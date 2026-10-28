@@ -18,6 +18,20 @@ type response struct {
 	Error  string          `json:"error"`
 }
 
+// RemoteError is an error the daemon answered with. Any other error from Call
+// is a problem with the connection itself.
+type RemoteError string
+
+func (e RemoteError) Error() string { return string(e) }
+
+// IsConnError reports whether err means the connection failed (as opposed to
+// the daemon refusing the request or the caller's context ending).
+func IsConnError(err error) bool {
+	var re RemoteError
+	return err != nil && !errors.As(err, &re) &&
+		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
+}
+
 type Client struct {
 	c    net.Conn
 	wmu  sync.Mutex
@@ -38,6 +52,16 @@ func Dial(path string) (*Client, error) {
 }
 
 func (c *Client) Close() error { return c.c.Close() }
+
+// Dead reports whether the connection has closed.
+func (c *Client) Dead() bool {
+	select {
+	case <-c.dead:
+		return true
+	default:
+		return false
+	}
+}
 
 func (c *Client) read() {
 	defer close(c.dead)
@@ -85,7 +109,7 @@ func (c *Client) Call(ctx context.Context, method string, params any) (json.RawM
 	select {
 	case r := <-ch:
 		if r.Error != "" {
-			return nil, errors.New(r.Error)
+			return nil, RemoteError(r.Error)
 		}
 		return r.Result, nil
 	case <-c.dead:

@@ -464,8 +464,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		var p struct {
-			MessageID string `json:"message_id"`
-			Body      string `json:"body"`
+			MessageID      string `json:"message_id"`
+			Body           string `json:"body"`
+			IdempotencyKey string `json:"idempotency_key"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
 			return nil, errors.New("reply needs message_id and body")
@@ -481,7 +482,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From,
-			Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID})
+			Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey})
 
 	case "messages":
 		var p protocol.QueryMessages

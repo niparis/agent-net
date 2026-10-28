@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/a2a-ocs/internal/client"
+	"github.com/niparis/a2a-ocs/internal/protocol"
 )
 
 // Caller makes one daemon call.
@@ -102,13 +104,21 @@ func New(call Caller) *mcp.Server {
 	mcp.AddTool(s, tool("agent_send",
 		"Send a message to another agent session. It is delivered into that agent's running session. The reply comes back as a message in your own session."+peerNote),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in sendIn) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, "send", in)
+			// The key is made once here, so a retry after a dropped connection
+			// reuses it and the gateway stores the message once.
+			out, err := run(ctx, "send", struct {
+				sendIn
+				IdempotencyKey string `json:"idempotency_key"`
+			}{in, protocol.NewID("k")})
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_reply",
 		"Reply to a message you received from another agent, by its message_id."+peerNote),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in replyIn) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, "reply", in)
+			out, err := run(ctx, "reply", struct {
+				replyIn
+				IdempotencyKey string `json:"idempotency_key"`
+			}{in, protocol.NewID("k")})
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_messages",
@@ -126,21 +136,101 @@ func New(call Caller) *mcp.Server {
 	return s
 }
 
-// Run connects to the daemon as a Claude session and serves MCP on stdio.
+// ErrUnreachable is what a tool call returns when the daemon cannot be reached.
+var ErrUnreachable = errors.New("agent-net daemon not reachable; it will be retried on the next call")
+
+// Daemon is a connection to the daemon that redials on demand. Every new
+// connection sends the same hello, so the session is the same one.
+type Daemon struct {
+	socket string
+	hello  map[string]any
+	mu     sync.Mutex
+	cl     *client.Client
+}
+
+func NewDaemon(socket string, hello map[string]any) *Daemon {
+	return &Daemon{socket: socket, hello: hello}
+}
+
+func (d *Daemon) Close() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.cl != nil {
+		d.cl.Close()
+		d.cl = nil
+	}
+}
+
+// conn returns a live connection, dialling and saying hello if needed.
+func (d *Daemon) conn(ctx context.Context) (*client.Client, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.cl != nil && !d.cl.Dead() {
+		return d.cl, nil
+	}
+	if d.cl != nil {
+		d.cl.Close()
+		d.cl = nil
+	}
+	cl, err := client.Dial(d.socket)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := cl.Call(ctx, "hello", d.hello); err != nil {
+		cl.Close()
+		return nil, err
+	}
+	d.cl = cl
+	return cl, nil
+}
+
+func (d *Daemon) drop(cl *client.Client) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.cl == cl {
+		d.cl = nil
+	}
+	cl.Close()
+}
+
+func (d *Daemon) once(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	cl, err := d.conn(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res, err := cl.Call(ctx, method, params)
+	if client.IsConnError(err) {
+		d.drop(cl)
+	}
+	return res, err
+}
+
+// Call makes one daemon call. If the connection fails it dials again and
+// retries once. Sends carry an idempotency key made before the first attempt,
+// so a retry never stores a message twice.
+func (d *Daemon) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	res, err := d.once(ctx, method, params)
+	if !client.IsConnError(err) {
+		return res, err
+	}
+	res, err = d.once(ctx, method, params)
+	if client.IsConnError(err) {
+		return nil, ErrUnreachable
+	}
+	return res, err
+}
+
+// Run serves MCP on stdio as a Claude session, talking to the daemon on socket.
 func Run(ctx context.Context, socket string) error {
 	nativeID := os.Getenv("CLAUDE_CODE_SESSION_ID")
 	if nativeID == "" {
 		return errors.New("CLAUDE_CODE_SESSION_ID is not set: `agent-net mcp` must be started by a Claude Code session")
 	}
-	cl, err := client.Dial(socket)
-	if err != nil {
-		return errors.New("cannot reach the agent-net daemon (is `agent-net daemon` running?): " + err.Error())
-	}
-	defer cl.Close()
 	cwd, _ := os.Getwd()
-	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "mcp", "harness": "claude",
-		"native_id": nativeID, "cwd": cwd, "status": "idle"}); err != nil {
-		return err
-	}
-	return New(cl.Call).Run(ctx, &mcp.StdioTransport{})
+	d := NewDaemon(socket, map[string]any{"client": "mcp", "harness": "claude",
+		"native_id": nativeID, "cwd": cwd, "status": "idle"})
+	defer d.Close()
+	// Connect now if the daemon is up; if not, the first tool call tries again.
+	d.conn(ctx)
+	return New(d.Call).Run(ctx, &mcp.StdioTransport{})
 }

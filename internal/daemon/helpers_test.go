@@ -129,6 +129,27 @@ type node struct {
 	d       *Daemon
 	sock    string
 	adapter *fakeAdapter
+	cfg     Config
+	cmdline string
+}
+
+// restart stops the daemon and starts a new one on the same socket and state.
+func (n *node) restart() {
+	n.t.Helper()
+	n.d.Stop()
+	d, err := New(n.cfg)
+	if err != nil {
+		n.t.Fatal(err)
+	}
+	if n.cmdline != "" {
+		d.cmdline = func(int) string { return n.cmdline }
+	}
+	if err := d.Start(context.Background()); err != nil {
+		n.t.Fatal(err)
+	}
+	n.d = d
+	n.t.Cleanup(d.Stop)
+	eventually(n.t, "daemon reconnected to gateway", d.Connected)
 }
 
 type nodeOpts struct {
@@ -176,7 +197,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	if err := d.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	n := &node{t: t, d: d, sock: sock, adapter: o.adapter}
+	n := &node{t: t, d: d, sock: sock, adapter: o.adapter, cfg: cfg, cmdline: o.cmdline}
 	t.Cleanup(d.Stop)
 	eventually(t, "daemon connected to gateway", d.Connected)
 	return n
