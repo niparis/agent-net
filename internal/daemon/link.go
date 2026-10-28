@@ -1,0 +1,216 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"math/rand"
+	"net/http"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/coder/websocket"
+	"github.com/niparis/a2a-ocs/internal/protocol"
+)
+
+// link is one WebSocket connection to the gateway.
+type link struct {
+	ws   *websocket.Conn
+	wmu  sync.Mutex
+	dead chan struct{}
+
+	mu      sync.Mutex
+	nextID  int
+	pending map[string]chan protocol.Header
+}
+
+func newLink(ws *websocket.Conn) *link {
+	return &link{ws: ws, dead: make(chan struct{}), pending: map[string]chan protocol.Header{}}
+}
+
+func (l *link) write(ctx context.Context, b []byte) error {
+	l.wmu.Lock()
+	defer l.wmu.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	return l.ws.Write(ctx, websocket.MessageText, b)
+}
+
+func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	l.mu.Lock()
+	l.nextID++
+	id := strconv.Itoa(l.nextID)
+	ch := make(chan protocol.Header, 1)
+	l.pending[id] = ch
+	l.mu.Unlock()
+	defer func() {
+		l.mu.Lock()
+		delete(l.pending, id)
+		l.mu.Unlock()
+	}()
+	frame, err := protocol.EncodeRequest(typ, id, params)
+	if err != nil {
+		return nil, err
+	}
+	if err := l.write(ctx, frame); err != nil {
+		return nil, errNotConnected
+	}
+	select {
+	case h := <-ch:
+		if !h.OK {
+			return nil, RemoteError(h.Error)
+		}
+		return h.Data, nil
+	case <-l.dead:
+		return nil, errNotConnected
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-time.After(20 * time.Second):
+		return nil, errors.New("gateway did not answer in time")
+	}
+}
+
+func (l *link) readLoop(ctx context.Context, d *Daemon) {
+	defer close(l.dead)
+	for {
+		_, raw, err := l.ws.Read(ctx)
+		if err != nil {
+			return
+		}
+		var h protocol.Header
+		if json.Unmarshal(raw, &h) != nil {
+			continue
+		}
+		switch h.Type {
+		case "result":
+			l.mu.Lock()
+			ch := l.pending[h.ID]
+			l.mu.Unlock()
+			if ch != nil {
+				ch <- h
+			}
+		case "msg.deliver":
+			var p protocol.MsgDeliver
+			if json.Unmarshal(raw, &p) != nil {
+				continue
+			}
+			// "accepted for delivery"; the outcome follows as delivery.update.
+			if res, err := protocol.EncodeResult(h.ID, map[string]bool{"accepted": true}, nil); err == nil {
+				l.write(ctx, res)
+			}
+			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
+		}
+	}
+}
+
+// call sends a request over the current link.
+func (d *Daemon) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	d.mu.Lock()
+	l := d.lk
+	d.mu.Unlock()
+	if l == nil {
+		return nil, errNotConnected
+	}
+	return l.call(ctx, typ, params)
+}
+
+func (d *Daemon) linkLoop(ctx context.Context) {
+	delay := d.cfg.BackoffMin
+	for ctx.Err() == nil {
+		up, err := d.runLink(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		d.Logf("gateway link: %v", err)
+		if up {
+			delay = d.cfg.BackoffMin
+		}
+		wait := delay/2 + time.Duration(rand.Int63n(int64(delay/2)+1))
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+		delay = min(delay*2, d.cfg.BackoffMax)
+	}
+}
+
+// runLink connects, does the handshake and blocks until the link drops.
+// up tells whether the handshake finished.
+func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
+	dctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ws, _, err := websocket.Dial(dctx, d.cfg.GatewayURL+"/v1/node", &websocket.DialOptions{
+		HTTPClient: d.client,
+		HTTPHeader: http.Header{"Authorization": {"Bearer " + d.cfg.Token}},
+	})
+	cancel()
+	if err != nil {
+		return false, err
+	}
+	ws.SetReadLimit(1 << 20)
+	d.mu.Lock()
+	d.connecting = true
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.connecting = false
+		d.mu.Unlock()
+	}()
+	l := newLink(ws)
+	rctx, rcancel := context.WithCancel(ctx)
+	defer rcancel()
+	go l.readLoop(rctx, d)
+	defer ws.Close(websocket.StatusNormalClosure, "")
+
+	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
+	defer hcancel()
+	if _, err := l.call(hctx, "hello", protocol.Hello{Version: "step2", Hostname: d.cfg.Hostname}); err != nil {
+		return false, err
+	}
+	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: d.snapshot()})
+	if err != nil {
+		return false, err
+	}
+	var r struct {
+		Sessions []struct {
+			NativeID  string `json:"native_id"`
+			Harness   string `json:"harness"`
+			SessionID string `json:"session_id"`
+		} `json:"sessions"`
+	}
+	if err := json.Unmarshal(data, &r); err != nil {
+		return false, err
+	}
+	d.mu.Lock()
+	for _, s := range r.Sessions {
+		if ls := d.sessions[key(s.Harness, s.NativeID)]; ls != nil {
+			ls.sessionID = s.SessionID
+		}
+	}
+	d.lk = l
+	d.connecting = false
+	var missing []*localSession
+	for _, ls := range d.sessions {
+		if ls.sessionID == "" {
+			missing = append(missing, ls)
+		}
+	}
+	d.mu.Unlock()
+	d.Logf("connected to gateway")
+	for _, ls := range missing {
+		d.pushSession(ls)
+	}
+	d.flushOutbox(rctx)
+
+	select {
+	case <-l.dead:
+	case <-ctx.Done():
+	}
+	d.mu.Lock()
+	if d.lk == l {
+		d.lk = nil
+	}
+	d.mu.Unlock()
+	return true, errors.New("link closed")
+}
