@@ -107,7 +107,7 @@ Why skills come before Codex and OpenCode: skills reuse the daemon built in step
 5. ~~Network?~~ Settled (D4): LAN first, then Tailscale.
 6. ~~Which Grokbot?~~ Settled (D7): xAI Grok Bot, cloud, webhook starts new runs only. Deferred.
 7. ~~Remove Reason hooks?~~ Done 2026-10-28 on this VM (Claude, Codex, OpenCode, skill). Backups in `~/.reason-removal-backup-20261028/`. The MacBook still has it.
-8. OCS: fork and use the harness modules as a library (option B, section 9)? TypeScript throughout?
+8. ~~OCS and language?~~ Settled: OCS as reference only (D8), Go (D9). This replaces the option B recommendation in section 9.
 
 ## 9. OCS: fork or not
 

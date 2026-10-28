@@ -38,6 +38,10 @@ Checked on 2026-10-28 against [xAI's routines page](https://docs.x.ai/grok-bot/s
 
 Consequence: Grok Bot cannot be a normal network member. At most, it is a "send-only target": the gateway can trigger a routine run, and the Bot can call back through a public-facing bridge if remote MCP works. It needs an internet-facing endpoint, which v1 does not have. Deferred until after step 7.
 
-## D8 - OCS: fork it, use its harness code, do not use it as the base (proposed)
+## D8 - OCS is reference material only
 
-See [review.md section 9](../review.md#9-ocs-fork-or-not). Waiting for owner approval, together with the language choice (TypeScript/Bun for the daemon).
+We do not fork OCS or depend on it. A clone lives outside this repo at `~/code/niparis/open-cross-session` (last reviewed at `478ffac`, v0.9.6). We read its harness code and tests and port the logic to Go. Its MIT copyright notice goes next to any ported harness code. From time to time we diff its harness files (`src/claude-*`, `src/codex-*`, `src/pi-*`, `src/grok.ts`, `src/wake*`) against the last reviewed commit. A change there usually means a harness protocol changed.
+
+## D9 - Go for everything except in-process plugins
+
+One Go binary, `agent-net`, with subcommands: `gateway`, `daemon` (one per machine), `mcp` (per-session stdio MCP process), and CLI inspection commands. MCP through the official `github.com/modelcontextprotocol/go-sdk` (v1.7.0+, supports 2026-07-28). SQLite through `modernc.org/sqlite` (pure Go, so macOS builds from Linux are easy). Git through the `git` CLI. The Pi extension and the OpenCode plugin are small TypeScript layers, because they must run inside those apps. They talk to the daemon over a local socket. This replaces the Python/FastAPI stack in brief section 14.
