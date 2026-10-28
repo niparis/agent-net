@@ -7,7 +7,7 @@ Date: 2026-10-28. Machine: Linux VM (this one). Throwaway sessions in tmux, neve
 | Claude Code: discovery, idle wake, busy, native reply | Works | [claude.md](claude.md) |
 | Claude Code: receiver in bypass-permissions mode | Not tested (docs say: held, dropped after 5 min) | [claude.md](claude.md) |
 | Codex CLI: idle wake, busy queue | Works | [codex.md](codex.md) |
-| Codex Desktop | Not tested (needs the MacBook) | - |
+| Codex Desktop | Deferred (D10) | - |
 | Per-session MCP process knows its session (Claude) | Works | [claude.md](claude.md) |
 | Per-session MCP process knows its session (Codex) | Not tested | [codex.md](codex.md) |
 | Pi: idle wake, busy follow-up, reply tool | Works | [pi.md](pi.md) |

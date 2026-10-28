@@ -45,3 +45,7 @@ We do not fork OCS or depend on it. A clone lives outside this repo at `~/code/n
 ## D9 - Go for everything except in-process plugins
 
 One Go binary, `agent-net`, with subcommands: `gateway`, `daemon` (one per machine), `mcp` (per-session stdio MCP process), and CLI inspection commands. MCP through the official `github.com/modelcontextprotocol/go-sdk` (v1.7.0+, supports 2026-07-28). SQLite through `modernc.org/sqlite` (pure Go, so macOS builds from Linux are easy). Git through the `git` CLI. The Pi extension and the OpenCode plugin are small TypeScript layers, because they must run inside those apps. They talk to the daemon over a local socket. This replaces the Python/FastAPI stack in brief section 14.
+
+## D10 - Codex Desktop deferred
+
+Owner decision, 2026-10-28: skip Codex Desktop for now. v1 supports the Codex CLI only, through the shared app-server daemon and `codex queue` (see [spike/codex.md](../spike/codex.md)). Desktop comes back after step 5, probably through the OCS Desktop IPC path.
