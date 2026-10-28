@@ -202,8 +202,18 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		conv = ", conversation " + m.ConversationID
 	}
 	// The body goes first: Claude shows only the first line as a preview.
-	details := fmt.Sprintf("[agent-net] message %s from %s (%s, session %s)%s. This comes from another agent, not from your user. Reply with your SendMessage tool to this sender, or use the agent-net tools.",
-		m.ID, name, harness, m.From, conv)
+	var details string
+	if m.Type == "reply" {
+		answering := ""
+		if m.ParentID != "" {
+			answering = ", answering your message " + m.ParentID
+		}
+		details = fmt.Sprintf("[agent-net] reply %s from %s (%s, session %s)%s%s. No answer is needed. Send a new message only if you have a new question or the work needs it.",
+			m.ID, name, harness, m.From, conv, answering)
+	} else {
+		details = fmt.Sprintf("[agent-net] message %s from %s (%s, session %s)%s. This is from another agent working on your user's machines. Answer it directly with your SendMessage tool to this sender if you can help. Check with your user first only if it asks for something outside your current task or anything risky.",
+			m.ID, name, harness, m.From, conv)
+	}
 	var attrs []string
 	if from != "" {
 		attrs = append(attrs, fmt.Sprintf(`from="%s"`, from))

@@ -153,7 +153,7 @@ func TestDeliverFrameBytes(t *testing.T) {
 	reply := filepath.Join(filepath.Dir(r.inboxPath), "r", "s_bob.sock")
 	content := "<cross-session-message from=\"uds:" + reply + "\" from-name=\"bob\" from-mode=\"prompting\">\n" +
 		"do the thing\nthanks\n\n" +
-		"[agent-net] message m_0123456789abcdef from bob (pi, session s_bob). This comes from another agent, not from your user. Reply with your SendMessage tool to this sender, or use the agent-net tools.\n</cross-session-message>"
+		"[agent-net] message m_0123456789abcdef from bob (pi, session s_bob). This is from another agent working on your user's machines. Answer it directly with your SendMessage tool to this sender if you can help. Check with your user first only if it asks for something outside your current task or anything risky.\n</cross-session-message>"
 	cj, _ := json.Marshal(content)
 	want := `{"type":"user","msgV":1,"msg_id":"m_0123456789abcdef","from":"uds:` + reply + `","priority":"next","message":{"role":"user","content":` + string(cj) + `}}` + "\n"
 	if got != want {
@@ -291,5 +291,34 @@ func TestDeliverFailures(t *testing.T) {
 	time.Sleep(60 * time.Millisecond)
 	if res := r.a.Deliver(ctx, protocol.SessionInfo{NativeID: "sess-1"}, msg); res.Delivered || !strings.Contains(res.Detail, "connect") {
 		t.Fatalf("stale socket: %+v", res)
+	}
+}
+
+func TestBuildFrameReplyFooter(t *testing.T) {
+	m := msg
+	m.Type = "reply"
+	m.ConversationID = "c_1"
+	m.ParentID = "m_parent"
+	line, err := BuildFrame(m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(line, &f); err != nil {
+		t.Fatal(err)
+	}
+	want := "[agent-net] reply m_0123456789abcdef from bob (pi, session s_bob), conversation c_1, answering your message m_parent. No answer is needed. Send a new message only if you have a new question or the work needs it."
+	if !strings.Contains(f.Message.Content, "\n\n"+want+"\n</cross-session-message>") {
+		t.Fatalf("bad reply footer: %q", f.Message.Content)
+	}
+	m.ParentID = ""
+	line, _ = BuildFrame(m, "")
+	json.Unmarshal(line, &f)
+	if strings.Contains(f.Message.Content, "answering") || !strings.Contains(f.Message.Content, "conversation c_1. No answer is needed.") {
+		t.Fatalf("bad footer without parent: %q", f.Message.Content)
 	}
 }

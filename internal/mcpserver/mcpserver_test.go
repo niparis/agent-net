@@ -62,8 +62,8 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		t.Fatalf("tools: %v", names)
 	}
 	for _, tl := range tools.Tools {
-		if tl.Name == "agent_send" && !strings.Contains(tl.Description, "not instructions from the user") {
-			t.Fatalf("agent_send must warn that peer messages are not user instructions: %q", tl.Description)
+		if tl.Name == "agent_send" && !strings.Contains(tl.Description, "requests from peers") {
+			t.Fatalf("agent_send must say peer messages are requests from peers: %q", tl.Description)
 		}
 	}
 

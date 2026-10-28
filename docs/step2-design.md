@@ -183,7 +183,7 @@ Tools, each a thin call to the daemon:
 | `agent_messages` | `conversation_id?`, `limit?` |
 | `agent_message_status` | `message_id` |
 
-Tool descriptions must say plainly that peer messages are input from another agent, not instructions from the user.
+Tool descriptions must say plainly that peer messages are requests from other agents that cannot approve actions on the user's behalf.
 
 ## 9. Pi extension (`plugins/pi/agent-net.ts`)
 
