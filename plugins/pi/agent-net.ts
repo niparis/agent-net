@@ -8,6 +8,7 @@ import { join } from "node:path";
 const REQUEST_TIMEOUT_MS = 10_000;
 const BACKOFF_START_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
+const MCP_POLL_MS = 15_000;
 const UNREACHABLE =
   "agent-net daemon not reachable. Start it with `agent-net daemon`; the extension reconnects on its own.";
 
@@ -58,6 +59,9 @@ export default function (pi: ExtensionAPI) {
   let status: "idle" | "busy" = "idle";
   let hello: Record<string, unknown> = {};
   const pending = new Map<string, Pending>();
+  let mcpTimer: NodeJS.Timeout | undefined;
+  // Registered MCP tools: name -> fingerprint, so a change is noticed and a removal withdrawn.
+  const mcpTools = new Map<string, string>();
 
   function failAllPending(reason: string) {
     for (const p of pending.values()) {
@@ -145,6 +149,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     if (frame.method === "deliver" && frame.params?.message) handleDeliver(frame.params.message);
+    if (frame.method === "mcp_changed") void refreshMcpTools();
   }
 
   function openConnection() {
@@ -159,6 +164,7 @@ export default function (pi: ExtensionAPI) {
       request("hello", { ...hello, status })
         .then(() => {
           backoff = BACKOFF_START_MS;
+          void refreshMcpTools();
         })
         .catch(() => s.destroy());
     });
@@ -197,6 +203,9 @@ export default function (pi: ExtensionAPI) {
     backoff = BACKOFF_START_MS;
     status = "idle";
     openConnection();
+    // Safety net for a missed mcp_changed push.
+    mcpTimer = setInterval(() => void refreshMcpTools(), MCP_POLL_MS);
+    mcpTimer.unref?.();
   });
 
   pi.on("agent_start", async () => sendStatus("busy"));
@@ -204,6 +213,8 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_shutdown", async () => {
     stopped = true;
+    if (mcpTimer) clearInterval(mcpTimer);
+    mcpTimer = undefined;
     if (retryTimer) clearTimeout(retryTimer);
     retryTimer = undefined;
     failAllPending("agent-net extension is shutting down");
@@ -268,6 +279,7 @@ export default function (pi: ExtensionAPI) {
     parameters: any,
     method: string,
     format: (result: any) => string = (r) => JSON.stringify(r ?? {}, null, 2),
+    mapParams: (params: any) => any = (p) => p ?? {},
   ) {
     pi.registerTool({
       name,
@@ -277,7 +289,7 @@ export default function (pi: ExtensionAPI) {
       async execute(_toolCallId: string, params: any) {
         try {
           // The daemon does not default online_only; the tool says it does.
-          const args = method === "list" ? { online_only: true, ...(params ?? {}) } : (params ?? {});
+          const args = method === "list" ? { online_only: true, ...(params ?? {}) } : mapParams(params));
           const result = await request(method, args);
           return {
             content: [{ type: "text" as const, text: format(result ?? {}) }],
@@ -376,5 +388,173 @@ export default function (pi: ExtensionAPI) {
     Type.Object({ message_id: Type.String({ description: "Message ID, like m_0123456789abcdef" }) }),
     "message_status",
     (r) => `${r.message?.message_id}: ${r.message?.state}`,
+  );
+
+  // ---- MCP registry ----
+  // Registered servers' tools are registered with Pi at run time as <server>__<tool>.
+  // Pi cannot unregister a tool, so a removed one is registered again as hidden.
+
+  function mcpResultText(r: any): string {
+    const parts: string[] = [];
+    for (const c of r?.content ?? []) {
+      if (c.type === "text") parts.push(String(c.text ?? ""));
+      else parts.push(`[${c.type} content omitted]`);
+    }
+    return parts.join("\n") || "(no output)";
+  }
+
+  function toolSchema(raw: any) {
+    const schema = raw && typeof raw === "object" && raw.type === "object" ? { ...raw } : { type: "object", properties: {} };
+    delete schema.$schema;
+    return Type.Unsafe<Record<string, unknown>>(schema);
+  }
+
+  function registerMcpTool(server: any, t: any) {
+    const name = `${server.name}__${t.name}`;
+    pi.registerTool({
+      name,
+      label: `${server.name}: ${t.name}`,
+      description: `[${server.name} on ${server.hostname}] ${t.description ?? ""}`,
+      parameters: toolSchema(t.input_schema),
+      async execute(_toolCallId: string, params: any) {
+        const r = await request("mcp_call", { server: server.name, tool: t.name, arguments: params ?? {} });
+        const text = mcpResultText(r);
+        if (r?.isError) throw new Error(text);
+        return { content: [{ type: "text" as const, text }], details: {} as Record<string, unknown> };
+      },
+    });
+  }
+
+  function hideMcpTool(name: string) {
+    pi.registerTool({
+      name,
+      label: name,
+      description: "Removed MCP tool.",
+      parameters: Type.Object({}),
+      exposure: "hidden",
+      async execute() {
+        throw new Error("This MCP server was removed from agent-net.");
+      },
+    });
+  }
+
+  let refreshing = false;
+  async function refreshMcpTools() {
+    if (refreshing || !connected) return;
+    refreshing = true;
+    try {
+      const r = await request("mcp_tools");
+      const seen = new Set<string>();
+      for (const server of r.servers ?? []) {
+        for (const t of server.tools ?? []) {
+          const name = `${server.name}__${t.name}`;
+          const fp = `${server.hostname}|${t.description ?? ""}|${JSON.stringify(t.input_schema ?? null)}`;
+          seen.add(name);
+          if (mcpTools.get(name) === fp) continue;
+          registerMcpTool(server, t);
+          mcpTools.set(name, fp);
+        }
+      }
+      for (const name of [...mcpTools.keys()]) {
+        if (seen.has(name)) continue;
+        hideMcpTool(name);
+        mcpTools.delete(name);
+      }
+    } catch {
+      // Keep the tools we have; the next push or poll tries again.
+    } finally {
+      refreshing = false;
+    }
+  }
+
+  const SECRETS = " Never put a secret value in an argument: give an environment variable NAME or a file PATH on this machine.";
+  const EVERYWHERE = "This change applies to every agent on every machine.";
+
+  function formatMcpServer(s: any): string {
+    const tools = (s.tools ?? []).map((t: any) => `${s.name}__${t.name}`).join(", ") || "-";
+    const target = s.transport === "stdio" ? [s.command, ...(s.args ?? [])].join(" ") : `${s.transport} ${s.url}`;
+    const auth =
+      s.transport === "stdio"
+        ? (s.env ?? []).length
+          ? `env ${(s.env ?? []).join(",")}`
+          : "none"
+        : (s.headers ?? []).map((h: any) => `${h.name} <- ${h.env ? "env " + h.env : "file " + h.file}`).join("; ") || "none";
+    const by = `${s.added_by_harness || "?"} ${s.added_by_session || ""} (node ${s.added_by_node || "?"})`.replace(/\s+/g, " ");
+    return (
+      `${s.name} on ${s.hostname}${s.host_online ? "" : " (offline)"}: ${target}\n` +
+      `  auth: ${auth}  enabled: ${s.enabled ? "yes" : "no"}  health: ${s.health}${s.health_detail ? " - " + s.health_detail : ""}\n` +
+      `  added by: ${by}\n  tools: ${tools}`
+    );
+  }
+
+  defineTool(
+    "agent_mcp_add",
+    "Add MCP server",
+    "Register an MCP server so that EVERY agent session on EVERY machine can use its tools, named <server>__<tool>. " +
+      "A stdio server (command, args) runs on THIS machine. A remote server (url) is reached from this machine. " +
+      "The server is connected and its tools listed before it is saved; the result names the tools. Ask your user before adding a server." +
+      SECRETS,
+    Type.Object({
+      name: Type.String({ description: "Server name: lowercase letters, numbers and hyphens, at most 24 characters" }),
+      command: Type.Optional(Type.String({ description: "Stdio server: the program to run on this machine" })),
+      args: Type.Optional(Type.Array(Type.String(), { description: "Stdio server: arguments (stored in the registry and shown to everyone: no secrets)" })),
+      env: Type.Optional(Type.Array(Type.String(), { description: "Stdio server: NAMES of environment variables to pass to the process, read on this machine" })),
+      url: Type.Optional(Type.String({ description: "Remote server: its MCP endpoint URL" })),
+      transport: Type.Optional(Type.String({ description: "Remote server: http (streamable HTTP, default) or sse" })),
+      headers: Type.Optional(
+        Type.Array(
+          Type.Object({
+            name: Type.String({ description: "Header name, for example Authorization" }),
+            env: Type.Optional(Type.String({ description: "NAME of an environment variable on this machine that holds the value" })),
+            file: Type.Optional(Type.String({ description: "PATH of a file on this machine that holds the value" })),
+          }),
+          { description: "Remote server: headers to send, each with the value's source" },
+        ),
+      ),
+      timeout_seconds: Type.Optional(Type.Number({ description: "Per-call timeout in seconds (default 60, at most 600)" })),
+    }),
+    "mcp_add",
+    (r) => `Added.\n${formatMcpServer(r.server ?? {})}\n${EVERYWHERE}`,
+    (p: any) => {
+      const server: Record<string, unknown> = { name: p.name, timeout_sec: p.timeout_seconds };
+      if (p.url) {
+        server.transport = p.transport || "http";
+        server.url = p.url;
+        server.headers = p.headers;
+      } else {
+        server.transport = "stdio";
+        server.command = p.command;
+        server.args = p.args;
+        server.env = p.env;
+      }
+      return { server };
+    },
+  );
+
+  defineTool(
+    "agent_mcp_list",
+    "List MCP servers",
+    "List the registered MCP servers: host machine, transport, auth source (a name or path, never a value), enabled, health, who added it, and tool names.",
+    Type.Object({}),
+    "mcp_list",
+    (r) => (r.servers ?? []).map(formatMcpServer).join("\n\n") || "No MCP servers are registered.",
+  );
+
+  defineTool(
+    "agent_mcp_test",
+    "Test MCP server",
+    "Check a registered MCP server now: its host connects, lists the tools and reports health.",
+    Type.Object({ name: Type.String({ description: "The server name from agent_mcp_list" }) }),
+    "mcp_test",
+    (r) => (r.ok ? `Healthy. Tools: ${(r.tools ?? []).map((t: any) => t.name).join(", ") || "-"}` : `Failed: ${r.detail}`),
+  );
+
+  defineTool(
+    "agent_mcp_remove",
+    "Remove MCP server",
+    "Remove a registered MCP server. Its tools disappear for every agent on every machine. Ask your user first.",
+    Type.Object({ name: Type.String({ description: "The server name from agent_mcp_list" }) }),
+    "mcp_remove",
+    (r) => `Removed ${r.removed ?? "the server"}. ${EVERYWHERE}`,
   );
 }
