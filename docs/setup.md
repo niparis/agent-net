@@ -5,7 +5,7 @@ One machine runs the gateway (the VM `research`). Every machine, including the V
 ## 1. The gateway host, once
 
 ```
-curl -fsSL https://raw.githubusercontent.com/niparis/agent-net/main/install.sh | sh -s -- --gateway
+curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --gateway
 ```
 
 The script downloads `agent-net-<os>-<arch>` and `checksums.txt` from the latest GitHub release and checks the SHA-256. It installs the binary to `~/.local/bin/agent-net` (through a temp file and a rename). Because of `--gateway`, it also downloads the binaries for Linux and macOS (amd64 and arm64) into `~/.local/share/agent-net/dist`, which the gateway serves, and then runs `agent-net setup --gateway`. Make sure `~/.local/bin` is on your `PATH`. The script prints the line to add if it is not.

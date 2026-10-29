@@ -1,0 +1,48 @@
+name: pages
+
+# Publishes install.sh at https://niparis.github.io/agent-net/install
+# (and /install.sh) so the first install is one short line.
+
+on:
+  push:
+    branches: [main]
+    paths: [install.sh, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - name: Build site
+        run: |
+          sh -n install.sh
+          mkdir -p site
+          cp install.sh site/install
+          cp install.sh site/install.sh
+          touch site/.nojekyll
+          cat > site/index.html <<'EOF'
+          <!doctype html>
+          <meta charset="utf-8">
+          <title>agent-net</title>
+          <meta http-equiv="refresh" content="0; url=https://github.com/niparis/agent-net">
+          <a href="https://github.com/niparis/agent-net">github.com/niparis/agent-net</a>
+          EOF
+      - uses: actions/configure-pages@v5.0.0
+      - uses: actions/upload-pages-artifact@v3.0.1
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4.0.5

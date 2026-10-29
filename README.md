@@ -30,7 +30,7 @@ It is one Go binary, `agent-net`, with a subcommand for each part.
 ### 1. On the first machine (the gateway), once
 
 ```
-curl -fsSL https://raw.githubusercontent.com/niparis/agent-net/main/install.sh | sh -s -- --gateway
+curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --gateway
 ```
 
 This downloads the latest release, checks its SHA-256, installs `~/.local/bin/agent-net`, and runs `agent-net setup --gateway`. That starts the gateway and the daemon as services. It also keeps the binaries for all platforms in `~/.local/share/agent-net/dist`, so the gateway can hand them to other machines.

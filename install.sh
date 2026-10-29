@@ -1,7 +1,7 @@
 #!/bin/sh
 # agent-net installer.
 #
-#   curl -fsSL https://raw.githubusercontent.com/niparis/agent-net/main/install.sh | sh -s -- --gateway
+#   curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --gateway
 #
 # Without --gateway it only installs the binary to ~/.local/bin/agent-net.
 # With --gateway it also downloads the binaries for all platforms (the gateway
