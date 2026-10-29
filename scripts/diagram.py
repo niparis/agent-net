@@ -92,7 +92,7 @@ def svg(t):
     my = ny + 64
     s += module(nx + 24, my, "Directory", ["who is online,", "where, and doing what"], True, t)
     s += module(nx + 240, my, "Messages", ["kept until delivered,", "replies routed back"], True, t)
-    s += module(nx + 456, my, "Registry", ["shared skills and", "MCP servers"], False, t)
+    s += module(nx + 456, my, "Registry", ["MCP servers today,", "shared skills next"], True, t)
     s += '</svg>\n'
     return s
 

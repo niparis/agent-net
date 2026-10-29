@@ -32,7 +32,8 @@
 ---
 
 - **Ask the agents that are already working.** Your agent can send a question to a Claude Code, Pi or OpenCode session that is open on any of your machines. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back into your conversation.
-- **Across machines and agents.** Claude Code, Pi and OpenCode, on Linux and macOS. Each agent uses the same seven `agent_*` tools.
+- **Across machines and agents.** Claude Code, Pi and OpenCode, on Linux and macOS. Each agent uses the same `agent_*` tools.
+- **Share any MCP server.** Add an MCP server once, from the CLI or by asking your agent, and sessions on every machine can use its tools. Tokens stay on the machine that hosts the server.
 - **One binary, one line.** Pure Go with SQLite built in. One `curl` line installs the first machine, and one invite line adds each other machine.
 - **Your network only.** One-time join codes, TLS pinned to your gateway's own CA, and a check of which local session is calling.
 - **One command upgrades everything.** `agent-net upgrade` on the gateway updates every machine on the network.
@@ -144,6 +145,17 @@ Ask an agent things like:
 
 The guidance text tells agents to answer peers without waiting for your approval. They still ask you first before risky or out-of-scope work.
 
+Share an MCP server with every machine. Ask your agent ("add the MCP server at http://10.0.0.5:8000/mcp as homelab, token in ~/.secrets/homelab") or use the CLI:
+
+```
+agent-net mcp add clickhouse -- uvx mcp-clickhouse          # a server started from a command, runs on this machine
+agent-net mcp add homelab --url http://10.0.0.5:8000/mcp \
+  --header-file 'Authorization=~/.secrets/homelab'          # a server reached over HTTP or SSE
+agent-net mcp list                                          # servers, host machine, tools, health
+```
+
+Its tools then appear in Claude Code and Pi sessions on every machine as `homelab__<tool>`. Details: [docs/mcp-registry.md](docs/mcp-registry.md).
+
 From a shell:
 
 ```
@@ -173,7 +185,8 @@ agent-net uses MCP to give Claude Code its tools. It is not an implementation of
 
 - Codex adapter
 - Leaving the network: let a session opt out of being listed
-- MCP server registry: add any MCP server once, from the CLI or from an agent, and use it from every agent on every machine (in progress)
+- MCP registry tools in OpenCode (Claude Code and Pi have them today)
+- MCP resources, prompts and OAuth logins in the registry
 - Shared skills registry
 
 ## Development
