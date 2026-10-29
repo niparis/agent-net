@@ -212,8 +212,10 @@ check "gateway host binary is $V2" test "$(machine gw version)" = "$V2"
 check "gateway host keeps .prev ($V1)" test "$("$T/gw/bin/agent-net.prev" version)" = "$V1"
 check "B binary is $V2" test "$(machine b version)" = "$V2"
 check "B keeps .prev ($V1)" test "$("$T/b/bin/agent-net.prev" version)" = "$V1"
-check "gateway host line says ok" bash -c "grep -E '  $V1 -> $V2  ok\$' <<<\"\$1\" | wc -l | grep -qx 2" _ "$UP_OUT"
-check "C is reported offline" contains "$UP_OUT" "offline (will not upgrade until you run agent-net upgrade there)"
+# gateway host and B: ok, or ok (upgraded on reconnect) when they caught up on their own first
+check "gateway host and B lines say ok" test "$(grep -cE "  $V1 -> $V2  ok( \(upgraded on reconnect\))?\$" <<<"$UP_OUT")" = 2
+OFFLINE_MSG="upgrades itself when it reconnects, unless auto-upgrade is turned off there"
+check "C and D are reported offline, as upgrading themselves" test "$(grep -cF "offline ($OFFLINE_MSG)" <<<"$UP_OUT")" = 2
 check "C binary still $V1" test "$(machine c version)" = "$V1"
 check "sessions note printed" contains "$UP_OUT" "running Claude/Pi/OpenCode sessions keep the old version until they restart"
 check "dist refreshed" test "$("$T/gw/dist/agent-net-linux-amd64" version)" = "$V2"
