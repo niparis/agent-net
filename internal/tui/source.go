@@ -25,6 +25,9 @@ type Snapshot struct {
 	Version   string // its agent-net version
 	Nodes     []protocol.NodeView
 	Agents    []protocol.AgentView
+	// Projects is the project list (registered, seen or both). Empty when the
+	// gateway cannot list them; the screen then shows no project source.
+	Projects []protocol.ProjectView
 }
 
 // Problem says why the last refresh failed.
@@ -170,6 +173,17 @@ func (s *DaemonSource) Snapshot(ctx context.Context) (Snapshot, error) {
 		return snap, err
 	}
 	snap.Agents = r.Agents
+	// Best effort, like the node list.
+	if raw, err := s.call(ctx, "projects", protocol.QueryProjects{}); err == nil {
+		var pr struct {
+			Projects []protocol.ProjectView `json:"projects"`
+		}
+		if json.Unmarshal(raw, &pr) == nil {
+			snap.Projects = pr.Projects
+		}
+	} else if errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
+		return snap, err
+	}
 	return snap, nil
 }
 

@@ -111,6 +111,8 @@ func normalHandler(method string, params json.RawMessage) (any, string) {
 		return map[string]any{"connected": true, "node_id": "n_here", "version": "v9.9.9"}, ""
 	case "nodes":
 		return protocol.NodesInfo{Nodes: []protocol.NodeView{{NodeID: "n_here", Hostname: "here", Online: true}}}, ""
+	case "projects":
+		return map[string]any{"projects": []protocol.ProjectView{{Name: "p", NodeID: "n_here", Path: "/p", Source: "both"}}}, ""
 	case "list":
 		return map[string]any{"agents": []protocol.AgentView{{SessionID: "s_1", NodeID: "n_here", Hostname: "here", Online: true,
 			Mode: protocol.ModeForeground, Model: "m"}}}, ""
@@ -135,7 +137,7 @@ func TestDaemonSourceReads(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !snap.Connected || snap.NodeID != "n_here" || snap.Version != "v9.9.9" || len(snap.Nodes) != 1 ||
-		len(snap.Agents) != 1 || snap.Agents[0].Mode != protocol.ModeForeground || snap.Agents[0].Model != "m" {
+		len(snap.Agents) != 1 || len(snap.Projects) != 1 || snap.Projects[0].Source != "both" || snap.Agents[0].Mode != protocol.ModeForeground || snap.Agents[0].Model != "m" {
 		t.Fatalf("snapshot %+v", snap)
 	}
 	evs, err := src.Events(ctx, 41, 10)
@@ -148,7 +150,7 @@ func TestDaemonSourceReads(t *testing.T) {
 	}
 	// Read-only: these are the only methods the screen ever calls, and it says
 	// it is a CLI client (which the daemon limits to read-only calls).
-	allowed := map[string]bool{"hello": true, "info": true, "nodes": true, "list": true, "events": true, "message_status": true}
+	allowed := map[string]bool{"hello": true, "info": true, "nodes": true, "list": true, "projects": true, "events": true, "message_status": true}
 	for _, m := range d.called() {
 		if !allowed[m] {
 			t.Errorf("the screen called %q", m)

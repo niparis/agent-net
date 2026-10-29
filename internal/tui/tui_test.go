@@ -92,7 +92,12 @@ func fakeAgents() []protocol.AgentView {
 }
 
 func fakeSnapshot() Snapshot {
-	return Snapshot{Connected: true, NodeID: "n_mac", Version: "v0.4.0", Nodes: fakeNodes(), Agents: fakeAgents()}
+	return Snapshot{Connected: true, NodeID: "n_mac", Version: "v0.4.0", Nodes: fakeNodes(), Agents: fakeAgents(),
+		Projects: []protocol.ProjectView{
+			{Name: "tenebrae", NodeID: "n_mac", Path: "/Users/n/code/tenebrae", Source: protocol.SourceBoth},
+			{Name: "strategies", NodeID: "n_mac", Path: "/Users/n/code/strategies", Source: protocol.SourceRegistered},
+			{Name: "shop", NodeID: "n_mac", Path: "/Users/n/code/shop"}, // an older gateway sends no source
+		}}
 }
 
 func ev(id int64, at time.Duration, kind, msg, from, to, typ string, f func(*protocol.FeedEvent)) protocol.FeedEvent {

@@ -17,9 +17,11 @@ Selected session ─────────────────────
   remote    git@git.example.com:team/strategies.git
   worktree  /Users/n/code/strategies/.claude/worktrees/agent-a7  (linked to /Users/n/code/strategies)
   state     idle, background   branch feature/risk-model   model claude-sonnet-5-5
+  project   strategies  [registered]
   task      trading strategies / backtest v2
   messages  13:57  -> tenebrae-53 (Mac)  reply  delivered
             13:56  <- tenebrae-53 (Mac)  request  replied
+
 
 
 Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -29,6 +31,4 @@ Messages (live) ─────────────────────�
   14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
   14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
   14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
-
-
 up/down select  / filter  o offline  tab messages  r refresh  q quit

@@ -188,7 +188,7 @@ Each entry has the machine, the path of the main working tree, the name (its bas
 
 - **Machines.** Each machine with its agent-net version, online or offline, and its installed harnesses. This machine comes first and is marked `(here)`.
 - **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`), ON (`on` or `off`), FUNCTION (the announced function, or the task).
-- **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, task and its recent messages (time, direction, peer, type, delivery state).
+- **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, project with its source (`registered`, `seen` or `both`, as in `agent-net projects`), task and its recent messages (time, direction, peer, type, delivery state).
 - **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends.
 
 The screen refreshes once a second. If the daemon is not running, or cannot reach the gateway, a banner says so, the last data stays on screen, and it retries every second.

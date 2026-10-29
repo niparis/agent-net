@@ -222,7 +222,7 @@ func (m Model) layout() layout {
 			extra -= n
 		}
 		grow(&table, len(m.tableRows()))
-		grow(&detail, 10)
+		grow(&detail, 12)
 		grow(&feed, 14)
 		table += extra
 	}
@@ -668,6 +668,9 @@ func (m Model) detailLines(w, n int) []string {
 		info = append(info, kv("worktree", a.Repo.Worktree))
 	}
 	info = append(info, kv("state", status))
+	if src := m.projectSource(a); src != "" {
+		info = append(info, kv("project", dashIfEmpty(firstNonEmpty(a.Repo.Project, a.Profile.Project))+"  ["+src+"]"))
+	}
 	if t := firstNonEmpty(a.Profile.Function, a.Profile.Task); t != "" {
 		task := a.Profile.Function
 		if a.Profile.Task != "" {
@@ -709,6 +712,23 @@ func (m Model) detailLines(w, n int) []string {
 		out = append(out, "")
 	}
 	return out[:n]
+}
+
+// projectSource says where the project of a session is known from: registered
+// (someone added it with agent-net projects add), seen (a session ran there)
+// or both. It is empty when the project list has no entry for the session's
+// repository on its machine, or the gateway is too old to say.
+func (m Model) projectSource(a protocol.AgentView) string {
+	root := firstNonEmpty(a.Repo.Root, a.Cwd)
+	for _, p := range m.snap.Projects {
+		if p.NodeID == a.NodeID && p.Path == root {
+			if p.Source == "" {
+				return protocol.SourceSeen
+			}
+			return sanitize(p.Source)
+		}
+	}
+	return ""
 }
 
 // sessionMessageLine describes one message of a session: time, direction, the
