@@ -441,3 +441,40 @@ func TestHelpOverlay(t *testing.T) {
 }
 
 var _ = fmt.Sprint
+
+// FUNCTION is the project description from AGENTS.md (decision 0009). An online
+// session without one says so; an offline one shows a dash.
+func TestFunctionColumnShowsTheDescriptionOrNoAgentsMD(t *testing.T) {
+	m := newModel(120, 40)
+	byName := map[string]string{}
+	for _, l := range lines(m.View()) {
+		for _, n := range []string{"tenebrae-53", "web", "scratch"} {
+			if strings.HasPrefix(strings.TrimLeft(l, "> "), n+" ") {
+				byName[n] = strings.TrimRight(l, " ")
+			}
+		}
+	}
+	if !strings.HasSuffix(byName["tenebrae-53"], "research") {
+		t.Errorf("description missing: %q", byName["tenebrae-53"])
+	}
+	if !strings.HasSuffix(byName["web"], "no AGENTS.md") || !strings.HasSuffix(byName["scratch"], "no AGENTS.md") {
+		t.Errorf("empty is not explained: %q %q", byName["web"], byName["scratch"])
+	}
+	m = keys(m, "o", "G")
+	for _, l := range lines(m.View()) {
+		if strings.Contains(l, "old-session") && strings.Contains(l, "no AGENTS.md") {
+			t.Errorf("an offline session must not say no AGENTS.md: %q", l)
+		}
+	}
+	// The announced task is not a fallback for the function.
+	a := agent("s_x", "n_mac", "Mac", "claude", "x", func(a *protocol.AgentView) { a.Profile.Task = "doing things" })
+	if got := functionText(a); got != "no AGENTS.md" {
+		t.Errorf("functionText = %q", got)
+	}
+}
+
+func TestWorkerCountIsSingularForOne(t *testing.T) {
+	if plural(1, "worker") != "1 worker" || plural(2, "worker") != "2 workers" || plural(0, "worker") != "0 workers" {
+		t.Fatal("plural")
+	}
+}

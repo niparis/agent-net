@@ -16,8 +16,8 @@ Selected session ─────────────────────
   folder   …s/.claude/worktrees/agent-a7  │
   branch   feature/risk-model             │
   model    claude-sonnet-5-5, background  │
-  task     trading strategies / backtest… │
-  remote   git@git.example.com:team/stra… │
+  function trading strategies             │
+  task     backtest v2                    │
 Messages (live) ────────────────────────────────────────────────────────────────
   14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)       notification failed
   14:04  tenebrae-53 (Mac) -> s_00000000                 request      dispatched

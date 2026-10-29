@@ -203,7 +203,7 @@ func (m Model) titleLine(w int) string {
 		mid = fmt.Sprintf("%d online · %d offline today", c.Online, c.Offline24h)
 	}
 	if workers > 0 {
-		mid += fmt.Sprintf(", %d workers", workers)
+		mid += ", " + plural(workers, "worker")
 	}
 	if m.showOffline {
 		mid += "  +offline"
@@ -372,7 +372,7 @@ func columns(avail, nameWant int) []column {
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
 		{name: "PROC", min: 4, max: 4, right: true},
-		{name: "FUNCTION", min: 10, max: 80},
+		{name: "FUNCTION", min: 12, max: 80},
 	}
 	for _, drop := range []string{"FUNCTION", "BRANCH", "MODE", "MODEL", "PROJECT"} {
 		if sumMin(cols) <= avail {
@@ -590,9 +590,9 @@ func (m Model) sessionLine(a protocol.AgentView, cols []column, w int) string {
 				v = "off"
 			}
 		case "FUNCTION":
-			v = firstNonEmpty(a.Profile.Function, a.Profile.Task)
+			v = functionText(a)
 		}
-		if c.name != "MODE" {
+		if c.name != "MODE" && !(c.name == "FUNCTION" && v == noAgentsMD) {
 			v = dashIfEmpty(v)
 		}
 		v = cell(v, c.width)
@@ -600,8 +600,12 @@ func (m Model) sessionLine(a protocol.AgentView, cols []column, w int) string {
 			switch c.name {
 			case "STATUS":
 				v = statusStyle(a.Status).Render(v)
-			case "MODE", "BRANCH", "FUNCTION", "AGENT":
+			case "MODE", "BRANCH", "AGENT":
 				v = sDim.Render(v)
+			case "FUNCTION":
+				if v == "" || strings.HasPrefix(v, noAgentsMD) {
+					v = sDim.Render(v)
+				}
 			}
 		}
 		parts = append(parts, v)
@@ -652,4 +656,20 @@ func plural(n int, noun string) string {
 		return fmt.Sprintf("%d %s", n, noun)
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
+}
+
+// noAgentsMD is what FUNCTION says for an online session whose project has no
+// description (decision 0009). It is a clear message to fix the project.
+const noAgentsMD = "no AGENTS.md"
+
+// functionText is the FUNCTION of a session: the project description the
+// gateway read from AGENTS.md. Empty is a real answer for an online session.
+func functionText(a protocol.AgentView) string {
+	if f := strings.TrimSpace(a.Profile.Function); f != "" {
+		return f
+	}
+	if a.Online {
+		return noAgentsMD
+	}
+	return ""
 }

@@ -16,8 +16,8 @@ Selected session ─────────────────────
   folder   -                              │ processes: too old for this action
   branch   -                              │
   model    -                              │
+  function no AGENTS.md                   │
   remote   -                              │
-  messages none seen yet                  │
 Messages (live) ────────────────────────────────────────────────────────────────
   14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)       notification failed
   14:04  tenebrae-53 (Mac) -> s_00000000                 request      dispatched

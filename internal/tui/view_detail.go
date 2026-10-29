@@ -113,12 +113,11 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		kv("branch", branch),
 		kv("model", model),
 	)
-	if t := firstNonEmpty(a.Profile.Function, a.Profile.Task); t != "" {
-		task := a.Profile.Function
-		if a.Profile.Task != "" {
-			task = strings.TrimSuffix(task+" / "+a.Profile.Task, " / ")
-		}
-		out = append(out, kv("task", task))
+	if f := functionText(a); f != "" {
+		out = append(out, kv("function", f))
+	}
+	if a.Profile.Task != "" {
+		out = append(out, kv("task", a.Profile.Task))
 	}
 	out = append(out, kv("remote", dashIfEmpty(a.Repo.Remote)))
 	// A linked git worktree (not the main working tree), or a folder inside

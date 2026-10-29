@@ -1,4 +1,4 @@
-agent-net tui  7 sessions, 6 online, 1 workers                updated 14:05:00
+agent-net tui  7 sessions, 6 online, 1 worker                 updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -17,7 +17,7 @@ Selected session ─────────────────────
   folder   /Users/n/code/tenebrae         │
   branch   main                           │
   model    anthropic/claude-haiku-4-5, b… │
-  remote   -                              │
+  function no AGENTS.md                   │
 Messages (live) ────────────────────────────────────────────────────────────────
   14:03  tenebrae (Mac) -> you (on Mac)                  reply        delivered
   14:04  worker refused in nope: no project named nope is known
