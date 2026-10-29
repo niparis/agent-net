@@ -95,7 +95,7 @@ function modelName(m: { provider?: string; id?: string } | undefined): string | 
 
 // ---- session_text: what happened in this session -----------------------------
 // The daemon asks for it with a `session_text` push, only when the owner asked
-// (agent-net show, the TUI). The answer goes back with `session_text_result`.
+// (the TUI). The answer goes back with `session_text_result`.
 // The daemon masks secrets and cuts the text again; this side only flattens the
 // harness's history into entries and does the paging.
 

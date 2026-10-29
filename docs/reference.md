@@ -27,8 +27,6 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net stop SESSION` | Stop a worker. The process group is killed. |
 | `agent-net workers` | The workers on the network, with machine, project, harness, model, owner, state and start time. `--json`. |
 | `agent-net send SESSION TEXT...` | Send a message as yourself (the owner of this machine). `SESSION` is a session ID or a unique agent name. |
-| `agent-net top` | CPU and memory of every machine (now and 5 minute average, memory used and total, load, processes) and of every session's process tree, plus the session counts (online, offline in the last 24 h). `top SESSION` (an ID or a name) adds the 5 heaviest processes by CPU and by memory. `--all` also lists sessions with no figures. `--json`. A machine on an older agent-net shows `unknown`. See [CPU and memory](#cpu-and-memory). |
-| `agent-net show SESSION` | What happens inside a session: prompts, replies, tool calls and results, newest last. `-n N` (default 50, at most 200), `--follow` (or `-f`), `--before CURSOR` (page back), `--sidechain` (sub-agents, Claude Code), `--json`. Secrets are masked and each entry is cut to 2,000 characters. Owner only: see [security.md](security.md#session-text-and-resource-figures). |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net version` | Print the version. |
 
@@ -244,25 +242,29 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 ## The TUI screen
 
-`agent-net tui` needs a terminal. It talks to the local daemon like `agent-net list` does, through the operator interface. It shows, from top to bottom:
+`agent-net tui` needs a terminal. It talks to the local daemon as an owner's CLI (`hello` with `client: cli`) and calls `info`, `nodes`, `list`, `projects`, `events`, `message_status`, and the owner-only methods `usage`, `counts`, `usage_top` and `session_text` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
-- **Machines.** Each machine with its agent-net version, online or offline, and its installed harnesses. This machine comes first and is marked `(here)`.
-- **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`, `dorm` for dormant), ON (`on` or `off`), FUNCTION (the project description from `AGENTS.md`; "no AGENTS.md" when there is none).
-- **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, project with its source (`registered`, `seen` or `both`, as in `agent-net projects`), task and its recent messages (time, direction, peer, type, delivery state).
-- **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends, workers starting, stopping or refused. Messages from you show as `you (on <host>)`.
-- **Workers** show in the sessions table with `[w]` before the name and MODE `bg`. The selected worker's detail has a `worker` line: who started it, when, and its project. The title counts them.
-- **A result line** under the title says what the last action did: plain when it worked, `!` and red when it did not. The next key clears it.
+- **Header.** `12 online · 5 offline today`, from `counts`. The total of old offline sessions is left out. An older gateway has no counts: the header then says `N sessions, M online`. Also the filter, and the time of the last refresh.
+- **Machines,** one line each: online state, name, agent-net version, CPU now with a bar and the 5 minute average in brackets, memory used and total with a bar, 1 minute load, and the installed harnesses when the line has room. This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
+- **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`; a dim `?` for unknown; blank for an older machine), STATUS (`idle`, `busy`, `shell`, `dorm` for dormant, `off` for offline), CPU, RAM and PROC (the session's process tree), and FUNCTION (the project description from `AGENTS.md`; "no AGENTS.md" when there is none). Offline sessions are dimmed. On a narrow terminal FUNCTION, BRANCH, MODE, MODEL and PROJECT go first; the usage columns stay. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. An OpenCode service process that several sessions share shows `shared` in their rows and is listed once under the machine's sessions, never split.
+- **Selected session.** The first line has the name, harness, status and the session's CPU, RAM and process count. Below, on the left: session ID and PID, folder, branch, model and mode, remote, worktree (when the session runs in a linked worktree), project with its source (`registered`, `seen` or `both`), task, and its recent messages. On the right: the heaviest 5 processes by CPU and by memory (PID, CPU, RAM, command line with secrets masked), fetched with `usage_top` when the session is selected and again every 5 seconds. On a small terminal the lists get as many rows as fit; `d` gives the pane the room of the message feed.
+- **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends.
+- **Conversation** (enter or `c` on a session). The whole screen shows the prompts, replies, tool calls and tool results of the session, newest last, each with its time and a role label (`user`, `assistant`, `tool`, `result`). Text is wrapped and shown as the daemon sent it, with its masking marks. The view follows new entries once a second; scroll up and it pauses (`G` follows again); page up past the top loads older entries by cursor; esc goes back.
+- **Help** (`?`). Lists the keys and what the columns mean. The key line at the bottom shows the main keys and drops the least useful when it does not fit.
 
-The screen refreshes once a second. If the daemon is not running, or cannot reach the gateway, a banner says so, the last data stays on screen, and it retries every second.
+The screen refreshes once a second. CPU, memory and counts are asked every 5 seconds, because daemons report every 10 seconds. If the daemon is not running, or cannot reach the gateway, a banner says so, the last data stays on screen, and it retries every second. A daemon or gateway from before CPU and memory shows `?` and is not asked again.
 
 | Key | What it does |
 |---|---|
 | up, down, `k`, `j`, `g`, `G`, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
+| enter, `c` | Open the conversation of the selected session. With the messages in focus, enter opens the body of the message. |
 | `/` | Filter the sessions: type words, all must appear in some field of a session (name, harness, machine, project, branch, model, mode, status, function, task, folder, ID). Enter keeps the filter, Esc clears it. |
 | `o` | Show or hide offline and dormant sessions. |
 | tab | Move the focus between the sessions and the messages. |
-| enter | With the messages in focus: open the body of the message. |
-| esc | Close the body, or clear the filter. |
+| `d` | Give the detail pane the room of the message feed, or give it back. |
+| `?` | Show or hide the help. |
+| esc | Leave the conversation, the help or a message body, or clear the filter. |
+| In the conversation: up, down, page up, page down, `g`, `G`, `f` | Scroll; `g` goes to the oldest loaded entry and loads older ones; `G`, end or `f` follow new entries. |
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |

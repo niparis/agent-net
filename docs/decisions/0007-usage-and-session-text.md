@@ -20,7 +20,7 @@ The method `session_text` returns the recent entries of one session (prompt, rep
 
 Rules:
 
-- Only the owner's CLI or TUI (a `hello` with `client: cli`) may call `session_text`, `usage`, `usage_top` and `counts`. Every bound agent connection (Claude MCP, Pi, OpenCode) is refused. A CLI that runs inside an agent session is refused too: the daemon walks the parents of the calling process and refuses it when one is a local session's process. This stops an agent that runs `agent-net show` from its shell tool. It does not stop a program that detaches itself on purpose; against a process of your own user nothing in agent-net is a wall (see security.md).
+- Only the owner's CLI or TUI (a `hello` with `client: cli`) may call `session_text`, `usage`, `usage_top` and `counts`. Every bound agent connection (Claude MCP, Pi, OpenCode) is refused. A CLI that runs inside an agent session is refused too: the daemon walks the parents of the calling process and refuses it when one is a local session's process. This stops an agent that runs `agent-net tui` from its shell tool. It does not stop a program that detaches itself on purpose; against a process of your own user nothing in agent-net is a wall (see security.md).
 - The text is masked (keys, tokens, bearer headers, `key=value` secrets, private keys, URL passwords) and cut to 2,000 characters per entry (tool results 600) on the machine that holds the session, and masked again by the daemon that asks.
 - Another machine's owner asks through the gateway (`query.session_text`, relayed as `node.session_text`). The gateway relays and keeps nothing: no store, no log line with content, no event.
 - Nothing of it goes into logs or the events table.

@@ -22,7 +22,7 @@ import (
 //     connection (Claude Code MCP, Pi, OpenCode) is always refused;
 //   - and not a CLI that runs inside an agent session. The daemon looks at the
 //     parents of the calling process and refuses it when one of them is a
-//     local session's process. An agent that runs `agent-net show` from its
+//     local session's process. An agent that runs `agent-net tui` from its
 //     shell tool is stopped here.
 //
 // Another machine's owner asks through the gateway, which relays the request

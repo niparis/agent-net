@@ -50,8 +50,6 @@ const usage = `usage: agent-net <command>
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
   tui        live terminal view of every agent session on the network; send as yourself, start and stop workers
-  top        CPU and memory of every machine and session; top SESSION shows its heaviest processes
-  show       what happens inside a session: prompts, replies and tool calls (show SESSION [-n N] [--follow])
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
   start      start a worker session: --project NAME --harness opencode --model M "<task>"
@@ -105,10 +103,6 @@ func main() {
 		err = cmdEvents(ctx, args)
 	case "tui":
 		err = cmdTUI(ctx, args)
-	case "top":
-		err = cmdTop(ctx, args)
-	case "show":
-		err = cmdShow(ctx, args)
 	case "upgrade":
 		err = cmdUpgrade(ctx, args)
 	case "messages":
