@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
@@ -133,6 +134,7 @@ func New(call Caller) *mcp.Server {
 			out, err := run(ctx, "message_status", in)
 			return nil, out, err
 		})
+	addRegistryTools(s, run)
 	return s
 }
 
@@ -146,10 +148,12 @@ type Daemon struct {
 	hello  map[string]any
 	mu     sync.Mutex
 	cl     *client.Client
+	// Changed gets a signal when the daemon says the MCP registry changed.
+	Changed chan struct{}
 }
 
 func NewDaemon(socket string, hello map[string]any) *Daemon {
-	return &Daemon{socket: socket, hello: hello}
+	return &Daemon{socket: socket, hello: hello, Changed: make(chan struct{}, 1)}
 }
 
 func (d *Daemon) Close() {
@@ -172,7 +176,14 @@ func (d *Daemon) conn(ctx context.Context) (*client.Client, error) {
 		d.cl.Close()
 		d.cl = nil
 	}
-	cl, err := client.Dial(d.socket)
+	cl, err := client.DialPush(d.socket, func(method string) {
+		if method == "mcp_changed" {
+			select {
+			case d.Changed <- struct{}{}:
+			default:
+			}
+		}
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -232,5 +243,8 @@ func Run(ctx context.Context, socket string) error {
 	defer d.Close()
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
-	return New(d.Call).Run(ctx, &mcp.StdioTransport{})
+	srv := New(d.Call)
+	// Registered MCP servers' tools follow the registry while this runs.
+	go NewDynamic(srv, d.Call).Watch(ctx, d.Changed, 15*time.Second)
+	return srv.Run(ctx, &mcp.StdioTransport{})
 }

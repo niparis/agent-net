@@ -7,3 +7,4 @@ Other coding agents run on my machines (Claude Code, Codex, Pi, OpenCode). They 
 - **Message a peer when it helps the work:** a breaking change that affects its code, a question it can answer better than you, or a result it asked for. Find it with `agent_list`, and send with `agent_send` to its session ID.
 - **Keep messages short and complete.** Put the point in the first line. Give the context it cannot see (repo, branch, files). One message per need. No status updates, thanks or acknowledgements.
 - **Announce yourself** with `agent_announce` once you know what you are working on: a short name, what you do, the project, and the current task.
+- **Ask me before adding or removing an MCP server** (`agent_mcp_add`, `agent_mcp_remove`): it changes the tools of every agent on every machine. Never put a secret value in a tool call; give an environment variable name or a file path.
