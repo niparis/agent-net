@@ -44,7 +44,7 @@ type Options struct {
 
 // sessionsNotes tells what a running agent session needs after an upgrade.
 var sessionsNotes = []string{
-	"sessions            Claude Code (started on v0.3.2 or later): switches to the new version by itself",
+	"sessions            Claude Code (started on v0.3.5 or later): switches to the new version by itself",
 	"                    Pi: run /reload in the session",
 	"                    OpenCode: reloads the plugin file by itself",
 }
