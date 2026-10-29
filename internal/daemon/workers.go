@@ -159,6 +159,7 @@ func (d *Daemon) workerSessionReady(w *worker, sessionID string) {
 	}
 	d.wmu.Lock()
 	w.sessionID = sessionID
+	w.lastActive = time.Now() // the idle clock starts when the session exists
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
 	w.readyOnce.Do(func() { close(w.ready) })
@@ -282,12 +283,15 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 // and start time. The caller adds the harness-specific arguments and
 // environment.
 func (d *Daemon) spawnWorker(w *worker, bin string, args []string, env []string) error {
-	w.dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
-	if err := os.MkdirAll(w.dir, 0o700); err != nil {
+	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
+	logPath := filepath.Join(dir, "worker.log")
+	d.wmu.Lock() // endWorker and workerLogTail read these from other goroutines
+	w.dir, w.logPath = dir, logPath
+	d.wmu.Unlock()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	w.logPath = filepath.Join(w.dir, "worker.log")
-	logf, err := os.OpenFile(w.logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	logf, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
 	}
@@ -322,10 +326,13 @@ func (d *Daemon) spawnWorker(w *worker, bin string, args []string, env []string)
 }
 
 func (d *Daemon) workerLogTail(w *worker) string {
-	if w.logPath == "" {
+	d.wmu.Lock()
+	logPath := w.logPath
+	d.wmu.Unlock()
+	if logPath == "" {
 		return ""
 	}
-	raw, err := os.ReadFile(w.logPath)
+	raw, err := os.ReadFile(logPath)
 	if err != nil {
 		return ""
 	}
@@ -505,6 +512,15 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		d.wmu.Lock()
 		age, idle, owner := now.Sub(w.startedAt), now.Sub(w.lastActive), w.owner
+		// A worker that is still starting is not idle. Until its first request
+		// is noted, it also gets the start timeout on top of the idle limit, so
+		// the task can arrive and a notice always has a request to answer.
+		idleLimit := set.Idle
+		if w.sessionID == "" {
+			idleLimit = -1
+		} else if w.taskMsg == "" {
+			idleLimit += set.StartTimeout
+		}
 		due := now.Sub(w.ownerChecked) >= set.Tick*4
 		d.wmu.Unlock()
 		switch {
@@ -512,7 +528,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			d.endWorker(w, protocol.StopExited)
 		case age >= set.MaxAge:
 			d.endWorker(w, protocol.StopMaxAge)
-		case idle >= set.Idle:
+		case idleLimit >= 0 && idle >= idleLimit:
 			d.endWorker(w, protocol.StopIdle)
 		case due && d.Connected():
 			offline := d.ownerOffline(ctx, owner)
