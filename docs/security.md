@@ -68,6 +68,10 @@ The gateway enforces these on every send:
 
 A repeated send with the same idempotency key stores nothing new.
 
+## MCP server registry
+
+Registered MCP servers run on the machine that hosts them, as your user, and their tools can be called by any agent on any enrolled machine. The registry holds env var names and file paths, never secret values; header and env values are read on the hosting machine and are redacted from errors, logs and tool results there. A daemon runs only the servers registered with its own node. See [mcp-registry.md](mcp-registry.md#security).
+
 ## What agent-net does not protect against
 
 - **A compromised enrolled machine.** Its token lets it list every agent on the network and send to any of them. It can send as any session that its own daemon reports, and read the messages to and from those sessions. Enroll only machines you would give a shell on the others.

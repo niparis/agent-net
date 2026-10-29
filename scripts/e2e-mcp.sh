@@ -22,6 +22,8 @@ pids=()
 cleanup() {
   [ "$KEEP" = 1 ] && return
   for p in "${pids[@]:-}"; do [ -n "$p" ] && kill "$p" 2>/dev/null || true; done
+  # The daemons run in subshells, and the daemons start the test servers.
+  for p in $(pgrep -f "^$BIN/" || true); do kill "$p" 2>/dev/null || true; done
   wait 2>/dev/null || true
   rm -rf "$T"
 }
@@ -120,6 +122,17 @@ expect_contains "a later bad token is reported by test" "$out" "rejected the cre
 expect_absent "test output holds no token" "$out" "wrong-token-zzzzzz"
 expect_absent "daemon log holds no token" "$(cat "$T"/daemon-*.log "$T/gateway.log")" "right-token-abcdef"
 expect_absent "daemon log holds no env secret" "$(cat "$T"/daemon-*.log "$T/gateway.log")" "secret-from-a-0123456789"
+
+echo "== (b2) SSE transport"
+"$BIN/testmcp-http" --sse --listen 127.0.0.1:0 >"$T/sse.log" 2>&1 &
+pids+=($!)
+for _ in $(seq 50); do grep -q listening "$T/sse.log" && break; sleep 0.1; done
+sseurl="http://$(sed -n 's/^listening on //p' "$T/sse.log")/"
+out=$(an a mcp add ssetest --url "$sseurl" --transport sse)
+expect_contains "the SSE server is accepted" "$out" "ssetest__echo"
+out=$(an b mcp call ssetest echo '{"text":"over sse"}')
+expect_contains "B calls the SSE server" "$out" "echo: over sse"
+an b mcp remove ssetest >/dev/null
 
 echo "== (e, CLI part) remove, disable, enable"
 an b mcp disable stdiotest >/dev/null
