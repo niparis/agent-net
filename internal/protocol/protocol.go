@@ -154,6 +154,28 @@ type RepoInfo struct {
 	// Remote is the origin URL with credentials removed.
 	Remote string `json:"remote"`
 	Branch string `json:"branch"`
+	// Description is the one-line project description the daemon read from
+	// AGENTS.md (or CLAUDE.md) of the project. The gateway shows it as the
+	// session's function. Empty when there is none, and from older daemons.
+	Description string `json:"description,omitempty"`
+}
+
+// MaxDescriptionLen is the longest project description, in characters.
+const MaxDescriptionLen = 120
+
+// CleanDescription trims a description, drops control characters and cuts it
+// to MaxDescriptionLen characters.
+func CleanDescription(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	if r := []rune(s); len(r) > MaxDescriptionLen {
+		s = string(r[:MaxDescriptionLen])
+	}
+	return s
 }
 
 type Profile struct {

@@ -238,13 +238,15 @@ func withoutDormant(agents []protocol.AgentView, include bool) []protocol.AgentV
 	return out
 }
 
-// printAgents is the table of `agent-net list`. PROJECT is the project the
+// printAgents is the table of `agent-net list`. FUNCTION is the project
+// description the daemon read from AGENTS.md ("-" when there is none). TASK
+// (wide only) is what the agent announced. PROJECT is the project the
 // machine found from the agent's folder; an agent that announced a project
 // but has no repo info shows its announced one.
 func printAgents(w io.Writer, agents []protocol.AgentView, wide bool) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	if wide {
-		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tBRANCH\tSTATUS\tMODE\tMODEL\tONLINE\tFUNCTION\tREMOTE\tFOLDER\tNODE\tWORKTREE")
+		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tBRANCH\tSTATUS\tMODE\tMODEL\tONLINE\tFUNCTION\tTASK\tREMOTE\tFOLDER\tNODE\tWORKTREE")
 	} else {
 		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tSTATUS\tMODE\tMODEL\tONLINE\tFUNCTION")
 	}
@@ -254,13 +256,13 @@ func printAgents(w io.Writer, agents []protocol.AgentView, wide bool) error {
 			project = a.Profile.Project
 		}
 		if wide {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness,
-				a.Hostname, dash(project), dash(a.Repo.Branch), a.Status, dash(a.Mode), dash(a.Model), a.Online, a.Profile.Function,
-				dash(a.Repo.Remote), dash(a.Cwd), a.NodeID, dash(a.Repo.Worktree))
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness,
+				a.Hostname, dash(project), dash(a.Repo.Branch), a.Status, dash(a.Mode), dash(a.Model), a.Online, dash(a.Profile.Function),
+				dash(a.Profile.Task), dash(a.Repo.Remote), dash(a.Cwd), a.NodeID, dash(a.Repo.Worktree))
 			continue
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\n", a.SessionID, a.Profile.Name, a.Harness, a.Hostname,
-			dash(project), a.Status, dash(a.Mode), dash(a.Model), a.Online, a.Profile.Function)
+			dash(project), a.Status, dash(a.Mode), dash(a.Model), a.Online, dash(a.Profile.Function))
 	}
 	return tw.Flush()
 }

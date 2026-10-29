@@ -111,6 +111,8 @@ ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT '';
 `, `
 ALTER TABLE sessions ADD COLUMN worker TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN launch INTEGER NOT NULL DEFAULT -1;
+`, `
+ALTER TABLE sessions ADD COLUMN repo_description TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -331,17 +333,19 @@ func (s *Store) upsertSession(q interface {
 		}
 		worker = string(raw)
 	}
+	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
-		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?)
+		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
-		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker`,
+		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
+		repo_description=excluded.repo_description`,
 		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
-		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker)
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, in.Repo.Description)
 	if err != nil {
 		return "", false, err
 	}
@@ -457,6 +461,11 @@ func (s *Store) SetNodeOffline(nodeID string) error {
 	return err
 }
 
+// Announce stores what an agent says about itself: its current task, and
+// optionally a name, a project and capability tags. Empty fields keep what is
+// stored, so announcing a new task does not erase the rest. The function is
+// not taken from the agent: it comes from the project's AGENTS.md (see
+// RepoInfo.Description), so a "function" in the request is ignored.
 func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Profile, error) {
 	owner, err := s.SessionNode(p.SessionID)
 	if err != nil {
@@ -465,25 +474,36 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	if owner != nodeID {
 		return protocol.Profile{}, reject("unknown session %q", p.SessionID)
 	}
-	if p.Capabilities == nil {
-		p.Capabilities = []string{}
+	p.Name = strings.TrimSpace(p.Name)
+	p.Task = strings.TrimSpace(p.Task)
+	caps := "[]"
+	if p.Capabilities != nil {
+		b, _ := json.Marshal(p.Capabilities)
+		caps = string(b)
 	}
-	caps, _ := json.Marshal(p.Capabilities)
 	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at)
-		VALUES (?,?,?,?,?,?,?)
-		ON CONFLICT (session_id) DO UPDATE SET name=excluded.name, function=excluded.function,
-		project=excluded.project, capabilities=excluded.capabilities, task=excluded.task, updated_at=excluded.updated_at`,
-		p.SessionID, p.Name, p.Function, p.Project, string(caps), p.Task, s.now().UnixNano())
+		VALUES (?,?,'',?,?,?,?)
+		ON CONFLICT (session_id) DO UPDATE SET
+		name=CASE WHEN excluded.name='' THEN profiles.name ELSE excluded.name END,
+		project=CASE WHEN excluded.project='' THEN profiles.project ELSE excluded.project END,
+		capabilities=CASE WHEN ? THEN profiles.capabilities ELSE excluded.capabilities END,
+		task=CASE WHEN excluded.task='' THEN profiles.task ELSE excluded.task END,
+		updated_at=excluded.updated_at`,
+		p.SessionID, p.Name, p.Project, caps, p.Task, s.now().UnixNano(), p.Capabilities == nil)
 	if err != nil {
 		return protocol.Profile{}, err
 	}
-	return protocol.Profile{Name: p.Name, Function: p.Function, Project: p.Project, Capabilities: p.Capabilities, Task: p.Task}, nil
+	a, ok, err := s.Agent(p.SessionID)
+	if err != nil || !ok {
+		return protocol.Profile{}, err
+	}
+	return a.Profile, nil
 }
 
 const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen,
-	COALESCE(NULLIF(p.name,''), s.name), COALESCE(p.function,''), COALESCE(p.project,''),
+	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
-	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker
+	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -493,7 +513,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var caps, worker string
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
-		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker)
+		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description)
 	if err != nil {
 		return a, err
 	}

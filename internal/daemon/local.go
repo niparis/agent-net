@@ -543,10 +543,12 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		var p protocol.ProfileAnnounce
-		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Name) == "" {
-			return nil, errors.New("announce needs a name")
+		if json.Unmarshal(raw, &p) != nil || (strings.TrimSpace(p.Task) == "" && strings.TrimSpace(p.Name) == "") {
+			return nil, errors.New("announce needs a task")
 		}
 		p.SessionID = sid
+		// The function comes from the project's AGENTS.md, never from the agent.
+		p.Function = ""
 		return d.call(ctx, "profile.announce", p)
 
 	case "list":

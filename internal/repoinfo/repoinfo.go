@@ -37,6 +37,7 @@ type Resolver struct {
 
 	mu    sync.Mutex
 	cache map[string]*entry
+	desc  descCache
 }
 
 type entry struct {
@@ -84,6 +85,14 @@ func (r *Resolver) lookup(cwd string, fresh bool) protocol.RepoInfo {
 		e.info.Branch = r.readBranch(ctx, cwd)
 		e.branchAt = now
 	}
+	// The description follows the instruction file (one stat per file), not
+	// the static TTL. It is read from the main tree, or from the folder when
+	// there is no repository.
+	dir := e.info.Root
+	if dir == "" {
+		dir = cwd
+	}
+	e.info.Description = r.desc.get(dir)
 	return e.info
 }
 

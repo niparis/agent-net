@@ -84,12 +84,28 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	b.Reset()
 	printAgents(&b, agents, true)
 	wide := strings.Split(strings.TrimSpace(b.String()), "\n")
-	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[7] != "MODE" || h[8] != "MODEL" || h[11] != "REMOTE" || h[12] != "FOLDER" || h[13] != "NODE" || h[14] != "WORKTREE" {
+	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[7] != "MODE" || h[8] != "MODEL" || h[10] != "FUNCTION" || h[11] != "TASK" || h[12] != "REMOTE" || h[13] != "FOLDER" || h[14] != "NODE" || h[15] != "WORKTREE" {
 		t.Fatalf("wide header: %q", wide[0])
 	}
 	f := strings.Fields(wide[1])
 	if f[4] != "shop" || f[5] != "main" || f[len(f)-4] != "https://example.com/shop.git" || f[len(f)-3] != "/src/shop/web" || f[len(f)-2] != "n_1" || f[len(f)-1] != "-" {
 		t.Errorf("wide row: %q", wide[1])
+	}
+	// The function is the project description from AGENTS.md; with none it is a dash.
+	if f := strings.Fields(lines[1]); f[len(f)-1] != "frontend" {
+		t.Errorf("function: %q", lines[1])
+	}
+	if f := strings.Fields(lines[3]); f[len(f)-1] != "-" {
+		t.Errorf("no description shows a dash: %q", lines[3])
+	}
+	if f := strings.Fields(wide[1]); f[10] != "frontend" || f[11] != "-" {
+		t.Errorf("wide function and empty task: %q", wide[1])
+	}
+	agents[0].Profile.Task = "fixing-login"
+	b.Reset()
+	printAgents(&b, agents, true)
+	if f := strings.Fields(strings.Split(strings.TrimSpace(b.String()), "\n")[1]); f[11] != "fixing-login" {
+		t.Errorf("wide task: %q", b.String())
 	}
 }
 
