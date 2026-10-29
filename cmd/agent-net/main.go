@@ -38,7 +38,8 @@ const usage = `usage: agent-net <command>
   enroll     print a one-time join string (run on the gateway host)
   join       join this machine to a gateway: agent-net join <join-string>
   daemon     run the per-machine daemon
-  mcp        stdio MCP server for a Claude Code session
+  mcp        stdio MCP server for a Claude Code session; with a subcommand (add, list, test,
+             remove, enable, disable) manages the MCP server registry
   status     show the daemon's state and local sessions
   list       list agents on the network
   nodes      list machines with their agent-net version
@@ -72,7 +73,12 @@ func main() {
 	case "daemon":
 		err = cmdDaemon(ctx, args)
 	case "mcp":
-		err = mcpserver.Run(ctx, daemon.SocketPath())
+		// No subcommand: the stdio server Claude Code starts. Anything else is the registry CLI.
+		if len(args) == 0 {
+			err = mcpserver.Run(ctx, daemon.SocketPath())
+		} else {
+			err = cmdMCP(ctx, args)
+		}
 	case "status":
 		err = cmdStatus(ctx, args)
 	case "list":
