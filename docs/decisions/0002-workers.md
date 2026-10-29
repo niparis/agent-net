@@ -133,3 +133,28 @@ Plan:
   - Channels need a claude.ai or Console login.
   - Changing how Claude is started is the owner's choice. Setup asks, and never does it silently.
 - **To check.** Does Claude Code write a "waiting for approval" status (for example `awaiting_approval`) to `~/.claude/sessions/<pid>.json`? If it does, the daemon flags waiting sessions in the "needs you" list even without a channel.
+
+### W16 - Enter a session from the TUI, and Claude workers as background sessions
+
+Facts from the installed CLIs (Claude Code 2.1.312 `claude --help`, OpenCode 2.2.0 `opencode --help`):
+
+- **Claude Code background sessions.** `claude --bg` starts a background session. `claude attach <id|name>` opens one in the current terminal: `←` returns to the agent view, and the session keeps running. `claude agents` lists them, and `logs`, `stop`, `rm` and `respawn` manage them.
+- **OpenCode.** `opencode --session <id>` opens the TUI on an existing session, and `--server <url>` connects to a given server.
+
+**Enter in the TUI.** Enter on a session hands the terminal to that session, using Bubble Tea's exec of an external process, and comes back when the owner leaves it. What the owner types there is the owner's own input, so approvals count.
+
+| Session | How the TUI enters it |
+|---|---|
+| Claude Code background session (`kind` bg) | `claude attach <id>` |
+| Claude Code interactive session | It cannot be attached a second time. If it runs in tmux, the TUI switches to its pane. Otherwise it shows "open its window on <machine>". |
+| OpenCode | `opencode --session <id>` |
+| Pi | Its tmux pane only. |
+| Another machine | The same command through `ssh -t <host>`, for example with Tailscale SSH. Setup asks before it relies on SSH. |
+
+**Claude Code workers** start with `claude --bg`, not `claude -p`. A worker is then a background session the owner can enter at any time to watch it or answer a permission prompt it waits on. Stop uses `claude stop <id>`. The W7 timeouts and the worker limit still apply, through those commands.
+
+Before building this, check:
+
+- that the bg id maps to the session file and transcript;
+- how `--bg` takes settings, `crossSessionInbound` and the prompt;
+- that `respawn` keeps the session ID.
