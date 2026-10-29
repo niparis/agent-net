@@ -14,6 +14,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/plugins/opencode"
 	"github.com/niparis/agent-net/plugins/pi"
 )
 
@@ -86,6 +87,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "cfg"))
 	t.Setenv("AGENT_NET_NO_SERVICE", "1")
 	data := t.TempDir()
@@ -283,6 +285,52 @@ func TestUninstall(t *testing.T) {
 	}
 	if !strings.Contains(norm(out.String()), "claude code ok (removed)") {
 		t.Errorf("output:\n%s", out.String())
+	}
+}
+
+func TestOpenCodeInstallAndUninstall(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	ocDir := filepath.Join(f.home, ".config", "opencode")
+	os.MkdirAll(ocDir, 0o755)
+	orig := "my own instructions\n"
+	os.WriteFile(filepath.Join(ocDir, "AGENTS.md"), []byte(orig), 0o644)
+
+	out := run(t, Options{Join: f.newJoin(t)})
+	for _, want := range []string{"opencode plugin ok", "opencode guidance updated", "the OpenCode service must be restarted"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("first run lacks %q:\n%s", want, out)
+		}
+	}
+	plugin, _ := os.ReadFile(filepath.Join(ocDir, "plugins", "agent-net.ts"))
+	if !bytes.Equal(plugin, opencode.Plugin) {
+		t.Error("plugin content")
+	}
+	ag, _ := os.ReadFile(filepath.Join(ocDir, "AGENTS.md"))
+	if !strings.HasPrefix(string(ag), orig+"\n"+guidance.Begin) {
+		t.Errorf("AGENTS.md:\n%s", ag)
+	}
+
+	// A rerun changes nothing and does not repeat the restart hint.
+	out = run(t, Options{Join: f.newJoin(t)})
+	for _, want := range []string{"opencode plugin ok (unchanged)", "opencode guidance ok (unchanged)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("rerun lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "must be restarted") {
+		t.Errorf("hint repeated:\n%s", out)
+	}
+
+	var buf bytes.Buffer
+	if err := Uninstall(Options{Out: &buf, Exe: "/x"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(ocDir, "plugins", "agent-net.ts")); err == nil {
+		t.Error("plugin still there")
+	}
+	if b, _ := os.ReadFile(filepath.Join(ocDir, "AGENTS.md")); string(b) != orig {
+		t.Errorf("AGENTS.md not restored:\n%q", b)
 	}
 }
 

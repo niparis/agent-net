@@ -25,6 +25,7 @@ func Uninstall(o Options) error {
 	}
 	r.removeClaudeMCP()
 	r.removePiExtension()
+	r.removeOpenCodePlugin()
 	r.removeGuidance()
 	if r.Purge {
 		for _, dir := range []string{daemon.ConfigDir(), daemon.StateDir()} {
@@ -76,6 +77,23 @@ func (r *runner) removePiExtension() {
 			return
 		}
 		r.step("pi extension", "ok (removed)", nil)
+	}
+}
+
+func (r *runner) removeOpenCodePlugin() {
+	path := opencodePluginPath()
+	st, err := os.Lstat(path)
+	switch {
+	case err != nil:
+		r.step("opencode plugin", "skipped (not installed)", nil)
+	case st.Mode()&os.ModeSymlink != 0:
+		r.step("opencode plugin", "skipped (symlink, left as is)", nil)
+	default:
+		if err := os.Remove(path); err != nil {
+			r.step("opencode plugin", "", err)
+			return
+		}
+		r.step("opencode plugin", "ok (removed)", nil)
 	}
 }
 
