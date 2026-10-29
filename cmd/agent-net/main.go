@@ -23,11 +23,15 @@ import (
 	"github.com/niparis/a2a-ocs/internal/gateway"
 	"github.com/niparis/a2a-ocs/internal/mcpserver"
 	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/a2a-ocs/internal/setup"
 )
 
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
+  setup      set this machine up: --join S, --gateway, --no-service
+  invite     print the one-line installer for a new machine (run on the gateway host)
+  uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)
   join       join this machine to a gateway: agent-net join <join-string>
   daemon     run the per-machine daemon
@@ -49,6 +53,12 @@ func main() {
 	switch os.Args[1] {
 	case "gateway":
 		err = cmdGateway(ctx, args)
+	case "setup":
+		err = cmdSetup(ctx, args)
+	case "invite":
+		err = cmdInvite(args)
+	case "uninstall":
+		err = cmdUninstall(args)
 	case "enroll":
 		err = cmdEnroll(args)
 	case "join":
@@ -88,6 +98,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on")
 	data := fs.String("data", defaultGatewayData(), "data directory")
 	sans := fs.String("san", "", "extra host names or IPs for the TLS certificate, comma separated")
+	dist := fs.String("dist", setup.DefaultDist(), "directory with the agent-net-{os}-{arch} binaries served at /install/bin")
 	fs.Parse(args)
 	var extra []string
 	for _, s := range strings.Split(*sans, ",") {
@@ -96,7 +107,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 		}
 	}
 	logger := log.New(os.Stderr, "gateway: ", log.LstdFlags)
-	gw, err := gateway.New(gateway.Options{DataDir: *data, SANs: extra, Logger: logger})
+	gw, err := gateway.New(gateway.Options{DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger})
 	if err != nil {
 		return err
 	}
