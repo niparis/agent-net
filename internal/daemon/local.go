@@ -100,6 +100,10 @@ type localConn struct {
 	client string
 	ls     *localSession // bound session; nil for cli
 	acks   map[string]chan ack
+	// peerPID is the process ID of the other end, read in hello.
+	peerPID int
+	// tx holds the session_text requests sent to this plugin (sessiontext.go).
+	tx textState
 }
 
 func (lc *localConn) close() {
@@ -175,7 +179,7 @@ func (lc *localConn) respond(id json.RawMessage, result any, err error) {
 func (lc *localConn) run(ctx context.Context) {
 	defer lc.cleanup()
 	sc := bufio.NewScanner(lc.c)
-	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
+	sc.Buffer(make([]byte, 0, 64*1024), 4<<20) // a plugin may answer session_text with a few hundred KB
 	first := true
 	for sc.Scan() {
 		var req request
@@ -198,6 +202,11 @@ func (lc *localConn) run(ctx context.Context) {
 		}
 		if req.Method == "delivered" {
 			lc.respond(req.ID, lc.delivered(req.Params), nil)
+			continue
+		}
+		if req.Method == "session_text_result" {
+			lc.textResult(req.Params)
+			lc.respond(req.ID, nil, nil)
 			continue
 		}
 		lc.d.wg.Add(1)
@@ -294,6 +303,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	case "cli":
 		lc.mu.Lock()
 		lc.client = "cli"
+		lc.peerPID = pid
 		lc.mu.Unlock()
 		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
 
@@ -357,6 +367,12 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		if p.Mode != "" && !protocol.ValidMode(p.Mode) {
 			return nil, fmt.Errorf("bad mode %q", p.Mode)
+		}
+		if p.Mode == "" {
+			// A plugin from before the mode existed, or one that cannot tell
+			// (OpenCode): say "unknown" and not nothing. An empty mode is
+			// reserved for a machine on an older agent-net.
+			p.Mode = protocol.ModeUnknown
 		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
 			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: pluginName(p.Name, p.Cwd),
@@ -441,6 +457,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	lc.mu.Lock()
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
+	if res, ok, err := lc.dispatchOperator(ctx, method, raw); ok {
+		return res, err
+	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
 		"nodes": true, "restart": true, "projects": true, "events": true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&

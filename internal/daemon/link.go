@@ -106,6 +106,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				l.write(ctx, res)
 			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
+		case "node.usage_top", "node.session_text":
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onOperatorFrame(ctx, l, h.Type, h.ID, raw)
+			}()
 		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.changed":
 			d.wg.Add(1)
 			go func() {

@@ -27,6 +27,7 @@ import (
 	"github.com/niparis/agent-net/internal/setup"
 	"github.com/niparis/agent-net/internal/tui"
 	"github.com/niparis/agent-net/internal/upgrade"
+	sysusage "github.com/niparis/agent-net/internal/usage"
 )
 
 // version is set at build time: -ldflags "-X main.version=v1.2.3".
@@ -49,6 +50,8 @@ const usage = `usage: agent-net <command>
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
   tui        live terminal view of every agent session on the network (read-only)
+  top        CPU and memory of every machine and session; top SESSION shows its heaviest processes
+  show       what happens inside a session: prompts, replies and tool calls (show SESSION [-n N] [--follow])
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
   version    print the version of this binary
@@ -98,6 +101,10 @@ func main() {
 		err = cmdEvents(ctx, args)
 	case "tui":
 		err = cmdTUI(ctx, args)
+	case "top":
+		err = cmdTop(ctx, args)
+	case "show":
+		err = cmdShow(ctx, args)
 	case "upgrade":
 		err = cmdUpgrade(ctx, args)
 	case "messages":
@@ -245,6 +252,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		RefreshAgentFiles: agentfiles.SyncAndLog,
+		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
 		// Tests set this to 0s so they need not wait up to 10 s.
 		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),

@@ -55,6 +55,9 @@ type Gateway struct {
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
 
+	// usage holds the newest CPU and memory report of each node (usage.go).
+	usage usageTable
+
 	mu     sync.Mutex
 	conns  map[string]*nodeConn
 	timers map[string]*time.Timer
@@ -382,6 +385,10 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveMCP(ctx, nc, h, raw)
 			continue
 		}
+		if isRelay(h.Type) {
+			go g.serveRelay(ctx, nc, h, raw)
+			continue
+		}
 		data, err := g.handle(ctx, nc, h.Type, raw)
 		var reply []byte
 		var eerr error
@@ -644,6 +651,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("unknown message %q", p.MessageID)
 		}
 		return map[string]any{"message": m}, nil
+	}
+	if data, ok, err := g.handleUsage(nc, typ, raw); ok {
+		return data, err
 	}
 	return nil, reject("unknown frame type %q", typ)
 }

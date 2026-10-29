@@ -19,6 +19,7 @@ import (
 	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/repoinfo"
+	"github.com/niparis/agent-net/internal/usage"
 )
 
 // Result is an adapter's report on one delivery.
@@ -104,6 +105,14 @@ type Config struct {
 	// HarnessInterval is how often DetectHarnesses runs after the first time.
 	// Default: 6 hours.
 	HarnessInterval time.Duration
+	// UsageSampler measures CPU and memory (see usage.go). Nil turns that off.
+	UsageSampler *usage.Sampler
+	// UsageReportInterval is how often the summary goes to the gateway.
+	// Default: 10 seconds.
+	UsageReportInterval time.Duration
+	// TextTimeout is how long to wait for a plugin to hand over a session's
+	// conversation. Default: 8 seconds.
+	TextTimeout time.Duration
 }
 
 type localSession struct {
@@ -142,6 +151,9 @@ type Daemon struct {
 
 	upg upgradeState
 
+	// usage is the state of CPU and memory reporting (usage.go).
+	usage usageState
+
 	repo *repoinfo.Resolver
 	// hmu guards the inventory of installed harnesses. hgen grows with each
 	// new inventory, so the link can tell whether hello carried the latest.
@@ -153,6 +165,10 @@ type Daemon struct {
 	cmdline func(pid int) string
 	// exe returns the executable path of a process; replaced in tests.
 	exe func(pid int) string
+	// inSession tells whether a process is inside a local session's process
+	// tree. Default: insideSession. Replaced in tests, where the "agent" and
+	// the "command line" are the same process.
+	inSession func(pid int) bool
 }
 
 // defaultDetect looks for the harnesses in the usual places. Tests replace it so
@@ -202,6 +218,7 @@ func New(cfg Config) (*Daemon, error) {
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
+	d.inSession = d.insideSession
 	d.repo = cfg.Repo
 	d.mcp = newMCPHost(d)
 	if len(cfg.CAPEM) > 0 {
@@ -241,6 +258,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 			return fmt.Errorf("%s adapter: %w", a.Harness(), err)
 		}
 	}
+	d.startUsage(ctx)
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
 	d.wg.Add(1)

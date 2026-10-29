@@ -93,13 +93,15 @@ func TestPluginReportsModeAndModel(t *testing.T) {
 	}
 }
 
-// An older plugin sends neither mode nor model: both stay empty.
+// An older plugin sends neither mode nor model. The model stays empty. The mode
+// is "unknown": the daemon is new enough to say so, and an empty mode is kept
+// for a machine on an older agent-net.
 func TestPluginWithoutModeAndModel(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
 	_, id := helloPi(t, n, "old", "/w/old", false)
 	a := agentByID(t, cliClient(t, n), id)
-	if a.Mode != "" || a.Model != "" {
+	if a.Mode != protocol.ModeUnknown || a.Model != "" {
 		t.Fatalf("an older plugin got mode %q model %q", a.Mode, a.Model)
 	}
 }
