@@ -53,7 +53,7 @@ func (d *Daemon) autoUpgrade(ctx context.Context) {
 		}
 	}
 	d.Logf("auto-upgrade: the gateway serves %s and this machine runs %s, upgrading", served, cur)
-	res, err := d.upgradeTo(ctx, served)
+	res, joined, err := d.upgradeTo(ctx, served)
 	if err != nil {
 		if errors.Is(err, errUpgradeBusy) || ctx.Err() != nil {
 			return
@@ -65,7 +65,8 @@ func (d *Daemon) autoUpgrade(ctx context.Context) {
 		return
 	}
 	d.Logf("auto-upgrade: %s -> %s installed, restarting: %v", cur, res.To, res.Restarting)
-	if res.Restarting {
+	if res.Restarting && !joined {
+		time.Sleep(300 * time.Millisecond) // let an answer to the gateway leave
 		d.restart()
 	}
 }
