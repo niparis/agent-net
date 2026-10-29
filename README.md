@@ -23,14 +23,14 @@ It is one Go binary, `agent-net`, with a subcommand for each part.
 ### 1. On the first machine (the gateway), once
 
 ```
-curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --gateway
+curl -fsSL https://niparis.github.io/agent-net/install | sh
 ```
 
-This downloads the latest release, checks its SHA-256, installs `~/.local/bin/agent-net`, and runs `agent-net setup --gateway`. That starts the gateway and the daemon as services. It also keeps the binaries for all platforms in `~/.local/share/agent-net/dist`, so the gateway can hand them to other machines.
+The script downloads the latest release, checks its SHA-256, and installs `~/.local/bin/agent-net`. Then it looks at the machine. On a fresh machine it sets it up as the gateway: it runs `agent-net setup --gateway`, which starts the gateway and the daemon as services and keeps the binaries for all platforms in `~/.local/share/agent-net/dist`, so the gateway can hand them to other machines. On the gateway it does the same as an update. On a machine that already joined it updates the binary and runs `agent-net setup`, which skips the join. It prints which of the three it chose.
 
 `~/.local/bin` must be on your `PATH` (the script tells you if it is not). On Linux, if `setup` prints a `loginctl enable-linger` hint, run it, so the services keep running after you log out.
 
-To install only the binary on any machine, run the same line without `-s -- --gateway`. To pick a release, add `--version vX.Y.Z` after `sh -s --`. To build from source instead, see [docs/setup.md](docs/setup.md).
+To build from source instead, or to force a mode or a release, see [docs/setup.md](docs/setup.md).
 
 ### 2. On every other machine
 
