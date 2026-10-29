@@ -359,9 +359,11 @@ func (r *run) gatewayHost(ctx context.Context) error {
 
 	// Remember who is online, to wait for them after the gateway restarts.
 	var wasOnline []string
+	before := map[string]string{}
 	if a, err := r.admin(); err == nil {
 		if info, err := a.nodes(ctx); err == nil {
 			for _, n := range info.Nodes {
+				before[n.NodeID] = n.Version
 				if n.Online {
 					wasOnline = append(wasOnline, n.NodeID)
 				}
@@ -374,7 +376,7 @@ func (r *run) gatewayHost(ctx context.Context) error {
 	} else if err := r.installRelease(ctx, tag); err != nil {
 		return err
 	}
-	return r.upgradeNodes(ctx, tag, wasOnline)
+	return r.upgradeNodes(ctx, tag, wasOnline, before)
 }
 
 // installRelease is steps 2 and 3: download and verify everything, then
@@ -430,7 +432,7 @@ func indexOf(s []string, v string) int {
 
 // upgradeNodes is step 4: wait for the gateway (and the nodes that were
 // online) to be back, tell every connected node to upgrade, print the result.
-func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string) error {
+func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string, before map[string]string) error {
 	a, err := r.waitGateway(ctx, tag, 45*time.Second)
 	if err != nil {
 		r.say("nodes               not upgraded: %v", err)
@@ -447,6 +449,10 @@ func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string) 
 	}
 	failed := 0
 	for _, res := range out.Results {
+		// A node on this host may already have restarted; show where it started.
+		if v, ok := before[res.NodeID]; ok {
+			res.From = v
+		}
 		r.say("%s", FormatResult(res))
 		if res.Status == protocol.UpgradeFailed {
 			failed++
