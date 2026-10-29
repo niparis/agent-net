@@ -269,6 +269,8 @@ type helloParams struct {
 	// session open (foreground, background or unknown) and which model it runs.
 	Mode  string `json:"mode"`
 	Model string `json:"model"`
+	// Name is optional. Without it the session is named after its folder.
+	Name string `json:"name"`
 	// Protocol is the local protocol version of the client; Version is its
 	// agent-net version (for the error message). Old clients send neither.
 	Protocol int    `json:"protocol"`
@@ -357,7 +359,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, fmt.Errorf("bad mode %q", p.Mode)
 		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
-			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: filepath.Base(p.Cwd),
+			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: pluginName(p.Name, p.Cwd),
 			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model)}}
 		k := key(p.Client, p.NativeID)
@@ -397,8 +399,15 @@ func (d *Daemon) checkPluginPeer(client string, pid int) error {
 	return nil
 }
 
-func validStatus(s string) bool {
-	return s == "idle" || s == "busy" || s == "shell" || s == "unknown"
+func validStatus(s string) bool { return protocol.ValidStatus(s) }
+
+// pluginName is the name a plugin gave its session, cleaned (control characters
+// removed, at most protocol.MaxModelLen bytes), or the folder name.
+func pluginName(name, cwd string) string {
+	if name = protocol.CleanModel(name); name != "" {
+		return name
+	}
+	return filepath.Base(cwd)
 }
 
 func (lc *localConn) bind(client string, ls *localSession) {
@@ -454,10 +463,11 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			Status string  `json:"status"`
 			Mode   *string `json:"mode"`
 			Model  *string `json:"model"`
+			Name   *string `json:"name"`
 		}
-		if json.Unmarshal(raw, &p) != nil || (p.Status == "" && p.Mode == nil && p.Model == nil) ||
+		if json.Unmarshal(raw, &p) != nil || (p.Status == "" && p.Mode == nil && p.Model == nil && p.Name == nil) ||
 			(p.Status != "" && !validStatus(p.Status)) {
-			return nil, errors.New("status must be idle, busy, shell or unknown")
+			return nil, errors.New("status must be idle, busy, shell, dormant or unknown")
 		}
 		if p.Mode != nil && !protocol.ValidMode(*p.Mode) {
 			return nil, errors.New("mode must be foreground, background or unknown")
@@ -474,6 +484,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		if p.Model != nil {
 			ls.info.Model = protocol.CleanModel(*p.Model)
+		}
+		if p.Name != nil {
+			ls.info.Name = pluginName(*p.Name, ls.info.Cwd)
 		}
 		cwd := ls.info.Cwd
 		d.mu.Unlock()

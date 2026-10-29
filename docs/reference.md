@@ -15,7 +15,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net join STRING` | Join this machine to a gateway with a join string. |
 | `agent-net uninstall` | Remove services and integrations. |
 | `agent-net status` | Daemon connection, node ID and local sessions. `--json` for JSON. |
-| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. MODE (`foreground`, `background`, `unknown`, or `-` from an older machine) and MODEL show how the session runs. `--json`. |
+| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--dormant` includes dormant ones (reachable, but quiet for a long time; OpenCode only). `--json` shows them always. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. MODE (`foreground`, `background`, `unknown`, or `-` from an older machine) and MODEL show how the session runs. `--json`. |
 | `agent-net nodes` | Machines with their agent-net version and installed harnesses (HARNESSES column). `--wide` lists each harness with version, path and model count, and one extra row for every other copy of a harness (marked "other copy"); the primary copy is marked when there is more than one. `--json` has everything, including the model lists. |
 | `agent-net projects` | Known projects, one per repository per machine: name, machine, path (the main working tree), git remote, SOURCE (`registered`, `seen` or `both`), which harnesses ran there, the linked worktrees where sessions ran, online sessions and last seen. `--name N` shows one project. `--json`. See [the project registry](#the-project-registry). |
 | `agent-net projects add PATH...` | Register repositories on this machine. `--dry-run` shows what would happen. `--json`. |
@@ -187,7 +187,7 @@ Each entry has the machine, the path of the main working tree, the name (its bas
 `agent-net tui` needs a terminal. It talks to the local daemon like `agent-net list` does and calls only the read-only methods `info`, `nodes`, `list`, `events` and `message_status`. It shows, from top to bottom:
 
 - **Machines.** Each machine with its agent-net version, online or offline, and its installed harnesses. This machine comes first and is marked `(here)`.
-- **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`), ON (`on` or `off`), FUNCTION (the announced function, or the task).
+- **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`, `dorm` for dormant), ON (`on` or `off`), FUNCTION (the announced function, or the task).
 - **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, project with its source (`registered`, `seen` or `both`, as in `agent-net projects`), task and its recent messages (time, direction, peer, type, delivery state).
 - **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends.
 
@@ -197,7 +197,7 @@ The screen refreshes once a second. If the daemon is not running, or cannot reac
 |---|---|
 | up, down, `k`, `j`, `g`, `G`, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
 | `/` | Filter the sessions: type words, all must appear in some field of a session (name, harness, machine, project, branch, model, mode, status, function, task, folder, ID). Enter keeps the filter, Esc clears it. |
-| `o` | Show or hide offline sessions. |
+| `o` | Show or hide offline and dormant sessions. |
 | tab | Move the focus between the sessions and the messages. |
 | enter | With the messages in focus: open the body of the message. |
 | esc | Close the body, or clear the filter. |

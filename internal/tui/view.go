@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -113,6 +114,8 @@ func statusShort(s string) string {
 	switch s {
 	case "idle", "busy", "shell":
 		return s
+	case protocol.StatusDormant:
+		return "dorm"
 	case "":
 		return "-"
 	}
@@ -456,10 +459,12 @@ type column struct {
 }
 
 // columns picks the columns that fit in avail columns and gives each a width.
-func columns(avail int) []column {
+// NAME grows past 18 columns, up to 32, only as far as the longest name needs
+// (nameWant), so short names leave the room to the other columns.
+func columns(avail, nameWant int) []column {
 	cols := []column{
 		{name: "AGENT", min: 8, max: 8},
-		{name: "NAME", min: 10, max: 18},
+		{name: "NAME", min: 10, max: min(max(nameWant, 18), 32)},
 		{name: "PROJECT", min: 9, max: 16},
 		{name: "BRANCH", min: 8, max: 16},
 		{name: "MODEL", min: 10, max: 18},
@@ -505,7 +510,13 @@ func sumMin(cols []column) int {
 }
 
 func (m Model) sessionsTable(w, n int) []string {
-	cols := columns(w - 2) // two columns for the selection marker
+	nameWant := 0
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			nameWant = max(nameWant, utf8.RuneCountInString(a.Profile.Name))
+		}
+	}
+	cols := columns(w-2, nameWant) // two columns for the selection marker
 	head := "  "
 	for i, c := range cols {
 		if i > 0 {
@@ -526,7 +537,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		if m.filter != "" {
 			msg = "  no session matches the filter"
 		} else if !m.showOffline {
-			msg = "  no online sessions (o shows the offline ones)"
+			msg = "  no online sessions (o shows the offline and dormant ones)"
 		}
 		out = append(out, sDim.Render(msg))
 	}

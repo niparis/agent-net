@@ -333,6 +333,7 @@ func cmdStatus(ctx context.Context, args []string) error {
 func cmdList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("list", flag.ExitOnError)
 	all := fs.Bool("all", false, "include offline agents")
+	dormant := fs.Bool("dormant", false, "include dormant agents (reachable, but quiet for a long time)")
 	harness := fs.String("harness", "", "filter by harness")
 	text := fs.String("text", "", "free-text filter")
 	wide := fs.Bool("wide", false, "also show branch, remote, folder and node")
@@ -357,7 +358,7 @@ func cmdList(ctx context.Context, args []string) error {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return err
 	}
-	return printAgents(os.Stdout, r.Agents, *wide)
+	return printAgents(os.Stdout, withoutDormant(r.Agents, *dormant), *wide)
 }
 
 func cmdMessages(ctx context.Context, args []string) error {

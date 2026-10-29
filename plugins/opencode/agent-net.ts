@@ -7,16 +7,24 @@
 // carries its session ID, so it is routed to that session's connection.
 import type { Plugin } from "@opencode/plugin";
 import { connect, type Socket } from "node:net";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 type Context = Plugin.Context;
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const BACKOFF_START_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
-// Startup discovery: registers the newest sessions that were created or
-// updated within this window, in any directory.
-const RECENT_SESSION_MS = 24 * 60 * 60 * 1000;
+// A session with no activity for this long is reported as "dormant". It stays
+// reachable: a message to it still arrives, and activity makes it active again.
+// Startup discovery uses the same window: it registers only the newest sessions
+// that were updated within it, in any directory. Older ones register on activity.
+// AGENT_NET_OPENCODE_DORMANT_MS overrides it (the tests use a short value).
+const DORMANT_AFTER_MS = 60 * 60 * 1000;
+function dormantAfterMs(): number {
+  const v = Number(process.env.AGENT_NET_OPENCODE_DORMANT_MS);
+  return Number.isFinite(v) && v > 0 ? v : DORMANT_AFTER_MS;
+}
+const NAME_MAX = 60;
 const DISCOVERY_LIMIT = 50;
 // session.created can arrive before the session can be read back.
 const CREATED_RETRY_DELAYS_MS = [200, 500, 1_000, 2_000, 4_000];
@@ -77,6 +85,20 @@ function modelName(ref: any): string | undefined {
 // viewer as viewed"), fires once per idle transition and says nothing when a
 // viewer stays attached and quiet. See docs/opencode.md.
 
+/**
+ * The name shown on the network: "<folder>: <title>". The title is
+ * Session.Info.title (optional, @opencode/schema session.d.ts) and changes with
+ * the session.renamed event (data: { sessionID, title }). Without a title the
+ * name is the folder alone, which is also what the daemon uses by default.
+ */
+function sessionName(cwd: string, title: unknown): string {
+  const folder = basename(cwd.replace(/[\\/]+$/, "")) || cwd;
+  const t = typeof title === "string" ? title.replace(/\s+/g, " ").trim() : "";
+  if (!t) return folder;
+  const full = `${folder}: ${t}`;
+  return full.length <= NAME_MAX ? full : full.slice(0, NAME_MAX - 3).trimEnd() + "...";
+}
+
 /** One daemon connection, bound to one OpenCode session. */
 class SessionLink {
   private sock: Socket | undefined;
@@ -86,16 +108,27 @@ class SessionLink {
   private backoff = BACKOFF_START_MS;
   private nextId = 1;
   private pending = new Map<string, Pending>();
-  status: "idle" | "busy" = "idle";
+  // The working state, and whether the session has gone quiet. The status the
+  // network sees is "dormant" when it is quiet and not busy.
+  base: "idle" | "busy" = "idle";
+  dormant = false;
   model: string | undefined;
+  name: string | undefined;
+  lastActive = Date.now();
+  private dormantTimer: NodeJS.Timeout | undefined;
+
+  get status(): "idle" | "busy" | "dormant" {
+    return this.dormant ? "dormant" : this.base;
+  }
 
   constructor(
     readonly sessionID: string,
-    private cwd: string,
+    readonly cwd: string,
     private onDeliver: (link: SessionLink, m: DeliveredMessage) => void,
   ) {}
 
   start() {
+    this.armDormancy();
     this.openConnection();
   }
 
@@ -103,6 +136,8 @@ class SessionLink {
     this.stopped = true;
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
+    if (this.dormantTimer) clearTimeout(this.dormantTimer);
+    this.dormantTimer = undefined;
     this.failAllPending("agent-net plugin is closing this session");
     const s = this.sock;
     this.sock = undefined;
@@ -116,10 +151,49 @@ class SessionLink {
     if (this.connected) this.request("status", { model: next }).catch(() => {});
   }
 
+  setName(next: string) {
+    if (!next || this.name === next) return;
+    this.name = next;
+    if (this.connected) this.request("status", { name: next }).catch(() => {});
+  }
+
+  /** Working state from execution events. This is activity too. */
   setStatus(next: "idle" | "busy") {
-    if (this.status === next) return;
-    this.status = next;
-    if (this.connected) this.request("status", { status: next }).catch(() => {});
+    const before = this.status;
+    this.base = next;
+    this.dormant = false;
+    this.lastActive = Date.now();
+    this.armDormancy();
+    if (this.status !== before && this.connected) this.request("status", { status: this.status }).catch(() => {});
+  }
+
+  /**
+   * Record activity: the session is not dormant and the clock starts again.
+   * `at` lets discovery start the clock at the session's last update.
+   */
+  touch(at = Date.now()) {
+    const before = this.status;
+    this.lastActive = at;
+    this.dormant = false;
+    this.armDormancy();
+    if (this.status !== before && this.connected) this.request("status", { status: this.status }).catch(() => {});
+  }
+
+  private armDormancy() {
+    if (this.dormantTimer) clearTimeout(this.dormantTimer);
+    this.dormantTimer = undefined;
+    if (this.stopped) return;
+    const wait = Math.max(0, this.lastActive + dormantAfterMs() - Date.now());
+    const timer = setTimeout(() => {
+      this.dormantTimer = undefined;
+      // A busy session is in use, however long the turn takes. Its idle event
+      // starts the clock again.
+      if (this.stopped || this.base === "busy") return;
+      this.dormant = true;
+      if (this.connected) this.request("status", { status: "dormant" }).catch(() => {});
+    }, wait);
+    timer.unref?.();
+    this.dormantTimer = timer;
   }
 
   request(method: string, params: Record<string, unknown> = {}): Promise<any> {
@@ -200,11 +274,16 @@ class SessionLink {
         harness: "opencode",
         native_id: this.sessionID,
         cwd: this.cwd,
-        status: this.status,
+        // Hello says idle or busy, which every daemon accepts. A dormant
+        // session says so right after, and an older daemon that does not know
+        // the value just keeps showing idle.
+        status: this.base,
         ...(this.model ? { model: this.model } : {}),
+        ...(this.name ? { name: this.name } : {}),
       })
         .then(() => {
           this.backoff = BACKOFF_START_MS;
+          if (this.dormant) this.request("status", { status: "dormant" }).catch(() => {});
         })
         .catch(() => s.destroy());
     });
@@ -518,7 +597,9 @@ export default {
     const events = new AbortController();
 
     // Walk up to the root session. Sub-agent sessions speak for their root.
-    async function rootSession(sessionID: string): Promise<{ id: string; cwd: string; model?: string } | undefined> {
+    async function rootSession(
+      sessionID: string,
+    ): Promise<{ id: string; cwd: string; model?: string; title?: string } | undefined> {
       let id = sessionID;
       for (let depth = 0; depth < 8; depth++) {
         let info: any;
@@ -530,7 +611,7 @@ export default {
         const parent = info?.parentID;
         if (!parent) {
           const cwd = info?.location?.directory ?? info?.directory ?? ctx.location.directory ?? "";
-          return { id, cwd: String(cwd), model: modelName(info?.model) };
+          return { id, cwd: String(cwd), model: modelName(info?.model), title: info?.title };
         }
         h.rootOf.set(id, String(parent));
         id = String(parent);
@@ -539,6 +620,7 @@ export default {
     }
 
     async function deliver(link: SessionLink, message: DeliveredMessage) {
+      link.touch(); // a message for a dormant session wakes it
       let confirm: Record<string, unknown>;
       try {
         await ctx.session.prompt({
@@ -556,21 +638,35 @@ export default {
 
     // The link for a session (or for the root of a sub-agent session). The
     // first instance to see a session owns its link.
-    async function ensureLink(sessionID: string): Promise<SessionLink | undefined> {
+    async function ensureLink(sessionID: string, activeAt?: number): Promise<SessionLink | undefined> {
       const root = h.rootOf.get(sessionID);
       if (root) return ensureLink(root);
       if (h.gone.has(sessionID)) return undefined;
       const known = h.links.get(sessionID);
-      if (known) return known.link;
+      if (known) {
+        // A link whose instance is gone (a reload that did not release it) still
+        // holds that instance's context and a daemon connection for the same
+        // session. Two such connections would replace each other at the daemon
+        // again and again, so stop it and make a new one.
+        if (known.owner === me || h.instances.has(known.owner)) return known.link;
+        h.links.delete(sessionID);
+        known.link.stop();
+      }
       const found = await rootSession(sessionID);
       if (!found) return undefined;
       if (found.id !== sessionID) return ensureLink(found.id);
       // Another instance may have claimed it while we waited.
       const again = h.links.get(sessionID);
-      if (again) return again.link;
+      if (again && (again.owner === me || h.instances.has(again.owner))) return again.link;
       if (h.gone.has(sessionID)) return undefined;
+      if (again) {
+        h.links.delete(sessionID);
+        again.link.stop();
+      }
       const link = new SessionLink(sessionID, found.cwd, deliver);
       link.model = found.model;
+      link.name = sessionName(found.cwd, found.title);
+      if (activeAt !== undefined) link.lastActive = activeAt;
       h.links.set(sessionID, { link, owner: me });
       link.start();
       return link;
@@ -603,12 +699,19 @@ export default {
           dropLink(sessionID);
           return;
         case "session.created":
-          await ensureLinkWithRetry(sessionID);
+          (await ensureLinkWithRetry(sessionID))?.touch();
           return;
+        case "session.renamed": {
+          // Sub-agent sessions do not name their root session.
+          const link = await ensureLink(sessionID);
+          if (link && !h.rootOf.has(sessionID)) link.setName(sessionName(link.cwd, event.data?.title));
+          link?.touch();
+          return;
+        }
         case "session.viewed":
         case "session.inbox.enqueued":
         case "session.inbox.delivered":
-          await ensureLink(sessionID);
+          (await ensureLink(sessionID))?.touch();
           return;
         case "session.model.selected":
         case "session.step.started": {
@@ -616,6 +719,7 @@ export default {
           // ensureLink learns the root of a session it has not seen yet.
           const link = await ensureLink(sessionID);
           if (!h.rootOf.has(sessionID)) link?.setModel(modelName(event.data?.model));
+          link?.touch();
           return;
         }
         case "session.execution.started":
@@ -626,6 +730,13 @@ export default {
         case "session.execution.interrupted":
           (await ensureLink(sessionID))?.setStatus("idle");
           return;
+        default: {
+          // Any other session event (text, tool and step events) is activity
+          // too, but it does not register a session by itself.
+          if (!String(event.type).startsWith("session.")) return;
+          const id = h.rootOf.get(sessionID) ?? sessionID;
+          h.links.get(id)?.link.touch();
+        }
       }
     }
 
@@ -641,11 +752,11 @@ export default {
           parentID: null,
           archived: false,
         } as any);
-        const cutoff = Date.now() - RECENT_SESSION_MS;
+        const cutoff = Date.now() - dormantAfterMs();
         for (const s of page?.data ?? page?.items ?? []) {
           if (events.signal.aborted) return;
           if (s?.parentID || s?.time?.archived || Number(s?.time?.updated ?? 0) < cutoff) continue;
-          await ensureLink(String(s.id));
+          await ensureLink(String(s.id), Number(s.time?.updated ?? Date.now()));
         }
       } catch {
         // Discovery is best effort; events still register sessions.
@@ -680,6 +791,7 @@ export default {
             try {
               const link = await ensureLink(String(context.sessionID));
               if (!link) return text("agent-net: this session is not registered with the daemon.");
+              link.touch(); // using an agent-net tool is activity
               const params = def.method === "list" ? { online_only: true, ...(input ?? {}) } : (input ?? {});
               const result = await link.request(def.method, params);
               return text((def.format ?? ((r) => JSON.stringify(r ?? {}, null, 2)))(result ?? {}));

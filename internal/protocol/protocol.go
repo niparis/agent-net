@@ -75,7 +75,7 @@ type SessionInfo struct {
 	PID       int    `json:"pid"`
 	Cwd       string `json:"cwd"`
 	Name      string `json:"name"`
-	Status    string `json:"status"` // idle | busy | shell | unknown
+	Status    string `json:"status"` // idle | busy | shell | dormant | unknown
 	Delivery  string `json:"delivery"`
 	// Repo is worked out by the daemon from Cwd. It is empty from older daemons.
 	Repo RepoInfo `json:"repo"`
@@ -86,6 +86,21 @@ type SessionInfo struct {
 	// (for example "claude-opus-5-5" or "anthropic/claude-sonnet-5"). Empty
 	// when the harness does not say.
 	Model string `json:"model,omitempty"`
+}
+
+// StatusDormant is the status of a session that is reachable but has had no
+// activity for a long time (OpenCode keeps every session in one service, so
+// "online" alone does not mean "in use"). A message to it still delivers.
+// Gateways store the status as given, so an older gateway accepts it.
+const StatusDormant = "dormant"
+
+// ValidStatus tells whether s is a status a plugin may report.
+func ValidStatus(s string) bool {
+	switch s {
+	case "idle", "busy", "shell", StatusDormant, "unknown":
+		return true
+	}
+	return false
 }
 
 // Session modes. Foreground means a person has the session open in a terminal

@@ -27,6 +27,7 @@ const hellos = [];
 const statuses = []; // status calls: { id, params }
 const closed = [];
 const calls = []; // [method, params] of every call except hello
+const conns = new Map(); // session ID -> its latest daemon connection
 const server = createServer((conn) => {
   let buf = "";
   conn.setEncoding("utf8");
@@ -38,7 +39,9 @@ const server = createServer((conn) => {
       buf = buf.slice(nl + 1);
       if (line.method === "hello") {
         conn.sessionID = line.params.native_id;
-        hellos.push({ id: line.params.native_id, cwd: line.params.cwd, model: line.params.model, mode: line.params.mode });
+        conns.set(line.params.native_id, conn);
+        hellos.push({ id: line.params.native_id, cwd: line.params.cwd, model: line.params.model, mode: line.params.mode,
+          name: line.params.name, status: line.params.status });
       }
       if (line.method !== "hello") calls.push([line.method, line.params]);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
@@ -168,7 +171,7 @@ await test("session.created registers a session that is not readable yet", async
 
 await test("startup discovery registers unused sessions of other directories", async () => {
   freshHub();
-  const sessions = new Map([["ses_other_dir", session("ses_other_dir", "/work/b", 3 * 60 * 60 * 1000)]]);
+  const sessions = new Map([["ses_other_dir", session("ses_other_dir", "/work/b", 30 * 60 * 1000)]]);
   const a = makeContext("/work/a", sessions);
   const stop = await plugin.setup(a.ctx);
   await until("hello for ses_other_dir", () => registered("ses_other_dir"));
@@ -179,6 +182,7 @@ await test("startup discovery skips old, archived and sub-agent sessions", async
   freshHub();
   const sessions = new Map([
     ["ses_old", session("ses_old", "/work/a", 3 * 24 * 60 * 60 * 1000)],
+    ["ses_90min", session("ses_90min", "/work/a", 90 * 60 * 1000)],
     ["ses_arch", session("ses_arch", "/work/a", 0, { time: { updated: Date.now(), archived: Date.now() } })],
     ["ses_child", session("ses_child", "/work/a", 0, { parentID: "ses_new2" })],
     ["ses_new2", session("ses_new2", "/work/a")],
@@ -187,7 +191,7 @@ await test("startup discovery skips old, archived and sub-agent sessions", async
   const stop = await plugin.setup(a.ctx);
   await until("hello for ses_new2", () => registered("ses_new2"));
   await settle();
-  for (const id of ["ses_old", "ses_arch", "ses_child"]) {
+  for (const id of ["ses_old", "ses_90min", "ses_arch", "ses_child"]) {
     if (registered(id)) throw new Error(id + " must not be registered");
   }
   stop();
@@ -325,6 +329,176 @@ await test("a sub-agent session does not change the model of its root session", 
   if (statuses.some((s) => s.id === "ses_root" && s.params.model === "p/small")) {
     throw new Error("the sub-agent model leaked to the root session");
   }
+  stop();
+});
+
+// ---- dormant state, names, stale links ----
+
+const statusOf = (id) => statuses.filter((s) => s.id === id && s.params.status).map((s) => s.params.status);
+const lastStatus = (id) => statusOf(id).at(-1);
+
+async function withDormantAfter(ms, fn) {
+  process.env.AGENT_NET_OPENCODE_DORMANT_MS = String(ms);
+  try {
+    await fn();
+  } finally {
+    delete process.env.AGENT_NET_OPENCODE_DORMANT_MS;
+  }
+}
+
+await test("a session with no activity goes dormant and stays registered", async () => {
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_quiet", session("ses_quiet", "/work/q")]]);
+    const q = makeContext("/work/q", sessions);
+    const stop = await plugin.setup(q.ctx);
+    await until("hello for ses_quiet", () => registered("ses_quiet"));
+    if (hellos.find((h) => h.id === "ses_quiet").status !== "idle") throw new Error("hello must say idle");
+    await until("dormant status", () => lastStatus("ses_quiet") === "dormant");
+    const closedBefore = closed.filter((id) => id === "ses_quiet").length;
+    await settle();
+    if (closed.filter((id) => id === "ses_quiet").length !== closedBefore) throw new Error("a dormant session was disconnected");
+    stop();
+  });
+});
+
+await test("activity wakes a dormant session, and the clock starts again", async () => {
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_wake", session("ses_wake", "/work/w")]]);
+    const w = makeContext("/work/w", sessions);
+    const stop = await plugin.setup(w.ctx);
+    await until("dormant", () => lastStatus("ses_wake") === "dormant");
+    w.emit({ type: "session.viewed", data: { sessionID: "ses_wake" } });
+    await until("idle again", () => lastStatus("ses_wake") === "idle");
+    await until("dormant a second time", () => statusOf("ses_wake").filter((x) => x === "dormant").length === 2);
+    // A text event (not a view or a step) is activity too.
+    w.emit({ type: "session.text.delta", data: { sessionID: "ses_wake" } });
+    await until("idle after a text event", () => lastStatus("ses_wake") === "idle");
+    stop();
+  });
+});
+
+await test("a busy session never goes dormant, and goes dormant after its turn", async () => {
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_busy", session("ses_busy", "/work/b")]]);
+    const b = makeContext("/work/b", sessions);
+    const stop = await plugin.setup(b.ctx);
+    await until("hello", () => registered("ses_busy"));
+    b.emit({ type: "session.execution.started", data: { sessionID: "ses_busy" } });
+    await until("busy", () => lastStatus("ses_busy") === "busy");
+    await new Promise((resolve) => setTimeout(resolve, 900));
+    if (lastStatus("ses_busy") !== "busy") throw new Error("a busy session went " + lastStatus("ses_busy"));
+    b.emit({ type: "session.execution.succeeded", data: { sessionID: "ses_busy" } });
+    await until("idle", () => lastStatus("ses_busy") === "idle");
+    await until("dormant after the turn", () => lastStatus("ses_busy") === "dormant");
+    stop();
+  });
+});
+
+await test("a message to a dormant session is delivered and wakes it", async () => {
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_msg", session("ses_msg", "/work/m")]]);
+    const m = makeContext("/work/m", sessions);
+    const prompts = [];
+    m.ctx.session.prompt = async (input) => void prompts.push(input);
+    const stop = await plugin.setup(m.ctx);
+    await until("dormant", () => lastStatus("ses_msg") === "dormant");
+    conns.get("ses_msg").write(JSON.stringify({ method: "deliver", params: { message: {
+      message_id: "m_1", conversation_id: "c_1", sender_session_id: "s_x", sender_name: "peer", message_type: "request", body: "wake up" } } }) + "\n");
+    await until("prompt", () => prompts.length === 1);
+    if (!prompts[0].text.includes("wake up") || prompts[0].sessionID !== "ses_msg") throw new Error("wrong prompt " + JSON.stringify(prompts[0]));
+    await until("idle after delivery", () => lastStatus("ses_msg") === "idle");
+    stop();
+  });
+});
+
+await test("a session that reconnects while dormant says idle in hello, then dormant", async () => {
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_re", session("ses_re", "/work/re")]]);
+    const r = makeContext("/work/re", sessions);
+    const stop = await plugin.setup(r.ctx);
+    await until("dormant", () => lastStatus("ses_re") === "dormant");
+    const n = hellos.length;
+    conns.get("ses_re").destroy(); // the daemon restarts
+    await until("second hello", () => hellos.length > n, 4000);
+    const h = hellos.at(-1);
+    if (h.id !== "ses_re" || h.status !== "idle") throw new Error("hello after reconnect: " + JSON.stringify(h));
+    await until("dormant again", () => statuses.filter((x) => x.id === "ses_re" && x.params.status === "dormant").length >= 2);
+    stop();
+  });
+});
+
+await test("the session title becomes the name, and a rename is followed", async () => {
+  freshHub();
+  const sessions = new Map([
+    ["ses_t", session("ses_t", "/Users/n/code/strategies", 0, { title: "Fix the risk model" })],
+    ["ses_nt", session("ses_nt", "/Users/n/code/strategies/", 0)],
+    ["ses_long", session("ses_long", "/Users/n/code/strategies", 0, { title: "x".repeat(200) })],
+  ]);
+  const t = makeContext("/Users/n/code/strategies", sessions);
+  const stop = await plugin.setup(t.ctx);
+  await until("hellos", () => registered("ses_t") && registered("ses_nt") && registered("ses_long"));
+  const nameOf = (id) => hellos.find((h) => h.id === id).name;
+  if (nameOf("ses_t") !== "strategies: Fix the risk model") throw new Error("name: " + nameOf("ses_t"));
+  if (nameOf("ses_nt") !== "strategies") throw new Error("no title: " + nameOf("ses_nt"));
+  const long = nameOf("ses_long");
+  if (long.length > 60 || !long.startsWith("strategies: xxx") || !long.endsWith("...")) throw new Error("long name: " + long);
+
+  t.emit({ type: "session.renamed", data: { sessionID: "ses_nt", title: "  Add\nbacktest   v2 " } });
+  await until("name from rename", () => statuses.some((s) => s.id === "ses_nt" && s.params.name === "strategies: Add backtest v2"));
+  // The same title again is not sent twice.
+  const n = statuses.length;
+  t.emit({ type: "session.renamed", data: { sessionID: "ses_nt", title: "Add backtest v2" } });
+  await settle();
+  if (statuses.length !== n) throw new Error("an unchanged name was sent again");
+  t.emit({ type: "session.renamed", data: { sessionID: "ses_nt", title: "" } });
+  await until("name back to the folder", () => statuses.some((s) => s.id === "ses_nt" && s.params.name === "strategies"));
+  stop();
+});
+
+await test("a sub-agent session does not rename its root session", async () => {
+  freshHub();
+  const sessions = new Map([
+    ["ses_r2", session("ses_r2", "/work/r2", 0, { title: "Root work" })],
+    ["ses_k2", session("ses_k2", "/work/r2", 0, { parentID: "ses_r2", title: "Kid work" })],
+  ]);
+  const r = makeContext("/work/r2", sessions);
+  const stop = await plugin.setup(r.ctx);
+  await until("hello", () => registered("ses_r2"));
+  r.emit({ type: "session.renamed", data: { sessionID: "ses_k2", title: "Kid renamed" } });
+  await settle();
+  if (statuses.some((s) => s.id === "ses_r2" && s.params.name)) throw new Error("the sub-agent renamed its root");
+  stop();
+});
+
+await test("a link left by a disposed instance is replaced, not shared", async () => {
+  // A reload that did not run the disposer left a link whose owner is gone.
+  freshHub();
+  let stopped = 0;
+  globalThis[Symbol.for("agent-net.opencode.hub.v1")] = {
+    links: new Map([["ses_orphan", { link: { stop: () => stopped++ }, owner: Symbol("gone") }]]),
+    rootOf: new Map(),
+    gone: new Set(),
+    instances: new Map(),
+  };
+  const sessions = new Map([["ses_orphan", session("ses_orphan", "/work/o")]]);
+  const o = makeContext("/work/o", sessions);
+  const stop = await plugin.setup(o.ctx);
+  // Discovery sees the orphan first and replaces it.
+  await until("a fresh hello for ses_orphan", () => registered("ses_orphan"));
+  if (stopped !== 1) throw new Error("the orphan link was stopped " + stopped + " times");
+  // Another live instance does not replace a link it does not own.
+  const before = hellos.filter((h) => h.id === "ses_orphan").length;
+  const other = makeContext("/work/o", sessions);
+  const stopOther = await plugin.setup(other.ctx);
+  other.emit({ type: "session.viewed", data: { sessionID: "ses_orphan" } });
+  await settle();
+  if (hellos.filter((h) => h.id === "ses_orphan").length !== before) throw new Error("a live link was replaced");
+  stopOther();
   stop();
 });
 

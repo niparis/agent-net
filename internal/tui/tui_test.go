@@ -904,3 +904,48 @@ func TestDetailShowsTheProjectSource(t *testing.T) {
 		t.Errorf("a source for an unknown project:\n%s", v)
 	}
 }
+
+// A dormant session is reachable but quiet. It is hidden with the offline
+// ones and shows up under o.
+func TestDormantSessionsAreHiddenWithTheOfflineOnes(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Agents = append(snap.Agents, agent("s_0000000000000007", "n_mac", "Mac", "opencode", "shop: quiet", func(a *protocol.AgentView) {
+		a.Status = protocol.StatusDormant
+	}))
+	src := &fakeSource{snap: snap, events: fakeEvents()}
+	m := New(src)
+	m.loc = time.UTC
+	m.now = func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = refresh(m, src)
+	if strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
+		t.Fatalf("a dormant session is shown by default: %v", names(m))
+	}
+	m = keys(m, "o")
+	if !strings.Contains(strings.Join(names(m), ","), "shop: quiet") {
+		t.Fatalf("o does not show the dormant session: %v", names(m))
+	}
+	if got := statusShort(protocol.StatusDormant); got != "dorm" {
+		t.Fatalf("status text %q", got)
+	}
+}
+
+func TestNameColumnGrowsOnlyForLongNames(t *testing.T) {
+	width := func(cols []column) int {
+		for _, c := range cols {
+			if c.name == "NAME" {
+				return c.width
+			}
+		}
+		return 0
+	}
+	if w := width(columns(120, 5)); w != 18 {
+		t.Fatalf("short names: NAME is %d wide, want 18", w)
+	}
+	if w := width(columns(120, 28)); w != 28 {
+		t.Fatalf("long names: NAME is %d wide, want 28", w)
+	}
+	if w := width(columns(120, 80)); w != 32 {
+		t.Fatalf("very long names: NAME is %d wide, want 32", w)
+	}
+}

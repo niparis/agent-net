@@ -87,3 +87,61 @@ func TestOpenCodePeerCheck(t *testing.T) {
 		t.Fatal("wrong harness accepted")
 	}
 }
+
+// A plugin can name its session, and report it dormant and active again. The
+// gateway keeps the status as given, and a dormant session still receives.
+func TestOpenCodeNameAndDormantStatus(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
+	cli := cliClient(t, n)
+
+	// No name in hello: the folder name.
+	s0, id0 := helloOpenCode(t, n, "ses_plain", "/work/plain")
+	if a := agentByID(t, cli, id0); a.Profile.Name != "plain" {
+		t.Fatalf("default name %q", a.Profile.Name)
+	}
+
+	lc := dialLocal(t, n.sock)
+	lc.AutoAck = true
+	res := lc.mustCall("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_named",
+		"cwd": "/work/strategies", "status": "idle", "name": "strategies: fix the risk model"})
+	var r struct {
+		SessionID string `json:"session_id"`
+	}
+	json.Unmarshal(res, &r)
+	if a := agentByID(t, cli, r.SessionID); a.Profile.Name != "strategies: fix the risk model" {
+		t.Fatalf("name from hello %q", a.Profile.Name)
+	}
+
+	// A title change is a status call with only a name.
+	lc.mustCall("status", map[string]any{"name": "strategies: backtest v2"})
+	eventually(t, "new name", func() bool { return agentByID(t, cli, r.SessionID).Profile.Name == "strategies: backtest v2" })
+	if a := agentByID(t, cli, r.SessionID); a.Status != "idle" {
+		t.Fatalf("a rename changed the status: %+v", a)
+	}
+
+	lc.mustCall("status", map[string]any{"status": "dormant"})
+	eventually(t, "dormant", func() bool { return agentByID(t, cli, r.SessionID).Status == "dormant" })
+	if a := agentByID(t, cli, r.SessionID); !a.Online {
+		t.Fatalf("a dormant session must stay online: %+v", a)
+	}
+	// It still receives a message.
+	m := sendResult(t, s0.mustCall("send", map[string]any{"to": r.SessionID, "body": "wake up"}))
+	if m.State == "" {
+		t.Fatalf("send to a dormant session: %+v", m)
+	}
+
+	lc.mustCall("status", map[string]any{"status": "idle"})
+	eventually(t, "idle again", func() bool { return agentByID(t, cli, r.SessionID).Status == "idle" })
+}
+
+func TestValidStatusIncludesDormant(t *testing.T) {
+	for _, s := range []string{"idle", "busy", "shell", "dormant", "unknown"} {
+		if !validStatus(s) {
+			t.Fatalf("%q must be valid", s)
+		}
+	}
+	if validStatus("napping") || validStatus("") {
+		t.Fatal("bad status accepted")
+	}
+}

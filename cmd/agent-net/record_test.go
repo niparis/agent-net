@@ -263,3 +263,18 @@ func TestEventsCommand(t *testing.T) {
 		t.Fatalf("follow output:\n%s", followed)
 	}
 }
+
+func TestWithoutDormantHidesQuietSessionsByDefault(t *testing.T) {
+	agents := []protocol.AgentView{
+		{SessionID: "s_1", Status: "idle", Online: true},
+		{SessionID: "s_2", Status: protocol.StatusDormant, Online: true},
+		{SessionID: "s_3", Status: "busy", Online: true},
+	}
+	got := withoutDormant(agents, false)
+	if len(got) != 2 || got[0].SessionID != "s_1" || got[1].SessionID != "s_3" {
+		t.Fatalf("default list: %+v", got)
+	}
+	if got := withoutDormant(agents, true); len(got) != 3 {
+		t.Fatalf("--dormant list: %+v", got)
+	}
+}

@@ -223,6 +223,21 @@ func (p *eventPrinter) print(evs []protocol.Event) {
 	tw.Flush()
 }
 
+// withoutDormant drops dormant sessions unless the caller asked for them. They
+// are reachable, but have had no activity for a long time. --json keeps them.
+func withoutDormant(agents []protocol.AgentView, include bool) []protocol.AgentView {
+	if include {
+		return agents
+	}
+	out := make([]protocol.AgentView, 0, len(agents))
+	for _, a := range agents {
+		if a.Status != protocol.StatusDormant {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 // printAgents is the table of `agent-net list`. PROJECT is the project the
 // machine found from the agent's folder; an agent that announced a project
 // but has no repo info shows its announced one.

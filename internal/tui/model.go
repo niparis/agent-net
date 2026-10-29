@@ -379,7 +379,8 @@ func (m Model) groups() []group {
 	by := map[string]*group{}
 	var order []*group
 	for _, a := range m.snap.Agents {
-		if !a.Online && !m.showOffline {
+		// Dormant sessions are reachable but quiet: hidden with the offline ones.
+		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue
 		}
 		if !matches(a, m.filter) {
