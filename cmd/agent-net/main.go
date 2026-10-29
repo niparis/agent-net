@@ -24,6 +24,7 @@ import (
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/setup"
+	"github.com/niparis/agent-net/internal/upgrade"
 )
 
 // version is set at build time: -ldflags "-X main.version=v1.2.3".
@@ -191,10 +192,24 @@ func cmdJoin(ctx context.Context, args []string) error {
 	return nil
 }
 
+// envDuration reads a duration like "0s" from the environment. 0s becomes a
+// negative value, which the daemon reads as "no wait".
+func envDuration(name string) time.Duration {
+	d, err := time.ParseDuration(os.Getenv(name))
+	if err != nil {
+		return 0
+	}
+	if d == 0 {
+		return -1
+	}
+	return d
+}
+
 func cmdDaemon(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("daemon", flag.ExitOnError)
 	gw := fs.String("gateway", "", "gateway URL (default: from node.json)")
 	dir := fs.String("config-dir", daemon.ConfigDir(), "directory with node.json and ca.pem")
+	noAuto := fs.Bool("no-auto-upgrade", false, "do not upgrade to a newer version the gateway serves (or set AGENT_NET_NO_AUTO_UPGRADE=1)")
 	fs.Parse(args)
 	nc, ca, err := daemon.LoadNode(*dir)
 	if err != nil {
@@ -208,6 +223,9 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	d, err := daemon.New(daemon.Config{
 		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
+		NoAutoUpgrade: *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
+		// Tests set this to 0s so they need not wait up to 10 s.
+		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),
 	})
 	if err != nil {
 		return err
@@ -273,7 +291,11 @@ func cmdStatus(ctx context.Context, args []string) error {
 	if info.Connected {
 		state = "connected"
 	}
-	fmt.Printf("version  %s\ngateway  %s (%s)\nnode     %s\n\n", info.Version, info.GatewayURL, state, info.NodeID)
+	fmt.Printf("version  %s\ngateway  %s (%s)\nnode     %s\n", info.Version, info.GatewayURL, state, info.NodeID)
+	if note := upgrade.LoadAuto(daemon.StateDir()).HoldNote(); note != "" {
+		fmt.Printf("upgrade  %s\n", note)
+	}
+	fmt.Println()
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "SESSION\tHARNESS\tNAME\tSTATUS\tCWD")
 	for _, s := range info.Sessions {

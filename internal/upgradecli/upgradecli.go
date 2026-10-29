@@ -146,7 +146,8 @@ func (r *run) joinedMachine(ctx context.Context) error {
 	case r.Check:
 		r.say("this machine   %s (%s)", r.Current, r.Exe)
 		r.say("latest release %s", orErr(latest, latestErr))
-		r.say("gateway        %s", orErr(gwVer, gwErr))
+		r.sayHold()
+		r.say("gateway       %s", orErr(gwVer, gwErr))
 		r.printNodesViaDaemon(ctx)
 		return nil
 	case r.Rollback:
@@ -165,6 +166,7 @@ func (r *run) joinedMachine(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
 	}
+	r.clearHold()
 	if res.To == r.Current && !res.Replaced && !r.Force {
 		r.say("already on %s (the gateway serves %s)", r.Current, res.To)
 		r.hintGatewayBehind(gwVer, latest, latestErr)
@@ -221,6 +223,34 @@ func (r *run) printNodes(nodes []protocol.NodeView) {
 	tw.Flush()
 }
 
+// ---- rollback hold ----
+
+// holdAt makes this machine's daemon skip version v (and older) when it
+// upgrades itself, so a rollback is not undone at the next reconnect.
+func (r *run) holdAt(v string) {
+	if _, ok := upgrade.ParseRelease(v); !ok {
+		return
+	}
+	if err := upgrade.SetHold(daemon.StateDir(), v); err != nil {
+		r.say("auto-upgrade        cannot hold %s: %v", v, err)
+		return
+	}
+	r.say("auto-upgrade        held at %s (a newer release, or agent-net upgrade, lifts it)", v)
+}
+
+// clearHold is for a manual upgrade: the person chose to move on.
+func (r *run) clearHold() {
+	if err := upgrade.ClearHold(daemon.StateDir()); err != nil {
+		r.say("auto-upgrade        cannot clear the rollback hold: %v", err)
+	}
+}
+
+func (r *run) sayHold() {
+	if note := upgrade.LoadAuto(daemon.StateDir()).HoldNote(); note != "" {
+		r.say("auto-upgrade   %s", strings.TrimPrefix(note, "auto-upgrade "))
+	}
+}
+
 // ---- rollback ----
 
 func (r *run) rollback(ctx context.Context, gatewayHost bool) error {
@@ -230,6 +260,7 @@ func (r *run) rollback(ctx context.Context, gatewayHost bool) error {
 		return err
 	}
 	r.say("agent-net           %s -> %s (the version you left is kept as %s)", before, now, upgrade.PrevPath(r.Exe))
+	r.holdAt(before)
 	var args []string
 	if gatewayHost {
 		args = r.gatewaySetupArgs(nil)
@@ -376,6 +407,7 @@ func (r *run) gatewayHost(ctx context.Context) error {
 	} else if err := r.installRelease(ctx, tag); err != nil {
 		return err
 	}
+	r.clearHold()
 	return r.upgradeNodes(ctx, tag, wasOnline, before)
 }
 
@@ -539,6 +571,7 @@ func (r *run) waitNodesBack(ctx context.Context, a *adminClient, ids []string, d
 func (r *run) gatewayCheck(ctx context.Context, latest string, latestErr error) error {
 	r.say("this machine   %s (%s)", r.Current, r.Exe)
 	r.say("latest release %s", orErr(latest, latestErr))
+	r.sayHold()
 	a, err := r.admin()
 	var info protocol.NodesInfo
 	if err == nil {
