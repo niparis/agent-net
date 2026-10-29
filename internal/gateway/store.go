@@ -73,6 +73,14 @@ CREATE TABLE events (
 `, `
 ALTER TABLE nodes ADD COLUMN version TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN seen_at INTEGER NOT NULL DEFAULT 0;
+`, `
+CREATE TABLE mcp_servers (
+	name TEXT PRIMARY KEY, node_id TEXT NOT NULL, spec TEXT NOT NULL,
+	enabled INTEGER NOT NULL DEFAULT 1,
+	added_by_node TEXT NOT NULL DEFAULT '', added_by_session TEXT NOT NULL DEFAULT '',
+	added_by_harness TEXT NOT NULL DEFAULT '', added_at INTEGER NOT NULL,
+	health TEXT NOT NULL DEFAULT 'unknown', health_detail TEXT NOT NULL DEFAULT '',
+	health_at INTEGER NOT NULL DEFAULT 0, tools TEXT NOT NULL DEFAULT '[]');
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

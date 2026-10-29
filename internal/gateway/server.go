@@ -279,7 +279,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		return
 	}
-	ws.SetReadLimit(1 << 20)
+	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
 	nc := &nodeConn{id: nodeID, ws: ws, cancel: cancel}
 
@@ -345,6 +345,10 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
+		if strings.HasPrefix(h.Type, "mcp.") {
+			go g.serveMCP(ctx, nc, h, raw)
+			continue
+		}
 		data, err := g.handle(ctx, nc, h.Type, raw)
 		var reply []byte
 		var eerr error
@@ -365,6 +369,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			return
 		}
 		if h.Type == "session.sync" && err == nil {
+			g.sendMCPSync(ctx, nc)
 			g.dispatchPending(ctx, nc.id, true)
 		}
 		if h.Type == "session.upsert" && err == nil {
