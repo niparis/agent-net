@@ -498,7 +498,8 @@ export default {
             try {
               const link = await ensureLink(String(context.sessionID));
               if (!link) return text("agent-net: this session is not registered with the daemon.");
-              const result = await link.request(def.method, input ?? {});
+              const params = def.method === "list" ? { online_only: true, ...(input ?? {}) } : (input ?? {});
+              const result = await link.request(def.method, params);
               return text((def.format ?? ((r) => JSON.stringify(r ?? {}, null, 2)))(result ?? {}));
             } catch (error) {
               return text(error instanceof Error ? error.message : String(error));
