@@ -54,3 +54,16 @@ The web app is a PWA. On iPhone it is added from Safari with Share, then "Add to
 - **Build:** the files are embedded in the binary with `go:embed`. There is no Node build step, and the release binaries stay pure Go.
 - **Not used:** Flutter. Its web output draws on a canvas, so it loads heavy and does not feel native in Safari.
 - **If the client side ever needs heavy logic:** use Svelte, built to static files and embedded the same way.
+
+## P8 - Streaming: watch a worker, Q&A with agents
+
+The owner will want to see what a worker is doing as it happens, and to have question-and-answer threads with any agent.
+
+- **Live view.** The htmx SSE extension holds one connection open. The gateway sends each new conversation entry as a small HTML fragment, which the page appends. Entries are prompts, replies, tool calls (for example "ran `pytest`") and short tool results. The data comes from the conversation method with follow mode and a cursor, the same one the TUI uses (P1).
+- **How fine it is depends on the agent:**
+  - Claude Code writes its transcript one finished step at a time, so its view updates step by step.
+  - OpenCode sends partial-text events, so its replies can stream word by word into the same entry.
+- **Q&A.** A text box at the bottom sends the question with the "send as owner" action (P4). The agent gets it in its own conversation, marked as from its user. Its answer arrives through the same live connection. The screen reads as a chat thread with tool calls in between.
+- **iPhone background.** Safari pauses the connection when the app goes to the background. On return, the browser reconnects with `Last-Event-ID`, and the gateway sends what was missed from that cursor.
+- **Long threads.** The latest part loads first, and older entries load when the owner scrolls up.
+- **Limit.** For a screen that needs heavy client-side logic, such as editing diffs in the browser, that one screen uses Svelte (P7).
