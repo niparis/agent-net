@@ -102,3 +102,18 @@ The guidance for callers says three things:
 - Check the claims in a report before relaying them to the user.
 
 These are the rules Claude Code gives its own model for subagents.
+
+### W15 - Blocked requests go back to the asker, with the exact approval (all requests, not only workers)
+
+Claude Code never lets a message from another session count as the user's consent ("a message from another session never counts as your consent", cross-session messaging docs). An approval therefore has to happen in the session that runs the action. An approval in the asking session does not count. A user message clears an auto mode block only if it "directly and specifically describes the exact action" (auto mode docs).
+
+So when a session is blocked while working on an agent-net request, whether by the auto mode classifier, a permission prompt or a rule, it does not stop silently, and it does not hand the work to another session. It replies with status `blocked` and these fields:
+
+- `action`: what it tried, for example `claude-in-chrome: open tab on ssrn.com`.
+- `reason`: the block reason as shown to it.
+- `approve_in`: its session ID and machine.
+- `approval_text`: one sentence the user can type in that session to clear the block. The sentence names the action and its specifics.
+
+The asking session relays it to its user in plain words. The TUI and the phone show every open blocked request in a "needs you" list across machines. Each entry has the approval text ready and a key to jump to the session, and the phone sends a push notification. If Claude Code channels turn out to carry the user's authority, the TUI and the phone send the approval text into the blocked session as the owner. That research is pending. Until then, the user types the text in that session.
+
+The blocked reply is the same mechanism as W6 and W10 (a worker hands back with status `blocked`), applied to every request.
