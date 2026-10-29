@@ -70,7 +70,7 @@ A message sent to a Claude session shows up in that session as a cross-session m
 
 ## 5. Pi
 
-Copy or link `plugins/pi/agent-net.ts` to `~/.pi/agent/extensions/agent-net.ts`, or try it with `pi -e plugins/pi/agent-net.ts`. It connects to the daemon socket by itself.
+`agent-net setup` writes the extension (embedded in the binary) to `~/.pi/agent/extensions/agent-net.ts`. To develop it, link `plugins/pi/agent-net.ts` there instead (setup leaves a symlink alone), or try it with `pi -e plugins/pi/agent-net.ts`. It connects to the daemon socket by itself.
 
 ## Paths and variables
 

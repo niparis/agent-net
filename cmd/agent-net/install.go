@@ -16,8 +16,9 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noService := fs.Bool("no-service", false, "do not write or start services")
 	data := fs.String("data", defaultGatewayData(), "gateway data directory (with --gateway)")
 	dist := fs.String("dist", setup.DefaultDist(), "directory the gateway serves binaries from (with --gateway)")
+	port := fs.String("port", setup.GatewayPort, "gateway port (with --gateway)")
 	fs.Parse(args)
-	return setup.Setup(ctx, setup.Options{Join: *join, Gateway: *gw, NoService: *noService, Data: *data, Dist: *dist})
+	return setup.Setup(ctx, setup.Options{Join: *join, Gateway: *gw, NoService: *noService, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

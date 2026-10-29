@@ -34,6 +34,7 @@ type Options struct {
 	Purge     bool   // uninstall only: also remove credentials and state
 	Data      string // gateway data dir
 	Dist      string // gateway dist dir
+	Port      string // gateway port (default 7420)
 	Exe       string // path of the agent-net binary; default: this binary
 	Out       io.Writer
 }
@@ -123,7 +124,7 @@ func (r *runner) setupGateway(ctx context.Context) {
 	if r.NoService {
 		r.step("gateway service", "skipped (no service)", nil)
 	} else {
-		args := []string{"gateway", "--listen", "0.0.0.0:" + GatewayPort, "--dist", dist}
+		args := []string{"gateway", "--listen", "0.0.0.0:" + r.port(), "--dist", dist}
 		if data != "" {
 			args = append(args, "--data", data)
 		}
@@ -197,7 +198,7 @@ func (r *runner) join(ctx context.Context) error {
 	}
 	if joinStr == "" {
 		if !r.NoService {
-			if err := waitForPort("localhost:"+GatewayPort, 10*time.Second); err != nil {
+			if err := waitForPort("localhost:"+r.port(), 10*time.Second); err != nil {
 				return err
 			}
 		}
@@ -210,7 +211,7 @@ func (r *runner) join(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		joinStr = fmt.Sprintf("https://localhost:%s#%s#%s", GatewayPort, code, fp)
+		joinStr = fmt.Sprintf("https://localhost:%s#%s#%s", r.port(), code, fp)
 	}
 	_, _, perr := daemon.LoadNode(daemon.ConfigDir())
 	nc, err := daemon.Join(ctx, joinStr, daemon.ConfigDir())
@@ -223,6 +224,13 @@ func (r *runner) join(ctx context.Context) error {
 	}
 	r.step("join", res, nil)
 	return nil
+}
+
+func (r *runner) port() string {
+	if r.Port != "" {
+		return r.Port
+	}
+	return GatewayPort
 }
 
 func (r *runner) gatewayData() string {

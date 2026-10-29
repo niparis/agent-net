@@ -186,7 +186,7 @@ func TestInstallScriptSyntax(t *testing.T) {
 	if _, err := RenderInstallScript("https://x:1", "A'B", "c", "p"); err == nil {
 		t.Error("quote in code was accepted")
 	}
-	if strings.Contains(string(script), "—") {
+	if strings.Contains(string(script), "\xe2\x80\x94") {
 		t.Error("em dash in script")
 	}
 }

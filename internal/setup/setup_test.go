@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -76,9 +77,9 @@ func fakeClaude(t *testing.T, dir string) (logPath string) {
 }
 
 type fixture struct {
-	home, join string
-	gw         *gateway.Gateway
-	srv        *httptest.Server
+	home, join, data string
+	gw               *gateway.Gateway
+	srv              *httptest.Server
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -87,7 +88,8 @@ func newFixture(t *testing.T) *fixture {
 	t.Setenv("HOME", home)
 	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "cfg"))
 	t.Setenv("AGENT_NET_NO_SERVICE", "1")
-	gw, err := gateway.New(gateway.Options{DataDir: t.TempDir()})
+	data := t.TempDir()
+	gw, err := gateway.New(gateway.Options{DataDir: data})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +97,7 @@ func newFixture(t *testing.T) *fixture {
 	srv.TLS = gw.TLSConfig()
 	srv.StartTLS()
 	t.Cleanup(func() { srv.Close(); gw.Close() })
-	return &fixture{home: home, gw: gw, srv: srv}
+	return &fixture{home: home, data: data, gw: gw, srv: srv}
 }
 
 func (f *fixture) newJoin(t *testing.T) string {
@@ -206,6 +208,42 @@ func TestSetupLeavesPiSymlink(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(extDir, "agent-net.ts")); err != nil {
 		t.Error("uninstall removed the symlink")
+	}
+}
+
+func TestSetupGatewayJoinsItself(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	dist := filepath.Join(f.home, "dist")
+	exe := filepath.Join(f.home, "agent-net-fake")
+	os.WriteFile(exe, []byte("fake binary"), 0o755)
+	port := f.srv.Listener.Addr().String()
+	port = port[strings.LastIndex(port, ":")+1:]
+	opts := Options{Gateway: true, Data: f.data, Dist: dist, Port: port}
+	var out bytes.Buffer
+	opts.Out, opts.Exe = &out, exe
+	if err := Setup(context.Background(), opts); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	got := norm(out.String())
+	for _, want := range []string{"gateway service skipped (no service)", "gateway binaries ok\n", "join ok (node n_"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("lacks %q:\n%s", want, got)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(dist, "agent-net-"+runtime.GOOS+"-"+runtime.GOARCH)); string(b) != "fake binary" {
+		t.Error("dist binary not copied")
+	}
+	// Rerun: joined already, dist unchanged.
+	out.Reset()
+	if err := Setup(context.Background(), opts); err != nil {
+		t.Fatal(err)
+	}
+	got = norm(out.String())
+	for _, want := range []string{"gateway binaries ok (unchanged)", "join skipped (already joined)"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rerun lacks %q:\n%s", want, got)
+		}
 	}
 }
 

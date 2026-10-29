@@ -22,7 +22,7 @@ func TestVariantsDifferOnlyInReplyLine(t *testing.T) {
 	if diff != 1 {
 		t.Fatalf("%d lines differ, want 1", diff)
 	}
-	if strings.Contains(Block(Claude), "{{") || strings.Contains(Block(Claude), "—") {
+	if strings.Contains(Block(Claude), "{{") || strings.Contains(Block(Claude), "\xe2\x80\x94") {
 		t.Error("placeholder or em dash left in block")
 	}
 }

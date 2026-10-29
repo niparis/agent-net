@@ -1,99 +1,91 @@
-# Setup: VM (gateway) and Mac
+# Setup
 
-The gateway runs on the VM `research` (LAN 192.168.1.10, Tailscale 100.64.0.10). Each machine runs one daemon. The VM is already joined as node `n_0123456789abcdef`.
+One machine runs the gateway (the VM `research`). Every machine, including the VM, runs one daemon. You add a machine by pasting one line.
 
-The gateway's TLS certificate includes every IP address of the VM, so the Mac can use either the LAN IP or the Tailscale IP.
+## 1. The gateway host, once
 
-## Part 1: VM
+Build the binaries and install this machine's one:
 
-1. Install and start the services:
+```
+scripts/dist.sh
+```
 
-   ```
-   cp ~/code/niparis/a2a-ocs/deploy/systemd/agent-net-*.service ~/.config/systemd/user/
-   systemctl --user daemon-reload
-   systemctl --user enable --now agent-net-gateway agent-net-daemon
-   sudo loginctl enable-linger nicolas
-   ```
+This builds Linux and macOS (amd64 and arm64) into `~/.local/share/agent-net/dist`, which the gateway serves, and copies the right one to `~/.local/bin/agent-net`. Make sure `~/.local/bin` is on your `PATH`.
 
-   `enable-linger` keeps the services running when you are not logged in.
+Then:
 
-2. Check it:
+```
+agent-net setup --gateway
+```
 
-   ```
-   agent-net status
-   ```
+This installs and starts the gateway (on `0.0.0.0:7420`) and the daemon as services, and joins the gateway host to its own network. The server key is kept in `server-key.pem` in the gateway data dir, so the pin in invite lines stays the same across restarts.
 
-   Expect `gateway https://localhost:7420 (connected)`.
+On Linux, if setup prints a hint about `loginctl enable-linger`, run that command. It keeps the services running when you are logged out.
 
-## Part 2: Mac
+## 2. Add a machine
 
-Run these commands on the Mac. Replace `VM` with `nicolas@192.168.1.10`, or with `nicolas@100.64.0.10` if the Mac reaches the VM over Tailscale.
+On the gateway host:
 
-1. Check that the Mac can reach the gateway:
+```
+agent-net invite
+```
 
-   ```
-   nc -vz 192.168.1.10 7420
-   ```
+It prints one line:
 
-2. Copy the binary. Use `arm64` for Apple Silicon and `amd64` for Intel. Run `uname -m` to see which one you have.
+```
+curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://192.168.1.10:7420/install/ABCD2345' | sh
+```
 
-   ```
-   mkdir -p ~/.local/bin
-   scp VM:.local/share/agent-net/agent-net-darwin-arm64 ~/.local/bin/agent-net
-   chmod +x ~/.local/bin/agent-net
-   ```
+If the host has a Tailscale address, it prints a second, labelled line for it. Paste the line in a shell on the Mac or Linux machine. That is all.
 
-3. Get a join code. It is valid for 10 minutes and works only once:
+The line works for 10 minutes and for one machine. `-k` is safe here: `--pinnedpubkey` checks the gateway's key, and the install script then checks the gateway CA by its SHA-256.
 
-   ```
-   ssh VM '~/.local/bin/agent-net enroll --host 192.168.1.10'
-   ```
+The script downloads the binary to `~/.local/bin/agent-net` and runs `agent-net setup`. Setup prints one line per step:
 
-4. Join, using the string the last step printed. Keep the single quotes, because the string contains `#`:
+```
+join               ok (node n_...)
+daemon service     ok
+claude code        ok
+pi extension       ok
+claude guidance    updated
+agent guidance     ok
+daemon status      connected to https://192.168.1.10:7420 as node n_...
+```
 
-   ```
-   ~/.local/bin/agent-net join 'https://192.168.1.10:7420#CODE#SHA'
-   ```
+Steps that do not apply say `skipped (reason)`. Setup:
 
-5. Start the daemon at login with launchd:
+- joins the gateway (skipped if this machine already joined the same gateway),
+- writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
+- registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
+- writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
+- adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md` and `~/.pi/agent/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 
-   ```
-   scp VM:code/niparis/a2a-ocs/deploy/launchd/com.agent-net.daemon.plist /tmp/
-   sed "s|HOME_DIR|$HOME|g" /tmp/com.agent-net.daemon.plist > ~/Library/LaunchAgents/com.agent-net.daemon.plist
-   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.agent-net.daemon.plist
-   ~/.local/bin/agent-net status
-   ```
+## 3. Update a machine
 
-   The log is in `~/Library/Logs/agent-net-daemon.log`.
+Run `scripts/dist.sh` on the gateway host to build new binaries, run `agent-net setup --gateway` there to restart its services, then run a new invite line on each other machine. On a machine that already joined, the line updates the binary and the integrations, restarts the daemon, and skips the join.
 
-6. Add the tools to Claude Code for all sessions:
+## 4. Check it
 
-   ```
-   claude mcp add -s user agent-net -- $HOME/.local/bin/agent-net mcp
-   ```
+Start a Pi session on one machine and a Claude Code session on another. Ask one to use `agent_list`, then message the other. On either machine, `agent-net messages` should show the request as `replied` and the answer as `delivered`.
 
-7. Add the extension to Pi:
+## Remove a machine
 
-   ```
-   mkdir -p ~/.pi/agent/extensions
-   scp VM:code/niparis/a2a-ocs/plugins/pi/agent-net.ts ~/.pi/agent/extensions/
-   ```
+```
+agent-net uninstall          # services, Claude MCP entry, Pi extension, guidance blocks
+agent-net uninstall --purge  # also ~/.config/agent-net and the daemon state
+```
 
-8. Add the guidance text. It is the last section of the VM's files:
+The binary and the gateway data are kept.
 
-   ```
-   ssh VM "sed -n '/^## agent-net/,\$p' ~/.claude/CLAUDE.md" >> ~/.claude/CLAUDE.md
-   ssh VM "sed -n '/^## agent-net/,\$p' ~/.pi/agent/AGENTS.md" >> ~/.pi/agent/AGENTS.md
-   ```
+## Options and tests
 
-## Part 3: Test across the two machines
-
-1. Start a Pi session on the VM: `pi --model gpt-6-astra`.
-2. Start a new Claude Code session on the Mac. Ask it: "Use agent_list, then ask the Pi session on research which model it runs."
-3. On either machine, run `agent-net messages`. The request should be `replied` and the answer `delivered`.
+- `agent-net setup --no-service` (or `AGENT_NET_NO_SERVICE=1`, which the install script passes through) writes no service files and starts nothing.
+- `agent-net invite --host H --port P --data DIR` overrides the address, port and gateway data dir. By default the host is the IPv4 address of the interface with the default route.
+- `agent-net enroll` still prints the raw join string. Use it with `agent-net setup --join '<string>'` when you already have the binary.
+- Service logs: `journalctl --user -u agent-net-daemon` on Linux, `~/Library/Logs/agent-net-daemon.log` on macOS.
 
 ## Known limits
 
-- Sessions that were already open before the daemon started can receive messages, but they can send only after a restart.
-- The join string contains a fixed IP address. If the VM's LAN IP changes, join the Mac again with a new code, or use the Tailscale IP, which does not change.
-- The macOS daemon builds and has its own caller check (`ps` and `LOCAL_PEERPID`), but it has not been run on a real Mac yet.
+- A machine keeps the gateway address it joined with (in `node.json`). If the gateway's address changes, delete `~/.config/agent-net/node.json` on that machine and paste a new invite line. Use the Tailscale line if you want an address that does not change.
+- The macOS path (launchd agent, `curl --pinnedpubkey` with the system curl) has not been run on a real Mac yet. Linux is tested end to end, including a clean Debian container.
+- If the download fails, `curl ... | sh` still exits 0 (the shell gets an empty script). Read the `curl:` error above.
