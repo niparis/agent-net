@@ -117,3 +117,19 @@ So when a session is blocked while working on an agent-net request, whether by t
 The asking session relays it to its user in plain words. The TUI and the phone show every open blocked request in a "needs you" list across machines. Each entry has the approval text ready and a key to jump to the session, and the phone sends a push notification. If Claude Code channels turn out to carry the user's authority, the TUI and the phone send the approval text into the blocked session as the owner. That research is pending. Until then, the user types the text in that session.
 
 The blocked reply is the same mechanism as W6 and W10 (a worker hands back with status `blocked`), applied to every request.
+
+#### W15, research result: permission relay through a Claude Code channel
+
+The Claude Code channels docs (channels.md, channels-reference.md) describe a two-way channel that declares `claude/channel/permission`. It receives each tool-use permission prompt in parallel and can answer it: "you can answer in the terminal or on your phone, and Claude Code applies whichever answer arrives first". The docs warn: "Anyone who can reply through the channel can approve or deny tool use in your session, so only allowlist senders you trust with that authority."
+
+Plan:
+
+- **Relay.** agent-net's MCP server becomes a two-way channel with permission relay. Each prompt is sent to the gateway as a "needs you" entry. The owner answers allow or deny from the TUI or the phone. Only an owner client may answer, so the daemon's owner-only gate is the sender allowlist the docs ask for.
+- **Auto mode.** No dialog opens in auto mode, so nothing is relayed there. Auto mode blocks come back as the W15 `blocked` reply.
+- **What the channel carries.** Channel text is shown to the model as a `<channel>` tag. The docs do not make it the user's instruction. The channel carries approvals and notices, not owner authority for requests.
+- **Limits.**
+  - Channels are a research preview, and a session must be started with the channel named.
+  - A server that is not on Anthropic's allowlist needs `--dangerously-load-development-channels server:agent-net`, which is ignored with `-p`. Headless Claude workers therefore keep the `blocked` reply.
+  - Channels need a claude.ai or Console login.
+  - Changing how Claude is started is the owner's choice. Setup asks, and never does it silently.
+- **To check.** Does Claude Code write a "waiting for approval" status (for example `awaiting_approval`) to `~/.claude/sessions/<pid>.json`? If it does, the daemon flags waiting sessions in the "needs you" list even without a channel.
