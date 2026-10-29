@@ -40,7 +40,7 @@ The script downloads the binary to `~/.local/bin/agent-net` and runs `agent-net 
 
 ```
 join               ok (node n_...)
-daemon service     ok
+daemon service     ok (restarted)
 claude code        ok
 pi extension       ok
 claude guidance    updated

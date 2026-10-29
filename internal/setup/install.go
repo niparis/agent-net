@@ -49,7 +49,7 @@ func (r *runner) installSystemd(s Service) (string, error) {
 			r.hint("hint: to keep the services running when you are logged out, run: sudo loginctl enable-linger %s", currentUser())
 		}
 	}
-	return fileResult(changed, existed), nil
+	return serviceResult(changed, existed), nil
 }
 
 func (r *runner) installLaunchd(s Service) (string, error) {
@@ -67,7 +67,7 @@ func (r *runner) installLaunchd(s Service) (string, error) {
 	for i := 0; i < 3; i++ {
 		// bootout can still be finishing; retry bootstrap briefly.
 		if out, err = runCmd("", "launchctl", "bootstrap", domain, plist); err == nil {
-			return fileResult(changed, existed), nil
+			return serviceResult(changed, existed), nil
 		}
 		time.Sleep(time.Second)
 	}
@@ -105,4 +105,16 @@ func (r *runner) removeService(s Service) (string, error) {
 		return "ok (removed)", nil
 	}
 	return "skipped (no service support)", nil
+}
+
+// serviceResult describes a service step. Both platforms always restart the
+// service, so the text says what happened to the file and that it restarted.
+func serviceResult(changed, existed bool) string {
+	switch {
+	case !changed:
+		return "ok (restarted)"
+	case existed:
+		return "updated (restarted)"
+	}
+	return "ok (installed, started)"
 }
