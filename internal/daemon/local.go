@@ -203,7 +203,11 @@ func (lc *localConn) run(ctx context.Context) {
 		lc.d.wg.Add(1)
 		go func() {
 			defer lc.d.wg.Done()
-			cctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+			timeout := 40 * time.Second
+			if strings.HasPrefix(req.Method, "mcp_") {
+				timeout = protocol.MCPMaxTimeout + time.Minute // a tool call may run as long as its server allows
+			}
+			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			res, err := lc.dispatch(cctx, req.Method, req.Params)
 			lc.respond(req.ID, res, err)
@@ -415,7 +419,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	lc.mu.Unlock()
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
 		"nodes": true, "restart": true}
-	if client == "cli" && !readOnly[method] {
+	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
 	// Sender identity is never taken from params: the bound session is used.
@@ -537,6 +541,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, errors.New("message_status needs message_id")
 		}
 		return d.call(ctx, "query.message", p)
+	}
+	if res, ok, err := lc.dispatchMCP(ctx, client, method, raw); ok {
+		return res, err
 	}
 	return nil, fmt.Errorf("unknown method %q", method)
 }

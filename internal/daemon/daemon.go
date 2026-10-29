@@ -78,6 +78,8 @@ type Config struct {
 	// Restart restarts the daemon process after an upgrade. Default: the
 	// service manager, or re-exec when there is none (see RestartSelf).
 	Restart func()
+	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
+	MCPBackoffMin, MCPBackoffMax time.Duration
 }
 
 type localSession struct {
@@ -108,6 +110,7 @@ type Daemon struct {
 	wg      sync.WaitGroup
 	cancel  context.CancelFunc
 	ln      *localServer
+	mcp     *mcpHost
 
 	upg upgradeState
 
@@ -149,6 +152,7 @@ func New(cfg Config) (*Daemon, error) {
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
+	d.mcp = newMCPHost(d)
 	if len(cfg.CAPEM) > 0 {
 		c, err := PinnedClient(cfg.CAPEM)
 		if err != nil {
@@ -168,6 +172,7 @@ func New(cfg Config) (*Daemon, error) {
 // the background.
 func (d *Daemon) Start(ctx context.Context) error {
 	ctx, d.cancel = context.WithCancel(ctx)
+	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)
 	if err != nil {
 		d.cancel()
@@ -195,6 +200,7 @@ func (d *Daemon) Stop() {
 	if d.ln != nil {
 		d.ln.close()
 	}
+	d.mcp.stop()
 	d.wg.Wait()
 	d.st.close()
 }
