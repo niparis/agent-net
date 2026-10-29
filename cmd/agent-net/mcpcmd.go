@@ -21,6 +21,7 @@ const mcpUsage = `usage: agent-net mcp [subcommand]
   add NAME --url URL [flags]    register a remote server
   list                          list registered servers
   test NAME                     connect to a server now and list its tools
+  call NAME TOOL [JSON]         call one tool with JSON arguments (for checks)
   remove NAME                   remove a server
   enable NAME | disable NAME    turn a server on or off
 
@@ -47,6 +48,8 @@ func cmdMCP(ctx context.Context, args []string) error {
 		return mcpList(ctx, args[1:])
 	case "test":
 		return mcpTest(ctx, args[1:])
+	case "call":
+		return mcpCallTool(ctx, args[1:])
 	case "remove", "rm":
 		return mcpRemove(ctx, args[1:])
 	case "enable":
@@ -313,5 +316,48 @@ func mcpEnable(ctx context.Context, args []string, enabled bool) error {
 		return err
 	}
 	fmt.Printf("%sd %s. This applies to every agent on every machine.\n", sub, name)
+	return nil
+}
+
+func mcpCallTool(ctx context.Context, args []string) error {
+	if len(args) < 2 || len(args) > 3 {
+		return errors.New("usage: agent-net mcp call NAME TOOL [JSON-ARGUMENTS]")
+	}
+	call := protocol.MCPCall{Server: args[0], Tool: args[1]}
+	if len(args) == 3 {
+		if !json.Valid([]byte(args[2])) {
+			return errors.New("the arguments are not valid JSON")
+		}
+		call.Arguments = json.RawMessage(args[2])
+	}
+	cl, err := dialCLI(ctx)
+	if err != nil {
+		return err
+	}
+	defer cl.Close()
+	raw, err := cl.Call(ctx, "mcp_call", call)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		IsError bool `json:"isError"`
+	}
+	if err := json.Unmarshal(raw, &r); err != nil {
+		return err
+	}
+	for _, c := range r.Content {
+		if c.Type == "text" {
+			fmt.Println(c.Text)
+		} else {
+			fmt.Printf("[%s content]\n", c.Type)
+		}
+	}
+	if r.IsError {
+		return errors.New("the tool reported an error")
+	}
 	return nil
 }
