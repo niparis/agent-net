@@ -13,6 +13,14 @@
 # `agent-net upgrade` upgrades itself when it reconnects (C), a bad dist binary
 # is tried once (D), a rollback is held until a newer release (B), and the
 # opt-outs (E env, F flag, G dev build) do nothing.
+#
+# The agent files are tested too. $V1 is built with older embedded Pi and
+# OpenCode plugin files and an older guidance text (go build -overlay), and the
+# machines have the harness folders. After each way a new binary starts on a
+# node (pushed upgrade B, catch-up C, manual copy E and F), the node's Pi
+# extension, OpenCode plugin and guidance block must hold the new content.
+# F has its Pi extension symlinked to a "dev checkout": it must stay alone. The
+# gateway host has no harness folders: nothing may be created there.
 set -u
 
 cd "$(dirname "$0")/.."
@@ -52,11 +60,25 @@ wait_for() { # wait_for DESCRIPTION SECONDS COMMAND...
 # ---- fake releases ----
 say "build $V1, $V2 and $V3"
 REL="$T/releases"
+# $V1 embeds old agent files: go build -overlay swaps the embedded sources.
+mkdir -p "$T/old"
+echo "// old pi extension" > "$T/old/pi.ts"
+echo "// old opencode plugin" > "$T/old/opencode.ts"
+printf '## agent-net: OLD GUIDANCE\n\nold text {{reply}}\n' > "$T/old/guidance.md"
+cat > "$T/old/overlay.json" <<EOF2
+{"Replace": {
+  "$ROOT/plugins/pi/agent-net.ts": "$T/old/pi.ts",
+  "$ROOT/plugins/opencode/agent-net.ts": "$T/old/opencode.ts",
+  "$ROOT/internal/guidance/guidance.md": "$T/old/guidance.md"
+}}
+EOF2
 for v in $V1 $V2 $V3; do
   mkdir -p "$REL/download/$v"
+  OVERLAY=()
+  if [ "$v" = "$V1" ]; then OVERLAY=(-overlay "$T/old/overlay.json"); fi
   for os in linux darwin; do
     for arch in amd64 arm64; do
-      CGO_ENABLED=0 GOOS=$os GOARCH=$arch "$GO" build -trimpath -ldflags "-s -w -X main.version=$v" \
+      CGO_ENABLED=0 GOOS=$os GOARCH=$arch "$GO" build -trimpath "${OVERLAY[@]}" -ldflags "-s -w -X main.version=$v" \
         -o "$REL/download/$v/agent-net-$os-$arch" ./cmd/agent-net || exit 1
     done
   done
@@ -94,6 +116,29 @@ wait_for "release server" 10 curl -sf "$RELEASE_URL/LATEST"
 GP=$(free_port)
 for m in gw b c d e f g; do mkdir -p "$T/$m/home" "$T/$m/bin" "$T/$m/claude-sessions"; done
 mkdir -p "$T/gw/dist"
+# b to f have all three harness folders and a CLAUDE.md of their own. The
+# gateway host and G have none. F's Pi extension is a symlink to a dev checkout.
+for m in b c d e f; do
+  mkdir -p "$T/$m/home/.pi/agent/extensions" "$T/$m/home/.config/opencode/plugins" "$T/$m/home/.claude"
+  printf '# my notes\n' > "$T/$m/home/.claude/CLAUDE.md"
+done
+echo "// dev checkout" > "$T/f/devpi.ts"
+ln -s "$T/f/devpi.ts" "$T/f/home/.pi/agent/extensions/agent-net.ts"
+
+# Agent file helpers. The new content is what the repo embeds.
+PI_FILE() { echo "$T/$1/home/.pi/agent/extensions/agent-net.ts"; }
+OC_FILE() { echo "$T/$1/home/.config/opencode/plugins/agent-net.ts"; }
+NEW_GUIDE_LINE="$(grep -v '{{' internal/guidance/guidance.md | sed -n 3p)"
+agent_files_old() { # agent_files_old NAME: Pi, OpenCode and guidance hold the $V1 content
+  grep -qF "old pi extension" "$(PI_FILE "$1")" && grep -qF "old opencode plugin" "$(OC_FILE "$1")" \
+    && grep -qF "OLD GUIDANCE" "$T/$1/home/.claude/CLAUDE.md"
+}
+agent_files_new() { # agent_files_new NAME: all three hold what this repo embeds
+  cmp -s "$ROOT/plugins/pi/agent-net.ts" "$(PI_FILE "$1")" && cmp -s "$ROOT/plugins/opencode/agent-net.ts" "$(OC_FILE "$1")" \
+    && grep -qF "$NEW_GUIDE_LINE" "$T/$1/home/.claude/CLAUDE.md" && ! grep -qF "OLD GUIDANCE" "$T/$1/home/.claude/CLAUDE.md" \
+    && grep -qF "$NEW_GUIDE_LINE" "$T/$1/home/.pi/agent/AGENTS.md" && grep -qF "$NEW_GUIDE_LINE" "$T/$1/home/.config/opencode/AGENTS.md"
+}
+notes_kept() { head -1 "$T/$1/home/.claude/CLAUDE.md" | grep -qx '# my notes'; }
 
 # menv NAME: set E to the clean environment of machine NAME.
 menv() {
@@ -175,6 +220,12 @@ wait_for "daemons connected" 20 bash -c "[ \"\$(grep -c 'connected to gateway' $
 kill "${DPID[c]}" "${DPID[d]}"
 wait_for "C and D are listed offline" 20 offline c d
 
+say "agent files written by $V1 on B, C and D"
+check "B has the old Pi, OpenCode and guidance content" agent_files_old b
+check "C has the old Pi, OpenCode and guidance content" agent_files_old c
+check "D has the old Pi, OpenCode and guidance content" agent_files_old d
+check "B keeps its own notes in CLAUDE.md" notes_kept b
+
 say "agent-net nodes (from B)"
 machine b nodes
 say "agent-net status (from B)"
@@ -240,6 +291,14 @@ check "second run says already on $V2" contains "$AGAIN_OUT" "already on $V2"
 wait_version b $V2 30
 wait_version gw $V2 30
 
+say "agent files on B after the pushed upgrade"
+wait_for "B agent files are refreshed" 10 agent_files_new b
+echo "--- B daemon log"; grep -F 'agent files' "$T/b/daemon.log"
+check "(push) B has the new Pi, OpenCode and guidance content" agent_files_new b
+check "(push) B keeps its own notes in CLAUDE.md" notes_kept b
+check "(push) B logged the Pi extension update" grep -qF 'agent files: pi extension updated' "$T/b/daemon.log"
+check "(gateway host) no harness folder was created" bash -c "[ ! -e '$T/gw/home/.pi' ] && [ ! -e '$T/gw/home/.config/opencode' ] && [ ! -e '$T/gw/home/.claude' ]"
+
 # ---- (1) C was offline during the upgrade: it upgrades itself when it is back ----
 say "(1) C comes back (offline during the upgrade, runs $V1): automatic catch-up"
 check "C binary is $V1 before it starts" test "$(machine c version)" = "$V1"
@@ -255,6 +314,9 @@ check "(1) C logged the result" test "$(log_count c "auto-upgrade: $V1 -> $V2 in
 C_LINE="$(node_line c)"
 check "(1) nodes shows C on $V2" contains "$C_LINE" "$V2"
 check "(1) nodes shows C online" contains "$C_LINE" "true"
+wait_for "C agent files are refreshed" 10 agent_files_new c
+check "(1) C has the new Pi, OpenCode and guidance content" agent_files_new c
+check "(1) C keeps its own notes in CLAUDE.md" notes_kept c
 
 # ---- (2) a bad dist binary: D tries once, does not loop ----
 say "(2) the dist binary for D's platform does not match what the gateway says"
@@ -378,6 +440,35 @@ check "(4) F binary unchanged" test "$(machine f version)" = "$V1"
 check "(4) F logged nothing about upgrades" test "$(log_count f auto-upgrade)" = 0
 check "(5) G (dev build) stays dev" test "$(daemon_version g)" = "dev"
 check "(5) G logged nothing about upgrades" test "$(log_count g auto-upgrade)" = 0
+
+# ---- (6) manual binary copy: E and F get $V3 copied in, no setup ----
+say "(6) manual copy: E and F get the $V3 binary, the daemon restarts, setup is not run"
+check "(6) E has old files before" agent_files_old e
+check "(6) F's Pi extension is a symlink to the dev checkout" test -L "$(PI_FILE f)"
+kill "${DPID[e]}" "${DPID[f]}"; sleep 1
+install_v e $V3; install_v f $V3
+mark e; mark f
+bg e daemon daemon
+bg f daemon daemon --no-auto-upgrade
+wait_version e $V3 20
+wait_version f $V3 20
+wait_for "E agent files are refreshed" 10 agent_files_new e
+echo "--- E daemon log"; log_since e | grep -F 'agent files'
+echo "--- F daemon log"; log_since f | grep -F 'agent files'
+check "(6) E has the new Pi, OpenCode and guidance content" agent_files_new e
+check "(6) E logged one line per changed file" test "$(log_count e 'agent files:')" = 5
+check "(6) F's Pi extension is still the symlink" test -L "$(PI_FILE f)"
+check "(6) F's dev checkout is untouched" test "$(cat "$T/f/devpi.ts")" = "// dev checkout"
+check "(6) F's OpenCode plugin is new" cmp -s "$ROOT/plugins/opencode/agent-net.ts" "$(OC_FILE f)"
+check "(6) F's guidance is new" grep -qF "$NEW_GUIDE_LINE" "$T/f/home/.claude/CLAUDE.md"
+check "(6) F logged the symlink once" test "$(log_count f 'agent files: pi extension left alone (symlink)')" = 1
+check "(6) F keeps its own notes in CLAUDE.md" notes_kept f
+say "(6) a second start changes nothing and logs nothing"
+mark e
+kill "${DPID[e]}"; sleep 1
+bg e daemon daemon
+wait_version e $V3 20
+check "(6) E logged no agent file change on the second start" test "$(log_count e 'agent files:')" = 0
 
 # ---- dev build ----
 say "dev build refuses without --force"
