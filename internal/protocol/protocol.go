@@ -29,6 +29,15 @@ const (
 	TypeNotification = "notification"
 )
 
+// LocalProtocol is the version of the local socket protocol (daemon <-> CLI,
+// MCP and plugin clients). Clients send it in hello. It only grows when a
+// change is not backward compatible; MinLocalProtocol is the oldest client
+// the daemon still serves.
+const (
+	LocalProtocol    = 1
+	MinLocalProtocol = 0 // a client that sends no protocol counts as 0
+)
+
 // Limits enforced by the gateway.
 const (
 	MaxHop          = 8
@@ -183,7 +192,50 @@ type (
 	MsgDeliver struct {
 		Message Message `json:"message"`
 	}
+	// NodeUpgrade is the gateway's "node.upgrade" request: install this version
+	// and restart. The daemon answers with NodeUpgradeResult before it restarts.
+	NodeUpgrade struct {
+		Version string `json:"version"`
+	}
+	NodeUpgradeResult struct {
+		From       string `json:"from"`
+		To         string `json:"to"`
+		Restarting bool   `json:"restarting"`
+	}
 )
+
+// NodeView is one node as the gateway lists it.
+type NodeView struct {
+	NodeID   string `json:"node_id"`
+	Hostname string `json:"hostname"`
+	OS       string `json:"os"`
+	Version  string `json:"version"`
+	Online   bool   `json:"online"`
+	LastSeen int64  `json:"last_seen"`
+}
+
+// NodesInfo answers "query.nodes" and the admin nodes call.
+type NodesInfo struct {
+	GatewayVersion string     `json:"gateway_version"`
+	Nodes          []NodeView `json:"nodes"`
+}
+
+// Upgrade outcomes per node.
+const (
+	UpgradeOK      = "ok"
+	UpgradeFailed  = "failed"
+	UpgradeOffline = "offline"
+)
+
+// UpgradeResult is the outcome of an upgrade for one node.
+type UpgradeResult struct {
+	NodeID   string `json:"node_id"`
+	Hostname string `json:"hostname"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	Status   string `json:"status"`
+	Detail   string `json:"detail,omitempty"`
+}
 
 func randHex(n int) string {
 	b := make([]byte, n)

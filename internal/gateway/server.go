@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -32,6 +33,12 @@ type Options struct {
 	Logger       *log.Logger
 	// Now is for tests.
 	Now func() time.Time
+	// Version is the agent-net version this gateway runs (served at
+	// /install/version and listed with the nodes).
+	Version string
+	// Restart restarts the gateway process. The admin restart call uses it
+	// when there is no service manager. Nil means that call is refused.
+	Restart func()
 }
 
 type Gateway struct {
@@ -42,6 +49,9 @@ type Gateway struct {
 	fp     string
 	pin    string
 	logger *log.Logger
+	// adminToken guards /v1/admin. It is new on every start and is written
+	// to admin.json in the data dir, which only the local user can read.
+	adminToken string
 
 	mu     sync.Mutex
 	conns  map[string]*nodeConn
@@ -54,6 +64,57 @@ type nodeConn struct {
 	ws     *websocket.Conn
 	wmu    sync.Mutex
 	cancel context.CancelFunc
+
+	pmu     sync.Mutex
+	nextID  int
+	pending map[string]chan protocol.Header
+}
+
+// call sends a request to the node and waits for its result frame.
+func (nc *nodeConn) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	nc.pmu.Lock()
+	nc.nextID++
+	id := "g" + strconv.Itoa(nc.nextID)
+	ch := make(chan protocol.Header, 1)
+	if nc.pending == nil {
+		nc.pending = map[string]chan protocol.Header{}
+	}
+	nc.pending[id] = ch
+	nc.pmu.Unlock()
+	defer func() {
+		nc.pmu.Lock()
+		delete(nc.pending, id)
+		nc.pmu.Unlock()
+	}()
+	frame, err := protocol.EncodeRequest(typ, id, params)
+	if err != nil {
+		return nil, err
+	}
+	if err := nc.write(ctx, frame); err != nil {
+		return nil, errors.New("node is not connected")
+	}
+	select {
+	case h := <-ch:
+		if !h.OK {
+			return nil, errors.New(h.Error)
+		}
+		return h.Data, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// answer hands a result frame to the call that waits for it.
+func (nc *nodeConn) answer(h protocol.Header) {
+	nc.pmu.Lock()
+	ch := nc.pending[h.ID]
+	nc.pmu.Unlock()
+	if ch != nil {
+		select {
+		case ch <- h:
+		default:
+		}
+	}
 }
 
 func (nc *nodeConn) write(ctx context.Context, b []byte) error {
@@ -113,7 +174,7 @@ func New(opts Options) (*Gateway, error) {
 		return nil, err
 	}
 	return &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
-		conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}, nil
+		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}, nil
 }
 
 func (g *Gateway) Store() *Store       { return g.store }
@@ -173,6 +234,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("GET /v1/node", g.handleNode)
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
 	mux.HandleFunc("GET /install/{code}", g.handleInstallScript)
+	g.upgradeRoutes(mux)
 	return mux
 }
 
@@ -279,6 +341,8 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 		}
 		if h.Type == "result" {
 			// Results to msg.deliver only say "accepted"; delivery.update has the outcome.
+			// Results to the gateway's own calls (node.upgrade) go to their waiter.
+			nc.answer(h)
 			continue
 		}
 		data, err := g.handle(ctx, nc, h.Type, raw)
@@ -323,10 +387,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad hello")
 		}
-		if err := st.SetNodeHostname(nc.id, p.Hostname); err != nil {
+		if err := st.SetNodeHello(nc.id, p.Hostname, p.Version); err != nil {
 			return nil, err
 		}
 		return map[string]string{"node_id": nc.id}, nil
+
+	case "query.nodes":
+		return g.NodesInfo()
 
 	case "session.sync":
 		p, err := decode[protocol.SessionSync](raw)
