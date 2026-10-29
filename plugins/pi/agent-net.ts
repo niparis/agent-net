@@ -905,7 +905,7 @@ export default function (pi: ExtensionAPI) {
     Type.Object({
       project: Type.String({ description: "The name of a project from agent_project_list" }),
       task: Type.String({ description: "What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply" }),
-      harness: Type.Optional(Type.String({ description: "opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine." })),
+      harness: Type.Optional(Type.String({ description: "opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree." })),
       model: Type.Optional(Type.String({ description: "The model, as the harness names it. opencode: provider/model, from the list in agent_nodes (the only harness with a checked list). claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default." })),
       machine: Type.Optional(Type.String({ description: "The machine, only when the project is on more than one" })),
       isolation: Type.Optional(

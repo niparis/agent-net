@@ -63,11 +63,10 @@ func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err != nil {
 		return err
 	}
-	w.dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
-	if err := os.MkdirAll(w.dir, 0o700); err != nil {
+	dir := d.setWorkerDir(w)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	w.logPath = filepath.Join(w.dir, "worker.log")
 	// Per worker settings, as a JSON string for --settings. They add to the
 	// settings of the user and the project and replace nothing in them.
 	settings, _ := json.Marshal(map[string]any{
@@ -95,7 +94,7 @@ func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = w.path
 	out, err := cmd.CombinedOutput()
-	os.WriteFile(w.logPath, out, 0o600)
+	os.WriteFile(filepath.Join(dir, "worker.log"), out, 0o600)
 	if err != nil {
 		return fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
 	}

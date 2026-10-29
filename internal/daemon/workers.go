@@ -310,6 +310,9 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if !protocol.ValidIsolation(l.Isolation) {
 		return refuse("isolation can be %q or empty, not %q", protocol.IsolationWorktree, l.Isolation)
 	}
+	if l.Harness == "pi" && l.Isolation != protocol.IsolationWorktree {
+		return refuse("a Pi worker needs isolation %q: Pi has no permission prompts, so it must not work in your own checkout", protocol.IsolationWorktree)
+	}
 	if l.Owner == "" {
 		return refuse("a worker needs an owner")
 	}
@@ -407,6 +410,16 @@ func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []st
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
 	return nil
+}
+
+// setWorkerDir records the private folder and log path of w, under the lock
+// that endWorker and workerLogTail read them with, and returns the folder.
+func (d *Daemon) setWorkerDir(w *worker) string {
+	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
+	d.wmu.Lock()
+	w.dir, w.logPath = dir, filepath.Join(dir, "worker.log")
+	d.wmu.Unlock()
+	return dir
 }
 
 func (d *Daemon) workerLogTail(w *worker) string {

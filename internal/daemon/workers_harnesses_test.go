@@ -339,10 +339,10 @@ func TestPiWorkerLifecycle(t *testing.T) {
 	w.register(t, repo)
 	owner := w.ownerID()
 
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Model: "openai/gpt-4.1-nano:low", Task: "say ok"})
-	rec := readPi(t, repo)
-	if rec.Cwd != repo {
-		t.Errorf("the worker runs in %s", rec.Cwd)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Model: "openai/gpt-4.1-nano:low", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	rec := readPi(t, res.Worktree)
+	if rec.Cwd != res.Worktree {
+		t.Errorf("the worker runs in %s, not its worktree", rec.Cwd)
 	}
 	session := argValue(rec.Args, "--session-id")
 	if rec.Args[0] != "--mode" || rec.Args[1] != "rpc" || len(session) != 36 || argValue(rec.Args, "--model") != "openai/gpt-4.1-nano:low" {
@@ -376,7 +376,7 @@ func TestPiWorkerLifecycle(t *testing.T) {
 	}
 	// Another process cannot be this session.
 	lc := dialLocal(t, w.sock)
-	if _, err := lc.call("hello", map[string]any{"client": "pi", "harness": "pi", "native_id": session, "cwd": repo}); err == nil ||
+	if _, err := lc.call("hello", map[string]any{"client": "pi", "harness": "pi", "native_id": session, "cwd": res.Worktree}); err == nil ||
 		!strings.Contains(err.Error(), "belongs to a worker") {
 		t.Errorf("a foreign process connected as the worker's session: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestPiWorkerStartFails(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Model: "nope/none", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Model: "nope/none", Task: "x", Isolation: protocol.IsolationWorktree})
 	if err == nil || !strings.Contains(err.Error(), "Model not found") {
 		t.Fatalf("error: %v", err)
 	}
@@ -428,8 +428,8 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x"})
-	rec := readPi(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x", Isolation: protocol.IsolationWorktree})
+	rec := readPi(t, res.Worktree)
 	owner := w.ownerID()
 	w.d.Stop()
 	time.Sleep(200 * time.Millisecond)
@@ -447,6 +447,28 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 	w.replyTo(t, owner, sent.Message.ID)
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the process is gone", func() bool { return !alive(rec.Pid) })
+}
+
+// Pi has no permission prompts, so a Pi worker is refused unless it gets its own
+// worktree, and nothing is started.
+func TestPiWorkerNeedsAWorktree(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startPiNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x"})
+	if err == nil || !strings.Contains(err.Error(), `a Pi worker needs isolation "worktree"`) {
+		t.Fatalf("error: %v", err)
+	}
+	if w.d.workerCount() != 0 {
+		t.Errorf("%d workers left", w.d.workerCount())
+	}
+	if _, statErr := os.Stat(filepath.Join(repo, "fake-pi.json")); statErr == nil {
+		t.Error("Pi was started")
+	}
+	if len(w.logs.lines("worker.refused", "harness=pi")) == 0 {
+		t.Error("no worker.refused line")
+	}
 }
 
 // ---- Codex ----

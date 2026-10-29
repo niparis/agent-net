@@ -58,12 +58,12 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err != nil {
 		return err
 	}
-	w.dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
-	if err := os.MkdirAll(w.dir, 0o700); err != nil {
+	dir := d.setWorkerDir(w)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
 	token := protocol.NewToken()
-	tokenPath := filepath.Join(w.dir, "token")
+	tokenPath := filepath.Join(dir, "token")
 	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 // adopt connects again to the app server of a worker that survived a restart
 // of the daemon, and takes its thread back.
 func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
-	tok, err := os.ReadFile(filepath.Join(w.dir, "token"))
+	tok, err := os.ReadFile(filepath.Join(d.setWorkerDir(w), "token"))
 	if err != nil || w.ref == "" || w.nativeID == "" {
 		return errors.New("the connection details of the Codex worker are gone")
 	}

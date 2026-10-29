@@ -49,11 +49,11 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err := d.bindWorkerNative(w, native); err != nil {
 		return err
 	}
-	w.dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
-	if err := os.MkdirAll(w.dir, 0o700); err != nil {
+	dir := d.setWorkerDir(w)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	fifo := filepath.Join(w.dir, "stdin")
+	fifo := filepath.Join(dir, "stdin")
 	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		return fmt.Errorf("cannot make the stdin pipe: %w", err)
 	}

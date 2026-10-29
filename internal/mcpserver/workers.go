@@ -17,7 +17,7 @@ const workerNote = "A worker is an agent session that agent-net starts for you w
 type startIn struct {
 	Project   string `json:"project" jsonschema:"the name of a project from agent_project_list"`
 	Task      string `json:"task" jsonschema:"what the worker should do, with everything it needs to know; it cannot ask you questions except by agent_reply"`
-	Harness   string `json:"harness,omitempty" jsonschema:"opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine."`
+	Harness   string `json:"harness,omitempty" jsonschema:"opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."`
 	Model     string `json:"model,omitempty" jsonschema:"The model, as the harness names it. opencode: provider/model, from the list in agent_nodes (the only harness with a checked list). claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."`
 	Machine   string `json:"machine,omitempty" jsonschema:"the machine, only when the project is on more than one"`
 	Isolation string `json:"isolation,omitempty" jsonschema:"worktree: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. Use it for tasks that change code"`
