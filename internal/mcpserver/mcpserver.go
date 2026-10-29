@@ -83,7 +83,9 @@ func New(call Caller) *mcp.Server {
 	}
 
 	mcp.AddTool(s, tool("agent_list",
-		"List agent sessions on the network (Claude Code, Pi) with their name, function, project and status."+peerNote),
+		"List agent sessions on the network (Claude Code, Pi, OpenCode) with their name, function, project and status. "+
+			"Each agent has a repo object (root, project, remote, branch) that the machine worked out from the agent's folder. "+
+			"For the machines and the harnesses installed on them, use agent_nodes."+peerNote),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in listIn) (*mcp.CallToolResult, any, error) {
 			online := true
 			if in.OnlineOnly != nil {
@@ -91,6 +93,14 @@ func New(call Caller) *mcp.Server {
 			}
 			out, err := run(ctx, "list", map[string]any{"harness": in.Harness, "capability": in.Capability,
 				"project": in.Project, "online_only": online, "text": in.Text})
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_nodes",
+		"List the machines on the network with their agent-net version, whether they are online, and the agent harnesses installed on each "+
+			"(claude, opencode, pi, codex) with path and version. For opencode it also lists the models it can use. "+
+			"A machine with harnesses null runs an older agent-net that does not report them."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, "nodes", nil)
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_get", "Show one agent session by session_id."),

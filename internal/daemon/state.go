@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/protocol"
 	_ "modernc.org/sqlite"
 )
@@ -19,7 +20,12 @@ func openState(dir string) (*state, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	dsn := "file:" + filepath.Join(dir, "daemon.db") + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	path := filepath.Join(dir, "daemon.db")
+	// Private from the start; SQLite gives -wal and -shm the mode of this file.
+	if err := dbfile.Create(path); err != nil {
+		return nil, err
+	}
+	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
@@ -29,6 +35,11 @@ func openState(dir string) (*state, error) {
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)`)
 	if err != nil {
+		db.Close()
+		return nil, err
+	}
+	// Fix files that an older version made with the default mode.
+	if err := dbfile.Secure(path); err != nil {
 		db.Close()
 		return nil, err
 	}

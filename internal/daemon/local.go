@@ -344,7 +344,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
 			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: filepath.Base(p.Cwd),
-			Status: status, Delivery: "plugin"}}
+			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd)}}
 		k := key(p.Client, p.NativeID)
 		d.mu.Lock()
 		old := d.sessions[k]
@@ -418,7 +418,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
-		"nodes": true, "restart": true}
+		"nodes": true, "restart": true, "projects": true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
@@ -444,6 +444,11 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		}
 		d.mu.Lock()
 		ls.info.Status = p.Status
+		cwd := ls.info.Cwd
+		d.mu.Unlock()
+		repo := d.repo.Refresh(cwd)
+		d.mu.Lock()
+		ls.info.Repo = repo
 		d.mu.Unlock()
 		d.pushSession(ls)
 		return nil, nil
@@ -466,6 +471,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, errors.New("bad list params")
 		}
 		return d.call(ctx, "query.agents", p)
+
+	case "projects":
+		var p protocol.QueryProjects
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad projects params")
+		}
+		return d.call(ctx, "query.projects", p)
 
 	case "get":
 		var p protocol.QueryAgent

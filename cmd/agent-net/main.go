@@ -43,7 +43,9 @@ const usage = `usage: agent-net <command>
              remove, enable, disable) manages the MCP server registry
   status     show the daemon's state and local sessions
   list       list agents on the network
-  nodes      list machines with their agent-net version
+  nodes      list machines with their agent-net version and installed harnesses
+  projects   list known projects: where they live and which harnesses ran there
+  events     show the gateway's events table (run on the gateway machine)
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
   version    print the version of this binary
@@ -87,6 +89,10 @@ func main() {
 		err = cmdList(ctx, args)
 	case "nodes":
 		err = cmdNodes(ctx, args)
+	case "projects":
+		err = cmdProjects(ctx, args)
+	case "events":
+		err = cmdEvents(ctx, args)
 	case "upgrade":
 		err = cmdUpgrade(ctx, args)
 	case "messages":
@@ -119,16 +125,24 @@ func cmdGateway(ctx context.Context, args []string) error {
 	data := fs.String("data", defaultGatewayData(), "data directory")
 	sans := fs.String("san", "", "extra host names or IPs for the TLS certificate, comma separated")
 	dist := fs.String("dist", setup.DefaultDist(), "directory with the agent-net-{os}-{arch} binaries served at /install/bin")
+	keep := gateway.DefaultRetention()
+	fs.DurationVar(&keep.Messages, "keep-messages", keep.Messages, "delete message bodies and delivery records older than this (0 keeps them for ever)")
+	fs.DurationVar(&keep.Events, "keep-events", keep.Events, "delete events older than this (0 keeps them for ever)")
+	fs.DurationVar(&keep.Sessions, "keep-sessions", keep.Sessions, "delete offline sessions not seen for this long (0 keeps them for ever)")
 	fs.Parse(args)
+	if keep.Messages < 0 || keep.Events < 0 || keep.Sessions < 0 {
+		return errors.New("the --keep-* periods must not be negative")
+	}
 	var extra []string
 	for _, s := range strings.Split(*sans, ",") {
 		if s = strings.TrimSpace(s); s != "" {
 			extra = append(extra, s)
 		}
 	}
-	logger := log.New(os.Stderr, "gateway: ", log.LstdFlags)
+	// Every log line carries its own ts=, so the logger adds nothing.
+	logger := log.New(os.Stderr, "", 0)
 	gw, err := gateway.New(gateway.Options{DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger,
-		Version: version, Restart: restartGateway})
+		Version: version, Restart: restartGateway, Retention: keep})
 	if err != nil {
 		return err
 	}
@@ -137,6 +151,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 		return err
 	}
 	go gw.RunExpiry(ctx)
+	go gw.RunRetention(ctx)
 	srv := &http.Server{Addr: *listen, Handler: gw.Handler(), TLSConfig: gw.TLSConfig()}
 	go func() {
 		<-ctx.Done()
@@ -314,6 +329,7 @@ func cmdList(ctx context.Context, args []string) error {
 	all := fs.Bool("all", false, "include offline agents")
 	harness := fs.String("harness", "", "filter by harness")
 	text := fs.String("text", "", "free-text filter")
+	wide := fs.Bool("wide", false, "also show branch, remote, folder and node")
 	asJSON := fs.Bool("json", false, "print JSON")
 	fs.Parse(args)
 	cl, err := dialCLI(ctx)
@@ -335,13 +351,7 @@ func cmdList(ctx context.Context, args []string) error {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tSTATUS\tONLINE\tFUNCTION")
-	for _, a := range r.Agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%v\t%s\n", a.SessionID, a.Profile.Name, a.Harness, a.Hostname,
-			a.Status, a.Online, a.Profile.Function)
-	}
-	return tw.Flush()
+	return printAgents(os.Stdout, r.Agents, *wide)
 }
 
 func cmdMessages(ctx context.Context, args []string) error {

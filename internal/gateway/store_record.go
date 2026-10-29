@@ -1,0 +1,303 @@
+package gateway
+
+import (
+	"math"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// ---- projects ----
+
+// Projects lists the project folders of the stored sessions, one row per
+// machine and folder. The folder is the repository root, or the session's
+// working folder when it is not in a repository. Sessions from daemons that
+// send no repository info are grouped by working folder and named after it.
+// name, when set, keeps only projects with that name (case-insensitive).
+func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
+	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
+		s.repo_root, s.repo_project, s.repo_remote
+		FROM sessions s JOIN nodes n ON n.id = s.node_id ORDER BY s.last_seen DESC, s.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type key struct{ node, path string }
+	byKey := map[key]*protocol.ProjectView{}
+	harness := map[key]map[string]bool{}
+	var order []key
+	for rows.Next() {
+		var node, host, h, cwd, root, project, remote string
+		var online int
+		var seen int64
+		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote); err != nil {
+			return nil, err
+		}
+		path := root
+		if path == "" {
+			path = cwd
+		}
+		if path == "" {
+			continue
+		}
+		if project == "" {
+			project = filepath.Base(path)
+		}
+		if name != "" && !strings.EqualFold(project, name) {
+			continue
+		}
+		k := key{node, path}
+		p := byKey[k]
+		if p == nil {
+			// Rows come newest first, so the first one has the newest remote.
+			p = &protocol.ProjectView{Name: project, NodeID: node, Hostname: host, Path: path, Remote: remote,
+				LastSeen: seen / int64(time.Second)}
+			byKey[k] = p
+			harness[k] = map[string]bool{}
+			order = append(order, k)
+		}
+		if p.Remote == "" {
+			p.Remote = remote
+		}
+		p.Sessions++
+		if online == 1 {
+			p.Online++
+		}
+		harness[k][h] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]protocol.ProjectView, 0, len(order))
+	for _, k := range order {
+		p := byKey[k]
+		for h := range harness[k] {
+			p.Harnesses = append(p.Harnesses, h)
+		}
+		sort.Strings(p.Harnesses)
+		out = append(out, *p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if !strings.EqualFold(a.Name, b.Name) {
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		}
+		if a.Hostname != b.Hostname {
+			return a.Hostname < b.Hostname
+		}
+		return a.Path < b.Path
+	})
+	return out, nil
+}
+
+// ---- events ----
+
+// EventFilter selects events. Empty fields match everything.
+type EventFilter struct {
+	// Node is a node ID or a host name. It matches events of the node, of its
+	// sessions and of messages to or from them.
+	Node string
+	// Session matches events of the session and of messages to or from it.
+	Session string
+	// Kind matches exactly, or as a prefix up to a dot: "msg" matches
+	// "msg.stored" and "msg.failed".
+	Kind string
+	// Since keeps events at or after this time.
+	Since time.Time
+	// AfterID keeps events with a larger ID. Results are then oldest first and
+	// the first Limit are returned (this is what follow mode uses).
+	AfterID int64
+	// Limit is the number of events. Default 100, at most 1000. Without
+	// AfterID the newest Limit events are returned.
+	Limit int
+}
+
+// QueryEvents returns audit records, oldest first.
+func (s *Store) QueryEvents(f EventFilter) ([]protocol.Event, error) {
+	if f.Limit <= 0 {
+		f.Limit = 100
+	}
+	if f.Limit > 1000 {
+		f.Limit = 1000
+	}
+	where := []string{"1=1"}
+	var args []any
+	if f.Node != "" {
+		ids, err := s.nodeIDs(f.Node)
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 0 {
+			return []protocol.Event{}, nil
+		}
+		in := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+		var a []any
+		for _, id := range ids {
+			a = append(a, id)
+		}
+		clause := `(e.node_id IN (` + in + `)
+			OR e.session_id IN (SELECT id FROM sessions WHERE node_id IN (` + in + `))
+			OR e.message_id IN (SELECT m.id FROM messages m WHERE
+				m.sender IN (SELECT id FROM sessions WHERE node_id IN (` + in + `))
+				OR m.recipient IN (SELECT id FROM sessions WHERE node_id IN (` + in + `))))`
+		where = append(where, clause)
+		for i := 0; i < 4; i++ {
+			args = append(args, a...)
+		}
+	}
+	if f.Session != "" {
+		where = append(where, `(e.session_id = ? OR e.message_id IN (SELECT id FROM messages WHERE sender = ? OR recipient = ?))`)
+		args = append(args, f.Session, f.Session, f.Session)
+	}
+	if f.Kind != "" {
+		where = append(where, `(e.kind = ? OR substr(e.kind, 1, ?) = ?)`)
+		args = append(args, f.Kind, len(f.Kind)+1, f.Kind+".")
+	}
+	if !f.Since.IsZero() {
+		// UnixNano overflows outside the years 1678 to 2262.
+		ns := f.Since.UnixNano()
+		switch {
+		case f.Since.Year() > 2200:
+			ns = math.MaxInt64
+		case f.Since.Year() < 1700:
+			ns = 0
+		}
+		where = append(where, `e.at >= ?`)
+		args = append(args, ns)
+	}
+	order := "DESC"
+	if f.AfterID > 0 {
+		where = append(where, `e.id > ?`)
+		args = append(args, f.AfterID)
+		order = "ASC"
+	}
+	args = append(args, f.Limit)
+	rows, err := s.db.Query(`SELECT e.id, e.at, e.kind, e.node_id, COALESCE(n.hostname,''), e.session_id, e.message_id, e.detail
+		FROM events e LEFT JOIN nodes n ON n.id = e.node_id
+		WHERE `+strings.Join(where, " AND ")+` ORDER BY e.id `+order+` LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.Event{}
+	for rows.Next() {
+		var e protocol.Event
+		var at int64
+		if err := rows.Scan(&e.ID, &at, &e.Kind, &e.NodeID, &e.Hostname, &e.SessionID, &e.MessageID, &e.Detail); err != nil {
+			return nil, err
+		}
+		e.Time = time.Unix(0, at).UTC()
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if order == "DESC" {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+	}
+	return out, nil
+}
+
+// nodeIDs resolves a node ID or host name to node IDs.
+func (s *Store) nodeIDs(idOrHost string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT id FROM nodes WHERE id = ? OR hostname = ?`, idOrHost, idOrHost)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// ---- retention ----
+
+// Default retention periods. A period of 0 keeps the data for ever.
+const (
+	DefaultKeepMessages = 30 * 24 * time.Hour
+	DefaultKeepEvents   = 90 * 24 * time.Hour
+	DefaultKeepSessions = 30 * 24 * time.Hour
+)
+
+// Retention says how long the gateway keeps data. A zero period keeps it for ever.
+type Retention struct {
+	// Messages covers message rows (with their bodies) and delivery rows.
+	Messages time.Duration
+	// Events covers the audit events.
+	Events time.Duration
+	// Sessions covers sessions that are offline: they go when they were last
+	// seen longer ago than this.
+	Sessions time.Duration
+}
+
+// DefaultRetention is what `agent-net gateway` uses.
+func DefaultRetention() Retention {
+	return Retention{Messages: DefaultKeepMessages, Events: DefaultKeepEvents, Sessions: DefaultKeepSessions}
+}
+
+// PruneResult counts the rows a Prune deleted.
+type PruneResult struct {
+	Messages, Deliveries, Events, Sessions int
+}
+
+func (r PruneResult) Any() bool {
+	return r.Messages+r.Deliveries+r.Events+r.Sessions > 0
+}
+
+// Prune deletes data older than the retention periods. It records a
+// "retention" event when it deleted anything.
+func (s *Store) Prune(r Retention) (PruneResult, error) {
+	var res PruneResult
+	now := s.now()
+	del := func(dst *int, query string, args ...any) error {
+		out, err := s.db.Exec(query, args...)
+		if err != nil {
+			return err
+		}
+		n, _ := out.RowsAffected()
+		*dst += int(n)
+		return nil
+	}
+	if r.Messages > 0 {
+		cut := now.Add(-r.Messages).UnixNano()
+		if err := del(&res.Deliveries, `DELETE FROM deliveries WHERE at < ? OR message_id IN (SELECT id FROM messages WHERE created_at < ?)`, cut, cut); err != nil {
+			return res, err
+		}
+		if err := del(&res.Messages, `DELETE FROM messages WHERE created_at < ?`, cut); err != nil {
+			return res, err
+		}
+	}
+	if r.Sessions > 0 {
+		cut := now.Add(-r.Sessions).UnixNano()
+		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE online = 0 AND last_seen < ?)`, cut); err != nil {
+			return res, err
+		}
+		if err := del(&res.Sessions, `DELETE FROM sessions WHERE online = 0 AND last_seen < ?`, cut); err != nil {
+			return res, err
+		}
+	}
+	if r.Events > 0 {
+		if err := del(&res.Events, `DELETE FROM events WHERE at < ?`, now.Add(-r.Events).UnixNano()); err != nil {
+			return res, err
+		}
+	}
+	if res.Any() {
+		detail := strings.TrimPrefix(pairs("messages", res.Messages, "deliveries", res.Deliveries,
+			"events", res.Events, "sessions", res.Sessions), " ")
+		s.Event("retention", "", "", "", detail)
+		s.logf("retention", "messages", res.Messages, "deliveries", res.Deliveries,
+			"events", res.Events, "sessions", res.Sessions)
+	}
+	return res, nil
+}

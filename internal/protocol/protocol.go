@@ -76,6 +76,20 @@ type SessionInfo struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"` // idle | busy | shell | unknown
 	Delivery  string `json:"delivery"`
+	// Repo is worked out by the daemon from Cwd. It is empty from older daemons.
+	Repo RepoInfo `json:"repo"`
+}
+
+// RepoInfo says which project a session works in. The daemon fills it from the
+// session's folder with source control commands.
+type RepoInfo struct {
+	// Root is the repository root, or "" when the folder is not in a repository.
+	Root string `json:"root"`
+	// Project is the base name of Root, or of the folder when there is no repository.
+	Project string `json:"project"`
+	// Remote is the origin URL with credentials removed.
+	Remote string `json:"remote"`
+	Branch string `json:"branch"`
 }
 
 type Profile struct {
@@ -97,6 +111,8 @@ type AgentView struct {
 	Online    bool    `json:"online"`
 	LastSeen  int64   `json:"last_seen"`
 	Profile   Profile `json:"profile"`
+	// Repo comes from the daemon's checks of Cwd, not from the agent.
+	Repo RepoInfo `json:"repo"`
 }
 
 // Header is shared by every gateway <-> daemon frame.
@@ -140,6 +156,13 @@ type (
 	Hello struct {
 		Version  string `json:"version"`
 		Hostname string `json:"hostname"`
+		// Harnesses is the inventory of installed harnesses. Nil (absent or
+		// null) means "not reported"; an empty list means "none installed".
+		Harnesses []HarnessInfo `json:"harnesses"`
+	}
+	// NodeHarnesses is the "node.harnesses" request: a new inventory.
+	NodeHarnesses struct {
+		Harnesses []HarnessInfo `json:"harnesses"`
 	}
 	SessionSync struct {
 		Sessions []SessionInfo `json:"sessions"`
@@ -189,6 +212,10 @@ type (
 	QueryMessage struct {
 		MessageID string `json:"message_id"`
 	}
+	QueryProjects struct {
+		// Name keeps only projects with this name (case-insensitive).
+		Name string `json:"name,omitempty"`
+	}
 	MsgDeliver struct {
 		Message Message `json:"message"`
 	}
@@ -212,6 +239,44 @@ type NodeView struct {
 	Version  string `json:"version"`
 	Online   bool   `json:"online"`
 	LastSeen int64  `json:"last_seen"`
+	// Harnesses is what the node's daemon last reported. Nil means the node
+	// never reported (an older daemon).
+	Harnesses []HarnessInfo `json:"harnesses"`
+}
+
+// HarnessInfo is one agent harness found on a machine.
+type HarnessInfo struct {
+	Name    string `json:"name"` // claude | opencode | pi | codex
+	Path    string `json:"path"`
+	Version string `json:"version"`
+	// Models lists the models the harness can use, as "provider/model". It is
+	// only filled for harnesses that have a command to list them (opencode).
+	Models []string `json:"models,omitempty"`
+}
+
+// Event is one row of the gateway's audit record.
+type Event struct {
+	ID        int64     `json:"id"`
+	Time      time.Time `json:"time"`
+	Kind      string    `json:"kind"`
+	NodeID    string    `json:"node_id,omitempty"`
+	Hostname  string    `json:"hostname,omitempty"`
+	SessionID string    `json:"session_id,omitempty"`
+	MessageID string    `json:"message_id,omitempty"`
+	Detail    string    `json:"detail,omitempty"`
+}
+
+// ProjectView is one project folder on one machine, built from stored sessions.
+type ProjectView struct {
+	Name      string   `json:"name"`
+	NodeID    string   `json:"node_id"`
+	Hostname  string   `json:"hostname"`
+	Path      string   `json:"path"` // the repository root, or the folder when there is none
+	Remote    string   `json:"remote"`
+	Harnesses []string `json:"harnesses"` // which harnesses have run there
+	Sessions  int      `json:"sessions"`  // sessions known there, online or not
+	Online    int      `json:"online"`
+	LastSeen  int64    `json:"last_seen"`
 }
 
 // NodesInfo answers "query.nodes" and the admin nodes call.

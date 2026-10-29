@@ -57,7 +57,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	want := "agent_announce agent_get agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_reply agent_send"
+	want := "agent_announce agent_get agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_reply agent_send"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("tools: %v", names)
 	}
@@ -106,6 +106,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_message_status", "message_status", map[string]any{"message_id": "m_1"}},
 		{"agent_get", "get", map[string]any{"session_id": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"name": "n", "function": "f"}},
+		{"agent_nodes", "nodes", map[string]any{}},
 	}
 	for _, c := range cases {
 		n := len(calls)

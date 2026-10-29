@@ -16,7 +16,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/repoinfo"
 )
 
 // Result is an adapter's report on one delivery.
@@ -89,6 +91,14 @@ type Config struct {
 	Served func(ctx context.Context) (string, error)
 	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
 	MCPBackoffMin, MCPBackoffMax time.Duration
+	// Repo finds the project of a session's folder. Default: repoinfo.New().
+	Repo *repoinfo.Resolver
+	// DetectHarnesses lists the installed harnesses. Default: harnesses.Detect
+	// with the usual install folders.
+	DetectHarnesses func(ctx context.Context) []protocol.HarnessInfo
+	// HarnessInterval is how often DetectHarnesses runs after the first time.
+	// Default: 6 hours.
+	HarnessInterval time.Duration
 }
 
 type localSession struct {
@@ -127,10 +137,23 @@ type Daemon struct {
 
 	upg upgradeState
 
+	repo *repoinfo.Resolver
+	// hmu guards the inventory of installed harnesses. hgen grows with each
+	// new inventory, so the link can tell whether hello carried the latest.
+	hmu       sync.Mutex
+	installed []protocol.HarnessInfo // nil until the first detection ends
+	hgen      int
+
 	// cmdline is replaced in tests.
 	cmdline func(pid int) string
 	// exe returns the executable path of a process; replaced in tests.
 	exe func(pid int) string
+}
+
+// defaultDetect looks for the harnesses in the usual places. Tests replace it so
+// they do not run the programs of the machine they run on.
+var defaultDetect = func(ctx context.Context) []protocol.HarnessInfo {
+	return harnesses.Detect(ctx, harnesses.Options{})
 }
 
 func New(cfg Config) (*Daemon, error) {
@@ -158,6 +181,15 @@ func New(cfg Config) (*Daemon, error) {
 	if cfg.Exe == "" {
 		cfg.Exe, _ = os.Executable()
 	}
+	if cfg.Repo == nil {
+		cfg.Repo = repoinfo.New()
+	}
+	if cfg.DetectHarnesses == nil {
+		cfg.DetectHarnesses = defaultDetect
+	}
+	if cfg.HarnessInterval == 0 {
+		cfg.HarnessInterval = 6 * time.Hour
+	}
 	st, err := openState(cfg.StateDir)
 	if err != nil {
 		return nil, err
@@ -165,6 +197,7 @@ func New(cfg Config) (*Daemon, error) {
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
+	d.repo = cfg.Repo
 	d.mcp = newMCPHost(d)
 	if len(cfg.CAPEM) > 0 {
 		c, err := PinnedClient(cfg.CAPEM)
@@ -201,6 +234,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	}
 	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
+	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
 	return nil
 }
@@ -223,6 +258,27 @@ func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...
 // ---- registry ----
 
 func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
+	// The repository commands run here, outside the lock. A session whose other
+	// fields changed gets a fresh branch; the rest use the cache.
+	d.mu.Lock()
+	before := map[string]protocol.SessionInfo{}
+	for k, ls := range d.sessions {
+		before[k] = ls.info
+	}
+	d.mu.Unlock()
+	infos = append([]protocol.SessionInfo(nil), infos...)
+	for i := range infos {
+		infos[i].Harness = harness
+		old, known := before[key(harness, infos[i].NativeID)]
+		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
+		probe := infos[i]
+		probe.Repo, probe.SessionID = protocol.RepoInfo{}, ""
+		if known && old != probe {
+			infos[i].Repo = d.repo.Refresh(infos[i].Cwd)
+		} else {
+			infos[i].Repo = d.repo.Lookup(infos[i].Cwd)
+		}
+	}
 	d.mu.Lock()
 	seen := map[string]bool{}
 	var changed []*localSession

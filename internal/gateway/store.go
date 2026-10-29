@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/protocol"
 	_ "modernc.org/sqlite"
 )
@@ -28,6 +29,9 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 type Store struct {
 	db  *sql.DB
 	now func() time.Time
+	// logf writes a structured log line; the gateway sets it. Never pass a
+	// message body to it.
+	logf func(event string, kv ...any)
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
@@ -81,10 +85,26 @@ CREATE TABLE mcp_servers (
 	added_by_harness TEXT NOT NULL DEFAULT '', added_at INTEGER NOT NULL,
 	health TEXT NOT NULL DEFAULT 'unknown', health_detail TEXT NOT NULL DEFAULT '',
 	health_at INTEGER NOT NULL DEFAULT 0, tools TEXT NOT NULL DEFAULT '[]');
+`, `
+ALTER TABLE sessions ADD COLUMN repo_root TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN repo_project TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN repo_remote TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN repo_branch TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN harnesses TEXT NOT NULL DEFAULT 'null';
+ALTER TABLE nodes ADD COLUMN harnesses_at INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX events_at ON events (at);
+CREATE INDEX events_kind ON events (kind);
+CREATE INDEX messages_created ON messages (created_at);
+CREATE INDEX deliveries_at ON deliveries (at);
+CREATE INDEX sessions_seen ON sessions (online, last_seen);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
+	// The file is private from the start; SQLite gives -wal and -shm its mode.
+	if err := dbfile.Create(path); err != nil {
+		return nil, err
+	}
 	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
@@ -92,8 +112,13 @@ func OpenStore(path string) (*Store, error) {
 	}
 	// One connection keeps writes serialized and avoids lock errors.
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, now: time.Now, buckets: map[string]*bucket{}}
+	s := &Store{db: db, now: time.Now, logf: func(string, ...any) {}, buckets: map[string]*bucket{}}
 	if err := s.migrate(); err != nil {
+		db.Close()
+		return nil, err
+	}
+	// Fix files that an older version made with the default mode.
+	if err := dbfile.Secure(path); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -246,34 +271,83 @@ func (s *Store) SetNodeHostname(nodeID, hostname string) error {
 
 // ---- sessions ----
 
+// newSession is a session the gateway saw for the first time.
+type newSession struct {
+	id   string
+	node string
+	in   protocol.SessionInfo
+}
+
+// upsertSession stores one session. created is true for a session the gateway
+// did not know.
 func (s *Store) upsertSession(q interface {
 	execer
 	QueryRow(string, ...any) *sql.Row
-}, nodeID string, in protocol.SessionInfo) (string, error) {
+}, nodeID string, in protocol.SessionInfo) (id string, created bool, err error) {
 	if in.Harness == "" || in.NativeID == "" {
-		return "", reject("session needs harness and native_id")
+		return "", false, reject("session needs harness and native_id")
 	}
 	if in.Status == "" {
 		in.Status = "unknown"
 	}
+	var known int
+	if err := q.QueryRow(`SELECT COUNT(*) FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&known); err != nil {
+		return "", false, err
+	}
 	now := s.now().UnixNano()
-	_, err := q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1)
+	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
+		repo_root, repo_project, repo_remote, repo_branch)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
-		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1`,
-		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now)
+		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
+		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
+		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch`,
+		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch)
 	if err != nil {
-		return "", err
+		return "", false, err
 	}
-	var id string
 	err = q.QueryRow(`SELECT id FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
 		nodeID, in.Harness, in.NativeID).Scan(&id)
-	return id, err
+	if err != nil {
+		return "", false, err
+	}
+	if known == 0 {
+		s.event(q, "session.new", nodeID, id, "", sessionDetail(in))
+	}
+	return id, known == 0, nil
+}
+
+func sessionDetail(in protocol.SessionInfo) string {
+	return strings.TrimPrefix(pairs("harness", in.Harness, "name", in.Name, "project", in.Repo.Project,
+		"branch", in.Repo.Branch, "cwd", in.Cwd), " ")
+}
+
+// logNewSessions writes the session.new log lines, after the transaction that
+// stored them has committed.
+func (s *Store) logNewSessions(list []newSession) {
+	for _, n := range list {
+		host := s.hostname(n.node)
+		s.logf("session.new", "session", n.id, "node", n.node, "host", host, "harness", n.in.Harness,
+			"name", n.in.Name, "pid", n.in.PID, "cwd", n.in.Cwd, "project", n.in.Repo.Project,
+			"git_root", n.in.Repo.Root, "remote", n.in.Repo.Remote, "branch", n.in.Repo.Branch)
+	}
+}
+
+func (s *Store) hostname(nodeID string) string {
+	var h string
+	s.db.QueryRow(`SELECT hostname FROM nodes WHERE id = ?`, nodeID).Scan(&h)
+	return h
 }
 
 func (s *Store) UpsertSession(nodeID string, in protocol.SessionInfo) (string, error) {
-	return s.upsertSession(s.db, nodeID, in)
+	id, created, err := s.upsertSession(s.db, nodeID, in)
+	if err == nil && created {
+		s.logNewSessions([]newSession{{id, nodeID, in}})
+	}
+	return id, err
 }
 
 // SyncSessions upserts the full set and marks the node's other sessions offline.
@@ -285,10 +359,14 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 	defer tx.Rollback()
 	out := make([]protocol.SessionInfo, 0, len(in))
 	keep := map[string]bool{}
+	var fresh []newSession
 	for _, si := range in {
-		id, err := s.upsertSession(tx, nodeID, si)
+		id, created, err := s.upsertSession(tx, nodeID, si)
 		if err != nil {
 			return nil, err
+		}
+		if created {
+			fresh = append(fresh, newSession{id, nodeID, si})
 		}
 		keep[id] = true
 		si.SessionID = id
@@ -311,11 +389,15 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 	}
 	rows.Close()
 	for _, id := range stale {
-		if _, err := tx.Exec(`UPDATE sessions SET online = 0 WHERE id = ?`, id); err != nil {
+		if _, err := tx.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ?`, s.now().UnixNano(), id); err != nil {
 			return nil, err
 		}
 	}
-	return out, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	s.logNewSessions(fresh)
+	return out, nil
 }
 
 func (s *Store) SessionNode(sessionID string) (string, error) {
@@ -328,12 +410,12 @@ func (s *Store) SessionNode(sessionID string) (string, error) {
 }
 
 func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0 WHERE id = ? AND node_id = ?`, sessionID, nodeID)
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
 	return err
 }
 
 func (s *Store) SetNodeOffline(nodeID string) error {
-	_, err := s.db.Exec(`UPDATE sessions SET online = 0 WHERE node_id = ?`, nodeID)
+	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE node_id = ? AND online = 1`, s.now().UnixNano(), nodeID)
 	return err
 }
 
@@ -362,7 +444,8 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 
 const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen,
 	COALESCE(NULLIF(p.name,''), s.name), COALESCE(p.function,''), COALESCE(p.project,''),
-	COALESCE(p.capabilities,'[]'), COALESCE(p.task,'')
+	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
+	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -371,7 +454,8 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var lastSeen int64
 	var caps string
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
-		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task)
+		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
+		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch)
 	if err != nil {
 		return a, err
 	}
@@ -410,7 +494,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		if f.Harness != "" && a.Harness != f.Harness {
 			continue
 		}
-		if f.Project != "" && !strings.EqualFold(a.Profile.Project, f.Project) {
+		if f.Project != "" && !strings.EqualFold(a.Profile.Project, f.Project) && !strings.EqualFold(a.Repo.Project, f.Project) {
 			continue
 		}
 		if f.Capability != "" {
@@ -426,7 +510,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		}
 		if text != "" {
 			hay := strings.ToLower(strings.Join(append([]string{a.Profile.Name, a.Profile.Function,
-				a.Profile.Project, a.Profile.Task, a.Cwd, a.Hostname}, a.Profile.Capabilities...), " "))
+				a.Profile.Project, a.Profile.Task, a.Cwd, a.Hostname, a.Repo.Project, a.Repo.Branch, a.Repo.Remote}, a.Profile.Capabilities...), " "))
 			if !strings.Contains(hay, text) {
 				continue
 			}
@@ -583,12 +667,52 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			return msg, false, err
 		}
 	}
-	s.event(tx, "msg.stored", "", m.From, m.ID, m.Type)
+	s.event(tx, "msg.stored", "", m.From, m.ID, strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " "))
 	if err := tx.Commit(); err != nil {
 		return msg, false, err
 	}
+	s.logMessage(m)
 	out, _, err := s.Message(m.ID)
 	return out, true, err
+}
+
+// party describes one end of a message for the log: id, name, harness, host.
+func (s *Store) party(prefix, sessionID string) []any {
+	a, ok, err := s.Agent(sessionID)
+	if err != nil || !ok {
+		return []any{prefix, sessionID}
+	}
+	return []any{prefix, sessionID, prefix + "_name", a.Profile.Name, prefix + "_harness", a.Harness, prefix + "_host", a.Hostname}
+}
+
+// logMessage writes the one line that describes a stored message. It has ids,
+// type, both ends and the size of the body, and never the body.
+func (s *Store) logMessage(m protocol.Message) {
+	kv := []any{"msg", m.ID, "conv", m.ConversationID, "type", m.Type}
+	kv = append(kv, s.party("from", m.From)...)
+	kv = append(kv, s.party("to", m.To)...)
+	kv = append(kv, "bytes", len(m.Body))
+	s.logf("msg.stored", kv...)
+}
+
+// recipientOf returns the recipient session of a message, or "".
+func (s *Store) recipientOf(id string) string {
+	var to string
+	s.db.QueryRow(`SELECT recipient FROM messages WHERE id = ?`, id).Scan(&to)
+	return to
+}
+
+// logStep writes the line for a later delivery step of a message.
+func (s *Store) logStep(event, id string, extra ...any) {
+	var conv, to, typ string
+	s.db.QueryRow(`SELECT conversation_id, recipient, type FROM messages WHERE id = ?`, id).Scan(&conv, &to, &typ)
+	kv := []any{"msg", id, "conv", conv, "type", typ, "to", to}
+	if to != "" {
+		var host string
+		s.db.QueryRow(`SELECT n.hostname FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.id = ?`, to).Scan(&host)
+		kv = append(kv, "to_host", host)
+	}
+	s.logf(event, append(kv, extra...)...)
 }
 
 // Pending returns undelivered messages for the node's online sessions, oldest first.
@@ -619,7 +743,8 @@ func (s *Store) MarkDispatched(id string) error {
 	res, err := s.db.Exec(`UPDATE messages SET state = 'dispatched' WHERE id = ? AND state = 'stored'`, id)
 	if err == nil {
 		if n, _ := res.RowsAffected(); n == 1 {
-			s.Event("msg.dispatched", "", "", id, "")
+			s.Event("msg.dispatched", "", s.recipientOf(id), id, "")
+			s.logStep("msg.dispatched", id)
 		}
 	}
 	return err
@@ -635,20 +760,51 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 	if _, err := s.db.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`, id, state, detail, now); err != nil {
 		return err
 	}
-	_, err := s.db.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
-	s.Event("msg."+state, "", "", id, detail)
+	res, err := s.db.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
+	s.Event("msg."+state, "", s.recipientOf(id), id, detail)
+	note := ""
+	if err == nil {
+		if n, _ := res.RowsAffected(); n == 0 {
+			note = "state_kept" // already replied, expired or failed
+		}
+	}
+	s.logStep("msg."+state, id, "detail", detail, "note", note)
 	return err
 }
 
 // Expire marks overdue undelivered messages expired and returns how many.
 func (s *Store) Expire() (int, error) {
-	res, err := s.db.Exec(`UPDATE messages SET state = 'expired' WHERE state IN ('stored','dispatched') AND expires_at <= ?`,
-		s.now().UnixNano())
+	now := s.now().UnixNano()
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched') AND expires_at <= ?`, now)
 	if err != nil {
 		return 0, err
 	}
-	n, _ := res.RowsAffected()
-	return int(n), nil
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, id := range ids {
+		res, err := s.db.Exec(`UPDATE messages SET state = 'expired' WHERE id = ? AND state IN ('stored','dispatched')`, id)
+		if err != nil {
+			return n, err
+		}
+		if c, _ := res.RowsAffected(); c == 1 {
+			n++
+			s.Event("msg.expired", "", s.recipientOf(id), id, "")
+			s.logStep("msg.expired", id)
+		}
+	}
+	return n, nil
 }
 
 // CanSee tells whether a message involves a session of the node.

@@ -42,12 +42,12 @@ func (g *Gateway) serveMCP(ctx context.Context, nc *nodeConn, h protocol.Header,
 	if err != nil {
 		var rj Rejection
 		if !errors.As(err, &rj) {
-			g.logger.Printf("node %s %s: %v", nc.id, h.Type, err)
+			g.logLine("error", "node", nc.id, "where", h.Type, "err", err)
 		}
 	}
 	reply, eerr := protocol.EncodeResult(h.ID, data, err)
 	if eerr != nil {
-		g.logger.Printf("encode result: %v", eerr)
+		g.logLine("error", "where", "encode result", "err", eerr)
 		return
 	}
 	nc.write(ctx, reply)
@@ -271,7 +271,7 @@ func (g *Gateway) mcpCall(ctx context.Context, p protocol.MCPCall) (any, error) 
 func (g *Gateway) sendMCPSync(ctx context.Context, nc *nodeConn) {
 	srvs, err := g.store.MCPServers()
 	if err != nil {
-		g.logger.Printf("mcp sync: %v", err)
+		g.logLine("error", "where", "mcp sync", "err", err)
 		return
 	}
 	var mine []protocol.MCPServer

@@ -43,7 +43,7 @@ func (g *Gateway) handleInstallScript(w http.ResponseWriter, r *http.Request) {
 	if codeRe.MatchString(code) {
 		var err error
 		if valid, err = g.store.EnrollCodeValid(code); err != nil {
-			g.logger.Printf("install: %v", err)
+			g.logLine("error", "where", "install", "err", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 			return
 		}

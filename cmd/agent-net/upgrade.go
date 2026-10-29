@@ -45,6 +45,7 @@ func cmdUpgrade(ctx context.Context, args []string) error {
 
 func cmdNodes(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("nodes", flag.ExitOnError)
+	wide := fs.Bool("wide", false, "also list each installed harness with its path, version and models")
 	asJSON := fs.Bool("json", false, "print JSON")
 	fs.Parse(args)
 	cl, err := dialCLI(ctx)
@@ -66,11 +67,17 @@ func cmdNodes(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("gateway  %s\n\n", orUnknown(info.GatewayVersion))
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "HOST\tNODE\tVERSION\tONLINE")
+	fmt.Fprintln(tw, "HOST\tNODE\tVERSION\tONLINE\tHARNESSES")
 	for _, n := range info.Nodes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\n", n.Hostname, n.NodeID, orUnknown(n.Version), n.Online)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\t%s\n", n.Hostname, n.NodeID, orUnknown(n.Version), n.Online, harnessSummary(n))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if *wide {
+		printHarnessDetails(os.Stdout, info.Nodes)
+	}
+	return nil
 }
 
 func orUnknown(v string) string {

@@ -177,7 +177,8 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
-	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname}); err != nil {
+	inv, gen := d.inventory()
+	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, Harnesses: inv}); err != nil {
 		return false, err
 	}
 	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: d.snapshot()})
@@ -210,6 +211,10 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.mu.Unlock()
 	d.Logf("connected to gateway")
+	if _, now := d.inventory(); now != gen {
+		// Detection ended while the handshake ran, so hello did not carry it.
+		d.publishHarnesses(rctx)
+	}
 	for _, ls := range missing {
 		d.pushSession(ls)
 	}

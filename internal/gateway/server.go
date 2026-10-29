@@ -39,6 +39,8 @@ type Options struct {
 	// Restart restarts the gateway process. The admin restart call uses it
 	// when there is no service manager. Nil means that call is refused.
 	Restart func()
+	// Retention says how long data is kept. The zero value keeps everything.
+	Retention Retention
 }
 
 type Gateway struct {
@@ -179,8 +181,10 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	return &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
-		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}, nil
+	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
+		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+	store.logf = g.logLine
+	return g, nil
 }
 
 func (g *Gateway) Store() *Store       { return g.store }
@@ -221,11 +225,30 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if n, err := g.store.Expire(); err != nil {
-				g.logger.Printf("expiry: %v", err)
-			} else if n > 0 {
-				g.logger.Printf("expired %d messages", n)
+			// Expire writes one log line per message.
+			if _, err := g.store.Expire(); err != nil {
+				g.logLine("error", "where", "expiry", "err", err)
 			}
+		}
+	}
+}
+
+// RetentionInterval is how often RunRetention deletes old data.
+const RetentionInterval = time.Hour
+
+// RunRetention deletes data older than Options.Retention, once at start and
+// then every RetentionInterval, until ctx ends.
+func (g *Gateway) RunRetention(ctx context.Context) {
+	t := time.NewTicker(RetentionInterval)
+	defer t.Stop()
+	for {
+		if _, err := g.store.Prune(g.opts.Retention); err != nil {
+			g.logLine("error", "where", "retention", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }
@@ -241,6 +264,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
 	mux.HandleFunc("GET /install/{code}", g.handleInstallScript)
 	g.upgradeRoutes(mux)
+	g.recordRoutes(mux)
 	return mux
 }
 
@@ -256,7 +280,7 @@ func (g *Gateway) handleEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	ok, err := g.store.ConsumeEnrollCode(req.Code)
 	if err != nil {
-		g.logger.Printf("enroll: %v", err)
+		g.logLine("error", "where", "enroll", "err", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
@@ -308,6 +332,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 		old.cancel()
 	}
 	g.store.Event("node.connected", nodeID, "", "", r.RemoteAddr)
+	g.logLine("node.connected", "node", nodeID, "host", g.store.hostname(nodeID), "remote", r.RemoteAddr)
 
 	g.serve(ctx, nc)
 
@@ -321,6 +346,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	}
 	g.mu.Unlock()
 	g.store.Event("node.disconnected", nodeID, "", "", "")
+	g.logLine("node.disconnected", "node", nodeID, "host", g.store.hostname(nodeID))
 }
 
 func (g *Gateway) nodeGone(nodeID string) {
@@ -331,7 +357,7 @@ func (g *Gateway) nodeGone(nodeID string) {
 	g.mu.Unlock()
 	if !live && !closed {
 		if err := g.store.SetNodeOffline(nodeID); err != nil {
-			g.logger.Printf("node offline: %v", err)
+			g.logLine("error", "where", "node offline", "err", err)
 		}
 	}
 }
@@ -362,14 +388,14 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 		if err != nil {
 			var rj Rejection
 			if !errors.As(err, &rj) {
-				g.logger.Printf("node %s %s: %v", nc.id, h.Type, err)
+				g.logLine("error", "node", nc.id, "where", h.Type, "err", err)
 			}
 			reply, eerr = protocol.EncodeResult(h.ID, nil, err)
 		} else {
 			reply, eerr = protocol.EncodeResult(h.ID, data, nil)
 		}
 		if eerr != nil {
-			g.logger.Printf("encode result: %v", eerr)
+			g.logLine("error", "where", "encode result", "err", eerr)
 			continue
 		}
 		if nc.write(ctx, reply) != nil {
@@ -402,7 +428,30 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetNodeHello(nc.id, p.Hostname, p.Version); err != nil {
 			return nil, err
 		}
+		// Older daemons send no inventory; their stored one stays as it is.
+		if _, err := st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
+			return nil, err
+		}
 		return map[string]string{"node_id": nc.id}, nil
+
+	case "node.harnesses":
+		p, err := decode[protocol.NodeHarnesses](raw)
+		if err != nil || p.Harnesses == nil {
+			return nil, reject("bad node.harnesses")
+		}
+		_, err = st.SetNodeHarnesses(nc.id, p.Harnesses)
+		return nil, err
+
+	case "query.projects":
+		p, err := decode[protocol.QueryProjects](raw)
+		if err != nil {
+			return nil, reject("bad query.projects")
+		}
+		ps, err := st.Projects(p.Name)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"projects": ps}, nil
 
 	case "query.nodes":
 		return g.NodesInfo()
@@ -462,6 +511,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		if owner != nc.id {
 			st.Event("msg.refused", nc.id, p.Sender, "", "sender session not on this node")
+			g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "to", p.Recipient, "bytes", len(p.Body),
+				"reason", "sender session not on this node")
 			return nil, reject("sender session %q does not belong to this node", p.Sender)
 		}
 		m, created, err := st.StoreMessage(p)
@@ -469,6 +520,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			var rj Rejection
 			if errors.As(err, &rj) {
 				st.Event("msg.refused", nc.id, p.Sender, "", err.Error())
+				g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "to", p.Recipient, "bytes", len(p.Body),
+					"reason", err.Error())
 			}
 			return nil, err
 		}
@@ -585,14 +638,14 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 		return
 	}
 	if err := g.store.MarkDispatched(m.ID); err != nil {
-		g.logger.Printf("mark dispatched: %v", err)
+		g.logLine("error", "where", "mark dispatched", "err", err)
 	}
 }
 
 func (g *Gateway) dispatchPending(ctx context.Context, nodeID string, includeDispatched bool) {
 	msgs, err := g.store.Pending(nodeID, includeDispatched)
 	if err != nil {
-		g.logger.Printf("pending: %v", err)
+		g.logLine("error", "where", "pending", "err", err)
 		return
 	}
 	for _, m := range msgs {

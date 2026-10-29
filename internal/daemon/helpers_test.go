@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,6 +39,36 @@ type testGateway struct {
 	addr string
 	gw   *gateway.Gateway
 	srv  *httptest.Server
+	logs *logBuf
+}
+
+// logBuf collects the gateway's log lines.
+type logBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *logBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+// lines returns the log lines that hold every given text.
+func (l *logBuf) lines(parts ...string) []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var out []string
+	for _, line := range strings.Split(l.b.String(), "\n") {
+		ok := line != ""
+		for _, p := range parts {
+			ok = ok && strings.Contains(line, p)
+		}
+		if ok {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 func startGateway(t *testing.T, dir, addr string) *testGateway {
@@ -55,7 +87,8 @@ func startGateway(t *testing.T, dir, addr string) *testGateway {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gw, err := gateway.New(gateway.Options{DataDir: dir, OfflineGrace: 200 * time.Millisecond})
+	logs := &logBuf{}
+	gw, err := gateway.New(gateway.Options{DataDir: dir, OfflineGrace: 200 * time.Millisecond, Logger: log.New(logs, "", 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +97,7 @@ func startGateway(t *testing.T, dir, addr string) *testGateway {
 	srv.Listener = ln
 	srv.TLS = gw.TLSConfig()
 	srv.StartTLS()
-	g := &testGateway{t: t, dir: dir, addr: ln.Addr().String(), gw: gw, srv: srv}
+	g := &testGateway{t: t, dir: dir, addr: ln.Addr().String(), gw: gw, srv: srv, logs: logs}
 	t.Cleanup(g.stop)
 	return g
 }
@@ -157,6 +190,9 @@ type nodeOpts struct {
 	claudeDir string
 	cmdline   string // what the fake process table says for every pid
 	exe       string // the executable path the fake process table says for every pid
+	// detect replaces the harness detection; interval is how often it runs.
+	detect   func(ctx context.Context) []protocol.HarnessInfo
+	interval time.Duration
 }
 
 func shortDir(t *testing.T) string {
@@ -188,6 +224,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	if o.adapter != nil {
 		cfg.Adapters = []Adapter{o.adapter}
 	}
+	cfg.DetectHarnesses, cfg.HarnessInterval = o.detect, o.interval
 	d, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
