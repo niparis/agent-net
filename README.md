@@ -1,39 +1,55 @@
-# agent-net
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/img/logo-dark.svg">
+    <img alt="agent-net logo" src="docs/img/logo-light.svg" width="96">
+  </picture>
+</p>
 
-Message passing between the coding agents running on your machines.
+<h1 align="center">agent-net</h1>
 
-[![CI](https://github.com/niparis/agent-net/actions/workflows/ci.yml/badge.svg)](https://github.com/niparis/agent-net/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/niparis/agent-net)](https://github.com/niparis/agent-net/releases/latest)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-[![Go version](https://img.shields.io/github/go-mod/go-version/niparis/agent-net)](go.mod)
+<p align="center">
+  <b>Let the coding agents on your machines talk to each other.</b><br>
+  Claude Code, Pi and OpenCode sessions on your laptop and your VMs find each other,<br>
+  message each other's live sessions, and get the answers back. No copy and paste.
+</p>
 
-A Claude Code session on your laptop can find a Pi session on your VM, ask it a question, and get the answer back in its own conversation. No copy and paste between windows. The message lands in the running session as a new turn, and the reply is routed back to the sender.
+<p align="center">
+  <a href="https://github.com/niparis/agent-net/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/niparis/agent-net/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/niparis/agent-net/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/niparis/agent-net"></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/license-Apache--2.0-blue"></a>
+  <a href="go.mod"><img alt="Go version" src="https://img.shields.io/github/go-mod/go-version/niparis/agent-net"></a>
+  <img alt="Platforms: Linux and macOS" src="https://img.shields.io/badge/platforms-linux%20%7C%20macos-lightgrey">
+</p>
 
-agent-net is one Go binary. It is pure Go, SQLite is built in, and it needs nothing else at runtime.
+<p align="center">
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="#what-it-looks-like">Demo</a> ·
+  <a href="docs/security.md">Security</a> ·
+  <a href="docs/README.md">Docs</a>
+</p>
+
+---
+
+- **Into live sessions.** A message arrives as a new turn in the session you already have open, and the reply finds its way back to the sender.
+- **Across machines and agents.** Claude Code, Pi and OpenCode, on Linux and macOS. Each agent uses the same seven `agent_*` tools.
+- **One binary, one line.** Pure Go with SQLite built in. One `curl` line installs the first machine, and one invite line adds each other machine.
+- **Your network only.** One-time join codes, TLS pinned to your gateway's own CA, and a check of which local session is calling.
+- **One command upgrades everything.** `agent-net upgrade` on the gateway updates every machine on the network.
 
 ## Quickstart
 
-On the first machine, which becomes the gateway:
-
-```
+```sh
+# On the first machine. It becomes the gateway.
 curl -fsSL https://niparis.github.io/agent-net/install | sh
+
+# For each other machine: run this on the gateway, then paste the line it prints there.
+agent-net invite
 ```
 
-On every other machine, run `agent-net invite` on the gateway machine, and paste the line it prints:
+Then open a new agent session and ask it: *"Use agent_list to see which other agents are online."*
 
-```
-curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://100.64.0.10:7420/install/ABCD2345' | sh
-```
-
-What the first line does depends on the machine. It prints which case it found.
-
-- **Fresh machine:** installs `~/.local/bin/agent-net` from the latest release (SHA-256 checked) and sets the machine up as the gateway.
-- **The gateway:** installs the new version and restarts the gateway and daemon services. It also keeps the binaries for Linux and macOS (amd64 and arm64) so the gateway can hand them to new machines.
-- **A machine that already joined:** updates the binary and the integrations, and skips the join.
-
-The invite line works once, for 10 minutes. It installs the binary from the gateway, joins the network, starts the daemon as a service, and adds the agent-net tools to Claude Code, Pi and OpenCode if they are installed. Every step prints `ok` or `skipped (reason)`.
-
-Then start a new Claude Code, Pi or OpenCode session. Details: [docs/setup.md](docs/setup.md). Problems (on a Mac, use the Tailscale line): [docs/troubleshooting.md](docs/troubleshooting.md). Why `curl -k --pinnedpubkey` is safe: [docs/security.md](docs/security.md).
+Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, use the Tailscale invite line: [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## How it works
 
@@ -158,7 +174,6 @@ agent-net uses MCP to give Claude Code its tools. It is not an implementation of
 - Codex adapter
 - Leaving the network: let a session opt out of being listed
 - MCP server registry: add any MCP server once, from the CLI or from an agent, and use it from every agent on every machine (in progress)
-- `agent-net upgrade`: upgrade every machine on the network with one command (in progress)
 - Shared skills registry
 
 ## Development
