@@ -170,6 +170,27 @@ Limits, to stop agents that loop: 64 KiB per message, 20 messages per minute per
 
 To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to delete its credentials too). What it changes and undoes is listed in [docs/reference.md](docs/reference.md).
 
+## Upgrade
+
+On the gateway machine:
+
+```
+agent-net upgrade            # upgrade the gateway, then every connected machine
+agent-net upgrade --check    # show the latest release and each machine's version; change nothing
+agent-net upgrade --rollback # go back to the previous version on this machine
+```
+
+`agent-net upgrade` downloads the latest release, checks its SHA-256, keeps the old binary as `agent-net.prev`, and restarts the services. Then it tells each connected machine to upgrade from the gateway, and prints one line per machine:
+
+```
+laptop   n_6d9a8f63e6a72bdf  v0.2.0 -> v0.2.1  ok
+vm       n_0123456789abcdef  v0.2.0 -> v0.2.1  ok
+```
+
+A machine that is offline is listed as `offline`; run `agent-net upgrade` on it later. Running agent sessions keep the old version until you restart them. `agent-net nodes` shows the version of every machine.
+
+Coming from v0.1.x, which has no `upgrade` command: run the Quickstart install line once on each machine. It finds the existing install and updates it. Details: [docs/upgrade.md](docs/upgrade.md).
+
 ## How it differs
 
 | | What it is | Scope |
