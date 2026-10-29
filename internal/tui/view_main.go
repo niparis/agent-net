@@ -635,7 +635,7 @@ func (m Model) sharedLine(t protocol.TreeUsage, g group, cols []column, w int) s
 		}
 		lead += c.width + 1
 	}
-	label := fmt.Sprintf("  %s service, shared by %d sessions (not split)", sanitize(t.Harness), len(t.Sessions))
+	label := fmt.Sprintf("  %s service, shared by %s (not split)", sanitize(t.Harness), plural(len(t.Sessions), "session"))
 	cpu, ram, procs := cellR(fmtPct(t.CPU), width("CPU")), cellR(fmtMem(t.RSS), width("RAM")), cellR(fmt.Sprint(t.Procs), width("PROC"))
 	if t.Samples == 0 {
 		cpu = cellR("...", width("CPU"))
@@ -644,4 +644,12 @@ func (m Model) sharedLine(t protocol.TreeUsage, g group, cols []column, w int) s
 		procs = sBad.Render(procs)
 	}
 	return clip(sDim.Render(cell(label, lead+1))+" "+cpu+" "+ram+" "+procs, w)
+}
+
+// plural writes a count and a noun: "1 session", "3 sessions".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return fmt.Sprintf("%d %s", n, noun)
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
 }

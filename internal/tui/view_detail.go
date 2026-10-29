@@ -82,7 +82,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	kv := func(label, value string) string {
 		return clip("  "+sDim.Render(cell(label, lw))+" "+sanitize(value), w)
 	}
-	title := "  " + sBold.Render(sanitize(dashIfEmpty(a.Profile.Name))) + "  " + sanitize(a.Harness)
+	title := "  " + sBold.Render(clip(sanitize(dashIfEmpty(a.Profile.Name)), 26)) + "  " + sanitize(a.Harness)
 	if a.Online {
 		title += "  " + statusStyle(a.Status).Render(statusShort(a.Status))
 	} else {
@@ -179,7 +179,7 @@ func (m Model) detailRight(a protocol.AgentView, w, n int) (string, []string) {
 	sum += "  " + procs
 	var out []string
 	if t.Shared {
-		out = append(out, sDim.Render(fmt.Sprintf("shared by %d %s sessions, not split", len(t.Sessions), sanitize(t.Harness))))
+		out = append(out, sDim.Render(fmt.Sprintf("shared by %s, not split", plural(len(t.Sessions), sanitize(t.Harness)+" session"))))
 	}
 	e := m.top[a.SessionID]
 	room := n - 1 - len(out)
