@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/gateway"
+	"github.com/niparis/agent-net/internal/gateway"
 )
 
 // InviteLine is the one-line installer for a host.

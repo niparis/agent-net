@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // NodeConfig is the content of node.json.

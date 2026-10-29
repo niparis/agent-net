@@ -10,8 +10,8 @@ import (
 	"sync"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/niparis/a2a-ocs/internal/client"
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/client"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // Caller makes one daemon call.

@@ -1,4 +1,4 @@
-module github.com/niparis/a2a-ocs
+module github.com/niparis/agent-net
 
 go 1.27
 

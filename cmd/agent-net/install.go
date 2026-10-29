@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/niparis/a2a-ocs/internal/setup"
+	"github.com/niparis/agent-net/internal/setup"
 )
 
 func cmdSetup(ctx context.Context, args []string) error {

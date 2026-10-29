@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // localServer serves the JSON-lines socket used by `agent-net mcp`, the Pi

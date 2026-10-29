@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/niparis/a2a-ocs/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/mcpserver"
 )
 
 func piHello() map[string]any {

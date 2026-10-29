@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // link is one WebSocket connection to the gateway.

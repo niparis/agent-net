@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type fakeHost struct {

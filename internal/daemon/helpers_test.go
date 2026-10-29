@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/gateway"
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func eventually(t *testing.T, what string, cond func() bool) {

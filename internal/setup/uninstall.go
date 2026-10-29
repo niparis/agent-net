@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/niparis/a2a-ocs/internal/daemon"
-	"github.com/niparis/a2a-ocs/internal/guidance"
+	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/guidance"
 )
 
 // Uninstall undoes Setup. It leaves the binary and the gateway data alone.

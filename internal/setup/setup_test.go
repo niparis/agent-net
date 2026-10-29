@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/gateway"
-	"github.com/niparis/a2a-ocs/internal/guidance"
-	"github.com/niparis/a2a-ocs/plugins/pi"
+	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/plugins/pi"
 )
 
 func TestSystemdUnit(t *testing.T) {

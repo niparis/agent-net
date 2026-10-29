@@ -17,14 +17,17 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/client"
-	"github.com/niparis/a2a-ocs/internal/daemon"
-	"github.com/niparis/a2a-ocs/internal/daemon/claude"
-	"github.com/niparis/a2a-ocs/internal/gateway"
-	"github.com/niparis/a2a-ocs/internal/mcpserver"
-	"github.com/niparis/a2a-ocs/internal/protocol"
-	"github.com/niparis/a2a-ocs/internal/setup"
+	"github.com/niparis/agent-net/internal/client"
+	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/daemon/claude"
+	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/setup"
 )
+
+// version is set at build time: -ldflags "-X main.version=v1.2.3".
+var version = "dev"
 
 const usage = `usage: agent-net <command>
 
@@ -39,6 +42,7 @@ const usage = `usage: agent-net <command>
   status     show the daemon's state and local sessions
   list       list agents on the network
   messages   list recent messages and their states
+  version    print the version of this binary
 `
 
 func main() {
@@ -73,6 +77,8 @@ func main() {
 		err = cmdList(ctx, args)
 	case "messages":
 		err = cmdMessages(ctx, args)
+	case "version", "--version":
+		fmt.Println(version)
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:

@@ -23,8 +23,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/daemon"
-	"github.com/niparis/a2a-ocs/internal/protocol"
+	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 type Config struct {

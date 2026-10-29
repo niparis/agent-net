@@ -16,11 +16,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/niparis/a2a-ocs/internal/client"
-	"github.com/niparis/a2a-ocs/internal/daemon"
-	"github.com/niparis/a2a-ocs/internal/gateway"
-	"github.com/niparis/a2a-ocs/internal/guidance"
-	"github.com/niparis/a2a-ocs/plugins/pi"
+	"github.com/niparis/agent-net/internal/client"
+	"github.com/niparis/agent-net/internal/daemon"
+	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/plugins/pi"
 )
 
 // GatewayPort is the port the gateway service listens on.
