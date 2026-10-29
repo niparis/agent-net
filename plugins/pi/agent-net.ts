@@ -63,7 +63,161 @@ function modeOf(piMode: string | undefined): "foreground" | "background" | undef
 /** The model as "provider/id", or undefined when there is none. */
 function modelName(m: { provider?: string; id?: string } | undefined): string | undefined {
   if (!m?.id) return undefined;
+  // With no model available Pi's ctx.model is { provider: "unknown", id: "unknown" }.
+  if (m.provider === "unknown" && m.id === "unknown") return undefined;
   return m.provider ? `${m.provider}/${m.id}` : m.id;
+}
+
+// ---- session_text: what happened in this session -----------------------------
+// The daemon asks for it with a `session_text` push, only when the owner asked
+// (agent-net show, the TUI). The answer goes back with `session_text_result`.
+// The daemon masks secrets and cuts the text again; this side only flattens the
+// harness's history into entries and does the paging.
+
+const TEXT_ENTRY_MAX = 2000; // characters per entry
+const TEXT_RESULT_MAX = 600; // characters of a tool result
+const TEXT_DEFAULT_LIMIT = 50;
+const TEXT_MAX_LIMIT = 200;
+
+type TextRole = "user" | "assistant" | "tool_call" | "tool_result";
+interface TextEntry {
+  cursor: string;
+  time: number;
+  role: TextRole;
+  tool?: string;
+  text: string;
+  cut?: boolean;
+}
+
+/** Cut s to max characters; `cut` says whether it was cut. */
+function cutText(s: string, max: number): { text: string; cut: boolean } {
+  const chars = Array.from(s);
+  if (chars.length <= max) return { text: s, cut: false };
+  return { text: chars.slice(0, max).join(""), cut: true };
+}
+
+function textEntry(cursor: string, time: number, role: TextRole, text: string, tool?: string): TextEntry {
+  const { text: t, cut } = cutText(text, role === "tool_result" ? TEXT_RESULT_MAX : TEXT_ENTRY_MAX);
+  return { cursor, time, role, text: t, ...(tool ? { tool } : {}), ...(cut ? { cut } : {}) };
+}
+
+/** A few words that say what a tool call does: its first text argument. */
+function summarizeArgs(args: any): string {
+  if (args == null) return "";
+  if (typeof args === "string") return args;
+  if (typeof args !== "object") return String(args);
+  for (const key of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
+    if (typeof args[key] === "string" && args[key]) return args[key].replace(/\s+/g, " ").slice(0, 300);
+  }
+  for (const key of Object.keys(args).sort()) {
+    if (typeof args[key] === "string" && args[key]) return args[key].replace(/\s+/g, " ").slice(0, 300);
+  }
+  try {
+    return JSON.stringify(args).slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
+/** Milliseconds from a number, an ISO string or a Date; 0 when unknown. */
+function toMillis(t: any): number {
+  if (typeof t === "number" && Number.isFinite(t)) return t;
+  if (typeof t === "string") {
+    const ms = Date.parse(t);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (t instanceof Date) return t.getTime();
+  if (t && typeof t === "object") {
+    for (const k of ["epochMillis", "epochMilliseconds", "ms"]) if (typeof t[k] === "number") return t[k];
+  }
+  return 0;
+}
+
+/** The text of a content that is a string or a list of { type: "text", text } blocks. */
+function blocksText(content: any): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b: any) => (b?.type === "text" && typeof b.text === "string" ? b.text : b?.type === "image" ? "[image]" : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+interface TextRequest {
+  req?: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+}
+
+/**
+ * One page of `all` (oldest first). `before` is the cursor of the first entry
+ * of a page you already have: the answer is the entries just before it.
+ * `after` is the cursor of the last entry you have: the answer is what follows.
+ */
+function pageOf(all: TextEntry[], q: TextRequest): { entries: TextEntry[]; older?: string; newer?: string } {
+  const limit = Math.min(Math.max(Math.trunc(Number(q.limit)) || TEXT_DEFAULT_LIMIT, 1), TEXT_MAX_LIMIT);
+  const last = all.length ? all[all.length - 1].cursor : undefined;
+  if (q.after) {
+    const i = all.findIndex((e) => e.cursor === q.after);
+    const from = i < 0 ? Math.max(all.length - limit, 0) : i + 1;
+    const entries = all.slice(from, from + limit);
+    return { entries, newer: entries.length ? entries[entries.length - 1].cursor : (i < 0 ? last : q.after) };
+  }
+  let end = all.length;
+  if (q.before) {
+    const i = all.findIndex((e) => e.cursor === q.before);
+    if (i < 0) return { entries: [] }; // the history changed under the cursor: nothing before it
+    end = i;
+  }
+  const start = Math.max(end - limit, 0);
+  const entries = all.slice(start, end);
+  return {
+    entries,
+    ...(start > 0 ? { older: entries[0]?.cursor } : {}),
+    ...(q.before ? {} : last ? { newer: last } : {}),
+  };
+}
+
+/** Flatten Pi's session entries (root first, as getBranch() gives them) into text entries. */
+function piTextEntries(branch: any[]): TextEntry[] {
+  const out: TextEntry[] = [];
+  for (const e of branch) {
+    const time = toMillis(e?.timestamp);
+    let n = 0;
+    const push = (role: TextRole, text: string, tool?: string) => {
+      const i = n++;
+      if (text.trim()) out.push(textEntry(`${e.id}:${i}`, time, role, text, tool));
+    };
+    if (e?.type === "custom_message") {
+      if (e.display !== false) push("user", `[${e.customType}] ${blocksText(e.content)}`);
+      continue;
+    }
+    if (e?.type !== "message") continue;
+    const m = e.message ?? {};
+    switch (m.role) {
+      case "user":
+        push("user", blocksText(m.content));
+        break;
+      case "custom": // includes the messages other agents send through agent-net
+        if (m.display !== false) push("user", blocksText(m.content));
+        break;
+      case "assistant":
+        for (const b of m.content ?? []) {
+          if (b?.type === "text") push("assistant", String(b.text ?? ""));
+          else if (b?.type === "toolCall") push("tool_call", `${b.name}: ${summarizeArgs(b.arguments)}`, String(b.name));
+        }
+        break;
+      case "toolResult":
+        push("tool_result", `${m.isError ? "error: " : ""}${blocksText(m.content)}`, m.toolName ? String(m.toolName) : undefined);
+        break;
+      case "bashExecution":
+        push("tool_call", `bash: ${m.command ?? ""}`, "bash");
+        push("tool_result", String(m.output ?? ""), "bash");
+        break;
+    }
+  }
+  return out;
 }
 
 export default function (pi: ExtensionAPI) {
@@ -77,6 +231,8 @@ export default function (pi: ExtensionAPI) {
   let mode: "foreground" | "background" | undefined;
   let model: string | undefined;
   let hello: Record<string, unknown> = {};
+  // The context of the running session, for session_text.
+  let sessionCtx: any;
   const pending = new Map<string, Pending>();
   let mcpTimer: NodeJS.Timeout | undefined;
   // Registered MCP tools: name -> fingerprint, so a change is noticed and a removal withdrawn.
@@ -169,6 +325,20 @@ export default function (pi: ExtensionAPI) {
     }
     if (frame.method === "deliver" && frame.params?.message) handleDeliver(frame.params.message);
     if (frame.method === "mcp_changed") void refreshMcpTools();
+    if (frame.method === "session_text" && frame.params) handleSessionText(frame.params);
+  }
+
+  /** Answer the daemon's request for a page of this session's history. */
+  function handleSessionText(q: TextRequest) {
+    let result: Record<string, unknown>;
+    try {
+      const manager = sessionCtx?.sessionManager;
+      if (!manager || typeof manager.getBranch !== "function") throw new Error("Pi has no session history here");
+      result = { req: q.req, ok: true, page: pageOf(piTextEntries(manager.getBranch()), q) };
+    } catch (error) {
+      result = { req: q.req, ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+    request("session_text_result", result).catch(() => {});
   }
 
   function openConnection() {
@@ -218,6 +388,7 @@ export default function (pi: ExtensionAPI) {
       native_id: ctx.sessionManager.getSessionId(),
       cwd: ctx.cwd,
     };
+    sessionCtx = ctx;
     mode = modeOf(ctx.mode);
     model = modelName(ctx.model);
     stopped = false;

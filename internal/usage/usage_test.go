@@ -380,6 +380,37 @@ func TestTopListsHeaviestProcessesAndMasksArgs(t *testing.T) {
 	}
 }
 
+// BenchmarkSampleProc is the cost of one sample of the real /proc with one
+// followed tree: go test -bench Sample ./internal/usage
+func BenchmarkSampleProc(b *testing.B) {
+	if runtime.GOOS != "linux" {
+		b.Skip("reads /proc")
+	}
+	s := NewWith(newProcFS("/proc"), time.Second, time.Minute, func() []int { return []int{os.Getpid()} })
+	ctx := context.Background()
+	s.Sample(ctx)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.Sample(ctx)
+	}
+}
+
+// BenchmarkSamplePS is the cost of the macOS reader's ps call, run here on
+// Linux as a rough guide (sysctl and vm_stat do not exist here, so the machine
+// totals are skipped; on a Mac they add two small commands).
+func BenchmarkSamplePS(b *testing.B) {
+	if _, err := exec.LookPath("ps"); err != nil {
+		b.Skip("no ps")
+	}
+	s := NewWith(newPSReader(), time.Second, time.Minute, func() []int { return []int{os.Getpid()} })
+	ctx := context.Background()
+	s.Sample(ctx)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		s.Sample(ctx)
+	}
+}
+
 // ---- the real thing, on Linux ----
 
 func TestRealProcFSSeesATreeAndItsCPU(t *testing.T) {

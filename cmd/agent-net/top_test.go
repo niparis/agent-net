@@ -44,13 +44,13 @@ func TestFormatUsageShowsMachinesSessionsSharedAndUnknown(t *testing.T) {
 		Gateway: &protocol.UsageAnswer{Nodes: []protocol.UsageNode{
 			{NodeID: "n2", Hostname: "vm", AgeSeconds: 4, Usage: protocol.UsageReport{
 				Machine: protocol.MachineUsage{Cores: 2, CPU: 5, CPUAvg: 6, MemUsed: 1 << 30, MemUsedAvg: 1 << 30, MemTotal: 4 << 30, Procs: 90, Samples: 3},
-				Trees: []protocol.TreeUsage{{PID: 77, Harness: "opencode", Shared: true, Sessions: []string{"s_oc1", "s_oc2"}, CPU: 33, CPUAvg: 20, RSS: 900 << 20, RSSAvg: 800 << 20, Procs: 12, Samples: 3}}}},
+				Trees:   []protocol.TreeUsage{{PID: 77, Harness: "opencode", Shared: true, Sessions: []string{"s_oc1", "s_oc2"}, CPU: 33, CPUAvg: 20, RSS: 900 << 20, RSSAvg: 800 << 20, Procs: 12, Samples: 3}}}},
 		}}}
 	var b bytes.Buffer
 	formatUsage(&b, u, agents, &protocol.SessionCounts{Online: 5, Offline24h: 7, OfflineTotal: 122}, false, time.Now())
 	out := b.String()
 	for _, want := range []string{
-		"Sessions: 5 online, 7 offline in the last 24 h (122 offline kept in all)",
+		"Sessions: 5 online, 7 offline in the last 24 h (the gateway keeps 122 offline sessions in all, for 30 days)",
 		"mac (here)", "42%", "6.0/16.0G",
 		"vm ", "90",
 		"oldbox", "unknown", // a machine with no report
@@ -69,7 +69,7 @@ func TestFormatUsageShowsMachinesSessionsSharedAndUnknown(t *testing.T) {
 	if !strings.Contains(out, "...") {
 		t.Errorf("a tree with no CPU sample should show ...:\n%s", out)
 	}
-	// An offline session with no figures is only listed with --all.
+	// An online session with no figures is listed as unknown.
 	if !strings.Contains(out, "s_old") {
 		t.Errorf("an online session with no figures should show as unknown:\n%s", out)
 	}
@@ -91,7 +91,7 @@ func TestFormatTopListsProcesses(t *testing.T) {
 	formatTop(&b, protocol.UsageTop{SessionID: "s_1", Tree: protocol.TreeUsage{PID: 5, Harness: "claude", CPU: 120, CPUAvg: 50, RSS: 2 << 30, RSSAvg: 1 << 30, Procs: 9, Samples: 4},
 		ByCPU: []protocol.ProcUsage{{PID: 6, Cmd: "node", Args: "node server.js --token [REDACTED]", CPU: 99, RSS: 300 << 20}},
 		ByRSS: []protocol.ProcUsage{{PID: 7, Cmd: "chrome", Args: "chrome --headless", CPU: 1, RSS: 1 << 30}}})
-	for _, want := range []string{"Session s_1 (claude)", "9 in all", "Top by CPU", "Top by memory", "node server.js --token [REDACTED]", "chrome"} {
+	for _, want := range []string{"Session s_1 (claude)", "9 process(es) in all", "Top by CPU", "Top by memory", "node server.js --token [REDACTED]", "chrome"} {
 		if !strings.Contains(b.String(), want) {
 			t.Errorf("lacks %q:\n%s", want, b.String())
 		}

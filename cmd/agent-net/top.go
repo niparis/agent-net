@@ -198,7 +198,7 @@ func stale(ageSeconds int64) bool { return ageSeconds > protocol.UsageStaleSecon
 
 func formatUsage(w io.Writer, u usageReply, agents []protocol.AgentView, counts *protocol.SessionCounts, all bool, now time.Time) {
 	if counts != nil {
-		fmt.Fprintf(w, "Sessions: %d online, %d offline in the last 24 h (%d offline kept in all)\n\n",
+		fmt.Fprintf(w, "Sessions: %d online, %d offline in the last 24 h (the gateway keeps %d offline sessions in all, for 30 days)\n\n",
 			counts.Online, counts.Offline24h, counts.OfflineTotal)
 	}
 	// This machine's own report is read live; it replaces the gateway's copy.
@@ -314,7 +314,9 @@ func formatUsage(w io.Writer, u usageReply, agents []protocol.AgentView, counts 
 		return ci > cj
 	})
 	tw = tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tCPU\tCPU 5m\tRSS\tRSS 5m\tPROCS")
+	if len(rows) > 0 {
+		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tCPU\tCPU 5m\tRSS\tRSS 5m\tPROCS")
+	}
 	for _, r := range rows {
 		a := r.a
 		if r.tree == nil {
@@ -363,7 +365,7 @@ func formatTop(w io.Writer, top protocol.UsageTop) {
 	if t.Samples == 0 {
 		cpu, cpu5 = "...", "..."
 	}
-	fmt.Fprintf(w, "Session %s (%s), process %d and %d in all\n", top.SessionID, t.Harness, t.PID, t.Procs)
+	fmt.Fprintf(w, "Session %s (%s): the tree of process %d, %d process(es) in all\n", top.SessionID, t.Harness, t.PID, t.Procs)
 	fmt.Fprintf(w, "CPU %s (5m average %s) of one core, RSS %s (5m average %s)\n", cpu, cpu5, mem(t.RSS), mem(t.RSSAvg))
 	if t.Shared {
 		fmt.Fprintf(w, "Shared: this is the process of %d sessions, so the figures are for all of them.\n", len(t.Sessions))

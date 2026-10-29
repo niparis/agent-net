@@ -28,6 +28,7 @@ const statuses = []; // status calls: { id, params }
 const closed = [];
 const calls = []; // [method, params] of every call except hello
 const conns = new Map(); // session ID -> its latest daemon connection
+const textResults = []; // params of every session_text_result
 const server = createServer((conn) => {
   let buf = "";
   conn.setEncoding("utf8");
@@ -44,6 +45,7 @@ const server = createServer((conn) => {
           name: line.params.name, status: line.params.status });
       }
       if (line.method !== "hello") calls.push([line.method, line.params]);
+      if (line.method === "session_text_result") textResults.push(line.params);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
         line.method === "project_add"
@@ -95,6 +97,11 @@ function makeContext(directory, sessions, hooks = {}) {
           return s;
         },
         async prompt() {},
+        async context({ sessionID }) {
+          hooks.onContext?.(sessionID);
+          if (hooks.contextFails) throw new Error("context failed");
+          return hooks.context?.[sessionID] ?? [];
+        },
       },
       event: {
         async *subscribe({ signal }) {
@@ -299,8 +306,8 @@ await test("the model goes in hello, and a model change is sent as status", asyn
   await until("hello for ses_m", () => registered("ses_m"));
   const hello = hellos.find((h) => h.id === "ses_m");
   if (hello.model !== "anthropic/claude-sonnet-5") throw new Error("hello model: " + hello.model);
-  // OpenCode has no reliable foreground signal, so the plugin never claims a mode.
-  if (hello.mode !== undefined) throw new Error("hello mode: " + hello.mode);
+  // OpenCode has no reliable foreground signal, so the plugin says "unknown" and never guesses.
+  if (hello.mode !== "unknown") throw new Error("hello mode: " + hello.mode);
   m.emit({ type: "session.model.selected", data: { sessionID: "ses_m", model: { id: "gpt-6", providerID: "openai" } } });
   await until("status with the new model", () =>
     statuses.some((s) => s.id === "ses_m" && s.params.model === "openai/gpt-6"));
@@ -499,6 +506,136 @@ await test("a link left by a disposed instance is replaced, not shared", async (
   await settle();
   if (hellos.filter((h) => h.id === "ses_orphan").length !== before) throw new Error("a live link was replaced");
   stopOther();
+  stop();
+});
+
+// OpenCode 2.1.4 and 2.2.0 leave Session.Info.model empty when the session was
+// created without an explicit model. The model is then only in the messages.
+await test("a session with no model in its info takes it from the last assistant message", async () => {
+  freshHub();
+  const sessions = new Map([["ses_nomodel", session("ses_nomodel", "/work/nm")]]);
+  const context = {
+    ses_nomodel: [
+      { id: "msg_1", type: "user", time: { created: 1 }, text: "hi" },
+      { id: "msg_2", type: "assistant", model: { id: "big-pickle", providerID: "opencode" }, content: [], time: { created: 2 } },
+      { id: "msg_3", type: "model-switched", model: { id: "gpt-6", providerID: "openai" }, time: { created: 3 } },
+      { id: "msg_4", type: "assistant", model: { id: "gpt-6", providerID: "openai" }, content: [], time: { created: 4 } },
+    ],
+  };
+  const c = makeContext("/work/nm", sessions, { context });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_nomodel", () => registered("ses_nomodel"));
+  const hello = hellos.find((h) => h.id === "ses_nomodel");
+  if (hello.model !== "openai/gpt-6") throw new Error("hello model: " + hello.model);
+  stop();
+});
+
+await test("a session with a model in its info does not read its messages", async () => {
+  freshHub();
+  const sessions = new Map([["ses_hasmodel", session("ses_hasmodel", "/work/hm", 0, { model: { id: "x", providerID: "p" } })]]);
+  let reads = 0;
+  const c = makeContext("/work/hm", sessions, { onContext: () => reads++ });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_hasmodel", () => registered("ses_hasmodel"));
+  if (reads !== 0) throw new Error("read the messages of a session that has a model");
+  stop();
+});
+
+await test("a session with no model and unreadable messages registers with no model", async () => {
+  freshHub();
+  const sessions = new Map([["ses_broken", session("ses_broken", "/work/br")]]);
+  const c = makeContext("/work/br", sessions, { contextFails: true });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_broken", () => registered("ses_broken"));
+  if (hellos.find((h) => h.id === "ses_broken").model !== undefined) throw new Error("invented a model");
+  stop();
+});
+
+function pushText(sessionID, params) {
+  conns.get(sessionID).write(JSON.stringify({ method: "session_text", params }) + "\n");
+}
+
+await test("session_text answers with the conversation: prompts, replies, tool calls and results", async () => {
+  freshHub();
+  const sessions = new Map([["ses_txt", session("ses_txt", "/work/txt")]]);
+  const context = {
+    ses_txt: [
+      { id: "msg_a", type: "user", time: { created: 1000 }, text: "fix the build", files: [] },
+      { id: "msg_b", type: "agent-switched", time: { created: 1001 } },
+      {
+        id: "msg_c", type: "assistant", time: { created: 1002 }, model: { id: "m", providerID: "p" },
+        content: [
+          { type: "reasoning", text: "thinking out loud" },
+          { type: "text", text: "Looking." },
+          { type: "tool", id: "t1", name: "bash", state: { status: "completed", input: { command: "go build ./..." }, content: [{ type: "text", text: "ok" }] } },
+          { type: "tool", id: "t2", name: "read", state: { status: "error", input: { filePath: "/x" }, error: { type: "x", message: "no such file" } } },
+        ],
+      },
+      { id: "msg_d", type: "shell", time: { created: 1003 }, command: "ls", output: { output: "a b c" } },
+      { id: "msg_e", type: "idle", time: { created: 1004 } },
+      { id: "msg_f", type: "user", time: { created: 1005 }, text: "x".repeat(5000), files: [{}, {}] },
+    ],
+  };
+  const c = makeContext("/work/txt", sessions, { context });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_t", () => registered("ses_txt"));
+  pushText("ses_txt", { req: "r1", limit: 50 });
+  await until("the answer", () => textResults.some((r) => r.req === "r1"));
+  const r = textResults.find((x) => x.req === "r1");
+  if (!r.ok) throw new Error("not ok: " + r.error);
+  const got = r.page.entries.map((e) => `${e.role}|${e.tool ?? ""}|${e.text.slice(0, 40)}`);
+  const want = [
+    "user||fix the build",
+    "assistant||Looking.",
+    "tool_call|bash|bash: go build ./...",
+    "tool_result|bash|ok",
+    "tool_call|read|read: /x",
+    "tool_result|read|error: no such file",
+    "tool_call|shell|shell: ls",
+    "tool_result|shell|a b c",
+  ];
+  const long = r.page.entries[r.page.entries.length - 1];
+  if (JSON.stringify(got.slice(0, 8)) !== JSON.stringify(want)) throw new Error("entries: " + JSON.stringify(got));
+  if (long.role !== "user" || !long.cut || Array.from(long.text).length !== 2000 || !long.text.endsWith("x")) {
+    throw new Error("the long prompt was not cut to 2000 characters: " + long.text.length);
+  }
+  if (r.page.entries[0].time !== 1000) throw new Error("time: " + r.page.entries[0].time);
+  if (r.page.older !== undefined) throw new Error("older should be empty when the start is reached");
+  if (!r.page.newer) throw new Error("no cursor to follow from");
+  stop();
+});
+
+await test("session_text pages back and forward by cursor, and reports failures", async () => {
+  freshHub();
+  const sessions = new Map([["ses_pg", session("ses_pg", "/work/pg")]]);
+  const msgs = [];
+  for (let i = 0; i < 10; i++) msgs.push({ id: "msg_" + i, type: "user", time: { created: i }, text: "prompt " + i, files: [] });
+  const hooks = { context: { ses_pg: msgs } };
+  const c = makeContext("/work/pg", sessions, hooks);
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_pg", () => registered("ses_pg"));
+  const ask = async (id, params) => {
+    pushText("ses_pg", { req: id, ...params });
+    await until("answer " + id, () => textResults.some((r) => r.req === id));
+    return textResults.find((r) => r.req === id);
+  };
+  const newest = await ask("p1", { limit: 3 });
+  const texts = (r) => r.page.entries.map((e) => e.text).join(",");
+  if (texts(newest) !== "prompt 7,prompt 8,prompt 9" || !newest.page.older) throw new Error("newest: " + texts(newest));
+  const older = await ask("p2", { limit: 3, before: newest.page.older });
+  if (texts(older) !== "prompt 4,prompt 5,prompt 6") throw new Error("older: " + texts(older));
+  const oldest = await ask("p3", { limit: 5, before: older.page.older });
+  if (texts(oldest) !== "prompt 0,prompt 1,prompt 2,prompt 3" || oldest.page.older !== undefined) throw new Error("oldest: " + texts(oldest));
+  msgs.push({ id: "msg_10", type: "user", time: { created: 10 }, text: "prompt 10", files: [] });
+  const news = await ask("p4", { after: newest.page.newer });
+  if (texts(news) !== "prompt 10") throw new Error("after: " + texts(news));
+  const none = await ask("p5", { after: news.page.newer });
+  if (none.page.entries.length !== 0 || none.page.newer !== news.page.newer) throw new Error("nothing new: " + JSON.stringify(none.page));
+  const gone = await ask("p6", { before: "msg_missing:0" });
+  if (gone.page.entries.length !== 0) throw new Error("an unknown cursor should give nothing");
+  hooks.contextFails = true;
+  const failed = await ask("p7", {});
+  if (failed.ok || !failed.error.includes("context failed")) throw new Error("failure: " + JSON.stringify(failed));
   stop();
 });
 

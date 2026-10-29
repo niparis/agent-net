@@ -78,6 +78,158 @@ function modelName(ref: any): string | undefined {
   return ref.providerID ? `${ref.providerID}/${ref.id}` : ref.id;
 }
 
+// ---- session_text: what happened in this session -----------------------------
+// The daemon asks for it with a `session_text` push, only when the owner asked
+// (agent-net show, the TUI). The answer goes back with `session_text_result`.
+// The daemon masks secrets and cuts the text again; this side only flattens the
+// harness's history into entries and does the paging.
+
+const TEXT_ENTRY_MAX = 2000; // characters per entry
+const TEXT_RESULT_MAX = 600; // characters of a tool result
+const TEXT_DEFAULT_LIMIT = 50;
+const TEXT_MAX_LIMIT = 200;
+
+type TextRole = "user" | "assistant" | "tool_call" | "tool_result";
+interface TextEntry {
+  cursor: string;
+  time: number;
+  role: TextRole;
+  tool?: string;
+  text: string;
+  cut?: boolean;
+}
+
+/** Cut s to max characters; `cut` says whether it was cut. */
+function cutText(s: string, max: number): { text: string; cut: boolean } {
+  const chars = Array.from(s);
+  if (chars.length <= max) return { text: s, cut: false };
+  return { text: chars.slice(0, max).join(""), cut: true };
+}
+
+function textEntry(cursor: string, time: number, role: TextRole, text: string, tool?: string): TextEntry {
+  const { text: t, cut } = cutText(text, role === "tool_result" ? TEXT_RESULT_MAX : TEXT_ENTRY_MAX);
+  return { cursor, time, role, text: t, ...(tool ? { tool } : {}), ...(cut ? { cut } : {}) };
+}
+
+/** A few words that say what a tool call does: its first text argument. */
+function summarizeArgs(args: any): string {
+  if (args == null) return "";
+  if (typeof args === "string") return args;
+  if (typeof args !== "object") return String(args);
+  for (const key of ["command", "file_path", "path", "pattern", "url", "query", "description", "prompt"]) {
+    if (typeof args[key] === "string" && args[key]) return args[key].replace(/\s+/g, " ").slice(0, 300);
+  }
+  for (const key of Object.keys(args).sort()) {
+    if (typeof args[key] === "string" && args[key]) return args[key].replace(/\s+/g, " ").slice(0, 300);
+  }
+  try {
+    return JSON.stringify(args).slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
+/** Milliseconds from a number, an ISO string or a Date; 0 when unknown. */
+function toMillis(t: any): number {
+  if (typeof t === "number" && Number.isFinite(t)) return t;
+  if (typeof t === "string") {
+    const ms = Date.parse(t);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  if (t instanceof Date) return t.getTime();
+  if (t && typeof t === "object") {
+    for (const k of ["epochMillis", "epochMilliseconds", "ms"]) if (typeof t[k] === "number") return t[k];
+  }
+  return 0;
+}
+
+/** The text of a content that is a string or a list of { type: "text", text } blocks. */
+function blocksText(content: any): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((b: any) => (b?.type === "text" && typeof b.text === "string" ? b.text : b?.type === "image" ? "[image]" : ""))
+    .filter(Boolean)
+    .join("\n");
+}
+
+interface TextRequest {
+  req?: string;
+  limit?: number;
+  before?: string;
+  after?: string;
+}
+
+/**
+ * One page of `all` (oldest first). `before` is the cursor of the first entry
+ * of a page you already have: the answer is the entries just before it.
+ * `after` is the cursor of the last entry you have: the answer is what follows.
+ */
+function pageOf(all: TextEntry[], q: TextRequest): { entries: TextEntry[]; older?: string; newer?: string } {
+  const limit = Math.min(Math.max(Math.trunc(Number(q.limit)) || TEXT_DEFAULT_LIMIT, 1), TEXT_MAX_LIMIT);
+  const last = all.length ? all[all.length - 1].cursor : undefined;
+  if (q.after) {
+    const i = all.findIndex((e) => e.cursor === q.after);
+    const from = i < 0 ? Math.max(all.length - limit, 0) : i + 1;
+    const entries = all.slice(from, from + limit);
+    return { entries, newer: entries.length ? entries[entries.length - 1].cursor : (i < 0 ? last : q.after) };
+  }
+  let end = all.length;
+  if (q.before) {
+    const i = all.findIndex((e) => e.cursor === q.before);
+    if (i < 0) return { entries: [] }; // the history changed under the cursor: nothing before it
+    end = i;
+  }
+  const start = Math.max(end - limit, 0);
+  const entries = all.slice(start, end);
+  return {
+    entries,
+    ...(start > 0 ? { older: entries[0]?.cursor } : {}),
+    ...(q.before ? {} : last ? { newer: last } : {}),
+  };
+}
+
+/** Flatten OpenCode's session messages (ctx.session.context, oldest first) into text entries. */
+function openCodeTextEntries(messages: any[]): TextEntry[] {
+  const out: TextEntry[] = [];
+  for (const m of messages) {
+    const time = toMillis(m?.time?.created);
+    let n = 0;
+    const push = (role: TextRole, text: string, tool?: string) => {
+      const i = n++;
+      if (text.trim()) out.push(textEntry(`${m.id}:${i}`, time, role, text, tool));
+    };
+    switch (m?.type) {
+      case "user": {
+        const files = Array.isArray(m.files) && m.files.length ? ` [${m.files.length} file${m.files.length > 1 ? "s" : ""}]` : "";
+        push("user", `${m.text ?? ""}${files}`);
+        break;
+      }
+      case "synthetic": // text a plugin or OpenCode put into the conversation
+        push("user", `[${m.description || "synthetic"}] ${m.text ?? ""}`);
+        break;
+      case "skill":
+        push("user", `[skill ${m.name ?? ""}]`);
+        break;
+      case "shell":
+        push("tool_call", `shell: ${m.command ?? ""}`, "shell");
+        if (m.output?.output) push("tool_result", String(m.output.output), "shell");
+        break;
+      case "assistant":
+        for (const b of m.content ?? []) {
+          if (b?.type === "text") push("assistant", String(b.text ?? ""));
+          else if (b?.type === "tool") {
+            push("tool_call", `${b.name}: ${summarizeArgs(b.state?.input)}`, String(b.name));
+            if (b.state?.status === "completed") push("tool_result", blocksText(b.state.content), String(b.name));
+            else if (b.state?.status === "error") push("tool_result", `error: ${b.state.error?.message ?? ""}`, String(b.name));
+          }
+        }
+        break;
+    }
+  }
+  return out;
+}
+
 // MODE is not reported for OpenCode (the daemon shows "unknown"). OpenCode 2.2.0
 // has no signal for "a TUI or app is attached to this session": the plugin
 // context has no client list, and the only viewer signal, the session.viewed
@@ -125,6 +277,7 @@ class SessionLink {
     readonly sessionID: string,
     readonly cwd: string,
     private onDeliver: (link: SessionLink, m: DeliveredMessage) => void,
+    private onText: (link: SessionLink, q: TextRequest) => void,
   ) {}
 
   start() {
@@ -258,6 +411,7 @@ class SessionLink {
       return;
     }
     if (frame.method === "deliver" && frame.params?.message) this.onDeliver(this, frame.params.message);
+    if (frame.method === "session_text" && frame.params) this.onText(this, frame.params);
   }
 
   private openConnection() {
@@ -278,6 +432,8 @@ class SessionLink {
         // session says so right after, and an older daemon that does not know
         // the value just keeps showing idle.
         status: this.base,
+        // OpenCode has no signal for "a person is attached" (see above), so say so.
+        mode: "unknown",
         ...(this.model ? { model: this.model } : {}),
         ...(this.name ? { name: this.name } : {}),
       })
@@ -596,6 +752,29 @@ export default {
     const me = Symbol("instance");
     const events = new AbortController();
 
+    // The model of a session that has none in its Session.Info. OpenCode 2.1.4
+    // and 2.2.0 leave Session.Info.model empty when the session was created
+    // without an explicit model (the default model is picked when the first
+    // prompt runs), even after steps ran. The model is then only in the
+    // session.step.started event and in the messages of the session: the last
+    // assistant message, or a later model-switched message. Without this, such
+    // a session shows no model after every plugin reload until its next step.
+    async function modelFromMessages(sessionID: string): Promise<string | undefined> {
+      try {
+        const messages: any[] = [...((await ctx.session.context({ sessionID } as any)) as any)];
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const m = messages[i];
+          if (m?.type === "assistant" || m?.type === "model-switched") {
+            const name = modelName(m.model);
+            if (name) return name;
+          }
+        }
+      } catch {
+        // No model is better than a wrong one.
+      }
+      return undefined;
+    }
+
     // Walk up to the root session. Sub-agent sessions speak for their root.
     async function rootSession(
       sessionID: string,
@@ -611,7 +790,12 @@ export default {
         const parent = info?.parentID;
         if (!parent) {
           const cwd = info?.location?.directory ?? info?.directory ?? ctx.location.directory ?? "";
-          return { id, cwd: String(cwd), model: modelName(info?.model), title: info?.title };
+          return {
+            id,
+            cwd: String(cwd),
+            model: modelName(info?.model) ?? (await modelFromMessages(id)),
+            title: info?.title,
+          };
         }
         h.rootOf.set(id, String(parent));
         id = String(parent);
@@ -634,6 +818,18 @@ export default {
       }
       // Fire and forget; the daemon's answer is ignored.
       link.request("delivered", confirm).catch(() => {});
+    }
+
+    // Answer the daemon's request for a page of this session's conversation.
+    async function sessionText(link: SessionLink, q: TextRequest) {
+      let result: Record<string, unknown>;
+      try {
+        const messages: any[] = [...((await ctx.session.context({ sessionID: link.sessionID } as any)) as any)];
+        result = { req: q.req, ok: true, page: pageOf(openCodeTextEntries(messages), q) };
+      } catch (error) {
+        result = { req: q.req, ok: false, error: error instanceof Error ? error.message : String(error) };
+      }
+      link.request("session_text_result", result).catch(() => {});
     }
 
     // The link for a session (or for the root of a sub-agent session). The
@@ -663,7 +859,7 @@ export default {
         h.links.delete(sessionID);
         again.link.stop();
       }
-      const link = new SessionLink(sessionID, found.cwd, deliver);
+      const link = new SessionLink(sessionID, found.cwd, deliver, sessionText);
       link.model = found.model;
       link.name = sessionName(found.cwd, found.title);
       if (activeAt !== undefined) link.lastActive = activeAt;

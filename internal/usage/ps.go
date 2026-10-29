@@ -35,7 +35,14 @@ type psReader struct {
 	run   cmdFunc
 	cores int
 	total uint64
+	// Load and memory change slowly and each costs a process start, so they
+	// are read on every slowEvery-th sample and kept in between.
+	n    int
+	load [3]float64
+	used uint64
 }
+
+const slowEvery = 4
 
 func newPSReader() *psReader { return &psReader{run: runCmd} }
 
@@ -60,12 +67,16 @@ func (r *psReader) Read(ctx context.Context) (Snapshot, error) {
 		r.total = uint64(r.sysctlInt(ctx, "hw.memsize"))
 	}
 	snap.M.Cores, snap.M.MemTotal = r.cores, r.total
-	if out, err := r.run(ctx, "sysctl", "-n", "vm.loadavg"); err == nil {
-		snap.M.Load = parseLoadavg(string(out))
+	if r.n%slowEvery == 0 {
+		if out, err := r.run(ctx, "sysctl", "-n", "vm.loadavg"); err == nil {
+			r.load = parseLoadavg(string(out))
+		}
+		if out, err := r.run(ctx, "vm_stat"); err == nil {
+			r.used = parseVMStat(string(out))
+		}
 	}
-	if out, err := r.run(ctx, "vm_stat"); err == nil {
-		snap.M.MemUsed = parseVMStat(string(out))
-	}
+	r.n++
+	snap.M.Load, snap.M.MemUsed = r.load, r.used
 	return snap, nil
 }
 
