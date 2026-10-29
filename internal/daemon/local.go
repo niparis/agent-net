@@ -261,6 +261,10 @@ type helloParams struct {
 	NativeID string `json:"native_id"`
 	Cwd      string `json:"cwd"`
 	Status   string `json:"status"`
+	// Protocol is the local protocol version of the client; Version is its
+	// agent-net version (for the error message). Old clients send neither.
+	Protocol int    `json:"protocol"`
+	Version  string `json:"version"`
 }
 
 func (lc *localConn) hello(raw json.RawMessage) (any, error) {
@@ -269,6 +273,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return nil, errors.New("bad hello params")
 	}
 	d := lc.d
+	if err := d.checkClientProtocol(p.Protocol, p.Version); err != nil {
+		return nil, err
+	}
 	pid, err := peerPID(lc.c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the peer process: %w", err)
@@ -278,7 +285,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		lc.mu.Lock()
 		lc.client = "cli"
 		lc.mu.Unlock()
-		return map[string]any{"node_id": d.cfg.NodeID}, nil
+		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
 
 	case "mcp":
 		if p.Harness != "claude" || p.NativeID == "" {
@@ -385,7 +392,8 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	lc.mu.Lock()
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
-	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true}
+	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
+		"nodes": true, "restart": true}
 	if client == "cli" && !readOnly[method] {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
@@ -393,7 +401,11 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	switch method {
 	case "info":
 		return map[string]any{"connected": d.Connected(), "node_id": d.cfg.NodeID,
-			"gateway_url": d.cfg.GatewayURL, "sessions": d.Sessions()}, nil
+			"gateway_url": d.cfg.GatewayURL, "sessions": d.Sessions(), "version": d.helloVersion(),
+			"protocol": protocol.LocalProtocol}, nil
+
+	case "nodes", "restart":
+		return d.dispatchUpgrade(ctx, method, client)
 
 	case "status":
 		var p struct {

@@ -228,7 +228,7 @@ func Run(ctx context.Context, socket string) error {
 	}
 	cwd, _ := os.Getwd()
 	d := NewDaemon(socket, map[string]any{"client": "mcp", "harness": "claude",
-		"native_id": nativeID, "cwd": cwd, "status": "idle"})
+		"native_id": nativeID, "cwd": cwd, "status": "idle", "protocol": protocol.LocalProtocol})
 	defer d.Close()
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
