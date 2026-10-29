@@ -95,6 +95,9 @@ func TestProjectScanDryRunScanAndRerun(t *testing.T) {
 	if len(ps) != 3 || ps[0].Source != protocol.SourceRegistered || ps[0].AddedBy != "cli" || ps[0].Path != filepath.Join(base, "alpha") {
 		t.Fatalf("projects: %+v", ps)
 	}
+	eventually(t, "project.added logged", func() bool {
+		return len(g.logs.lines("event=project.added", "host=host-"+n.d.NodeID(), "harness=cli")) >= 3
+	})
 	if lines := g.logs.lines("event=project.added", "host=host-"+n.d.NodeID(), "harness=cli"); len(lines) != 3 {
 		t.Fatalf("log lines: %q", g.logs.lines())
 	}
@@ -195,6 +198,9 @@ func TestAgentRegistersOnItsOwnMachineOnly(t *testing.T) {
 		ps[0].AddedBy != "pi "+sidA || ps[0].Source != protocol.SourceRegistered {
 		t.Fatalf("projects: %+v", ps)
 	}
+	eventually(t, "project.added logged", func() bool {
+		return len(g.logs.lines("event=project.added", "node="+a.d.NodeID(), "session="+sidA, "harness=pi", "name=beta")) > 0
+	})
 	if lines := g.logs.lines("event=project.added", "node="+a.d.NodeID(), "session="+sidA, "harness=pi", "name=beta"); len(lines) != 1 {
 		t.Fatalf("log: %q", g.logs.lines())
 	}
@@ -254,6 +260,7 @@ func TestCLIRemoveByNameAndPath(t *testing.T) {
 	if ps := listProjects(t, cliA, "beta"); len(ps) != 0 {
 		t.Fatalf("after remove --on: %+v", ps)
 	}
+	eventually(t, "project.removed logged", func() bool { return len(g.logs.lines("event=project.removed")) >= 3 })
 	if len(g.logs.lines("event=project.removed")) != 3 {
 		t.Fatalf("log: %q", g.logs.lines())
 	}

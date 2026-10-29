@@ -75,6 +75,7 @@ func TestSessionRepoInfoReachesGateway(t *testing.T) {
 		t.Fatal("credentials reached the gateway")
 	}
 
+	eventually(t, "session.new logged", func() bool { return len(g.logs.lines("event=session.new")) > 0 })
 	lines := g.logs.lines("event=session.new")
 	if len(lines) != 1 {
 		t.Fatalf("session.new lines: %v", lines)
@@ -150,6 +151,8 @@ func TestMessageTrailInGatewayLog(t *testing.T) {
 	eventually(t, "delivered", func() bool { return messageState(t, pi, m.ID) == protocol.StateDelivered })
 
 	for _, ev := range []string{"msg.stored", "msg.dispatched", "msg.delivered"} {
+		// The state can read as delivered just before the gateway writes the log line.
+		eventually(t, ev+" logged", func() bool { return len(g.logs.lines("event="+ev, "msg="+m.ID)) > 0 })
 		ls := g.logs.lines("event="+ev, "msg="+m.ID)
 		if len(ls) != 1 {
 			t.Fatalf("%s: %v", ev, ls)
