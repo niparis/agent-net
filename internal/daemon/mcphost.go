@@ -216,9 +216,12 @@ func (r *mcpRunner) setDown(detail string) {
 func (r *mcpRunner) run(ctx context.Context) {
 	delay := r.h.backMin
 	for ctx.Err() == nil {
-		cctx, cancel := context.WithTimeout(ctx, probeTimeout)
+		// The connect context also carries an SSE client's stream, so it must
+		// live as long as the session; the timer only limits the connect itself.
+		cctx, cancel := context.WithCancel(ctx)
+		timer := time.AfterFunc(probeTimeout, cancel)
 		c, err := connectMCP(cctx, r.h.d, r.spec, r.stderrWriter())
-		cancel()
+		timer.Stop()
 		var tools []protocol.MCPTool
 		if err == nil {
 			lctx, lcancel := context.WithTimeout(ctx, probeTimeout)
@@ -230,6 +233,7 @@ func (r *mcpRunner) run(ctx context.Context) {
 			}
 		}
 		if err != nil {
+			cancel()
 			if ctx.Err() != nil {
 				return
 			}
@@ -246,6 +250,7 @@ func (r *mcpRunner) run(ctx context.Context) {
 			r.logf("up with %d tools", len(tools))
 			started := time.Now()
 			r.watch(ctx, c)
+			cancel()
 			if ctx.Err() != nil {
 				return
 			}
