@@ -389,6 +389,12 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveRelay(ctx, nc, h, raw)
 			continue
 		}
+		if strings.HasPrefix(h.Type, "worker.") {
+			// Starting and stopping wait for another machine, so they must not
+			// block this node's other frames.
+			go g.serveWorker(ctx, nc, h, raw)
+			continue
+		}
 		data, err := g.handle(ctx, nc, h.Type, raw)
 		var reply []byte
 		var eerr error
@@ -439,6 +445,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if _, err := st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
 			return nil, err
 		}
+		if err := st.SetNodeLaunch(nc.id, p.Launch); err != nil {
+			return nil, err
+		}
 		return map[string]string{"node_id": nc.id}, nil
 
 	case "node.harnesses":
@@ -446,8 +455,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.Harnesses == nil {
 			return nil, reject("bad node.harnesses")
 		}
-		_, err = st.SetNodeHarnesses(nc.id, p.Harnesses)
-		return nil, err
+		if _, err = st.SetNodeHarnesses(nc.id, p.Harnesses); err != nil {
+			return nil, err
+		}
+		return nil, st.SetNodeLaunch(nc.id, p.Launch)
 
 	case "query.projects":
 		p, err := decode[protocol.QueryProjects](raw)

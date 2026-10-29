@@ -1,0 +1,287 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// The operator interface on the daemon (decision 0007). The methods and their
+// types are in protocol/operator.go. The data methods are served in local.go;
+// this file has the owner pseudo-session and the actions.
+
+// addOwnerSession registers the owner pseudo-session: the person at this
+// machine, as a sender and a recipient. It is created here and nowhere else.
+func (d *Daemon) addOwnerSession() {
+	info := protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID,
+		Name: protocol.OwnerName(d.cfg.Hostname), Status: "idle", Delivery: "owner", Mode: protocol.ModeForeground}
+	d.sessions[key(info.Harness, info.NativeID)] = &localSession{info: info}
+}
+
+// ownerSessionID returns the gateway ID of the owner session, or "".
+func (d *Daemon) ownerSessionID() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if ls := d.sessions[key(protocol.OwnerHarness, protocol.OwnerNativeID)]; ls != nil {
+		return ls.sessionID
+	}
+	return ""
+}
+
+// launchFlag is what the daemon tells the gateway about workers.
+func (d *Daemon) launchFlag() *bool {
+	v := !d.cfg.NoLaunch
+	return &v
+}
+
+// requireOwner is the caller check for the owner's own actions. Only the
+// command line or the TUI of the person may act as the owner. An agent
+// connection is refused before this runs (it has a bound session), and so is
+// a command that runs inside an agent: an agent's shell tool starts
+// `agent-net` as a descendant of the agent process, and a worker's too.
+func (lc *localConn) requireOwner(client string) error {
+	if client != "cli" {
+		return errors.New("only the owner at the command line or the TUI can do this; an agent session cannot act as the owner")
+	}
+	if lc.d.insideAgent(lc.peer) {
+		return errors.New("this command runs inside an agent session, so it cannot act as the owner: run it in your own terminal")
+	}
+	return nil
+}
+
+// insideAgent tells whether the process is a descendant of a session or worker
+// process of this machine.
+func (d *Daemon) insideAgent(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	agents := map[int]bool{}
+	d.mu.Lock()
+	for _, ls := range d.sessions {
+		if ls.info.PID > 1 && !protocol.IsOwner(ls.info.Harness) {
+			agents[ls.info.PID] = true
+		}
+	}
+	d.mu.Unlock()
+	d.wmu.Lock()
+	for _, w := range d.workers {
+		if w.pid > 1 {
+			agents[w.pid] = true
+		}
+	}
+	d.wmu.Unlock()
+	if len(agents) == 0 {
+		return false
+	}
+	for p, depth := pid, 0; depth < 64; depth++ {
+		parent, err := parentPID(p)
+		if err != nil || parent <= 1 {
+			return false
+		}
+		if agents[parent] {
+			return true
+		}
+		p = parent
+	}
+	return false
+}
+
+// callerSession returns the session an action is made for: the owner session
+// for the command line, else the bound session.
+func (lc *localConn) callerSession(client string) (id string, ls *localSession, err error) {
+	if client == "cli" {
+		if err := lc.requireOwner(client); err != nil {
+			return "", nil, err
+		}
+		id = lc.d.ownerSessionID()
+		if id == "" {
+			return "", nil, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+		}
+		return id, nil, nil
+	}
+	lc.mu.Lock()
+	ls = lc.ls
+	lc.mu.Unlock()
+	if ls == nil {
+		return "", nil, errors.New("this method needs a bound session")
+	}
+	id, err = lc.boundID()
+	return id, ls, err
+}
+
+// tooOldGateway makes the error of a gateway without worker frames clear.
+func tooOldGateway(err error) error {
+	if err != nil && strings.Contains(err.Error(), "unknown frame type") {
+		return errors.New("the gateway is too old for workers; upgrade it with `agent-net upgrade` on the gateway machine")
+	}
+	return err
+}
+
+// dispatchOperator serves the operator actions. handled is false for other
+// methods.
+func (lc *localConn) dispatchOperator(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
+	d := lc.d
+	switch method {
+	case protocol.OpSend:
+		// The owner as a sender. The sender is the owner session of this
+		// machine, never a parameter.
+		var p protocol.OwnerSendRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad owner_send params")
+		}
+		sid, _, err := lc.callerSession(client)
+		if err != nil {
+			return nil, true, err
+		}
+		if client != "cli" {
+			return nil, true, errors.New("only the owner can use owner_send")
+		}
+		to, err := d.resolveTo(ctx, p.To)
+		if err != nil {
+			return nil, true, err
+		}
+		data, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest,
+			Body: p.Body, IdempotencyKey: p.IdempotencyKey})
+		return data, true, err
+
+	case protocol.OpWorkerStart:
+		var p protocol.WorkerStartRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad worker_start params")
+		}
+		sid, ls, err := lc.callerSession(client)
+		if err != nil {
+			return nil, true, err
+		}
+		// A worker cannot start workers. The check is on the session's worker
+		// flag, which the daemon set, not on anything the model says.
+		if ls != nil {
+			d.mu.Lock()
+			isWorker := ls.info.Worker != nil
+			d.mu.Unlock()
+			if isWorker {
+				d.Logf("worker.refused owner=%s project=%s harness=%s reason=%q", sid, p.Project, p.Harness, "a worker cannot start workers")
+				return nil, true, errors.New("a worker cannot start workers")
+			}
+		}
+		out, err := d.workerStartCall(ctx, sid, p)
+		return out, true, err
+
+	case protocol.OpWorkerHandback:
+		// Only a worker's own session hands back, never the command line.
+		var p protocol.WorkerHandbackRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad worker_handback params")
+		}
+		if client == "cli" {
+			return nil, true, errors.New("worker_handback is for a worker's own session")
+		}
+		sid, ls, err := lc.callerSession(client)
+		if err != nil {
+			return nil, true, err
+		}
+		d.mu.Lock()
+		isWorker := ls != nil && ls.info.Worker != nil
+		d.mu.Unlock()
+		if !isWorker {
+			return nil, true, errors.New("agent_handback is for workers started through agent-net; you are not one: answer with agent_reply")
+		}
+		out, err := d.handback(ctx, sid, p)
+		return out, true, err
+
+	case protocol.OpWorkerStop:
+		var p protocol.WorkerStopRequest
+		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
+			return nil, true, errors.New("worker_stop needs session")
+		}
+		sid, _, err := lc.callerSession(client)
+		if err != nil {
+			return nil, true, err
+		}
+		cctx := withCallWait(ctx, 30e9)
+		if _, err := d.call(cctx, "worker.stop", protocol.WorkerStopFrame{Session: p.Session, Requester: sid}); err != nil {
+			return nil, true, tooOldGateway(err)
+		}
+		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, true, nil
+
+	case protocol.OpWorkers:
+		out, err := d.workersView(ctx)
+		return out, true, err
+	}
+	return nil, false, nil
+}
+
+// workerStartCall asks the gateway to start a worker, then sends the task as
+// a message from the caller.
+func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest) (*protocol.WorkerStartResult, error) {
+	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
+	if p.Project == "" || p.Harness == "" || p.Task == "" {
+		return nil, errors.New("worker_start needs project, harness and task")
+	}
+	if !protocol.ValidIsolation(p.Isolation) {
+		return nil, fmt.Errorf("isolation can be %q or empty, not %q", protocol.IsolationWorktree, p.Isolation)
+	}
+	if len(protocol.WorkerTaskBody(p.Task, "/x", "b")) > protocol.MaxBodyBytes {
+		return nil, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
+	}
+	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
+	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller})
+	if err != nil {
+		return nil, tooOldGateway(err)
+	}
+	var ans protocol.WorkerStartAnswer
+	if err := json.Unmarshal(data, &ans); err != nil || ans.SessionID == "" {
+		return nil, errors.New("the gateway answered without a worker session")
+	}
+	out := &protocol.WorkerStartResult{SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Worktree: ans.Worktree, Branch: ans.Branch}
+	// The task is a normal message from the caller, with the fixed preamble.
+	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
+		Body: protocol.WorkerTaskBody(p.Task, ans.Worktree, ans.Branch)})
+	if err != nil {
+		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
+	}
+	var sent protocol.MessageSent
+	if json.Unmarshal(raw, &sent) == nil {
+		out.Task, out.Queued = sent.Message, sent.Queued
+	}
+	return out, nil
+}
+
+// workersView lists the workers on the network with their owners.
+func (d *Daemon) workersView(ctx context.Context) (*protocol.WorkersResult, error) {
+	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
+	if err != nil {
+		return nil, err
+	}
+	var r protocol.AgentsResult
+	if err := json.Unmarshal(data, &r); err != nil {
+		return nil, err
+	}
+	return &protocol.WorkersResult{Workers: protocol.WorkersOf(r.Agents)}, nil
+}
+
+// onWorkerFrame serves "worker.launch" and "worker.kill" from the gateway.
+func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, raw []byte) {
+	var data any
+	var err error
+	switch h.Type {
+	case "worker.launch":
+		var p protocol.WorkerLaunch
+		if err = json.Unmarshal(raw, &p); err == nil {
+			data, err = d.startWorker(ctx, p)
+		}
+	case "worker.kill":
+		var p protocol.WorkerKill
+		if err = json.Unmarshal(raw, &p); err == nil {
+			err = d.stopWorkerSession(p.Session)
+		}
+	}
+	if res, eerr := protocol.EncodeResult(h.ID, data, err); eerr == nil {
+		l.write(ctx, res)
+	}
+}

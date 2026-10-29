@@ -65,6 +65,9 @@ type Message struct {
 	// FromHarness is filled by the gateway so a receiving adapter can say
 	// what kind of agent wrote the message.
 	FromHarness string `json:"sender_harness,omitempty"`
+	// FromWorker is true when the sender is a worker (a session that agent-net
+	// started). A receiving adapter frames its text as model output.
+	FromWorker bool `json:"sender_worker,omitempty"`
 }
 
 // SessionInfo is what a daemon reports about one local session.
@@ -86,6 +89,8 @@ type SessionInfo struct {
 	// (for example "claude-opus-5-5" or "anthropic/claude-sonnet-5"). Empty
 	// when the harness does not say.
 	Model string `json:"model,omitempty"`
+	// Worker is set when agent-net started this session as a worker.
+	Worker *WorkerInfo `json:"worker,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -176,6 +181,8 @@ type AgentView struct {
 	// older daemon.
 	Mode  string `json:"mode,omitempty"`
 	Model string `json:"model,omitempty"`
+	// Worker is set for a session that agent-net started as a worker.
+	Worker *WorkerInfo `json:"worker,omitempty"`
 	// PID is the process ID of the session on its machine (0 when unknown).
 	PID int `json:"pid,omitempty"`
 }
@@ -224,10 +231,14 @@ type (
 		// Harnesses is the inventory of installed harnesses. Nil (absent or
 		// null) means "not reported"; an empty list means "none installed".
 		Harnesses []HarnessInfo `json:"harnesses"`
+		// Launch says whether this machine accepts workers. Nil means "not
+		// reported" (an older daemon): the gateway then refuses workers there.
+		Launch *bool `json:"launch,omitempty"`
 	}
 	// NodeHarnesses is the "node.harnesses" request: a new inventory.
 	NodeHarnesses struct {
 		Harnesses []HarnessInfo `json:"harnesses"`
+		Launch    *bool         `json:"launch,omitempty"`
 	}
 	SessionSync struct {
 		Sessions []SessionInfo `json:"sessions"`
@@ -265,6 +276,9 @@ type (
 		Project    string `json:"project,omitempty"`
 		OnlineOnly bool   `json:"online_only,omitempty"`
 		Text       string `json:"text,omitempty"`
+		// IncludeOwners also returns the owner pseudo-sessions ("you (on
+		// host)"). They are left out by default: they are people, not agents.
+		IncludeOwners bool `json:"include_owners,omitempty"`
 	}
 	QueryAgent struct {
 		SessionID string `json:"session_id"`
@@ -314,6 +328,9 @@ type NodeView struct {
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`
+	// Launch says whether the machine accepts workers: nil when it never
+	// said (an older daemon), false after `setup --no-launch`.
+	Launch *bool `json:"launch,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.

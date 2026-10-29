@@ -73,6 +73,10 @@ From source: `scripts/dist.sh`, then `agent-net setup --gateway`. The install li
 
 Start a Pi session on one machine and a Claude Code session on another. Ask one to use `agent_list`, then message the other. On either machine, `agent-net messages` should show the request as `replied` and the answer as `delivered`.
 
+## Workers on a machine
+
+Machines accept workers (agent sessions that other sessions, or you, start there) by default. To refuse them, run `agent-net setup --no-launch` on that machine; `agent-net setup --launch` accepts them again. `agent-net nodes` shows the choice in the WORKERS column. The OpenCode plugin must be installed there for OpenCode workers (`setup` does it when `~/.config/opencode` exists). See [reference.md](reference.md#workers).
+
 ## Remove a machine
 
 ```

@@ -18,6 +18,37 @@ func (s *Store) SetNodeHello(nodeID, hostname, version string) error {
 	return err
 }
 
+// SetNodeLaunch records whether a node accepts workers. Nil is "not reported"
+// and changes nothing.
+func (s *Store) SetNodeLaunch(nodeID string, launch *bool) error {
+	if launch == nil {
+		return nil
+	}
+	v := 0
+	if *launch {
+		v = 1
+	}
+	_, err := s.db.Exec(`UPDATE nodes SET launch = ? WHERE id = ?`, v, nodeID)
+	return err
+}
+
+// NodeLaunch returns whether a node accepts workers: nil when it never said.
+func (s *Store) NodeLaunch(nodeID string) (*bool, error) {
+	var v int
+	if err := s.db.QueryRow(`SELECT launch FROM nodes WHERE id = ?`, nodeID).Scan(&v); err != nil {
+		return nil, err
+	}
+	return launchValue(v), nil
+}
+
+func launchValue(v int) *bool {
+	if v < 0 {
+		return nil
+	}
+	b := v == 1
+	return &b
+}
+
 // NodeVersion returns the version a node last reported.
 func (s *Store) NodeVersion(nodeID string) (string, error) {
 	var v string
@@ -28,7 +59,7 @@ func (s *Store) NodeVersion(nodeID string) (string, error) {
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses FROM nodes WHERE seen_at > 0 ORDER BY hostname, id`)
+	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses, launch FROM nodes WHERE seen_at > 0 ORDER BY hostname, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -38,9 +69,11 @@ func (s *Store) Nodes() ([]protocol.NodeView, error) {
 		var n protocol.NodeView
 		var seen int64
 		var hs string
-		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs); err != nil {
+		var launch int
+		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch); err != nil {
 			return nil, err
 		}
+		n.Launch = launchValue(launch)
 		n.Harnesses = decodeHarnesses(hs)
 		n.LastSeen = seen / 1e9
 		out = append(out, n)

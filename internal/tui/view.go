@@ -169,6 +169,7 @@ func shortID(id string) string {
 
 type layout struct {
 	banner       bool
+	notice       int // rows of the result under the title (0 to 2)
 	machines     int // machine rows shown
 	moreMachines int // machines not shown
 	sessions     int // rows of the table
@@ -184,6 +185,7 @@ func (m Model) layout() layout {
 	var l layout
 	h := max(m.height, 10)
 	l.banner = m.problem != ProblemNone
+	l.notice = len(m.noticeLines(max(m.width, 40)))
 	n := len(m.machineRows())
 	l.machines = min(n, maxMachineRows)
 	if n > maxMachineRows {
@@ -195,6 +197,7 @@ func (m Model) layout() layout {
 	if l.banner {
 		fixed++
 	}
+	fixed += l.notice
 	avail := max(h-fixed, 3)
 	// Every part has a smallest size: the table eight rows (two machine
 	// headings and six sessions), the detail pane five, the feed three. On a
@@ -330,6 +333,9 @@ func (m Model) View() string {
 	if l.banner {
 		add(m.bannerLine(w))
 	}
+	for _, s := range m.noticeLines(w) {
+		add(s)
+	}
 
 	rows := m.machineRows()
 	for i, r := range rows {
@@ -347,7 +353,11 @@ func (m Model) View() string {
 		add(s)
 	}
 
-	if m.open != nil {
+	if m.mode == modeForm {
+		for _, s := range m.formView(w, l.detail+l.feed+2) {
+			add(s)
+		}
+	} else if m.open != nil {
 		for _, s := range m.messageView(w, l.detail+l.feed+2) {
 			add(s)
 		}
@@ -381,13 +391,23 @@ func section(title string, w int) string {
 
 func (m Model) titleLine(w int) string {
 	left := sTitle.Render("agent-net") + " " + sDim.Render("tui")
-	online, total := 0, len(m.snap.Agents)
+	online, total, workers := 0, 0, 0
 	for _, a := range m.snap.Agents {
+		if protocol.IsOwner(a.Harness) {
+			continue
+		}
+		total++
 		if a.Online {
 			online++
+			if a.Worker != nil {
+				workers++
+			}
 		}
 	}
 	mid := fmt.Sprintf("%d sessions, %d online", total, online)
+	if workers > 0 {
+		mid += fmt.Sprintf(", %d workers", workers)
+	}
 	if m.showOffline {
 		mid += "  +offline"
 	}
@@ -588,6 +608,9 @@ func (m Model) sessionLine(a protocol.AgentView, cols []column, w int) string {
 			v = a.Harness
 		case "NAME":
 			v = a.Profile.Name
+			if a.Worker != nil {
+				v = "[w] " + v
+			}
 		case "PROJECT":
 			v = firstNonEmpty(a.Repo.Project, a.Profile.Project)
 		case "BRANCH":
@@ -668,11 +691,19 @@ func (m Model) detailLines(w, n int) []string {
 	}
 	status := fmt.Sprintf("%s, %s   branch %s   model %s", statusShort(a.Status), dashIfEmpty(a.Mode),
 		dashIfEmpty(a.Repo.Branch), dashIfEmpty(a.Model))
+	var worker string
+	if a.Worker != nil {
+		worker = fmt.Sprintf("started by %s, %s, project %s", m.who(a.Worker.Owner), m.clock(time.Unix(a.Worker.StartedAt, 0)),
+			dashIfEmpty(a.Worker.Project))
+	}
 	info := []string{
 		clip(title, w),
-		kv("folder", dashIfEmpty(a.Cwd)),
-		kv("remote", dashIfEmpty(a.Repo.Remote)),
 	}
+	if worker != "" {
+		// Who started it matters most, so it comes before the folder and the remote.
+		info = append(info, kv("worker", worker))
+	}
+	info = append(info, kv("folder", dashIfEmpty(a.Cwd)), kv("remote", dashIfEmpty(a.Repo.Remote)))
 	// A linked git worktree (not the main working tree), or a folder inside
 	// one: say which.
 	switch {
@@ -759,6 +790,9 @@ func (m Model) who(id string) string {
 		return "?"
 	}
 	if a, ok := m.agentByID(id); ok {
+		if protocol.IsOwner(a.Harness) {
+			return dashIfEmpty(a.Profile.Name) // already "you (on host)"
+		}
 		return fmt.Sprintf("%s (%s)", dashIfEmpty(a.Profile.Name), a.Hostname)
 	}
 	return shortID(id)
@@ -856,6 +890,16 @@ func (m Model) infoText(it *feedItem) string {
 		return fmt.Sprintf("new session %s (%s) on %s", sanitize(dashIfEmpty(d["name"])), sanitize(dashIfEmpty(d["harness"])), sanitize(host))
 	case "msg.refused":
 		return "send refused from " + m.who(it.From) + ": " + sanitize(it.Detail)
+	case "worker.started":
+		d := parseDetail(it.Detail)
+		return fmt.Sprintf("worker started: %s %s in %s for %s", m.who(it.Session), sanitize(dashIfEmpty(d["harness"])),
+			sanitize(dashIfEmpty(d["project"])), m.who(d["owner"]))
+	case "worker.stopped":
+		d := parseDetail(it.Detail)
+		return fmt.Sprintf("worker stopped: %s (%s)", m.who(it.Session), sanitize(strings.ReplaceAll(dashIfEmpty(d["reason"]), "_", " ")))
+	case "worker.refused":
+		d := parseDetail(it.Detail)
+		return fmt.Sprintf("worker refused in %s: %s", sanitize(dashIfEmpty(d["project"])), sanitize(detailReason(it.Detail)))
 	}
 	return sanitize(it.Kind)
 }
@@ -944,6 +988,14 @@ func wrap(s string, w int) []string {
 // ---- help ----
 
 func (m Model) helpLine(w int) string {
+	switch m.mode {
+	case modeCompose:
+		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
+	case modeForm:
+		return sDim.Render(clip("tab completes  up/down or enter: field  enter on the task starts  esc cancels", w))
+	case modeConfirm:
+		return clip(sBold.Render("Stop worker "+m.confirmName+"? y/n"), w)
+	}
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
 	}
@@ -952,9 +1004,9 @@ func (m Model) helpLine(w int) string {
 	case m.open != nil:
 		s = "up/down scroll  esc close  q quit"
 	case m.focus == focusFeed:
-		s = "up/down move  enter open body  tab sessions  / filter  o offline  q quit"
+		s = "up/down move  enter open body  m msg  tab sessions  / filter  q quit"
 	default:
-		s = "up/down select  / filter  o offline  tab messages  r refresh  q quit"
+		s = "up/down select  m msg  s start  x stop  / filter  o offline  tab feed  q quit"
 	}
 	return sDim.Render(clip(s, w))
 }

@@ -33,7 +33,15 @@ func openState(dir string) (*state, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL)`)
+CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS workers (
+	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,
+	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, native_id TEXT NOT NULL DEFAULT '',
+	session_id TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, pgid INTEGER NOT NULL,
+	start_token TEXT NOT NULL, started_at INTEGER NOT NULL, last_active INTEGER NOT NULL,
+	ended_reason TEXT NOT NULL DEFAULT '',
+	main_path TEXT NOT NULL DEFAULT '', worktree TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
+	base TEXT NOT NULL DEFAULT '', task_msg TEXT NOT NULL DEFAULT '', done_status TEXT NOT NULL DEFAULT '')`)
 	if err != nil {
 		db.Close()
 		return nil, err

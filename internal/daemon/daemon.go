@@ -113,6 +113,14 @@ type Config struct {
 	// TextTimeout is how long to wait for a plugin to hand over a session's
 	// conversation. Default: 8 seconds.
 	TextTimeout time.Duration
+
+	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
+	NoLaunch bool
+	// Workers are the worker limits and timeouts. Zero fields take the defaults.
+	Workers WorkerSettings
+	// HarnessPaths overrides where a harness binary is, by harness name.
+	// Default: the path from the inventory. Tests use it.
+	HarnessPaths map[string]string
 }
 
 type localSession struct {
@@ -153,6 +161,10 @@ type Daemon struct {
 
 	// usage is the state of CPU and memory reporting (usage.go).
 	usage usageState
+	// wmu guards the workers started by this daemon (workers.go).
+	wmu       sync.Mutex
+	workers   map[string]*worker
+	launchers map[string]launcher
 
 	repo *repoinfo.Resolver
 	// hmu guards the inventory of installed harnesses. hgen grows with each
@@ -216,6 +228,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
+		workers: map[string]*worker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	d.inSession = d.insideSession
@@ -233,6 +246,7 @@ func New(cfg Config) (*Daemon, error) {
 	for _, a := range cfg.Adapters {
 		d.adapters[a.Harness()] = a
 	}
+	d.addOwnerSession()
 	return d, nil
 }
 
@@ -259,6 +273,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 		}
 	}
 	d.startUsage(ctx)
+	d.adoptWorkers()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.workerLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
 	d.wg.Add(1)
@@ -444,6 +461,7 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 	if p.IdempotencyKey == "" {
 		p.IdempotencyKey = protocol.NewID("k")
 	}
+	d.touchWorker(p.Sender, p.Recipient) // a message to or from a worker keeps it alive
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
 	if d.st.outboxLen() == 0 {
@@ -551,6 +569,8 @@ func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "no such local session")
 		return
 	}
+	d.touchWorker(m.To, m.From)
+	d.noteAsk(m)
 	res := d.deliverTo(ctx, ls, m)
 	if !res.Delivered {
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, res.Detail)
@@ -570,6 +590,10 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	d.mu.Unlock()
 	if conn != nil {
 		return conn.push(ctx, m, d.cfg.PluginAckTimeout)
+	}
+	if protocol.IsOwner(info.Harness) {
+		// The person reads it in the TUI feed. There is no program to push to.
+		return Result{Delivered: true, Detail: "owner"}
 	}
 	a := d.adapters[info.Harness]
 	if a == nil {

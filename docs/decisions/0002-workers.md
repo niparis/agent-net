@@ -1,7 +1,7 @@
 # 0002 - Workers: sessions started through agent-net
 
 **Date:** 2026-10-29
-**Status:** Accepted by the owner
+**Status:** Accepted by the owner. Built for OpenCode; how, and what is left, is in [0007](0007-operator-interface-and-worker-build.md).
 **Context:** the owner wants to say "start a new opencode session in project <name> with <task> and <model>", from the CLI or from any agent.
 
 ## W1 - What a worker is

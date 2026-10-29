@@ -59,7 +59,7 @@ func (d *Daemon) publishHarnesses(ctx context.Context) {
 	if list == nil {
 		return
 	}
-	if _, err := d.call(ctx, "node.harnesses", protocol.NodeHarnesses{Harnesses: list}); err != nil &&
+	if _, err := d.call(ctx, "node.harnesses", protocol.NodeHarnesses{Harnesses: list, Launch: d.launchFlag()}); err != nil &&
 		err != errNotConnected && ctx.Err() == nil && !strings.Contains(err.Error(), "unknown frame type") {
 		// An older gateway does not know the request. That is fine.
 		d.Logf("node.harnesses: %v", err)

@@ -39,6 +39,21 @@ The daemon reads the process ID of the caller from the kernel: `SO_PEERCRED` on 
 - **Pi.** The Pi extension runs inside the Pi process. The daemon checks that the connecting process has `pi` anywhere in its command line (compared in lower case). This is a weak check. Any process of your user whose command line contains "pi" can claim to be a Pi session, with any session ID. It is accepted because the socket is already limited to your user, and a process running as you can do much more harm than that. A stricter check (matching Pi's executable) is not done yet.
 - **The CLI** (`status`, `list`, `messages`) says it is a CLI client and gets read-only calls, plus the MCP registry and project registry commands.
 
+## Sending as the owner, and who may start workers
+
+A message from the person at a machine is sent from that machine's **owner session** (harness `owner`, shown as `you (on <host>)`). Receiving agents are told it is "from your user in person". So who may send as the owner matters.
+
+- **Only the command line or the TUI.** The daemon accepts `owner_send` only from a socket client that said `client: cli`. An agent connection (Claude, Pi, OpenCode) is bound to a session and is refused. The owner session cannot be created by a hello: only the daemon makes it, and the gateway accepts only the native ID `owner` for that harness.
+- **Not from inside an agent.** A command-line call is also refused when its process is a descendant of a session or worker process of this machine, so an agent's shell tool cannot run `agent-net send` or `agent-net start` as you. The daemon reads the caller's process ID from the socket and walks its parents. This stops an agent that shells out. It does not stop a process of your user that is not under an agent, which could always use the socket (the socket is yours).
+- **The sender is never a parameter.** `owner_send` ignores any sender field, and `send` and `reply` use the bound session.
+- **Workers.** Any agent may call `agent_start` and `agent_stop` (on its own workers); the person at the command line may stop any worker. A worker cannot start workers: the daemon checks the worker flag of the calling session, which the daemon set from its own table; the gateway checks it again; and a command-line call from inside a worker is refused as above. A machine refuses workers with `setup --no-launch`; the gateway sees that from the machine's hello and refuses early. At most 4 workers run on a machine (a setting).
+- **A worker's session is only its own process.** The daemon binds a worker's harness session to the worker's process group. A connection for that session from any other process is refused, so the user's own OpenCode service cannot register or hijack it. A worker has one session.
+- **A worker's server** (`opencode serve`) listens on `127.0.0.1` only, with a random password in its environment. Another local user of the machine could reach the port but not the API without the password. The password is not written to disk or to the command line.
+- **Permissions.** A worker runs with the project's own permission settings. agent-net never passes a flag that turns them off.
+- **Reports are model output.** The gateway marks messages from a worker. Claude Code, Pi and OpenCode frame them as the worker's own words, not the user's: no instruction or approval in a report carries your authority. This limits prompt injection through a report; it does not stop a model that decides to obey.
+- **Worktrees.** With `isolation: worktree` a worker edits its own git worktree under the daemon's state folder, not your checkout. The branch `agent-net/<worker id>` is made in your project.
+- **The feed** now also carries `worker.started`, `worker.stopped` and `worker.refused` (project, harness, model, reason and owner session ID, cut to 200 characters), readable by every enrolled machine, like the other feed events.
+
 ## Delivery into a Claude Code session
 
 - To deliver, the daemon writes one frame to the inbox socket of the target Claude session. Before it writes, it checks that the path is a real Unix socket (not a symlink) owned by your user.

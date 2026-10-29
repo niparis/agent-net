@@ -31,6 +31,8 @@ type Options struct {
 	Join      string // join string; empty means keep the current credentials
 	Gateway   bool   // also install and start the gateway on this machine
 	NoService bool   // do not write or start services
+	NoLaunch  bool   // refuse workers on this machine (saved in node.json)
+	Launch    bool   // accept workers again after --no-launch
 	Purge     bool   // uninstall only: also remove credentials and state
 	Data      string // gateway data dir
 	Dist      string // gateway dist dir
@@ -105,6 +107,7 @@ func Setup(ctx context.Context, o Options) error {
 		r.step("join", "", err)
 		return r.failed
 	}
+	r.workersSetting()
 	r.daemonService()
 	r.claudeMCP()
 	r.piExtension()
@@ -272,6 +275,33 @@ func waitForPort(addr string, d time.Duration) error {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// ---- workers ----
+
+// workersSetting saves --no-launch or --launch in node.json and says what the
+// machine does now. A setting that was saved earlier stays when neither flag is given.
+func (r *runner) workersSetting() {
+	if r.NoLaunch && r.Launch {
+		r.step("workers", "", errors.New("use --no-launch or --launch, not both"))
+		return
+	}
+	if r.NoLaunch || r.Launch {
+		if err := daemon.SetNoLaunch(daemon.ConfigDir(), r.NoLaunch); err != nil {
+			r.step("workers", "", err)
+			return
+		}
+	}
+	nc, _, err := daemon.LoadNode(daemon.ConfigDir())
+	if err != nil {
+		r.step("workers", "", err)
+		return
+	}
+	if nc.NoLaunch {
+		r.step("workers", "refused (--no-launch); run setup --launch to accept them again", nil)
+		return
+	}
+	r.step("workers", "accepted (refuse them with --no-launch)", nil)
 }
 
 // ---- daemon service ----

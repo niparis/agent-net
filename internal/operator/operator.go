@@ -1,0 +1,121 @@
+// Package operator is the one interface a person uses to look at the agent
+// network and act on it (decision 0007). It has two parts:
+//
+//   - the methods and their request and answer types, in internal/protocol
+//     (operator.go), which are plain JSON and know nothing about a front end;
+//   - this package, a Go client of those methods over the local daemon's
+//     socket, with a small composed Snapshot for screens that show everything
+//     at once.
+//
+// The terminal screen uses only this package. The phone app will call the same
+// methods through the gateway.
+package operator
+
+import (
+	"context"
+	"errors"
+	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+// Operator is everything a front end can ask and do. Reads never change
+// anything. The actions are the ones decision 0007 lists.
+type Operator interface {
+	// Snapshot is the state of the network as the local daemon sees it.
+	Snapshot(ctx context.Context) (Snapshot, error)
+	// Events returns feed events after afterID, oldest first. With afterID 0
+	// it returns the newest limit events.
+	Events(ctx context.Context, afterID int64, limit int) ([]protocol.FeedEvent, error)
+	// Message fetches one message with its body. The gateway only gives it to
+	// the machines that have a session in the conversation.
+	Message(ctx context.Context, id string) (protocol.Message, error)
+	// SendAsOwner sends a message from the owner (the person at this machine)
+	// to a session.
+	SendAsOwner(ctx context.Context, to, body string) (protocol.MessageSent, error)
+	// StartWorker starts a worker and sends it its task as the owner.
+	StartWorker(ctx context.Context, req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error)
+	// StopWorker ends a worker.
+	StopWorker(ctx context.Context, session string) error
+	// Workers lists the workers on the network with their owners.
+	Workers(ctx context.Context) ([]protocol.WorkerView, error)
+	Close()
+}
+
+// Snapshot is the state of the network as one daemon sees it.
+type Snapshot struct {
+	// Connected tells whether the daemon has a link to the gateway.
+	Connected bool
+	NodeID    string // the machine the operator runs on
+	Hostname  string // its host name, when the daemon says it
+	Version   string // its agent-net version
+	// OwnerSession is the owner's session ID on this machine ("" if unknown).
+	OwnerSession string
+	// Launch is false when this machine refuses workers.
+	Launch bool
+	Nodes  []protocol.NodeView
+	// Agents are the sessions, with the owner pseudo-sessions.
+	Agents []protocol.AgentView
+	// Projects is the project list (registered, seen or both). Empty when the
+	// gateway cannot list them; a screen then shows no project source.
+	Projects []protocol.ProjectView
+}
+
+// Workers lists the workers among the agents, with their owners.
+func (s Snapshot) Workers() []protocol.WorkerView { return protocol.WorkersOf(s.Agents) }
+
+// Problem says why the last call failed.
+type Problem int
+
+const (
+	ProblemNone    Problem = iota
+	ProblemDaemon          // the daemon cannot be reached
+	ProblemGateway         // the daemon cannot reach the gateway
+	ProblemOther           // the daemon refused a call
+)
+
+// ErrDaemonDown and ErrGatewayDown are the two failures a screen explains.
+var (
+	ErrDaemonDown  = errors.New("daemon not reachable")
+	ErrGatewayDown = errors.New("gateway not reachable")
+)
+
+// ErrFeedUnavailable means the daemon or the gateway is older than the event
+// feed.
+var ErrFeedUnavailable = errors.New("event feed not available")
+
+// ErrTooOld means the daemon or the gateway is older than the call.
+var ErrTooOld = errors.New("too old for this action")
+
+// ClassifyError maps an error from an Operator to a Problem.
+func ClassifyError(err error) Problem {
+	switch {
+	case err == nil:
+		return ProblemNone
+	case errors.Is(err, ErrDaemonDown):
+		return ProblemDaemon
+	case errors.Is(err, ErrGatewayDown):
+		return ProblemGateway
+	}
+	return ProblemOther
+}
+
+// IsOldPeer tells whether an error text comes from a daemon that does not know
+// a method (it says "not available to cli clients" or "unknown method") or a
+// gateway that does not know a frame.
+func IsOldPeer(msg string) bool {
+	for _, s := range []string{"unknown method", "unknown frame type", "not available to cli clients"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// Timeout is how long one read may take. Starting a worker takes longer
+// (StartTimeout).
+const Timeout = 5 * time.Second
+
+// StartTimeout is how long StartWorker may take: the machine starts a harness.
+const StartTimeout = 2 * time.Minute

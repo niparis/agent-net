@@ -96,6 +96,9 @@ type localConn struct {
 	once   sync.Once
 	closed chan struct{}
 
+	// peer is the process ID of the other end of the socket.
+	peer int
+
 	mu     sync.Mutex
 	client string
 	ls     *localSession // bound session; nil for cli
@@ -216,6 +219,9 @@ func (lc *localConn) run(ctx context.Context) {
 			if strings.HasPrefix(req.Method, "mcp_") {
 				timeout = protocol.MCPMaxTimeout + time.Minute // a tool call may run as long as its server allows
 			}
+			if req.Method == protocol.OpWorkerStart {
+				timeout = lc.d.cfg.Workers.filled().StartTimeout + 60*time.Second // the machine starts a harness
+			}
 			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			res, err := lc.dispatch(cctx, req.Method, req.Params)
@@ -299,6 +305,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the peer process: %w", err)
 	}
+	lc.peer = pid
 	switch p.Client {
 	case "cli":
 		lc.mu.Lock()
@@ -368,6 +375,20 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		if p.Mode != "" && !protocol.ValidMode(p.Mode) {
 			return nil, fmt.Errorf("bad mode %q", p.Mode)
 		}
+		// A worker's own harness process connects as its session, and nobody
+		// else may: the user's service sees the worker's sessions in the shared
+		// database and would try to register them too.
+		var wk *worker
+		var winfo *protocol.WorkerInfo
+		if wk = d.workerForPeer(pid); wk != nil {
+			if err := d.bindWorkerNative(wk, p.NativeID); err != nil {
+				return nil, err
+			}
+			winfo = d.workerInfo(wk)
+			p.Mode = protocol.ModeBackground // nobody watches a worker
+		} else if d.workerOwnsNative(p.Client, p.NativeID) {
+			return nil, errors.New("that session belongs to a worker started by this daemon; only the worker's own process can connect as it")
+		}
 		if p.Mode == "" {
 			// A plugin from before the mode existed, or one that cannot tell
 			// (OpenCode): say "unknown" and not nothing. An empty mode is
@@ -377,7 +398,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
 			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: pluginName(p.Name, p.Cwd),
 			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
-			Mode: p.Mode, Model: protocol.CleanModel(p.Model)}}
+			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
 		k := key(p.Client, p.NativeID)
 		d.mu.Lock()
 		old := d.sessions[k]
@@ -391,6 +412,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		lc.bind(p.Client, ls)
 		d.pushSession(ls)
+		if wk != nil {
+			d.workerSessionReady(wk, d.currentSessionID(ls))
+		}
 		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 	}
 	return nil, fmt.Errorf("unknown client %q", p.Client)
@@ -461,17 +485,18 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return res, err
 	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
-		"nodes": true, "restart": true, "projects": true, "events": true}
+		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
-		method != "project_add" && method != "project_remove" {
+		method != "project_add" && method != "project_remove" &&
+		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
 	// Sender identity is never taken from params: the bound session is used.
 	switch method {
 	case "info":
-		return map[string]any{"connected": d.Connected(), "node_id": d.cfg.NodeID,
-			"gateway_url": d.cfg.GatewayURL, "sessions": d.Sessions(), "version": d.helloVersion(),
-			"protocol": protocol.LocalProtocol}, nil
+		return protocol.OperatorInfo{Connected: d.Connected(), NodeID: d.cfg.NodeID, Hostname: d.cfg.Hostname,
+			GatewayURL: d.cfg.GatewayURL, Sessions: d.Sessions(), Version: d.helloVersion(),
+			Protocol: protocol.LocalProtocol, OwnerSession: d.ownerSessionID(), Launch: !d.cfg.NoLaunch}, nil
 
 	case "nodes", "restart":
 		return d.dispatchUpgrade(ctx, method, client)
@@ -498,7 +523,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if p.Status != "" {
 			ls.info.Status = p.Status
 		}
-		if p.Mode != nil {
+		if p.Mode != nil && ls.info.Worker == nil { // a worker is always background
 			ls.info.Mode = *p.Mode
 		}
 		if p.Model != nil {
@@ -628,6 +653,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return res, err
 	}
 	if res, ok, err := lc.dispatchProject(ctx, client, method, raw); ok {
+		return res, err
+	}
+	if res, ok, err := lc.dispatchOperator(ctx, client, method, raw); ok {
 		return res, err
 	}
 	return nil, fmt.Errorf("unknown method %q", method)

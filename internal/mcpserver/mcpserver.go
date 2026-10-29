@@ -148,6 +148,7 @@ func New(call Caller) *mcp.Server {
 		})
 	addRegistryTools(s, run)
 	addProjectTools(s, run)
+	addWorkerTools(s, run)
 	return s
 }
 

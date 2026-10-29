@@ -59,6 +59,12 @@ const server = createServer((conn) => {
               { name: "beta", hostname: "mac", path: "/c/beta", source: "registered", harnesses: [] },
               { name: "old", hostname: "box", path: "/c/old", harnesses: ["pi"] },
             ] }
+        : line.method === "worker_start"
+          ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac" }
+        : line.method === "worker_handback"
+          ? { status: line.params.status || "done" }
+        : line.method === "worker_stop"
+          ? { session: line.params.session, stopped: true }
         : line.method === "nodes"
           ? { gateway_version: "v1", nodes: [
               { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
@@ -96,7 +102,9 @@ function makeContext(directory, sessions, hooks = {}) {
           if (!s) throw new Error("session not found");
           return s;
         },
-        async prompt() {},
+        async prompt(input) {
+          hooks.onPrompt?.(input);
+        },
         async context({ sessionID }) {
           hooks.onContext?.(sessionID);
           if (hooks.contextFails) throw new Error("context failed");
@@ -636,6 +644,144 @@ await test("session_text pages back and forward by cursor, and reports failures"
   hooks.contextFails = true;
   const failed = await ask("p7", {});
   if (failed.ok || !failed.error.includes("context failed")) throw new Error("failure: " + JSON.stringify(failed));
+await test("agent_start and agent_stop reach the daemon and print a short result", async () => {
+  freshHub();
+  const sessions = new Map([["ses_w", session("ses_w", "/work/w")]]);
+  let tools;
+  const c = makeContext("/work/w", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_w", () => registered("ses_w"));
+  const start = tools.find((t) => t.name === "agent_start");
+  const stopTool = tools.find((t) => t.name === "agent_stop");
+  if (!start || !stopTool) throw new Error("worker tools are not registered");
+  // The caller is the bound session: there is no way to name another one.
+  for (const bad of ["owner", "from", "sender", "session_id"]) {
+    if (bad in start.input.properties) throw new Error("agent_start exposes " + bad);
+  }
+  const before = calls.length;
+  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x" }, { sessionID: "ses_w" })).content;
+  const [method, params] = calls[before];
+  if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x") {
+    throw new Error("wrong call: " + JSON.stringify(calls[before]));
+  }
+  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop"]) {
+    if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
+  }
+  const gone = (await stopTool.execute({ session: "s_worker" }, { sessionID: "ses_w" })).content;
+  const last = calls[calls.length - 1];
+  if (last[0] !== "worker_stop" || last[1].session !== "s_worker" || !gone.includes("Stopped worker s_worker")) {
+    throw new Error("stop: " + JSON.stringify(last) + " " + gone);
+  }
+  stop();
+});
+
+await test("a message from the owner says it is from the user in person", async () => {
+  freshHub();
+  const sessions = new Map([["ses_o", session("ses_o", "/work/o")]]);
+  const prompts = [];
+  const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_o", () => registered("ses_o"));
+  const push = (m) => conns.get("ses_o").write(JSON.stringify({ method: "deliver", params: { message: m } }) + "\n");
+  push({ message_id: "m_1", sender_session_id: "s_me", sender_name: "you (on mac)", sender_harness: "owner",
+         message_type: "request", body: "please also run the tests" });
+  await until("prompt for the owner message", () => prompts.length === 1);
+  const text = prompts[0].text;
+  for (const want of ["please also run the tests", "from your user in person (you (on mac)", "This is your user speaking, not another agent", 'message_id="m_1"']) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
+  }
+  if (text.includes("another agent working on your user's machines")) throw new Error("an owner message is labelled as an agent's");
+  // An agent's message keeps its own text.
+  push({ message_id: "m_2", sender_session_id: "s_a", sender_name: "alice", sender_harness: "pi", message_type: "request", body: "hello" });
+  await until("prompt for the agent message", () => prompts.length === 2);
+  if (!prompts[1].text.includes("another agent working on your user's machines")) throw new Error("agent text: " + prompts[1].text);
+  stop();
+});
+
+await test("a worker does not register the user's other sessions", async () => {
+  freshHub();
+  const sessions = new Map([
+    ["ses_other", session("ses_other", "/work/x")],
+    ["ses_older", session("ses_older", "/work/x")],
+    ["ses_mine", session("ses_mine", "/work/x")],
+  ]);
+  const file = join(dir, "worker-session");
+  process.env.AGENT_NET_WORKER = "w_1";
+  process.env.AGENT_NET_WORKER_SESSION_FILE = file;
+  try {
+    let listed = 0;
+    const c = makeContext("/work/x", sessions, { onList: () => listed++ });
+    const stop = await plugin.setup(c.ctx);
+    await settle();
+    if (listed !== 0 || registered("ses_other") || registered("ses_older") || registered("ses_mine")) {
+      throw new Error("a worker ran discovery");
+    }
+    // The daemon names the worker's session in a file; the plugin registers that one only.
+    writeFileSync(file, "ses_mine\n");
+    await until("hello for the worker's own session", () => registered("ses_mine"));
+    await settle();
+    if (registered("ses_other") || registered("ses_older")) throw new Error("a worker registered a session that is not its own");
+    stop();
+  } finally {
+    delete process.env.AGENT_NET_WORKER;
+    delete process.env.AGENT_NET_WORKER_SESSION_FILE;
+  }
+});
+
+await test("agent_handback reaches the daemon; agent_start can ask for a worktree", async () => {
+  freshHub();
+  const sessions = new Map([["ses_h", session("ses_h", "/work/h")]]);
+  let tools;
+  const c = makeContext("/work/h", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_h", () => registered("ses_h"));
+  const hb = tools.find((t) => t.name === "agent_handback");
+  if (!hb) throw new Error("agent_handback is not registered");
+  if (!hb.input.required.includes("report")) throw new Error("report must be required");
+  for (const bad of ["to", "owner", "session", "recipient"]) {
+    if (bad in hb.input.properties) throw new Error("agent_handback lets the worker pick a recipient: " + bad);
+  }
+  const before = calls.length;
+  const out = (await hb.execute({ report: "all done", status: "blocked" }, { sessionID: "ses_h" })).content;
+  const [method, params] = calls[before];
+  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || !out.includes("Handed back (blocked)")) {
+    throw new Error("handback: " + JSON.stringify(calls[before]) + " " + out);
+  }
+  const start = tools.find((t) => t.name === "agent_start");
+  if (!("isolation" in start.input.properties)) throw new Error("agent_start has no isolation");
+  await start.execute({ project: "alpha", task: "t", isolation: "worktree" }, { sessionID: "ses_h" });
+  if (calls[calls.length - 1][1].isolation !== "worktree") throw new Error("isolation was not passed");
+  stop();
+});
+
+await test("a report from a worker is framed as model output, not the user's words", async () => {
+  freshHub();
+  const sessions = new Map([["ses_r", session("ses_r", "/work/r2")]]);
+  const prompts = [];
+  const c = makeContext("/work/r2", sessions, { onPrompt: (p) => prompts.push(p) });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_r", () => registered("ses_r"));
+  const push = (m) => conns.get("ses_r").write(JSON.stringify({ method: "deliver", params: { message: m } }) + "\n");
+  push({ message_id: "m_w", sender_session_id: "s_w", sender_name: "shop", sender_harness: "opencode", sender_worker: true,
+         message_type: "reply", body: "[agent-net worker notice]\nstatus: done" });
+  await until("prompt for the worker report", () => prompts.length === 1);
+  for (const want of ["status: done", "model output from a worker", "not your user's words", "no user authority"]) {
+    if (!prompts[0].text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(prompts[0].text));
+  }
+  // The owner's own message is never framed that way, and a plain agent's is not either.
+  push({ message_id: "m_p", sender_session_id: "s_p", sender_name: "pal", sender_harness: "pi", message_type: "request", body: "hi" });
+  await until("prompt for the agent message", () => prompts.length === 2);
+  if (prompts[1].text.includes("model output from a worker")) throw new Error("an agent message got the worker frame");
   stop();
 });
 

@@ -134,6 +134,12 @@ type fakeSource struct {
 	evErr    error
 	messages map[string]protocol.Message
 	msgErr   error
+
+	// What the actions were asked to do, and the error they answer with.
+	sentTo, sentBody string
+	started          *protocol.WorkerStartRequest
+	stopped          string
+	actErr           error
 }
 
 func (f *fakeSource) Snapshot(context.Context) (Snapshot, error) { return f.snap, f.snapErr }
@@ -155,6 +161,27 @@ func (f *fakeSource) Message(_ context.Context, id string) (protocol.Message, er
 		return m, client.RemoteError(fmt.Sprintf("unknown message %q", id))
 	}
 	return m, nil
+}
+func (f *fakeSource) SendAsOwner(_ context.Context, to, body string) (protocol.MessageSent, error) {
+	f.sentTo, f.sentBody = to, body
+	if f.actErr != nil {
+		return protocol.MessageSent{}, f.actErr
+	}
+	return protocol.MessageSent{Message: &protocol.Message{ID: "m_sent", To: to}}, nil
+}
+func (f *fakeSource) StartWorker(_ context.Context, r protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
+	f.started = &r
+	if f.actErr != nil {
+		return protocol.WorkerStartResult{}, f.actErr
+	}
+	return protocol.WorkerStartResult{SessionID: "s_new", Harness: r.Harness, Project: r.Project, Hostname: "Mac"}, nil
+}
+func (f *fakeSource) StopWorker(_ context.Context, id string) error {
+	f.stopped = id
+	return f.actErr
+}
+func (f *fakeSource) Workers(context.Context) ([]protocol.WorkerView, error) {
+	return nil, nil
 }
 func (f *fakeSource) Close() {}
 

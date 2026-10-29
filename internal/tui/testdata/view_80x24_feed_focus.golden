@@ -21,4 +21,4 @@ Messages (live, enter opens one) ───────────────�
 > 13:56  tenebrae-53 (Mac) -> strategies (Mac)           request      replied
   13:57  strategies (Mac) -> tenebrae-53 (Mac)           reply        delivered
   14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)       request      delivered
-up/down move  enter open body  tab sessions  / filter  o offline  q quit
+up/down move  enter open body  m msg  tab sessions  / filter  q quit

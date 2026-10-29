@@ -110,6 +110,18 @@ TIME      MESSAGE             STATE      TYPE     FROM                TO        
 
 Neither agent asked you to copy anything. Pi answered from its own files, and Claude Code used the answer in its own project. The session IDs, paths and message IDs are the real values from that run.
 
+## Workers
+
+From the TUI (`s`), the command line or an agent, you can start a new agent session in a project on any machine and give it a task. OpenCode first:
+
+```sh
+agent-net start --project shop --harness opencode --model anthropic/claude-sonnet-5 --isolation worktree "add a /health route and a test"
+agent-net workers     # who runs what, and who started it
+agent-net stop s_...  # end one
+```
+
+The worker works with nobody watching, under the project's own permission settings, and hands back a report with the facts: status, run time, tokens, and the diff. It ends by itself after 60 minutes of silence or 4 hours. From Claude Code, ask it to "use agent-net to do this with an opencode worker" and it calls `agent_start`. See [docs/reference.md](docs/reference.md#workers).
+
 ## Supported agents
 
 | Agent | Status | How it connects | Tested with |

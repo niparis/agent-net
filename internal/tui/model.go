@@ -68,6 +68,16 @@ type Model struct {
 	feedCur     int // index in the feed items when the feed has focus
 	open        *openMsg
 	quitting    bool
+
+	// Actions (forms.go).
+	mode        inputMode
+	notice      notice
+	compose     textinput.Model // the message prompt
+	composeTo   string          // session ID the message goes to
+	composeName string
+	form        workerForm
+	confirmID   string // worker the stop question is about
+	confirmName string
 }
 
 // New returns a model that reads from src.
@@ -159,6 +169,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFetch(msg)
 		return m, nil
 
+	case actionMsg:
+		return m.onAction(msg)
+
 	case bodyMsg:
 		if m.open != nil && m.open.id == msg.id {
 			m.open.loading = false
@@ -225,6 +238,14 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
+	switch m.mode {
+	case modeCompose:
+		return m.composeKey(k)
+	case modeForm:
+		return m.formKey(k)
+	case modeConfirm:
+		return m.confirmKey(k)
+	}
 	if m.filtering {
 		switch k.Type {
 		case tea.KeyEsc:
@@ -264,10 +285,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	m.notice = notice{} // the result of the last action goes with the next key
 	switch k.String() {
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "m":
+		return m.startCompose()
+	case "s":
+		return m.startForm()
+	case "x":
+		return m.startConfirm()
 	case "/":
 		m.filtering = true
 		m.input.SetValue(m.filter)
@@ -379,6 +407,9 @@ func (m Model) groups() []group {
 	by := map[string]*group{}
 	var order []*group
 	for _, a := range m.snap.Agents {
+		if protocol.IsOwner(a.Harness) {
+			continue // the owner is a sender, not a row
+		}
 		// Dormant sessions are reachable but quiet: hidden with the offline ones.
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue

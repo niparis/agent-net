@@ -26,6 +26,18 @@ func harnessSummary(n protocol.NodeView) string {
 	return strings.Join(names, ",")
 }
 
+// launchSummary is the WORKERS column of `nodes`: whether the machine accepts
+// workers. "unknown" is a machine on an older agent-net.
+func launchSummary(n protocol.NodeView) string {
+	switch {
+	case n.Launch == nil:
+		return "unknown"
+	case *n.Launch:
+		return "accepts"
+	}
+	return "refuses"
+}
+
 // modelSummary says how many models a harness lists and from which providers.
 func modelSummary(models []string) string {
 	if len(models) == 0 {

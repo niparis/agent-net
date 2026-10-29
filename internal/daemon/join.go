@@ -25,6 +25,63 @@ type NodeConfig struct {
 	NodeID     string `json:"node_id"`
 	Token      string `json:"token"`
 	CASHA256   string `json:"ca_sha256"`
+	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
+	NoLaunch bool `json:"no_launch,omitempty"`
+	// Workers sets the worker limits and timeouts. Absent fields take the
+	// defaults of decision 0002.
+	Workers *NodeWorkers `json:"workers,omitempty"`
+}
+
+// NodeWorkers is the "workers" part of node.json. Durations are Go durations
+// such as "60m" or "4h".
+type NodeWorkers struct {
+	Max        int    `json:"max,omitempty"`
+	Idle       string `json:"idle,omitempty"`
+	MaxAge     string `json:"max_age,omitempty"`
+	OwnerGrace string `json:"owner_grace,omitempty"`
+}
+
+// WorkerSettings returns the worker settings of node.json.
+func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
+	var s WorkerSettings
+	if nc.Workers == nil {
+		return s, nil
+	}
+	s.Max = nc.Workers.Max
+	for _, f := range []struct {
+		name string
+		in   string
+		out  *time.Duration
+	}{{"idle", nc.Workers.Idle, &s.Idle}, {"max_age", nc.Workers.MaxAge, &s.MaxAge}, {"owner_grace", nc.Workers.OwnerGrace, &s.OwnerGrace}} {
+		if f.in == "" {
+			continue
+		}
+		d, err := time.ParseDuration(f.in)
+		if err != nil || d <= 0 {
+			return s, fmt.Errorf("node.json: workers.%s must be a duration like 60m, not %q", f.name, f.in)
+		}
+		*f.out = d
+	}
+	if s.Max < 0 {
+		return s, errors.New("node.json: workers.max must not be negative")
+	}
+	return s, nil
+}
+
+// SetNoLaunch writes the no_launch setting into node.json in dir.
+func SetNoLaunch(dir string, noLaunch bool) error {
+	path := filepath.Join(dir, "node.json")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	var nc NodeConfig
+	if err := json.Unmarshal(raw, &nc); err != nil {
+		return err
+	}
+	nc.NoLaunch = noLaunch
+	out, _ := json.MarshalIndent(nc, "", "  ")
+	return os.WriteFile(path, out, 0o600)
 }
 
 // LoadNode reads node.json and ca.pem from dir.
@@ -126,6 +183,13 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 		return NodeConfig{}, err
 	}
 	nc := NodeConfig{GatewayURL: url, NodeID: out.NodeID, Token: out.Token, CASHA256: fp}
+	// Joining again (a new gateway) keeps this machine's own settings.
+	if raw, err := os.ReadFile(filepath.Join(dir, "node.json")); err == nil {
+		var old NodeConfig
+		if json.Unmarshal(raw, &old) == nil {
+			nc.NoLaunch, nc.Workers = old.NoLaunch, old.Workers
+		}
+	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nc, err
 	}

@@ -31,4 +31,4 @@ Messages (live) ─────────────────────�
   14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
   14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
   14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
-up/down select  / filter  o offline  tab messages  r refresh  q quit
+up/down select  m msg  s start  x stop  / filter  o offline  tab feed  q quit

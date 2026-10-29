@@ -49,11 +49,15 @@ const usage = `usage: agent-net <command>
   nodes      list machines with their agent-net version and installed harnesses
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
-  tui        live terminal view of every agent session on the network (read-only)
+  tui        live terminal view of every agent session on the network; send as yourself, start and stop workers
   top        CPU and memory of every machine and session; top SESSION shows its heaviest processes
   show       what happens inside a session: prompts, replies and tool calls (show SESSION [-n N] [--follow])
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
+  start      start a worker session: --project NAME --harness opencode --model M "<task>"
+  stop       stop a worker: agent-net stop <session>
+  workers    list the workers on the network with their owners
+  send       send a message as yourself: agent-net send <session or name> <message...>
   version    print the version of this binary
 `
 
@@ -109,6 +113,14 @@ func main() {
 		err = cmdUpgrade(ctx, args)
 	case "messages":
 		err = cmdMessages(ctx, args)
+	case "start":
+		err = cmdStart(ctx, args)
+	case "stop":
+		err = cmdStop(ctx, args)
+	case "workers":
+		err = cmdWorkers(ctx, args)
+	case "send":
+		err = cmdSend(ctx, args)
 	case "version", "--version":
 		fmt.Println(version)
 	case "-h", "--help", "help":
@@ -246,6 +258,10 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	if *gw != "" {
 		nc.GatewayURL = strings.TrimRight(*gw, "/")
 	}
+	ws, err := nc.WorkerSettings()
+	if err != nil {
+		return err
+	}
 	host, _ := os.Hostname()
 	logger := log.New(os.Stderr, "daemon: ", log.LstdFlags)
 	d, err := daemon.New(daemon.Config{
@@ -254,6 +270,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		RefreshAgentFiles: agentfiles.SyncAndLog,
 		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
+		NoLaunch:          nc.NoLaunch, Workers: ws,
 		// Tests set this to 0s so they need not wait up to 10 s.
 		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),
 	})
@@ -407,8 +424,8 @@ func cmdMessages(ctx context.Context, args []string) error {
 	return tw.Flush()
 }
 
-// cmdTUI shows the network live in the terminal. It reads through the local
-// daemon, so it runs on any machine of the network, and it changes nothing.
+// cmdTUI shows the network live in the terminal. It talks to the local daemon
+// through the operator interface, so it runs on any machine of the network.
 func cmdTUI(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("tui", flag.ExitOnError)
 	fs.Parse(args)

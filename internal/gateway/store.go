@@ -108,6 +108,9 @@ CREATE TABLE projects (
 `, `
 ALTER TABLE sessions ADD COLUMN mode TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT '';
+`, `
+ALTER TABLE sessions ADD COLUMN worker TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN launch INTEGER NOT NULL DEFAULT -1;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -312,17 +315,33 @@ func (s *Store) upsertSession(q interface {
 		in.Mode = ""
 	}
 	in.Model = protocol.CleanModel(in.Model)
+	// The owner pseudo-session is the person at a machine. A daemon makes one
+	// per machine, with this fixed native ID, and it is never a worker.
+	if protocol.IsOwner(in.Harness) {
+		if in.NativeID != protocol.OwnerNativeID {
+			return "", false, reject("an owner session must have native_id %q", protocol.OwnerNativeID)
+		}
+		in.Worker = nil
+	}
+	worker := ""
+	if in.Worker != nil {
+		raw, err := json.Marshal(in.Worker)
+		if err != nil {
+			return "", false, err
+		}
+		worker = string(raw)
+	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
-		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)
+		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
-		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model`,
+		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker`,
 		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
-		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model)
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker)
 	if err != nil {
 		return "", false, err
 	}
@@ -331,10 +350,12 @@ func (s *Store) upsertSession(q interface {
 	if err != nil {
 		return "", false, err
 	}
-	if known == 0 {
+	// The owner session is the person, not a new agent: no session.new for it.
+	fresh := known == 0 && !protocol.IsOwner(in.Harness)
+	if fresh {
 		s.event(q, "session.new", nodeID, id, "", sessionDetail(in))
 	}
-	return id, known == 0, nil
+	return id, fresh, nil
 }
 
 func sessionDetail(in protocol.SessionInfo) string {
@@ -462,19 +483,25 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen,
 	COALESCE(NULLIF(p.name,''), s.name), COALESCE(p.function,''), COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
-	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid
+	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var a protocol.AgentView
 	var online int
 	var lastSeen int64
-	var caps string
+	var caps, worker string
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
-		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID)
+		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker)
 	if err != nil {
 		return a, err
+	}
+	if worker != "" {
+		var w protocol.WorkerInfo
+		if json.Unmarshal([]byte(worker), &w) == nil {
+			a.Worker = &w
+		}
 	}
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
@@ -506,6 +533,9 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 			return nil, err
 		}
 		if f.OnlineOnly && !a.Online {
+			continue
+		}
+		if protocol.IsOwner(a.Harness) && !f.IncludeOwners && f.Harness != protocol.OwnerHarness {
 			continue
 		}
 		if f.Harness != "" && a.Harness != f.Harness {
@@ -541,14 +571,14 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, '')
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != ''
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker)
 	m.CreatedAt = time.Unix(0, created).UTC()
 	m.ExpiresAt = time.Unix(0, expires).UTC()
 	return m, err

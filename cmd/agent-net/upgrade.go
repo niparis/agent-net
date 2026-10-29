@@ -67,9 +67,9 @@ func cmdNodes(ctx context.Context, args []string) error {
 	}
 	fmt.Printf("gateway  %s\n\n", orUnknown(info.GatewayVersion))
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "HOST\tNODE\tVERSION\tONLINE\tHARNESSES")
+	fmt.Fprintln(tw, "HOST\tNODE\tVERSION\tONLINE\tWORKERS\tHARNESSES")
 	for _, n := range info.Nodes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\t%s\n", n.Hostname, n.NodeID, orUnknown(n.Version), n.Online, harnessSummary(n))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%v\t%s\t%s\n", n.Hostname, n.NodeID, orUnknown(n.Version), n.Online, launchSummary(n), harnessSummary(n))
 	}
 	if err := tw.Flush(); err != nil {
 		return err

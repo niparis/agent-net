@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +68,8 @@ func (f *feed) apply(evs []protocol.FeedEvent) {
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, From: e.SessionID, Detail: e.Detail, State: "refused"})
 		case e.Kind == "node.connected" || e.Kind == "node.disconnected" || e.Kind == "node.enrolled":
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Host: e.Hostname, Detail: e.Detail})
+		case strings.HasPrefix(e.Kind, "worker."):
+			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Session: e.SessionID, Host: e.Hostname, Detail: e.Detail})
 		case e.Kind == "session.new":
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Session: e.SessionID, Host: e.Hostname, Detail: e.Detail})
 		}
@@ -145,6 +148,20 @@ func parseDetail(s string) map[string]string {
 		}
 	}
 	return out
+}
+
+// detailReason returns the value of reason= in an event detail. It is the
+// last field and may be quoted and hold spaces, so it runs to the end.
+func detailReason(detail string) string {
+	_, rest, ok := strings.Cut(detail, "reason=")
+	if !ok {
+		return ""
+	}
+	rest = strings.TrimSpace(rest)
+	if u, err := strconv.Unquote(rest); err == nil {
+		return u
+	}
+	return strings.Trim(rest, `"`)
 }
 
 // messagesOf returns the message items that involve a session, newest first.

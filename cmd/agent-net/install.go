@@ -14,11 +14,13 @@ func cmdSetup(ctx context.Context, args []string) error {
 	join := fs.String("join", "", "join string from `agent-net invite` or `agent-net enroll`")
 	gw := fs.Bool("gateway", false, "also install and start the gateway on this machine")
 	noService := fs.Bool("no-service", false, "do not write or start services")
+	noLaunch := fs.Bool("no-launch", false, "refuse workers on this machine: other sessions cannot start agent sessions here")
+	launch := fs.Bool("launch", false, "accept workers again after --no-launch")
 	data := fs.String("data", defaultGatewayData(), "gateway data directory (with --gateway)")
 	dist := fs.String("dist", setup.DefaultDist(), "directory the gateway serves binaries from (with --gateway)")
 	port := fs.String("port", setup.GatewayPort, "gateway port (with --gateway)")
 	fs.Parse(args)
-	return setup.Setup(ctx, setup.Options{Join: *join, Gateway: *gw, NoService: *noService, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

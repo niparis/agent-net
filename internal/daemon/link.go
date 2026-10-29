@@ -112,6 +112,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onOperatorFrame(ctx, l, h.Type, h.ID, raw)
 			}()
+		case "worker.launch", "worker.kill":
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onWorkerFrame(ctx, l, h, raw)
+			}()
 		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.changed":
 			d.wg.Add(1)
 			go func() {
@@ -184,7 +190,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
 	inv, gen := d.inventory()
-	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, Harnesses: inv}); err != nil {
+	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, Harnesses: inv, Launch: d.launchFlag()}); err != nil {
 		return false, err
 	}
 	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: d.snapshot()})
@@ -225,6 +231,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		d.pushSession(ls)
 	}
 	d.flushOutbox(rctx)
+	d.reportWorkerEnds(rctx)
 	go d.autoUpgrade(rctx) // not tracked: it may stop the daemon itself to restart
 
 	select {

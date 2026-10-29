@@ -66,7 +66,7 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
 		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree
-		FROM sessions s JOIN nodes n ON n.id = s.node_id ORDER BY s.last_seen DESC, s.id`)
+		FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.harness != 'owner' ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -262,7 +262,7 @@ const (
 
 // feedKinds are the event kinds any node may read, as prefixes up to a dot.
 // MCP events and enrollment events are left out.
-var feedKinds = []string{"msg", "session", "node"}
+var feedKinds = []string{"msg", "session", "node", "worker"}
 
 // FeedEvents returns the events any node may read, oldest first. It is the
 // admin events table without bodies, MCP records and addresses: messages are

@@ -67,6 +67,20 @@ sudo loginctl enable-linger $USER
 
 This is expected in some cases. Claude Code and Pi check with you before work that is outside the current task or risky, and a message from another agent is never your approval. Answer the agent in its own session. See [security.md](security.md).
 
+## A worker does not start
+
+`agent-net start` prints the reason. The usual ones:
+
+- `no project named X is known`: register it with `agent-net projects add <path>` on the machine that has it.
+- `X is on several machines`: add `--machine HOST`.
+- `does not accept workers`: that machine was set up with `--no-launch`; run `agent-net setup --launch` there.
+- `model ... is not in the opencode model list`: see `agent-net nodes --wide`.
+- `the agent-net plugin did not register the worker session`: the OpenCode plugin is not installed on that machine. Run `agent-net setup` there. The daemon log has the worker's output.
+- `already runs 4 workers`: stop one (`agent-net workers`, `agent-net stop`) or raise `workers.max` in `node.json`.
+- `runs inside an agent session`: `agent-net start`, `send` and `stop` act as you, so they refuse to run from an agent's shell. Run them in your own terminal.
+
+A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
+
 ## Still stuck
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues) with the output of `agent-net version`, `agent-net status`, the relevant log lines and your OS.

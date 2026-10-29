@@ -21,6 +21,7 @@ These files record how the project was planned and built. They are kept for cont
 - [brief.md](brief.md): the original brief.
 - [review.md](review.md): review of the brief and the build order.
 - [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
+- [0002](decisions/0002-workers.md): workers, accepted. [0007](decisions/0007-operator-interface-and-worker-build.md): the operator interface, the owner as a sender, and how workers were built (the OpenCode command, isolation from the user's service, hand-back, notices, worktrees).
 - [0007](decisions/0007-usage-and-session-text.md): CPU and memory per machine and session, the text of a session (owner only), and session counts.
 - [0006](decisions/0006-phone-app.md): phone app, planned: same data and actions as the TUI, through one shared operator interface.
 - [spike/](spike/): what we measured about each agent before building.

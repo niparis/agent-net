@@ -164,6 +164,7 @@ type node struct {
 	adapter *fakeAdapter
 	cfg     Config
 	cmdline string
+	exe     string
 }
 
 // restart stops the daemon and starts a new one on the same socket and state.
@@ -176,6 +177,9 @@ func (n *node) restart() {
 	}
 	if n.cmdline != "" {
 		d.cmdline = func(int) string { return n.cmdline }
+	}
+	if n.exe != "" {
+		d.exe = func(int) string { return n.exe }
 	}
 	if err := d.Start(context.Background()); err != nil {
 		n.t.Fatal(err)
@@ -194,6 +198,8 @@ type nodeOpts struct {
 	detect   func(ctx context.Context) []protocol.HarnessInfo
 	interval time.Duration
 	logger   *log.Logger
+	// cfg, if set, changes the daemon config before the daemon is made.
+	cfg func(*Config)
 }
 
 func shortDir(t *testing.T) string {
@@ -226,6 +232,9 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		cfg.Adapters = []Adapter{o.adapter}
 	}
 	cfg.DetectHarnesses, cfg.HarnessInterval = o.detect, o.interval
+	if o.cfg != nil {
+		o.cfg(&cfg)
+	}
 	d, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -239,7 +248,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	if err := d.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	n := &node{t: t, d: d, sock: sock, adapter: o.adapter, cfg: cfg, cmdline: o.cmdline}
+	n := &node{t: t, d: d, sock: sock, adapter: o.adapter, cfg: cfg, cmdline: o.cmdline, exe: o.exe}
 	t.Cleanup(d.Stop)
 	eventually(t, "daemon connected to gateway", d.Connected)
 	return n

@@ -22,7 +22,11 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net projects scan DIR` | Register every repository under a folder on this machine. `--depth N` (default 3, at most 8), `--dry-run`, `--json`. |
 | `agent-net projects remove NAME\|PATH` | Remove a registration. A name that fits two projects on this machine is refused: give the path. `--on MACHINE` removes the entry of another machine (host name or node ID), for example one that is gone. |
 | `agent-net events` | On the gateway machine: the gateway's events table, newest last. `--node` (ID or host name), `--session`, `--kind` (exact, or a group like `msg`), `--since` (like `2h` or `2026-10-29T12:00:00Z`), `--limit N` (default 100), `--follow` (or `-f`), `--json`, `--data DIR`. |
-| `agent-net tui` | A live, read-only terminal view of every session on the network. It reads through the local daemon, so it runs on any machine. See [the screen](#the-tui-screen). |
+| `agent-net tui` | A live terminal view of every session on the network, with three actions: message a session as yourself, start a worker, stop a worker. It talks to the local daemon through the operator interface, so it runs on any machine. See [the screen](#the-tui-screen). |
+| `agent-net start --project NAME [--harness opencode] [--model P/M] [--machine HOST] [--isolation worktree] "TASK"` | Start a worker: a new agent session in a known project, on the machine that holds it. It prints the worker's session ID. The task is sent to it as a message from you; its report comes back to you (see the TUI, or `agent-net messages`). `--isolation worktree` gives it its own git worktree on the branch `agent-net/<worker-id>`. See [workers](#workers). |
+| `agent-net stop SESSION` | Stop a worker. The process group is killed. |
+| `agent-net workers` | The workers on the network, with machine, project, harness, model, owner, state and start time. `--json`. |
+| `agent-net send SESSION TEXT...` | Send a message as yourself (the owner of this machine). `SESSION` is a session ID or a unique agent name. |
 | `agent-net top` | CPU and memory of every machine (now and 5 minute average, memory used and total, load, processes) and of every session's process tree, plus the session counts (online, offline in the last 24 h). `top SESSION` (an ID or a name) adds the 5 heaviest processes by CPU and by memory. `--all` also lists sessions with no figures. `--json`. A machine on an older agent-net shows `unknown`. See [CPU and memory](#cpu-and-memory). |
 | `agent-net show SESSION` | What happens inside a session: prompts, replies, tool calls and results, newest last. `-n N` (default 50, at most 200), `--follow` (or `-f`), `--before CURSOR` (page back), `--sidechain` (sub-agents, Claude Code), `--json`. Secrets are masked and each entry is cut to 2,000 characters. Owner only: see [security.md](security.md#session-text-and-resource-figures). |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
@@ -42,7 +46,9 @@ The daemon and the agents talk over Unix sockets, not network ports.
 |---|---|---|
 | Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
-| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates) and the outbox for sends made while the gateway is away. Mode 0600, like its `-wal` and `-shm` files. |
+| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree) that lets the daemon take its workers back after a restart. Mode 0600, like its `-wal` and `-shm` files. |
+| Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private OpenCode state folder and its output log. Deleted when the worker ends. |
+| Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | With `--isolation worktree`. Kept when the worker changed something, removed when not. The branch is `agent-net/<worker id>` in the project. |
 | Daemon socket | `$XDG_RUNTIME_DIR/agent-net/daemon.sock`, else `/tmp/agent-net-<uid>/daemon.sock` | Directory 0700, socket 0600. macOS has no `XDG_RUNTIME_DIR`, so it uses the `/tmp` path. |
 | Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files). **Back this folder up.** Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
@@ -93,6 +99,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_BASE_URL` | `install.sh` | Replaces the release download URL. For tests. |
 | `AGENT_NET_DIST` | `scripts/dist.sh` | Output directory for the built binaries. |
 | `AGENT_NET_NO_INSTALL` | `scripts/dist.sh` | Set it to skip copying the binary to `~/.local/bin`. |
+| `AGENT_NET_WORKER` | OpenCode plugin | Set to `1` by the daemon in a worker's environment. The plugin then does not register the user's other sessions. Do not set it. |
 | `AGENT_NET_NO_AUTO_UPGRADE` | daemon, `agent-net mcp` | `1` means: do not upgrade by itself. For the daemon: no automatic catch-up. For `agent-net mcp`: do not switch to a newer binary. |
 | `AGENT_NET_MCP_HANDOVER` | `agent-net mcp` | Set by `agent-net mcp` on itself when it switches to a newer binary. It holds the path of a private temp file (`agent-net-mcp-handover-*` in `$TMPDIR`) with the start-up messages and unread input. The new process reads it, deletes the file and unsets the variable. Do not set it. |
 | `CLAUDE_CODE_SESSION_ID` | `agent-net mcp` | Set by Claude Code for the MCP servers it starts. Not set by you. |
@@ -111,6 +118,8 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `daemon` | `--gateway URL` | from `node.json` |
 | | `--config-dir DIR` | `~/.config/agent-net` |
 | `setup` | `--join STRING` | none. A join string from `invite` or `enroll`. |
+| | `--no-launch` | off. This machine refuses workers. Saved as `no_launch` in `node.json`. It stays until `--launch`. |
+| | `--launch` | off. Accept workers again. |
 | | `--gateway` | off. Also install and start the gateway here. |
 | | `--no-service` | off |
 | | `--data DIR`, `--dist DIR`, `--port P` | gateway data, dist dir, `7420` (with `--gateway`) |
@@ -197,14 +206,31 @@ Each entry has the machine, the path of the main working tree, the name (its bas
 
 **Versions.** A gateway from before this feature answers `unknown frame type` to the new requests, and the daemon turns that into "the gateway is too old for project registration". A daemon from before this feature does not know the new methods, and the CLI says so. An older gateway lists projects without SOURCE, and the CLI shows those rows as `seen`.
 
+## Workers
+
+A worker is an agent session that agent-net starts for you, with nobody watching it. See [decision 0002](decisions/0002-workers.md) for the rules and [0007](decisions/0007-operator-interface-and-worker-build.md) for how they are built.
+
+- **Who starts one:** you (`agent-net start`, the TUI) or an agent (`agent_start`). A worker cannot start workers. The harness is `opencode`; Claude Code workers are not built yet.
+- **Where:** the project is looked up by name in `agent-net projects` (registered or seen). If it is on two machines, name one with `--machine`. The machine must be online, accept workers (not set up with `--no-launch`), have OpenCode, and list the model (`agent-net nodes --wide`). The gateway says which of these failed.
+- **How:** the daemon of that machine runs `opencode serve` on `127.0.0.1` with a random password, in a new process group, in the project folder. The OpenCode plugin must be installed there (`agent-net setup`). It never passes a flag that turns permission checks off: the worker uses the project's own permission settings.
+- **The task** is sent as a message from the caller, after the fixed brief. The worker ends its work with `agent_handback(report)`. The caller gets one message with the facts (status, run time, model, tokens and cost if OpenCode reports them, the worktree and branch, `git diff --stat`) and the report below them. A worker that ends without a hand-back sends the same notice with the status `timed out`, `failed` or `stopped`.
+- **Ending:** no message to or from it for 60 minutes; 4 hours since the start; its owner ended or stayed offline for 10 minutes; `agent_stop` or `agent-net stop`. A worker that handed back stays up for follow-ups until the idle time.
+- **Limits:** 4 workers per machine. Settings are in `node.json`: `"workers": {"max": 4, "idle": "60m", "max_age": "4h", "owner_grace": "10m"}`. Restart the daemon after a change.
+- **Owner:** `agent-net workers` and the TUI show who started each worker. A worker started from the command line or the TUI is owned by `you (on <host>)`.
+- **Events:** `worker.started`, `worker.stopped` (with `reason=idle|max_age|owner_gone|stopped|process_exited|lost`) and `worker.refused`, in the gateway log, the events table and the TUI feed.
+
+**The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback` and `workers`. `owner_send` is for the command line only.
+
 ## The TUI screen
 
-`agent-net tui` needs a terminal. It talks to the local daemon like `agent-net list` does and calls only the read-only methods `info`, `nodes`, `list`, `events` and `message_status`. It shows, from top to bottom:
+`agent-net tui` needs a terminal. It talks to the local daemon like `agent-net list` does, through the operator interface. It shows, from top to bottom:
 
 - **Machines.** Each machine with its agent-net version, online or offline, and its installed harnesses. This machine comes first and is marked `(here)`.
 - **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`, `dorm` for dormant), ON (`on` or `off`), FUNCTION (the announced function, or the task).
 - **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, project with its source (`registered`, `seen` or `both`, as in `agent-net projects`), task and its recent messages (time, direction, peer, type, delivery state).
-- **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends.
+- **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends, workers starting, stopping or refused. Messages from you show as `you (on <host>)`.
+- **Workers** show in the sessions table with `[w]` before the name and MODE `bg`. The selected worker's detail has a `worker` line: who started it, when, and its project. The title counts them.
+- **A result line** under the title says what the last action did: plain when it worked, `!` and red when it did not. The next key clears it.
 
 The screen refreshes once a second. If the daemon is not running, or cannot reach the gateway, a banner says so, the last data stays on screen, and it retries every second.
 
@@ -217,6 +243,9 @@ The screen refreshes once a second. If the daemon is not running, or cannot reac
 | enter | With the messages in focus: open the body of the message. |
 | esc | Close the body, or clear the filter. |
 | `r` | Refresh now. |
+| `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
+| `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
+| `x` | Stop the selected worker, after a `y/n` question. Any other session is refused with a message. |
 | `q`, ctrl+c | Quit. |
 
 A message body can only be shown for a message that involves a session on this machine. The gateway refuses it to other machines. Text from the network is stripped of control characters before it is drawn, so an agent name or a message cannot move the cursor or change the screen.
