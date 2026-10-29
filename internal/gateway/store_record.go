@@ -19,7 +19,7 @@ import (
 // name, when set, keeps only projects with that name (case-insensitive).
 func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
-		s.repo_root, s.repo_project, s.repo_remote
+		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree
 		FROM sessions s JOIN nodes n ON n.id = s.node_id ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
@@ -30,10 +30,10 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 	harness := map[key]map[string]bool{}
 	var order []key
 	for rows.Next() {
-		var node, host, h, cwd, root, project, remote string
+		var node, host, h, cwd, root, project, remote, worktree string
 		var online int
 		var seen int64
-		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote); err != nil {
+		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote, &worktree); err != nil {
 			return nil, err
 		}
 		path := root
@@ -62,6 +62,9 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 		if p.Remote == "" {
 			p.Remote = remote
 		}
+		if worktree != "" && worktree != path && !contains(p.Worktrees, worktree) {
+			p.Worktrees = append(p.Worktrees, worktree)
+		}
 		p.Sessions++
 		if online == 1 {
 			p.Online++
@@ -78,6 +81,7 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 			p.Harnesses = append(p.Harnesses, h)
 		}
 		sort.Strings(p.Harnesses)
+		sort.Strings(p.Worktrees)
 		out = append(out, *p)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -300,4 +304,13 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 			"events", res.Events, "sessions", res.Sessions)
 	}
 	return res, nil
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }

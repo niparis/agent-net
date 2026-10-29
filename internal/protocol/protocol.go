@@ -83,8 +83,12 @@ type SessionInfo struct {
 // RepoInfo says which project a session works in. The daemon fills it from the
 // session's folder with source control commands.
 type RepoInfo struct {
-	// Root is the repository root, or "" when the folder is not in a repository.
+	// Root is the main working tree of the repository, or "" when the folder
+	// is not in a repository. All git worktrees of a repository share it.
 	Root string `json:"root"`
+	// Worktree is the working tree the folder is in. It equals Root, except
+	// in a linked git worktree.
+	Worktree string `json:"worktree"`
 	// Project is the base name of Root, or of the folder when there is no repository.
 	Project string `json:"project"`
 	// Remote is the origin URL with credentials removed.
@@ -268,10 +272,12 @@ type Event struct {
 
 // ProjectView is one project folder on one machine, built from stored sessions.
 type ProjectView struct {
-	Name      string   `json:"name"`
-	NodeID    string   `json:"node_id"`
-	Hostname  string   `json:"hostname"`
-	Path      string   `json:"path"` // the repository root, or the folder when there is none
+	Name     string `json:"name"`
+	NodeID   string `json:"node_id"`
+	Hostname string `json:"hostname"`
+	Path     string `json:"path"` // the main working tree of the repository, or the folder when there is none
+	// Worktrees lists the linked git worktrees of the project where sessions ran.
+	Worktrees []string `json:"worktrees"`
 	Remote    string   `json:"remote"`
 	Harnesses []string `json:"harnesses"` // which harnesses have run there
 	Sessions  int      `json:"sessions"`  // sessions known there, online or not

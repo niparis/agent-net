@@ -51,10 +51,10 @@ func cmdProjects(ctx context.Context, args []string) error {
 
 func printProjects(w io.Writer, ps []protocol.ProjectView, loc *time.Location) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROJECT\tMACHINE\tPATH\tREMOTE\tHARNESSES\tONLINE\tLAST SEEN")
+	fmt.Fprintln(tw, "PROJECT\tMACHINE\tPATH\tREMOTE\tHARNESSES\tWORKTREES\tONLINE\tLAST SEEN")
 	for _, p := range ps {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n", p.Name, p.Hostname, p.Path, dash(p.Remote),
-			strings.Join(p.Harnesses, ","), p.Online, time.Unix(p.LastSeen, 0).In(loc).Format("2006-01-02 15:04"))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", p.Name, p.Hostname, p.Path, dash(p.Remote),
+			strings.Join(p.Harnesses, ","), dash(strings.Join(p.Worktrees, ",")), p.Online, time.Unix(p.LastSeen, 0).In(loc).Format("2006-01-02 15:04"))
 	}
 	tw.Flush()
 }
@@ -212,7 +212,7 @@ func (p *eventPrinter) print(evs []protocol.Event) {
 func printAgents(w io.Writer, agents []protocol.AgentView, wide bool) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	if wide {
-		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tBRANCH\tSTATUS\tONLINE\tFUNCTION\tREMOTE\tFOLDER\tNODE")
+		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tBRANCH\tSTATUS\tONLINE\tFUNCTION\tREMOTE\tFOLDER\tNODE\tWORKTREE")
 	} else {
 		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tSTATUS\tONLINE\tFUNCTION")
 	}
@@ -222,9 +222,9 @@ func printAgents(w io.Writer, agents []protocol.AgentView, wide bool) error {
 			project = a.Profile.Project
 		}
 		if wide {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness,
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness,
 				a.Hostname, dash(project), dash(a.Repo.Branch), a.Status, a.Online, a.Profile.Function,
-				dash(a.Repo.Remote), dash(a.Cwd), a.NodeID)
+				dash(a.Repo.Remote), dash(a.Cwd), a.NodeID, dash(a.Repo.Worktree))
 			continue
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\n", a.SessionID, a.Profile.Name, a.Harness, a.Hostname,

@@ -212,9 +212,29 @@ function formatSent(r: any): string {
 function formatAgent(a: any): string {
   const p = a.profile ?? {};
   let line = `${a.session_id}  ${a.harness}  ${p.name || a.hostname || "-"}  ${a.status}${a.online ? "" : " (offline)"}  ${a.cwd}`;
+  if (a.repo?.project) line += `  project: ${a.repo.project}${a.repo.branch ? "@" + a.repo.branch : ""}`;
   if (p.function) line += `  - ${p.function}`;
   if (p.task) line += `  [task: ${p.task}]`;
   return line;
+}
+
+function formatNodes(r: any): string {
+  const nodes: any[] = r.nodes ?? [];
+  if (!nodes.length) return "No machines found.";
+  return nodes
+    .map((n) => {
+      const hs: any[] | null = n.harnesses ?? null;
+      const list =
+        hs === null
+          ? "harnesses not reported (older agent-net)"
+          : hs.length
+            ? hs
+                .map((h) => `${h.name} ${h.version || "?"}${h.models?.length ? ` (${h.models.length} models)` : ""} at ${h.path}`)
+                .join("; ")
+            : "no harnesses installed";
+      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}`;
+    })
+    .join("\n");
 }
 
 function formatAgentList(r: any): string {
@@ -231,6 +251,9 @@ function formatAgentGet(r: any): string {
     `Harness: ${a.harness}  Status: ${a.status}  Online: ${a.online ? "yes" : "no"}`,
     `Host: ${a.hostname}  Cwd: ${a.cwd}`,
   ];
+  if (a.repo?.project) {
+    lines.push(`Repo: ${a.repo.project}${a.repo.branch ? " on " + a.repo.branch : ""}  Root: ${a.repo.root || "-"}  Remote: ${a.repo.remote || "-"}`);
+  }
   if (p.function) lines.push(`Function: ${p.function}`);
   if (p.project) lines.push(`Project: ${p.project}`);
   if (p.task) lines.push(`Task: ${p.task}`);
@@ -277,6 +300,15 @@ const TOOLS: ToolDef[] = [
     required: [],
     method: "list",
     format: formatAgentList,
+  },
+  {
+    name: "agent_nodes",
+    description:
+      "List the machines on the network, with the agent harnesses installed on each (claude, opencode, pi, codex): path, version and, for opencode, its models.",
+    properties: {},
+    required: [],
+    method: "nodes",
+    format: formatNodes,
   },
   {
     name: "agent_get",

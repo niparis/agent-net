@@ -38,7 +38,15 @@ const server = createServer((conn) => {
         conn.sessionID = line.params.native_id;
         hellos.push({ id: line.params.native_id, cwd: line.params.cwd });
       }
-      conn.write(JSON.stringify({ id: line.id, result: {} }) + "\n");
+      const result =
+        line.method === "nodes"
+          ? { gateway_version: "v1", nodes: [
+              { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
+                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }] },
+              { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
+            ] }
+          : {};
+      conn.write(JSON.stringify({ id: line.id, result }) + "\n");
     }
   });
   conn.on("close", () => closed.push(conn.sessionID));
@@ -81,7 +89,7 @@ function makeContext(directory, sessions, hooks = {}) {
           }
         },
       },
-      tool: { transform() {} },
+      tool: { transform(fn) { hooks.onTransform?.(fn); } },
     },
   };
 }
@@ -182,6 +190,28 @@ await test("when the owning instance goes away, another one takes its sessions o
   stopA(); // owner of ses_keep; B must re-register it without any event
   await until("second hello for ses_keep", () => hellos.filter((h) => h.id === "ses_keep").length > before);
   stopB();
+});
+
+await test("agent_nodes lists machines with their harnesses", async () => {
+  freshHub();
+  const sessions = new Map([["ses_n", session("ses_n", "/work/n")]]);
+  let tools;
+  const c = makeContext("/work/n", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_n", () => registered("ses_n"));
+  const tool = tools.find((t) => t.name === "agent_nodes");
+  if (!tool) throw new Error("agent_nodes is not registered");
+  const out = (await tool.execute({}, { sessionID: "ses_n" })).content;
+  for (const want of ["mac (n_1, online, agent-net v0.4.0): opencode v2 (2 models) at /u/opencode",
+                      "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)"]) {
+    if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
+  }
+  stop();
 });
 
 server.close();

@@ -66,7 +66,7 @@ func TestSessionRepoInfoReachesGateway(t *testing.T) {
 	fa.setSessions(info)
 	eventually(t, "session on the gateway", func() bool { return len(onlineAgents(t, cli)) == 1 })
 
-	want := protocol.RepoInfo{Root: repo, Project: "shop-api", Remote: "https://git.example.com/team/shop-api.git", Branch: "main"}
+	want := protocol.RepoInfo{Root: repo, Worktree: repo, Project: "shop-api", Remote: "https://git.example.com/team/shop-api.git", Branch: "main"}
 	a := onlineAgents(t, cli)[0]
 	if a.Repo != want {
 		t.Fatalf("repo info %+v, want %+v", a.Repo, want)

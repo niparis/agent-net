@@ -90,6 +90,7 @@ ALTER TABLE sessions ADD COLUMN repo_root TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN repo_project TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN repo_remote TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN repo_branch TEXT NOT NULL DEFAULT '';
+ALTER TABLE sessions ADD COLUMN repo_worktree TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN harnesses TEXT NOT NULL DEFAULT 'null';
 ALTER TABLE nodes ADD COLUMN harnesses_at INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX events_at ON events (at);
@@ -297,15 +298,16 @@ func (s *Store) upsertSession(q interface {
 	}
 	now := s.now().UnixNano()
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
-		repo_root, repo_project, repo_remote, repo_branch)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?)
+		repo_root, repo_project, repo_remote, repo_branch, repo_worktree)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
-		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch`,
+		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
+		repo_worktree=excluded.repo_worktree`,
 		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
-		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch)
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree)
 	if err != nil {
 		return "", false, err
 	}
@@ -332,7 +334,7 @@ func (s *Store) logNewSessions(list []newSession) {
 		host := s.hostname(n.node)
 		s.logf("session.new", "session", n.id, "node", n.node, "host", host, "harness", n.in.Harness,
 			"name", n.in.Name, "pid", n.in.PID, "cwd", n.in.Cwd, "project", n.in.Repo.Project,
-			"git_root", n.in.Repo.Root, "remote", n.in.Repo.Remote, "branch", n.in.Repo.Branch)
+			"git_root", n.in.Repo.Root, "worktree", n.in.Repo.Worktree, "remote", n.in.Repo.Remote, "branch", n.in.Repo.Branch)
 	}
 }
 
@@ -445,7 +447,7 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen,
 	COALESCE(NULLIF(p.name,''), s.name), COALESCE(p.function,''), COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
-	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch
+	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -455,7 +457,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var caps string
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
-		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch)
+		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree)
 	if err != nil {
 		return a, err
 	}

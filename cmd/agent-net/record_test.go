@@ -73,11 +73,11 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	b.Reset()
 	printAgents(&b, agents, true)
 	wide := strings.Split(strings.TrimSpace(b.String()), "\n")
-	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[9] != "REMOTE" || h[10] != "FOLDER" || h[11] != "NODE" {
+	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[9] != "REMOTE" || h[10] != "FOLDER" || h[11] != "NODE" || h[12] != "WORKTREE" {
 		t.Fatalf("wide header: %q", wide[0])
 	}
 	f := strings.Fields(wide[1])
-	if f[4] != "shop" || f[5] != "main" || f[len(f)-3] != "https://example.com/shop.git" || f[len(f)-2] != "/src/shop/web" || f[len(f)-1] != "n_1" {
+	if f[4] != "shop" || f[5] != "main" || f[len(f)-4] != "https://example.com/shop.git" || f[len(f)-3] != "/src/shop/web" || f[len(f)-2] != "n_1" || f[len(f)-1] != "-" {
 		t.Errorf("wide row: %q", wide[1])
 	}
 }
@@ -86,17 +86,17 @@ func TestPrintProjects(t *testing.T) {
 	var b bytes.Buffer
 	printProjects(&b, []protocol.ProjectView{
 		{Name: "shop", Hostname: "mac", Path: "/src/shop", Remote: "https://example.com/shop.git",
-			Harnesses: []string{"claude", "opencode"}, Online: 1, LastSeen: time.Date(2026, 10, 29, 14, 30, 0, 0, time.UTC).Unix()},
+			Harnesses: []string{"claude", "opencode"}, Worktrees: []string{"/src/shop-wt"}, Online: 1, LastSeen: time.Date(2026, 10, 29, 14, 30, 0, 0, time.UTC).Unix()},
 		{Name: "scratch", Hostname: "box", Path: "/tmp/scratch", Harnesses: []string{"pi"}, LastSeen: 0},
 	}, time.UTC)
 	lines := strings.Split(strings.TrimSpace(b.String()), "\n")
-	if strings.Join(strings.Fields(lines[0]), " ") != "PROJECT MACHINE PATH REMOTE HARNESSES ONLINE LAST SEEN" {
+	if strings.Join(strings.Fields(lines[0]), " ") != "PROJECT MACHINE PATH REMOTE HARNESSES WORKTREES ONLINE LAST SEEN" {
 		t.Fatalf("header: %q", lines[0])
 	}
-	if got := strings.Join(strings.Fields(lines[1]), " "); got != "shop mac /src/shop https://example.com/shop.git claude,opencode 1 2026-10-29 14:30" {
+	if got := strings.Join(strings.Fields(lines[1]), " "); got != "shop mac /src/shop https://example.com/shop.git claude,opencode /src/shop-wt 1 2026-10-29 14:30" {
 		t.Errorf("row 1: %q", got)
 	}
-	if got := strings.Join(strings.Fields(lines[2]), " "); !strings.HasPrefix(got, "scratch box /tmp/scratch - pi 0 ") {
+	if got := strings.Join(strings.Fields(lines[2]), " "); !strings.HasPrefix(got, "scratch box /tmp/scratch - pi - 0 ") {
 		t.Errorf("row 2: %q", got)
 	}
 }

@@ -729,3 +729,41 @@ func TestGatewayNewKeepsDatabasePrivate(t *testing.T) {
 }
 
 func setUmask(m int) int { return syscall.Umask(m) }
+
+// Sessions in the main tree and in linked worktrees make one project per
+// machine. The worktree folders are kept as a list.
+func TestProjectsGroupWorktrees(t *testing.T) {
+	s, _ := newTestStore(t)
+	n1, _, _ := s.CreateNode("mac", "darwin")
+	n2, _, _ := s.CreateNode("box", "linux")
+	main := protocol.RepoInfo{Root: "/src/tenebrae", Worktree: "/src/tenebrae", Project: "tenebrae", Remote: "https://example.com/t.git", Branch: "main"}
+	wt1 := protocol.RepoInfo{Root: "/src/tenebrae", Worktree: "/wt/agent-a76c", Project: "tenebrae", Remote: "https://example.com/t.git", Branch: "x"}
+	wt2 := protocol.RepoInfo{Root: "/src/tenebrae", Worktree: "/wt/agent-b11d", Project: "tenebrae", Branch: "y"}
+	s.UpsertSession(n1, protocol.SessionInfo{Harness: "claude", NativeID: "a", Cwd: "/src/tenebrae", Repo: main})
+	s.UpsertSession(n1, protocol.SessionInfo{Harness: "claude", NativeID: "b", Cwd: "/wt/agent-a76c/pkg", Repo: wt1})
+	s.UpsertSession(n1, protocol.SessionInfo{Harness: "opencode", NativeID: "c", Cwd: "/wt/agent-b11d", Repo: wt2})
+	s.UpsertSession(n2, protocol.SessionInfo{Harness: "pi", NativeID: "d", Cwd: "/home/u/tenebrae",
+		Repo: protocol.RepoInfo{Root: "/home/u/tenebrae", Worktree: "/home/u/tenebrae", Project: "tenebrae"}})
+	ps, err := s.Projects("tenebrae")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 2 {
+		t.Fatalf("want one project per machine, got %+v", ps)
+	}
+	var mac protocol.ProjectView
+	for _, p := range ps {
+		if p.Hostname == "mac" {
+			mac = p
+		}
+	}
+	if mac.Path != "/src/tenebrae" || mac.Sessions != 3 || strings.Join(mac.Harnesses, ",") != "claude,opencode" ||
+		strings.Join(mac.Worktrees, ",") != "/wt/agent-a76c,/wt/agent-b11d" {
+		t.Fatalf("mac project: %+v", mac)
+	}
+	for _, p := range ps {
+		if p.Hostname == "box" && len(p.Worktrees) != 0 {
+			t.Fatalf("a main tree has no linked worktrees: %+v", p)
+		}
+	}
+}

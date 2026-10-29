@@ -15,9 +15,9 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net join STRING` | Join this machine to a gateway with a join string. |
 | `agent-net uninstall` | Remove services and integrations. |
 | `agent-net status` | Daemon connection, node ID and local sessions. `--json` for JSON. |
-| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--harness`, `--text` filter. `--wide` adds branch, remote, folder and node. `--json`. |
+| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. `--json`. |
 | `agent-net nodes` | Machines with their agent-net version and installed harnesses (HARNESSES column). `--wide` lists each harness with version, path and model count. `--json` has everything, including the model lists. |
-| `agent-net projects` | Known projects: name, machine, path, git remote, which harnesses ran there, online sessions and last seen. `--name N` shows one project. `--json`. |
+| `agent-net projects` | Known projects, one per repository per machine: name, machine, path (the main working tree), git remote, which harnesses ran there, the linked worktrees where sessions ran, online sessions and last seen. `--name N` shows one project. `--json`. |
 | `agent-net events` | On the gateway machine: the gateway's events table, newest last. `--node` (ID or host name), `--session`, `--kind` (exact, or a group like `msg`), `--since` (like `2h` or `2026-10-29T12:00:00Z`), `--limit N` (default 100), `--follow` (or `-f`), `--json`, `--data DIR`. |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net version` | Print the version. |
@@ -60,7 +60,7 @@ The gateway writes one line per event to stderr (the systemd journal, or the lau
 | `msg.failed` | It could not be delivered. | same, and `detail` |
 | `msg.expired` | It was not delivered within 24 hours. | same |
 | `msg.refused` | A send was refused (limit, unknown session, ...). | `node`, `from`, `to`, `bytes`, `reason` |
-| `session.new` | The first time the gateway sees a session. | `session`, `node`, `host`, `harness`, `name`, `pid`, `cwd`, `project`, `git_root`, `remote`, `branch` |
+| `session.new` | The first time the gateway sees a session. | `session`, `node`, `host`, `harness`, `name`, `pid`, `cwd`, `project`, `git_root`, `worktree`, `remote`, `branch` |
 | `node.harnesses` | The harnesses installed on a machine changed (or it reported for the first time). | `node`, `host`, `change`, `installed` |
 | `node.connected`, `node.disconnected` | A machine's link came up or went down. | `node`, `host`, `remote` |
 | `retention` | Old data was deleted. | `messages`, `deliveries`, `events`, `sessions` |
@@ -123,8 +123,9 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 
 **Repo info for each session.** When the daemon finds a session (any harness), it runs `git` in the session's folder (with a 3 second limit for all commands) and sends:
 
-- `root`: the git root. Empty if the folder is not in a git repository.
-- `project`: the base name of the root, or of the folder if there is no git repository. A git worktree is its own root, so its project name is the name of the worktree folder.
+- `root`: the main working tree of the repository. Empty if the folder is not in a git repository. A linked git worktree has the root of the main tree it belongs to, found with `git rev-parse --git-common-dir`.
+- `worktree`: the working tree the session's folder is in. It is the same as `root`, except in a linked git worktree.
+- `project`: the base name of `root`, or of the folder if there is no git repository. So a worktree is not a project of its own: the sessions of `tenebrae` and of its worktrees `agent-a76c...` are all in project `tenebrae`.
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
 

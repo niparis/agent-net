@@ -1,8 +1,8 @@
-# 0002 - The gateway record, repo info and harness inventory
+# 0003 - The gateway record, repo info and harness inventory
 
 **Date:** 2026-10-29
 **Status:** Accepted by the owner
-**Context:** the plan to start a new agent session on the right machine ("start an OpenCode session in project X with this task and model"). That launch feature is built later. This change builds the records it needs.
+**Context:** the plan to start a new agent session on the right machine ("start an OpenCode session in project X with this task and model"). The launch feature is described in [0002](0002-workers.md). This change builds the records it needs: workers resolve "project X" to a machine and a folder through the projects list in D3.
 
 ## D1 - One log line per event, in key=value form
 
@@ -12,7 +12,9 @@ The gateway logs to stderr, as before, but every line is now `ts=... event=... k
 
 The daemon runs `git` in the session's folder. It does this and not the gateway, because only the daemon can see the folder. The result (git root, project, remote without credentials, branch) is part of the session it already reports. It is cached per folder, has a time limit, and never fails a session.
 
-A git worktree counts as its own root. So a worktree has its own project name. We chose the literal rule (name of the root folder) over a smarter one (name of the main repository), because the launch feature must resolve a project to a folder, and the folder of a worktree is the worktree.
+A linked git worktree is not a project of its own. The daemon takes the main working tree from `git rev-parse --git-common-dir` (its parent, when that directory is named `.git`). The project name is the base name of that main tree, and `root` is its path. The worktree the session is in is kept in its own field, `worktree`. We do this because workers resolve "project tenebrae" to a folder, and worktree folders with names like `agent-a76c...` would fill the list. Where the common directory has another shape (a bare repository, a submodule, a separate git directory), the working tree itself is the root; a submodule is its own project.
+
+`agent-net projects` shows one project per repository per machine. The path is the main working tree, and the linked worktrees where sessions ran are listed in the WORKTREES column, so no folder is lost.
 
 ## D3 - The projects list is built from stored sessions
 

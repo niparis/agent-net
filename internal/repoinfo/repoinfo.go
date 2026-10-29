@@ -93,13 +93,33 @@ func (r *Resolver) readAll(ctx context.Context, cwd string) protocol.RepoInfo {
 	if err != nil || root == "" {
 		return info
 	}
-	info.Root = filepath.Clean(root)
+	info.Worktree = filepath.Clean(root)
+	info.Root = r.mainTree(ctx, cwd, info.Worktree)
 	info.Project = filepath.Base(info.Root)
 	if remote, err := r.git(ctx, cwd, "config", "--get", "remote.origin.url"); err == nil {
 		info.Remote = StripCredentials(remote)
 	}
 	info.Branch = r.readBranch(ctx, cwd)
 	return info
+}
+
+// mainTree returns the main working tree of the repository that worktree
+// belongs to. In a linked git worktree, the common git directory is
+// <main tree>/.git. When it has another shape (a bare repository, a
+// submodule, a separate git directory), the worktree itself is the answer.
+func (r *Resolver) mainTree(ctx context.Context, cwd, worktree string) string {
+	common, err := r.git(ctx, cwd, "rev-parse", "--git-common-dir")
+	if err != nil || common == "" {
+		return worktree
+	}
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(cwd, common)
+	}
+	common = filepath.Clean(common)
+	if filepath.Base(common) != ".git" {
+		return worktree
+	}
+	return filepath.Dir(common)
 }
 
 func (r *Resolver) readBranch(ctx context.Context, cwd string) string {

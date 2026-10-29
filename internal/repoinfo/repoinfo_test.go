@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestStripCredentials(t *testing.T) {
@@ -129,35 +131,35 @@ func TestCachePerFolderAndBranchRefresh(t *testing.T) {
 		return "", context.Canceled
 	}
 	got := r.Lookup("/work/proj/sub")
-	if got.Project != "proj" || got.Branch != "main" || calls != 3 {
+	if got.Project != "proj" || got.Branch != "main" || calls != 4 {
 		t.Fatalf("first lookup: %+v after %d calls", got, calls)
 	}
 	r.Lookup("/work/proj/sub")
-	if calls != 3 {
+	if calls != 4 {
 		t.Fatalf("second lookup ran git again (%d calls)", calls)
 	}
 	branch = "other"
 	if got := r.Lookup("/work/proj/sub"); got.Branch != "main" {
 		t.Fatalf("Lookup within the branch TTL changed the branch: %q", got.Branch)
 	}
-	if got := r.Refresh("/work/proj/sub"); got.Branch != "other" || calls != 4 {
+	if got := r.Refresh("/work/proj/sub"); got.Branch != "other" || calls != 5 {
 		t.Fatalf("Refresh: %+v after %d calls", got, calls)
 	}
 	branch = "third"
 	now = now.Add(r.BranchTTL + time.Second)
-	if got := r.Lookup("/work/proj/sub"); got.Branch != "third" || calls != 5 {
+	if got := r.Lookup("/work/proj/sub"); got.Branch != "third" || calls != 6 {
 		t.Fatalf("Lookup after the TTL: %+v after %d calls", got, calls)
 	}
 	// Another folder has its own entry.
 	r.Lookup("/work/other")
-	if calls != 8 {
-		t.Fatalf("a second folder should run 3 more commands, calls = %d", calls)
+	if calls != 10 {
+		t.Fatalf("a second folder should run 4 more commands, calls = %d", calls)
 	}
 	// The static part expires too.
 	now = now.Add(r.StaticTTL + time.Second)
 	r.Lookup("/work/proj/sub")
-	if calls != 11 {
-		t.Fatalf("static refresh should run 3 commands, calls = %d", calls)
+	if calls != 14 {
+		t.Fatalf("static refresh should run 4 commands, calls = %d", calls)
 	}
 }
 
@@ -185,5 +187,50 @@ func TestMissingGitBinary(t *testing.T) {
 	got := New().Lookup(filepath.Join(evalDir(t), "nogit"))
 	if got.Project != "nogit" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+// A linked git worktree belongs to the project of its main working tree.
+func TestWorktreeUsesMainWorkingTree(t *testing.T) {
+	needGit(t)
+	base := evalDir(t)
+	main := filepath.Join(base, "tenebrae")
+	if err := os.MkdirAll(main, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runIn(t, main, "init", "-q", "-b", "main")
+	runIn(t, main, "remote", "add", "origin", "https://example.com/o/tenebrae.git")
+	runIn(t, main, "commit", "-q", "--allow-empty", "-m", "one")
+	wt := filepath.Join(base, "agent-a76c0ffee")
+	runIn(t, main, "worktree", "add", "-q", "-b", "task", wt)
+	sub := filepath.Join(wt, "pkg")
+	os.MkdirAll(sub, 0o755)
+
+	r := New()
+	got := r.Lookup(sub)
+	want := protocol.RepoInfo{Root: main, Worktree: wt, Project: "tenebrae", Remote: "https://example.com/o/tenebrae.git", Branch: "task"}
+	if got != want {
+		t.Fatalf("worktree: got %+v, want %+v", got, want)
+	}
+	if got := r.Lookup(main); got.Root != main || got.Worktree != main || got.Project != "tenebrae" || got.Branch != "main" {
+		t.Fatalf("main tree: %+v", got)
+	}
+}
+
+// A submodule has its own repository: it is not part of the parent project.
+func TestSubmoduleKeepsItsOwnProject(t *testing.T) {
+	needGit(t)
+	base := evalDir(t)
+	lib := filepath.Join(base, "lib")
+	os.MkdirAll(lib, 0o755)
+	runIn(t, lib, "init", "-q", "-b", "main")
+	runIn(t, lib, "commit", "-q", "--allow-empty", "-m", "lib")
+	super := filepath.Join(base, "super")
+	os.MkdirAll(super, 0o755)
+	runIn(t, super, "init", "-q", "-b", "main")
+	runIn(t, super, "-c", "protocol.file.allow=always", "submodule", "add", "-q", lib, "vendor/lib")
+	got := New().Lookup(filepath.Join(super, "vendor", "lib"))
+	if got.Project != "lib" || got.Root != filepath.Join(super, "vendor", "lib") {
+		t.Fatalf("submodule: %+v", got)
 	}
 }
