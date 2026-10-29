@@ -23,6 +23,8 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net projects remove NAME\|PATH` | Remove a registration. A name that fits two projects on this machine is refused: give the path. `--on MACHINE` removes the entry of another machine (host name or node ID), for example one that is gone. |
 | `agent-net events` | On the gateway machine: the gateway's events table, newest last. `--node` (ID or host name), `--session`, `--kind` (exact, or a group like `msg`), `--since` (like `2h` or `2026-10-29T12:00:00Z`), `--limit N` (default 100), `--follow` (or `-f`), `--json`, `--data DIR`. |
 | `agent-net tui` | A live, read-only terminal view of every session on the network. It reads through the local daemon, so it runs on any machine. See [the screen](#the-tui-screen). |
+| `agent-net top` | CPU and memory of every machine (now and 5 minute average, memory used and total, load, processes) and of every session's process tree, plus the session counts (online, offline in the last 24 h). `top SESSION` (an ID or a name) adds the 5 heaviest processes by CPU and by memory. `--all` also lists sessions with no figures. `--json`. A machine on an older agent-net shows `unknown`. See [CPU and memory](#cpu-and-memory). |
+| `agent-net show SESSION` | What happens inside a session: prompts, replies, tool calls and results, newest last. `-n N` (default 50, at most 200), `--follow` (or `-f`), `--before CURSOR` (page back), `--sidechain` (sub-agents, Claude Code), `--json`. Secrets are masked and each entry is cut to 2,000 characters. Owner only: see [security.md](security.md#session-text-and-resource-figures). |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net version` | Print the version. |
 
@@ -154,6 +156,19 @@ The version manager folders are: nvm (`$NVM_DIR` if set, and `~/.nvm/versions/no
 A harness can be installed more than once, for example OpenCode v1 from its install script and v2 from npm. The daemon finds every copy and drops copies that are the same file (same real path after symlinks). It reports one entry per harness. The `path`, `version` and `models` fields describe the primary copy. This is the copy that comes first in your login shell's `PATH`, and then `primary` is `true`. If the login shell does not find the harness, the primary copy is the first one in the search order and `primary` is absent: the daemon cannot tell which one you run. The other copies are in `others`, each with `path` and `version`. Models are listed only for the primary copy. Both fields are new after v0.3.5 and are left out when empty, so v0.3.5 daemons, gateways and clients still work with them.
 
 `agent-net nodes` shows the result. A machine on an older agent-net shows `unknown`. A machine that reports an empty list shows `none`. Agents get the same data from the `agent_nodes` tool (Claude Code and Pi).
+
+## CPU and memory
+
+Each daemon samples its machine every 5 seconds, keeps 5 minutes, and reports a summary to the gateway every 10 seconds. The gateway keeps the newest report per machine in memory only (it is gone after a gateway restart and back within 10 seconds).
+
+- **Machine:** CPU as a percentage of all cores (0 to 100), memory used and total, load average (1, 5, 15 minutes), process count, each with the 5 minute average.
+- **Session:** the process tree under the session's process: CPU as a percentage of one core (100 is one full core, a tree can show more), the sum of resident memory, the number of processes, each with the 5 minute average. A tree seen only once has no CPU figure yet (`...`).
+- **Which process:** Claude Code, the session's PID. Pi, the process that connects the extension. OpenCode, the one service process that hosts all sessions: it is listed once as "shared by N sessions" and is never split. If one session starts another (a Claude Code session inside another's shell), the inner tree is also counted in the outer one.
+- **Linux:** `/proc/<pid>/stat` (user, system and waited-for children time) and `/proc/stat`. CPU is the difference between two readings. The sampler costs about 5 ms per reading with 450 processes, about 0.1% of one core.
+- **macOS:** `ps -A -o pid=,ppid=,rss=,time=,comm=` for processes, `sysctl` for cores, memory size and load, `vm_stat` for memory in use (app + wired + compressed, like Activity Monitor). Load and memory are read every 4th sample. CPU time from `ps` has a resolution of 10 ms and misses processes that start and end between two readings, so tree CPU can read low for a tree that spawns many short jobs. Machine CPU is the sum of live processes' CPU time over the cores, with the same limit. This was written and tested against fixtures of the `ps`, `sysctl` and `vm_stat` output; it has not been run on a Mac.
+- **Top lists:** only on request, not in the report. Each process has its PID, short name, and the first 80 characters of its command line with tokens, `--password=`/`--token` values and `KEY=value` secrets masked.
+- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `session_text {session_id, limit, before, after, sidechain}`, `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.usage_top`, `query.session_text` (and `node.usage_top`, `node.session_text` to the machine that holds the session).
+- **Counts:** `counts` returns `online`, `offline_24h` and `offline_total`. The gateway keeps offline sessions for 30 days, so a header that says "134 sessions, 12 online" is mostly old restarts. Show "12 online, 5 offline in the last 24 h".
 
 ## The project registry
 

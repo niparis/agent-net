@@ -119,6 +119,20 @@ File paths and the remote URL name your projects. If that is sensitive, do not e
 
 Since the TUI, every enrolled machine can read the network's event metadata, with `agent-net tui` or the daemon method `events` (gateway frame `query.events`). This is new: before, a machine could only read the messages of its own sessions. The feed has the kind and time of each message, delivery, session and connection event, which machine and session it concerns, the two session IDs and the type of each message, and the ID of the message it answers. It does not have message bodies, MCP events, enrollment events or machine addresses. Details are cut to 200 characters, and the delivery detail comes from the receiving machine (for example `plugin refused`). A message body is still given only to the two machines in the conversation (`message_status`), and the TUI uses exactly that call. The feed is open to every enrolled machine, which already could list all agents; a compromised machine now also sees who talks to whom and when. The events are kept for 90 days.
 
+## Session text and resource figures
+
+Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are for the owner only.
+
+**The text of a session** (`agent-net show`, later the TUI and the phone): prompts, replies, tool calls and results.
+
+- It crosses the network only when the owner asks for it. The request comes from the local CLI or TUI. For a session on another machine it goes through the gateway, which relays it to the machine that holds the session and relays the answer back. The gateway does not store it, count it or log it, and writes no event for it. The log line for a failed relay says only that it failed.
+- **Agent connections can never call it.** The daemon allows `session_text`, `usage`, `usage_top` and `counts` only on a connection that said `client: cli` in hello. Claude MCP, Pi and OpenCode connections get an error. The daemon also refuses a CLI whose calling process is a local session's process or a child of one, so an agent that runs `agent-net show` in its shell tool is stopped. A process that detaches itself from its parent (a double fork) is not caught, and any process of your user can read `~/.claude/projects` directly: this is a barrier against an agent that simply runs the command, not against hostile code of your own user.
+- Before the text leaves the machine that holds it, secrets are masked: `sk-...` keys, GitHub tokens, AWS key IDs, Slack and Google keys, JWTs, bearer and `Authorization` headers, `password`/`token`/`secret`/`key` values after `=` or `:`, passwords in URLs, and private key blocks. The daemon that asks masks again. This catches common shapes only; a secret in an odd shape is not masked. Each entry is cut to 2,000 characters (tool results 600) and control characters are removed.
+- Nothing of it is written to the gateway log, the events table or the daemon's database.
+- The gateway cannot tell an owner's CLI from a program on that machine that says it is one. A compromised enrolled machine can therefore ask for the text of any online session on the network. This widens the trust note under [what agent-net does not protect against](#what-agent-net-does-not-protect-against).
+
+**CPU and memory.** Each daemon reports a summary to the gateway every 10 seconds, and every enrolled machine can read it (same trust as the agent list). The summary has numbers only: no command lines. The command lines of the 5 heaviest processes of a session (first 80 characters, tokens and `--password`/`KEY=value` pairs masked) come only on request, with the same owner-only rule and relay as the session text. The gateway keeps the summaries in memory only.
+
 ## What agent-net does not protect against
 
 - **A compromised enrolled machine.** Its token lets it list every agent on the network and send to any of them. It can send as any session that its own daemon reports, and read the messages to and from those sessions, and it sees the metadata of every message on the network. Enroll only machines you would give a shell on the others.
