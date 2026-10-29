@@ -158,7 +158,8 @@ agent-net uses MCP to give Claude Code its tools. It is not an implementation of
 - OpenCode adapter (in progress)
 - Codex adapter
 - Leaving the network: let a session opt out of being listed
-- MCP server registry: add an MCP server once, use it from every agent on every machine
+- MCP server registry: add any MCP server once, from the CLI or from an agent, and use it from every agent on every machine (in progress)
+- `agent-net upgrade`: upgrade every machine on the network with one command (in progress)
 - Shared skills registry
 
 ## Development
