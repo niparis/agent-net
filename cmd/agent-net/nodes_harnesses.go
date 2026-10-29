@@ -57,7 +57,18 @@ func printHarnessDetails(w io.Writer, nodes []protocol.NodeView) {
 			fmt.Fprintf(tw, "%s\t-\t-\t-\tnot reported (older agent-net)\n", n.Hostname)
 		}
 		for _, h := range n.Harnesses {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", n.Hostname, h.Name, dash(h.Version), modelSummary(h.Models), h.Path)
+			path := h.Path
+			if len(h.Others) > 0 {
+				if h.Primary {
+					path += "  (primary: first in your login shell PATH)"
+				} else {
+					path += "  (first found; the login shell does not say which one you run)"
+				}
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", n.Hostname, h.Name, dash(h.Version), modelSummary(h.Models), path)
+			for _, o := range h.Others {
+				fmt.Fprintf(tw, "%s\t%s (other copy)\t%s\t-\t%s\n", n.Hostname, h.Name, dash(o.Version), o.Path)
+			}
 		}
 	}
 	tw.Flush()

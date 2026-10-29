@@ -102,7 +102,8 @@ func TestPrintProjects(t *testing.T) {
 }
 
 func TestHarnessSummaryAndDetails(t *testing.T) {
-	oc := protocol.HarnessInfo{Name: "opencode", Path: "/u/opencode", Version: "v2.2.0",
+	oc := protocol.HarnessInfo{Name: "opencode", Path: "/u/opencode", Version: "v2.2.0", Primary: true,
+		Others: []protocol.HarnessInstall{{Path: "/old/opencode", Version: "1.18.16"}},
 		Models: []string{"anthropic/claude-x", "openai/gpt-5", "openai/gpt-6"}}
 	nodes := []protocol.NodeView{
 		{Hostname: "mac", Harnesses: []protocol.HarnessInfo{{Name: "claude", Path: "/u/claude", Version: "2.1"}, oc}},
@@ -125,6 +126,7 @@ func TestHarnessSummaryAndDetails(t *testing.T) {
 	printHarnessDetails(&b, nodes)
 	out := b.String()
 	for _, w := range []string{"HOST", "HARNESS", "VERSION", "MODELS", "PATH", "mac", "/u/opencode", "v2.2.0", "3 (anthropic, openai)",
+		"primary", "opencode (other copy)", "1.18.16", "/old/opencode",
 		"old", "not reported (older agent-net)"} {
 		if !strings.Contains(out, w) {
 			t.Errorf("details lack %q:\n%s", w, out)

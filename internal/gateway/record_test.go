@@ -597,6 +597,8 @@ func TestDescribeHarnessChange(t *testing.T) {
 		{[]protocol.HarnessInfo{h("pi", "/a", "")}, []protocol.HarnessInfo{h("pi", "/a", "2")}, "pi:?->2"},
 		{[]protocol.HarnessInfo{h("opencode", "/a", "1", "a/x")}, []protocol.HarnessInfo{h("opencode", "/a", "1", "a/y")}, "opencode:models changed"},
 		{[]protocol.HarnessInfo{h("codex", "/a", "1")}, nil, "-codex"},
+		{[]protocol.HarnessInfo{h("pi", "/a", "1")},
+			[]protocol.HarnessInfo{{Name: "pi", Path: "/a", Version: "1", Others: []protocol.HarnessInstall{{Path: "/b", Version: "0.9"}}}}, "pi:installs 1->2"},
 	}
 	for i, c := range cases {
 		if got := DescribeHarnessChange(c.old, c.cur); got != c.want {

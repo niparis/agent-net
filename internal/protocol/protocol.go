@@ -256,6 +256,19 @@ type HarnessInfo struct {
 	// Models lists the models the harness can use, as "provider/model". It is
 	// only filled for harnesses that have a command to list them (opencode).
 	Models []string `json:"models,omitempty"`
+	// Primary is true when Path is the copy that comes first in the PATH of the
+	// user's login shell. When it is false, the daemon could not tell which copy
+	// the user runs. Absent in v0.3.5 and older.
+	Primary bool `json:"primary,omitempty"`
+	// Others are further copies of the same harness (a different real file),
+	// each with its own path and version. Absent in v0.3.5 and older.
+	Others []HarnessInstall `json:"others,omitempty"`
+}
+
+// HarnessInstall is one extra copy of a harness found on a machine.
+type HarnessInstall struct {
+	Path    string `json:"path"`
+	Version string `json:"version"`
 }
 
 // Event is one row of the gateway's audit record.

@@ -1,8 +1,9 @@
 // Package harnesses finds which agent harnesses are installed on this machine.
 //
 // A daemon started by launchd (macOS) or a systemd user unit has a short PATH,
-// so the search also looks in the usual install folders and, only when a
-// harness is still missing, in the PATH of the user's login shell.
+// so the search also looks in the usual install folders (including the folders
+// of Node version managers) and in the PATH of the user's login shell. It never
+// starts an interactive shell.
 package harnesses
 
 import (
@@ -37,10 +38,12 @@ const (
 type Options struct {
 	// PATH is the search path. Default: the PATH of this process.
 	PATH string
-	// Dirs are searched after PATH. Default: DefaultDirs().
+	// Dirs are searched after PATH. Default: DefaultDirs(Home).
 	Dirs []string
+	// Home is the home folder used for the default Dirs. Default: the user's.
+	Home string
 	// LoginShellPATH returns the PATH of the user's login shell, or "". It is
-	// only called when a harness was not found in PATH and Dirs.
+	// always called: the copy that comes first there is the primary one.
 	// Default: run $SHELL as a login shell.
 	LoginShellPATH func(ctx context.Context) string
 	// Run runs a program and returns its output. Default: exec with the
@@ -48,87 +51,111 @@ type Options struct {
 	Run func(ctx context.Context, path string, args ...string) (string, error)
 }
 
-// DefaultDirs are the usual places where these tools are installed.
-func DefaultDirs() []string {
-	home, _ := os.UserHomeDir()
-	dirs := []string{"/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"}
-	if home != "" {
-		dirs = append([]string{
-			filepath.Join(home, ".local", "bin"),
-			filepath.Join(home, ".bun", "bin"),
-			filepath.Join(home, ".npm-global", "bin"),
-			filepath.Join(home, ".opencode", "bin"),
-		}, dirs...)
-	}
-	return dirs
-}
-
 // Detect reports the installed harnesses, in the order of Names. A harness that
 // is not found is left out. The result is never nil.
+//
+// A harness can be installed more than once (for example OpenCode v1 from its
+// install script and v2 from npm). Detect finds every copy, drops copies that
+// are the same file (same real path), and reports one entry per harness: the
+// primary copy in the main fields and the others in Others. The primary copy is
+// the first one in the login shell's PATH (Primary is then true). When the
+// login shell does not find the harness, it is the first copy in the search
+// order and Primary is false.
 func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 	if o.PATH == "" {
 		o.PATH = os.Getenv("PATH")
 	}
 	if o.Dirs == nil {
-		o.Dirs = DefaultDirs()
+		o.Dirs = DefaultDirs(o.Home)
 	}
 	if o.LoginShellPATH == nil {
 		o.LoginShellPATH = loginShellPATH
 	}
+	var loginDirs []string
+	if sp := o.LoginShellPATH(ctx); sp != "" {
+		loginDirs = splitPath(sp)
+	}
 	search := splitPath(o.PATH)
 	search = append(search, o.Dirs...)
+	search = append(search, loginDirs...)
 	if o.Run == nil {
 		o.Run = func(ctx context.Context, path string, args ...string) (string, error) {
 			return runProgram(ctx, path, strings.Join(search, string(os.PathListSeparator)), args...)
 		}
 	}
 
-	paths := map[string]string{}
-	missing := false
+	out := []protocol.HarnessInfo{}
 	for _, n := range Names {
-		if p := find(n, search); p != "" {
-			paths[n] = p
-		} else {
-			missing = true
+		installs := findAll(n, search)
+		if len(installs) == 0 {
+			continue
 		}
-	}
-	if missing {
-		if sp := o.LoginShellPATH(ctx); sp != "" {
-			shellDirs := splitPath(sp)
-			search = append(search, shellDirs...)
-			for _, n := range Names {
-				if paths[n] == "" {
-					if p := find(n, shellDirs); p != "" {
-						paths[n] = p
-					}
+		primary := false
+		if first := find(n, loginDirs); first != "" {
+			real := realPath(first)
+			for i, p := range installs {
+				if realPath(p) == real {
+					// Move the login shell's copy to the front, under the
+					// path the login shell finds it at.
+					copy(installs[1:i+1], installs[:i])
+					installs[0] = first
+					primary = true
+					break
 				}
 			}
 		}
-	}
-
-	out := []protocol.HarnessInfo{}
-	for _, n := range Names {
-		p := paths[n]
-		if p == "" {
-			continue
-		}
-		h := protocol.HarnessInfo{Name: n, Path: p}
-		vctx, cancel := context.WithTimeout(ctx, VersionTimeout)
-		if v, err := o.Run(vctx, p, "--version"); err == nil {
-			h.Version = firstLine(v)
-		}
-		cancel()
+		h := protocol.HarnessInfo{Name: n, Path: installs[0], Primary: primary}
+		h.Version = version(ctx, o, installs[0])
 		if n == "opencode" {
 			// `opencode models` prints one provider/model per line.
 			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
-			if m, err := o.Run(mctx, p, "models"); err == nil {
+			if m, err := o.Run(mctx, installs[0], "models"); err == nil {
 				h.Models = ParseModels(m)
 			}
 			cancel()
 		}
+		for _, p := range installs[1:] {
+			h.Others = append(h.Others, protocol.HarnessInstall{Path: p, Version: version(ctx, o, p)})
+		}
 		out = append(out, h)
 	}
 	return out
+}
+
+func version(ctx context.Context, o Options, path string) string {
+	vctx, cancel := context.WithTimeout(ctx, VersionTimeout)
+	defer cancel()
+	if v, err := o.Run(vctx, path, "--version"); err == nil {
+		return firstLine(v)
+	}
+	return ""
+}
+
+// findAll returns every executable called name in dirs, in order, without
+// copies that resolve to the same real file.
+func findAll(name string, dirs []string) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, d := range dirs {
+		p := isExec(filepath.Join(d, name))
+		if p == "" {
+			continue
+		}
+		r := realPath(p)
+		if seen[r] {
+			continue
+		}
+		seen[r] = true
+		out = append(out, p)
+	}
+	return out
+}
+
+func realPath(p string) string {
+	if r, err := filepath.EvalSymlinks(p); err == nil {
+		return r
+	}
+	return p
 }
 
 // ParseModels reads the output of `opencode models`: one "provider/model" per
@@ -178,10 +205,16 @@ func splitPath(p string) []string {
 // find returns the first executable regular file called name in dirs.
 func find(name string, dirs []string) string {
 	for _, d := range dirs {
-		p := filepath.Join(d, name)
-		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+		if p := isExec(filepath.Join(d, name)); p != "" {
 			return p
 		}
+	}
+	return ""
+}
+
+func isExec(p string) string {
+	if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+		return p
 	}
 	return ""
 }

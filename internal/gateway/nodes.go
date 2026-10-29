@@ -140,6 +140,9 @@ func DescribeHarnessChange(old, cur []protocol.HarnessInfo) string {
 			if oh.Path != ch.Path {
 				parts = append(parts, n+":path")
 			}
+			if len(oh.Others) != len(ch.Others) {
+				parts = append(parts, n+":installs "+strconv.Itoa(1+len(oh.Others))+"->"+strconv.Itoa(1+len(ch.Others)))
+			}
 			if len(oh.Models) != len(ch.Models) {
 				parts = append(parts, n+":models "+strconv.Itoa(len(oh.Models))+"->"+strconv.Itoa(len(ch.Models)))
 			} else if strings.Join(oh.Models, "\n") != strings.Join(ch.Models, "\n") {

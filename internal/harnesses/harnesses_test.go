@@ -2,6 +2,7 @@ package harnesses
 
 import (
 	"context"
+	"flag"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -41,11 +42,11 @@ func TestDetectFindsToolsInPathAndKnownDirs(t *testing.T) {
 		t.Fatalf("opencode: %+v", got[1])
 	}
 	if !called {
-		t.Fatal("pi and codex are missing, so the login shell PATH should have been tried")
+		t.Fatal("the login shell PATH should always be asked")
 	}
 }
 
-func TestDetectUsesLoginShellPathOnlyWhenSomethingIsMissing(t *testing.T) {
+func TestDetectUsesLoginShellPathToo(t *testing.T) {
 	root := t.TempDir()
 	dirs := map[string]string{}
 	for _, n := range Names {
@@ -56,18 +57,11 @@ func TestDetectUsesLoginShellPathOnlyWhenSomethingIsMissing(t *testing.T) {
 	opts := Options{PATH: dirs["claude"], Dirs: []string{dirs["opencode"], dirs["pi"]},
 		LoginShellPATH: func(context.Context) string { calls++; return dirs["codex"] }}
 	got := Detect(context.Background(), opts)
-	if len(got) != 4 || got[3].Name != "codex" || got[3].Version != "codex 1.0" {
+	if len(got) != 4 || got[3].Name != "codex" || got[3].Version != "codex 1.0" || !got[3].Primary {
 		t.Fatalf("got %+v", got)
 	}
 	if calls != 1 {
 		t.Fatalf("login shell asked %d times, want 1", calls)
-	}
-
-	opts.Dirs = append(opts.Dirs, dirs["codex"])
-	calls = 0
-	Detect(context.Background(), opts)
-	if calls != 0 {
-		t.Fatalf("login shell asked although everything was found")
 	}
 }
 
@@ -142,5 +136,199 @@ func TestLoginShellPathRunsTheShell(t *testing.T) {
 	p := loginShellPATH(context.Background())
 	if p == "" {
 		t.Fatal("empty PATH from the login shell")
+	}
+}
+
+func TestDetectReportsEveryCopyAndMarksTheLoginShellOne(t *testing.T) {
+	root := t.TempDir()
+	v1 := script(t, filepath.Join(root, "home", ".opencode", "bin"), "opencode", `echo 1.18.16`)
+	v2 := script(t, filepath.Join(root, "npm", "bin"), "opencode", `echo 2.2.0`)
+	// A symlink to v2 is the same install and must not be listed twice.
+	link := filepath.Join(root, "link")
+	os.MkdirAll(link, 0o755)
+	if err := os.Symlink(v2, filepath.Join(link, "opencode")); err != nil {
+		t.Fatal(err)
+	}
+	got := Detect(context.Background(), Options{
+		PATH: filepath.Dir(v1), Dirs: []string{link, filepath.Dir(v2)},
+		LoginShellPATH: func(context.Context) string { return filepath.Dir(v2) + ":" + filepath.Dir(v1) },
+	})
+	if len(got) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	h := got[0]
+	if h.Path != v2 || h.Version != "2.2.0" || !h.Primary {
+		t.Fatalf("main: %+v", h)
+	}
+	if len(h.Others) != 1 || h.Others[0].Path != v1 || h.Others[0].Version != "1.18.16" {
+		t.Fatalf("others: %+v", h.Others)
+	}
+}
+
+func TestDetectWithoutLoginShellAnswerFirstFoundIsNotPrimary(t *testing.T) {
+	root := t.TempDir()
+	a := script(t, filepath.Join(root, "a"), "pi", `echo 1`)
+	b := script(t, filepath.Join(root, "b"), "pi", `echo 2`)
+	got := Detect(context.Background(), Options{PATH: filepath.Dir(a), Dirs: []string{filepath.Dir(b)},
+		LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 1 || got[0].Path != a || got[0].Primary || len(got[0].Others) != 1 || got[0].Others[0].Path != b {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestDetectSingleCopyHasNoOthers(t *testing.T) {
+	root := t.TempDir()
+	script(t, root, "pi", `echo 1`)
+	got := Detect(context.Background(), Options{PATH: root, Dirs: []string{root}, LoginShellPATH: func(context.Context) string { return root }})
+	if len(got) != 1 || got[0].Others != nil || !got[0].Primary {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestDetectFindsToolsUnderNvmWithNoPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("NVM_DIR", "")
+	t.Setenv("FNM_DIR", "")
+	bin := filepath.Join(home, ".nvm", "versions", "node", "v22.23.3", "bin")
+	script(t, bin, "opencode", `echo 2.2.0`)
+	script(t, bin, "pi", `echo 0.7.0`)
+	got := Detect(context.Background(), Options{PATH: "/nonexistent", Home: home, LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 2 || got[0].Name != "opencode" || got[0].Version != "2.2.0" || got[1].Name != "pi" || got[1].Path != filepath.Join(bin, "pi") {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func mkNode(t *testing.T, root, ver string) string {
+	t.Helper()
+	d := filepath.Join(root, "versions", "node", ver, "bin")
+	if err := os.MkdirAll(d, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func writeAlias(t *testing.T, root, name, val string) {
+	t.Helper()
+	p := filepath.Join(root, "alias", filepath.FromSlash(name))
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.WriteFile(p, []byte(val+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNvmOrderNewestFirstWithoutDefault(t *testing.T) {
+	root := t.TempDir()
+	for _, v := range []string{"v18.20.0", "v22.9.0", "v22.23.3", "v20.1.0"} {
+		mkNode(t, root, v)
+	}
+	got := nvmBins(root)
+	want := []string{"v22.23.3", "v22.9.0", "v20.1.0", "v18.20.0"}
+	for i, w := range want {
+		if got[i] != filepath.Join(root, "versions", "node", w, "bin") {
+			t.Fatalf("got %v", got)
+		}
+	}
+}
+
+func TestNvmDefaultAliasWins(t *testing.T) {
+	cases := map[string]string{
+		"exact":  "v20.1.0",
+		"prefix": "20",
+		"lts":    "lts/iron",
+	}
+	for name, val := range cases {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			for _, v := range []string{"v18.20.0", "v20.1.0", "v22.23.3"} {
+				mkNode(t, root, v)
+			}
+			writeAlias(t, root, "default", val)
+			writeAlias(t, root, "lts/iron", "v20.1.0")
+			got := nvmBins(root)
+			if got[0] != filepath.Join(root, "versions", "node", "v20.1.0", "bin") || len(got) != 3 || got[1] != filepath.Join(root, "versions", "node", "v22.23.3", "bin") {
+				t.Fatalf("got %v", got)
+			}
+		})
+	}
+}
+
+func TestNvmUnresolvableDefaultFallsBackToNewest(t *testing.T) {
+	root := t.TempDir()
+	mkNode(t, root, "v18.20.0")
+	mkNode(t, root, "v22.23.3")
+	writeAlias(t, root, "default", "v99.0.0")
+	if got := nvmBins(root); got[0] != filepath.Join(root, "versions", "node", "v22.23.3", "bin") {
+		t.Fatalf("got %v", got)
+	}
+	writeAlias(t, root, "default", "lts/loop")
+	writeAlias(t, root, "lts/loop", "lts/loop")
+	if got := nvmBins(root); got[0] != filepath.Join(root, "versions", "node", "v22.23.3", "bin") {
+		t.Fatalf("loop: %v", got)
+	}
+}
+
+func TestNvmDirEnvIsSearchedFirst(t *testing.T) {
+	home := t.TempDir()
+	custom := filepath.Join(t.TempDir(), "nvmx")
+	mkNode(t, custom, "v20.0.0")
+	mkNode(t, filepath.Join(home, ".nvm"), "v22.0.0")
+	t.Setenv("NVM_DIR", custom)
+	dirs := versionManagerDirs(home)
+	if len(dirs) < 2 || dirs[0] != filepath.Join(custom, "versions", "node", "v20.0.0", "bin") || dirs[1] != filepath.Join(home, ".nvm", "versions", "node", "v22.0.0", "bin") {
+		t.Fatalf("got %v", dirs)
+	}
+}
+
+func TestFnmDefaultAlias(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("FNM_DIR", "")
+	root := filepath.Join(home, ".local", "share", "fnm")
+	for _, v := range []string{"v18.0.0", "v22.0.0"} {
+		os.MkdirAll(filepath.Join(root, "node-versions", v, "installation", "bin"), 0o755)
+	}
+	os.MkdirAll(filepath.Join(root, "aliases"), 0o755)
+	if err := os.Symlink(filepath.Join(root, "node-versions", "v18.0.0", "installation"), filepath.Join(root, "aliases", "default")); err != nil {
+		t.Fatal(err)
+	}
+	got := fnmBins(root)
+	if len(got) != 2 || got[0] != filepath.Join(root, "node-versions", "v18.0.0", "installation", "bin") {
+		t.Fatalf("got %v", got)
+	}
+}
+
+func TestDefaultDirsListVersionManagersAndFriends(t *testing.T) {
+	home := t.TempDir()
+	for _, k := range []string{"NVM_DIR", "FNM_DIR", "VOLTA_HOME", "ASDF_DATA_DIR", "PNPM_HOME", "BUN_INSTALL"} {
+		t.Setenv(k, "")
+	}
+	have := map[string]bool{}
+	for _, d := range DefaultDirs(home) {
+		have[d] = true
+	}
+	for _, rel := range []string{".volta/bin", ".asdf/shims", ".local/share/mise/shims", ".mise/shims", ".local/share/pnpm", "Library/pnpm", ".bun/bin", ".local/bin"} {
+		if !have[filepath.Join(home, rel)] {
+			t.Errorf("missing %s in %v", rel, DefaultDirs(home))
+		}
+	}
+}
+
+func TestVersionLess(t *testing.T) {
+	if !versionLess("v22.9.0", "v22.23.3") || versionLess("v22.23.3", "v22.9.0") || versionLess("v1.0.0", "v1.0.0") {
+		t.Fatal("wrong order")
+	}
+}
+
+var realDetect = flag.Bool("real", false, "run detection against this machine (read-only) and print paths and versions")
+
+// go test ./internal/harnesses -run TestRealDetection -real -v
+func TestRealDetection(t *testing.T) {
+	if !*realDetect {
+		t.Skip("pass -real to run")
+	}
+	for _, h := range Detect(context.Background(), Options{}) {
+		t.Logf("%s %s %q primary=%v", h.Name, h.Path, h.Version, h.Primary)
+		for _, o := range h.Others {
+			t.Logf("  other: %s %q", o.Path, o.Version)
+		}
 	}
 }
