@@ -20,6 +20,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/plugins/opencode"
 	"github.com/niparis/agent-net/plugins/pi"
 )
@@ -504,7 +505,7 @@ func queryInfo(ctx context.Context) (daemonInfo, error) {
 	defer cl.Close()
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
-	if _, err := cl.Call(cctx, "hello", map[string]any{"client": "cli"}); err != nil {
+	if _, err := cl.Call(cctx, "hello", map[string]any{"client": "cli", "protocol": protocol.LocalProtocol}); err != nil {
 		return info, err
 	}
 	raw, err := cl.Call(cctx, "info", nil)

@@ -70,6 +70,9 @@ CREATE TABLE events (
 	id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL,
 	node_id TEXT NOT NULL DEFAULT '', session_id TEXT NOT NULL DEFAULT '',
 	message_id TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');
+`, `
+ALTER TABLE nodes ADD COLUMN version TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN seen_at INTEGER NOT NULL DEFAULT 0;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

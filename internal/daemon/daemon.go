@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -62,6 +63,21 @@ type Config struct {
 	BackoffMin, BackoffMax time.Duration
 	// PluginAckTimeout is how long to wait for a plugin to confirm a push.
 	PluginAckTimeout time.Duration
+
+	// Version is the agent-net version of this process (sent in hello).
+	Version string
+	// Exe is the path of this binary, taken before it is ever replaced.
+	// Default: the running executable.
+	Exe string
+	// MinLocalProtocol is the oldest local client protocol served.
+	// Default: protocol.MinLocalProtocol.
+	MinLocalProtocol int
+	// Upgrade installs the version the gateway asks for and returns the
+	// version that is now on disk. Default: download from the gateway.
+	Upgrade func(ctx context.Context, target string) (from, to string, err error)
+	// Restart restarts the daemon process after an upgrade. Default: the
+	// service manager, or re-exec when there is none (see RestartSelf).
+	Restart func()
 }
 
 type localSession struct {
@@ -93,6 +109,8 @@ type Daemon struct {
 	cancel  context.CancelFunc
 	ln      *localServer
 
+	upg upgradeState
+
 	// cmdline is replaced in tests.
 	cmdline func(pid int) string
 	// exe returns the executable path of a process; replaced in tests.
@@ -120,6 +138,9 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.StateDir == "" {
 		cfg.StateDir = StateDir()
+	}
+	if cfg.Exe == "" {
+		cfg.Exe, _ = os.Executable()
 	}
 	st, err := openState(cfg.StateDir)
 	if err != nil {

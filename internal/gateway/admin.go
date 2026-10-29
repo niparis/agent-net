@@ -1,0 +1,261 @@
+package gateway
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/upgrade"
+)
+
+// AdminInfo is admin.json in the data dir: how the local `agent-net upgrade`
+// reaches a running gateway. The file is 0600 and lists the token of the
+// current run only.
+type AdminInfo struct {
+	URL   string `json:"url"`
+	Token string `json:"token"`
+	Dist  string `json:"dist"`
+}
+
+// AdminFile is the path of admin.json in a data dir.
+func AdminFile(dataDir string) string { return filepath.Join(dataDir, "admin.json") }
+
+// WriteAdminInfo records how to reach this gateway. listen is the address it
+// listens on; an unspecified host is replaced by localhost.
+func (g *Gateway) WriteAdminInfo(listen string) error {
+	host, port := listen, ""
+	if i := strings.LastIndex(listen, ":"); i >= 0 {
+		host, port = listen[:i], listen[i+1:]
+	}
+	if host == "" || host == "0.0.0.0" || host == "[::]" || host == "::" {
+		host = "localhost"
+	}
+	info := AdminInfo{URL: "https://" + host + ":" + port, Token: g.adminToken, Dist: g.opts.DistDir}
+	raw, _ := json.MarshalIndent(info, "", "  ")
+	tmp := AdminFile(g.opts.DataDir) + ".tmp"
+	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, AdminFile(g.opts.DataDir))
+}
+
+func (g *Gateway) upgradeRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /install/version", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, g.opts.Version)
+	})
+	mux.HandleFunc("GET /install/checksums.txt", g.handleChecksums)
+	mux.HandleFunc("GET /v1/admin/nodes", g.admin(func(w http.ResponseWriter, r *http.Request) {
+		info, err := g.NodesInfo()
+		writeJSON(w, info, err)
+	}))
+	mux.HandleFunc("POST /v1/admin/upgrade", g.admin(g.handleAdminUpgrade))
+	mux.HandleFunc("POST /v1/admin/restart", g.admin(func(w http.ResponseWriter, r *http.Request) {
+		if g.opts.Restart == nil {
+			http.Error(w, "this gateway cannot restart itself", http.StatusNotImplemented)
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			g.opts.Restart()
+		}()
+	}))
+}
+
+func (g *Gateway) admin(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if got == "" || subtle.ConstantTimeCompare([]byte(got), []byte(g.adminToken)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		h(w, r)
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v any, err error) {
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+// NodesInfo lists the nodes with their versions; Online comes from the live
+// connections.
+func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
+	nodes, err := g.store.Nodes()
+	if err != nil {
+		return protocol.NodesInfo{}, err
+	}
+	g.mu.Lock()
+	for i := range nodes {
+		_, nodes[i].Online = g.conns[nodes[i].NodeID]
+	}
+	g.mu.Unlock()
+	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, nil
+}
+
+// ---- checksums ----
+
+type sumEntry struct {
+	size int64
+	mod  time.Time
+	sum  string
+}
+
+var (
+	sumMu    sync.Mutex
+	sumCache = map[string]sumEntry{}
+)
+
+// handleChecksums serves the SHA-256 of every binary in the dist dir in
+// sha256sum format. It is computed from the files, so it always matches what
+// /install/bin serves.
+func (g *Gateway) handleChecksums(w http.ResponseWriter, r *http.Request) {
+	names := upgrade.AllAssets()
+	sort.Strings(names)
+	var b strings.Builder
+	for _, n := range names {
+		path := filepath.Join(g.opts.DistDir, n)
+		st, err := os.Stat(path)
+		if err != nil || st.IsDir() {
+			continue
+		}
+		sumMu.Lock()
+		e, ok := sumCache[path]
+		sumMu.Unlock()
+		if !ok || e.size != st.Size() || !e.mod.Equal(st.ModTime()) {
+			sum, err := upgrade.SHA256File(path)
+			if err != nil {
+				continue
+			}
+			e = sumEntry{st.Size(), st.ModTime(), sum}
+			sumMu.Lock()
+			sumCache[path] = e
+			sumMu.Unlock()
+		}
+		fmt.Fprintf(&b, "%s  %s\n", e.sum, n)
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprint(w, b.String())
+}
+
+// ---- upgrade ----
+
+func (g *Gateway) handleAdminUpgrade(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Version        string `json:"version"`
+		TimeoutSeconds int    `json:"timeout_seconds"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || req.Version == "" {
+		http.Error(w, "bad request: version is required", http.StatusBadRequest)
+		return
+	}
+	timeout := time.Duration(req.TimeoutSeconds) * time.Second
+	if timeout <= 0 {
+		timeout = 2 * time.Minute
+	}
+	res, err := g.UpgradeNodes(r.Context(), req.Version, timeout)
+	writeJSON(w, map[string]any{"results": res}, err)
+}
+
+// oldDaemon reports whether a node's hello version predates remote upgrade.
+func oldDaemon(v string) bool { return v == "" || v == "step2" }
+
+// UpgradeNodes tells every connected node to upgrade to target and waits up to
+// timeout for each to come back on that version. Nodes that are not connected
+// are listed as offline.
+func (g *Gateway) UpgradeNodes(ctx context.Context, target string, timeout time.Duration) ([]protocol.UpgradeResult, error) {
+	nodes, err := g.store.Nodes()
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	results := make([]protocol.UpgradeResult, len(nodes))
+	var wg sync.WaitGroup
+	for i, n := range nodes {
+		res := protocol.UpgradeResult{NodeID: n.NodeID, Hostname: n.Hostname, From: n.Version, To: target}
+		g.mu.Lock()
+		nc := g.conns[n.NodeID]
+		g.mu.Unlock()
+		switch {
+		case nc == nil:
+			res.Status = protocol.UpgradeOffline
+			res.Detail = "will not upgrade until you run agent-net upgrade there"
+			results[i] = res
+		case oldDaemon(n.Version):
+			res.Status = protocol.UpgradeFailed
+			res.Detail = "this node runs an agent-net too old to upgrade remotely; run agent-net upgrade there"
+			results[i] = res
+		default:
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results[i] = g.upgradeOne(ctx, nc, res, target)
+			}()
+		}
+	}
+	wg.Wait()
+	return results, nil
+}
+
+func (g *Gateway) upgradeOne(ctx context.Context, nc *nodeConn, res protocol.UpgradeResult, target string) protocol.UpgradeResult {
+	fail := func(format string, a ...any) protocol.UpgradeResult {
+		res.Status = protocol.UpgradeFailed
+		res.Detail = fmt.Sprintf(format, a...)
+		return res
+	}
+	raw, err := nc.call(ctx, "node.upgrade", protocol.NodeUpgrade{Version: target})
+	if err != nil {
+		if ctx.Err() != nil {
+			return fail("no answer in time")
+		}
+		return fail("%v", err)
+	}
+	var r protocol.NodeUpgradeResult
+	if json.Unmarshal(raw, &r) != nil {
+		return fail("bad answer from the node")
+	}
+	if !r.Restarting {
+		res.Status = protocol.UpgradeOK
+		res.To = r.To
+		if r.To != target {
+			return fail("node reports %s, wanted %s", r.To, target)
+		}
+		return res
+	}
+	// The node restarts now. Wait for it to come back and say hello.
+	for {
+		g.mu.Lock()
+		cur := g.conns[nc.id]
+		g.mu.Unlock()
+		if cur != nil && cur != nc {
+			v, _ := g.store.NodeVersion(nc.id)
+			if v == target {
+				res.Status = protocol.UpgradeOK
+				res.To = v
+				return res
+			}
+			if v != "" && v != res.From {
+				return fail("restarted but reports %s", v)
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return fail("installed, but the node did not come back on %s in time", target)
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}

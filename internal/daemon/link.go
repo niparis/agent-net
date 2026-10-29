@@ -90,6 +90,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 			if ch != nil {
 				ch <- h
 			}
+		case "node.upgrade":
+			var p protocol.NodeUpgrade
+			if json.Unmarshal(raw, &p) != nil {
+				continue
+			}
+			go d.onUpgrade(ctx, l, h.ID, p.Version)
 		case "msg.deliver":
 			var p protocol.MsgDeliver
 			if json.Unmarshal(raw, &p) != nil {
@@ -165,7 +171,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
-	if _, err := l.call(hctx, "hello", protocol.Hello{Version: "step2", Hostname: d.cfg.Hostname}); err != nil {
+	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname}); err != nil {
 		return false, err
 	}
 	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: d.snapshot()})
