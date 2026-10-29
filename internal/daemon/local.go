@@ -324,6 +324,13 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, errors.New("the daemon has not discovered this Claude session")
 		}
 		lc.bind("mcp", ls)
+		// One line per hello. After an upgrade, a session's `agent-net mcp` says
+		// hello on the old version (and is told to switch), then on the new one.
+		ver := p.Version
+		if ver == "" {
+			ver = "(unknown version)"
+		}
+		d.Logf("mcp hello: claude session %s pid %d runs agent-net %s, daemon runs %s", p.NativeID, pid, ver, d.helloVersion())
 		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 
 	case "pi", "opencode":

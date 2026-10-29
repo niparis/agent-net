@@ -193,6 +193,7 @@ type nodeOpts struct {
 	// detect replaces the harness detection; interval is how often it runs.
 	detect   func(ctx context.Context) []protocol.HarnessInfo
 	interval time.Duration
+	logger   *log.Logger
 }
 
 func shortDir(t *testing.T) string {
@@ -220,7 +221,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	cfg := Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
 		Hostname: "host-" + nc.NodeID, StateDir: t.TempDir(), SocketPath: sock,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
-		PluginAckTimeout: 500 * time.Millisecond}
+		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger}
 	if o.adapter != nil {
 		cfg.Adapters = []Adapter{o.adapter}
 	}

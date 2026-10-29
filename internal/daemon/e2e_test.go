@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -254,7 +256,10 @@ func TestPeerCheckAndBoundSender(t *testing.T) {
 		t.Fatal(err)
 	}
 	fa := &fakeAdapter{harness: "claude"}
-	a := startNode(t, g, nodeOpts{adapter: fa, claudeDir: sessDir, cmdline: "node something"})
+	var logs strings.Builder
+	var logMu sync.Mutex
+	logger := log.New(writerFunc(func(p []byte) (int, error) { logMu.Lock(); defer logMu.Unlock(); return logs.Write(p) }), "", 0)
+	a := startNode(t, g, nodeOpts{adapter: fa, claudeDir: sessDir, cmdline: "node something", logger: logger})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	fa.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "sess-1", Name: "claude-one", Status: "idle"})
 	eventually(t, "claude session id", func() bool { return fa.host.SessionID("claude", "sess-1") != "" })
@@ -280,7 +285,15 @@ func TestPeerCheckAndBoundSender(t *testing.T) {
 	}
 
 	good := dialLocal(t, a.sock)
-	res := good.mustCall("hello", map[string]any{"client": "mcp", "harness": "claude", "native_id": "sess-1"})
+	res := good.mustCall("hello", map[string]any{"client": "mcp", "harness": "claude", "native_id": "sess-1", "version": "v0.0.7"})
+	// The daemon log says which agent-net version each Claude session runs, so an
+	// upgrade that did not reach a session can be seen.
+	logMu.Lock()
+	gotLog := logs.String()
+	logMu.Unlock()
+	if !strings.Contains(gotLog, "mcp hello: claude session sess-1") || !strings.Contains(gotLog, "runs agent-net v0.0.7") {
+		t.Fatalf("daemon log lacks the mcp hello line:\n%s", gotLog)
+	}
 	if !strings.Contains(string(res), claudeID) {
 		t.Fatalf("hello result %s lacks the session id", res)
 	}
@@ -396,3 +409,7 @@ func TestBadTokenRefused(t *testing.T) {
 		t.Fatal("connected with a bad token")
 	}
 }
+
+type writerFunc func([]byte) (int, error)
+
+func (f writerFunc) Write(p []byte) (int, error) { return f(p) }

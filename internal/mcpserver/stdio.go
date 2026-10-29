@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -22,16 +23,39 @@ import (
 const HandoverEnv = "AGENT_NET_MCP_HANDOVER"
 
 // handover is what the old process leaves for the new one: the two handshake
-// lines the client sent once (it will not send them again), and the bytes the
-// old process had read from stdin but not given to the MCP server.
+// lines the client sent once (it will not send them again), the subscriptions
+// the client opened (also sent once), and the bytes the old process had read
+// from stdin but not given to the MCP server.
 type handover struct {
-	V           int    `json:"v"`
-	Init        []byte `json:"init,omitempty"`        // the initialize request line
-	Initialized []byte `json:"initialized,omitempty"` // the notifications/initialized line
-	Leftover    []byte `json:"leftover,omitempty"`
+	V           int      `json:"v"`
+	Init        []byte   `json:"init,omitempty"`        // the initialize request line
+	Initialized []byte   `json:"initialized,omitempty"` // the notifications/initialized line
+	Listens     [][]byte `json:"listens,omitempty"`     // open subscriptions/listen request lines
+	Leftover    []byte   `json:"leftover,omitempty"`
 }
 
-const listChangedLine = `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`
+const (
+	listChangedLine = `{"jsonrpc":"2.0","method":"notifications/tools/list_changed"}`
+	methodListen    = "subscriptions/listen"
+	methodAck       = "notifications/subscriptions/acknowledged"
+	subscriptionKey = "io.modelcontextprotocol/subscriptionId"
+)
+
+// listChangedFor is the tools/list_changed notification on one subscription
+// (MCP protocol 2026-07-28 and later): it carries the id of the listen request.
+func listChangedFor(id jsonrpc.ID) []byte {
+	raw, _ := json.Marshal(id.Raw())
+	return []byte(`{"jsonrpc":"2.0","method":"notifications/tools/list_changed","params":{"_meta":{"` +
+		subscriptionKey + `":` + string(raw) + `}}}`)
+}
+
+// listenLine is an open subscriptions/listen request. Newer MCP clients send
+// one and it stays open for the whole session: the server never answers it
+// until the client cancels it. So it must not count as work in progress.
+type listenLine struct {
+	id   jsonrpc.ID
+	line []byte
+}
 
 // stdioConn is an MCP connection over stdin and stdout that owns its framing
 // (newline-delimited JSON). Because it holds the only read buffer, it knows
@@ -47,11 +71,13 @@ type stdioConn struct {
 	buf          []byte   // bytes read from in and not yet handed to the server
 	pre          [][]byte // replayed handshake lines, handed out before buf
 	eof          bool
-	waiting      bool // the server is blocked in Read, so it holds no message
-	started      bool // the replay (if any) has been fully processed
-	replayHanded bool // the last replayed line has been given to the server
-	announce     bool // send tools/list_changed when the replay is done
+	waiting      bool     // the server is blocked in Read, so it holds no message
+	started      bool     // the replay (if any) has been fully processed
+	replayHanded bool     // the last replayed line has been given to the server
+	announce     [][]byte // lines to send when the replay is done: the tools changed
 	swallow      *jsonrpc.ID
+	swallowAcks  map[jsonrpc.ID]bool // replayed listens whose acknowledgement the client saw already
+	listens      []listenLine        // open subscriptions/listen requests
 
 	initLine, initializedLine []byte
 	pendingIn                 map[jsonrpc.ID]bool // requests the server has not answered
@@ -87,7 +113,22 @@ func newStdioConn(in int, out io.Writer, h *handover, logf func(string, ...any))
 		if len(h.Initialized) > 0 && len(h.Init) > 0 {
 			c.pre = append(c.pre, h.Initialized)
 			c.initializedLine = h.Initialized
-			c.announce = true
+			c.announce = append(c.announce, []byte(listChangedLine))
+		}
+		for _, l := range h.Listens {
+			m, err := jsonrpc.DecodeMessage(l)
+			if err != nil {
+				continue
+			}
+			if r, ok := m.(*jsonrpc.Request); ok && r.IsCall() {
+				c.pre = append(c.pre, l)
+				c.listens = append(c.listens, listenLine{r.ID, l})
+				if c.swallowAcks == nil {
+					c.swallowAcks = map[jsonrpc.ID]bool{}
+				}
+				c.swallowAcks[r.ID] = true
+				c.announce = append(c.announce, listChangedFor(r.ID))
+			}
 		}
 		c.buf = append(c.buf, h.Leftover...)
 	}
@@ -177,10 +218,11 @@ func (c *stdioConn) Read(ctx context.Context) (jsonrpc.Message, error) {
 	for {
 		c.mu.Lock()
 		c.waiting = true
-		announce := false
+		var announce [][]byte
 		if c.replayHanded && !c.started {
 			c.started = true // the server has processed the replay
 			announce = c.announce
+			c.announce = nil
 		}
 		c.maybeExecLocked() // returns only if there is no exec, or it failed
 		line := c.nextLineLocked()
@@ -190,9 +232,9 @@ func (c *stdioConn) Read(ctx context.Context) (jsonrpc.Message, error) {
 		}
 		eof := c.eof
 		c.mu.Unlock()
-		if announce {
+		for _, l := range announce {
 			// The client did not ask again, so tell it the tools may differ.
-			c.writeLine([]byte(listChangedLine))
+			c.writeLine(l)
 		}
 		if line != nil {
 			msg, err := jsonrpc.DecodeMessage(line)
@@ -219,8 +261,19 @@ func (c *stdioConn) noteInLocked(line []byte) {
 	var h struct {
 		ID     json.RawMessage `json:"id"`
 		Method string          `json:"method"`
+		Params struct {
+			RequestID json.RawMessage `json:"requestId"`
+		} `json:"params"`
 	}
 	if json.Unmarshal(line, &h) != nil {
+		return
+	}
+	if h.Method == "notifications/cancelled" {
+		// The client no longer waits for that answer, so it is not in flight.
+		if id, ok := makeID(h.Params.RequestID); ok {
+			delete(c.pendingIn, id)
+			c.dropListenLocked(id)
+		}
 		return
 	}
 	switch {
@@ -229,21 +282,39 @@ func (c *stdioConn) noteInLocked(line []byte) {
 	case h.Method == "notifications/initialized" && c.initializedLine == nil && c.initLine != nil:
 		c.initializedLine = line
 	}
-	if len(h.ID) == 0 || string(h.ID) == "null" {
+	id, ok := makeID(h.ID)
+	if !ok {
 		return
+	}
+	switch {
+	case h.Method == "":
+		delete(c.pendingOut, id) // the client answered a server request
+	case h.Method == methodListen:
+		c.dropListenLocked(id)
+		c.listens = append(c.listens, listenLine{id, line})
+	default:
+		c.pendingIn[id] = true
+	}
+}
+
+func makeID(raw json.RawMessage) (jsonrpc.ID, bool) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return jsonrpc.ID{}, false
 	}
 	var v any
-	if json.Unmarshal(h.ID, &v) != nil {
-		return
+	if json.Unmarshal(raw, &v) != nil {
+		return jsonrpc.ID{}, false
 	}
 	id, err := jsonrpc.MakeID(v)
-	if err != nil {
-		return
-	}
-	if h.Method == "" {
-		delete(c.pendingOut, id) // the client answered a server request
-	} else {
-		c.pendingIn[id] = true
+	return id, err == nil
+}
+
+func (c *stdioConn) dropListenLocked(id jsonrpc.ID) {
+	for i, l := range c.listens {
+		if l.id == id {
+			c.listens = append(c.listens[:i], c.listens[i+1:]...)
+			return
+		}
 	}
 }
 
@@ -253,12 +324,27 @@ func (c *stdioConn) Write(ctx context.Context, msg jsonrpc.Message) error {
 	case *jsonrpc.Response:
 		if c.swallow != nil && m.ID == *c.swallow {
 			c.swallow = nil // the answer to the replayed initialize: the client saw one already
+			delete(c.pendingIn, m.ID)
+			c.maybeExecLocked() // this may be the idle moment an exec waits for
 			c.mu.Unlock()
 			return nil
 		}
 	case *jsonrpc.Request:
 		if m.IsCall() {
 			c.pendingOut[m.ID] = true
+		} else if m.Method == methodAck && len(c.swallowAcks) > 0 {
+			// A replayed listen is acknowledged again by the new process; the
+			// client got the first acknowledgement from the old one.
+			var p struct {
+				Meta map[string]json.RawMessage `json:"_meta"`
+			}
+			if json.Unmarshal(m.Params, &p) == nil {
+				if id, ok := makeID(p.Meta[subscriptionKey]); ok && c.swallowAcks[id] {
+					delete(c.swallowAcks, id)
+					c.mu.Unlock()
+					return nil
+				}
+			}
 		}
 	}
 	c.mu.Unlock()
@@ -271,6 +357,7 @@ func (c *stdioConn) Write(ctx context.Context, msg jsonrpc.Message) error {
 	c.mu.Lock()
 	if m, ok := msg.(*jsonrpc.Response); ok {
 		delete(c.pendingIn, m.ID)
+		c.dropListenLocked(m.ID) // a listen that ended
 	}
 	c.maybeExecLocked()
 	c.mu.Unlock()
@@ -297,9 +384,24 @@ func (c *stdioConn) requestExec(path string) {
 	c.mu.Lock()
 	if c.execPath == "" {
 		c.execPath = path
+		// If the switch is still not possible after a while, say why.
+		time.AfterFunc(stuckAfter, c.logStuck)
 	}
 	c.maybeExecLocked()
 	c.mu.Unlock()
+}
+
+// stuckAfter is how long a wanted switch may wait before we log why.
+var stuckAfter = 15 * time.Second
+
+func (c *stdioConn) logStuck() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.execPath == "" {
+		return
+	}
+	c.logf("still waiting to switch to the new binary: waiting_for_input=%v started=%v replay_left=%d requests_unanswered=%d server_requests_unanswered=%d",
+		c.waiting, c.started, len(c.pre), len(c.pendingIn), len(c.pendingOut))
 }
 
 // idleLocked: the server is waiting for input, holds no message, owes no
@@ -320,6 +422,9 @@ func (c *stdioConn) maybeExecLocked() {
 	c.execPath = ""
 	h := handover{V: 1, Init: c.initLine, Initialized: c.initializedLine,
 		Leftover: append([]byte(nil), c.buf...)}
+	for _, l := range c.listens {
+		h.Listens = append(h.Listens, l.line)
+	}
 	c.wmu.Lock() // no half-written line may be cut off by the exec
 	err := c.execFn(h, path)
 	c.wmu.Unlock()
