@@ -198,6 +198,45 @@ func (s *Client) Workers(ctx context.Context) ([]protocol.WorkerView, error) {
 	return out.Workers, nil
 }
 
+// The owner-only data methods. A daemon from before them refuses with
+// "not available to cli clients"; the gate refuses an agent with its own text.
+
+func (s *Client) Usage(ctx context.Context) (protocol.UsageResult, error) {
+	var out protocol.UsageResult
+	raw, err := s.action(ctx, protocol.OpUsage, nil)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) UsageTop(ctx context.Context, session string) (protocol.UsageTop, error) {
+	var out protocol.UsageTop
+	raw, err := s.action(ctx, protocol.OpUsageTop, protocol.QueryUsageTop{SessionID: session})
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) SessionText(ctx context.Context, q protocol.TextQuery) (protocol.TextPage, error) {
+	var out protocol.TextPage
+	raw, err := s.action(ctx, protocol.OpSessionText, q)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
+	var out protocol.SessionCounts
+	raw, err := s.action(ctx, protocol.OpCounts, nil)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

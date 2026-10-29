@@ -8,7 +8,7 @@
 
 This is the main requirement. The phone is not a smaller product. Everything the TUI can show, the phone can show, and every action the TUI can do, such as sending a message, the phone can do too.
 
-To keep the two from drifting apart (built: see [0007](0007-operator-interface-and-worker-build.md), O1), the TUI and the phone use one shared operator interface. That interface covers the data (machines, sessions, projects, the message feed, message bodies) and the actions (send a message, start a worker, stop a worker, and future ones). A new feature is added there once, and both front ends get it. The TUI must not grow actions that call the daemon in a way the phone cannot reuse.
+To keep the two from drifting apart (built: see [0008](0008-operator-interface-and-worker-build.md), O1), the TUI and the phone use one shared operator interface. That interface covers the data (machines, sessions, projects, the message feed, message bodies) and the actions (send a message, start a worker, stop a worker, and future ones). A new feature is added there once, and both front ends get it. The TUI must not grow actions that call the daemon in a way the phone cannot reuse.
 
 ## P2 - A web app served by the gateway, not a native app
 

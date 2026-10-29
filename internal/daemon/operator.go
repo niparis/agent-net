@@ -38,63 +38,15 @@ func (d *Daemon) launchFlag() *bool {
 	return &v
 }
 
-// requireOwner is the caller check for the owner's own actions. Only the
-// command line or the TUI of the person may act as the owner. An agent
-// connection is refused before this runs (it has a bound session), and so is
-// a command that runs inside an agent: an agent's shell tool starts
-// `agent-net` as a descendant of the agent process, and a worker's too.
-func (lc *localConn) requireOwner(client string) error {
-	if client != "cli" {
-		return errors.New("only the owner at the command line or the TUI can do this; an agent session cannot act as the owner")
-	}
-	if lc.d.insideAgent(lc.peer) {
-		return errors.New("this command runs inside an agent session, so it cannot act as the owner: run it in your own terminal")
-	}
-	return nil
-}
-
-// insideAgent tells whether the process is a descendant of a session or worker
-// process of this machine.
-func (d *Daemon) insideAgent(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	agents := map[int]bool{}
-	d.mu.Lock()
-	for _, ls := range d.sessions {
-		if ls.info.PID > 1 && !protocol.IsOwner(ls.info.Harness) {
-			agents[ls.info.PID] = true
-		}
-	}
-	d.mu.Unlock()
-	d.wmu.Lock()
-	for _, w := range d.workers {
-		if w.pid > 1 {
-			agents[w.pid] = true
-		}
-	}
-	d.wmu.Unlock()
-	if len(agents) == 0 {
-		return false
-	}
-	for p, depth := pid, 0; depth < 64; depth++ {
-		parent, err := parentPID(p)
-		if err != nil || parent <= 1 {
-			return false
-		}
-		if agents[parent] {
-			return true
-		}
-		p = parent
-	}
-	return false
-}
-
 // callerSession returns the session an action is made for: the owner session
 // for the command line, else the bound session.
-func (lc *localConn) callerSession(client string) (id string, ls *localSession, err error) {
+//
+// The command line acts as the owner, so it goes through operatorGate, the one
+// rule for owner-only methods (sessiontext.go): CLI only, and never from inside
+// an agent session or a worker.
+func (lc *localConn) callerSession(client, method string) (id string, ls *localSession, err error) {
 	if client == "cli" {
-		if err := lc.requireOwner(client); err != nil {
+		if err := lc.operatorGate(method); err != nil {
 			return "", nil, err
 		}
 		id = lc.d.ownerSessionID()
@@ -121,9 +73,9 @@ func tooOldGateway(err error) error {
 	return err
 }
 
-// dispatchOperator serves the operator actions. handled is false for other
+// dispatchActions serves the operator actions. handled is false for other
 // methods.
-func (lc *localConn) dispatchOperator(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
+func (lc *localConn) dispatchActions(ctx context.Context, client, method string, raw json.RawMessage) (res any, handled bool, err error) {
 	d := lc.d
 	switch method {
 	case protocol.OpSend:
@@ -133,12 +85,12 @@ func (lc *localConn) dispatchOperator(ctx context.Context, client, method string
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad owner_send params")
 		}
-		sid, _, err := lc.callerSession(client)
-		if err != nil {
-			return nil, true, err
-		}
 		if client != "cli" {
 			return nil, true, errors.New("only the owner can use owner_send")
+		}
+		sid, _, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
 		}
 		to, err := d.resolveTo(ctx, p.To)
 		if err != nil {
@@ -153,7 +105,7 @@ func (lc *localConn) dispatchOperator(ctx context.Context, client, method string
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad worker_start params")
 		}
-		sid, ls, err := lc.callerSession(client)
+		sid, ls, err := lc.callerSession(client, method)
 		if err != nil {
 			return nil, true, err
 		}
@@ -180,7 +132,7 @@ func (lc *localConn) dispatchOperator(ctx context.Context, client, method string
 		if client == "cli" {
 			return nil, true, errors.New("worker_handback is for a worker's own session")
 		}
-		sid, ls, err := lc.callerSession(client)
+		sid, ls, err := lc.callerSession(client, method)
 		if err != nil {
 			return nil, true, err
 		}
@@ -198,7 +150,7 @@ func (lc *localConn) dispatchOperator(ctx context.Context, client, method string
 		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
 			return nil, true, errors.New("worker_stop needs session")
 		}
-		sid, _, err := lc.callerSession(client)
+		sid, _, err := lc.callerSession(client, method)
 		if err != nil {
 			return nil, true, err
 		}

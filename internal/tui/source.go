@@ -1,7 +1,7 @@
 // Package tui is the live terminal view of the agent network (`agent-net
 // tui`), with a few actions: send a message as the owner, start a worker and
 // stop a worker. It gets all its data and does all its actions through the
-// operator interface (internal/operator, decision 0007), which is the same one
+// operator interface (internal/operator, decision 0008), which is the same one
 // the phone app will use. The model and update logic (model.go, feed.go,
 // forms.go) know nothing about the terminal drawing (view.go) or the daemon.
 package tui

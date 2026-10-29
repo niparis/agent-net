@@ -43,6 +43,18 @@ func (f *fakeOp) StopWorker(_ context.Context, s string) error { f.stopped = s; 
 func (f *fakeOp) Workers(context.Context) ([]protocol.WorkerView, error) {
 	return f.workers, f.err
 }
+func (f *fakeOp) Usage(context.Context) (protocol.UsageResult, error) {
+	return protocol.UsageResult{}, nil
+}
+func (f *fakeOp) UsageTop(context.Context, string) (protocol.UsageTop, error) {
+	return protocol.UsageTop{}, nil
+}
+func (f *fakeOp) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
+	return protocol.TextPage{}, nil
+}
+func (f *fakeOp) Counts(context.Context) (protocol.SessionCounts, error) {
+	return protocol.SessionCounts{}, nil
+}
 func (f *fakeOp) Close() {}
 
 func TestStartCommand(t *testing.T) {

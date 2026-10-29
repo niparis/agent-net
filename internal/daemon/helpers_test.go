@@ -175,6 +175,7 @@ func (n *node) restart() {
 	if err != nil {
 		n.t.Fatal(err)
 	}
+	d.inSession = func(int) bool { return false }
 	if n.cmdline != "" {
 		d.cmdline = func(int) string { return n.cmdline }
 	}
@@ -200,6 +201,8 @@ type nodeOpts struct {
 	logger   *log.Logger
 	// cfg, if set, changes the daemon config before the daemon is made.
 	cfg func(*Config)
+	// realGate makes the daemon use the real inside-a-session check.
+	realGate bool
 }
 
 func shortDir(t *testing.T) string {
@@ -238,6 +241,10 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	d, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	// In these tests the "agent" and the command line are one process.
+	if !o.realGate {
+		d.inSession = func(int) bool { return false }
 	}
 	if o.exe != "" {
 		d.exe = func(int) string { return o.exe }

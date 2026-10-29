@@ -183,6 +183,18 @@ func (f *fakeSource) StopWorker(_ context.Context, id string) error {
 func (f *fakeSource) Workers(context.Context) ([]protocol.WorkerView, error) {
 	return nil, nil
 }
+func (f *fakeSource) Usage(context.Context) (protocol.UsageResult, error) {
+	return protocol.UsageResult{}, nil
+}
+func (f *fakeSource) UsageTop(context.Context, string) (protocol.UsageTop, error) {
+	return protocol.UsageTop{}, nil
+}
+func (f *fakeSource) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
+	return protocol.TextPage{}, nil
+}
+func (f *fakeSource) Counts(context.Context) (protocol.SessionCounts, error) {
+	return protocol.SessionCounts{}, nil
+}
 func (f *fakeSource) Close() {}
 
 // newModel returns a model of the given size that has already shown the fake data.

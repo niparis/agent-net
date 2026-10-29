@@ -276,7 +276,7 @@ func TestOperatorGateRefusesEveryClientButCLI(t *testing.T) {
 func TestCLIInsideASessionIsRefused(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
-	n := startNode(t, g, nodeOpts{adapter: fa})
+	n := startNode(t, g, nodeOpts{adapter: fa, realGate: true})
 	// The real check: this test process is the "command line". A session
 	// whose process is this one, or a parent of it, makes the command line
 	// "inside" the session.

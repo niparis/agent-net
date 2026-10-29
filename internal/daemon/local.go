@@ -96,9 +96,6 @@ type localConn struct {
 	once   sync.Once
 	closed chan struct{}
 
-	// peer is the process ID of the other end of the socket.
-	peer int
-
 	mu     sync.Mutex
 	client string
 	ls     *localSession // bound session; nil for cli
@@ -305,7 +302,6 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the peer process: %w", err)
 	}
-	lc.peer = pid
 	switch p.Client {
 	case "cli":
 		lc.mu.Lock()
@@ -655,7 +651,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if res, ok, err := lc.dispatchProject(ctx, client, method, raw); ok {
 		return res, err
 	}
-	if res, ok, err := lc.dispatchOperator(ctx, client, method, raw); ok {
+	if res, ok, err := lc.dispatchActions(ctx, client, method, raw); ok {
 		return res, err
 	}
 	return nil, fmt.Errorf("unknown method %q", method)

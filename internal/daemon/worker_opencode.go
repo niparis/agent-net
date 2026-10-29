@@ -67,11 +67,11 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	password := protocol.NewToken()
 	w.dir = filepath.Join(d.cfg.StateDir, "workers", w.id)
 	env := workerEnv(os.Environ(), map[string]string{
-		"OPENCODE_SERVER_PASSWORD": password,
-		"AGENT_NET_WORKER":         w.id,
+		"OPENCODE_SERVER_PASSWORD":      password,
+		"AGENT_NET_WORKER":              w.id,
 		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(w.dir, "session"),
-		"AGENT_NET_SOCKET":         d.cfg.SocketPath,
-		"XDG_STATE_HOME":           filepath.Join(w.dir, "state"),
+		"AGENT_NET_SOCKET":              d.cfg.SocketPath,
+		"XDG_STATE_HOME":                filepath.Join(w.dir, "state"),
 	})
 	// Never a flag that turns permission checks off (decision 0002, W6).
 	args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}

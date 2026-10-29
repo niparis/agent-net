@@ -1,5 +1,5 @@
 // Package operator is the one interface a person uses to look at the agent
-// network and act on it (decision 0007). It has two parts:
+// network and act on it (decision 0008). It has two parts:
 //
 //   - the methods and their request and answer types, in internal/protocol
 //     (operator.go), which are plain JSON and know nothing about a front end;
@@ -21,7 +21,7 @@ import (
 )
 
 // Operator is everything a front end can ask and do. Reads never change
-// anything. The actions are the ones decision 0007 lists.
+// anything. The actions are the ones decision 0008 lists.
 type Operator interface {
 	// Snapshot is the state of the network as the local daemon sees it.
 	Snapshot(ctx context.Context) (Snapshot, error)
@@ -40,6 +40,14 @@ type Operator interface {
 	StopWorker(ctx context.Context, session string) error
 	// Workers lists the workers on the network with their owners.
 	Workers(ctx context.Context) ([]protocol.WorkerView, error)
+	// Usage is the CPU and memory of every machine and session. Owner only.
+	Usage(ctx context.Context) (protocol.UsageResult, error)
+	// UsageTop is the heaviest processes of one session. Owner only.
+	UsageTop(ctx context.Context, session string) (protocol.UsageTop, error)
+	// SessionText is a page of what happens inside a session. Owner only.
+	SessionText(ctx context.Context, q protocol.TextQuery) (protocol.TextPage, error)
+	// Counts is how many sessions are online and offline. Owner only.
+	Counts(ctx context.Context) (protocol.SessionCounts, error)
 	Close()
 }
 

@@ -1,8 +1,8 @@
-# 0007 - The operator interface, the owner as a sender, and how workers are built
+# 0008 - The operator interface, the owner as a sender, and how workers are built
 
 **Date:** 2026-10-29
 **Status:** Built on branch `worktree-agent-a022fe03a8ec212a7`. Proposed until the owner has read it.
-**Context:** [0006](0006-phone-app.md) P1 says the TUI and the phone must use one interface, and [0002](0002-workers.md) is accepted. This text records how both were built, and the choices that 0002 left open.
+**Context:** [0007](0007-usage-and-session-text.md) made the owner-only data methods and their gate. [0006](0006-phone-app.md) P1 says the TUI and the phone must use one interface, and [0002](0002-workers.md) is accepted. This text records how both were built, and the choices that 0002 left open.
 
 ## O1 - One operator interface, in the daemon's local API
 
@@ -17,6 +17,10 @@ The methods a person uses are one set, with request and answer types in `interna
 | `events` | `QueryEvents` | `EventsResult` | read |
 | `message_status` | `QueryMessage` | `MessageResult` (the body) | read |
 | `workers` | - | `WorkersResult` | read |
+| `usage` | - | `UsageResult` | owner-only data, from [0007](0007-usage-and-session-text.md) |
+| `usage_top` | `QueryUsageTop` | `UsageTop` | owner-only data |
+| `session_text` | `TextQuery` | `TextPage` | owner-only data |
+| `counts` | - | `SessionCounts` | owner-only data |
 | `owner_send` | `OwnerSendRequest` | `MessageSent` | action, owner only |
 | `worker_start` | `WorkerStartRequest` | `WorkerStartResult` | action |
 | `worker_stop` | `WorkerStopRequest` | `WorkerStopResult` | action |
@@ -31,7 +35,7 @@ Each daemon registers one pseudo-session for the person at its machine: harness 
 
 - The gateway hides owner sessions from `agent_list` unless asked (`include_owners`), makes no `session.new` event for them, keeps them out of the project list, accepts only the native ID `owner` for them and never marks one as a worker.
 - A message carries `sender_harness: owner`. Claude Code frames, the Pi extension and the OpenCode plugin then say: "from your user in person ... This is your user speaking, not another agent".
-- **Who may send as the owner** is decided in the daemon (`requireOwner`). Only a socket client that said `client: cli` may call `owner_send`; an agent connection (bound to a session) is refused. A CLI call that comes from a process that is a descendant of an agent session or a worker of this machine is refused too: an agent's shell tool starts `agent-net` as a child of the agent. The check walks the parent chain of the caller (found with the socket's peer credentials) against the process IDs of the sessions and workers. This is a check against an agent that shells out. A process of your user that is not under an agent can still connect as `cli`, as before: the socket is yours.
+- **Who may send as the owner** is decided by `operatorGate`, the one rule that 0007 made for owner-only data (`usage`, `usage_top`, `session_text`, `counts`). Only a socket client that said `client: cli` may call `owner_send`; an agent connection (bound to a session) is refused. A CLI call that comes from a process that is a descendant of a session is refused too: an agent's shell tool starts `agent-net` as a child of the agent. We did not build a second gate: `owner_send` and the command line's `worker_start`, `worker_stop` call `operatorGate`, and `insideSession` also counts the process of every worker from the moment it starts (a worker is a session only after its plugin says hello). This is a check against an agent that shells out. A process of your user that is not under an agent can still connect as `cli`, as before: the socket is yours.
 - The sender is never a parameter. `owner_send` ignores a sender field.
 
 ## W-build - Workers

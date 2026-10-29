@@ -16,7 +16,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Workers (decision 0002, 0007). This daemon starts the harness as its own
+// Workers (decision 0002, 0008). This daemon starts the harness as its own
 // child process, in a new process group, in the project folder. It owns the
 // process: it keeps the process ID and start time in daemon.db, kills the
 // whole group when the worker ends, and takes its workers back after a

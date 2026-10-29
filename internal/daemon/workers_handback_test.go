@@ -112,7 +112,11 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 		t.Fatal("a worker that handed back ended")
 	}
 	var sent protocol.MessageSent
-	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"}), &sent)
+	raw := w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"})
+	mustJSON(t, raw, &sent)
+	if sent.Message == nil {
+		t.Fatalf("owner_send gave %s", raw)
+	}
 	if r := w.replyTo(t, owner, sent.Message.ID); !strings.HasPrefix(r.Body, "ok from worker") {
 		t.Errorf("follow-up: %+v", r)
 	}

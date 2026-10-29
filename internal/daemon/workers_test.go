@@ -521,7 +521,7 @@ func (w *workerNode) workerSession(t *testing.T, id string) string {
 func TestOwnerActionsRefuseACallerInsideAnAgent(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
-	n := startNode(t, g, nodeOpts{adapter: fa})
+	n := startNode(t, g, nodeOpts{adapter: fa, realGate: true})
 	// The fake agent's process is the parent of this test process, as if the
 	// test were the shell tool of that agent.
 	fa.setSessions(protocol.SessionInfo{Harness: "fake", NativeID: "na", PID: os.Getppid(), Cwd: "/work/a", Name: "alice",

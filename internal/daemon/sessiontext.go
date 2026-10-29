@@ -35,6 +35,9 @@ var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true,
 }
 
+// The owner as a sender (owner_send, and the command line's worker calls) uses
+// the same gate, operatorGate, but is served by dispatchActions (operator.go).
+
 // TextProvider is implemented by an adapter that can read the conversation of
 // its sessions itself (Claude Code reads the transcript file).
 type TextProvider interface {
@@ -112,6 +115,15 @@ func (d *Daemon) insideSession(pid int) bool {
 		}
 	}
 	d.mu.Unlock()
+	// A worker is a session, but it is registered only when its plugin says
+	// hello. Count its process from the moment it starts.
+	d.wmu.Lock()
+	for _, w := range d.workers {
+		if w.pid > 1 {
+			sess[w.pid] = true
+		}
+	}
+	d.wmu.Unlock()
 	if len(sess) == 0 {
 		return false
 	}

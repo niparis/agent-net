@@ -121,7 +121,7 @@ func runFakeOpenCode() {
 			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
 				hello = "ses_other"
 			}
-			go fakePlugin(hello, cwd)
+			go fakeOCPlugin(hello, cwd)
 		}
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
 	})
@@ -143,16 +143,16 @@ func fakeEdit(dir string) {
 	}
 }
 
-// fakePlugin is the agent-net plugin inside the fake OpenCode: one connection
+// fakeOCPlugin is the agent-net plugin inside the fake OpenCode: one connection
 // to the daemon for the session, which it opens again when it drops.
-func fakePlugin(sessionID, cwd string) {
+func fakeOCPlugin(sessionID, cwd string) {
 	for {
-		fakePluginOnce(sessionID, cwd)
+		fakeOCPluginOnce(sessionID, cwd)
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
-func fakePluginOnce(sessionID, cwd string) {
+func fakeOCPluginOnce(sessionID, cwd string) {
 	c, err := net.Dial("unix", os.Getenv("AGENT_NET_SOCKET"))
 	if err != nil {
 		return

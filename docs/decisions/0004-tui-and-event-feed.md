@@ -4,7 +4,7 @@
 **Status:** Proposed, built on branch `worktree-agent-a97bcf0f23c6359d2`
 **Context:** a live, read-only view of every agent session (`agent-net tui`) that runs on any machine, plus two new facts per session.
 
-> **Update 2026-10-29.** The TUI now also acts: send a message as the owner (`m`), start a worker (`s`), stop a worker (`x`). It still talks only to the local daemon, now through the operator interface of [0007](0007-operator-interface-and-worker-build.md), which the phone will share. D1 below describes the first version, which only read. The feed kinds now include `worker.*`.
+> **Update 2026-10-29.** The TUI now also acts: send a message as the owner (`m`), start a worker (`s`), stop a worker (`x`). It still talks only to the local daemon, now through the operator interface of [0008](0008-operator-interface-and-worker-build.md), which the phone will share. D1 below describes the first version, which only read. The feed kinds now include `worker.*`.
 
 ## D1 - The TUI reads through the local daemon only
 

@@ -22,13 +22,7 @@ import (
 // they ask for data that agents cannot get (decision 0007).
 
 // usageReply is the daemon's answer to the "usage" method.
-type usageReply struct {
-	NodeID       string                `json:"node_id"`
-	Hostname     string                `json:"hostname"`
-	Local        *protocol.UsageReport `json:"local"`
-	Gateway      *protocol.UsageAnswer `json:"gateway"`
-	GatewayError string                `json:"gateway_error"`
-}
+type usageReply = protocol.UsageResult
 
 func cmdTop(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("top", flag.ExitOnError)

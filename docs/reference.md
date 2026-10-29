@@ -208,7 +208,7 @@ Each entry has the machine, the path of the main working tree, the name (its bas
 
 ## Workers
 
-A worker is an agent session that agent-net starts for you, with nobody watching it. See [decision 0002](decisions/0002-workers.md) for the rules and [0007](decisions/0007-operator-interface-and-worker-build.md) for how they are built.
+A worker is an agent session that agent-net starts for you, with nobody watching it. See [decision 0002](decisions/0002-workers.md) for the rules and [0008](decisions/0008-operator-interface-and-worker-build.md) for how they are built.
 
 - **Who starts one:** you (`agent-net start`, the TUI) or an agent (`agent_start`). A worker cannot start workers. The harness is `opencode`; Claude Code workers are not built yet.
 - **Where:** the project is looked up by name in `agent-net projects` (registered or seen). If it is on two machines, name one with `--machine`. The machine must be online, accept workers (not set up with `--no-launch`), have OpenCode, and list the model (`agent-net nodes --wide`). The gateway says which of these failed.

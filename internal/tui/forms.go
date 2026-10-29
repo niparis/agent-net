@@ -15,7 +15,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The actions of the screen (decision 0007): send a message as the owner,
+// The actions of the screen (decision 0008): send a message as the owner,
 // start a worker, stop a worker. Each one calls only the operator interface,
 // shows a prompt in the help row or a form in the middle of the screen, and
 // ends with one result line, green or red, under the title.

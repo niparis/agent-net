@@ -5,7 +5,7 @@ import "sort"
 // The operator interface: the one set of methods a person uses to look at the
 // network and act on it. The terminal screen (`agent-net tui`) calls these
 // through the local daemon. The phone app will call the same methods through
-// the gateway (decision 0007), so every request and answer is plain JSON with
+// the gateway (decision 0008), so every request and answer is plain JSON with
 // no shape that belongs to one front end.
 //
 // A method name is the "method" of a local socket request, and would be the
@@ -22,6 +22,14 @@ const (
 	OpMessage  = "message_status" // takes QueryMessage, answers MessageResult
 	OpWorkers  = "workers"        // takes nothing, answers WorkersResult
 
+	// Owner-only data (decision 0008): CPU and memory, the text of a session,
+	// the session counts. They share one gate with OpSend (decision 0008): the
+	// owner's command line or TUI, never an agent session.
+	OpUsage       = "usage"        // takes nothing, answers UsageResult
+	OpUsageTop    = "usage_top"    // takes QueryUsageTop, answers UsageTop
+	OpSessionText = "session_text" // takes TextQuery, answers TextPage
+	OpCounts      = "counts"       // takes nothing, answers SessionCounts
+
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
 	// the limits of decision 0002.
@@ -36,7 +44,17 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpSend, OpWorkerStart, OpWorkerStop}
+	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSend, OpWorkerStart, OpWorkerStop}
+
+// UsageResult answers OpUsage: this machine's own sample, and what the gateway
+// has for every machine.
+type UsageResult struct {
+	NodeID       string       `json:"node_id"`
+	Hostname     string       `json:"hostname"`
+	Local        *UsageReport `json:"local"`
+	Gateway      *UsageAnswer `json:"gateway"`
+	GatewayError string       `json:"gateway_error"`
+}
 
 // OperatorInfo answers OpInfo: the state of the daemon the operator talks to.
 type OperatorInfo struct {

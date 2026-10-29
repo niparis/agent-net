@@ -431,6 +431,9 @@ func (d *Daemon) Sessions() []protocol.SessionInfo {
 	defer d.mu.Unlock()
 	out := make([]protocol.SessionInfo, 0, len(d.sessions))
 	for _, ls := range d.sessions {
+		if protocol.IsOwner(ls.info.Harness) {
+			continue // the person is not a session; info gives owner_session
+		}
 		in := ls.info
 		in.SessionID = ls.sessionID
 		out = append(out, in)
