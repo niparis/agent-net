@@ -85,6 +85,10 @@ type Daemon struct {
 	lk       *link
 	// connecting is true between a successful dial and the end of the handshake.
 	connecting bool
+	// upserting counts session.upsert calls in flight. The gateway may push a
+	// stored message right after the upsert result, before the session ID is
+	// recorded here.
+	upserting int
 
 	sendMu  sync.Mutex
 	lanesMu sync.Mutex
@@ -251,6 +255,14 @@ func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 // pushSession tells the gateway about a session if the link is up.
 func (d *Daemon) pushSession(ls *localSession) {
 	info := d.infoOf(ls)
+	d.mu.Lock()
+	d.upserting++
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.upserting--
+		d.mu.Unlock()
+	}()
 	data, err := d.call(context.Background(), "session.upsert", protocol.SessionUpsert{Session: info})
 	if err != nil {
 		return
@@ -468,7 +480,7 @@ func (d *Daemon) NodeID() string { return d.cfg.NodeID }
 func (d *Daemon) isConnecting() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return d.connecting
+	return d.connecting || d.upserting > 0
 }
 
 // lane runs deliveries to one session one at a time, in the order they arrived.
