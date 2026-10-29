@@ -250,26 +250,55 @@ func fakeClaudeSession() {
 func fakeClaudeMCP() {
 	session := os.Getenv(envFakeClaudeMCP)
 	cwd, _ := os.Getwd()
-	c, err := net.Dial("unix", os.Getenv("AGENT_NET_SOCKET"))
-	if err != nil {
-		os.Exit(1)
-	}
+	// Like the real MCP server, it dials again (and says hello again) when the
+	// daemon goes away and comes back.
 	var wmu sync.Mutex
+	var c net.Conn
 	next := 0
+	hello := func() {
+		next++
+		b, _ := json.Marshal(map[string]any{"id": strconv.Itoa(next), "method": "hello", "params": map[string]any{
+			"client": "mcp", "harness": "claude", "native_id": session, "cwd": cwd}})
+		c.Write(append(b, '\n'))
+	}
+	dial := func() bool {
+		conn, err := net.Dial("unix", os.Getenv("AGENT_NET_SOCKET"))
+		if err != nil {
+			return false
+		}
+		wmu.Lock()
+		c = conn
+		hello()
+		wmu.Unlock()
+		sc := bufio.NewScanner(conn)
+		sc.Buffer(make([]byte, 0, 1<<16), 1<<20)
+		for sc.Scan() { // answers from the daemon are not needed
+		}
+		return true
+	}
+	first := make(chan struct{})
+	go func() {
+		once := true
+		for {
+			if !dial() {
+				time.Sleep(20 * time.Millisecond)
+				continue
+			}
+			_ = once
+			time.Sleep(20 * time.Millisecond)
+		}
+	}()
+	go func() { time.Sleep(10 * time.Millisecond); close(first) }()
+	<-first
 	send := func(method string, params any) {
 		wmu.Lock()
 		defer wmu.Unlock()
 		next++
 		b, _ := json.Marshal(map[string]any{"id": strconv.Itoa(next), "method": method, "params": params})
-		c.Write(append(b, '\n'))
-	}
-	go func() { // answers from the daemon are not needed
-		sc := bufio.NewScanner(c)
-		sc.Buffer(make([]byte, 0, 1<<16), 1<<20)
-		for sc.Scan() {
+		if c != nil {
+			c.Write(append(b, '\n'))
 		}
-	}()
-	send("hello", map[string]any{"client": "mcp", "harness": "claude", "native_id": session, "cwd": cwd})
+	}
 	in := bufio.NewScanner(os.Stdin)
 	in.Buffer(make([]byte, 0, 1<<16), 1<<20)
 	for in.Scan() {
