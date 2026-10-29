@@ -85,19 +85,38 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 func TestPrintProjects(t *testing.T) {
 	var b bytes.Buffer
 	printProjects(&b, []protocol.ProjectView{
-		{Name: "shop", Hostname: "mac", Path: "/src/shop", Remote: "https://example.com/shop.git",
+		{Name: "shop", Hostname: "mac", Path: "/src/shop", Remote: "https://example.com/shop.git", Source: protocol.SourceBoth,
 			Harnesses: []string{"claude", "opencode"}, Worktrees: []string{"/src/shop-wt"}, Online: 1, LastSeen: time.Date(2026, 10, 29, 14, 30, 0, 0, time.UTC).Unix()},
-		{Name: "scratch", Hostname: "box", Path: "/tmp/scratch", Harnesses: []string{"pi"}, LastSeen: 0},
+		{Name: "scratch", Hostname: "box", Path: "/tmp/scratch", Harnesses: []string{"pi"}, LastSeen: 1}, // an older gateway sends no source
+		{Name: "new", Hostname: "box", Path: "/src/new", Source: protocol.SourceRegistered},
 	}, time.UTC)
 	lines := strings.Split(strings.TrimSpace(b.String()), "\n")
-	if strings.Join(strings.Fields(lines[0]), " ") != "PROJECT MACHINE PATH REMOTE HARNESSES WORKTREES ONLINE LAST SEEN" {
+	if strings.Join(strings.Fields(lines[0]), " ") != "PROJECT MACHINE PATH REMOTE SOURCE HARNESSES WORKTREES ONLINE LAST SEEN" {
 		t.Fatalf("header: %q", lines[0])
 	}
-	if got := strings.Join(strings.Fields(lines[1]), " "); got != "shop mac /src/shop https://example.com/shop.git claude,opencode /src/shop-wt 1 2026-10-29 14:30" {
+	if got := strings.Join(strings.Fields(lines[1]), " "); got != "shop mac /src/shop https://example.com/shop.git both claude,opencode /src/shop-wt 1 2026-10-29 14:30" {
 		t.Errorf("row 1: %q", got)
 	}
-	if got := strings.Join(strings.Fields(lines[2]), " "); !strings.HasPrefix(got, "scratch box /tmp/scratch - pi - 0 ") {
+	if got := strings.Join(strings.Fields(lines[2]), " "); !strings.HasPrefix(got, "scratch box /tmp/scratch - seen pi - 0 ") {
 		t.Errorf("row 2: %q", got)
+	}
+	if got := strings.Join(strings.Fields(lines[3]), " "); got != "new box /src/new - registered - - 0 -" {
+		t.Errorf("row 3: %q", got)
+	}
+}
+
+func TestPrintAddOutcome(t *testing.T) {
+	var b bytes.Buffer
+	printAddOutcome(&b, protocol.ProjectAddOutcome{Machine: "mac", DryRun: true,
+		Added:    []protocol.ProjectEntry{{Name: "a", Path: "/c/a", Remote: "https://example.com/a.git"}},
+		Existing: []protocol.ProjectEntry{{Name: "b", Path: "/c/b"}},
+		Skipped:  []protocol.ProjectSkip{{Path: "/c/n", Reason: "not a working tree"}}, Overflow: 3})
+	out := b.String()
+	for _, want := range []string{"would add  a     /c/a  https://example.com/a.git", "exists", "skipped", "not a working tree",
+		"3 more repositories were found", "1 would be added on mac, 1 already registered, 1 skipped (dry run: nothing was changed)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q in:\n%s", want, out)
+		}
 	}
 }
 

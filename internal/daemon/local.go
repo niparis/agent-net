@@ -426,7 +426,8 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	lc.mu.Unlock()
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
 		"nodes": true, "restart": true, "projects": true}
-	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") {
+	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
+		method != "project_add" && method != "project_remove" {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
 	// Sender identity is never taken from params: the bound session is used.
@@ -562,6 +563,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return d.call(ctx, "query.message", p)
 	}
 	if res, ok, err := lc.dispatchMCP(ctx, client, method, raw); ok {
+		return res, err
+	}
+	if res, ok, err := lc.dispatchProject(ctx, client, method, raw); ok {
 		return res, err
 	}
 	return nil, fmt.Errorf("unknown method %q", method)

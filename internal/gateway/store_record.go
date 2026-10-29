@@ -12,12 +12,58 @@ import (
 
 // ---- projects ----
 
-// Projects lists the project folders of the stored sessions, one row per
+// Projects lists the known projects, one row per machine and folder: the
+// registered ones (see store_projects.go) merged with the project folders of
+// the stored sessions. Source says which of the two a row comes from.
+func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
+	seen, err := s.seenProjects(name)
+	if err != nil {
+		return nil, err
+	}
+	reg, err := s.registeredProjects(name)
+	if err != nil {
+		return nil, err
+	}
+	type key struct{ node, path string }
+	byKey := map[key]int{}
+	out := make([]protocol.ProjectView, 0, len(seen)+len(reg))
+	for _, p := range seen {
+		p.Source = protocol.SourceSeen
+		byKey[key{p.NodeID, p.Path}] = len(out)
+		out = append(out, p)
+	}
+	for _, r := range reg {
+		i, ok := byKey[key{r.NodeID, r.Path}]
+		if !ok {
+			out = append(out, r)
+			continue
+		}
+		p := &out[i]
+		p.Source, p.Name = protocol.SourceBoth, r.Name
+		p.DefaultBranch, p.AddedBy, p.AddedAt, p.CheckedAt = r.DefaultBranch, r.AddedBy, r.AddedAt, r.CheckedAt
+		if p.Remote == "" {
+			p.Remote = r.Remote
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if !strings.EqualFold(a.Name, b.Name) {
+			return strings.ToLower(a.Name) < strings.ToLower(b.Name)
+		}
+		if a.Hostname != b.Hostname {
+			return a.Hostname < b.Hostname
+		}
+		return a.Path < b.Path
+	})
+	return out, nil
+}
+
+// seenProjects lists the project folders of the stored sessions, one row per
 // machine and folder. The folder is the repository root, or the session's
 // working folder when it is not in a repository. Sessions from daemons that
 // send no repository info are grouped by working folder and named after it.
 // name, when set, keeps only projects with that name (case-insensitive).
-func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
+func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
 		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree
 		FROM sessions s JOIN nodes n ON n.id = s.node_id ORDER BY s.last_seen DESC, s.id`)

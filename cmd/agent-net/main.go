@@ -44,7 +44,7 @@ const usage = `usage: agent-net <command>
   status     show the daemon's state and local sessions
   list       list agents on the network
   nodes      list machines with their agent-net version and installed harnesses
-  projects   list known projects: where they live and which harnesses ran there
+  projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states

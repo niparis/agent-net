@@ -453,6 +453,30 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"projects": ps}, nil
 
+	case "project.add":
+		p, err := decode[protocol.ProjectAdd](raw)
+		if err != nil {
+			return nil, reject("bad project.add")
+		}
+		return st.AddProjects(nc.id, p)
+
+	case "project.remove":
+		p, err := decode[protocol.ProjectRemove](raw)
+		if err != nil {
+			return nil, reject("bad project.remove")
+		}
+		node := nc.id
+		if p.On != "" {
+			if node, err = st.NodeByHostOrID(p.On); err != nil {
+				return nil, err
+			}
+		}
+		removed, err := st.RemoveProject(node, p.Name, p.Path, nc.id)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"removed": removed}, nil
+
 	case "query.nodes":
 		return g.NodesInfo()
 

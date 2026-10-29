@@ -296,6 +296,14 @@ type ProjectView struct {
 	Sessions  int      `json:"sessions"`  // sessions known there, online or not
 	Online    int      `json:"online"`
 	LastSeen  int64    `json:"last_seen"`
+	// Source says where the row comes from: registered, seen or both. An older
+	// gateway sends none; read that as seen.
+	Source        string `json:"source,omitempty"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	// AddedBy says who registered it ("cli", or the harness and session).
+	AddedBy   string `json:"added_by,omitempty"`
+	AddedAt   int64  `json:"added_at,omitempty"`
+	CheckedAt int64  `json:"checked_at,omitempty"`
 }
 
 // NodesInfo answers "query.nodes" and the admin nodes call.

@@ -57,7 +57,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	want := "agent_announce agent_get agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_reply agent_send"
+	want := "agent_announce agent_get agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_project_add agent_project_list agent_reply agent_send"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("tools: %v", names)
 	}
@@ -107,12 +107,34 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_get", "get", map[string]any{"session_id": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"name": "n", "function": "f"}},
 		{"agent_nodes", "nodes", map[string]any{}},
+		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
+		{"agent_project_list", "projects", map[string]any{"name": "a"}},
 	}
 	for _, c := range cases {
 		n := len(calls)
 		cs.CallTool(ctx, &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
 		if len(calls) != n+1 || calls[n].method != c.method {
 			t.Fatalf("%s did not call %s: %+v", c.tool, c.method, calls[n:])
+		}
+	}
+	// A scan and a dry run reach the daemon as given, and the agent cannot name a machine.
+	n := len(calls)
+	cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_project_add", Arguments: map[string]any{"dir": "~/code", "scan": true, "dry_run": true, "depth": 2}})
+	if p := calls[n].params; calls[n].method != "project_add" || p["dir"] != "~/code" || p["scan"] != true || p["dry_run"] != true || p["depth"] != float64(2) {
+		t.Fatalf("scan call: %+v", calls[n])
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name == "agent_project_add" {
+			b, _ := json.Marshal(tl.InputSchema)
+			var sch struct {
+				Properties map[string]any `json:"properties"`
+			}
+			json.Unmarshal(b, &sch)
+			for _, bad := range []string{"on", "machine", "node", "node_id", "host"} {
+				if _, ok := sch.Properties[bad]; ok {
+					t.Fatalf("agent_project_add lets the agent pick a machine (%s): %s", bad, b)
+				}
+			}
 		}
 	}
 }

@@ -43,6 +43,10 @@ type bucket struct {
 }
 
 // migrations are applied in order. Never edit one that has shipped.
+//
+// Migration 5 is a placeholder: the TUI work on another branch takes number 5
+// (session mode and model). The project registry is migration 6. Whoever
+// merges the two puts the real migration 5 in place of the placeholder.
 var migrations = []string{`
 CREATE TABLE nodes (
 	id TEXT PRIMARY KEY, hostname TEXT NOT NULL, os TEXT NOT NULL,
@@ -98,6 +102,15 @@ CREATE INDEX events_kind ON events (kind);
 CREATE INDEX messages_created ON messages (created_at);
 CREATE INDEX deliveries_at ON deliveries (at);
 CREATE INDEX sessions_seen ON sessions (online, last_seen);
+`, `
+SELECT 1;
+`, `
+CREATE TABLE projects (
+	node_id TEXT NOT NULL, path TEXT NOT NULL, name TEXT NOT NULL,
+	remote TEXT NOT NULL DEFAULT '', default_branch TEXT NOT NULL DEFAULT '',
+	added_by_session TEXT NOT NULL DEFAULT '', added_by_harness TEXT NOT NULL DEFAULT '',
+	added_at INTEGER NOT NULL, checked_at INTEGER NOT NULL,
+	PRIMARY KEY (node_id, path));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

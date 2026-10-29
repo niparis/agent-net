@@ -19,9 +19,19 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// cmdProjects lists the known projects: where each one lives and which
-// harnesses have run there.
+// cmdProjects lists the known projects: registered ones and those where
+// sessions ran. The subcommands add, scan and remove change the registry.
 func cmdProjects(ctx context.Context, args []string) error {
+	if len(args) > 0 {
+		switch args[0] {
+		case "add":
+			return cmdProjectsAdd(ctx, args[1:], false)
+		case "scan":
+			return cmdProjectsAdd(ctx, args[1:], true)
+		case "remove":
+			return cmdProjectsRemove(ctx, args[1:])
+		}
+	}
 	fs := flag.NewFlagSet("projects", flag.ExitOnError)
 	name := fs.String("name", "", "only the project with this name")
 	asJSON := fs.Bool("json", false, "print JSON")
@@ -51,10 +61,17 @@ func cmdProjects(ctx context.Context, args []string) error {
 
 func printProjects(w io.Writer, ps []protocol.ProjectView, loc *time.Location) {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
-	fmt.Fprintln(tw, "PROJECT\tMACHINE\tPATH\tREMOTE\tHARNESSES\tWORKTREES\tONLINE\tLAST SEEN")
+	fmt.Fprintln(tw, "PROJECT\tMACHINE\tPATH\tREMOTE\tSOURCE\tHARNESSES\tWORKTREES\tONLINE\tLAST SEEN")
 	for _, p := range ps {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", p.Name, p.Hostname, p.Path, dash(p.Remote),
-			strings.Join(p.Harnesses, ","), dash(strings.Join(p.Worktrees, ",")), p.Online, time.Unix(p.LastSeen, 0).In(loc).Format("2006-01-02 15:04"))
+		source, seen := p.Source, "-"
+		if source == "" { // an older gateway only knows sessions
+			source = protocol.SourceSeen
+		}
+		if p.LastSeen > 0 {
+			seen = time.Unix(p.LastSeen, 0).In(loc).Format("2006-01-02 15:04")
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\t%s\n", p.Name, p.Hostname, p.Path, dash(p.Remote), source,
+			dash(strings.Join(p.Harnesses, ",")), dash(strings.Join(p.Worktrees, ",")), p.Online, seen)
 	}
 	tw.Flush()
 }

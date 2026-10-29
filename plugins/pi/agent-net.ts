@@ -261,6 +261,34 @@ export default function (pi: ExtensionAPI) {
       .join("\n");
   }
 
+  function formatProjects(r: any): string {
+    const ps: any[] = r.projects ?? [];
+    if (!ps.length) return "No projects found.";
+    return ps
+      .map((p) => {
+        let line = `${p.name} on ${p.hostname}: ${p.path}  [${p.source || "seen"}]`;
+        if (p.remote) line += `  ${p.remote}`;
+        if (p.harnesses?.length) line += `  harnesses: ${p.harnesses.join(",")}`;
+        return line;
+      })
+      .join("\n");
+  }
+
+  function formatProjectAdd(r: any): string {
+    const added: any[] = r.added ?? [];
+    const existing: any[] = r.existing ?? [];
+    const skipped: any[] = r.skipped ?? [];
+    const lines = [
+      `${r.dry_run ? "Dry run, nothing changed. Would add" : "Added"} ${added.length} on ${r.machine}; ${existing.length} already registered; ${skipped.length} skipped.`,
+      ...added.map((e) => `  ${r.dry_run ? "would add" : "added"}  ${e.name}  ${e.path}${e.remote ? "  " + e.remote : ""}`),
+      ...existing.map((e) => `  exists  ${e.name}  ${e.path}`),
+      ...skipped.map((s) => `  skipped  ${s.path}: ${s.reason}`),
+    ];
+    if (r.overflow) lines.push(`${r.overflow} more repositories were found and not looked at (limit 200 per call): scan a smaller folder.`);
+    if (r.note) lines.push(r.note);
+    return lines.join("\n");
+  }
+
   function formatAgentList(r: any): string {
     const agents: any[] = r.agents ?? [];
     return agents.length ? agents.map(formatAgent).join("\n") : "No agents found.";
@@ -591,5 +619,41 @@ export default function (pi: ExtensionAPI) {
     Type.Object({ name: Type.String({ description: "The server name from agent_mcp_list" }) }),
     "mcp_remove",
     (r) => `Removed ${r.removed ?? "the server"}. ${EVERYWHERE}`,
+  );
+
+  const PROJECT_NOTE = "Registered projects are the folders where workers may start sessions on this machine.";
+
+  defineTool(
+    "agent_project_add",
+    "Add projects",
+    "Register repositories on THIS machine as projects of the agent network, so they are known even if no session ran there. " +
+      "Give paths, or a dir with scan=true to register every repository under a folder (a scan goes 3 levels down by default, " +
+      "does not enter a repository once found, skips hidden folders, node_modules, vendor and worktree folders, and registers at most 200). " +
+      "You can only register folders on your own machine. The result lists what was added, what already existed, and what was skipped with the reason. " +
+      "Use dry_run to preview. " +
+      PROJECT_NOTE +
+      " Only do this when your user asks.",
+    Type.Object({
+      paths: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Folders on THIS machine to register: absolute paths, or starting with ~. A folder inside a repository, or a worktree, registers the main tree",
+        }),
+      ),
+      dir: Type.Optional(Type.String({ description: "With scan=true: a folder on THIS machine to scan for repositories, for example ~/code" })),
+      scan: Type.Optional(Type.Boolean({ description: "Scan dir for repositories and register them all" })),
+      depth: Type.Optional(Type.Number({ description: "Scan: how many folder levels to go down (default 3, at most 8)" })),
+      dry_run: Type.Optional(Type.Boolean({ description: "Only list what would be registered, change nothing" })),
+    }),
+    "project_add",
+    (r) => formatProjectAdd(r.dry_run ? r : { ...r, note: PROJECT_NOTE }),
+  );
+
+  defineTool(
+    "agent_project_list",
+    "List projects",
+    "List the projects of the agent network: one row per repository per machine, with its path, remote and source (registered, seen because a session ran there, or both).",
+    Type.Object({ name: Type.Optional(Type.String({ description: "Only projects with this name" })) }),
+    "projects",
+    formatProjects,
   );
 }
