@@ -42,6 +42,7 @@ The script downloads the binary to `~/.local/bin/agent-net` and runs `agent-net 
 join               ok (node n_...)
 daemon service     ok (restarted)
 claude code        ok
+claude peer messages held for review (default)
 pi extension       ok
 claude guidance    updated
 agent guidance     ok
@@ -53,9 +54,30 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - joins the gateway (skipped if this machine already joined the same gateway),
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
+- when `claude` is found and Claude Code's `crossSessionInbound` setting is not set, asks once whether Claude Code should accept agent-net messages without holding them (see below),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink is left alone; see [opencode.md](opencode.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md` and `~/.config/opencode/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
+
+### The Claude Code question
+
+Claude Code holds a message from another session for your review when the sender's permission mode class differs from the receiver's. agent-net messages go through that path, so a message to a session in a different mode waits until you approve it. Setup asks once:
+
+```
+Claude Code holds messages from other sessions for review when the sender's
+permission mode differs from yours. Accepting delivers messages from any agent on
+your network without review, even from sessions in a looser mode. A peer message
+still never counts as your approval.
+Accept agent-net messages in Claude Code without holding them? [y/N]
+```
+
+- The default is No. Only `y` or `yes` turns it on. Yes sets `"crossSessionInbound": "accept"` in the Claude Code user settings file (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`). No other key is changed.
+- The answer is read from the terminal (`/dev/tty`), so it works under `curl ... | sh`. With no terminal, setup changes nothing and prints how to turn it on later.
+- `--accept-peer-messages` sets it without a prompt. `--no-accept-peer-messages` skips it without a prompt. Both work on `install.sh` too, which passes them to setup: `curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --accept-peer-messages`.
+- If `crossSessionInbound` already has any value, setup never changes it and does not ask. The summary line shows it: `claude peer messages  hold (your setting)`.
+- After you answer once (yes or no), setup does not ask again. Run `agent-net setup --accept-peer-messages` later to change your mind.
+- If the settings file is not valid JSON, setup leaves it untouched and says so.
+- `agent-net uninstall` removes the key, but only if agent-net set it and the value is still `"accept"`.
 
 ## 3. Update a machine
 
@@ -80,7 +102,7 @@ Machines accept workers (agent sessions that other sessions, or you, start there
 ## Remove a machine
 
 ```
-agent-net uninstall          # services, Claude MCP entry, Pi extension, guidance blocks
+agent-net uninstall          # services, Claude MCP entry, the crossSessionInbound value agent-net set, Pi extension, guidance blocks
 agent-net uninstall --purge  # also ~/.config/agent-net and the daemon state
 ```
 

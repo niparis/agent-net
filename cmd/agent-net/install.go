@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -19,8 +20,19 @@ func cmdSetup(ctx context.Context, args []string) error {
 	data := fs.String("data", defaultGatewayData(), "gateway data directory (with --gateway)")
 	dist := fs.String("dist", setup.DefaultDist(), "directory the gateway serves binaries from (with --gateway)")
 	port := fs.String("port", setup.GatewayPort, "gateway port (with --gateway)")
+	accept := fs.Bool("accept-peer-messages", false, "set Claude Code crossSessionInbound to accept without asking (only if unset)")
+	noAccept := fs.Bool("no-accept-peer-messages", false, "do not set crossSessionInbound and do not ask")
 	fs.Parse(args)
-	return setup.Setup(ctx, setup.Options{Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	if *accept && *noAccept {
+		return errors.New("--accept-peer-messages and --no-accept-peer-messages cannot be used together")
+	}
+	peer := ""
+	if *accept {
+		peer = setup.PeerMessagesAccept
+	} else if *noAccept {
+		peer = setup.PeerMessagesNo
+	}
+	return setup.Setup(ctx, setup.Options{PeerMessages: peer, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

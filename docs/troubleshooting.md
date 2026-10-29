@@ -81,6 +81,14 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 
 A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
 
+## A peer message is held for review in Claude Code
+
+Claude Code shows: `The sending session's permission mode class doesn't match this session's. Review it below, or set "crossSessionInbound" to "accept".` The message waits until you approve it in that session, and is dropped after a while if you do not.
+
+Claude Code does this when the sender and the receiver run in different permission mode classes (for example prompting and bypass). To deliver such messages without review, run `agent-net setup --accept-peer-messages`. It sets `"crossSessionInbound": "accept"` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`). Read [security.md](security.md#accepting-peer-messages-in-claude-code) first: it turns off the review for all agents on your network.
+
+Setup does not change a value that is already set. `agent-net setup` prints the current one on the `claude peer messages` line. If it says `hold` or `refuse`, change or remove the key yourself. A `hold` in a managed (organization) setting or in a repository's `.claude/settings.json` overrides your `accept`.
+
 ## Still stuck
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues) with the output of `agent-net version`, `agent-net status`, the relevant log lines and your OS.

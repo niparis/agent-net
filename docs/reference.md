@@ -122,6 +122,8 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | | `--launch` | off. Accept workers again. |
 | | `--gateway` | off. Also install and start the gateway here. |
 | | `--no-service` | off |
+| | `--accept-peer-messages` | off. Set Claude Code `crossSessionInbound` to `accept` without asking, if it is not set. |
+| | `--no-accept-peer-messages` | off. Do not set it and do not ask. |
 | | `--data DIR`, `--dist DIR`, `--port P` | gateway data, dist dir, `7420` (with `--gateway`) |
 | `invite` | `--host H` | the IPv4 address of the interface with the default route. A second line is printed for a Tailscale address if there is one. |
 | | `--port P`, `--data DIR` | `7420`, gateway data |
@@ -132,7 +134,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 
 `setup --gateway` does not pass the `--keep-*` flags, so the gateway service uses the defaults. To change them, add the flags to the `ExecStart` line of the systemd unit (or to `ProgramArguments` in the launchd plist) and restart the service. Setup keeps your edit only until the next `setup` run, which rewrites the unit.
 
-`install.sh` takes `--gateway`, `--client`, `--binary-only` and `--version vX.Y.Z`. See [setup.md](setup.md).
+`install.sh` takes `--gateway`, `--client`, `--binary-only`, `--accept-peer-messages`, `--no-accept-peer-messages` and `--version vX.Y.Z`. The last two peer-message flags are passed to `setup`. See [setup.md](setup.md).
 
 ## What each machine reports
 
@@ -266,6 +268,7 @@ A message body can only be shown for a message that involves a session on this m
 | Join | Writes `~/.config/agent-net/node.json` and `ca.pem`. Skipped if this machine already joined the same gateway. | Keeps them. `--purge` deletes `~/.config/agent-net`. |
 | Daemon state | Created by the daemon. | Keeps it. `--purge` deletes `~/.local/state/agent-net/daemon`. |
 | Claude Code | If `claude` is found, runs `claude mcp add -s user agent-net -- <binary> mcp`. This adds an entry to your user-level MCP servers in `~/.claude.json`. Skipped if the entry exists. | Runs `claude mcp remove -s user agent-net`. |
+| Claude Code peer messages | If `claude` is found and `crossSessionInbound` is not set in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), asks on the terminal, or follows `--accept-peer-messages` / `--no-accept-peer-messages`. On yes it adds `"crossSessionInbound": "accept"` and keeps every other key (file rewritten with 2-space indent, through a temp file and a rename). Records the answer in `~/.config/agent-net/claude-peer-messages.json`. An existing value is never changed. A file that is not valid JSON is not touched. The daemon and upgrades never change it. | Removes the key, only if agent-net set it and the value is still `"accept"`. Deletes the record. |
 | OpenCode plugin | If `~/.config/opencode` (or `$XDG_CONFIG_HOME/opencode`) exists, writes `plugins/agent-net.ts` in it. A symlink there is left alone. | Deletes the file. A symlink is left alone. |
 | Pi extension | If `~/.pi` exists, writes `~/.pi/agent/extensions/agent-net.ts`. A symlink there is left alone. | Deletes the file. A symlink is left alone. |
 | Guidance text | Adds a block between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` to `~/.claude/CLAUDE.md` (if `~/.claude` exists) `~/.pi/agent/AGENTS.md` (if `~/.pi` exists) and `~/.config/opencode/AGENTS.md` (if `~/.config/opencode` exists). Text outside the markers is never changed. An older unmarked `## agent-net: working with other agents` section is replaced by the block. | Removes the block. |
@@ -274,4 +277,4 @@ The Pi extension, the OpenCode plugin and the guidance blocks are also written b
 
 Setup does not use `sudo`. On Linux it may print a hint to run `sudo loginctl enable-linger <user>`, which keeps the user services running when you are logged out. You run that yourself.
 
-Setup does not change any other Claude Code or Pi setting, and it does not touch other MCP servers.
+Setup does not change any other Claude Code or Pi setting (the one exception is the peer-message setting above, and only with your yes), and it does not touch other MCP servers.

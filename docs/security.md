@@ -62,6 +62,14 @@ A message from the person at a machine is sent from that machine's **owner sessi
 - The agent-net details (sender, message ID, session ID) follow the body, as plain text in the same turn.
 - Claude Code treats the message as a request from another session. In our tests Claude asks its user before acting on a peer message that is outside the current task (see [step 2 results](step2-e2e.md)). Claude Code's own permission rules still apply to everything the agent does next.
 
+### Accepting peer messages in Claude Code
+
+By default Claude Code holds a cross-session message for your review when the sender's permission mode class differs from the receiver's (for example a prompting session sends to one in bypass mode). Setting `"crossSessionInbound": "accept"` in the user settings turns that check off for all cross-session messages. Then a message from any agent on your agent-net network reaches the session without review, even when the sender runs in a looser permission mode than the receiver. This means a compromised or careless agent on another machine can put text in front of a strict session without you seeing it first.
+
+What stays the same: a peer message is still not your approval. Claude Code's permission rules and prompts still apply to what the agent does next. Claude Code also keeps its stricter sources: a managed (organization) setting or a repository setting of `hold` or `refuse` wins over your `accept`. The accepted values are `accept`, `hold` and `refuse`.
+
+Setup never turns this on by itself. It asks, default No, or follows `--accept-peer-messages`. It never changes a value that is already set. It records that it set the value, and `agent-net uninstall` removes the key only if agent-net set it and it is still `"accept"`. See [setup.md](setup.md#the-claude-code-question).
+
 ## Delivery into a Pi session
 
 The extension turns the message into a follow-up message in the running session, marked as coming from another agent and not from you. Pi's own tool permissions apply to what the agent does next.

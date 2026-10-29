@@ -15,6 +15,8 @@
 #                      (also downloads the binaries for all platforms, which the gateway serves)
 #   --client           install the binary and run `agent-net setup` (no join, no gateway)
 #   --binary-only      only install ~/.local/bin/agent-net and print next steps
+#   --accept-peer-messages     passed to setup: set Claude Code "crossSessionInbound" to "accept" (only if unset)
+#   --no-accept-peer-messages  passed to setup: do not set it and do not ask
 #   --version vX.Y.Z   install this release (default: latest)
 #
 # AGENT_NET_BASE_URL overrides the download base URL (used by tests).
@@ -28,8 +30,9 @@ main() {
   REPO="niparis/agent-net"
   MODE=""
   FRESH=""
+  PEER_FLAG=""
   VERSION=""
-  USAGE="usage: install.sh [--gateway | --client | --binary-only] [--version vX.Y.Z]"
+  USAGE="usage: install.sh [--gateway | --client | --binary-only] [--accept-peer-messages | --no-accept-peer-messages] [--version vX.Y.Z]"
 
   die() { echo "agent-net install: $*" >&2; exit 1; }
 
@@ -38,6 +41,7 @@ main() {
       --gateway) MODE=gateway ;;
       --client) MODE=client ;;
       --binary-only) MODE=binary ;;
+      --accept-peer-messages|--no-accept-peer-messages) PEER_FLAG="$1" ;;
       --version)
         [ $# -ge 2 ] || die "--version needs a value, like v0.1.0"
         VERSION="$2"
@@ -168,9 +172,9 @@ main() {
         echo "Other machines join with the line that \`agent-net invite\` prints on this machine."
         echo
       fi
-      exec "$BIN_DIR/agent-net" setup --gateway
+      exec "$BIN_DIR/agent-net" setup --gateway ${PEER_FLAG:+"$PEER_FLAG"}
     fi
-    exec "$BIN_DIR/agent-net" setup
+    exec "$BIN_DIR/agent-net" setup ${PEER_FLAG:+"$PEER_FLAG"}
   fi
 
   echo

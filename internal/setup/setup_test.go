@@ -90,6 +90,8 @@ func newFixture(t *testing.T) *fixture {
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "cfg"))
 	t.Setenv("AGENT_NET_NO_SERVICE", "1")
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	noTTY(t)
 	data := t.TempDir()
 	gw, err := gateway.New(gateway.Options{DataDir: data})
 	if err != nil {

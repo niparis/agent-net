@@ -36,7 +36,7 @@ var version = "dev"
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service
+  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)

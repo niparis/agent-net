@@ -28,17 +28,18 @@ const GatewayPort = "7420"
 
 // Options configure Setup and Uninstall.
 type Options struct {
-	Join      string // join string; empty means keep the current credentials
-	Gateway   bool   // also install and start the gateway on this machine
-	NoService bool   // do not write or start services
-	NoLaunch  bool   // refuse workers on this machine (saved in node.json)
-	Launch    bool   // accept workers again after --no-launch
-	Purge     bool   // uninstall only: also remove credentials and state
-	Data      string // gateway data dir
-	Dist      string // gateway dist dir
-	Port      string // gateway port (default 7420)
-	Exe       string // path of the agent-net binary; default: this binary
-	Out       io.Writer
+	Join         string // join string; empty means keep the current credentials
+	Gateway      bool   // also install and start the gateway on this machine
+	NoService    bool   // do not write or start services
+	NoLaunch     bool   // refuse workers on this machine (saved in node.json)
+	Launch       bool   // accept workers again after --no-launch
+	Purge        bool   // uninstall only: also remove credentials and state
+	Data         string // gateway data dir
+	Dist         string // gateway dist dir
+	Port         string // gateway port (default 7420)
+	Exe          string // path of the agent-net binary; default: this binary
+	PeerMessages string // "" ask; PeerMessagesAccept or PeerMessagesNo choose without a prompt
+	Out          io.Writer
 }
 
 // DefaultDist is where the gateway serves binaries from.
@@ -110,6 +111,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.workersSetting()
 	r.daemonService()
 	r.claudeMCP()
+	r.claudePeerMessages()
 	r.piExtension()
 	r.opencodePlugin()
 	r.guidance()
