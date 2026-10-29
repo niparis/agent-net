@@ -58,7 +58,15 @@ Steps that do not apply say `skipped (reason)`. Setup:
 
 ## 3. Update a machine
 
-On the gateway host, run the install line from step 1 again (from source: `scripts/dist.sh`, then `agent-net setup --gateway`). It restarts the services. Then run `agent-net invite` and paste the new line on each other machine. On a machine that already joined, the line updates the binary and the integrations, restarts the daemon, and skips the join. The install line from step 1 does the same there.
+On the gateway host, run:
+
+```
+agent-net upgrade
+```
+
+It downloads and verifies the latest release, replaces the binary (the old one stays as `agent-net.prev`), restarts the gateway and daemon services, and tells every connected machine to upgrade itself. It prints one line per machine. A machine that is offline is listed as such: run `agent-net upgrade` there when it is back. `agent-net upgrade --check` shows the versions and changes nothing, `agent-net upgrade --rollback` goes back to the previous binary on this machine. See [upgrade.md](upgrade.md).
+
+From source: `scripts/dist.sh`, then `agent-net setup --gateway`. The install line from step 1 also still works to update a machine.
 
 ## 4. Check it
 
