@@ -78,6 +78,17 @@ type Model struct {
 	form        workerForm
 	confirmID   string // worker the stop question is about
 	confirmName string
+
+	// CPU, memory and counts from the daemon (usage.go).
+	usage usageData
+	// top caches the top processes of sessions that were selected.
+	top map[string]*topEntry
+	// conv is the open conversation, or nil (conv.go).
+	conv *convState
+	// help shows the key overlay; expand gives the detail pane the room of the
+	// message feed.
+	help   bool
+	expand bool
 }
 
 // New returns a model that reads from src.
@@ -86,7 +97,8 @@ func New(src Source) Model {
 	ti.Prompt = "/"
 	ti.CharLimit = 80
 	ti.Cursor.SetMode(cursor.CursorHide)
-	return Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true}
+	return Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
+		top: map[string]*topEntry{}}
 }
 
 // ---- messages ----
@@ -99,6 +111,19 @@ type fetchedMsg struct {
 	events    []protocol.FeedEvent
 	eventsErr error
 	at        time.Time
+	// usage and counts are set when this refresh asked for them.
+	askedUsage bool
+	usage      Usage
+	usageErr   error
+	counts     protocol.SessionCounts
+	countsErr  error
+}
+
+type topMsg struct {
+	id  string
+	at  time.Time
+	top protocol.UsageTop
+	err error
 }
 
 type bodyMsg struct {
@@ -111,14 +136,20 @@ type bodyMsg struct {
 // New marks a fetch as running, so the first tick does not start a second.
 func (m Model) Init() tea.Cmd { return tea.Batch(m.fetchCmd(), tick()) }
 
+// tickDelay is RefreshEvery; tests shorten it.
+var tickDelay = RefreshEvery
+
 func tick() tea.Cmd {
-	return tea.Tick(RefreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
+	return tea.Tick(tickDelay, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
 // fetchCmd reads a snapshot and the new events. One runs at a time.
 func (m Model) fetchCmd() tea.Cmd {
 	src, after := m.src, m.feed.lastID
 	skipFeed := m.feed.unavailable != ""
+	askUsage := m.usageDue()
+	askCounts := askUsage && !m.usage.noCounts
+	askU := askUsage && m.usage.unavailable == ""
 	now := m.now
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
@@ -126,7 +157,23 @@ func (m Model) fetchCmd() tea.Cmd {
 		var res fetchedMsg
 		res.at = now()
 		res.snap, res.err = src.Snapshot(ctx)
-		if res.err != nil || !res.snap.Connected || skipFeed {
+		if res.err != nil || !res.snap.Connected {
+			return res
+		}
+		if askUsage {
+			res.askedUsage = true
+			if askU {
+				res.usage, res.usageErr = src.Usage(ctx)
+			} else {
+				res.usageErr = ErrUsageUnavailable
+			}
+			if askCounts {
+				res.counts, res.countsErr = src.Counts(ctx)
+			} else {
+				res.countsErr = ErrUsageUnavailable
+			}
+		}
+		if skipFeed {
 			return res
 		}
 		limit := 100
@@ -135,6 +182,17 @@ func (m Model) fetchCmd() tea.Cmd {
 		}
 		res.events, res.eventsErr = src.Events(ctx, after, limit)
 		return res
+	}
+}
+
+func (m Model) topCmd(id string) tea.Cmd {
+	src, now := m.src, m.now
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		at := now()
+		top, err := src.UsageTop(ctx, id)
+		return topMsg{id: id, at: at, top: top, err: err}
 	}
 }
 
@@ -151,6 +209,17 @@ func (m Model) bodyCmd(id string) tea.Cmd {
 // ---- update ----
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	nm := next.(Model)
+	// After any change, fetch the top processes the detail pane wants.
+	cmds := []tea.Cmd{cmd}
+	if c := nm.wantTop(); c != nil {
+		cmds = append(cmds, c)
+	}
+	return nm, tea.Batch(cmds...)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -158,11 +227,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		if m.fetching {
-			return m, tick()
+		cmds := []tea.Cmd{tick()}
+		if m.conv != nil && m.conv.loaded {
+			cmds = append(cmds, m.convCmd(convNewer)) // follow, even while a refresh runs
 		}
-		m.fetching = true
-		return m, tea.Batch(m.fetchCmd(), tick())
+		if !m.fetching {
+			m.fetching = true
+			cmds = append(cmds, m.fetchCmd())
+		}
+		return m, tea.Batch(cmds...)
+
+	case convMsg:
+		m.applyConv(msg)
+		return m, nil
+
+	case topMsg:
+		if e := m.top[msg.id]; e != nil {
+			e.loading, e.at = false, msg.at
+			if msg.err != nil {
+				e.err, e.have = sanitize(msg.err.Error()), false
+			} else {
+				e.err, e.have, e.top = "", true, msg.top
+			}
+		}
+		return m, nil
 
 	case fetchedMsg:
 		m.fetching = false
@@ -215,6 +303,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	m.applyUsage(r)
 	if r.eventsErr != nil {
 		if errors.Is(r.eventsErr, ErrFeedUnavailable) {
 			m.feed.unavailable = "no message feed: the daemon or the gateway is older than the event feed"
@@ -231,6 +320,27 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	m.fixScroll()
 }
 
+// applyUsage keeps the usage and counts of a refresh that asked for them. An
+// older daemon or gateway turns the feature off with a reason; another error
+// keeps the last figures, which go stale by themselves.
+func (m *Model) applyUsage(r fetchedMsg) {
+	if !r.askedUsage {
+		return
+	}
+	m.usage.at = r.at
+	if r.usageErr == nil {
+		m.usage.raw, m.usage.have, m.usage.unavailable = r.usage, true, ""
+	} else if isUnavailable(r.usageErr) {
+		m.usage.have, m.usage.unavailable = false, "CPU and memory need a newer daemon and gateway"
+	}
+	if r.countsErr == nil {
+		c := r.counts
+		m.usage.counts, m.usage.noCounts = &c, false
+	} else if isUnavailable(r.countsErr) {
+		m.usage.counts, m.usage.noCounts = nil, true
+	}
+}
+
 // ---- keys ----
 
 func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -245,6 +355,19 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.formKey(k)
 	case modeConfirm:
 		return m.confirmKey(k)
+	}
+	if m.help {
+		switch k.String() {
+		case "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "esc", "?", "enter", "backspace":
+			m.help = false
+		}
+		return m, nil
+	}
+	if m.conv != nil {
+		return m.convKey(k)
 	}
 	if m.filtering {
 		switch k.Type {
@@ -296,6 +419,13 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startForm()
 	case "x":
 		return m.startConfirm()
+	case "?":
+		m.help = true
+	case "d":
+		m.expand = !m.expand
+		m.fixScroll()
+	case "c":
+		return m, m.openConv()
 	case "/":
 		m.filtering = true
 		m.input.SetValue(m.filter)
@@ -342,7 +472,36 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.open = &openMsg{id: it.MsgID, loading: true}
 				return m, m.bodyCmd(it.MsgID)
 			}
+			return m, nil
 		}
+		return m, m.openConv()
+	}
+	return m, nil
+}
+
+// convKey handles the keys of the conversation view.
+func (m Model) convKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	c := m.conv
+	switch k.String() {
+	case "q":
+		m.quitting = true
+		return m, tea.Quit
+	case "esc", "backspace", "c":
+		m.conv = nil
+	case "?":
+		m.help = true
+	case "up", "k":
+		return m, m.convScroll(1)
+	case "down", "j":
+		return m, m.convScroll(-1)
+	case "pgup", "ctrl+u":
+		return m, m.convScroll(m.convRows() - 1)
+	case "pgdown", "ctrl+d":
+		return m, m.convScroll(-(m.convRows() - 1))
+	case "home", "g":
+		return m, m.convScroll(1 << 20)
+	case "end", "G", "f":
+		c.back = 0
 	}
 	return m, nil
 }
@@ -419,7 +578,7 @@ func (m Model) groups() []group {
 		}
 		g := by[a.NodeID]
 		if g == nil {
-			g = &group{nodeID: a.NodeID, host: a.Hostname}
+			g = &group{nodeID: a.NodeID, host: m.nodeName(a.NodeID, a.Hostname)}
 			by[a.NodeID] = g
 			order = append(order, g)
 		}
@@ -498,6 +657,19 @@ func (m Model) selectedAgent() (protocol.AgentView, bool) {
 	return protocol.AgentView{}, false
 }
 
+// nodeName is the name of a machine as the gateway knows it. A session's own
+// hostname can differ (a Mac reports "Nicolass-MacBook-Pro-950.local" where
+// the gateway says "NicolassMBP950"), so headings use the node list and fall
+// back to the session's hostname only when the node is not listed.
+func (m Model) nodeName(nodeID, fallback string) string {
+	for _, n := range m.snap.Nodes {
+		if n.NodeID == nodeID && n.Hostname != "" {
+			return n.Hostname
+		}
+	}
+	return fallback
+}
+
 // agentByID finds a session by its ID in the last snapshot.
 func (m Model) agentByID(id string) (protocol.AgentView, bool) {
 	for _, a := range m.snap.Agents {
@@ -513,14 +685,23 @@ type tableRow struct {
 	header bool
 	g      group
 	agent  protocol.AgentView
+	// shared is a process tree several sessions use (the OpenCode service). It
+	// is listed once, after the sessions of its machine, and cannot be selected.
+	shared *protocol.TreeUsage
 }
 
 func (m Model) tableRows() []tableRow {
 	var rows []tableRow
 	for _, g := range m.groups() {
 		rows = append(rows, tableRow{header: true, g: g})
+		ids := map[string]bool{}
 		for _, a := range g.agents {
 			rows = append(rows, tableRow{agent: a})
+			ids[a.SessionID] = true
+		}
+		for _, t := range m.sharedTreesOf(g.nodeID, ids) {
+			t := t
+			rows = append(rows, tableRow{g: g, shared: &t})
 		}
 	}
 	return rows

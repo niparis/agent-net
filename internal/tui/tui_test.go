@@ -140,6 +140,42 @@ type fakeSource struct {
 	started          *protocol.WorkerStartRequest
 	stopped          string
 	actErr           error
+
+	// CPU, memory, counts, top lists and conversations. Nil means the daemon
+	// is older than the feature.
+	usage   *Usage
+	counts  *protocol.SessionCounts
+	tops    map[string]protocol.UsageTop
+	textFn  func(q protocol.TextQuery) (protocol.TextPage, error)
+	queries []protocol.TextQuery
+	topReqs []string
+}
+
+func (f *fakeSource) Usage(context.Context) (Usage, error) {
+	if f.usage == nil {
+		return Usage{}, ErrUsageUnavailable
+	}
+	return *f.usage, nil
+}
+func (f *fakeSource) Counts(context.Context) (protocol.SessionCounts, error) {
+	if f.counts == nil {
+		return protocol.SessionCounts{}, ErrUsageUnavailable
+	}
+	return *f.counts, nil
+}
+func (f *fakeSource) UsageTop(_ context.Context, id string) (protocol.UsageTop, error) {
+	f.topReqs = append(f.topReqs, id)
+	if t, ok := f.tops[id]; ok {
+		return t, nil
+	}
+	return protocol.UsageTop{}, ErrUsageUnavailable
+}
+func (f *fakeSource) SessionText(_ context.Context, q protocol.TextQuery) (protocol.TextPage, error) {
+	f.queries = append(f.queries, q)
+	if f.textFn == nil {
+		return protocol.TextPage{}, errors.New("session_text is not available")
+	}
+	return f.textFn(q)
 }
 
 func (f *fakeSource) Snapshot(context.Context) (Snapshot, error) { return f.snap, f.snapErr }
@@ -183,28 +219,33 @@ func (f *fakeSource) StopWorker(_ context.Context, id string) error {
 func (f *fakeSource) Workers(context.Context) ([]protocol.WorkerView, error) {
 	return nil, nil
 }
-func (f *fakeSource) Usage(context.Context) (protocol.UsageResult, error) {
-	return protocol.UsageResult{}, nil
-}
-func (f *fakeSource) UsageTop(context.Context, string) (protocol.UsageTop, error) {
-	return protocol.UsageTop{}, nil
-}
-func (f *fakeSource) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
-	return protocol.TextPage{}, nil
-}
-func (f *fakeSource) Counts(context.Context) (protocol.SessionCounts, error) {
-	return protocol.SessionCounts{}, nil
-}
 func (f *fakeSource) Close() {}
 
 // newModel returns a model of the given size that has already shown the fake data.
 func newModel(w, h int) Model {
 	src := &fakeSource{snap: fakeSnapshot(), events: fakeEvents()}
+	src.usage, src.counts, src.tops = fakeUsage(), fakeCounts(), fakeTops()
 	m := New(src)
 	m.loc = time.UTC
 	m.now = func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: w, Height: h})
-	return refresh(m, src)
+	return settle(refresh(m, src))
+}
+
+// settle fetches the top processes the detail pane wants, the way the
+// program does after a key or a refresh.
+func settle(m Model) Model {
+	// The tests drop the commands that Update returns, so a fetch that was
+	// started is not running: forget it.
+	for id, e := range m.top {
+		if e.loading && !e.have {
+			delete(m.top, id)
+		}
+	}
+	if cmd := m.wantTop(); cmd != nil {
+		m = send(m, cmd())
+	}
+	return m
 }
 
 // refresh runs one refresh, the way the tick does, and applies the result.
@@ -238,7 +279,7 @@ func keys(m Model, ks ...string) Model {
 		}
 		m = send(m, msg)
 	}
-	return m
+	return settle(m)
 }
 
 func lines(s string) []string { return strings.Split(s, "\n") }
@@ -329,12 +370,11 @@ func TestViewFitsEverySize(t *testing.T) {
 func TestViewHasEverythingAt80Columns(t *testing.T) {
 	out := keys(newModel(80, 24), "down").View() // tenebrae-53
 	for _, want := range []string{
-		"Mac (here)", "v0.4.0", "online", "claude 2.1.312", "opencode 2.2.0", "pi 1.4.0",
-		"old-box", "offline", "harnesses unknown",
-		"AGENT", "NAME", "PROJECT", "BRANCH", "MODEL", "MODE", "STATUS", "ON", "FUNCTION",
+		"Mac (here)", "v0.4.0", "online", "old-box", "offline", "12 online",
+		"AGENT", "NAME", "PROJECT", "MODEL", "MODE", "STATUS", "CPU", "RAM", "PROC",
 		"tenebrae-53", "opus-5-5", "fg", "bg", "busy", "shell", "claude-opus-5-5",
-		"Selected session", "pid 4242", "https://git.example.com/team/tenebrae.git", "/Users/n/code/tenebrae",
-		"Messages (live)", "tenebrae-53 (Mac) -> ci-runner (build-vm)", "request", "delivered",
+		"Selected session", "pid 4242", "/Users/n/code/tenebrae",
+		"Messages (live)", "tenebrae-53 (Mac) -> ci-runner (build-vm)", "request",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -786,9 +826,9 @@ func TestOpenMessageBody(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 30})
 	m = refresh(m, src)
 
-	// Enter does nothing while the sessions have the focus.
-	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd != nil {
-		t.Fatal("enter fetched a body from the sessions table")
+	// Enter on a session opens its conversation, not a message body.
+	if next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); next.(Model).open != nil || next.(Model).conv == nil {
+		t.Fatal("enter on the sessions table opened the wrong thing")
 	}
 	m = keys(m, "tab")
 	for m.feed.items[m.feedCur].MsgID != "m_3" {
@@ -927,9 +967,9 @@ func TestColourOutputIsWellFormed(t *testing.T) {
 func TestDetailShowsTheProjectSource(t *testing.T) {
 	m := newModel(100, 30)
 	want := map[string]string{
-		"s_0000000000000002": "project: registered",
-		"s_0000000000000001": "project: both",
-		"s_0000000000000003": "project: seen", // an older gateway sends no source
+		"s_0000000000000002": "project  registered",
+		"s_0000000000000001": "project  both",
+		"s_0000000000000003": "project  seen", // an older gateway sends no source
 	}
 	for id, text := range want {
 		m.selected = id
@@ -939,7 +979,7 @@ func TestDetailShowsTheProjectSource(t *testing.T) {
 	}
 	// A session in a folder with no project entry shows no source.
 	m.selected = "s_0000000000000004"
-	if v := m.View(); strings.Contains(v, "project:") {
+	if v := m.View(); strings.Contains(v, "project  ") {
 		t.Errorf("a source for an unknown project:\n%s", v)
 	}
 }

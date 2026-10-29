@@ -1,24 +1,24 @@
 agent-net tui  7 sessions, 6 online, 1 workers                updated 14:05:00
 ! Worker not started: machine build-vm does not accept workers (it was set up
   with --no-launch)
-  Mac (here)       v0.4.0    online  claude 2.1.312  opencode 2.2.0  pi 1.4.0
-  build-vm         v0.4.0    online  pi 1.4.0
-  old-box          v0.3.2    offline harnesses unknown
-  AGENT    NAME           PROJECT   BRANCH   MODEL      MODE STATUS ON  FUNCTION
- Mac (here)
-> claude   strategies     strategi… feature… sonnet-5-5 bg   idle   on  trading…
-  opencode [w] tenebrae   tenebrae  main     haiku-4-5  bg   busy   on  -
-  claude   tenebrae-53    tenebrae  main     opus-5-5   fg   busy   on  research
-  opencode web            shop      main     sonnet-5   ?    idle   on  -
- build-vm
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT    MODEL      MODE STATUS   CPU   RAM PROC
+ Mac (here) 4 sessions ─────────────────────────────────────────────────────────
+> strategies         claude   strategies sonnet-5-5 bg   idle       ?     ?    ?
+  [w] tenebrae       opencode tenebrae   haiku-4-5  bg   busy       ?     ?    ?
+  tenebrae-53        claude   tenebrae   opus-5-5   fg   busy       ?     ?    ?
+  web                opencode shop       sonnet-5   ?    idle       ?     ?    ?
 Selected session ───────────────────────────────────────────────────────────────
-  strategies claude  s_0000000000000002  pid 4300  project: registered
-  folder    /Users/n/code/strategies/.claude/worktrees/agent-a7
-  remote    git@git.example.com:team/strategies.git
-  worktree  /Users/n/code/strategies/.claude/worktrees/agent-a7  (linked to /Us…
-  messages  13:57  -> tenebrae-53 (Mac)  reply  delivered
+  strategies  claude  idle    CPU and memory need a newer daemon and gateway
+  id       s_0000000000000002 pid 4300    │
+  folder   …s/.claude/worktrees/agent-a7  │
+  branch   feature/risk-model             │
+  model    claude-sonnet-5-5, background  │
+  task     trading strategies / backtest… │
+  remote   git@git.example.com:team/stra… │
 Messages (live) ────────────────────────────────────────────────────────────────
-  14:00  you (on Mac) -> tenebrae (Mac)                  request      replied
   14:03  tenebrae (Mac) -> you (on Mac)                  reply        delivered
   14:04  worker refused in nope: no project named nope is known
-up/down select  m msg  s start  x stop  / filter  o offline  tab feed  q quit
+up/down select  enter conversation  m msg  s start  x stop  ? help  q quit

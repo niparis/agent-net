@@ -1,16 +1,16 @@
 agent-net tui  7 sessions, 6 online, 1 workers                                                        updated 14:05:00
-  Mac (here)       v0.4.0    online  claude 2.1.312  opencode 2.2.0  pi 1.4.0
-  build-vm         v0.4.0    online  pi 1.4.0
-  old-box          v0.3.2    offline harnesses unknown
-  AGENT    NAME               PROJECT          BRANCH           MODEL              MODE STATUS ON  FUNCTION
- Mac (here)
-  claude   strategies         strategies       feature/risk-mo… sonnet-5-5         bg   idle   on  trading strategies
-  opencode [w] tenebrae       tenebrae         main             haiku-4-5          bg   busy   on  -
-  claude   tenebrae-53        tenebrae         main             opus-5-5           fg   busy   on  research
-  opencode web                shop             main             sonnet-5           ?    idle   on  -
- build-vm
-> pi       ci-runner          agent-net        main             gpt-6              bg   idle   on  runs the test suite
-  pi       scratch            -                -                -                  fg   shell  on  -
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                            claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                            pi 1.4.0
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT          BRANCH         MODEL              MODE STATUS   CPU   RAM PROC FUNCTION
+ Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+  strategies         claude   strategies       feature/risk-… sonnet-5-5         bg   idle       ?     ?    ? trading s…
+  [w] tenebrae       opencode tenebrae         main           haiku-4-5          bg   busy       ?     ?    ? -
+  tenebrae-53        claude   tenebrae         main           opus-5-5           fg   busy       ?     ?    ? research
+  web                opencode shop             main           sonnet-5           ?    idle       ?     ?    ? -
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+> ci-runner          pi       agent-net        main           gpt-6              bg   idle       ?     ?    ? runs the …
+  scratch            pi       -                -              -                  fg   shell      ?     ?    ? -
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
   Project   tenebrae   on Mac
   Harness   opencode

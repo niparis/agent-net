@@ -1,21 +1,21 @@
 agent-net tui  6 sessions, 5 online                           updated 14:05:00
-  Mac (here)       v0.4.0    online  claude 2.1.312  opencode 2.2.0  pi 1.4.0
-  build-vm         v0.4.0    online  pi 1.4.0
-  old-box          v0.3.2    offline harnesses unknown
-  AGENT    NAME           PROJECT   BRANCH   MODEL      MODE STATUS ON  FUNCTION
- Mac (here)
-> claude   strategies     strategi… feature… sonnet-5-5 bg   idle   on  trading…
-  claude   tenebrae-53    tenebrae  main     opus-5-5   fg   busy   on  research
-  opencode web            shop      main     sonnet-5   ?    idle   on  -
- build-vm
-  pi       ci-runner      agent-net main     gpt-6      bg   idle   on  runs th…
-  pi       scratch        -         -        -          fg   shell  on  -
-
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT    MODEL      MODE STATUS   CPU   RAM PROC
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────
+> strategies         claude   strategies sonnet-5-5 bg   idle       ?     ?    ?
+  tenebrae-53        claude   tenebrae   opus-5-5   fg   busy       ?     ?    ?
+  web                opencode shop       sonnet-5   ?    idle       ?     ?    ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net  gpt-6      bg   idle       ?     ?    ?
+  scratch            pi       -          -          fg   shell      ?     ?    ?
 Message m_1 ────────────────────────────────────────────────────────────────────
   tenebrae-53 (Mac) -> strategies (Mac)   request   replied   13:56
   sent 2026-10-29 13:56:00, conversation c_1, hop 0
   Which model do you run?
   Please answer in one line.
+
 
 
 

@@ -1,0 +1,40 @@
+agent-net tui  12 online · 5 offline today                                                            updated 14:05:00
+ ● Mac (here) v0.4.0 online  cpu █░░░ 12% (8%)  mem ██░░ 9.1/16G   load 1.2  claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● build-vm   v0.4.0 online  cpu ███░ 71% (40%) mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT          BRANCH         MODEL              MODE STATUS   CPU   RAM PROC FUNCTION
+ Mac (here) 5 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+  api                opencode -                -              -                  ?    busy   shared           -
+  docs               opencode -                -              -                  ?    idle   shared           -
+  strategies         claude   strategies       feature/risk-… sonnet-5-5         bg   idle    240%  4.6G   34 trading s…
+  tenebrae-53        claude   tenebrae         main           opus-5-5           fg   busy     38%  1.2G   14 research
+> web                opencode shop             main           sonnet-5           ?    idle   shared           -
+  opencode service, shared by 3 sessions (not split)                                           22%  2.1G    9
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net        main           gpt-6              bg   idle      5%  300M    3 runs the …
+  scratch            pi       -                -              -                  fg   shell    <1%   80M    2 -
+Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
+  web  opencode  idle    CPU 22% (5m 15%)  RAM 2.1G (2.1G)  9 procs
+  id       s_0000000000000003                                   │ shared by 3 opencode sessions, not split
+  folder   /Users/n/code/shop/web                               │ processes: too old for this action
+  branch   main                                                 │
+  model    anthropic/claude-sonnet-5                            │
+  remote   -                                                    │
+  worktree /Users/n/code/shop                                   │
+  project  seen                                                 │
+  messages none seen yet                                        │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
+  13:55  build-vm connected
+  13:56  tenebrae-53 (Mac) -> strategies (Mac)                            request      replied
+  13:57  strategies (Mac) -> tenebrae-53 (Mac)                            reply        delivered
+  14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
+  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
+  14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
+
+
+
+up/down select  enter conversation  m msg  s start  x stop  / filter  o offline  d detail  tab feed  ? help  q quit

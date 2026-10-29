@@ -7,7 +7,10 @@
 package tui
 
 import (
+	"errors"
+
 	"github.com/niparis/agent-net/internal/operator"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The TUI's names for the operator's types. They are aliases, so the TUI has
@@ -22,6 +25,19 @@ type (
 	// DaemonSource is the operator over the local daemon's socket.
 	DaemonSource = operator.Client
 )
+
+// Usage is the answer of the operator's usage method.
+type Usage = protocol.UsageResult
+
+// ErrUsageUnavailable means the daemon or gateway is older than the CPU and
+// memory data. The fake sources of the tests return it too.
+var ErrUsageUnavailable = operator.ErrTooOld
+
+// isUnavailable tells whether an error from the owner-only data calls means
+// the daemon or the gateway cannot answer them (it is older than decision 0007).
+func isUnavailable(err error) bool {
+	return errors.Is(err, ErrUsageUnavailable) || err != nil && operator.IsOldPeer(err.Error())
+}
 
 const (
 	ProblemNone    = operator.ProblemNone

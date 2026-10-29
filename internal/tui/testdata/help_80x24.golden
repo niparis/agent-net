@@ -1,0 +1,24 @@
+Keys ───────────────────────────────────────────────────────────────────────────
+ Sessions
+  up/down, j/k         select a session
+  pgup/pgdn, g/G       page, first, last
+  enter or c           open the conversation of the session
+  m                    send a message to the session as yourself
+  s                    start a worker (a form: project, harness, model, task)
+  x                    stop the selected worker (asks y/n)
+  /                    filter (words match name, project, branch, model, ...)
+  o                    show offline and dormant sessions
+  d                    give the detail pane the room of the message feed
+  tab                  message feed and back; enter opens a message body
+  r                    refresh now
+ Conversation
+  up/down, pgup/pgdn   scroll; at the top, older entries load
+  g                    go to the oldest loaded entry
+  G, end, f            back to the end and follow new entries
+  esc                  back to the sessions
+ Everywhere
+  ?                    this help
+  q, ctrl+c            quit
+ Reading the screen
+  CPU                  machine: all cores. session: one core. (x%): 5 min avg
+esc close help  q quit

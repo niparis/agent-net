@@ -1,0 +1,24 @@
+agent-net tui  12 online · 5 offline today                    updated 14:05:00
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  (stale)
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?  (stale)
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT    MODEL      MODE STATUS   CPU   RAM PROC
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────
+> strategies         claude   strategies sonnet-5-5 bg   idle       ?     ?    ?
+  tenebrae-53        claude   tenebrae   opus-5-5   fg   busy       ?     ?    ?
+  web                opencode shop       sonnet-5   ?    idle       ?     ?    ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net  gpt-6      bg   idle       ?     ?    ?
+  scratch            pi       -          -          fg   shell      ?     ?    ?
+Selected session ───────────────────────────────────────────────────────────────
+  strategies  claude  idle    cpu ? ram ? (figures are old)
+  id       s_0000000000000002 pid 4300    │
+  folder   …s/.claude/worktrees/agent-a7  │
+  branch   feature/risk-model             │
+  model    claude-sonnet-5-5, background  │
+  task     trading strategies / backtest… │
+  remote   git@git.example.com:team/stra… │
+Messages (live) ────────────────────────────────────────────────────────────────
+  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)       notification failed
+  14:04  tenebrae-53 (Mac) -> s_00000000                 request      dispatched
+up/down select  enter conversation  m msg  s start  x stop  ? help  q quit

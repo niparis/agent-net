@@ -189,6 +189,17 @@ agent-net messages    # recent messages and their state
 agent-net tui         # live, read-only view of every session on every machine
 ```
 
+`agent-net tui` shows each machine with its CPU, memory and load, every session with its project, branch, model, mode (fg or bg), status and the CPU, memory and process count of its process tree, and the messages as they move. Enter opens what a session is doing: its prompts, replies and tool calls, live. `/` filters, `o` shows offline sessions, `?` lists the keys, `q` quits. Details: [docs/reference.md](docs/reference.md#the-project-registry).
+
+From a shell:
+
+```
+agent-net status      # this machine: gateway connection, local sessions
+agent-net list        # all agent sessions on all machines
+agent-net messages    # recent messages and their state
+agent-net tui         # live, read-only view of every session on every machine
+```
+
 `agent-net tui` shows each machine and its harnesses, every session with its project, branch, model and whether a person has it open (fg) or not (bg), and the messages as they move. `/` filters, `o` shows offline sessions, `q` quits. Details: [docs/reference.md](docs/reference.md#the-tui-screen).
 
 A message goes through these states: `stored`, `dispatched`, `delivered`, `replied`. It ends as `failed` or `expired` if it cannot be delivered.

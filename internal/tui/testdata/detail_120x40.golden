@@ -1,0 +1,40 @@
+agent-net tui  12 online · 5 offline today                                                            updated 14:05:00
+ ● Mac (here) v0.4.0 online  cpu █░░░ 12% (8%)  mem ██░░ 9.1/16G   load 1.2  claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● build-vm   v0.4.0 online  cpu ███░ 71% (40%) mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT          BRANCH         MODEL              MODE STATUS   CPU   RAM PROC FUNCTION
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+> strategies         claude   strategies       feature/risk-… sonnet-5-5         bg   idle    240%  4.6G   34 trading s…
+  tenebrae-53        claude   tenebrae         main           opus-5-5           fg   busy     38%  1.2G   14 research
+  web                opencode shop             main           sonnet-5           ?    idle       ?     ?    ? -
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net        main           gpt-6              bg   idle      5%  300M    3 runs the …
+  scratch            pi       -                -              -                  fg   shell    <1%   80M    2 -
+Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
+  strategies  claude  idle    CPU 240% (5m 180%)  RAM 4.6G (4.6G)  34 procs
+  id       s_0000000000000002 pid 4300                          │     PID   CPU   RAM by CPU
+  folder   /Users/n/code/strategies/.claude/worktrees/agent-a7  │    4301  180%  900M node /srv/app/dev-server.js --por…
+  branch   feature/risk-model                                   │    4300   40%  600M claude --resume
+  model    claude-sonnet-5-5, background                        │    4402   18%  1.2G python3 backtest.py --years 10
+  task     trading strategies / backtest v2                     │    4410    2%  300M cargo watch -x test
+  remote   git@git.example.com:team/strategies.git              │    4500    0%    1M sleep 600
+  worktree /Users/n/code/strategies/.claude/worktrees/agent-a7… │     PID   CPU   RAM by RAM
+  project  registered                                           │    4402   18%  1.2G python3 backtest.py --years 10
+  messages 13:57  -> tenebrae-53 (Mac)  reply  delivered        │    4301  180%  900M node /srv/app/dev-server.js --por…
+           13:56  <- tenebrae-53 (Mac)  request  replied        │    4300   40%  600M claude --resume
+                                                                │    4410    2%  300M cargo watch -x test
+                                                                │    4501    0%    4M bash -l
+Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
+  13:55  build-vm connected
+  13:56  tenebrae-53 (Mac) -> strategies (Mac)                            request      replied
+  13:57  strategies (Mac) -> tenebrae-53 (Mac)                            reply        delivered
+  14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
+  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
+  14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
+
+
+
+
+
+
+up/down select  enter conversation  m msg  s start  x stop  / filter  o offline  d detail  tab feed  ? help  q quit
