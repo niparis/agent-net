@@ -27,7 +27,7 @@ Use the invite line that has a Tailscale address (`100.x.x.x`). Tailscale traffi
 
 ## A session cannot send, but it can receive
 
-Sessions that were already open when you installed agent-net can receive messages, because the daemon finds them on its own. They have no agent-net tools yet, because Claude Code and Pi load tools when a session starts. Restart the session, or start a new one.
+Sessions that were already open when you installed agent-net can receive messages, because the daemon finds them on its own. They have no agent-net tools yet, because Claude Code and Pi load tools when a session starts. Restart the session, or start a new one. After an upgrade this is not needed for Claude Code sessions started on v0.3.2 or newer (they switch to the new binary by themselves), and Pi needs only `/reload`. See [upgrade.md](upgrade.md#running-sessions).
 
 ## `curl ... | sh` of an invite line printed nothing and exited 0
 

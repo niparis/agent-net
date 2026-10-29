@@ -76,7 +76,8 @@ func main() {
 	case "mcp":
 		// No subcommand: the stdio server Claude Code starts. Anything else is the registry CLI.
 		if len(args) == 0 {
-			err = mcpserver.Run(ctx, daemon.SocketPath())
+			err = mcpserver.Run(ctx, daemon.SocketPath(), mcpserver.Options{Version: version,
+				Exe: startExe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"})
 		} else {
 			err = cmdMCP(ctx, args)
 		}

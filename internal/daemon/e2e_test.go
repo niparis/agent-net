@@ -284,6 +284,10 @@ func TestPeerCheckAndBoundSender(t *testing.T) {
 	if !strings.Contains(string(res), claudeID) {
 		t.Fatalf("hello result %s lacks the session id", res)
 	}
+	// The MCP process uses the daemon's version to decide to switch to a newer binary.
+	if !strings.Contains(string(res), `"version"`) {
+		t.Fatalf("hello result %s lacks the daemon version", res)
+	}
 	// Params cannot name another sender.
 	m := sendResult(t, good.mustCall("send", map[string]any{"to": bobID, "body": "hello", "message_type": "notification",
 		"sender_session_id": bobID, "from": bobID, "session_id": bobID}))

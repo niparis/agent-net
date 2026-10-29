@@ -324,7 +324,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, errors.New("the daemon has not discovered this Claude session")
 		}
 		lc.bind("mcp", ls)
-		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls)}, nil
+		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 
 	case "pi", "opencode":
 		// Plugin clients run inside the harness process. The OpenCode plugin
@@ -358,7 +358,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		}
 		lc.bind(p.Client, ls)
 		d.pushSession(ls)
-		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls)}, nil
+		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 	}
 	return nil, fmt.Errorf("unknown client %q", p.Client)
 }

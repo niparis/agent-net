@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"sync"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/upgrade"
 )
 
 // Caller makes one daemon call.
@@ -150,6 +152,9 @@ type Daemon struct {
 	cl     *client.Client
 	// Changed gets a signal when the daemon says the MCP registry changed.
 	Changed chan struct{}
+	// OnHello, if set, gets the daemon's agent-net version after every
+	// successful hello (the first connection and each redial). It must not block.
+	OnHello func(daemonVersion string)
 }
 
 func NewDaemon(socket string, hello map[string]any) *Daemon {
@@ -187,12 +192,38 @@ func (d *Daemon) conn(ctx context.Context) (*client.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := cl.Call(ctx, "hello", d.hello); err != nil {
+	res, err := cl.Call(ctx, "hello", d.hello)
+	if err != nil {
 		cl.Close()
 		return nil, err
 	}
 	d.cl = cl
+	if d.OnHello != nil {
+		var r struct {
+			Version string `json:"version"`
+		}
+		json.Unmarshal(res, &r)
+		d.OnHello(r.Version)
+	}
 	return cl, nil
+}
+
+// Reconnect dials the daemon again every interval if the connection is gone,
+// until ctx ends. Without it a session that makes no calls would not notice a
+// daemon restart.
+func (d *Daemon) Reconnect(ctx context.Context, every time.Duration) {
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			cctx, cancel := context.WithTimeout(ctx, every)
+			d.conn(cctx)
+			cancel()
+		}
+	}
 }
 
 func (d *Daemon) drop(cl *client.Client) {
@@ -231,16 +262,37 @@ func (d *Daemon) Call(ctx context.Context, method string, params any) (json.RawM
 	return res, err
 }
 
+// Options are what Run needs to know about its own binary.
+type Options struct {
+	// Version is this binary's version, like v0.3.2, or "dev".
+	Version string
+	// Exe is the path of this binary. Run execs it again when a newer one is
+	// installed there.
+	Exe string
+	// NoAutoUpgrade turns off switching to a newer binary.
+	NoAutoUpgrade bool
+}
+
 // Run serves MCP on stdio as a Claude session, talking to the daemon on socket.
-func Run(ctx context.Context, socket string) error {
+//
+// When the daemon reports a newer release than this binary, and the binary on
+// disk is that release, Run replaces the process with it (see switcher). The
+// client keeps its connection and is told the tool list changed.
+func Run(ctx context.Context, socket string, opts Options) error {
 	nativeID := os.Getenv("CLAUDE_CODE_SESSION_ID")
 	if nativeID == "" {
 		return errors.New("CLAUDE_CODE_SESSION_ID is not set: `agent-net mcp` must be started by a Claude Code session")
 	}
+	logf := func(format string, a ...any) { fmt.Fprintf(os.Stderr, "agent-net mcp: "+format+"\n", a...) }
+	conn := newStdioConn(0, os.Stdout, takeHandover(logf), logf)
+	go conn.readLoop()
 	cwd, _ := os.Getwd()
 	d := NewDaemon(socket, map[string]any{"client": "mcp", "harness": "claude",
-		"native_id": nativeID, "cwd": cwd, "status": "idle", "protocol": protocol.LocalProtocol})
+		"native_id": nativeID, "cwd": cwd, "status": "idle", "protocol": protocol.LocalProtocol,
+		"version": opts.Version})
 	defer d.Close()
+	sw := &switcher{opts: opts, conn: conn, logf: logf}
+	d.OnHello = func(v string) { go sw.consider(ctx, v) }
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
 	srv := New(d.Call)
@@ -251,5 +303,53 @@ func Run(ctx context.Context, socket string) error {
 	dyn.Refresh(ictx)
 	icancel()
 	go dyn.Watch(ctx, d.Changed, 15*time.Second)
-	return srv.Run(ctx, &mcp.StdioTransport{})
+	// An idle session still notices a daemon restart, so it can switch binaries.
+	go d.Reconnect(ctx, 2*time.Second)
+	return srv.Run(ctx, stdioTransport{conn})
+}
+
+// switcher decides when this process should become the newer binary.
+type switcher struct {
+	opts Options
+	conn *stdioConn
+	logf func(string, ...any)
+
+	mu     sync.Mutex
+	failed map[string]bool // daemon versions already tried and refused
+}
+
+// consider is called with the daemon's version after each hello. It asks for
+// the switch only if all of these hold: the daemon runs a release newer than
+// this binary, and the file at Exe reports exactly that version. The second
+// check keeps a half-finished upgrade (new file, old daemon) or a rollback from
+// switching. A new process is never older than the daemon it just met, so this
+// cannot loop.
+func (s *switcher) consider(ctx context.Context, daemonVersion string) {
+	if s.opts.NoAutoUpgrade || s.opts.Exe == "" || !upgrade.IsNewer(daemonVersion, s.opts.Version) {
+		return
+	}
+	s.mu.Lock()
+	if s.failed[daemonVersion] {
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
+	exe := ExePath(s.opts.Exe)
+	disk, err := upgrade.BinaryVersion(ctx, exe)
+	if err != nil || disk != daemonVersion {
+		s.mu.Lock()
+		if s.failed == nil {
+			s.failed = map[string]bool{}
+		}
+		s.failed[daemonVersion] = true
+		s.mu.Unlock()
+		if err != nil {
+			s.logf("the daemon runs %s but %s does not run: %v", daemonVersion, exe, err)
+		} else {
+			s.logf("the daemon runs %s but %s is %s, staying on %s", daemonVersion, exe, disk, s.opts.Version)
+		}
+		return
+	}
+	s.logf("switching from %s to %s", s.opts.Version, disk)
+	s.conn.requestExec(exe)
 }
