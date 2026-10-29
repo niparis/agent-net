@@ -22,6 +22,8 @@ import (
 
 type Options struct {
 	DataDir string
+	// DistDir holds the agent-net-{os}-{arch} binaries that /install serves.
+	DistDir string
 	// SANs are extra host names or IPs for the server certificate.
 	SANs []string
 	// OfflineGrace is how long a node may be disconnected before its
@@ -38,6 +40,7 @@ type Gateway struct {
 	ca     *authority
 	cert   tls.Certificate
 	fp     string
+	pin    string
 	logger *log.Logger
 
 	mu     sync.Mutex
@@ -89,7 +92,17 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	cert, err := ca.serverCert(opts.SANs)
+	serverKey, err := loadOrCreateServerKey(opts.DataDir)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	pin, err := PublicKeyPin(&serverKey.PublicKey)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	cert, err := ca.serverCert(serverKey, opts.SANs)
 	if err != nil {
 		store.Close()
 		return nil, err
@@ -99,12 +112,13 @@ func New(opts Options) (*Gateway, error) {
 		store.Close()
 		return nil, err
 	}
-	return &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, logger: logger,
+	return &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}, nil
 }
 
 func (g *Gateway) Store() *Store       { return g.store }
 func (g *Gateway) Fingerprint() string { return g.fp }
+func (g *Gateway) Pin() string         { return g.pin }
 func (g *Gateway) CAPEM() []byte       { return g.ca.certPEM }
 func (g *Gateway) TLSConfig() *tls.Config {
 	return &tls.Config{Certificates: []tls.Certificate{g.cert}, MinVersion: tls.VersionTLS12}
@@ -157,6 +171,8 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
+	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
+	mux.HandleFunc("GET /install/{code}", g.handleInstallScript)
 	return mux
 }
 

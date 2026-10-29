@@ -183,6 +183,16 @@ func (s *Store) CreateEnrollCode(ttl time.Duration) (string, error) {
 	return string(code), err
 }
 
+// EnrollCodeValid reports whether a code is unexpired and unused, without
+// consuming it.
+func (s *Store) EnrollCodeValid(code string) (bool, error) {
+	code = strings.ToUpper(strings.TrimSpace(code))
+	var n int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM enroll_codes WHERE code_hash = ? AND used_at IS NULL AND expires_at > ?`,
+		hashHex(code), s.now().UnixNano()).Scan(&n)
+	return n == 1, err
+}
+
 // ConsumeEnrollCode returns true once for a valid, unexpired, unused code.
 func (s *Store) ConsumeEnrollCode(code string) (bool, error) {
 	code = strings.ToUpper(strings.TrimSpace(code))

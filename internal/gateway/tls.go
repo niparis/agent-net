@@ -1,12 +1,15 @@
 package gateway
 
 import (
+	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -100,13 +103,57 @@ func loadOrCreateCA(dir string) (*authority, error) {
 	return &authority{cert, key, certPEM}, nil
 }
 
-// serverCert signs a fresh server certificate. It is regenerated on every
-// start so a changed host name or address is picked up.
-func (a *authority) serverCert(sans []string) (tls.Certificate, error) {
+// loadOrCreateServerKey returns the persisted server private key. The
+// certificate changes on every start but the key does not, so the public key
+// pin that `agent-net invite` prints stays valid.
+func loadOrCreateServerKey(dir string) (*ecdsa.PrivateKey, error) {
+	path := filepath.Join(dir, "server-key.pem")
+	if keyPEM, err := os.ReadFile(path); err == nil {
+		kb, _ := pem.Decode(keyPEM)
+		if kb == nil {
+			return nil, errors.New("corrupt server-key.pem")
+		}
+		return x509.ParseECPrivateKey(kb.Bytes)
+	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return tls.Certificate{}, err
+		return nil, err
 	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+	return key, os.WriteFile(path, keyPEM, 0o600)
+}
+
+// PublicKeyPin is the value for `curl --pinnedpubkey`: "sha256//" and the
+// base64 of the SHA-256 of the key's SubjectPublicKeyInfo DER bytes.
+func PublicKeyPin(pub crypto.PublicKey) (string, error) {
+	der, err := x509.MarshalPKIXPublicKey(pub)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(der)
+	return "sha256//" + base64.StdEncoding.EncodeToString(sum[:]), nil
+}
+
+// ServerPin reads (or creates) the server key in a gateway data dir and
+// returns its curl pin.
+func ServerPin(dataDir string) (string, error) {
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return "", err
+	}
+	key, err := loadOrCreateServerKey(dataDir)
+	if err != nil {
+		return "", err
+	}
+	return PublicKeyPin(&key.PublicKey)
+}
+
+// serverCert signs a fresh server certificate for the persisted key. It is
+// regenerated on every start so a changed host name or address is picked up.
+func (a *authority) serverCert(key *ecdsa.PrivateKey, sans []string) (tls.Certificate, error) {
 	tmpl := &x509.Certificate{
 		SerialNumber: serial(),
 		Subject:      pkix.Name{CommonName: "agent-net gateway"},
