@@ -31,7 +31,7 @@
 
 ---
 
-- **Into live sessions.** A message arrives as a new turn in the session you already have open, and the reply finds its way back to the sender.
+- **Ask the agents that are already working.** Your agent can send a question to a Claude Code, Pi or OpenCode session that is open on any of your machines. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back into your conversation.
 - **Across machines and agents.** Claude Code, Pi and OpenCode, on Linux and macOS. Each agent uses the same seven `agent_*` tools.
 - **One binary, one line.** Pure Go with SQLite built in. One `curl` line installs the first machine, and one invite line adds each other machine.
 - **Your network only.** One-time join codes, TLS pinned to your gateway's own CA, and a check of which local session is calling.
