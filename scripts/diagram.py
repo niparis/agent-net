@@ -47,7 +47,7 @@ def host(x, y, title, sub, icon, t):
     s += icon(x + 20, y + 22, t["text"])
     s += f'<text x="{x+56}" y="{y+37}" font-size="17" font-weight="700" fill="{t["text"]}">{title}</text>'
     s += f'<text x="{x+w-20}" y="{y+37}" font-size="12.5" fill="{t["muted"]}" text-anchor="end">{sub}</text>'
-    agents = [("Claude Code", True), ("Pi", True), ("Codex", False), ("OpenCode", False)]
+    agents = [("Claude Code", True), ("Pi", True), ("Codex", False), ("OpenCode", True)]
     for i, (name, live) in enumerate(agents):
         s += chip(x + 20 + (i % 2) * 188, y + 60 + (i // 2) * 56, name, live, t)
     dy = y + 180
