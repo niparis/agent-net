@@ -4,21 +4,17 @@ One machine runs the gateway (the VM `research`). Every machine, including the V
 
 ## 1. The gateway host, once
 
-Build the binaries and install this machine's one:
-
 ```
-scripts/dist.sh
+curl -fsSL https://raw.githubusercontent.com/niparis/agent-net/main/install.sh | sh -s -- --gateway
 ```
 
-This builds Linux and macOS (amd64 and arm64) into `~/.local/share/agent-net/dist`, which the gateway serves, and copies the right one to `~/.local/bin/agent-net`. Make sure `~/.local/bin` is on your `PATH`.
+The script downloads `agent-net-<os>-<arch>` and `checksums.txt` from the latest GitHub release and checks the SHA-256. It installs the binary to `~/.local/bin/agent-net` (through a temp file and a rename). Because of `--gateway`, it also downloads the binaries for Linux and macOS (amd64 and arm64) into `~/.local/share/agent-net/dist`, which the gateway serves, and then runs `agent-net setup --gateway`. Make sure `~/.local/bin` is on your `PATH`. The script prints the line to add if it is not.
 
-Then:
+Options: `--version vX.Y.Z` installs that release instead of the latest. Without `--gateway` the script only installs the binary. `AGENT_NET_BASE_URL` replaces the download URL (for tests). `AGENT_NET_NO_SERVICE=1` is passed on to setup.
 
-```
-agent-net setup --gateway
-```
+From source, run `scripts/dist.sh` instead of the install line. It builds the four binaries into the same dist dir, copies the right one to `~/.local/bin/agent-net`, and sets the version from `git describe`. Then run `agent-net setup --gateway` yourself.
 
-This installs and starts the gateway (on `0.0.0.0:7420`) and the daemon as services, and joins the gateway host to its own network. The server key is kept in `server-key.pem` in the gateway data dir, so the pin in invite lines stays the same across restarts.
+`setup --gateway` installs and starts the gateway (on `0.0.0.0:7420`) and the daemon as services, and joins the gateway host to its own network. The server key is kept in `server-key.pem` in the gateway data dir, so the pin in invite lines stays the same across restarts.
 
 On Linux, if setup prints a hint about `loginctl enable-linger`, run that command. It keeps the services running when you are logged out.
 
@@ -62,7 +58,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 
 ## 3. Update a machine
 
-Run `scripts/dist.sh` on the gateway host to build new binaries, run `agent-net setup --gateway` there to restart its services, then run a new invite line on each other machine. On a machine that already joined, the line updates the binary and the integrations, restarts the daemon, and skips the join.
+On the gateway host, run the install line from step 1 again (from source: `scripts/dist.sh`, then `agent-net setup --gateway`). It restarts the services. Then run `agent-net invite` and paste the new line on each other machine. On a machine that already joined, the line updates the binary and the integrations, restarts the daemon, and skips the join.
 
 ## 4. Check it
 
@@ -88,4 +84,4 @@ The binary and the gateway data are kept.
 
 - A machine keeps the gateway address it joined with (in `node.json`). If the gateway's address changes, delete `~/.config/agent-net/node.json` on that machine and paste a new invite line. Use the Tailscale line if you want an address that does not change.
 - The macOS path (launchd agent, `curl --pinnedpubkey` with the system curl) has not been run on a real Mac yet. Linux is tested end to end, including a clean Debian container.
-- If the download fails, `curl ... | sh` still exits 0 (the shell gets an empty script). Read the `curl:` error above.
+- If the download fails, an invite line `curl ... | sh` still exits 0 (the shell gets an empty script). Read the `curl:` error above. The `install.sh` line does not have this problem: it runs nothing unless the whole script arrived.

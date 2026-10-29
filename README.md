@@ -27,14 +27,17 @@ It is one Go binary, `agent-net`, with a subcommand for each part.
 
 ## Install
 
-### 1. On the gateway machine, once
+### 1. On the first machine (the gateway), once
 
 ```
-scripts/dist.sh                # build the binaries, install this machine's one
-agent-net setup --gateway      # start the gateway and the daemon as services
+curl -fsSL https://raw.githubusercontent.com/niparis/agent-net/main/install.sh | sh -s -- --gateway
 ```
 
-`~/.local/bin` must be on your `PATH`. On Linux, if `setup` prints a `loginctl enable-linger` hint, run it, so the services keep running after you log out.
+This downloads the latest release, checks its SHA-256, installs `~/.local/bin/agent-net`, and runs `agent-net setup --gateway`. That starts the gateway and the daemon as services. It also keeps the binaries for all platforms in `~/.local/share/agent-net/dist`, so the gateway can hand them to other machines.
+
+`~/.local/bin` must be on your `PATH` (the script tells you if it is not). On Linux, if `setup` prints a `loginctl enable-linger` hint, run it, so the services keep running after you log out.
+
+To install only the binary on any machine, run the same line without `-s -- --gateway`. To pick a release, add `--version vX.Y.Z` after `sh -s --`. To build from source instead, see [docs/setup.md](docs/setup.md).
 
 ### 2. On every other machine
 
@@ -58,7 +61,18 @@ That's it. The line downloads the right binary from the gateway, joins the netwo
 
 ### Update
 
-On the gateway machine, run `scripts/dist.sh` and `agent-net setup --gateway`. Then paste a new invite line on each other machine. A machine that already joined gets the new binary and skips the join.
+On the gateway machine, run the install line from step 1 again. It installs the latest release and restarts the services. Then run `agent-net invite` and paste the new line on each other machine. A machine that already joined gets the new binary and skips the join.
+
+## Releasing
+
+Tag a version and push the tag:
+
+```
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow runs the tests, builds the four binaries, writes `checksums.txt`, and publishes a GitHub release with the binaries, `checksums.txt` and `install.sh`. The install line then picks it up as the latest release.
 
 ### Remove
 
@@ -131,7 +145,8 @@ go vet ./... && go test -race ./...
 | `internal/setup` | `setup`, `invite`, `uninstall`, service files |
 | `internal/guidance` | the guidance text added to agent instruction files |
 | `plugins/pi` | the Pi extension |
-| `scripts/dist.sh` | builds Linux and macOS binaries |
+| `install.sh` | the one-line installer, published with each release |
+| `scripts/dist.sh` | builds Linux and macOS binaries from source |
 
 Docs:
 
