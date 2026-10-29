@@ -290,7 +290,7 @@ func (s *Store) FeedEvents(afterID int64, limit int) ([]protocol.FeedEvent, erro
 	}
 	args = append(args, limit)
 	rows, err := s.db.Query(`SELECT e.id, e.at, e.kind, e.node_id, COALESCE(n.hostname,''), e.session_id, e.message_id, e.detail,
-		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,'')
+		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,''), COALESCE(m.parent_id,'')
 		FROM events e LEFT JOIN nodes n ON n.id = e.node_id LEFT JOIN messages m ON m.id = e.message_id AND e.message_id != ''
 		WHERE `+where+` ORDER BY e.id `+order+` LIMIT ?`, args...)
 	if err != nil {
@@ -302,7 +302,7 @@ func (s *Store) FeedEvents(afterID int64, limit int) ([]protocol.FeedEvent, erro
 		var e protocol.FeedEvent
 		var at int64
 		if err := rows.Scan(&e.ID, &at, &e.Kind, &e.NodeID, &e.Hostname, &e.SessionID, &e.MessageID, &e.Detail,
-			&e.From, &e.To, &e.Type); err != nil {
+			&e.From, &e.To, &e.Type, &e.Parent); err != nil {
 			return nil, err
 		}
 		e.Time = time.Unix(0, at).UTC()

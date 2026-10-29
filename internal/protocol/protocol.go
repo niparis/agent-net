@@ -161,6 +161,8 @@ type AgentView struct {
 	// older daemon.
 	Mode  string `json:"mode,omitempty"`
 	Model string `json:"model,omitempty"`
+	// PID is the process ID of the session on its machine (0 when unknown).
+	PID int `json:"pid,omitempty"`
 }
 
 // Header is shared by every gateway <-> daemon frame.
@@ -342,6 +344,9 @@ type FeedEvent struct {
 	From string `json:"from,omitempty"` // sender session of the message
 	To   string `json:"to,omitempty"`   // recipient session of the message
 	Type string `json:"message_type,omitempty"`
+	// Parent is the message this one answers. A stored reply marks its parent
+	// as replied, which has no event of its own.
+	Parent string `json:"parent_message_id,omitempty"`
 }
 
 // ProjectView is one project folder on one machine, built from stored sessions.

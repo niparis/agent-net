@@ -1,0 +1,30 @@
+agent-net tui  6 sessions, 5 online  +offline  filter: pi                         updated 14:05:00
+  Mac (here)       v0.4.0    online  claude 2.1.312  opencode 2.2.0  pi 1.4.0
+  build-vm         v0.4.0    online  pi 1.4.0
+  old-box          v0.3.2    offline harnesses unknown
+  AGENT    NAME               PROJECT          BRANCH    MODEL              MODE STATUS ON  FUNCTION
+ Mac (here)
+  opencode web                shop             main      sonnet-5           ?    idle   on  -
+ build-vm
+> pi       ci-runner          agent-net        main      gpt-6              bg   idle   on  runs th…
+  pi       scratch            -                -         -                  fg   shell  on  -
+
+
+
+Selected session ───────────────────────────────────────────────────────────────────────────────────
+  ci-runner pi  s_0000000000000004  pid 981
+  folder    /srv/agent-net
+  remote    -
+  state     idle, background   branch main   model openai/gpt-6
+  task      runs the test suite
+  messages  14:02  <- tenebrae-53 (Mac)  notification  failed
+            14:01  -> tenebrae-53 (Mac)  request  delivered
+
+
+
+Messages (live) ────────────────────────────────────────────────────────────────────────────────────
+  13:57  strategies (Mac) -> tenebrae-53 (Mac)                            reply        delivered
+  14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
+  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
+  14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
+up/down select  / filter  o offline  tab messages  r refresh  q quit

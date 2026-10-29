@@ -1,0 +1,24 @@
+agent-net tui  6 sessions, 5 online                           updated 14:05:00
+! Daemon not reachable. Showing last data. Retrying.
+  Mac (here)       v0.4.0    online  claude 2.1.312  opencode 2.2.0  pi 1.4.0
+  build-vm         v0.4.0    online  pi 1.4.0
+  old-box          v0.3.2    offline harnesses unknown
+  AGENT    NAME           PROJECT   BRANCH   MODEL      MODE STATUS ON  FUNCTION
+ Mac (here)
+> claude   strategies     strategi… feature… sonnet-5-5 bg   idle   on  trading…
+  claude   tenebrae-53    tenebrae  main     opus-5-5   fg   busy   on  research
+  opencode web            shop      main     sonnet-5   ?    idle   on  -
+ build-vm
+  pi       ci-runner      agent-net main     gpt-6      bg   idle   on  runs th…
+  pi       scratch        -         -        -          fg   shell  on  -
+Selected session ───────────────────────────────────────────────────────────────
+  strategies claude  s_0000000000000002  pid 4300
+  folder    /Users/n/code/strategies/.claude/worktrees/agent-a7
+  remote    git@git.example.com:team/strategies.git
+  worktree  /Users/n/code/strategies/.claude/worktrees/agent-a7  (linked to /Us…
+  messages  13:57  -> tenebrae-53 (Mac)  reply  delivered
+Messages (live) ────────────────────────────────────────────────────────────────
+  14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)       request      delivered
+  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)       notification failed
+  14:04  tenebrae-53 (Mac) -> s_00000000                 request      dispatched
+up/down select  / filter  o offline  tab messages  r refresh  q quit

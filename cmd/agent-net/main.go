@@ -24,6 +24,7 @@ import (
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/setup"
+	"github.com/niparis/agent-net/internal/tui"
 	"github.com/niparis/agent-net/internal/upgrade"
 )
 
@@ -46,6 +47,7 @@ const usage = `usage: agent-net <command>
   nodes      list machines with their agent-net version and installed harnesses
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
+  tui        live terminal view of every agent session on the network (read-only)
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
   version    print the version of this binary
@@ -93,6 +95,8 @@ func main() {
 		err = cmdProjects(ctx, args)
 	case "events":
 		err = cmdEvents(ctx, args)
+	case "tui":
+		err = cmdTUI(ctx, args)
 	case "upgrade":
 		err = cmdUpgrade(ctx, args)
 	case "messages":
@@ -390,4 +394,15 @@ func cmdMessages(ctx context.Context, args []string) error {
 			m.Type, m.From, m.To, body)
 	}
 	return tw.Flush()
+}
+
+// cmdTUI shows the network live in the terminal. It reads through the local
+// daemon, so it runs on any machine of the network, and it changes nothing.
+func cmdTUI(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("tui", flag.ExitOnError)
+	fs.Parse(args)
+	if fi, err := os.Stdout.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+		return errors.New("tui needs a terminal; use `agent-net list --json` in a script")
+	}
+	return tui.Run(ctx, tui.NewDaemonSource(daemon.SocketPath()))
 }

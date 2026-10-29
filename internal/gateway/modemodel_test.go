@@ -142,7 +142,7 @@ func TestFeedEventsKindsAndOrder(t *testing.T) {
 		t.Fatalf("kinds %q\nwant  %q", got, want)
 	}
 	for _, e := range evs {
-		if strings.HasPrefix(e.Kind, "msg.") && (e.From != a || e.To != b || e.Type != protocol.TypeRequest) {
+		if strings.HasPrefix(e.Kind, "msg.") && (e.Parent != "" || e.From != a || e.To != b || e.Type != protocol.TypeRequest) {
 			t.Errorf("%s: from %q to %q type %q", e.Kind, e.From, e.To, e.Type)
 		}
 	}
@@ -179,5 +179,34 @@ func TestFeedEventsCutLongDetail(t *testing.T) {
 	// The message is gone (retention) but the event stays.
 	if evs[0].From != "" || evs[0].To != "" {
 		t.Fatalf("ends of a message that does not exist: %+v", evs[0])
+	}
+}
+
+func TestFeedNamesTheParentOfAReply(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	m, _, _ := send(s, a, b, "k1", "")
+	r, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "ok", IdempotencyKey: "k2", ParentID: m.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evs, _ := s.FeedEvents(0, 50)
+	var got protocol.FeedEvent
+	for _, e := range evs {
+		if e.Kind == "msg.stored" && e.MessageID == r.ID {
+			got = e
+		}
+	}
+	if got.Parent != m.ID || got.Type != protocol.TypeReply || got.From != b || got.To != a {
+		t.Fatalf("reply event: %+v", got)
+	}
+}
+
+func TestAgentViewHasThePID(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	id, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "n", PID: 4242})
+	if a, _, _ := s.Agent(id); a.PID != 4242 {
+		t.Fatalf("pid %d", a.PID)
 	}
 }
