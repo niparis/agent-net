@@ -17,6 +17,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/daemon/claude"
@@ -243,7 +244,8 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	d, err := daemon.New(daemon.Config{
 		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
-		NoAutoUpgrade: *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
+		RefreshAgentFiles: agentfiles.SyncAndLog,
+		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
 		// Tests set this to 0s so they need not wait up to 10 s.
 		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),
 	})

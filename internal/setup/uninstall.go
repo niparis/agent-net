@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/guidance"
 )
@@ -64,7 +65,7 @@ func (r *runner) removeClaudeMCP() {
 }
 
 func (r *runner) removePiExtension() {
-	path := piExtensionPath()
+	path := agentfiles.PiExtensionPath()
 	st, err := os.Lstat(path)
 	switch {
 	case err != nil:
@@ -81,7 +82,7 @@ func (r *runner) removePiExtension() {
 }
 
 func (r *runner) removeOpenCodePlugin() {
-	path := opencodePluginPath()
+	path := agentfiles.OpencodePluginPath()
 	st, err := os.Lstat(path)
 	switch {
 	case err != nil:
@@ -98,21 +99,21 @@ func (r *runner) removeOpenCodePlugin() {
 }
 
 func (r *runner) removeGuidance() {
-	for _, f := range guidanceFiles() {
-		old, err := os.ReadFile(f.path)
+	for _, f := range agentfiles.GuidanceFiles() {
+		old, err := os.ReadFile(f.Path)
 		if err != nil {
-			r.step(f.name, "skipped (no file)", nil)
+			r.step(f.Name, "skipped (no file)", nil)
 			continue
 		}
 		out, changed := guidance.Remove(string(old))
 		if !changed {
-			r.step(f.name, "skipped (no agent-net block)", nil)
+			r.step(f.Name, "skipped (no agent-net block)", nil)
 			continue
 		}
-		if err := os.WriteFile(f.path, []byte(out), 0o644); err != nil {
-			r.step(f.name, "", err)
+		if err := os.WriteFile(f.Path, []byte(out), 0o644); err != nil {
+			r.step(f.Name, "", err)
 			continue
 		}
-		r.step(f.name, "ok (removed)", nil)
+		r.step(f.Name, "ok (removed)", nil)
 	}
 }

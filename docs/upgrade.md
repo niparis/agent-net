@@ -25,7 +25,17 @@ A machine that is offline is not upgraded now. It upgrades itself when it is bac
 
 `agent-net upgrade` on a joined machine downloads its binary and the checksum from the gateway, over the CA the machine already trusts. It verifies the file, keeps `agent-net.prev`, replaces the binary and runs `agent-net setup`. If the gateway runs an older version than the latest release, it prints a hint to run `agent-net upgrade` on the gateway first.
 
-When the gateway tells a machine to upgrade, the daemon does the same by itself. It reports the result to the gateway, then restarts through the service manager (`systemctl --user restart agent-net-daemon` on Linux, an exit and `KeepAlive` on macOS). The machine reports its new version when it reconnects.
+When the gateway tells a machine to upgrade, the daemon does the same by itself, except that it does not run `agent-net setup`. It reports the result to the gateway, then restarts through the service manager (`systemctl --user restart agent-net-daemon` on Linux, an exit and `KeepAlive` on macOS). The machine reports its new version when it reconnects. The new daemon refreshes the agent files when it starts (next section), so no setup run is needed.
+
+## Agent files on a machine
+
+Setup writes three kinds of files that agents load: the Pi extension `~/.pi/agent/extensions/agent-net.ts`, the OpenCode plugin `~/.config/opencode/plugins/agent-net.ts`, and the guidance block between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md` and `~/.config/opencode/AGENTS.md`. A binary can start on a machine without setup running: a pushed upgrade, an automatic catch-up, the install line, or a binary you copied in. So the daemon does this on every start, with the same code as setup, before it connects:
+
+- It compares each of these files with the content embedded in its own binary and rewrites the ones that differ. It logs one line per file it changed (`agent files: pi extension updated`). A start that changes nothing logs nothing.
+- It follows the rules of setup. It only touches a harness whose folder exists (`~/.pi`, `~/.config/opencode` or `$XDG_CONFIG_HOME/opencode`, `~/.claude`) and never creates one. A symlinked Pi or OpenCode file is left alone and logged (`agent files: pi extension left alone (symlink)`). In a guidance file it replaces only the text between the markers.
+- The daemon of a dev build does the same with the files of the dev build.
+
+The running sessions load the new files as described under "Running sessions".
 
 ## Automatic catch-up
 
@@ -74,7 +84,7 @@ agent-net status               # also shows the version of this machine
 
 ## Running sessions
 
-`agent-net upgrade` ends with three lines that say the same as this section: Claude Code sessions started on v0.3.5 or later switch by themselves, Pi needs `/reload`, and OpenCode reloads its plugin file by itself.
+`agent-net upgrade` ends with three lines that say the same as this section: Claude Code sessions started on v0.3.5 or later switch by themselves, Pi needs `/reload`, and OpenCode reloads its plugin file by itself. The Pi and OpenCode lines hold for every machine that was upgraded: each one rewrites its files when its daemon restarts, so a Pi session on another machine needs `/reload` too.
 
 ### Claude Code
 
@@ -91,7 +101,7 @@ A session started before v0.3.5 has no such code. It needs one restart. After th
 
 ### Pi
 
-A Pi session loads the extension file once, into the Pi process. Setup rewrites the file, but the running session keeps the old code. Run `/reload` in the Pi session to load the new file without leaving the session, or start a new session. The extension cannot reload itself: Pi only allows that from a command handler.
+A Pi session loads the extension file once, into the Pi process. The daemon rewrites the file when it starts after an upgrade, but the running session keeps the old code. Run `/reload` in the Pi session to load the new file without leaving the session, or start a new session. The extension cannot reload itself: Pi only allows that from a command handler.
 
 ### OpenCode
 

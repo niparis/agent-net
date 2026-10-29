@@ -89,6 +89,11 @@ type Config struct {
 	// Served returns the version the gateway serves to this machine.
 	// Default: ask the gateway.
 	Served func(ctx context.Context) (string, error)
+	// RefreshAgentFiles runs once at start, before the gateway link, to bring
+	// the Pi extension, the OpenCode plugin and the guidance blocks in line
+	// with this binary. It logs through the function it gets. Default: none
+	// (tests must not touch the home dir of the machine they run on).
+	RefreshAgentFiles func(logf func(format string, args ...any))
 	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
 	MCPBackoffMin, MCPBackoffMax time.Duration
 	// Repo finds the project of a session's folder. Default: repoinfo.New().
@@ -218,6 +223,9 @@ func New(cfg Config) (*Daemon, error) {
 // the background.
 func (d *Daemon) Start(ctx context.Context) error {
 	ctx, d.cancel = context.WithCancel(ctx)
+	if d.cfg.RefreshAgentFiles != nil {
+		d.cfg.RefreshAgentFiles(d.Logf)
+	}
 	d.mcp.start(ctx)
 	ln, err := listenLocal(d, d.cfg.SocketPath)
 	if err != nil {
