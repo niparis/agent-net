@@ -37,7 +37,7 @@ The daemon reads the process ID of the caller from the kernel: `SO_PEERCRED` on 
 - **Claude Code.** `agent-net mcp` is started by Claude Code for each session. The daemon takes the parent PID of the connecting process and requires a file `~/.claude/sessions/<parent pid>.json` whose `sessionId` equals the session ID the process claims (Claude sets it in `CLAUDE_CODE_SESSION_ID`). If the file is missing or the ID differs, the connection is refused.
   - When `agent-net mcp` switches to a newer binary (see [upgrade.md](upgrade.md#running-sessions)), it keeps its process ID and its parent, so this check gives the same answer. It only executes the file at its own install path, only after that file reports exactly the version the daemon runs, and only if that is a newer `vX.Y.Z` release than its own. Dev builds never switch. The hand-over file (start-up messages and unread input, which can hold tool arguments) is a mode 0600 temp file that the new process deletes at once.
 - **Pi.** The Pi extension runs inside the Pi process. The daemon checks that the connecting process has `pi` anywhere in its command line (compared in lower case). This is a weak check. Any process of your user whose command line contains "pi" can claim to be a Pi session, with any session ID. It is accepted because the socket is already limited to your user, and a process running as you can do much more harm than that. A stricter check (matching Pi's executable) is not done yet.
-- **The CLI** (`status`, `list`, `messages`) says it is a CLI client and gets read-only calls.
+- **The CLI** (`status`, `list`, `messages`) says it is a CLI client and gets read-only calls, plus the MCP registry and project registry commands.
 
 ## Delivery into a Claude Code session
 
@@ -73,9 +73,20 @@ A repeated send with the same idempotency key stores nothing new.
 
 Registered MCP servers run on the machine that hosts them, as your user, and their tools can be called by any agent on any enrolled machine. The registry holds env var names and file paths, never secret values; header and env values are read on the hosting machine and are redacted from errors, logs and tool results there. A daemon runs only the servers registered with its own node. See [mcp-registry.md](mcp-registry.md#security).
 
+## Project registry
+
+A registered project is a folder where workers may start sessions (see [decision 0002](decisions/0002-workers.md)). Registering one widens that set, so it is controlled like this:
+
+- **Only the folder's own machine can register it.** The daemon of that machine checks the path (it exists and is inside a git working tree), resolves it to the main tree and strips credentials from the remote. The gateway puts the entry on the node of the connection that sent it. The request has no field for another machine, and the daemon ignores any extra field an agent adds (for example `on`), the same way `agent_mcp_add` does. So an agent can register folders on its own machine only. A compromised enrolled machine can register paths on itself, as it can already start anything on itself.
+- **The gateway does not look at folders.** It only checks the shape of an entry: an absolute, clean path, no control characters, fields of at most 4096 bytes, at most 200 entries per call. It removes credentials from the remote again.
+- **Agents can add and list, not remove.** The daemon refuses the remove method from anything but the CLI. The guidance text asks agents to register projects only when you ask; like all guidance, that is advice and not enforcement (see below). The harness permission rules are the barrier.
+- **Limits on a scan.** It stops at 200 repositories per call, goes at most 8 levels down, does not follow symbolic links, does not enter a repository once found and skips hidden folders, `node_modules` and `vendor`. This keeps an agent that scans `/` or `~` from registering thousands of folders, or from walking out of the tree it was pointed at.
+- **The CLI can remove another machine's entry** (`projects remove --on`), for a machine that is gone. This is as much trust as `agent-net mcp remove` has.
+- Registrations are in the audit trail: `project.added` and `project.removed` events, with the session and harness that did it (`cli` for the CLI).
+
 ## What the gateway logs and keeps
 
-**The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, dispatched, delivered, failed, expired), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
+**The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, dispatched, delivered, failed, expired), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, each project that is registered or removed, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
 
 **The database.** `gateway.db` holds the nodes (token hashes only), sessions, profiles, messages with their bodies, delivery records, and an `events` table.
 
@@ -84,6 +95,7 @@ Registered MCP servers run on the machine that hosts them, as your user, and the
 | Messages (with bodies) and delivery records | 30 days | `--keep-messages` |
 | Events | 90 days | `--keep-events` |
 | Sessions that are offline and not seen | 30 days | `--keep-sessions` |
+| Registered projects | until you remove them | none |
 | Nodes and their token hashes | until you delete them | none |
 
 A timer deletes older data once at start and then every hour. A period of `0` keeps that data for ever. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.

@@ -61,7 +61,7 @@ Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, us
 
 - **One gateway** runs on one machine. It keeps the directory of agent sessions and stores every message until it is delivered.
 - **One daemon** runs on each machine. It finds the local sessions, delivers incoming messages into them, and queues outgoing ones while the gateway is down.
-- **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`. Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
+- **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`, and tools to register and list projects (`agent_project_add`, `agent_project_list`). Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
 - **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_reply`.
 
 ## What it looks like
@@ -155,6 +155,18 @@ agent-net mcp list                                          # servers, host mach
 ```
 
 Its tools then appear in Claude Code and Pi sessions on every machine as `homelab__<tool>`. Details: [docs/mcp-registry.md](docs/mcp-registry.md).
+
+Register your repositories as projects, so they are known even before a session ran in them. Ask your agent ("register all the repos in ~/code to the agent net") or use the CLI on the machine that holds the folders:
+
+```
+agent-net projects scan ~/code --dry-run    # list the repositories a scan would register
+agent-net projects scan ~/code              # register them (3 levels deep by default)
+agent-net projects add ~/work/api           # register one repository
+agent-net projects                          # all projects, SOURCE is registered, seen or both
+agent-net projects remove api               # remove a registration (by name or path)
+```
+
+A folder can only be registered on its own machine. Details: [docs/reference.md](docs/reference.md#the-project-registry).
 
 From a shell:
 
