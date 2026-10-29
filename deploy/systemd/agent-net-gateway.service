@@ -3,7 +3,7 @@ Description=agent-net gateway
 After=network-online.target
 
 [Service]
-ExecStart=%h/.local/bin/agent-net gateway --listen 127.0.0.1:7420 --data %h/.local/state/agent-net/gateway
+ExecStart=%h/.local/bin/agent-net gateway --listen 0.0.0.0:7420 --data %h/.local/state/agent-net/gateway
 Restart=on-failure
 RestartSec=2
 
