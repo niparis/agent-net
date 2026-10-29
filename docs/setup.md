@@ -1,8 +1,8 @@
 # Setup
 
-One machine runs the gateway (the VM `research`). Every machine, including the VM, runs one daemon. You add a machine by pasting one line.
+One machine runs the gateway. Every machine, including that one, runs one daemon. You add a machine by pasting one line. For a shorter version, see the [README](../README.md#quickstart). For files, variables and flags, see [reference.md](reference.md).
 
-## 1. The gateway host, once
+## 1. The first machine (the gateway), once
 
 ```
 curl -fsSL https://niparis.github.io/agent-net/install | sh
@@ -78,10 +78,9 @@ The binary and the gateway data are kept.
 - `agent-net setup --no-service` (or `AGENT_NET_NO_SERVICE=1`, which the install script passes through) writes no service files and starts nothing.
 - `agent-net invite --host H --port P --data DIR` overrides the address, port and gateway data dir. By default the host is the IPv4 address of the interface with the default route.
 - `agent-net enroll` still prints the raw join string. Use it with `agent-net setup --join '<string>'` when you already have the binary.
-- Service logs: `journalctl --user -u agent-net-daemon` on Linux, `~/Library/Logs/agent-net-daemon.log` on macOS.
+- Service logs: see [troubleshooting.md](troubleshooting.md#first-checks).
 
 ## Known limits
 
-- A machine keeps the gateway address it joined with (in `node.json`). If the gateway's address changes, delete `~/.config/agent-net/node.json` on that machine and paste a new invite line. Use the Tailscale line if you want an address that does not change.
-- The macOS path (launchd agent, `curl --pinnedpubkey` with the system curl) has not been run on a real Mac yet. Linux is tested end to end, including a clean Debian container.
-- If the download fails, an invite line `curl ... | sh` still exits 0 (the shell gets an empty script). Read the `curl:` error above. The `install.sh` line does not have this problem: it runs nothing unless the whole script arrived.
+- Problems with a changed gateway address, a failed `curl | sh`, or macOS "no route to host" are covered in [troubleshooting.md](troubleshooting.md).
+- The macOS path (launchd agent, `curl --pinnedpubkey` with the system curl) is newer and less tested than Linux. Linux is tested end to end, including a clean Debian container.
