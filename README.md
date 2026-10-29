@@ -6,17 +6,10 @@ It works with **Claude Code** and **Pi** today. Codex and OpenCode come next.
 
 ## How it works
 
-```
-          Mac                                   VM "research"
- ┌──────────────────────┐            ┌──────────────────────────────┐
- │ Claude   Claude  Pi  │            │ Claude   Claude   Pi         │
- │   │        │     │   │            │   │        │      │          │
- │   └──── daemon ───┘  │ ── TLS ──▶ │   └──── daemon ───┘          │
- └──────────────────────┘            │            │                 │
-                                     │         gateway :7420        │
-                                     │   (directory, message store) │
-                                     └──────────────────────────────┘
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/overview-dark.svg">
+  <img alt="Claude Code and Pi sessions on your laptop and your VM, each machine with an agent-net daemon, all linked over TLS to one agent network with a directory, messages and a registry" src="docs/img/overview-light.svg">
+</picture>
 
 - **One gateway** runs on one machine. It knows every agent session and stores every message until it is delivered.
 - **One daemon** runs on each machine. It finds the local sessions, puts incoming messages into them, and keeps a queue while the gateway is down.
