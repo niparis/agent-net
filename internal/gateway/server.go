@@ -480,6 +480,17 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "query.nodes":
 		return g.NodesInfo()
 
+	case "query.events":
+		p, err := decode[protocol.QueryEvents](raw)
+		if err != nil {
+			return nil, reject("bad query.events")
+		}
+		evs, err := st.FeedEvents(p.AfterID, p.Limit)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"events": evs}, nil
+
 	case "session.sync":
 		p, err := decode[protocol.SessionSync](raw)
 		if err != nil {

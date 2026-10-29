@@ -33,6 +33,9 @@ type Config struct {
 	// ReplyDir holds the reply sockets (".../r"). Defaults to next to the daemon socket.
 	ReplyDir     string
 	PollInterval time.Duration
+	// ProjectsDir holds the transcripts (".../projects"). Defaults to the
+	// folder next to SessionsDir.
+	ProjectsDir string
 }
 
 type found struct {
@@ -42,8 +45,9 @@ type found struct {
 }
 
 type Adapter struct {
-	cfg  Config
-	host daemon.Host
+	cfg    Config
+	host   daemon.Host
+	models *modelReader
 
 	mu       sync.Mutex
 	byNative map[string]found        // native_id -> session
@@ -62,7 +66,10 @@ func New(cfg Config) *Adapter {
 	if cfg.PollInterval == 0 {
 		cfg.PollInterval = time.Second
 	}
-	return &Adapter{cfg: cfg, byNative: map[string]found{}, bySock: map[string]string{},
+	if cfg.ProjectsDir == "" {
+		cfg.ProjectsDir = filepath.Join(filepath.Dir(cfg.SessionsDir), "projects")
+	}
+	return &Adapter{cfg: cfg, models: newModelReader(cfg.ProjectsDir), byNative: map[string]found{}, bySock: map[string]string{},
 		replies: map[string]net.Listener{}, last: map[string]string{}}
 }
 
@@ -95,6 +102,7 @@ type sessionFile struct {
 	Name                string `json:"name"`
 	Cwd                 string `json:"cwd"`
 	Status              string `json:"status"`
+	Kind                string `json:"kind"`
 	MessagingSocketPath string `json:"messagingSocketPath"`
 }
 
@@ -111,6 +119,7 @@ func (a *Adapter) poll() {
 	byNative := map[string]found{}
 	bySock := map[string]string{}
 	var infos []protocol.SessionInfo
+	seenModels := map[string]bool{}
 	for _, e := range entries {
 		m := pidFile.FindStringSubmatch(e.Name())
 		if m == nil {
@@ -134,7 +143,9 @@ func (a *Adapter) poll() {
 			status = "unknown"
 		}
 		info := protocol.SessionInfo{Harness: "claude", NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd,
-			Name: sf.Name, Status: status, Delivery: "native-claude"}
+			Name: sf.Name, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
+			Model: a.models.Model(sf.SessionID, sf.Cwd)}
+		seenModels[sf.SessionID] = true
 		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info}
 		if sf.MessagingSocketPath != "" {
 			bySock[sf.MessagingSocketPath] = sf.SessionID
@@ -144,6 +155,7 @@ func (a *Adapter) poll() {
 	a.mu.Lock()
 	a.byNative, a.bySock = byNative, bySock
 	a.mu.Unlock()
+	a.models.forget(seenModels)
 	// The daemon compares with what it already has and only tells the gateway about changes.
 	a.host.SetSessions("claude", infos)
 }

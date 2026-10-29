@@ -49,6 +49,23 @@ function formatDelivery(m: DeliveredMessage): string {
   );
 }
 
+/**
+ * Pi tells the extension how it runs in ctx.mode ("tui", "rpc", "json" or "print";
+ * see ExtensionMode in pi-coding-agent/dist/core/extensions/types.d.ts).
+ * Only the terminal UI has a person at the session: the rest is background.
+ */
+function modeOf(piMode: string | undefined): "foreground" | "background" | undefined {
+  if (piMode === "tui") return "foreground";
+  if (piMode === "rpc" || piMode === "json" || piMode === "print") return "background";
+  return undefined;
+}
+
+/** The model as "provider/id", or undefined when there is none. */
+function modelName(m: { provider?: string; id?: string } | undefined): string | undefined {
+  if (!m?.id) return undefined;
+  return m.provider ? `${m.provider}/${m.id}` : m.id;
+}
+
 export default function (pi: ExtensionAPI) {
   let sock: Socket | undefined;
   let connected = false;
@@ -57,6 +74,8 @@ export default function (pi: ExtensionAPI) {
   let backoff = BACKOFF_START_MS;
   let nextId = 1;
   let status: "idle" | "busy" = "idle";
+  let mode: "foreground" | "background" | undefined;
+  let model: string | undefined;
   let hello: Record<string, unknown> = {};
   const pending = new Map<string, Pending>();
   let mcpTimer: NodeJS.Timeout | undefined;
@@ -161,7 +180,7 @@ export default function (pi: ExtensionAPI) {
     s.on("connect", () => {
       connected = true;
       // hello must be the first request on the connection.
-      request("hello", { ...hello, status })
+      request("hello", { ...hello, status, ...(mode ? { mode } : {}), ...(model ? { model } : {}) })
         .then(() => {
           backoff = BACKOFF_START_MS;
           void refreshMcpTools();
@@ -199,6 +218,8 @@ export default function (pi: ExtensionAPI) {
       native_id: ctx.sessionManager.getSessionId(),
       cwd: ctx.cwd,
     };
+    mode = modeOf(ctx.mode);
+    model = modelName(ctx.model);
     stopped = false;
     backoff = BACKOFF_START_MS;
     status = "idle";
@@ -206,6 +227,13 @@ export default function (pi: ExtensionAPI) {
     // Safety net for a missed mcp_changed push.
     mcpTimer = setInterval(() => void refreshMcpTools(), MCP_POLL_MS);
     mcpTimer.unref?.();
+  });
+
+  // /model, Ctrl+P and the like. A model change is sent at once; the daemon
+  // keeps the value for a reconnect through hello.
+  pi.on("model_select", async (event) => {
+    model = modelName(event.model);
+    if (connected) request("status", { model: model ?? "" }).catch(() => {});
   });
 
   pi.on("agent_start", async () => sendStatus("busy"));
@@ -233,6 +261,8 @@ export default function (pi: ExtensionAPI) {
   function formatAgent(a: any): string {
     const p = a.profile ?? {};
     let line = `${a.session_id}  ${a.harness}  ${p.name || a.hostname || "-"}  ${a.status}${a.online ? "" : " (offline)"}  ${a.cwd}`;
+    if (a.mode) line += `  mode: ${a.mode}`;
+    if (a.model) line += `  model: ${a.model}`;
     if (a.repo?.project) line += `  project: ${a.repo.project}${a.repo.branch ? "@" + a.repo.branch : ""}`;
     if (p.function) line += `  - ${p.function}`;
     if (p.task) line += `  [task: ${p.task}]`;
@@ -301,6 +331,7 @@ export default function (pi: ExtensionAPI) {
       `Session: ${a.session_id}`,
       `Name: ${p.name || "-"}`,
       `Harness: ${a.harness}  Status: ${a.status}  Online: ${a.online ? "yes" : "no"}`,
+      `Mode: ${a.mode || "unknown"}  Model: ${a.model || "-"}`,
       `Host: ${a.hostname}  Cwd: ${a.cwd}`,
     ];
     if (a.repo?.project) {

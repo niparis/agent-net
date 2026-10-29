@@ -60,6 +60,23 @@ function formatDelivery(m: DeliveredMessage): string {
   );
 }
 
+/**
+ * The model of a session as "provider/model", from a Model.Ref
+ * ({ providerID, id }) as found in Session.Info.model and in the
+ * session.model.selected and session.step.started events.
+ */
+function modelName(ref: any): string | undefined {
+  if (!ref || typeof ref.id !== "string" || !ref.id) return undefined;
+  return ref.providerID ? `${ref.providerID}/${ref.id}` : ref.id;
+}
+
+// MODE is not reported for OpenCode (the daemon shows "unknown"). OpenCode 2.2.0
+// has no signal for "a TUI or app is attached to this session": the plugin
+// context has no client list, and the only viewer signal, the session.viewed
+// event (POST /api/session/:id/view, "mark the idle transition observed by the
+// viewer as viewed"), fires once per idle transition and says nothing when a
+// viewer stays attached and quiet. See docs/opencode.md.
+
 /** One daemon connection, bound to one OpenCode session. */
 class SessionLink {
   private sock: Socket | undefined;
@@ -70,6 +87,7 @@ class SessionLink {
   private nextId = 1;
   private pending = new Map<string, Pending>();
   status: "idle" | "busy" = "idle";
+  model: string | undefined;
 
   constructor(
     readonly sessionID: string,
@@ -90,6 +108,12 @@ class SessionLink {
     this.sock = undefined;
     this.connected = false;
     s?.destroy();
+  }
+
+  setModel(next: string | undefined) {
+    if (!next || this.model === next) return;
+    this.model = next;
+    if (this.connected) this.request("status", { model: next }).catch(() => {});
   }
 
   setStatus(next: "idle" | "busy") {
@@ -177,6 +201,7 @@ class SessionLink {
         native_id: this.sessionID,
         cwd: this.cwd,
         status: this.status,
+        ...(this.model ? { model: this.model } : {}),
       })
         .then(() => {
           this.backoff = BACKOFF_START_MS;
@@ -212,6 +237,8 @@ function formatSent(r: any): string {
 function formatAgent(a: any): string {
   const p = a.profile ?? {};
   let line = `${a.session_id}  ${a.harness}  ${p.name || a.hostname || "-"}  ${a.status}${a.online ? "" : " (offline)"}  ${a.cwd}`;
+  if (a.mode) line += `  mode: ${a.mode}`;
+  if (a.model) line += `  model: ${a.model}`;
   if (a.repo?.project) line += `  project: ${a.repo.project}${a.repo.branch ? "@" + a.repo.branch : ""}`;
   if (p.function) line += `  - ${p.function}`;
   if (p.task) line += `  [task: ${p.task}]`;
@@ -249,6 +276,7 @@ function formatAgentGet(r: any): string {
     `Session: ${a.session_id}`,
     `Name: ${p.name || "-"}`,
     `Harness: ${a.harness}  Status: ${a.status}  Online: ${a.online ? "yes" : "no"}`,
+    `Mode: ${a.mode || "unknown"}  Model: ${a.model || "-"}`,
     `Host: ${a.hostname}  Cwd: ${a.cwd}`,
   ];
   if (a.repo?.project) {
@@ -470,7 +498,7 @@ export default {
     const events = new AbortController();
 
     // Walk up to the root session. Sub-agent sessions speak for their root.
-    async function rootSession(sessionID: string): Promise<{ id: string; cwd: string } | undefined> {
+    async function rootSession(sessionID: string): Promise<{ id: string; cwd: string; model?: string } | undefined> {
       let id = sessionID;
       for (let depth = 0; depth < 8; depth++) {
         let info: any;
@@ -482,7 +510,7 @@ export default {
         const parent = info?.parentID;
         if (!parent) {
           const cwd = info?.location?.directory ?? info?.directory ?? ctx.location.directory ?? "";
-          return { id, cwd: String(cwd) };
+          return { id, cwd: String(cwd), model: modelName(info?.model) };
         }
         h.rootOf.set(id, String(parent));
         id = String(parent);
@@ -522,6 +550,7 @@ export default {
       if (again) return again.link;
       if (h.gone.has(sessionID)) return undefined;
       const link = new SessionLink(sessionID, found.cwd, deliver);
+      link.model = found.model;
       h.links.set(sessionID, { link, owner: me });
       link.start();
       return link;
@@ -561,6 +590,14 @@ export default {
         case "session.inbox.delivered":
           await ensureLink(sessionID);
           return;
+        case "session.model.selected":
+        case "session.step.started": {
+          // Sub-agent sessions run their own models; only the root session counts.
+          // ensureLink learns the root of a session it has not seen yet.
+          const link = await ensureLink(sessionID);
+          if (!h.rootOf.has(sessionID)) link?.setModel(modelName(event.data?.model));
+          return;
+        }
         case "session.execution.started":
           (await ensureLink(sessionID))?.setStatus("busy");
           return;

@@ -40,9 +40,10 @@ func TestParseSince(t *testing.T) {
 func TestPrintAgentsShowsProject(t *testing.T) {
 	agents := []protocol.AgentView{
 		{SessionID: "s_1", Harness: "opencode", Hostname: "mac", NodeID: "n_1", Cwd: "/src/shop/web", Status: "idle", Online: true,
+			Mode: "foreground", Model: "anthropic/claude-sonnet-5",
 			Profile: protocol.Profile{Name: "web", Function: "frontend"},
 			Repo:    protocol.RepoInfo{Root: "/src/shop", Project: "shop", Remote: "https://example.com/shop.git", Branch: "main"}},
-		{SessionID: "s_2", Harness: "claude", Hostname: "box", Status: "busy",
+		{SessionID: "s_2", Harness: "claude", Hostname: "box", Status: "busy", Mode: "background",
 			Profile: protocol.Profile{Name: "old", Project: "announced"}},
 		{SessionID: "s_3", Harness: "pi", Hostname: "box", Status: "idle", Profile: protocol.Profile{Name: "none"}},
 	}
@@ -54,7 +55,7 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("output:\n%s", b.String())
 	}
-	if f := strings.Fields(lines[0]); strings.Join(f, " ") != "SESSION NAME HARNESS HOST PROJECT STATUS ONLINE FUNCTION" {
+	if f := strings.Fields(lines[0]); strings.Join(f, " ") != "SESSION NAME HARNESS HOST PROJECT STATUS MODE MODEL ONLINE FUNCTION" {
 		t.Fatalf("header: %q", lines[0])
 	}
 	if f := strings.Fields(lines[1]); f[4] != "shop" {
@@ -66,6 +67,16 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	if f := strings.Fields(lines[3]); f[4] != "-" {
 		t.Errorf("no project shows a dash: %q", lines[3])
 	}
+	if f := strings.Fields(lines[1]); f[6] != "foreground" || f[7] != "anthropic/claude-sonnet-5" {
+		t.Errorf("mode and model: %q", lines[1])
+	}
+	// A background session with no model, and an older daemon that reports neither.
+	if f := strings.Fields(lines[2]); f[6] != "background" || f[7] != "-" {
+		t.Errorf("no model shows a dash: %q", lines[2])
+	}
+	if f := strings.Fields(lines[3]); f[6] != "-" || f[7] != "-" {
+		t.Errorf("an older daemon shows dashes: %q", lines[3])
+	}
 	if strings.Contains(b.String(), "example.com") {
 		t.Error("the remote belongs to the wide view")
 	}
@@ -73,7 +84,7 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	b.Reset()
 	printAgents(&b, agents, true)
 	wide := strings.Split(strings.TrimSpace(b.String()), "\n")
-	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[9] != "REMOTE" || h[10] != "FOLDER" || h[11] != "NODE" || h[12] != "WORKTREE" {
+	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[7] != "MODE" || h[8] != "MODEL" || h[11] != "REMOTE" || h[12] != "FOLDER" || h[13] != "NODE" || h[14] != "WORKTREE" {
 		t.Fatalf("wide header: %q", wide[0])
 	}
 	f := strings.Fields(wide[1])

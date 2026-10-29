@@ -265,6 +265,10 @@ type helloParams struct {
 	NativeID string `json:"native_id"`
 	Cwd      string `json:"cwd"`
 	Status   string `json:"status"`
+	// Mode and Model are optional. A plugin says whether a person has the
+	// session open (foreground, background or unknown) and which model it runs.
+	Mode  string `json:"mode"`
+	Model string `json:"model"`
 	// Protocol is the local protocol version of the client; Version is its
 	// agent-net version (for the error message). Old clients send neither.
 	Protocol int    `json:"protocol"`
@@ -349,9 +353,13 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		if !validStatus(status) {
 			return nil, fmt.Errorf("bad status %q", status)
 		}
+		if p.Mode != "" && !protocol.ValidMode(p.Mode) {
+			return nil, fmt.Errorf("bad mode %q", p.Mode)
+		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
 			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: filepath.Base(p.Cwd),
-			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd)}}
+			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
+			Mode: p.Mode, Model: protocol.CleanModel(p.Model)}}
 		k := key(p.Client, p.NativeID)
 		d.mu.Lock()
 		old := d.sessions[k]
@@ -425,7 +433,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
-		"nodes": true, "restart": true, "projects": true}
+		"nodes": true, "restart": true, "projects": true, "events": true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
 		method != "project_add" && method != "project_remove" {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
@@ -441,17 +449,32 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return d.dispatchUpgrade(ctx, method, client)
 
 	case "status":
+		// Status, mode and model are all optional; the ones present change.
 		var p struct {
-			Status string `json:"status"`
+			Status string  `json:"status"`
+			Mode   *string `json:"mode"`
+			Model  *string `json:"model"`
 		}
-		if json.Unmarshal(raw, &p) != nil || !validStatus(p.Status) {
+		if json.Unmarshal(raw, &p) != nil || (p.Status == "" && p.Mode == nil && p.Model == nil) ||
+			(p.Status != "" && !validStatus(p.Status)) {
 			return nil, errors.New("status must be idle, busy, shell or unknown")
+		}
+		if p.Mode != nil && !protocol.ValidMode(*p.Mode) {
+			return nil, errors.New("mode must be foreground, background or unknown")
 		}
 		if ls == nil || ls.conn != lc {
 			return nil, errors.New("only plugin clients report their status")
 		}
 		d.mu.Lock()
-		ls.info.Status = p.Status
+		if p.Status != "" {
+			ls.info.Status = p.Status
+		}
+		if p.Mode != nil {
+			ls.info.Mode = *p.Mode
+		}
+		if p.Model != nil {
+			ls.info.Model = protocol.CleanModel(*p.Model)
+		}
 		cwd := ls.info.Cwd
 		d.mu.Unlock()
 		repo := d.repo.Refresh(cwd)
@@ -486,6 +509,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, errors.New("bad projects params")
 		}
 		return d.call(ctx, "query.projects", p)
+
+	case "events":
+		var p protocol.QueryEvents
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad events params")
+		}
+		return d.call(ctx, "query.events", p)
 
 	case "get":
 		var p protocol.QueryAgent

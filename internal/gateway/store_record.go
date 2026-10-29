@@ -253,6 +253,78 @@ func (s *Store) QueryEvents(f EventFilter) ([]protocol.Event, error) {
 	return out, nil
 }
 
+// Feed limits.
+const (
+	DefaultFeedLimit = 100
+	MaxFeedLimit     = 500
+	maxFeedDetail    = 200
+)
+
+// feedKinds are the event kinds any node may read, as prefixes up to a dot.
+// MCP events and enrollment events are left out.
+var feedKinds = []string{"msg", "session", "node"}
+
+// FeedEvents returns the events any node may read, oldest first. It is the
+// admin events table without bodies, MCP records and addresses: messages are
+// named by ID, both ends and type only. With afterID 0 it returns the newest
+// limit events; otherwise the first limit events after afterID.
+func (s *Store) FeedEvents(afterID int64, limit int) ([]protocol.FeedEvent, error) {
+	if limit <= 0 {
+		limit = DefaultFeedLimit
+	}
+	if limit > MaxFeedLimit {
+		limit = MaxFeedLimit
+	}
+	var kinds []string
+	var args []any
+	for _, k := range feedKinds {
+		kinds = append(kinds, `substr(e.kind, 1, ?) = ?`)
+		args = append(args, len(k)+1, k+".")
+	}
+	where := `(` + strings.Join(kinds, " OR ") + `)`
+	order := "DESC"
+	if afterID > 0 {
+		where += ` AND e.id > ?`
+		args = append(args, afterID)
+		order = "ASC"
+	}
+	args = append(args, limit)
+	rows, err := s.db.Query(`SELECT e.id, e.at, e.kind, e.node_id, COALESCE(n.hostname,''), e.session_id, e.message_id, e.detail,
+		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,'')
+		FROM events e LEFT JOIN nodes n ON n.id = e.node_id LEFT JOIN messages m ON m.id = e.message_id AND e.message_id != ''
+		WHERE `+where+` ORDER BY e.id `+order+` LIMIT ?`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.FeedEvent{}
+	for rows.Next() {
+		var e protocol.FeedEvent
+		var at int64
+		if err := rows.Scan(&e.ID, &at, &e.Kind, &e.NodeID, &e.Hostname, &e.SessionID, &e.MessageID, &e.Detail,
+			&e.From, &e.To, &e.Type); err != nil {
+			return nil, err
+		}
+		e.Time = time.Unix(0, at).UTC()
+		if e.Kind == "node.connected" {
+			e.Detail = "" // the address of the machine
+		}
+		if len(e.Detail) > maxFeedDetail {
+			e.Detail = strings.ToValidUTF8(e.Detail[:maxFeedDetail], "")
+		}
+		out = append(out, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if order == "DESC" {
+		for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+			out[i], out[j] = out[j], out[i]
+		}
+	}
+	return out, nil
+}
+
 // nodeIDs resolves a node ID or host name to node IDs.
 func (s *Store) nodeIDs(idOrHost string) ([]string, error) {
 	rows, err := s.db.Query(`SELECT id FROM nodes WHERE id = ? OR hostname = ?`, idOrHost, idOrHost)

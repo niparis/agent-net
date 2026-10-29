@@ -24,6 +24,7 @@ const plugin = (await import(pathToFileURL(jsPath).href)).default;
 
 // Fake daemon: records the session IDs that said hello.
 const hellos = [];
+const statuses = []; // status calls: { id, params }
 const closed = [];
 const calls = []; // [method, params] of every call except hello
 const server = createServer((conn) => {
@@ -37,9 +38,10 @@ const server = createServer((conn) => {
       buf = buf.slice(nl + 1);
       if (line.method === "hello") {
         conn.sessionID = line.params.native_id;
-        hellos.push({ id: line.params.native_id, cwd: line.params.cwd });
+        hellos.push({ id: line.params.native_id, cwd: line.params.cwd, model: line.params.model, mode: line.params.mode });
       }
       if (line.method !== "hello") calls.push([line.method, line.params]);
+      if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
         line.method === "project_add"
           ? { machine: "mac", dry_run: !!line.params.dry_run,
@@ -263,6 +265,49 @@ await test("agent_project_add and agent_project_list reach the daemon and print 
   for (const want of ["alpha on mac: /c/alpha  [both]  https://example.com/alpha.git  harnesses: claude",
                       "beta on mac: /c/beta  [registered]", "old on box: /c/old  [seen]"]) {
     if (!listed.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(listed));
+  }
+  stop();
+});
+
+await test("the model goes in hello, and a model change is sent as status", async () => {
+  freshHub();
+  const sessions = new Map([
+    ["ses_m", session("ses_m", "/work/m", 0, { model: { id: "claude-sonnet-5", providerID: "anthropic" } })],
+  ]);
+  const m = makeContext("/work/m", sessions);
+  const stop = await plugin.setup(m.ctx);
+  await until("hello for ses_m", () => registered("ses_m"));
+  const hello = hellos.find((h) => h.id === "ses_m");
+  if (hello.model !== "anthropic/claude-sonnet-5") throw new Error("hello model: " + hello.model);
+  // OpenCode has no reliable foreground signal, so the plugin never claims a mode.
+  if (hello.mode !== undefined) throw new Error("hello mode: " + hello.mode);
+  m.emit({ type: "session.model.selected", data: { sessionID: "ses_m", model: { id: "gpt-6", providerID: "openai" } } });
+  await until("status with the new model", () =>
+    statuses.some((s) => s.id === "ses_m" && s.params.model === "openai/gpt-6"));
+  // The same model again is not sent twice.
+  const n = statuses.length;
+  m.emit({ type: "session.step.started", data: { sessionID: "ses_m", model: { id: "gpt-6", providerID: "openai" } } });
+  await settle();
+  if (statuses.length !== n) throw new Error("an unchanged model was sent again");
+  // A step with another model (after a switch the plugin did not see) is picked up.
+  m.emit({ type: "session.step.started", data: { sessionID: "ses_m", model: { id: "o9", providerID: "openai" } } });
+  await until("status from a step", () => statuses.some((s) => s.id === "ses_m" && s.params.model === "openai/o9"));
+  stop();
+});
+
+await test("a sub-agent session does not change the model of its root session", async () => {
+  freshHub();
+  const sessions = new Map([
+    ["ses_root", session("ses_root", "/work/r", 0, { model: { id: "big", providerID: "p" } })],
+    ["ses_kid", session("ses_kid", "/work/r", 0, { parentID: "ses_root", model: { id: "small", providerID: "p" } })],
+  ]);
+  const r = makeContext("/work/r", sessions);
+  const stop = await plugin.setup(r.ctx);
+  await until("hello for ses_root", () => registered("ses_root"));
+  r.emit({ type: "session.step.started", data: { sessionID: "ses_kid", model: { id: "small", providerID: "p" } } });
+  await settle();
+  if (statuses.some((s) => s.id === "ses_root" && s.params.model === "p/small")) {
+    throw new Error("the sub-agent model leaked to the root session");
   }
   stop();
 });

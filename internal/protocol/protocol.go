@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -78,6 +79,45 @@ type SessionInfo struct {
 	Delivery  string `json:"delivery"`
 	// Repo is worked out by the daemon from Cwd. It is empty from older daemons.
 	Repo RepoInfo `json:"repo"`
+	// Mode says whether a person has the session open: ModeForeground,
+	// ModeBackground or ModeUnknown. Empty from older daemons.
+	Mode string `json:"mode,omitempty"`
+	// Model is the model the session runs now, as the harness names it
+	// (for example "claude-opus-5-5" or "anthropic/claude-sonnet-5"). Empty
+	// when the harness does not say.
+	Model string `json:"model,omitempty"`
+}
+
+// Session modes. Foreground means a person has the session open in a terminal
+// or an app. Background means nobody is attached. Unknown means the harness
+// gives no reliable signal.
+const (
+	ModeForeground = "foreground"
+	ModeBackground = "background"
+	ModeUnknown    = "unknown"
+)
+
+// ValidMode tells whether s is a mode a client may report.
+func ValidMode(s string) bool {
+	return s == ModeForeground || s == ModeBackground || s == ModeUnknown
+}
+
+// MaxModelLen is the longest model name the gateway keeps.
+const MaxModelLen = 120
+
+// CleanModel trims a model name, drops control characters and cuts it to
+// MaxModelLen bytes (at a character boundary).
+func CleanModel(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(s))
+	if len(s) > MaxModelLen {
+		s = strings.ToValidUTF8(s[:MaxModelLen], "")
+	}
+	return s
 }
 
 // RepoInfo says which project a session works in. The daemon fills it from the
@@ -117,6 +157,10 @@ type AgentView struct {
 	Profile   Profile `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
+	// Mode and Model are what the session's daemon reported. Empty from an
+	// older daemon.
+	Mode  string `json:"mode,omitempty"`
+	Model string `json:"model,omitempty"`
 }
 
 // Header is shared by every gateway <-> daemon frame.
@@ -220,6 +264,13 @@ type (
 		// Name keeps only projects with this name (case-insensitive).
 		Name string `json:"name,omitempty"`
 	}
+	// QueryEvents asks for the event feed: metadata of what happens on the
+	// network, never message bodies. AfterID 0 returns the newest Limit events;
+	// a larger AfterID returns the events after it, oldest first.
+	QueryEvents struct {
+		AfterID int64 `json:"after_id,omitempty"`
+		Limit   int   `json:"limit,omitempty"`
+	}
 	MsgDeliver struct {
 		Message Message `json:"message"`
 	}
@@ -281,6 +332,16 @@ type Event struct {
 	SessionID string    `json:"session_id,omitempty"`
 	MessageID string    `json:"message_id,omitempty"`
 	Detail    string    `json:"detail,omitempty"`
+}
+
+// FeedEvent is an Event as any node may read it: metadata only. For events
+// about a message it also names both ends and the type, so a reader need not
+// ask for the message (whose body only its two nodes may read).
+type FeedEvent struct {
+	Event
+	From string `json:"from,omitempty"` // sender session of the message
+	To   string `json:"to,omitempty"`   // recipient session of the message
+	Type string `json:"message_type,omitempty"`
 }
 
 // ProjectView is one project folder on one machine, built from stored sessions.
