@@ -343,6 +343,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, errors.New("the daemon has not discovered this Claude session")
 		}
 		lc.bind("mcp", ls)
+		d.noteMCPHello(p.NativeID)
 		// One line per hello. After an upgrade, a session's `agent-net mcp` says
 		// hello on the old version (and is told to switch), then on the new one.
 		ver := p.Version

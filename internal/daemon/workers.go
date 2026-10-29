@@ -41,6 +41,11 @@ type WorkerSettings struct {
 	// KillGrace is how long a worker gets after SIGTERM before SIGKILL.
 	// Default 3 s.
 	KillGrace time.Duration
+	// MCPSettle is how long a Claude worker waits after its MCP server said
+	// hello before it gets the task. Claude Code connects its MCP servers in
+	// the background, and a turn that starts before they are ready has none of
+	// their tools. Default 3 s; negative means no wait.
+	MCPSettle time.Duration
 }
 
 func (s WorkerSettings) filled() WorkerSettings {
@@ -64,6 +69,9 @@ func (s WorkerSettings) filled() WorkerSettings {
 	}
 	if s.KillGrace <= 0 {
 		s.KillGrace = 3 * time.Second
+	}
+	if s.MCPSettle == 0 {
+		s.MCPSettle = 3 * time.Second
 	}
 	return s
 }
@@ -89,9 +97,18 @@ type worker struct {
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
-	exited           chan struct{} // closed when an own child is reaped; nil if adopted
-	ready            chan struct{} // closed when the session has a gateway ID
-	readyOnce        sync.Once
+	// ref is the harness's own handle for the worker: the background session
+	// ID of a Claude worker, the address of a Codex app server. It is kept in
+	// the database, so an adopted worker can be found again.
+	ref string
+	// info is the worker part of the session, made once so that a comparison
+	// of session infos does not see a change each time.
+	info *protocol.WorkerInfo
+	// codex is the connection to the worker's Codex app server.
+	codex     *codexConn
+	exited    chan struct{} // closed when an own child is reaped; nil if adopted
+	ready     chan struct{} // closed when the session has a gateway ID
+	readyOnce sync.Once
 }
 
 // launcher starts one kind of harness for a worker.
@@ -101,8 +118,61 @@ type launcher interface {
 	start(ctx context.Context, d *Daemon, w *worker) error
 }
 
+// stopper is a launcher that has a polite way to stop its harness: it is tried
+// before the process group is killed (for Claude, `claude stop`).
+type stopper interface {
+	stop(d *Daemon, w *worker)
+}
+
+// adopter is a launcher that must reconnect to a worker that survived a
+// restart of the daemon.
+type adopter interface {
+	adopt(ctx context.Context, d *Daemon, w *worker) error
+}
+
+// ender is a launcher that has more to clean up when a worker ends.
+type ender interface {
+	end(d *Daemon, w *worker)
+}
+
 func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
-	return &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix()}
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	if w.info == nil {
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix()}
+	}
+	return w.info
+}
+
+// workerByNative returns the worker that has this harness session, or nil.
+func (d *Daemon) workerByNative(harness, native string) *worker {
+	if native == "" {
+		return nil
+	}
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	for _, w := range d.workers {
+		if w.harness == harness && w.nativeID == native {
+			return w
+		}
+	}
+	return nil
+}
+
+// attachWorkerProcess records a process that the daemon did not start as the
+// process of w: a Claude background session belongs to Claude's own service, not
+// to this daemon. The group is the session's own (Claude makes each one a group
+// leader). The caller has checked that pid is the session.
+func (d *Daemon) attachWorkerProcess(w *worker, pid int) {
+	pgid, err := syscall.Getpgid(pid)
+	if err != nil {
+		pgid = pid
+	}
+	tok, _ := procToken(pid)
+	d.wmu.Lock()
+	w.pid, w.pgid, w.token = pid, pgid, tok
+	d.saveWorkerLocked(w)
+	d.wmu.Unlock()
 }
 
 // ---- finding workers ----
@@ -211,7 +281,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, DoneStatus: w.doneStatus}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, DoneStatus: w.doneStatus, Ref: w.ref}
 }
 
 // ---- starting ----
@@ -283,6 +353,12 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 // and start time. The caller adds the harness-specific arguments and
 // environment.
 func (d *Daemon) spawnWorker(w *worker, bin string, args []string, env []string) error {
+	return d.spawnWorkerStdin(w, bin, args, env, nil)
+}
+
+// spawnWorkerStdin is spawnWorker with a file for the standard input of the
+// process (nil is /dev/null).
+func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []string, stdin *os.File) error {
 	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
 	logPath := filepath.Join(dir, "worker.log")
 	d.wmu.Lock() // endWorker and workerLogTail read these from other goroutines
@@ -299,7 +375,9 @@ func (d *Daemon) spawnWorker(w *worker, bin string, args []string, env []string)
 	cmd := exec.Command(bin, args...)
 	cmd.Dir = w.path
 	cmd.Env = env
-	cmd.Stdin = nil
+	if stdin != nil {
+		cmd.Stdin = stdin
+	}
 	cmd.Stdout, cmd.Stderr = logf, logf
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
@@ -408,7 +486,13 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	if sendNotice {
 		stats = d.workerStats(w)
 	}
+	if st, ok := d.launchers[w.harness].(stopper); ok && w.pid != 0 {
+		st.stop(d, w)
+	}
 	d.killGroup(w)
+	if en, ok := d.launchers[w.harness].(ender); ok {
+		en.end(d, w)
+	}
 	d.wmu.Lock()
 	delete(d.workers, w.id)
 	row := d.rowLocked(w, reason)
@@ -500,7 +584,15 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 	d.wmu.Lock()
 	list := make([]*worker, 0, len(d.workers))
 	for _, w := range d.workers {
-		if w.pid != 0 && !w.stopping {
+		// A worker that is still starting belongs to its start, which has its
+		// own time limit and reads the harness output when it fails.
+		started := false
+		select {
+		case <-w.ready:
+			started = true
+		default:
+		}
+		if w.pid != 0 && !w.stopping && started {
 			list = append(list, w)
 		}
 	}
@@ -594,12 +686,23 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, doneStatus: r.DoneStatus}
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, doneStatus: r.DoneStatus, ref: r.Ref}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()
 		d.workers[w.id] = w
 		d.wmu.Unlock()
+		if ad, ok := d.launchers[w.harness].(adopter); ok {
+			actx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			err := ad.adopt(actx, d, w)
+			cancel()
+			if err != nil {
+				// It runs, but the daemon cannot talk to it any more. End it.
+				d.Logf("worker %s: cannot be taken back: %v", w.id, err)
+				go d.endWorker(w, protocol.StopLost)
+				continue
+			}
+		}
 		d.Logf("worker.adopted worker=%s session=%s project=%s pid=%d", w.id, w.sessionID, w.project, w.pid)
 	}
 }

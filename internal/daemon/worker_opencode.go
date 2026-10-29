@@ -177,7 +177,7 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 
 // stats reads the session's tokens, cost and model from the worker's own
 // server. Any failure gives an empty result: the notice then omits them.
-func (opencodeLauncher) stats(ctx context.Context, w *worker) workerStats {
+func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerStats {
 	if w.apiBase == "" || w.nativeID == "" {
 		return workerStats{}
 	}

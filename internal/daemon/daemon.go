@@ -165,6 +165,9 @@ type Daemon struct {
 	wmu       sync.Mutex
 	workers   map[string]*worker
 	launchers map[string]launcher
+	// mcpHello is when the MCP server of each Claude session first said hello.
+	// A Claude worker waits for it before it gets its task.
+	mcpHello map[string]time.Time
 
 	repo *repoinfo.Resolver
 	// hmu guards the inventory of installed harnesses. hgen grows with each
@@ -228,7 +231,8 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
-		workers: map[string]*worker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}},
+		mcpHello: map[string]time.Time{}, workers: map[string]*worker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
+			"pi": piLauncher{}, "codex": codexLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	d.inSession = d.insideSession
@@ -245,6 +249,9 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	for _, a := range cfg.Adapters {
 		d.adapters[a.Harness()] = a
+	}
+	if d.adapters["codex"] == nil {
+		d.adapters["codex"] = codexDelivery{d} // Codex workers are the only Codex sessions
 	}
 	d.addOwnerSession()
 	return d, nil
@@ -312,6 +319,12 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	infos = append([]protocol.SessionInfo(nil), infos...)
 	for i := range infos {
 		infos[i].Harness = harness
+		// A session that agent-net started as a worker carries the worker flag,
+		// whichever way the harness is discovered.
+		if wk := d.workerByNative(harness, infos[i].NativeID); wk != nil {
+			infos[i].Worker = d.workerInfo(wk)
+			infos[i].Mode = protocol.ModeBackground
+		}
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
 		probe := infos[i]

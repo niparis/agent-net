@@ -27,7 +27,9 @@ type workerNode struct {
 // tests point at the test binary (the fake `opencode serve`).
 func fakeInventory(context.Context) []protocol.HarnessInfo {
 	return []protocol.HarnessInfo{{Name: "opencode", Path: os.Args[0], Version: "fake", Primary: true,
-		Models: []string{"fake/m1", "fake/m2"}}}
+		Models: []string{"fake/m1", "fake/m2"}},
+		{Name: "claude", Path: os.Args[0], Version: "fake"}, {Name: "pi", Path: os.Args[0], Version: "fake"},
+		{Name: "codex", Path: os.Args[0], Version: "fake"}}
 }
 
 // startWorkerNode starts a node that can run workers. The settings are short.
@@ -95,7 +97,7 @@ func newRepo(t *testing.T, name string) string {
 	gitIn(t, repo, "add", "README.md")
 	gitIn(t, repo, "commit", "-q", "-m", "first")
 	// The fake opencode writes its record into its folder; git ignores it.
-	if err := os.WriteFile(filepath.Join(repo, ".git", "info", "exclude"), []byte("fake-opencode.json\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(repo, ".git", "info", "exclude"), []byte("fake-opencode.json\nfake-claude.json\nfake-pi.json\nfake-codex.json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return repo
@@ -123,7 +125,7 @@ func (w *workerNode) mustStart(t *testing.T, req protocol.WorkerStartRequest) pr
 	t.Helper()
 	res, err := w.start(req)
 	if err != nil {
-		t.Fatalf("worker_start: %v", err)
+		t.Fatalf("worker_start: %v\ndaemon log:\n%s", err, strings.Join(w.logs.lines(), "\n"))
 	}
 	if res.SessionID == "" {
 		t.Fatalf("no session in %+v", res)
@@ -198,7 +200,7 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 	})
 }
 
-var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: 8 * time.Second}
+var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: 8 * time.Second, MCPSettle: -1}
 
 // ---- the lifecycle ----
 
@@ -646,7 +648,7 @@ func TestWorkerRefusals(t *testing.T) {
 	}{
 		{"unknown project", protocol.WorkerStartRequest{Project: "nope", Harness: "opencode", Task: "x"}, `no project named "nope" is known`},
 		{"harness the machine has not", protocol.WorkerStartRequest{Project: "bare", Harness: "opencode", Task: "x"}, "opencode is not installed on"},
-		{"unsupported harness", protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "x"}, "workers can run these harnesses: opencode"},
+		{"unsupported harness", protocol.WorkerStartRequest{Project: "shop", Harness: "gemini", Task: "x"}, "workers can run these harnesses: opencode, claude, pi, codex"},
 		{"model not in the list", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/zzz", Task: "x"}, `model "fake/zzz" is not in the opencode model list`},
 		{"machine that refuses workers", protocol.WorkerStartRequest{Project: "private", Harness: "opencode", Task: "x"}, "does not accept workers (it was set up with --no-launch)"},
 		{"wrong machine named", protocol.WorkerStartRequest{Project: "shop", Machine: "elsewhere", Harness: "opencode", Task: "x"}, `no project named "shop" on machine "elsewhere"`},

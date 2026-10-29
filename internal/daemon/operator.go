@@ -193,7 +193,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Worktree: ans.Worktree, Branch: ans.Branch}
 	// The task is a normal message from the caller, with the fixed preamble.
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBody(p.Task, ans.Worktree, ans.Branch)})
+		Body: protocol.WorkerTaskBodyFor(ans.Harness, p.Task, ans.Worktree, ans.Branch)})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}

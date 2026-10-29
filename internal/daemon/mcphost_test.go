@@ -27,6 +27,10 @@ func TestMain(m *testing.M) {
 		}
 		return
 	}
+	// The test binary is also the fake claude, pi and codex of the worker tests.
+	if runFakeHarness() {
+		return
+	}
 	// The test binary is also the fake `opencode serve` of the worker tests.
 	if len(os.Args) > 1 && os.Args[1] == "serve" && os.Getenv("OPENCODE_SERVER_PASSWORD") != "" {
 		runFakeOpenCode()

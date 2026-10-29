@@ -46,6 +46,17 @@ CREATE TABLE IF NOT EXISTS workers (
 		db.Close()
 		return nil, err
 	}
+	// harness_ref is what a harness needs to find its worker again: the
+	// background session ID of a Claude worker, the address of a Codex one.
+	// A table from an older version does not have it.
+	var hasRef int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'harness_ref'`).Scan(&hasRef)
+	if hasRef == 0 {
+		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN harness_ref TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()

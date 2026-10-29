@@ -17,8 +17,8 @@ const workerNote = "A worker is an agent session that agent-net starts for you w
 type startIn struct {
 	Project   string `json:"project" jsonschema:"the name of a project from agent_project_list"`
 	Task      string `json:"task" jsonschema:"what the worker should do, with everything it needs to know; it cannot ask you questions except by agent_reply"`
-	Harness   string `json:"harness,omitempty" jsonschema:"opencode (the default); other harnesses come later"`
-	Model     string `json:"model,omitempty" jsonschema:"provider/model, from the model list of agent_nodes; empty means the harness default"`
+	Harness   string `json:"harness,omitempty" jsonschema:"opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine."`
+	Model     string `json:"model,omitempty" jsonschema:"The model, as the harness names it. opencode: provider/model, from the list in agent_nodes (the only harness with a checked list). claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."`
 	Machine   string `json:"machine,omitempty" jsonschema:"the machine, only when the project is on more than one"`
 	Isolation string `json:"isolation,omitempty" jsonschema:"worktree: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. Use it for tasks that change code"`
 }
@@ -37,9 +37,10 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 
 	mcp.AddTool(s, tool("agent_start",
 		"Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. "+
-			"The project must be known (agent_project_list). The machine that holds it must have the harness, and the model must be in its model list (agent_nodes). "+
+			"The project must be known (agent_project_list). The machine that holds it must have the harness, and an opencode model must be in its model list (agent_nodes). "+
 			"The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. "+
-			workerNote+" A worker cannot start workers."),
+			workerNote+" A worker cannot start workers."+
+			" A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in startIn) (*mcp.CallToolResult, any, error) {
 			if in.Harness == "" {
 				in.Harness = "opencode"

@@ -19,25 +19,27 @@ type workerRow struct {
 	TaskMsg string
 	// DoneStatus is the status of the last hand-back, "" if there was none.
 	DoneStatus string
+	// Ref is the harness's own handle for the worker (see worker.ref).
+	Ref string
 }
 
 func (s *state) saveWorker(w workerRow) error {
 	_, err := s.db.Exec(`INSERT INTO workers (id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
-		start_token, started_at, last_active, ended_reason, main_path, worktree, branch, base, task_msg, done_status)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		start_token, started_at, last_active, ended_reason, main_path, worktree, branch, base, task_msg, done_status, harness_ref)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET native_id=excluded.native_id, session_id=excluded.session_id,
 		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
 		last_active=excluded.last_active, ended_reason=excluded.ended_reason, task_msg=excluded.task_msg,
-		done_status=excluded.done_status`,
+		done_status=excluded.done_status, harness_ref=excluded.harness_ref`,
 		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.NativeID, w.SessionID, w.PID, w.PGID,
 		w.StartToken, w.StartedAt.UnixNano(), w.LastActive.UnixNano(), w.EndedReason,
-		w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.DoneStatus)
+		w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.DoneStatus, w.Ref)
 	return err
 }
 
 func (s *state) workers() ([]workerRow, error) {
 	rows, err := s.db.Query(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
-		start_token, started_at, last_active, ended_reason, main_path, worktree, branch, base, task_msg, done_status
+		start_token, started_at, last_active, ended_reason, main_path, worktree, branch, base, task_msg, done_status, harness_ref
 		FROM workers ORDER BY started_at`)
 	if err != nil {
 		return nil, err
@@ -49,7 +51,7 @@ func (s *state) workers() ([]workerRow, error) {
 		var started, active int64
 		if err := rows.Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason,
-			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.DoneStatus); err != nil {
+			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.DoneStatus, &w.Ref); err != nil {
 			return nil, err
 		}
 		w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)

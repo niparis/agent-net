@@ -33,7 +33,7 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 	project := fs.String("project", "", "project name (see `agent-net projects`)")
 	machine := fs.String("machine", "", "machine, when the project is on more than one")
 	harness := fs.String("harness", "opencode", "harness to run: "+strings.Join(protocol.WorkerHarnesses, ", "))
-	model := fs.String("model", "", "model as provider/model (default: the harness default)")
+	model := fs.String("model", "", "model, as the harness names it: provider/model for opencode, an alias like haiku for claude, a name for pi and codex (default: the harness default)")
 	isolation := fs.String("isolation", "", "worktree: the worker gets its own git worktree and branch")
 	asJSON := fs.Bool("json", false, "print JSON")
 	words, err := parseInterspersed(fs, args)
@@ -42,7 +42,7 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 	}
 	task := strings.TrimSpace(strings.Join(words, " "))
 	if *project == "" || task == "" {
-		return errors.New("usage: agent-net start --project <name> [--harness opencode] [--model provider/model] [--machine host] [--isolation worktree] \"<task>\"")
+		return errors.New("usage: agent-net start --project <name> [--harness opencode|claude|pi|codex] [--model M] [--machine host] [--isolation worktree] \"<task>\"")
 	}
 	cctx, cancel := context.WithTimeout(ctx, operator.StartTimeout)
 	defer cancel()

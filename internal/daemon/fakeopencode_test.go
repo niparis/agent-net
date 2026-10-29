@@ -114,7 +114,7 @@ func runFakeOpenCode() {
 			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
 				hello = "ses_other"
 			}
-			go fakeOCPlugin(hello, cwd)
+			go fakeOCPlugin("opencode", hello, cwd)
 		}
 		fmt.Fprint(w, `{"data":{}}`)
 	})
@@ -159,14 +159,14 @@ func fakeEdit(dir string) {
 
 // fakeOCPlugin is the agent-net plugin inside the fake OpenCode: one connection
 // to the daemon for the session, which it opens again when it drops.
-func fakeOCPlugin(sessionID, cwd string) {
+func fakeOCPlugin(client, sessionID, cwd string) {
 	for {
-		fakeOCPluginOnce(sessionID, cwd)
+		fakeOCPluginOnce(client, sessionID, cwd)
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
-func fakeOCPluginOnce(sessionID, cwd string) {
+func fakeOCPluginOnce(client, sessionID, cwd string) {
 	c, err := net.Dial("unix", os.Getenv("AGENT_NET_SOCKET"))
 	if err != nil {
 		return
@@ -186,7 +186,7 @@ func fakeOCPluginOnce(sessionID, cwd string) {
 		c.Write(append(b, '\n'))
 		wmu.Unlock()
 	}
-	send("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": sessionID, "cwd": cwd, "status": "idle"})
+	send("hello", map[string]any{"client": client, "harness": client, "native_id": sessionID, "cwd": cwd, "status": "idle"})
 	sc := bufio.NewScanner(c)
 	sc.Buffer(make([]byte, 0, 1<<16), 1<<20)
 	results := map[string]chan string{}

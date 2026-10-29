@@ -120,14 +120,14 @@ type workerStats struct {
 // harness cannot say (or the worker was adopted after a restart).
 func (d *Daemon) workerStats(w *worker) workerStats {
 	ln, ok := d.launchers[w.harness].(interface {
-		stats(ctx context.Context, w *worker) workerStats
+		stats(ctx context.Context, d *Daemon, w *worker) workerStats
 	})
 	if !ok {
 		return workerStats{}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	return ln.stats(ctx, w)
+	return ln.stats(ctx, d, w)
 }
 
 // tokenText formats token counts, or "" when there are none.
@@ -165,9 +165,19 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 // the worker's owner. It is a reply to the last request of the owner, so the
 // caller sees it in that conversation. The sender is the worker's session.
 func (d *Daemon) sendNotice(ctx context.Context, w *worker, n protocol.WorkerNotice, report string) (json.RawMessage, error) {
+	return d.sendNoticeTo(ctx, w, n, report, "", "")
+}
+
+// sendNoticeTo is sendNotice to another session than the owner, as a reply to
+// another message than the owner's last request. Empty to and replyTo mean the
+// owner and its last request.
+func (d *Daemon) sendNoticeTo(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo string) (json.RawMessage, error) {
 	d.wmu.Lock()
 	sid, owner, parent := w.sessionID, w.owner, w.taskMsg
 	d.wmu.Unlock()
+	if to != "" {
+		owner, parent = to, replyTo
+	}
 	if sid == "" {
 		return nil, errors.New("the worker has no session")
 	}
@@ -210,6 +220,14 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 	if w == nil {
 		return nil, errors.New("only a worker started by agent-net can hand back a report")
 	}
+	return d.handbackTo(ctx, w, req, "", "")
+}
+
+// handbackTo is handback to another session than the owner (see sendNoticeTo).
+func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
+	d.wmu.Lock()
+	sessionID := w.sessionID
+	d.wmu.Unlock()
 	if req.Status == "" {
 		req.Status = protocol.StatusDone
 	}
@@ -221,7 +239,7 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 	}
 	st := d.workerStats(w)
 	n := d.notice(w, req.Status, "", st)
-	raw, err := d.sendNotice(ctx, w, n, req.Report)
+	raw, err := d.sendNoticeTo(ctx, w, n, req.Report, to, replyTo)
 	if err != nil {
 		return nil, err
 	}
