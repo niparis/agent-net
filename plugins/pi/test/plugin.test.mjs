@@ -33,11 +33,13 @@ const extension = (await import(pathToFileURL(jsPath).href)).default;
 const hellos = [];
 const statuses = [];
 const textResults = [];
+const requests = []; // every request except hello
 let conn;
 const server = createServer((c) => {
   conn = c;
   let buf = "";
   c.setEncoding("utf8");
+  c.on("error", () => {}); // a plugin that closes abruptly resets the socket
   c.on("data", (chunk) => {
     buf += chunk;
     let nl;
@@ -45,6 +47,7 @@ const server = createServer((c) => {
       const line = JSON.parse(buf.slice(0, nl));
       buf = buf.slice(nl + 1);
       if (line.method === "hello") hellos.push(line.params);
+      else requests.push(line);
       if (line.method === "status") statuses.push(line.params);
       if (line.method === "session_text_result") textResults.push(line.params);
       c.write(JSON.stringify({ id: line.id, result: {} }) + "\n");
@@ -76,14 +79,18 @@ async function test(name, fn) {
 // A fake Pi: records handlers so the test can fire events.
 function makePi() {
   const handlers = new Map();
+  const tools = new Map();
   return {
     handlers,
+    tools,
     api: {
       on(event, fn) {
         handlers.set(event, fn);
         return () => {};
       },
-      registerTool() {},
+      registerTool(t) {
+        tools.set(t.name, t);
+      },
       sendMessage() {},
     },
     fire: (event, ...args) => handlers.get(event)?.(...args),
@@ -207,6 +214,54 @@ await test("session_text pages back and forward, and says why it failed", async 
   await p.fire("session_start", { type: "session_start", reason: "new" }, sessionCtx({ sessionManager: { getSessionId: () => "pi-session-1" } }));
   const failed = await ask("e", {});
   if (failed.ok || !failed.error) throw new Error("failure: " + JSON.stringify(failed));
+  await p.fire("session_shutdown", {});
+});
+
+await test("the announce rule goes into the system prompt once per turn", async () => {
+  const p = makePi();
+  extension(p.api);
+  const base = "You are Pi.";
+  const out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: base });
+  for (const want of ["start of every session", "before other work", "agent_announce", "whenever your task changes", "AGENTS.md"]) {
+    if (!out.systemPrompt.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + out.systemPrompt);
+  }
+  if (!out.systemPrompt.startsWith(base)) throw new Error("the base prompt must stay: " + out.systemPrompt);
+  // A handler that sees its own change does not add it again.
+  const again = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: out.systemPrompt });
+  if (again !== undefined) throw new Error("added twice");
+});
+
+await test("agent_announce asks for a task and says so; no name or function is required", async () => {
+  const p = makePi();
+  extension(p.api);
+  const tool = p.tools.get("agent_announce");
+  if (!tool) throw new Error("agent_announce is not registered");
+  for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {
+    if (!tool.description.includes(want)) throw new Error("description misses " + JSON.stringify(want) + ": " + tool.description);
+  }
+});
+
+await test("tool results end with the reminder until the session has announced", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const run = async (name, params = {}) => (await p.tools.get(name).execute("id", params)).content[0].text;
+  const reminder = "Reminder: call agent_announce with your current task.";
+  for (const name of ["agent_list", "agent_nodes", "agent_messages"]) {
+    const text = await run(name);
+    if (text.split("\n").pop() !== reminder) throw new Error(name + " before announce: " + JSON.stringify(text));
+  }
+  const before = requests.length;
+  const done = await run("agent_announce", { task: "fixing the login bug" });
+  if (done.includes("Reminder")) throw new Error("announce result has the reminder: " + done);
+  const sent = requests.slice(before).find((r) => r.method === "announce");
+  if (!sent || sent.params.task !== "fixing the login bug") throw new Error("announce request: " + JSON.stringify(sent));
+  for (const name of ["agent_list", "agent_nodes"]) {
+    const text = await run(name);
+    if (text.includes("Reminder")) throw new Error(name + " after announce: " + JSON.stringify(text));
+  }
   await p.fire("session_shutdown", {});
 });
 

@@ -105,7 +105,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_messages", "messages", map[string]any{"limit": 5}},
 		{"agent_message_status", "message_status", map[string]any{"message_id": "m_1"}},
 		{"agent_get", "get", map[string]any{"session_id": "s_1"}},
-		{"agent_announce", "announce", map[string]any{"name": "n", "function": "f"}},
+		{"agent_announce", "announce", map[string]any{"task": "t"}},
 		{"agent_nodes", "nodes", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
 		{"agent_project_list", "projects", map[string]any{"name": "a"}},

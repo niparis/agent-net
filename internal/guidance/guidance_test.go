@@ -27,6 +27,27 @@ func TestVariantsDifferOnlyInReplyLine(t *testing.T) {
 	}
 }
 
+// Announcing the task is a rule, not a hint, for every variant.
+func TestAnnounceRuleIsMandatory(t *testing.T) {
+	for _, v := range []string{Claude, Other} {
+		b := Block(v)
+		for _, want := range []string{
+			"Announce your task. This is required.",
+			"At the start of every session, before other work, call `agent_announce` with your current task in one short line.",
+			"Call it again whenever your task changes.",
+			"AGENTS.md automatically",
+			"Do not pass a name unless I ask you to rename the session.",
+		} {
+			if !strings.Contains(b, want) {
+				t.Errorf("%s block lacks %q", v, want)
+			}
+		}
+		if strings.Contains(b, "once you know what you are working on") {
+			t.Errorf("%s block still has the old optional wording", v)
+		}
+	}
+}
+
 func TestApplyInsertAndRerun(t *testing.T) {
 	out, changed := Apply("# Mine\n\n- rule\n", Claude)
 	if !changed || !strings.HasPrefix(out, "# Mine\n\n- rule\n\n"+Begin+"\n## agent-net") || !strings.HasSuffix(out, End+"\n") {

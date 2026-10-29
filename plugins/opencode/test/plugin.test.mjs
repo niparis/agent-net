@@ -32,6 +32,7 @@ const textResults = []; // params of every session_text_result
 const server = createServer((conn) => {
   let buf = "";
   conn.setEncoding("utf8");
+  conn.on("error", () => {}); // a plugin that closes abruptly resets the socket
   conn.on("data", (chunk) => {
     buf += chunk;
     let nl;
@@ -104,6 +105,10 @@ function makeContext(directory, sessions, hooks = {}) {
         },
         async prompt(input) {
           hooks.onPrompt?.(input);
+        },
+        async hook(name, fn) {
+          hooks.onHook?.(name, fn);
+          return {};
         },
         async context({ sessionID }) {
           hooks.onContext?.(sessionID);
@@ -785,6 +790,57 @@ await test("a report from a worker is framed as model output, not the user's wor
   push({ message_id: "m_p", sender_session_id: "s_p", sender_name: "pal", sender_harness: "pi", message_type: "request", body: "hi" });
   await until("prompt for the agent message", () => prompts.length === 2);
   if (prompts[1].text.includes("model output from a worker")) throw new Error("an agent message got the worker frame");
+  stop();
+});
+
+await test("the announce rule goes into the system prompt of each request, once", async () => {
+  freshHub();
+  const sessions = new Map([["ses_r", session("ses_r", "/work/r")]]);
+  const hooked = [];
+  const c = makeContext("/work/r", sessions, { onHook: (name, fn) => hooked.push([name, fn]) });
+  const stop = await plugin.setup(c.ctx);
+  const ctxHook = hooked.find(([name]) => name === "context");
+  if (!ctxHook) throw new Error("no context hook: " + JSON.stringify(hooked.map((h) => h[0])));
+  const input = { system: [{ type: "text", text: "You are OpenCode." }] };
+  ctxHook[1](input);
+  const joined = input.system.map((p) => p.text).join("\n");
+  for (const want of ["start of every session", "before other work", "agent_announce", "whenever your task changes", "AGENTS.md"]) {
+    if (!joined.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + joined);
+  }
+  if (input.system.length !== 2 || input.system[0].text !== "You are OpenCode.") throw new Error("system parts: " + JSON.stringify(input.system));
+  ctxHook[1](input);
+  if (input.system.length !== 2) throw new Error("added twice");
+  stop();
+});
+
+await test("agent_announce asks for a task, and tool results end with the reminder until the session announces", async () => {
+  freshHub();
+  const sessions = new Map([["ses_a", session("ses_a", "/work/a")], ["ses_b", session("ses_b", "/work/b")]]);
+  let tools;
+  const c = makeContext("/work/a", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_a", () => registered("ses_a"));
+  const announce = tools.find((t) => t.name === "agent_announce");
+  if (JSON.stringify(announce.input.required) !== '["task"]') throw new Error("required: " + JSON.stringify(announce.input.required));
+  for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {
+    if (!announce.description.includes(want)) throw new Error("description misses " + JSON.stringify(want));
+  }
+  const reminder = "Reminder: call agent_announce with your current task.";
+  const run = async (name, sid, input = {}) => (await tools.find((t) => t.name === name).execute(input, { sessionID: sid })).content;
+  const first = await run("agent_nodes", "ses_a");
+  if (first.split("\n").pop() !== reminder) throw new Error("before announce: " + JSON.stringify(first));
+  const done = await run("agent_announce", "ses_a", { task: "fixing the login bug" });
+  if (done.includes("Reminder")) throw new Error("announce result: " + done);
+  const sent = calls.filter(([m]) => m === "announce").pop();
+  if (!sent || sent[1].task !== "fixing the login bug") throw new Error("announce call: " + JSON.stringify(sent));
+  if ((await run("agent_nodes", "ses_a")).includes("Reminder")) throw new Error("reminder after announce");
+  // The reminder is per session.
+  if (!(await run("agent_nodes", "ses_b")).endsWith(reminder)) throw new Error("ses_b should still be reminded");
   stop();
 });
 
