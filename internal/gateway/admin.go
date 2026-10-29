@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -214,8 +215,9 @@ func (g *Gateway) handleChecksums(w http.ResponseWriter, r *http.Request) {
 
 func (g *Gateway) handleAdminUpgrade(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Version        string `json:"version"`
-		TimeoutSeconds int    `json:"timeout_seconds"`
+		Version        string   `json:"version"`
+		TimeoutSeconds int      `json:"timeout_seconds"`
+		ExpectOnline   []string `json:"expect_online"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&req); err != nil || req.Version == "" {
 		http.Error(w, "bad request: version is required", http.StatusBadRequest)
@@ -225,23 +227,41 @@ func (g *Gateway) handleAdminUpgrade(w http.ResponseWriter, r *http.Request) {
 	if timeout <= 0 {
 		timeout = 2 * time.Minute
 	}
-	res, err := g.UpgradeNodes(r.Context(), req.Version, timeout)
+	res, err := g.UpgradeNodesExpect(r.Context(), req.Version, timeout, req.ExpectOnline)
 	writeJSON(w, map[string]any{"results": res}, err)
 }
 
 // oldDaemon reports whether a node's hello version predates remote upgrade.
 func oldDaemon(v string) bool { return v == "" || v == "step2" }
 
+// OfflineDetail is what an offline node is told. Since nodes catch up by
+// themselves, it is not a dead end.
+const OfflineDetail = "upgrades itself when it reconnects, unless auto-upgrade is turned off there"
+
+// reconnectWait is the longest UpgradeNodesExpect waits for the nodes that were
+// online before a gateway restart to connect again.
+const reconnectWait = 30 * time.Second
+
 // UpgradeNodes tells every connected node to upgrade to target and waits up to
 // timeout for each to come back on that version. Nodes that are not connected
 // are listed as offline.
 func (g *Gateway) UpgradeNodes(ctx context.Context, target string, timeout time.Duration) ([]protocol.UpgradeResult, error) {
+	return g.UpgradeNodesExpect(ctx, target, timeout, nil)
+}
+
+// UpgradeNodesExpect is UpgradeNodes for a caller that knows which nodes were
+// online before it restarted the gateway. It first waits (up to 30 s, and not
+// longer than timeout) for those nodes to connect again, so a node that is
+// only reconnecting, or restarting after it caught up by itself, is not
+// reported as offline.
+func (g *Gateway) UpgradeNodesExpect(ctx context.Context, target string, timeout time.Duration, expect []string) ([]protocol.UpgradeResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	g.waitConnected(ctx, expect, min(reconnectWait, timeout))
 	nodes, err := g.store.Nodes()
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	results := make([]protocol.UpgradeResult, len(nodes))
 	var wg sync.WaitGroup
 	for i, n := range nodes {
@@ -252,7 +272,7 @@ func (g *Gateway) UpgradeNodes(ctx context.Context, target string, timeout time.
 		switch {
 		case nc == nil:
 			res.Status = protocol.UpgradeOffline
-			res.Detail = "will not upgrade until you run agent-net upgrade there"
+			res.Detail = OfflineDetail
 			results[i] = res
 		case oldDaemon(n.Version):
 			res.Status = protocol.UpgradeFailed
@@ -270,6 +290,27 @@ func (g *Gateway) UpgradeNodes(ctx context.Context, target string, timeout time.
 	return results, nil
 }
 
+// waitConnected waits until every node in ids has a live connection, up to d.
+func (g *Gateway) waitConnected(ctx context.Context, ids []string, d time.Duration) {
+	deadline := time.Now().Add(d)
+	for {
+		g.mu.Lock()
+		all := true
+		for _, id := range ids {
+			all = all && g.conns[id] != nil
+		}
+		g.mu.Unlock()
+		if all || time.Now().After(deadline) {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
 func (g *Gateway) upgradeOne(ctx context.Context, nc *nodeConn, res protocol.UpgradeResult, target string) protocol.UpgradeResult {
 	fail := func(format string, a ...any) protocol.UpgradeResult {
 		res.Status = protocol.UpgradeFailed
@@ -277,14 +318,17 @@ func (g *Gateway) upgradeOne(ctx context.Context, nc *nodeConn, res protocol.Upg
 		return res
 	}
 	raw, err := nc.call(ctx, "node.upgrade", protocol.NodeUpgrade{Version: target})
-	if err != nil {
-		if ctx.Err() != nil {
-			return fail("no answer in time")
-		}
-		return fail("%v", err)
-	}
 	var r protocol.NodeUpgradeResult
-	if json.Unmarshal(raw, &r) != nil {
+	switch {
+	case err != nil && ctx.Err() != nil:
+		return fail("no answer in time")
+	case err != nil && !errors.Is(err, errNodeGone):
+		return fail("%v", err)
+	case err != nil:
+		// The link dropped: the node is restarting, often because it caught up
+		// by itself. Wait for it below, like for a restart after an install.
+		r.Restarting = true
+	case json.Unmarshal(raw, &r) != nil:
 		return fail("bad answer from the node")
 	}
 	if !r.Restarting {

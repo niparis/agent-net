@@ -11,12 +11,12 @@ Run it on the gateway host. It does this:
 1. Finds the latest release on GitHub (or the one you give with `--version vX.Y.Z`). If this machine already runs it, it says so and goes to step 4. `--force` runs all steps anyway.
 2. Downloads the binary for this machine, the binaries for all four platforms and `checksums.txt` to a temporary directory, and checks the SHA-256 of each file. If one does not match, it stops and nothing has changed.
 3. Keeps the current binary as `agent-net.prev` next to it, replaces `~/.local/bin/agent-net` in one atomic step, refreshes `~/.local/share/agent-net/dist`, and runs the new binary's `agent-net setup --gateway`. That restarts the gateway and daemon services and refreshes the integrations.
-4. Tells every connected machine to upgrade, waits up to 2 minutes (`--timeout`), and prints one line per machine:
+4. Waits for the machines that were online to reconnect to the restarted gateway (up to 30 seconds, and not longer than `--timeout`), tells every connected machine to upgrade, waits up to 2 minutes (`--timeout`), and prints one line per machine. A machine that already upgraded itself while it reconnected shows `ok (upgraded on reconnect)`.
 
 ```
 laptop n_5c05f2151c059f44  v0.1.0 -> v0.2.0  ok
 mac    n_80933bfb6b6377da  v0.1.0 -> v0.2.0  failed (checksum mismatch for agent-net-darwin-arm64)
-nas    n_870459ef2d2d18f2  v0.1.0 -> v0.2.0  offline (will not upgrade until you run agent-net upgrade there)
+nas    n_870459ef2d2d18f2  v0.1.0 -> v0.2.0  offline (upgrades itself when it reconnects, unless auto-upgrade is turned off there)
 ```
 
 A machine that is offline is not upgraded now. It upgrades itself when it is back (see "Automatic catch-up" below). Run `agent-net upgrade` on it if you do not want to wait or if automatic upgrade is off.

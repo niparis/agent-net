@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/upgrade"
 )
 
@@ -183,5 +185,91 @@ func TestAutoUpgradeSharesTheInstallGuard(t *testing.T) {
 	eventually(t, "failure recorded", func() bool { return upgrade.LoadAuto(n.cfg.StateDir).Failed != nil })
 	if calls.Load() != 1 {
 		t.Errorf("install called %d times", calls.Load())
+	}
+}
+
+// After `agent-net upgrade` restarts the gateway, the nodes that were online
+// are only reconnecting. They must be reported ok, not offline: both a node
+// that waits to be asked, and one that catches up by itself on reconnect.
+func TestNodesReconnectingAfterGatewayRestartAreNotOffline(t *testing.T) {
+	dir := t.TempDir()
+	g := startGateway(t, dir, "")
+	addr := g.addr
+	waits, _ := autoNode(t, g, "v0.1.0", installOK, served(servedValue("v0.1.0")))
+	sv := servedValue("v0.1.0")
+	catches, _ := autoNode(t, g, "v0.1.0", installOK, served(sv))
+	off := startUpNode(t, g, "v0.1.0", nil)
+	off.daemon().Stop()
+	eventually(t, "off node is gone", func() bool {
+		info, _ := g.gw.NodesInfo()
+		for _, n := range info.Nodes {
+			if n.NodeID == off.cfg.NodeID {
+				return !n.Online
+			}
+		}
+		return false
+	})
+
+	// The gateway moves to v0.2.0 and restarts.
+	sv.Store("v0.2.0")
+	g.stop()
+	g2 := startGateway(t, dir, addr)
+	expect := []string{waits.cfg.NodeID, catches.cfg.NodeID}
+	res, err := g2.gw.UpgradeNodesExpect(context.Background(), "v0.2.0", 20*time.Second, expect)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := byNode(res)
+	for _, id := range expect {
+		if r := got[id]; r.Status != protocol.UpgradeOK || r.To != "v0.2.0" {
+			t.Errorf("node %s: %+v", id, r)
+		}
+	}
+	if r := got[off.cfg.NodeID]; r.Status != protocol.UpgradeOffline || r.Detail != gateway.OfflineDetail {
+		t.Errorf("offline node: %+v", r)
+	}
+}
+
+// The gateway's request for the version an automatic upgrade is already
+// installing joins it: one install, and the gateway sees ok.
+func TestPushJoinsARunningAutoUpgrade(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	release := make(chan struct{})
+	started := make(chan struct{}, 2)
+	n, calls := autoNode(t, g, "v0.1.0", func(target string) (string, error) {
+		started <- struct{}{}
+		<-release
+		return target, nil
+	}, served(servedValue("v0.2.0")))
+	<-started
+	type out struct {
+		res []protocol.UpgradeResult
+		err error
+	}
+	ch := make(chan out, 1)
+	go func() {
+		res, err := g.gw.UpgradeNodes(context.Background(), "v0.2.0", 10*time.Second)
+		ch <- out{res, err}
+	}()
+	time.Sleep(200 * time.Millisecond) // the request reaches the daemon while the install runs
+	close(release)
+	o := <-ch
+	if o.err != nil {
+		t.Fatal(o.err)
+	}
+	var got *protocol.UpgradeResult
+	for i := range o.res {
+		if o.res[i].NodeID == n.cfg.NodeID {
+			got = &o.res[i]
+		}
+	}
+	if got == nil || got.Status != protocol.UpgradeOK || got.To != "v0.2.0" {
+		t.Fatalf("push result: %+v", o.res)
+	}
+	// One install, and one restart: the node is back on v0.2.0 and stays up.
+	eventually(t, "back on v0.2.0", func() bool { return nodeVersion(g, n.cfg.NodeID) == "v0.2.0" })
+	time.Sleep(600 * time.Millisecond)
+	if calls.Load() != 1 || !n.daemon().Connected() {
+		t.Errorf("installs %d, connected %v, want 1 and true", calls.Load(), n.daemon().Connected())
 	}
 }

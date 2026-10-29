@@ -21,8 +21,10 @@ func TestFormatResult(t *testing.T) {
 		{protocol.UpgradeResult{Hostname: "box", NodeID: "n_2", From: "v0.1.0", To: "v0.2.0", Status: protocol.UpgradeFailed, Detail: "checksum mismatch"},
 			"box n_2  v0.1.0 -> v0.2.0  failed (checksum mismatch)"},
 		{protocol.UpgradeResult{Hostname: "pi", NodeID: "n_3", From: "step2", To: "v0.2.0", Status: protocol.UpgradeOffline,
-			Detail: "will not upgrade until you run agent-net upgrade there"},
-			"pi n_3  unknown -> v0.2.0  offline (will not upgrade until you run agent-net upgrade there)"},
+			Detail: "upgrades itself when it reconnects, unless auto-upgrade is turned off there"},
+			"pi n_3  unknown -> v0.2.0  offline (upgrades itself when it reconnects, unless auto-upgrade is turned off there)"},
+		{protocol.UpgradeResult{Hostname: "vm", NodeID: "n_4", From: "v0.1.0", To: "v0.2.0", Status: protocol.UpgradeOK, Detail: "upgraded on reconnect"},
+			"vm n_4  v0.1.0 -> v0.2.0  ok (upgraded on reconnect)"},
 	}
 	for _, c := range cases {
 		if got := FormatResult(c.res); got != c.want {

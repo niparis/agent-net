@@ -64,11 +64,15 @@ type nodeConn struct {
 	ws     *websocket.Conn
 	wmu    sync.Mutex
 	cancel context.CancelFunc
+	dead   chan struct{} // closed when the connection ends
 
 	pmu     sync.Mutex
 	nextID  int
 	pending map[string]chan protocol.Header
 }
+
+// errNodeGone means the connection to the node ended before it answered.
+var errNodeGone = errors.New("node is not connected")
 
 // call sends a request to the node and waits for its result frame.
 func (nc *nodeConn) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
@@ -91,9 +95,11 @@ func (nc *nodeConn) call(ctx context.Context, typ string, params any) (json.RawM
 		return nil, err
 	}
 	if err := nc.write(ctx, frame); err != nil {
-		return nil, errors.New("node is not connected")
+		return nil, errNodeGone
 	}
 	select {
+	case <-nc.dead:
+		return nil, errNodeGone
 	case h := <-ch:
 		if !h.OK {
 			return nil, errors.New(h.Error)
@@ -281,7 +287,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(4 << 20)
 	ctx, cancel := context.WithCancel(context.Background())
-	nc := &nodeConn{id: nodeID, ws: ws, cancel: cancel}
+	nc := &nodeConn{id: nodeID, ws: ws, cancel: cancel, dead: make(chan struct{})}
 
 	g.mu.Lock()
 	if g.closed {
@@ -305,6 +311,7 @@ func (g *Gateway) handleNode(w http.ResponseWriter, r *http.Request) {
 
 	g.serve(ctx, nc)
 
+	close(nc.dead)
 	cancel()
 	ws.Close(websocket.StatusNormalClosure, "")
 	g.mu.Lock()

@@ -470,19 +470,25 @@ func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string, 
 		r.say("nodes               not upgraded: %v", err)
 		return err
 	}
-	r.waitNodesBack(ctx, a, wasOnline, 30*time.Second)
 	a.hc.Timeout = r.Timeout + 30*time.Second
 	var out struct {
 		Results []protocol.UpgradeResult `json:"results"`
 	}
-	req := map[string]any{"version": tag, "timeout_seconds": int(r.Timeout / time.Second)}
+	// The gateway waits for the nodes that were online to reconnect (they are
+	// not offline, only reconnecting after the restart) before it asks them.
+	req := map[string]any{"version": tag, "timeout_seconds": int(r.Timeout / time.Second), "expect_online": wasOnline}
 	if err := a.do(ctx, "POST", "/v1/admin/upgrade", req, &out); err != nil {
 		return fmt.Errorf("cannot ask the nodes to upgrade: %w", err)
 	}
 	failed := 0
 	for _, res := range out.Results {
-		// A node on this host may already have restarted; show where it started.
+		// A node that was on an older version before the gateway restarted, and
+		// is already on the target now, caught up by itself.
 		if v, ok := before[res.NodeID]; ok {
+			if res.Status == protocol.UpgradeOK && v != tag && res.From == tag {
+				res.Detail = "upgraded on reconnect"
+			}
+			// A node on this host may already have restarted; show where it started.
 			res.From = v
 		}
 		r.say("%s", FormatResult(res))
@@ -503,6 +509,9 @@ func FormatResult(res protocol.UpgradeResult) string {
 	switch res.Status {
 	case protocol.UpgradeOK:
 		status = "ok"
+		if res.Detail != "" {
+			status += " (" + res.Detail + ")"
+		}
 	case protocol.UpgradeOffline:
 		status = "offline (" + res.Detail + ")"
 	default:
@@ -539,30 +548,6 @@ func (r *run) waitGateway(ctx context.Context, tag string, d time.Duration) (*ad
 		last = err
 		if time.Now().After(deadline) || ctx.Err() != nil {
 			return nil, last
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-}
-
-func (r *run) waitNodesBack(ctx context.Context, a *adminClient, ids []string, d time.Duration) {
-	if len(ids) == 0 {
-		return
-	}
-	deadline := time.Now().Add(d)
-	for time.Now().Before(deadline) && ctx.Err() == nil {
-		info, err := a.nodes(ctx)
-		if err == nil {
-			on := map[string]bool{}
-			for _, n := range info.Nodes {
-				on[n.NodeID] = n.Online
-			}
-			all := true
-			for _, id := range ids {
-				all = all && on[id]
-			}
-			if all {
-				return
-			}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

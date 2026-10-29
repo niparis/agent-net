@@ -169,7 +169,7 @@ func TestGatewayUpgradesNodes(t *testing.T) {
 	if r := got[old.cfg.NodeID]; r.Status != protocol.UpgradeFailed || !strings.Contains(r.Detail, "too old") {
 		t.Errorf("old node: %+v", r)
 	}
-	if r := got[off.cfg.NodeID]; r.Status != protocol.UpgradeOffline || !strings.Contains(r.Detail, "agent-net upgrade") {
+	if r := got[off.cfg.NodeID]; r.Status != protocol.UpgradeOffline || !strings.Contains(r.Detail, "upgrades itself") {
 		t.Errorf("offline node: %+v", r)
 	}
 
