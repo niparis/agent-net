@@ -6,7 +6,7 @@
 
 ## P1 - A registry table, merged with the seen projects
 
-The gateway has a `projects` table (gateway migration 6): machine, path of the main tree, name, remote, default branch, who added it, when it was added, when it was last checked. The key is machine plus path.
+The gateway has a `projects` table (gateway migration 5): machine, path of the main tree, name, remote, default branch, who added it, when it was added, when it was last checked. The key is machine plus path.
 
 `agent-net projects` (and `query.projects`) merge two sources, one row per repository per machine, with a SOURCE of `registered`, `seen` or `both`. Seen projects are still built from the stored sessions as in 0003 D3, and the session code is not changed. Because the registry is a separate table, a registered project does not go away when its sessions are deleted by retention.
 

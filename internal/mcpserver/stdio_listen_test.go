@@ -29,7 +29,7 @@ func TestOpenListenDoesNotBlockExecAndIsHandedOver(t *testing.T) {
 		if len(h.Listens) != 1 || string(h.Listens[0]) != listen0 {
 			t.Fatalf("listen not handed over: %q", h.Listens)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		t.Fatal("no exec while a subscriptions/listen request is open")
 	}
 }
@@ -58,7 +58,7 @@ func TestCancelledRequestIsNotInFlight(t *testing.T) {
 	r.send(`{"jsonrpc":"2.0","method":"notifications/cancelled","params":{"requestId":7}}` + "\n")
 	select {
 	case <-r.execs:
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		t.Fatal("no exec after the client cancelled the only request")
 	}
 }
@@ -80,7 +80,7 @@ func TestReplayedListenIsAnnouncedNotAckedAgain(t *testing.T) {
 		if len(h.Listens) != 1 {
 			t.Fatalf("listen not handed over again: %q", h.Listens)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		t.Fatal("second exec blocked")
 	}
 }
@@ -91,7 +91,7 @@ func TestSecondExecAfterLegacyReplay(t *testing.T) {
 	r.conn.requestExec("/newer/binary")
 	select {
 	case <-r.execs:
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		t.Fatal("the swallowed initialize left a request in flight forever")
 	}
 }

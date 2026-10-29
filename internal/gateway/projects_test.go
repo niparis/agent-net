@@ -229,7 +229,7 @@ func TestRemoveProject(t *testing.T) {
 	}
 }
 
-func TestMigration6AddsProjectsToAnOlderDatabase(t *testing.T) {
+func TestMigration5AddsProjectsToAnOlderDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gw.db")
 	// A database as version 0.3.5 left it: migrations 1 to 4 applied.
 	db, err := sql.Open("sqlite", "file:"+path)
@@ -250,8 +250,8 @@ func TestMigration6AddsProjectsToAnOlderDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if v, _ := s.SchemaVersion(); v != len(migrations) || len(migrations) < 6 {
-		t.Fatalf("schema version %d of %d, want at least 6", v, len(migrations))
+	if v, _ := s.SchemaVersion(); v != len(migrations) || len(migrations) < 5 {
+		t.Fatalf("schema version %d of %d, want at least 5", v, len(migrations))
 	}
 	if res, err := s.AddProjects("n_1", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{entry("a", "/c/a")}}); err != nil || len(res.Added) != 1 {
 		t.Fatalf("%v %+v", err, res)

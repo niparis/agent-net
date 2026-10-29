@@ -17,6 +17,11 @@ const (
 	listReq  = `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`
 )
 
+// waitMax is how long a test waits for something that must happen. Every wait
+// returns as soon as the event comes, so this is a failure ceiling and not a
+// sleep. It stays at 2 s.
+const waitMax = 2 * time.Second
+
 // rig is an MCP server on a stdioConn with pipes for stdin and stdout.
 type rig struct {
 	t      *testing.T
@@ -49,6 +54,25 @@ func newRig(t *testing.T, h *handover, call Caller) *rig {
 		return errors.New("stub: not really exec'ing")
 	}
 	go rg.conn.readLoop()
+	// readLoop polls its fd and only ends at end of input. Closing the fd under
+	// it does not wake the poll, and the next test's pipe may get the same fd
+	// number, so a leftover loop would steal that test's input. (This was the
+	// cause of a rare "timed out waiting for a line".) So end the input first
+	// and wait for the loop to see it. This cleanup runs before the pipes close.
+	t.Cleanup(func() {
+		inW.Close()
+		deadline := time.Now().Add(waitMax)
+		for time.Now().Before(deadline) {
+			rg.conn.mu.Lock()
+			eof := rg.conn.eof
+			rg.conn.mu.Unlock()
+			if eof {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+		t.Error("the input loop did not end")
+	})
 	go func() {
 		sc := bufio.NewScanner(outR)
 		sc.Buffer(nil, 1<<20)
@@ -76,7 +100,7 @@ func (r *rig) next() string {
 	select {
 	case l := <-r.lines:
 		return l
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		r.t.Fatal("timed out waiting for a line from the server")
 		return ""
 	}
@@ -155,7 +179,7 @@ func TestExecWaitsForIdleAndHandsOverUnreadBytes(t *testing.T) {
 	var h handover
 	select {
 	case h = <-r.execs:
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		t.Fatal("no exec once idle")
 	}
 	if string(h.Leftover) != `{"jsonrpc":"2.0","id":3,"meth` {
@@ -221,7 +245,7 @@ func TestNoExecBeforeInitializeDone(t *testing.T) {
 		if len(h.Init) != 0 || len(h.Initialized) != 0 {
 			t.Fatalf("unexpected handshake: %+v", h)
 		}
-	case <-time.After(2 * time.Second):
+	case <-time.After(waitMax):
 		t.Fatal("no exec on an idle connection")
 	}
 }
