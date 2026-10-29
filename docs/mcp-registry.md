@@ -26,7 +26,8 @@ agent-net mcp add legacy --url https://old.lan/sse --transport sse
 Other commands:
 
 ```
-agent-net mcp list              # host, transport, auth source, enabled, health, tool count, who added it
+agent-net mcp list              # host, transport, short target, auth source, enabled, health, tool count, who added it
+agent-net mcp list --wide       # same, with the full command line in TARGET
 agent-net mcp test NAME         # the host connects now, lists tools, reports health
 agent-net mcp call NAME TOOL '{"arg":"value"}'   # one call, for checks
 agent-net mcp enable NAME

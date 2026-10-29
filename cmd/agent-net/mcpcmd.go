@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -19,7 +20,7 @@ const mcpUsage = `usage: agent-net mcp [subcommand]
   (none)                        run the stdio MCP server for a Claude Code session
   add NAME [flags] -- CMD ARGS  register a stdio server, run on this machine (or --on HOST)
   add NAME --url URL [flags]    register a remote server
-  list                          list registered servers
+  list [--wide]                 list registered servers (--wide: full command lines)
   test NAME                     connect to a server now and list its tools
   call NAME TOOL [JSON]         call one tool with JSON arguments (for checks)
   remove NAME                   remove a server
@@ -196,6 +197,7 @@ func authSummary(s protocol.MCPServer) string {
 func mcpList(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("mcp list", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "print JSON")
+	wide := fs.Bool("wide", false, "print the full command line in TARGET")
 	fs.Parse(args)
 	cl, err := dialCLI(ctx)
 	if err != nil {
@@ -219,10 +221,7 @@ func mcpList(ctx context.Context, args []string) error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "NAME\tHOST\tTRANSPORT\tTARGET\tAUTH\tENABLED\tHEALTH\tTOOLS\tADDED BY")
 	for _, s := range r.Servers {
-		target := s.URL
-		if s.Transport == protocol.MCPStdio {
-			target = strings.Join(append([]string{s.Command}, s.Args...), " ")
-		}
+		target := mcpTarget(s, *wide)
 		host := s.Hostname
 		if !s.HostOnline {
 			host += " (offline)"
@@ -231,10 +230,7 @@ func mcpList(ctx context.Context, args []string) error {
 		if s.HealthDetail != "" {
 			health += ": " + s.HealthDetail
 		}
-		by := s.AddedByHarness
-		if s.AddedBySession != "" {
-			by += " " + s.AddedBySession
-		}
+		by := mcpAddedBy(s)
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%v\t%s\t%d\t%s\n", s.Name, host, s.Transport, target,
 			authSummary(s), s.Enabled, health, len(s.Tools), by)
 	}
@@ -360,4 +356,57 @@ func mcpCallTool(ctx context.Context, args []string) error {
 		return errors.New("the tool reported an error")
 	}
 	return nil
+}
+
+const targetMax = 40
+
+// mcpTarget returns the TARGET cell. A URL is kept whole. A stdio command is
+// shortened to the program base name plus the last argument, skipping a
+// leading `env VAR=value` wrapper, and cut to targetMax characters. wide
+// returns the full command line.
+func mcpTarget(s protocol.MCPServer, wide bool) string {
+	if s.Transport != protocol.MCPStdio {
+		return s.URL
+	}
+	full := strings.Join(append([]string{s.Command}, s.Args...), " ")
+	if wide {
+		return full
+	}
+	cmd, args := s.Command, s.Args
+	if filepath.Base(cmd) == "env" {
+		for len(args) > 0 && (strings.Contains(args[0], "=") || strings.HasPrefix(args[0], "-")) {
+			args = args[1:]
+		}
+		if len(args) > 0 {
+			cmd, args = args[0], args[1:]
+		}
+	}
+	short := filepath.Base(cmd)
+	if len(args) > 0 {
+		short += " " + args[len(args)-1]
+	}
+	if r := []rune(short); len(r) > targetMax {
+		short = string(r[:targetMax-3]) + "..."
+	}
+	return short
+}
+
+// mcpAddedBy says who registered a server. A CLI add has no session, so it
+// names the machine instead.
+func mcpAddedBy(s protocol.MCPServer) string {
+	if s.AddedByHarness == "cli" || (s.AddedByHarness == "" && s.AddedBySession == "") {
+		where := s.AddedByNode
+		if where == s.NodeID && s.Hostname != "" {
+			where = s.Hostname
+		}
+		if where == "" {
+			return "cli"
+		}
+		return "cli on " + where
+	}
+	by := s.AddedByHarness
+	if s.AddedBySession != "" {
+		by += " " + s.AddedBySession
+	}
+	return by
 }
