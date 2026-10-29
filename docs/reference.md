@@ -147,6 +147,25 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 - `project`: the base name of `root`, or of the folder if there is no git repository. So a worktree is not a project of its own: the sessions of `tenebrae` and of its worktrees `agent-a76c...` are all in project `tenebrae`.
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
+- `description`: the one-line description of the project, read from `AGENTS.md` (else `CLAUDE.md`) in the main working tree, or in the session's folder when there is no repository. See "FUNCTION and the task" below.
+
+**FUNCTION and the task.** FUNCTION in `agent-net list`, the TUI and the `function` field of an agent's profile is the project description above. The model does not write it, and `agent_announce` cannot set it. With no `AGENTS.md` or `CLAUDE.md`, or no description line in it, FUNCTION is empty: `agent-net list` shows `-`. The daemon re-checks the file (one `stat`) at every update of the session, so a change shows within moments.
+
+The description is found like this (code: `internal/repoinfo/description.go`). Details and reasons: [decision 0009](decisions/0009-function-from-agents-md.md).
+
+1. Start at the first `# Project: <name>` heading (the standard template), else at the first `# ` heading, else at the top of the file. Ignore front matter and code blocks.
+2. In the template form, take the first non-empty line after the heading. Otherwise take the first plain paragraph. Stop at the next heading.
+3. Skip lists, tables, quotes, HTML, rules, `@file` imports and notes to agents (a paragraph that starts like "Notes for coding agents ...").
+4. Strip markdown, keep the first sentence without its final full stop, and cut to 120 characters.
+
+What the agent writes is the **task**. At the start of every session, and when the task changes, the agent must call `agent_announce` with its task in one short line (the guidance, the MCP server instructions, the tool description and the Pi and OpenCode system prompts all say so). `name` renames the session only when the agent passes it; `function` is ignored. Until a session has announced, every agent-net tool result ends with "Reminder: call agent_announce with your current task." The task shows in `agent_list`, `agent_get`, the TUI and as TASK in `agent-net list --wide`.
+
+To make a project show a good FUNCTION, start its `AGENTS.md` with:
+
+```
+# Project: <name>
+A <one sentence: what it is and why it exists>.
+```
 
 **Mode and model for each session.** Every session also carries two fields. `agent_list` and `agent_get` return them as `mode` and `model` (both are left out by a machine on an older agent-net).
 
@@ -228,7 +247,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 `agent-net tui` needs a terminal. It talks to the local daemon like `agent-net list` does, through the operator interface. It shows, from top to bottom:
 
 - **Machines.** Each machine with its agent-net version, online or offline, and its installed harnesses. This machine comes first and is marked `(here)`.
-- **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`, `dorm` for dormant), ON (`on` or `off`), FUNCTION (the announced function, or the task).
+- **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`, `dorm` for dormant), ON (`on` or `off`), FUNCTION (the project description from `AGENTS.md`; "no AGENTS.md" when there is none).
 - **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, project with its source (`registered`, `seen` or `both`, as in `agent-net projects`), task and its recent messages (time, direction, peer, type, delivery state).
 - **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends, workers starting, stopping or refused. Messages from you show as `you (on <host>)`.
 - **Workers** show in the sessions table with `[w]` before the name and MODE `bg`. The selected worker's detail has a `worker` line: who started it, when, and its project. The title counts them.
