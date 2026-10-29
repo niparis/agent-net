@@ -41,6 +41,7 @@ check() { # check DESCRIPTION CONDITION-COMMAND...
   if "$@"; then echo "PASS: $d"; else echo "FAIL: $d"; FAILS=$((FAILS + 1)); fi
 }
 contains() { grep -qF -- "$2" <<<"$1"; }
+lacks() { ! grep -qF -- "$2" <<<"$1"; }
 free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1])'; }
 wait_for() { # wait_for DESCRIPTION SECONDS COMMAND...
   local d="$1" n="$2"; shift 2
@@ -217,7 +218,8 @@ check "gateway host and B lines say ok" test "$(grep -cE "  $V1 -> $V2  ok( \(up
 OFFLINE_MSG="upgrades itself when it reconnects, unless auto-upgrade is turned off there"
 check "C and D are reported offline, as upgrading themselves" test "$(grep -cF "offline ($OFFLINE_MSG)" <<<"$UP_OUT")" = 2
 check "C binary still $V1" test "$(machine c version)" = "$V1"
-check "sessions note printed" contains "$UP_OUT" "running Claude/Pi/OpenCode sessions keep the old version until they restart"
+check "sessions notes printed" contains "$UP_OUT" "Pi: run /reload in the session"
+check "no outdated sessions note" lacks "$UP_OUT" "keep the old version until they restart"
 check "dist refreshed" test "$("$T/gw/dist/agent-net-linux-amd64" version)" = "$V2"
 
 say "agent-net nodes (from B, after)"

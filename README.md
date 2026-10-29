@@ -187,7 +187,7 @@ laptop   n_89abcdef01234567  v0.2.0 -> v0.2.1  ok
 vm       n_0123456789abcdef  v0.2.0 -> v0.2.1  ok
 ```
 
-A machine that is offline is listed as `offline`. It upgrades itself when it reconnects and sees that the gateway serves a newer release. Turn this off on a machine with `AGENT_NET_NO_AUTO_UPGRADE=1` or `agent-net daemon --no-auto-upgrade`. After `agent-net upgrade --rollback` the machine does not upgrade to the version it left, until a newer release comes out or you run `agent-net upgrade` there. Running agent sessions keep the old version until you restart them. `agent-net nodes` shows the version of every machine.
+A machine that is offline is listed as `offline`. It upgrades itself when it reconnects and sees that the gateway serves a newer release. Turn this off on a machine with `AGENT_NET_NO_AUTO_UPGRADE=1` or `agent-net daemon --no-auto-upgrade`. After `agent-net upgrade --rollback` the machine does not upgrade to the version it left, until a newer release comes out or you run `agent-net upgrade` there. Running Claude Code sessions (started on v0.3.2 or later) switch to the new version by themselves, Pi needs `/reload`, and OpenCode reloads its plugin by itself (see [docs/upgrade.md](docs/upgrade.md)). `agent-net nodes` shows the version of every machine.
 
 Coming from v0.1.x, which has no `upgrade` command: run the Quickstart install line once on each machine. It finds the existing install and updates it. Details: [docs/upgrade.md](docs/upgrade.md).
 

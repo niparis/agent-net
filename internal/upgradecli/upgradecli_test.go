@@ -33,6 +33,20 @@ func TestFormatResult(t *testing.T) {
 	}
 }
 
+func TestSessionsNotesMatchCurrentBehavior(t *testing.T) {
+	var out bytes.Buffer
+	(&run{Options: Options{Out: &out}}).saySessions()
+	got := out.String()
+	for _, want := range []string{"Claude Code (started on v0.3.2 or later)", "Pi: run /reload", "OpenCode: reloads the plugin file by itself"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "keep the old version") {
+		t.Errorf("outdated note still printed:\n%s", got)
+	}
+}
+
 func TestVersionLess(t *testing.T) {
 	for _, c := range []struct {
 		a, b string

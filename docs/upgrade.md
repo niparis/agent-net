@@ -74,6 +74,8 @@ agent-net status               # also shows the version of this machine
 
 ## Running sessions
 
+`agent-net upgrade` ends with three lines that say the same as this section: Claude Code sessions started on v0.3.2 or later switch by themselves, Pi needs `/reload`, and OpenCode reloads its plugin file by itself.
+
 ### Claude Code
 
 From v0.3.2 on, a running Claude Code session picks up the new version without a restart. Each session has its own `agent-net mcp` process. It switches itself to the new binary like this:

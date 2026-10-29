@@ -42,7 +42,12 @@ type Options struct {
 	Out         io.Writer
 }
 
-const sessionsNote = "running Claude/Pi/OpenCode sessions keep the old version until they restart"
+// sessionsNotes tells what a running agent session needs after an upgrade.
+var sessionsNotes = []string{
+	"sessions            Claude Code (started on v0.3.2 or later): switches to the new version by itself",
+	"                    Pi: run /reload in the session",
+	"                    OpenCode: reloads the plugin file by itself",
+}
 
 type run struct {
 	Options
@@ -82,6 +87,12 @@ func Run(ctx context.Context, o Options) error {
 }
 
 func (r *run) say(format string, a ...any) { fmt.Fprintf(r.Out, format+"\n", a...) }
+
+func (r *run) saySessions() {
+	for _, l := range sessionsNotes {
+		r.say("%s", l)
+	}
+}
 
 func (r *run) devGuard() error {
 	if r.Current == "dev" && !r.Force {
@@ -178,7 +189,7 @@ func (r *run) joinedMachine(ctx context.Context) error {
 		return err
 	}
 	r.restartDaemonWithoutService(ctx)
-	r.say("%s", sessionsNote)
+	r.saySessions()
 	return nil
 }
 
@@ -272,7 +283,7 @@ func (r *run) rollback(ctx context.Context, gatewayHost bool) error {
 		r.restartGatewayWithoutService(ctx)
 	}
 	r.restartDaemonWithoutService(ctx)
-	r.say("%s", sessionsNote)
+	r.saySessions()
 	return nil
 }
 
@@ -496,7 +507,7 @@ func (r *run) upgradeNodes(ctx context.Context, tag string, wasOnline []string, 
 			failed++
 		}
 	}
-	r.say("%s", sessionsNote)
+	r.saySessions()
 	if failed > 0 {
 		return fmt.Errorf("%d node(s) failed to upgrade", failed)
 	}
