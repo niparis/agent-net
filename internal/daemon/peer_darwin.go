@@ -53,3 +53,9 @@ func procCmdline(pid int) string {
 	s, _ := ps("command", pid)
 	return s
 }
+
+// procExe returns the path of the process executable, or "".
+func procExe(pid int) string {
+	s, _ := ps("comm", pid)
+	return s
+}

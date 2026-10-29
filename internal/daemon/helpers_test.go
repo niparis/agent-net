@@ -156,6 +156,7 @@ type nodeOpts struct {
 	adapter   *fakeAdapter
 	claudeDir string
 	cmdline   string // what the fake process table says for every pid
+	exe       string // the executable path the fake process table says for every pid
 }
 
 func shortDir(t *testing.T) string {
@@ -190,6 +191,9 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	d, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if o.exe != "" {
+		d.exe = func(int) string { return o.exe }
 	}
 	if o.cmdline != "" {
 		d.cmdline = func(int) string { return o.cmdline }

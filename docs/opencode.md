@@ -1,0 +1,65 @@
+# OpenCode
+
+OpenCode v2 sessions join the network through a plugin, `plugins/opencode/agent-net.ts`. The spike that led here is in [spike/opencode.md](spike/opencode.md).
+
+## How it works
+
+OpenCode runs one background service (`opencode serve --service`) that hosts every session. Plugins load inside that service. MCP servers also run under the service, so a stdio MCP server cannot tell which session is calling. That is why the adapter is a plugin that registers the `agent_*` tools itself: each tool call carries the session ID.
+
+- **Where v2 loads plugins:** every file in `~/.config/opencode/plugins/` (or `$XDG_CONFIG_HOME/opencode/plugins/`), `.js` or `.ts`, plus entries in the `plugins` list of `opencode.jsonc`. The file must `export default { id, setup }`; the old v1 style (`export const Plugin = ...`) fails with "Plugin must export a default definition with an id". OpenCode also watches the file and reloads it when it changes.
+- **Where v2 reads global instructions:** `~/.config/opencode/AGENTS.md`. Setup adds the same marked guidance block as for Pi ("other agents" variant).
+- **Plugin instances:** OpenCode creates one instance per project directory, and every instance receives the events of every session. A shared per-process hub decides which instance owns a session, so one session never gets two daemon connections.
+- **Connection model:** one daemon connection per OpenCode session, all from the service process. The first request is `hello` with `{client:"opencode", harness:"opencode", native_id:<session ID>, cwd}`. This needs no change to the local protocol: a connection is still bound to exactly one session, the sender identity is the bound session, and `deliver` pushes arrive on that session's connection. When a session goes away its connection closes and the daemon marks it offline.
+- **Peer check:** the daemon reads the peer PID (`SO_PEERCRED` / `LOCAL_PEERPID`) and requires the peer's executable file name to start with `opencode` (`/proc/<pid>/exe` on Linux, `ps -o comm` on macOS). This is stronger than the Pi check, which only looks for `pi` in the command line. The native ID is taken as given, since the plugin runs inside the service.
+- **Presence:** a session registers on `session.created` and on any later activity (`session.viewed`, `session.inbox.*`, `session.execution.*`). At plugin load, sessions of that project updated in the last hour are registered too. `session.execution.started` sends `busy`; `succeeded`, `failed` and `interrupted` send `idle`. `session.deleted` and `session.archived` close the connection. Sub-agent sessions (with a `parentID`) use their root session's connection.
+- **Delivery:** `ctx.session.prompt({sessionID, text, delivery: "queue"})` wakes an idle session and waits behind a busy turn. The text has the Pi footers: a request invites a direct answer with `agent_reply`, a reply says no answer is needed. The plugin confirms with `delivered`.
+- **Tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages`, `agent_message_status`, with the Pi parameters and the same short text output. They are registered with `ctx.tool.transform` and a JSON Schema input, with `codemode: false` so the model sees them as normal tools.
+
+## Install
+
+`agent-net setup` does both steps when `~/.config/opencode` exists, and prints a hint about restarting the OpenCode service. It never restarts it, since the service hosts all your sessions. `agent-net uninstall` removes the plugin file and the guidance block. A symlinked plugin file is left alone.
+
+## How to test
+
+Run everything in isolation, so the real OpenCode service and the real agent-net daemon stay untouched.
+
+1. A throwaway gateway and daemon, with short socket paths (Unix socket paths are limited to about 108 bytes):
+
+   ```sh
+   export AGENT_NET_SOCKET=/tmp/ane/d.sock AGENT_NET_CONFIG_DIR=$T/nodecfg AGENT_NET_STATE_DIR=$T/nodestate
+   export AGENT_NET_CLAUDE_SESSIONS_DIR=$T/empty        # keep real Claude sessions out
+   agent-net gateway --listen 127.0.0.1:17421 --data $T/gw &
+   agent-net join "$(agent-net enroll -data $T/gw -host 127.0.0.1 -port 17421 | head -1)"
+   agent-net daemon &
+   ```
+
+2. An isolated OpenCode service with its own config, data and port. `XDG_*` moves all four directories. The default service port is taken by your real service, so set another one:
+
+   ```sh
+   export XDG_CONFIG_HOME=$T/cfg XDG_DATA_HOME=$T/data XDG_STATE_HOME=$T/state XDG_CACHE_HOME=$T/cache
+   mkdir -p $T/cfg/opencode/plugins
+   cp plugins/opencode/agent-net.ts $T/cfg/opencode/plugins/
+   opencode service set port 49377
+   opencode service start        # inherits AGENT_NET_SOCKET
+   ```
+
+3. Drive sessions without a TUI. The free model works without login:
+
+   ```sh
+   cd $T/proj1 && opencode run -m opencode/beam-free --title one "Reply with the word PONG."
+   agent-net list                              # the session shows with harness opencode
+   opencode run -m opencode/beam-free -s <session id> "Use agent_send to send ... to pipeer"
+   opencode session export <session id>        # transcript as JSON
+   opencode session delete <session id>        # agent-net list: the session goes offline
+   ```
+
+4. A Pi peer: `AGENT_NET_SOCKET=/tmp/ane/d.sock pi --model <model> -ne -e plugins/pi/agent-net.ts` in tmux (`-ne` keeps your installed extension out).
+
+`plugins/opencode/typecheck.sh` type-checks the plugin. Go tests: `go test -race ./...` (see `internal/daemon/opencode_test.go` for the peer check and the two-session case).
+
+## Notes and limits
+
+- Not tested on macOS. The macOS peer check (`ps -o comm` for the executable) is written but unrun.
+- A session with no activity since the service started registers only when something happens in it (a view, a prompt, a message to it). The one-hour discovery at load covers a restart or a plugin reload.
+- The names in `agent_list` are the project directory names, so two sessions in one project share a name. Use the session ID to tell them apart, or let each one call `agent_announce`.
+- OpenCode 2.2.0 hot-loads new and changed files in `plugins/` within seconds, so a restart should not be needed. A reload drops and re-creates the session connections. If the tools are missing in a session, restart the service (`opencode service restart`) when no session is busy. Setup prints this hint and never restarts the service itself.

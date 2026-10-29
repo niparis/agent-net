@@ -20,6 +20,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/plugins/opencode"
 	"github.com/niparis/agent-net/plugins/pi"
 )
 
@@ -108,6 +109,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.daemonService()
 	r.claudeMCP()
 	r.piExtension()
+	r.opencodePlugin()
 	r.guidance()
 	r.daemonStatus(ctx)
 	return r.failed
@@ -355,6 +357,41 @@ func (r *runner) piExtension() {
 	r.step("pi extension", fileResult(changed, existed), err)
 }
 
+// ---- OpenCode ----
+
+// opencodeDir is OpenCode's global config directory. OpenCode v2 loads every
+// file in its plugins/ subdirectory and reads AGENTS.md in it as global
+// instructions.
+func opencodeDir() string {
+	if x := os.Getenv("XDG_CONFIG_HOME"); x != "" {
+		return filepath.Join(x, "opencode")
+	}
+	return filepath.Join(home(), ".config", "opencode")
+}
+
+func opencodePluginPath() string {
+	return filepath.Join(opencodeDir(), "plugins", "agent-net.ts")
+}
+
+func (r *runner) opencodePlugin() {
+	if !exists(opencodeDir()) {
+		r.step("opencode plugin", "skipped ("+displayPath(opencodeDir())+" not found)", nil)
+		return
+	}
+	path := opencodePluginPath()
+	if st, err := os.Lstat(path); err == nil && st.Mode()&os.ModeSymlink != 0 {
+		r.step("opencode plugin", "skipped (symlink, left as is)", nil)
+		return
+	}
+	changed, existed, err := writeIfChanged(path, opencode.Plugin, 0o644)
+	r.step("opencode plugin", fileResult(changed, existed), err)
+	if err == nil && changed {
+		// The service hosts every OpenCode session, so setup never restarts it;
+		// the user decides when.
+		r.hint("hint: OpenCode 2.2 loads new plugin files by itself; if the agent-net tools are missing in a session, restart its service when no session is busy: opencode service restart")
+	}
+}
+
 func fileResult(changed, existed bool) string {
 	switch {
 	case !changed:
@@ -379,6 +416,7 @@ func guidanceFiles() []guidanceFile {
 	return []guidanceFile{
 		{"claude guidance", filepath.Join(h, ".claude"), filepath.Join(h, ".claude", "CLAUDE.md"), guidance.Claude},
 		{"agent guidance", filepath.Join(h, ".pi"), filepath.Join(h, ".pi", "agent", "AGENTS.md"), guidance.Other},
+		{"opencode guidance", opencodeDir(), filepath.Join(opencodeDir(), "AGENTS.md"), guidance.Other},
 	}
 }
 

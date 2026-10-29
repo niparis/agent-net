@@ -95,6 +95,8 @@ type Daemon struct {
 
 	// cmdline is replaced in tests.
 	cmdline func(pid int) string
+	// exe returns the executable path of a process; replaced in tests.
+	exe func(pid int) string
 }
 
 func New(cfg Config) (*Daemon, error) {
@@ -124,7 +126,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
-		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline,
+		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	if len(cfg.CAPEM) > 0 {
 		c, err := PinnedClient(cfg.CAPEM)
