@@ -163,7 +163,7 @@ func TestMCPStdioAcrossNodes(t *testing.T) {
 	}
 
 	// Size cap.
-	out, err = callTool(t, agentB, "probe", "big", map[string]int{"bytes": 2 << 20})
+	out, err = callTool(t, agentB, "probe", "big", map[string]int{"bytes": protocol.MCPMaxResultBytes + 64<<10})
 	if err != nil {
 		t.Fatal(err)
 	}
