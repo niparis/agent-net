@@ -308,7 +308,9 @@ func (d *Daemon) spawnWorker(w *worker, bin string, args []string, env []string)
 	d.wmu.Unlock()
 	for i := 0; i < 20; i++ {
 		if tok, _ := procToken(w.pid); tok != "" {
+			d.wmu.Lock() // gone() reads the token from the worker loop
 			w.token = tok
+			d.wmu.Unlock()
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
