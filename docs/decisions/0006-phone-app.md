@@ -34,3 +34,13 @@ A message sent from the phone comes from the owner in person, not from an agent 
 
 1. Workers (0002) and the TUI actions, built on the shared operator interface of P1.
 2. The phone view and actions, on that same interface.
+
+## P6 - iPhone, without the App Store
+
+The web app is a PWA. On iPhone it is added from Safari with Share, then "Add to Home Screen". It then opens full screen with its own icon. Needs and limits:
+
+- **Certificate:** iOS installs web apps and allows notifications only over a certificate it trusts. That is why P3 uses the `tailscale serve` certificate.
+- **Push notifications:** home screen web apps get them since iOS 16.4. The gateway sends Web Push through Apple's push service. A notification carries only a short line, such as "worker on tenebrae finished". Message and conversation text never go into it.
+- **When open:** the app shows live data only while it is open. It does not run in the background.
+- **Off Tailscale:** the app shows "not reachable".
+- **Not used:** TestFlight and sideloading, because builds expire.
