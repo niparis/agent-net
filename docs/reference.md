@@ -15,7 +15,10 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net join STRING` | Join this machine to a gateway with a join string. |
 | `agent-net uninstall` | Remove services and integrations. |
 | `agent-net status` | Daemon connection, node ID and local sessions. `--json` for JSON. |
-| `agent-net list` | Agents on the network. `--all` includes offline ones. `--harness`, `--text` filter. `--json`. |
+| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--harness`, `--text` filter. `--wide` adds branch, remote, folder and node. `--json`. |
+| `agent-net nodes` | Machines with their agent-net version and installed harnesses (HARNESSES column). `--wide` lists each harness with version, path and model count. `--json` has everything, including the model lists. |
+| `agent-net projects` | Known projects: name, machine, path, git remote, which harnesses ran there, online sessions and last seen. `--name N` shows one project. `--json`. |
+| `agent-net events` | On the gateway machine: the gateway's events table, newest last. `--node` (ID or host name), `--session`, `--kind` (exact, or a group like `msg`), `--since` (like `2h` or `2026-10-29T12:00:00Z`), `--limit N` (default 100), `--follow` (or `-f`), `--json`, `--data DIR`. |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net version` | Print the version. |
 
@@ -33,10 +36,10 @@ The daemon and the agents talk over Unix sockets, not network ports.
 |---|---|---|
 | Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
-| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates) and the outbox for sends made while the gateway is away. |
+| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates) and the outbox for sends made while the gateway is away. Mode 0600, like its `-wal` and `-shm` files. |
 | Daemon socket | `$XDG_RUNTIME_DIR/agent-net/daemon.sock`, else `/tmp/agent-net-<uid>/daemon.sock` | Directory 0700, socket 0600. macOS has no `XDG_RUNTIME_DIR`, so it uses the `/tmp` path. |
 | Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
-| Gateway data | `~/.local/state/agent-net/gateway/` | `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite). Back this up if you care about message history. |
+| Gateway data | `~/.local/state/agent-net/gateway/` | `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files). **Back this folder up.** Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
 | Gateway binaries | `~/.local/share/agent-net/dist/agent-net-<os>-<arch>` | The four binaries the gateway hands out to new machines. |
 | Binary | `~/.local/bin/agent-net` | |
 | Claude Code sessions (read) | `~/.claude/sessions/` | The daemon reads one file per live session. It never writes here. |
@@ -44,6 +47,26 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | macOS services | `~/Library/LaunchAgents/com.agent-net.daemon.plist`, `com.agent-net.gateway.plist` | launchd agents. |
 | Linux logs | `journalctl --user -u agent-net-daemon` (and `-u agent-net-gateway`) | |
 | macOS logs | `~/Library/Logs/agent-net-daemon.log`, `agent-net-gateway.log` | |
+
+## Gateway log format
+
+The gateway writes one line per event to stderr (the systemd journal, or the launchd log file). Every line is `ts=... event=... key=value ...`. The time is UTC. A value with a space, quote or `=` is in double quotes. Empty values are left out. Message bodies are never logged.
+
+| Event | When | Main keys |
+|---|---|---|
+| `msg.stored` | The gateway accepted a message. This is the one line per message. | `msg`, `conv`, `type` (`request`, `reply` or `notification`), `from`, `from_name`, `from_harness`, `from_host`, `to`, `to_name`, `to_harness`, `to_host`, `bytes` (size of the body) |
+| `msg.dispatched` | The message was sent to the recipient's machine. | `msg`, `conv`, `type`, `to`, `to_host` |
+| `msg.delivered` | The recipient's machine put it into the session. | same, and `detail` |
+| `msg.failed` | It could not be delivered. | same, and `detail` |
+| `msg.expired` | It was not delivered within 24 hours. | same |
+| `msg.refused` | A send was refused (limit, unknown session, ...). | `node`, `from`, `to`, `bytes`, `reason` |
+| `session.new` | The first time the gateway sees a session. | `session`, `node`, `host`, `harness`, `name`, `pid`, `cwd`, `project`, `git_root`, `remote`, `branch` |
+| `node.harnesses` | The harnesses installed on a machine changed (or it reported for the first time). | `node`, `host`, `change`, `installed` |
+| `node.connected`, `node.disconnected` | A machine's link came up or went down. | `node`, `host`, `remote` |
+| `retention` | Old data was deleted. | `messages`, `deliveries`, `events`, `sessions` |
+| `error` | Something failed inside the gateway. | `where`, `err` |
+
+Most of these events are also rows in the `events` table, which `agent-net events` shows.
 
 The daemon honours `XDG_CONFIG_HOME` (config is then `$XDG_CONFIG_HOME/agent-net`) and `XDG_STATE_HOME` (state is then `$XDG_STATE_HOME/agent-net/daemon`). The gateway data default does not follow `XDG_STATE_HOME`.
 
@@ -74,6 +97,9 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
 | | `--dist DIR` | `~/.local/share/agent-net/dist` |
 | | `--san LIST` | none. Extra host names or IPs for the TLS certificate, comma separated. |
+| | `--keep-messages D` | `720h` (30 days). Message bodies and delivery records older than this are deleted. `0` keeps them for ever. |
+| | `--keep-events D` | `2160h` (90 days). Events older than this are deleted. `0` keeps them for ever. |
+| | `--keep-sessions D` | `720h` (30 days). Offline sessions not seen for this long are deleted. `0` keeps them for ever. |
 | `daemon` | `--gateway URL` | from `node.json` |
 | | `--config-dir DIR` | `~/.config/agent-net` |
 | `setup` | `--join STRING` | none. A join string from `invite` or `enroll`. |
@@ -87,7 +113,28 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `uninstall` | `--purge` | off. Also remove credentials and daemon state. |
 | | `--no-service` | off |
 
+`setup --gateway` does not pass the `--keep-*` flags, so the gateway service uses the defaults. To change them, add the flags to the `ExecStart` line of the systemd unit (or to `ProgramArguments` in the launchd plist) and restart the service. Setup keeps your edit only until the next `setup` run, which rewrites the unit.
+
 `install.sh` takes `--gateway`, `--client`, `--binary-only` and `--version vX.Y.Z`. See [setup.md](setup.md).
+
+## What each machine reports
+
+Each daemon sends two kinds of facts about its machine to the gateway. Agents and the CLI can read them.
+
+**Repo info for each session.** When the daemon finds a session (any harness), it runs `git` in the session's folder (with a 3 second limit for all commands) and sends:
+
+- `root`: the git root. Empty if the folder is not in a git repository.
+- `project`: the base name of the root, or of the folder if there is no git repository. A git worktree is its own root, so its project name is the name of the worktree folder.
+- `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
+- `branch`: the current branch, or `detached@<short hash>`.
+
+If `git` is missing, slow or fails, the session is still reported, with fewer fields. The result is cached per folder (5 minutes for root, project and remote, 5 seconds for the branch), and the branch is read again when the session updates. `agent_list` returns these fields in each agent's `repo` object. `agent-net list` shows PROJECT, and `--wide` shows the rest.
+
+**Installed harnesses.** At start and then every 6 hours the daemon looks for `claude`, `opencode`, `pi` and `codex`. It reports the path and the version (the first line of `<program> --version`, 5 second limit) of each one it finds. For OpenCode it also runs `opencode models` (20 second limit), which prints one `provider/model` per line, and reports that list. No other harness has such a command in use, so only OpenCode reports models.
+
+A daemon started by launchd or systemd has a short `PATH`. So it searches, in this order: its own `PATH`, then `~/.local/bin`, `~/.bun/bin`, `~/.npm-global/bin`, `~/.opencode/bin`, `/usr/local/bin`, `/opt/homebrew/bin`, `/usr/bin`, `/bin`. If a harness is still missing, it asks your login shell for its `PATH` (`$SHELL -l -c`, or `/bin/zsh` on macOS if `$SHELL` is not set, 3 second limit) and searches that too. This reads your login startup files, not the interactive ones. The programs it runs get the search path as their `PATH`, so a script that starts with `#!/usr/bin/env node` works.
+
+`agent-net nodes` shows the result. A machine on an older agent-net shows `unknown`. A machine that reports an empty list shows `none`. Agents get the same data from the `agent_nodes` tool (Claude Code and Pi).
 
 ## What setup changes on your machine
 

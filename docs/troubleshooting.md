@@ -8,6 +8,9 @@ Run these on the machine that has the problem.
 agent-net status      # is the daemon up and connected? which sessions does it see?
 agent-net list        # which agents does the network know about (--all adds offline ones)?
 agent-net messages    # recent messages and their state
+agent-net nodes       # machines, their versions and installed harnesses (--wide for paths and models)
+agent-net projects    # known projects and where they live
+agent-net events --since 1h   # on the gateway machine: what the gateway did in the last hour
 ```
 
 `status` prints `connected` or `disconnected` next to the gateway URL. If it cannot reach the daemon, the daemon is not running. Check its log:
@@ -15,7 +18,7 @@ agent-net messages    # recent messages and their state
 - Linux: `journalctl --user -u agent-net-daemon -e`
 - macOS: `~/Library/Logs/agent-net-daemon.log`
 
-On the gateway machine, the gateway log is `journalctl --user -u agent-net-gateway -e` (Linux) or `~/Library/Logs/agent-net-gateway.log` (macOS).
+The gateway log has one `key=value` line per message and per delivery step, for example `grep msg=m_0123456789abcdef`. See [reference.md](reference.md#gateway-log-format). On the gateway machine, the gateway log is `journalctl --user -u agent-net-gateway -e` (Linux) or `~/Library/Logs/agent-net-gateway.log` (macOS).
 
 To read a message state: `stored` means the gateway has it, `dispatched` means it was sent to the machine, `delivered` means it went into the session, `replied` means the session answered. `failed` and `expired` mean it was not delivered. A recipient that is offline gets the message when it comes back, for up to 24 hours.
 

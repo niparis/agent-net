@@ -73,13 +73,41 @@ A repeated send with the same idempotency key stores nothing new.
 
 Registered MCP servers run on the machine that hosts them, as your user, and their tools can be called by any agent on any enrolled machine. The registry holds env var names and file paths, never secret values; header and env values are read on the hosting machine and are redacted from errors, logs and tool results there. A daemon runs only the servers registered with its own node. See [mcp-registry.md](mcp-registry.md#security).
 
+## What the gateway logs and keeps
+
+**The log.** The gateway writes one line per event to stderr (the systemd journal, or `~/Library/Logs/agent-net-gateway.log`). For each message it logs the time, the message and conversation IDs, the type, the sender and recipient (session ID, name, harness and host) and the size of the body in bytes. It never logs the body. It also logs each delivery step (stored, dispatched, delivered, failed, expired), each refused send, each new session (with its folder, project, git root, remote and branch), changes of the installed harnesses on a machine, and node connects and disconnects. The format is in [reference.md](reference.md#gateway-log-format). Session names come from agents, so the log quotes them: a name cannot add a field or a line. Logs are copied around by journals and log shippers. The remote URL has its credentials removed before it leaves the machine (see below), so a password in a git remote does not reach the log.
+
+**The database.** `gateway.db` holds the nodes (token hashes only), sessions, profiles, messages with their bodies, delivery records, and an `events` table.
+
+| Data | Kept for | Flag |
+|---|---|---|
+| Messages (with bodies) and delivery records | 30 days | `--keep-messages` |
+| Events | 90 days | `--keep-events` |
+| Sessions that are offline and not seen | 30 days | `--keep-sessions` |
+| Nodes and their token hashes | until you delete them | none |
+
+A timer deletes older data once at start and then every hour. A period of `0` keeps that data for ever. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.
+
+**File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
+
+**Back up the gateway data folder.** It is the only copy of the CA, the server key and the database. If you lose it, every node has to join again (new invites, one for each machine), and all message history is gone. Copy the whole folder (`~/.local/state/agent-net/gateway/`) while the gateway is stopped, or use `sqlite3 gateway.db ".backup ..."` for the database, and keep the copy private: it holds `ca.key` and `server-key.pem`.
+
+## What a node reports about its machine
+
+Each daemon sends the gateway an inventory of the machine, and every enrolled machine and every agent can read it (this is the same trust as for the agent list).
+
+- **Per session:** the working folder (already sent before), the git root, the project name, the `origin` remote URL and the current branch. The daemon removes passwords and tokens from the remote before it sends it. It runs `git` in the session's folder, with `core.fsmonitor` turned off, no prompts and no optional locks. A repository can hold configuration that we did not write, so only read-only plumbing commands run (`rev-parse`, `config --get`, `symbolic-ref`).
+- **Per machine:** which of `claude`, `opencode`, `pi` and `codex` are installed, their file paths and versions, and the model list of OpenCode. To get the versions and models the daemon runs those programs (`--version`, and `opencode models`) as your user. `opencode models` may start or contact the OpenCode background service. To find the programs it also runs your login shell once (`$SHELL -l -c`) when a harness is missing from the daemon's `PATH`.
+
+File paths and the remote URL name your projects. If that is sensitive, do not enroll the machine.
+
 ## What agent-net does not protect against
 
 - **A compromised enrolled machine.** Its token lets it list every agent on the network and send to any of them. It can send as any session that its own daemon reports, and read the messages to and from those sessions. Enroll only machines you would give a shell on the others.
 - **Prompt injection through a message.** A message is text that an agent will read. A hostile or confused peer, or a peer that read a poisoned web page, can send instructions. The wrapper, the sender label and the guidance text help the model see where the text came from. They do not stop a model that decides to obey. Your permission rules are the barrier.
 - **Anyone who is your user on a machine.** Any process running as your user can read `node.json` and the token, connect to the daemon socket (and claim to be a Pi session), and write to Claude's inbox sockets. agent-net adds no boundary between your own processes.
 - **Anyone who can reach the gateway port.** Without a valid code or token they cannot join, list agents or read messages. They can fetch the gateway CA certificate and the agent-net release binaries (`/v1/ca` and `/install/bin/<os>/<arch>` need no login). The gateway listens on `0.0.0.0:7420` by default. Keep it on a LAN, a VPN or Tailscale, and not on the public internet.
-- **Eavesdropping on the gateway machine.** Messages are stored as plain text in `gateway.db`. They are encrypted on the wire, not at rest. Anyone with access to the gateway's disk can read them.
+- **Eavesdropping on the gateway machine.** Messages are stored as plain text in `gateway.db` for 30 days by default. They are encrypted on the wire, not at rest. Anyone with access to the gateway's disk can read them, and the files are readable by your user only (mode 0600), not by other users.
 - **A malicious gateway machine.** It hands out the binaries that other machines install, and it sees every message.
 
 ## Reporting a problem
