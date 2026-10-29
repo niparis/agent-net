@@ -487,7 +487,27 @@ const HUB_KEY = Symbol.for("agent-net.opencode.hub.v1");
 
 function hub(): Hub {
   const g = globalThis as any;
-  return (g[HUB_KEY] ??= { links: new Map(), rootOf: new Map(), gone: new Set(), instances: new Map() } satisfies Hub);
+  const h = (g[HUB_KEY] ??= {}) as Partial<Hub>;
+  // OpenCode can hot-reload a newer version of this file inside the same
+  // process, so the hub may come from an older version and miss fields.
+  // Every field added to Hub in the future MUST be filled in here the same way.
+  if (!h.instances) {
+    // No `instances` means an older version made this hub. Its links belong to
+    // instances that were disposed on reload, and their owner ids are not in
+    // this version's instance map, so nobody would ever release them. Stop
+    // them and drop them: the new instances register the sessions again.
+    for (const entry of h.links?.values() ?? []) {
+      try {
+        entry.link?.stop?.();
+      } catch {}
+    }
+    h.links = new Map();
+  }
+  h.links ??= new Map();
+  h.rootOf ??= new Map();
+  h.gone ??= new Set();
+  h.instances ??= new Map();
+  return h as Hub;
 }
 
 export default {

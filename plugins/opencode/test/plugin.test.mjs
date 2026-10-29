@@ -207,6 +207,22 @@ await test("when the owning instance goes away, another one takes its sessions o
   stopB();
 });
 
+await test("a hub left by an older plugin version (no instances field) is upgraded", async () => {
+  // Hot reload: the old version made the hub without `instances`.
+  let stopped = false;
+  globalThis[Symbol.for("agent-net.opencode.hub.v1")] = {
+    links: new Map([["ses_stale", { link: { stop: () => (stopped = true) }, owner: Symbol("old") }]]),
+    rootOf: new Map(),
+    gone: new Set(),
+  };
+  const sessions = new Map([["ses_after_reload", session("ses_after_reload", "/work/a")]]);
+  const a = makeContext("/work/a", sessions);
+  const stop = await plugin.setup(a.ctx);
+  await until("hello for ses_after_reload", () => registered("ses_after_reload"));
+  if (!stopped) throw new Error("stale link of the old version was not stopped");
+  stop();
+});
+
 await test("agent_nodes lists machines with their harnesses", async () => {
   freshHub();
   const sessions = new Map([["ses_n", session("ses_n", "/work/n")]]);
