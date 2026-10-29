@@ -1,5 +1,5 @@
 agent-net
 Copyright 2026 Nicolas Paris
 
-This product includes ideas and wire-format knowledge from open-cross-session
-(MIT License), see the header of internal/daemon/claude/claude.go.
+The Claude Code adapter (internal/daemon/claude) follows the message frame format
+of open-cross-session, Copyright (c) leeguooooo, MIT License.
