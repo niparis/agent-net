@@ -8,11 +8,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/upgrade"
 )
 
 func adminReq(t *testing.T, h http.Handler, method, path, token string) *httptest.ResponseRecorder {
@@ -138,4 +140,54 @@ func newTestStoreForNodes(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s
+}
+
+func TestVersionOfDistBinary(t *testing.T) {
+	dist := t.TempDir()
+	gw, err := New(Options{DataDir: t.TempDir(), DistDir: dist, Version: "v1.0.0"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+	h := gw.Handler()
+	native := upgrade.ThisAsset()
+	query := "/install/version?os=" + runtime.GOOS + "&arch=" + runtime.GOARCH
+	version := func(q string) string { return strings.TrimSpace(adminReq(t, h, "GET", q, "").Body.String()) }
+
+	if rec := adminReq(t, h, "GET", query, ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("empty dist dir: %d %q", rec.Code, rec.Body)
+	}
+	// The dist binary says v1.1.0 while the gateway runs v1.0.0: nodes get the dist version.
+	path := filepath.Join(dist, native)
+	os.WriteFile(path, []byte("#!/bin/sh\necho v1.1.0\n"), 0o755)
+	if v := version(query); v != "v1.1.0" {
+		t.Fatalf("dist version = %q", v)
+	}
+	// Replacing the file is seen at once.
+	os.WriteFile(path, []byte("#!/bin/sh\necho v1.2.0\n"), 0o755)
+	later := time.Now().Add(time.Minute)
+	os.Chtimes(path, later, later)
+	if v := version(query); v != "v1.2.0" {
+		t.Fatalf("dist version after a change = %q", v)
+	}
+	// Another platform: the same release, once its file exists.
+	oos, oarch := "darwin", "arm64"
+	if native == upgrade.AssetName(oos, oarch) {
+		oos, oarch = "linux", "amd64"
+	}
+	other := "/install/version?os=" + oos + "&arch=" + oarch
+	if rec := adminReq(t, h, "GET", other, ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("platform without a binary: %d", rec.Code)
+	}
+	os.WriteFile(filepath.Join(dist, upgrade.AssetName(oos, oarch)), []byte("x"), 0o755)
+	if v := version(other); v != "v1.2.0" {
+		t.Fatalf("other platform = %q", v)
+	}
+	if rec := adminReq(t, h, "GET", "/install/version?os=plan9&arch=amd64", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("bad platform: %d", rec.Code)
+	}
+	// Without a platform it is still the gateway's own version.
+	if v := version("/install/version"); v != "v1.0.0" {
+		t.Fatalf("plain version = %q", v)
+	}
 }

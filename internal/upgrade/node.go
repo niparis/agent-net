@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -14,6 +15,28 @@ import (
 // GatewayVersion asks the gateway which agent-net version it runs.
 func GatewayVersion(ctx context.Context, c *http.Client, gatewayURL string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", strings.TrimRight(gatewayURL, "/")+"/install/version", nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("gateway answered %s", resp.Status)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 256))
+	return strings.TrimSpace(string(b)), err
+}
+
+// ServedVersion asks the gateway which version it serves to a node of this
+// platform: the version of its dist binary, which is what FromGateway
+// installs. A gateway from before this feature ignores the platform and
+// answers with its own version.
+func ServedVersion(ctx context.Context, c *http.Client, gatewayURL string) (string, error) {
+	u := strings.TrimRight(gatewayURL, "/") + "/install/version?os=" + runtime.GOOS + "&arch=" + runtime.GOARCH
+	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return "", err
 	}

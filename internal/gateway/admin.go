@@ -49,9 +49,7 @@ func (g *Gateway) WriteAdminInfo(listen string) error {
 }
 
 func (g *Gateway) upgradeRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /install/version", func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, g.opts.Version)
-	})
+	mux.HandleFunc("GET /install/version", g.handleVersion)
 	mux.HandleFunc("GET /install/checksums.txt", g.handleChecksums)
 	mux.HandleFunc("GET /v1/admin/nodes", g.admin(func(w http.ResponseWriter, r *http.Request) {
 		info, err := g.NodesInfo()
@@ -104,6 +102,67 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 	}
 	g.mu.Unlock()
 	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, nil
+}
+
+// handleVersion serves the version of the gateway. With ?os=&arch= it serves
+// the version of the dist binary for that platform instead: what a node of
+// that platform installs when it upgrades.
+func (g *Gateway) handleVersion(w http.ResponseWriter, r *http.Request) {
+	goos, goarch := r.URL.Query().Get("os"), r.URL.Query().Get("arch")
+	if goos == "" && goarch == "" {
+		fmt.Fprintln(w, g.opts.Version)
+		return
+	}
+	if !ValidPlatform(goos, goarch) {
+		http.Error(w, "unsupported platform", http.StatusNotFound)
+		return
+	}
+	v, err := g.distVersion(r.Context(), goos, goarch)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	fmt.Fprintln(w, v)
+}
+
+type verEntry struct {
+	size int64
+	mod  time.Time
+	ver  string
+}
+
+var (
+	verMu    sync.Mutex
+	verCache = map[string]verEntry{}
+)
+
+// distVersion is the version of the dist binary for a platform. Only the
+// binary for the platform the gateway runs on can be executed, so that one is
+// asked (`version`); the dist dir holds the four binaries of one release, so
+// its answer stands for the others, as long as their files exist.
+func (g *Gateway) distVersion(ctx context.Context, goos, goarch string) (string, error) {
+	if st, err := os.Stat(filepath.Join(g.opts.DistDir, upgrade.AssetName(goos, goarch))); err != nil || st.IsDir() {
+		return "", fmt.Errorf("no %s binary in the dist dir", upgrade.AssetName(goos, goarch))
+	}
+	path := filepath.Join(g.opts.DistDir, upgrade.ThisAsset())
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() {
+		return "", fmt.Errorf("no %s binary in the dist dir to read the version from", upgrade.ThisAsset())
+	}
+	verMu.Lock()
+	e, ok := verCache[path]
+	verMu.Unlock()
+	if ok && e.size == st.Size() && e.mod.Equal(st.ModTime()) {
+		return e.ver, nil
+	}
+	ver, err := upgrade.BinaryVersion(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	verMu.Lock()
+	verCache[path] = verEntry{st.Size(), st.ModTime(), ver}
+	verMu.Unlock()
+	return ver, nil
 }
 
 // ---- checksums ----
