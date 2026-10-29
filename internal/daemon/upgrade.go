@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -16,6 +17,12 @@ import (
 
 type upgradeState struct {
 	running atomic.Bool
+
+	mu     sync.Mutex
+	target string        // the version the running (or last) install is for
+	done   chan struct{} // closed when that install ends
+	res    protocol.NodeUpgradeResult
+	err    error
 }
 
 func (d *Daemon) helloVersion() string {
@@ -31,10 +38,41 @@ var errUpgradeBusy = errors.New("an upgrade is already running")
 // it. It is the one install path, for the gateway's node.upgrade request and
 // for automatic upgrades. On success the running flag stays set when the
 // daemon is going to restart.
-func (d *Daemon) upgradeTo(ctx context.Context, target string) (protocol.NodeUpgradeResult, error) {
+//
+// If an install of the same target is already running (or done and waiting for
+// the restart), the caller joins it: it gets that install's result and joined
+// is true, so it must not restart the daemon a second time. This is what
+// happens when an automatic upgrade and the gateway's request meet.
+func (d *Daemon) upgradeTo(ctx context.Context, target string) (res protocol.NodeUpgradeResult, joined bool, err error) {
 	if !d.upg.running.CompareAndSwap(false, true) {
-		return protocol.NodeUpgradeResult{}, errUpgradeBusy
+		d.upg.mu.Lock()
+		same, done := d.upg.target == target, d.upg.done
+		d.upg.mu.Unlock()
+		if !same || done == nil {
+			return protocol.NodeUpgradeResult{}, false, errUpgradeBusy
+		}
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return protocol.NodeUpgradeResult{}, false, ctx.Err()
+		}
+		d.upg.mu.Lock()
+		defer d.upg.mu.Unlock()
+		return d.upg.res, true, d.upg.err
 	}
+	done := make(chan struct{})
+	d.upg.mu.Lock()
+	d.upg.target, d.upg.done = target, done
+	d.upg.mu.Unlock()
+	res, err = d.doUpgrade(ctx, target)
+	d.upg.mu.Lock()
+	d.upg.res, d.upg.err = res, err
+	d.upg.mu.Unlock()
+	close(done)
+	return res, false, err
+}
+
+func (d *Daemon) doUpgrade(ctx context.Context, target string) (protocol.NodeUpgradeResult, error) {
 	cur := d.helloVersion()
 	if cur == "dev" {
 		d.upg.running.Store(false)
@@ -65,7 +103,7 @@ func (d *Daemon) onUpgrade(ctx context.Context, l *link, id, target string) {
 			l.write(ctx, frame)
 		}
 	}
-	res, err := d.upgradeTo(ctx, target)
+	res, joined, err := d.upgradeTo(ctx, target)
 	if err != nil {
 		if !errors.Is(err, errUpgradeBusy) {
 			d.Logf("upgrade to %s failed: %v", target, err)
@@ -73,9 +111,9 @@ func (d *Daemon) onUpgrade(ctx context.Context, l *link, id, target string) {
 		reply(res, err)
 		return
 	}
-	d.Logf("upgrade to %s: installed %s (running %s), restarting: %v", target, res.To, res.From, res.Restarting)
+	d.Logf("upgrade to %s: installed %s (running %s), restarting: %v, joined an upgrade already running: %v", target, res.To, res.From, res.Restarting, joined)
 	reply(res, nil)
-	if res.Restarting {
+	if res.Restarting && !joined {
 		go func() {
 			time.Sleep(300 * time.Millisecond) // let the answer leave
 			d.restart()

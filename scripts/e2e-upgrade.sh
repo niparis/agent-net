@@ -144,8 +144,18 @@ wait_version() {
   done
   echo "timed out: $1 does not report $2 (reports: $(daemon_version "$1"))"; FAILS=$((FAILS + 1)); return 1
 }
-# log_count NAME PATTERN: how often the daemon log of NAME has PATTERN.
-log_count() { grep -cF -- "$2" "$T/$1/daemon.log"; }
+# mark NAME: remember how long the daemon log of NAME is now. log_count and
+# log_since only look at lines written after the last mark, so an earlier
+# phase (or a push upgrade that raced a reconnect) cannot make a check fail.
+declare -A MARK
+mark() { MARK[$1]="$(wc -l < "$T/$1/daemon.log" 2>/dev/null || echo 0)"; }
+log_since() { tail -n "+$((${MARK[$1]:-0} + 1))" "$T/$1/daemon.log" 2>/dev/null; }
+# log_count NAME PATTERN: how often PATTERN is in the daemon log of NAME since its mark.
+log_count() { log_since "$1" | grep -cF -- "$2"; }
+# log_has NAME PATTERN: succeeds if PATTERN is in the daemon log of NAME since its mark.
+log_has() { log_since "$1" | grep -qF -- "$2"; }
+# offline NAME...: succeed when the gateway lists all of them as offline.
+offline() { local m; for m in "$@"; do node_line "$m" | grep -q false || return 1; done; }
 
 say "start from $V1: gateway host, B, C and D"
 for m in gw b c d; do install_v $m $V1; done
@@ -161,7 +171,8 @@ done
 wait_for "daemons connected" 20 bash -c "[ \"\$(grep -c 'connected to gateway' $T/gw/daemon.log $T/b/daemon.log $T/c/daemon.log $T/d/daemon.log | grep -c ':1')\" = 4 ]"
 # C and D joined and connected once; now they go away so the gateway sees them
 # offline during the upgrade.
-kill "${DPID[c]}" "${DPID[d]}"; sleep 1.5
+kill "${DPID[c]}" "${DPID[d]}"
+wait_for "C and D are listed offline" 20 offline c d
 
 say "agent-net nodes (from B)"
 machine b nodes
@@ -222,9 +233,13 @@ say "gateway: agent-net upgrade again (already on the latest)"
 AGAIN_OUT="$(machine gw upgrade 2>&1)"; echo "$AGAIN_OUT"
 check "second run says already on $V2" contains "$AGAIN_OUT" "already on $V2"
 
+wait_version b $V2 30
+wait_version gw $V2 30
+
 # ---- (1) C was offline during the upgrade: it upgrades itself when it is back ----
 say "(1) C comes back (offline during the upgrade, runs $V1): automatic catch-up"
 check "C binary is $V1 before it starts" test "$(machine c version)" = "$V1"
+mark c
 bg c daemon daemon
 wait_version c $V2 30
 echo "--- C daemon log"; grep -E 'auto-upgrade|connected' "$T/c/daemon.log"
@@ -251,8 +266,9 @@ esac
 EOF
 chmod +x "$T/gw/dist/agent-net-linux-amd64"
 check "(2) the gateway serves $V2 for linux/amd64" test "$(curl -sk "https://127.0.0.1:$GP/install/version?os=linux&arch=amd64")" = "$V2"
+mark d
 bg d daemon daemon
-wait_wanted() { grep -q "auto-upgrade to $V2 failed" "$T/d/daemon.log"; }
+wait_wanted() { log_has d "auto-upgrade to $V2 failed"; }
 wait_for "D's failed attempt" 30 wait_wanted
 for i in 1 2; do
   kill "${DPID[d]}"; sleep 1
@@ -275,6 +291,7 @@ check "(2) dist restored: the gateway serves $V2 again" test "$(curl -sk "https:
 
 # ---- (3) rollback on B sticks ----
 say "B: agent-net upgrade --rollback"
+mark b
 RB_OUT="$(machine b upgrade --rollback 2>&1)"; echo "$RB_OUT"
 check "rollback: B binary is $V1" test "$(machine b version)" = "$V1"
 check "rollback: B .prev is $V2" test "$("$T/b/bin/agent-net.prev" version)" = "$V2"
@@ -285,7 +302,7 @@ machine b status | head -5
 machine b nodes
 check "rollback: gateway host untouched ($V2)" test "$(machine gw version)" = "$V2"
 say "(3) B reconnected on $V1 while the gateway serves $V2: held"
-wait_for "B logged the hold" 20 grep -q "held at $V2 after rollback" "$T/b/daemon.log"
+wait_for "B logged the hold" 20 log_has b "held at $V2 after rollback"
 sleep 4
 echo "--- B daemon log"; grep -E 'auto-upgrade|connected' "$T/b/daemon.log"
 check "(3) B still $V1 (binary)" test "$(machine b version)" = "$V1"
@@ -310,7 +327,8 @@ machine b upgrade --check
 say "(3) B rolls back again, goes offline, the gateway moves to $V3"
 machine b upgrade --rollback 2>&1 | sed 's/^/  b rollback: /'
 wait_version b $V1 20
-kill "${DPID[b]}" "${DPID[d]}"; sleep 1.5
+kill "${DPID[b]}" "${DPID[d]}"
+wait_for "B and D are listed offline" 20 offline b d
 echo "$V3" > "$REL/LATEST"
 UP3_OUT="$(machine gw upgrade 2>&1)"; echo "$UP3_OUT"
 check "gateway host binary is $V3" test "$(machine gw version)" = "$V3"
@@ -319,12 +337,13 @@ check "C (online) was upgraded by the gateway" contains "$UP3_OUT" "$V2 -> $V3  
 check "B is reported offline" contains "$UP3_OUT" "offline"
 check "B binary is still $V1" test "$(machine b version)" = "$V1"
 check "the gateway serves $V3 for linux/amd64" test "$(curl -sk "https://127.0.0.1:$GP/install/version?os=linux&arch=amd64")" = "$V3"
+mark b; mark d
 bg b daemon daemon
 bg d daemon daemon
 wait_version b $V3 30
 wait_version d $V3 30
-echo "--- B daemon log (tail)"; grep -E 'auto-upgrade' "$T/b/daemon.log" | tail -3
-echo "--- D daemon log (tail)"; grep -E 'auto-upgrade' "$T/d/daemon.log" | tail -3
+echo "--- B daemon log (tail)"; log_since b | grep -E 'auto-upgrade' | tail -3
+echo "--- D daemon log (tail)"; log_since d | grep -E 'auto-upgrade' | tail -3
 echo "--- agent-net nodes"; machine gw nodes
 check "(3) B auto-upgraded past the hold to $V3" test "$(machine b version)" = "$V3"
 check "(3) B keeps .prev ($V1)" test "$("$T/b/bin/agent-net.prev" version)" = "$V1"

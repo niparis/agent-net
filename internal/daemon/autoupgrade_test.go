@@ -176,8 +176,8 @@ func TestAutoUpgradeSharesTheInstallGuard(t *testing.T) {
 		return "", errors.New("slow install failed")
 	}, served(servedValue("v0.2.0")))
 	<-started
-	if _, err := n.daemon().upgradeTo(context.Background(), "v0.2.0"); !errors.Is(err, errUpgradeBusy) {
-		t.Fatalf("second install: %v", err)
+	if _, _, err := n.daemon().upgradeTo(context.Background(), "v0.9.0"); !errors.Is(err, errUpgradeBusy) {
+		t.Fatalf("install of another version: %v", err)
 	}
 	close(release)
 	eventually(t, "failure recorded", func() bool { return upgrade.LoadAuto(n.cfg.StateDir).Failed != nil })
