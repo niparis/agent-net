@@ -1,13 +1,20 @@
 #!/bin/sh
 # agent-net installer.
 #
-#   curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --gateway
+#   curl -fsSL https://niparis.github.io/agent-net/install | sh
 #
-# Without --gateway it only installs the binary to ~/.local/bin/agent-net.
-# With --gateway it also downloads the binaries for all platforms (the gateway
-# serves them to joining machines) and runs `agent-net setup --gateway`.
+# With no options it looks at the machine and picks a mode:
+#   - gateway data found here   -> update the gateway (as --gateway)
+#   - node.json found here      -> update this joined machine (as --client)
+#   - neither                   -> set this machine up as the gateway (as --gateway)
+# It prints which mode it chose. Other machines join with the line that
+# `agent-net invite` prints on the gateway, not with this script.
 #
-#   --gateway          set this machine up as the gateway
+# Overrides:
+#   --gateway          install everything for a gateway and run `agent-net setup --gateway`
+#                      (also downloads the binaries for all platforms, which the gateway serves)
+#   --client           install the binary and run `agent-net setup` (no join, no gateway)
+#   --binary-only      only install ~/.local/bin/agent-net and print next steps
 #   --version vX.Y.Z   install this release (default: latest)
 #
 # AGENT_NET_BASE_URL overrides the download base URL (used by tests).
@@ -19,30 +26,57 @@ main() {
   set -eu
 
   REPO="niparis/agent-net"
-  GATEWAY=""
+  MODE=""
+  FRESH=""
   VERSION=""
+  USAGE="usage: install.sh [--gateway | --client | --binary-only] [--version vX.Y.Z]"
 
   die() { echo "agent-net install: $*" >&2; exit 1; }
 
   while [ $# -gt 0 ]; do
     case "$1" in
-      --gateway) GATEWAY=1 ;;
+      --gateway) MODE=gateway ;;
+      --client) MODE=client ;;
+      --binary-only) MODE=binary ;;
       --version)
         [ $# -ge 2 ] || die "--version needs a value, like v0.1.0"
         VERSION="$2"
         shift
         ;;
       -h|--help)
-        echo "usage: install.sh [--gateway] [--version vX.Y.Z]"
+        echo "$USAGE"
         exit 0
         ;;
-      *) die "unknown option: $1 (usage: install.sh [--gateway] [--version vX.Y.Z])" ;;
+      *) die "unknown option: $1 ($USAGE)" ;;
     esac
     shift
   done
 
   command -v curl >/dev/null 2>&1 || die "curl is required"
   [ -n "${HOME:-}" ] || die "HOME is not set"
+
+  # No option given: look at what is on this machine.
+  if [ -z "$MODE" ]; then
+    GW_DATA="${AGENT_NET_GATEWAY_DATA:-$HOME/.local/state/agent-net/gateway}"
+    if [ -n "${AGENT_NET_CONFIG_DIR:-}" ]; then
+      CONF_DIR="$AGENT_NET_CONFIG_DIR"
+    elif [ -n "${XDG_CONFIG_HOME:-}" ]; then
+      CONF_DIR="$XDG_CONFIG_HOME/agent-net"
+    else
+      CONF_DIR="$HOME/.config/agent-net"
+    fi
+    if [ -f "$GW_DATA/ca.pem" ]; then
+      MODE=gateway
+      echo "gateway found ($GW_DATA): updating"
+    elif [ -f "$CONF_DIR/node.json" ]; then
+      MODE=client
+      echo "this machine is already joined ($CONF_DIR/node.json): updating"
+    else
+      MODE=gateway
+      FRESH=1
+      echo "no agent-net here yet: setting this machine up as the gateway"
+    fi
+  fi
 
   if command -v sha256sum >/dev/null 2>&1; then
     sha256() { sha256sum "$1" | cut -d ' ' -f 1; }
@@ -100,7 +134,7 @@ main() {
     fi
   }
 
-  if [ -n "$GATEWAY" ]; then
+  if [ "$MODE" = gateway ]; then
     mkdir -p "$DIST_DIR" || die "cannot create $DIST_DIR"
     for o in linux darwin; do
       for a in amd64 arm64; do
@@ -126,10 +160,17 @@ main() {
       ;;
   esac
 
-  if [ -n "$GATEWAY" ]; then
+  if [ "$MODE" != binary ]; then
     echo
     rm -rf "$WORK" # exec skips the exit trap
-    exec "$BIN_DIR/agent-net" setup --gateway
+    if [ "$MODE" = gateway ]; then
+      if [ -n "$FRESH" ]; then
+        echo "Other machines join with the line that \`agent-net invite\` prints on this machine."
+        echo
+      fi
+      exec "$BIN_DIR/agent-net" setup --gateway
+    fi
+    exec "$BIN_DIR/agent-net" setup
   fi
 
   echo
