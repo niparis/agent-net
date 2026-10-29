@@ -119,7 +119,7 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 	if a == nil || a.Worker == nil || a.Worker.Owner != owner || a.Mode != protocol.ModeBackground || a.Harness != "claude" {
 		t.Fatalf("worker view: %+v", a)
 	}
-	if !strings.HasPrefix(res.Task.Body, protocol.WorkerPreamble) || !strings.Contains(res.Task.Body, "agent_handback") {
+	if !strings.HasPrefix(res.Task.Body, protocol.WorkerPreamble) || !strings.Contains(res.Task.Body, "select:mcp__agent-net__agent_handback") {
 		t.Errorf("task body: %q", res.Task.Body)
 	}
 

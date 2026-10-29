@@ -97,6 +97,9 @@ type worker struct {
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
+	// discardStdout drops the standard output of the process: Pi's rpc mode
+	// writes its whole event stream there, which nobody reads.
+	discardStdout bool
 	// ref is the harness's own handle for the worker: the background session
 	// ID of a Claude worker, the address of a Codex app server. It is kept in
 	// the database, so an adopted worker can be found again.
@@ -379,6 +382,9 @@ func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []st
 		cmd.Stdin = stdin
 	}
 	cmd.Stdout, cmd.Stderr = logf, logf
+	if w.discardStdout {
+		cmd.Stdout = nil // /dev/null
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot run %s: %w", bin, err)

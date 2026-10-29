@@ -7,7 +7,7 @@
 #
 # THIS SPENDS MONEY. It starts one worker with a tiny task ("reply with OK")
 # on a cheap model, waits for the hand-back, stops the worker, and cleans up.
-# Defaults: claude haiku, pi openai/gpt-4.1-nano, codex gpt-6-luna.
+# Defaults: claude haiku, pi openai/gpt-5.5, codex gpt-6-luna.
 #
 # Run it from your own terminal, not from inside an agent session: the daemon
 # refuses owner actions (start, stop) from a process under an agent.
@@ -31,7 +31,7 @@ set -euo pipefail
 H=${1:?usage: scripts/smoke-worker.sh claude|pi|codex [MODEL]}
 case "$H" in
 claude) MODEL=${2:-haiku} ;;
-pi) MODEL=${2:-openai/gpt-4.1-nano} ;;
+pi) MODEL=${2:-openai/gpt-5.5} ;;
 codex) MODEL=${2:-gpt-6-luna} ;;
 *)
   echo "unknown harness $H" >&2
@@ -76,6 +76,26 @@ an() {
 mkdir -p "$T/cfg"
 join=$("$BIN/agent-net" enroll --data "$T/gw" --host 127.0.0.1 --port "$port" 2>/dev/null)
 an join "$join" >/dev/null
+# Pi and Codex keep their sessions and settings in one folder. The worker gets a
+# private one that holds only your login (a link to the real auth file), so the
+# run leaves nothing in your own history, and Pi loads the extension of this
+# build and not the one you have installed (which may be older).
+case "$H" in
+pi)
+  mkdir -p "$T/pi-agent/extensions"
+  for f in auth.json models-store.json; do
+    [ -e "$HOME/.pi/agent/$f" ] && ln -s "$HOME/.pi/agent/$f" "$T/pi-agent/$f"
+  done
+  [ -e "$HOME/.pi/agent/settings.json" ] && cp "$HOME/.pi/agent/settings.json" "$T/pi-agent/settings.json"
+  cp "$here/plugins/pi/agent-net.ts" "$T/pi-agent/extensions/agent-net.ts"
+  export PI_CODING_AGENT_DIR=$T/pi-agent PI_SKIP_VERSION_CHECK=1
+  ;;
+codex)
+  mkdir -p "$T/codex-home"
+  ln -s "$HOME/.codex/auth.json" "$T/codex-home/auth.json"
+  export CODEX_HOME=$T/codex-home
+  ;;
+esac
 an daemon >"$T/daemon.log" 2>&1 &
 pids+=($!)
 for _ in $(seq 50); do an status >/dev/null 2>&1 && break; sleep 0.1; done

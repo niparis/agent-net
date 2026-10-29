@@ -70,6 +70,7 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if w.model != "" {
 		args = append(args, "--model", w.model)
 	}
+	w.discardStdout = true // the rpc event stream; stderr (with the errors) goes to the log
 	if err := d.spawnWorkerStdin(w, bin, args, env, in); err != nil {
 		return err
 	}
