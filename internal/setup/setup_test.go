@@ -297,7 +297,7 @@ func TestOpenCodeInstallAndUninstall(t *testing.T) {
 	os.WriteFile(filepath.Join(ocDir, "AGENTS.md"), []byte(orig), 0o644)
 
 	out := run(t, Options{Join: f.newJoin(t)})
-	for _, want := range []string{"opencode plugin ok", "opencode guidance updated", "the OpenCode service must be restarted"} {
+	for _, want := range []string{"opencode plugin ok", "opencode guidance updated", "restart its service"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("first run lacks %q:\n%s", want, out)
 		}
@@ -318,7 +318,7 @@ func TestOpenCodeInstallAndUninstall(t *testing.T) {
 			t.Errorf("rerun lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "must be restarted") {
+	if strings.Contains(out, "restart its service") {
 		t.Errorf("hint repeated:\n%s", out)
 	}
 

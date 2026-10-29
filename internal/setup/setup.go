@@ -388,7 +388,7 @@ func (r *runner) opencodePlugin() {
 	if err == nil && changed {
 		// The service hosts every OpenCode session, so setup never restarts it;
 		// the user decides when.
-		r.hint("hint: the OpenCode service must be restarted to load the plugin. Do it when no session is busy: opencode service restart")
+		r.hint("hint: OpenCode 2.2 loads new plugin files by itself; if the agent-net tools are missing in a session, restart its service when no session is busy: opencode service restart")
 	}
 }
 

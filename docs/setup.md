@@ -54,7 +54,8 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
-- adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md` and `~/.pi/agent/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
+- writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink is left alone; see [opencode.md](opencode.md)),
+- adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md` and `~/.config/opencode/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 
 ## 3. Update a machine
 

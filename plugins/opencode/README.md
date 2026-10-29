@@ -11,7 +11,7 @@ Connects OpenCode v2 sessions to the local agent-net daemon. OpenCode sessions c
 
 ## Install
 
-`agent-net setup` writes the plugin to `~/.config/opencode/plugins/agent-net.ts` (or `$XDG_CONFIG_HOME/opencode/plugins/`) when that directory exists. OpenCode loads every file in `plugins/` by itself. Restart the OpenCode service to load it:
+`agent-net setup` writes the plugin to `~/.config/opencode/plugins/agent-net.ts` (or `$XDG_CONFIG_HOME/opencode/plugins/`) when that directory exists. OpenCode loads every file in `plugins/` by itself. OpenCode 2.2 hot-loads it within seconds. If the tools are missing in a session, restart the service when no session is busy:
 
 ```sh
 opencode service restart
