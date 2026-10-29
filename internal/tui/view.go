@@ -649,6 +649,9 @@ func (m Model) detailLines(w, n int) []string {
 	if a.PID > 0 {
 		title += fmt.Sprintf("  pid %d", a.PID)
 	}
+	if src := m.projectSource(a); src != "" {
+		title += "  project: " + src
+	}
 	if !a.Online {
 		title += "  " + sBad.Render("offline, last seen "+m.clock(time.Unix(a.LastSeen, 0)))
 	}
@@ -668,9 +671,6 @@ func (m Model) detailLines(w, n int) []string {
 		info = append(info, kv("worktree", a.Repo.Worktree))
 	}
 	info = append(info, kv("state", status))
-	if src := m.projectSource(a); src != "" {
-		info = append(info, kv("project", dashIfEmpty(firstNonEmpty(a.Repo.Project, a.Profile.Project))+"  ["+src+"]"))
-	}
 	if t := firstNonEmpty(a.Profile.Function, a.Profile.Task); t != "" {
 		task := a.Profile.Function
 		if a.Profile.Task != "" {

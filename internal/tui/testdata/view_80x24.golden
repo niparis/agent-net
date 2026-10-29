@@ -12,7 +12,7 @@ agent-net tui  6 sessions, 5 online                           updated 14:05:00
   pi       scratch        -         -        -          fg   shell  on  -
 
 Selected session ───────────────────────────────────────────────────────────────
-  strategies claude  s_0000000000000002  pid 4300
+  strategies claude  s_0000000000000002  pid 4300  project: registered
   folder    /Users/n/code/strategies/.claude/worktrees/agent-a7
   remote    git@git.example.com:team/strategies.git
   worktree  /Users/n/code/strategies/.claude/worktrees/agent-a7  (linked to /Us…

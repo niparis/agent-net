@@ -884,3 +884,23 @@ func TestColourOutputIsWellFormed(t *testing.T) {
 		}
 	}
 }
+
+func TestDetailShowsTheProjectSource(t *testing.T) {
+	m := newModel(100, 30)
+	want := map[string]string{
+		"s_0000000000000002": "project: registered",
+		"s_0000000000000001": "project: both",
+		"s_0000000000000003": "project: seen", // an older gateway sends no source
+	}
+	for id, text := range want {
+		m.selected = id
+		if v := m.View(); !strings.Contains(v, text) {
+			t.Errorf("%s: no %q in\n%s", id, text, v)
+		}
+	}
+	// A session in a folder with no project entry shows no source.
+	m.selected = "s_0000000000000004"
+	if v := m.View(); strings.Contains(v, "project:") {
+		t.Errorf("a source for an unknown project:\n%s", v)
+	}
+}

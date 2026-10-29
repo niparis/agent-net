@@ -12,15 +12,15 @@ agent-net tui  6 sessions, 5 online                                             
   pi       scratch            -                -                -                  fg   shell  on  -
 
 Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  strategies claude  s_0000000000000002  pid 4300
+  strategies claude  s_0000000000000002  pid 4300  project: registered
   folder    /Users/n/code/strategies/.claude/worktrees/agent-a7
   remote    git@git.example.com:team/strategies.git
   worktree  /Users/n/code/strategies/.claude/worktrees/agent-a7  (linked to /Users/n/code/strategies)
   state     idle, background   branch feature/risk-model   model claude-sonnet-5-5
-  project   strategies  [registered]
   task      trading strategies / backtest v2
   messages  13:57  -> tenebrae-53 (Mac)  reply  delivered
             13:56  <- tenebrae-53 (Mac)  request  replied
+
 
 
 
