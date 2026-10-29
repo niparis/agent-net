@@ -78,6 +78,15 @@ type Config struct {
 	// Restart restarts the daemon process after an upgrade. Default: the
 	// service manager, or re-exec when there is none (see RestartSelf).
 	Restart func()
+	// NoAutoUpgrade turns off the upgrade to a newer version that the gateway
+	// serves after each connect.
+	NoAutoUpgrade bool
+	// AutoUpgradeMaxDelay bounds the random wait before an automatic upgrade.
+	// Default: 10 s; a negative value means no wait.
+	AutoUpgradeMaxDelay time.Duration
+	// Served returns the version the gateway serves to this machine.
+	// Default: ask the gateway.
+	Served func(ctx context.Context) (string, error)
 	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
 	MCPBackoffMin, MCPBackoffMax time.Duration
 }

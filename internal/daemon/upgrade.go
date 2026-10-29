@@ -25,6 +25,37 @@ func (d *Daemon) helloVersion() string {
 	return d.cfg.Version
 }
 
+var errUpgradeBusy = errors.New("an upgrade is already running")
+
+// upgradeTo installs target and says whether the daemon must restart to run
+// it. It is the one install path, for the gateway's node.upgrade request and
+// for automatic upgrades. On success the running flag stays set when the
+// daemon is going to restart.
+func (d *Daemon) upgradeTo(ctx context.Context, target string) (protocol.NodeUpgradeResult, error) {
+	if !d.upg.running.CompareAndSwap(false, true) {
+		return protocol.NodeUpgradeResult{}, errUpgradeBusy
+	}
+	cur := d.helloVersion()
+	if cur == "dev" {
+		d.upg.running.Store(false)
+		return protocol.NodeUpgradeResult{From: cur}, errors.New("this is a dev build, it is not upgraded remotely")
+	}
+	if target == "" {
+		d.upg.running.Store(false)
+		return protocol.NodeUpgradeResult{From: cur}, errors.New("no version given")
+	}
+	_, to, err := d.install(ctx, target)
+	if err != nil {
+		d.upg.running.Store(false)
+		return protocol.NodeUpgradeResult{From: cur}, err
+	}
+	restarting := to != cur
+	if !restarting {
+		d.upg.running.Store(false)
+	}
+	return protocol.NodeUpgradeResult{From: cur, To: to, Restarting: restarting}, nil
+}
+
 // onUpgrade handles the gateway's node.upgrade request: install the version,
 // answer the gateway, then restart. The answer goes out before the restart so
 // the gateway learns the result; the new version shows up in the next hello.
@@ -34,35 +65,17 @@ func (d *Daemon) onUpgrade(ctx context.Context, l *link, id, target string) {
 			l.write(ctx, frame)
 		}
 	}
-	if !d.upg.running.CompareAndSwap(false, true) {
-		reply(protocol.NodeUpgradeResult{}, errors.New("an upgrade is already running"))
-		return
-	}
-	cur := d.helloVersion()
-	if cur == "dev" {
-		d.upg.running.Store(false)
-		reply(protocol.NodeUpgradeResult{From: cur}, errors.New("this is a dev build, it is not upgraded remotely"))
-		return
-	}
-	if target == "" {
-		d.upg.running.Store(false)
-		reply(protocol.NodeUpgradeResult{From: cur}, errors.New("no version given"))
-		return
-	}
-	_, to, err := d.install(ctx, target)
+	res, err := d.upgradeTo(ctx, target)
 	if err != nil {
-		d.upg.running.Store(false)
-		d.Logf("upgrade to %s failed: %v", target, err)
-		reply(protocol.NodeUpgradeResult{From: cur}, err)
+		if !errors.Is(err, errUpgradeBusy) {
+			d.Logf("upgrade to %s failed: %v", target, err)
+		}
+		reply(res, err)
 		return
 	}
-	restarting := to != cur
-	if !restarting {
-		d.upg.running.Store(false)
-	}
-	d.Logf("upgrade to %s: installed %s (running %s), restarting: %v", target, to, cur, restarting)
-	reply(protocol.NodeUpgradeResult{From: cur, To: to, Restarting: restarting}, nil)
-	if restarting {
+	d.Logf("upgrade to %s: installed %s (running %s), restarting: %v", target, res.To, res.From, res.Restarting)
+	reply(res, nil)
+	if res.Restarting {
 		go func() {
 			time.Sleep(300 * time.Millisecond) // let the answer leave
 			d.restart()

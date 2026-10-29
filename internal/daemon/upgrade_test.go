@@ -19,6 +19,7 @@ type upNode struct {
 	cfg Config
 	mu  sync.Mutex
 	d   *Daemon
+	ver string // the version after an install; empty until then
 }
 
 func (n *upNode) daemon() *Daemon {
@@ -29,17 +30,24 @@ func (n *upNode) daemon() *Daemon {
 
 func (n *upNode) start() {
 	n.t.Helper()
-	d, err := New(n.cfg)
+	n.mu.Lock()
+	cfg := n.cfg
+	if n.ver != "" {
+		cfg.Version = n.ver
+	}
+	n.mu.Unlock()
+	d, err := New(cfg)
 	if err != nil {
 		n.t.Fatal(err)
 	}
 	d.cmdline = func(int) string { return "pi" }
-	if err := d.Start(context.Background()); err != nil {
-		n.t.Fatal(err)
-	}
+	// Set before Start: an automatic upgrade can restart the node at once.
 	n.mu.Lock()
 	n.d = d
 	n.mu.Unlock()
+	if err := d.Start(context.Background()); err != nil {
+		n.t.Fatal(err)
+	}
 	n.t.Cleanup(d.Stop)
 }
 
@@ -78,13 +86,14 @@ func startUpNode(t *testing.T, g *testGateway, version string, install func(targ
 		// What a service manager does: stop this process, start the new binary.
 		old := n.daemon()
 		old.Stop()
-		cfg := n.cfg
-		cfg.Version = n.installed()
-		n.cfg = cfg
+		v := n.installed()
+		n.mu.Lock()
+		n.ver = v
+		n.mu.Unlock()
 		n.start()
 	}
 	n.start()
-	eventually(t, "node connected", n.daemon().Connected)
+	eventually(t, "node connected", func() bool { return n.daemon().Connected() })
 	return n
 }
 

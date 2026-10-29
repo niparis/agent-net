@@ -214,6 +214,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 		d.pushSession(ls)
 	}
 	d.flushOutbox(rctx)
+	go d.autoUpgrade(rctx) // not tracked: it may stop the daemon itself to restart
 
 	select {
 	case <-l.dead:
