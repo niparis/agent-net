@@ -127,7 +127,9 @@ func summarize(out any, verb string) any {
 		}
 		if s.Transport == protocol.MCPStdio {
 			m["command"] = strings.Join(append([]string{s.Command}, s.Args...), " ")
-			m["env"] = s.Env
+			if len(s.Env) > 0 {
+				m["env"] = s.Env
+			}
 		} else {
 			m["url"] = s.URL
 			var hs []string
@@ -246,18 +248,26 @@ func objectSchema(raw json.RawMessage) any {
 	return m
 }
 
-// Watch refreshes on every trigger and every interval, until ctx ends.
+// Watch refreshes on every trigger and every interval, until ctx ends. After
+// a failed refresh (the daemon is down, or has not found this session yet) it
+// retries sooner, with a growing delay.
 func (d *Dynamic) Watch(ctx context.Context, trigger <-chan struct{}, every time.Duration) {
-	_ = d.Refresh(ctx)
-	t := time.NewTicker(every)
-	defer t.Stop()
+	retry := time.Second
+	wait := time.Duration(0)
 	for {
+		t := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
+			t.Stop()
 			return
 		case <-trigger:
 		case <-t.C:
 		}
-		_ = d.Refresh(ctx)
+		t.Stop()
+		if err := d.Refresh(ctx); err != nil {
+			wait, retry = min(retry, every), min(retry*2, every)
+		} else {
+			wait, retry = every, time.Second
+		}
 	}
 }

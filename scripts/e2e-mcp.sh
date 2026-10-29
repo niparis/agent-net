@@ -53,14 +53,15 @@ an() {
   local n=$1
   shift
   AGENT_NET_CONFIG_DIR=$T/$n/cfg AGENT_NET_STATE_DIR=$T/$n/state AGENT_NET_SOCKET=$T/$n.sock \
-    AGENT_NET_CLAUDE_SESSIONS_DIR=$T/empty "$BIN/agent-net" "$@"
+    AGENT_NET_CLAUDE_SESSIONS_DIR=$([ "$n" = b ] && echo "${E2E_B_CLAUDE_SESSIONS:-$T/empty}" || echo "$T/empty") \
+    "$BIN/agent-net" "$@"
 }
 for n in a b; do
   mkdir -p "$T/$n"
   join=$("$BIN/agent-net" enroll --data "$T/gw" --host 127.0.0.1 --port "$port" 2>/dev/null)
   an $n join "$join" >/dev/null
   # The daemon of each machine gets this variable; a stdio server asks for it by name.
-  ( export DAEMON_SECRET="secret-from-$n-0123456789"; an $n daemon >"$T/daemon-$n.log" 2>&1 ) &
+  ( export DAEMON_SECRET="secret-from-$n-0123456789"; an $n daemon >"$T/daemon-$n.log" 2>&1 ) >/dev/null 2>&1 &
   pids+=($!)
 done
 for n in a b; do

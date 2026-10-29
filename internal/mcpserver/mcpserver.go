@@ -245,6 +245,11 @@ func Run(ctx context.Context, socket string) error {
 	d.conn(ctx)
 	srv := New(d.Call)
 	// Registered MCP servers' tools follow the registry while this runs.
-	go NewDynamic(srv, d.Call).Watch(ctx, d.Changed, 15*time.Second)
+	dyn := NewDynamic(srv, d.Call)
+	// Load them before serving, so the first tools/list already has them.
+	ictx, icancel := context.WithTimeout(ctx, 3*time.Second)
+	dyn.Refresh(ictx)
+	icancel()
+	go dyn.Watch(ctx, d.Changed, 15*time.Second)
 	return srv.Run(ctx, &mcp.StdioTransport{})
 }
