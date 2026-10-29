@@ -15,13 +15,14 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net join STRING` | Join this machine to a gateway with a join string. |
 | `agent-net uninstall` | Remove services and integrations. |
 | `agent-net status` | Daemon connection, node ID and local sessions. `--json` for JSON. |
-| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. `--json`. |
+| `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. MODE (`foreground`, `background`, `unknown`, or `-` from an older machine) and MODEL show how the session runs. `--json`. |
 | `agent-net nodes` | Machines with their agent-net version and installed harnesses (HARNESSES column). `--wide` lists each harness with version, path and model count, and one extra row for every other copy of a harness (marked "other copy"); the primary copy is marked when there is more than one. `--json` has everything, including the model lists. |
 | `agent-net projects` | Known projects, one per repository per machine: name, machine, path (the main working tree), git remote, SOURCE (`registered`, `seen` or `both`), which harnesses ran there, the linked worktrees where sessions ran, online sessions and last seen. `--name N` shows one project. `--json`. See [the project registry](#the-project-registry). |
 | `agent-net projects add PATH...` | Register repositories on this machine. `--dry-run` shows what would happen. `--json`. |
 | `agent-net projects scan DIR` | Register every repository under a folder on this machine. `--depth N` (default 3, at most 8), `--dry-run`, `--json`. |
 | `agent-net projects remove NAME\|PATH` | Remove a registration. A name that fits two projects on this machine is refused: give the path. `--on MACHINE` removes the entry of another machine (host name or node ID), for example one that is gone. |
 | `agent-net events` | On the gateway machine: the gateway's events table, newest last. `--node` (ID or host name), `--session`, `--kind` (exact, or a group like `msg`), `--since` (like `2h` or `2026-10-29T12:00:00Z`), `--limit N` (default 100), `--follow` (or `-f`), `--json`, `--data DIR`. |
+| `agent-net tui` | A live, read-only terminal view of every session on the network. It reads through the local daemon, so it runs on any machine. See [the screen](#the-tui-screen). |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net version` | Print the version. |
 
@@ -134,6 +135,14 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
 
+**Mode and model for each session.** Every session also carries two fields. `agent_list` and `agent_get` return them as `mode` and `model` (both are left out by a machine on an older agent-net).
+
+| Harness | `mode` | `model` |
+|---|---|---|
+| Claude Code | From the `kind` field of `~/.claude/sessions/<pid>.json`. `interactive` is `foreground`. `bg`, `daemon` and `daemon-worker` (the other values Claude Code 2.1.312 accepts) and any new value are `background`. No `kind` is `unknown`. | The `model` field of the newest assistant entry of the main conversation in `~/.claude/projects/<folder>/<session id>.jsonl`, found when the session folder is turned into a folder name (every character that is not a letter or digit becomes `-`), or by searching all project folders. The daemon reads the file from the end in blocks (at most 8 MiB) and only when its size or time changed. It keeps no transcript text and logs none. Sub-agent entries and Claude Code's `<synthetic>` placeholder are skipped. The model changes after the next answer, not at the moment of `/model`. |
+| Pi | From `ctx.mode` in the extension: `tui` is `foreground`, `rpc`, `json` and `print` are `background`. | `provider/id` of `ctx.model`, updated on `model_select`. |
+| OpenCode | Always `unknown`. OpenCode 2.2.0 has no signal for a client that is attached to a session. See [opencode.md](opencode.md#notes-and-limits). | `provider/model` of the session (`Session.Info.model`), updated on `session.model.selected` and `session.step.started` of the root session. |
+
 If `git` is missing, slow or fails, the session is still reported, with fewer fields. The result is cached per folder (5 minutes for root, project and remote, 5 seconds for the branch), and the branch is read again when the session updates. `agent_list` returns these fields in each agent's `repo` object. `agent-net list` shows PROJECT, and `--wide` shows the rest.
 
 **Installed harnesses.** At start and then every 6 hours the daemon looks for `claude`, `opencode`, `pi` and `codex`. It reports the path and the version (the first line of `<program> --version`, 5 second limit) of each one it finds. For OpenCode it also runs `opencode models` (20 second limit), which prints one `provider/model` per line, and reports that list. No other harness has such a command in use, so only OpenCode reports models.
@@ -172,6 +181,32 @@ Each entry has the machine, the path of the main working tree, the name (its bas
 **Agent tools** (Claude Code, Pi, OpenCode): `agent_project_add` (`paths`, or `dir` with `scan`, plus `depth` and `dry_run`) and `agent_project_list` (optional `name`). There is no tool to remove a project: removing is only done with `agent-net projects remove`. An agent that calls the remove method gets an error that tells it to ask you. The guidance text tells agents to register projects only when you ask.
 
 **Versions.** A gateway from before this feature answers `unknown frame type` to the new requests, and the daemon turns that into "the gateway is too old for project registration". A daemon from before this feature does not know the new methods, and the CLI says so. An older gateway lists projects without SOURCE, and the CLI shows those rows as `seen`.
+
+## The TUI screen
+
+`agent-net tui` needs a terminal. It talks to the local daemon like `agent-net list` does and calls only the read-only methods `info`, `nodes`, `list`, `events` and `message_status`. It shows, from top to bottom:
+
+- **Machines.** Each machine with its agent-net version, online or offline, and its installed harnesses. This machine comes first and is marked `(here)`.
+- **Sessions,** grouped by machine: AGENT (the harness), NAME, PROJECT, BRANCH, MODEL (shortened: no provider, no `claude-` prefix), MODE (`fg`, `bg`, `?` for unknown, `-` for an older machine), STATUS (`idle`, `busy`, `shell`), ON (`on` or `off`), FUNCTION (the announced function, or the task).
+- **Selected session.** Folder, git remote, worktree (when the session runs in a linked git worktree), session ID, PID, state, task and its recent messages (time, direction, peer, type, delivery state).
+- **Messages (live).** One line per message on the network, with both ends, the type and the delivery state. Other lines: machines connecting or disconnecting, new sessions, refused sends.
+
+The screen refreshes once a second. If the daemon is not running, or cannot reach the gateway, a banner says so, the last data stays on screen, and it retries every second.
+
+| Key | What it does |
+|---|---|
+| up, down, `k`, `j`, `g`, `G`, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
+| `/` | Filter the sessions: type words, all must appear in some field of a session (name, harness, machine, project, branch, model, mode, status, function, task, folder, ID). Enter keeps the filter, Esc clears it. |
+| `o` | Show or hide offline sessions. |
+| tab | Move the focus between the sessions and the messages. |
+| enter | With the messages in focus: open the body of the message. |
+| esc | Close the body, or clear the filter. |
+| `r` | Refresh now. |
+| `q`, ctrl+c | Quit. |
+
+A message body can only be shown for a message that involves a session on this machine. The gateway refuses it to other machines. Text from the network is stripped of control characters before it is drawn, so an agent name or a message cannot move the cursor or change the screen.
+
+**Event feed.** The screen reads the gateway's events through the local daemon method `events` (`{"after_id": N, "limit": N}`) and the gateway frame `query.events`. Any enrolled machine can ask. It returns the events of kinds `msg.*`, `session.*` and `node.*`, oldest first, as metadata: the event kind and time, the machine, the session, the message ID, and for messages the two session IDs, the type and the ID of the message it answers. Never a message body. Machine addresses are left out, details are cut to 200 characters, and MCP, enrollment and retention events are not included. With `after_id` 0 you get the newest `limit` events (default 100, at most 500). An older daemon or gateway answers that the method is unknown, and the screen then shows the sessions without the feed.
 
 ## What setup changes on your machine
 

@@ -59,6 +59,7 @@ Run everything in isolation, so the real OpenCode service and the real agent-net
 
 ## Notes and limits
 
+- MODE is `unknown` for OpenCode sessions. OpenCode 2.2.0 has no signal for "a TUI or app is attached to this session". The plugin context has no list of clients. The only viewer signal is the `session.viewed` event (`POST /api/session/:id/view`, "mark the idle transition observed by the viewer as viewed"), which fires once per idle transition and says nothing about a viewer that stays attached and quiet. `Session.Info.time.viewed` has the same limit. The MODEL is reported (`Session.Info.model`, then `session.model.selected` and `session.step.started`).
 - Not tested on macOS. The macOS peer check (`ps -o comm` for the executable) is written but unrun.
 - OpenCode creates a plugin instance for a project directory only when a client first uses that directory, not when the service starts. While no instance is loaded at all, no plugin code runs, so a session created through the API then registers when the first instance loads (the 24-hour discovery covers it). Once any instance is loaded, it sees the created event of every directory. In the TUI a new session is created when you send the first prompt, not when you open the empty home screen, so there is nothing to register before that.
 - Sessions older than 24 hours, or beyond the newest 50, register when something happens in them (a view, a prompt, a message to it).

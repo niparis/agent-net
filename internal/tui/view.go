@@ -280,6 +280,19 @@ func (m Model) machineRows() []machineRow {
 	return out
 }
 
+// numberOf finds the version number in what `<program> --version` printed,
+// such as "2.1.312 (Claude Code)" or "opencode v2.2.0": the first word that
+// starts with a digit, after an optional "v".
+func numberOf(s string) string {
+	for _, f := range strings.Fields(s) {
+		f = strings.TrimPrefix(f, "v")
+		if f != "" && f[0] >= '0' && f[0] <= '9' {
+			return f
+		}
+	}
+	return ""
+}
+
 func harnessList(hs []protocol.HarnessInfo) string {
 	if hs == nil {
 		return "harnesses unknown"
@@ -289,8 +302,7 @@ func harnessList(hs []protocol.HarnessInfo) string {
 	}
 	var parts []string
 	for _, h := range hs {
-		v := strings.TrimPrefix(strings.Fields(h.Version + " ")[0], "v")
-		if v != "" {
+		if v := numberOf(h.Version); v != "" {
 			parts = append(parts, h.Name+" "+v)
 		} else {
 			parts = append(parts, h.Name)
@@ -519,6 +531,15 @@ func (m Model) sessionsTable(w, n int) []string {
 		out = append(out, sDim.Render(msg))
 	}
 	top := min(m.tableTop, max(len(rows)-n, 0))
+	if top > 0 && top < len(rows) && !rows[top].header {
+		// The machine heading has scrolled off: keep it as the first line.
+		for j := top - 1; j >= 0; j-- {
+			if rows[j].header {
+				out = append(out, m.groupLine(rows[j].g, w))
+				break
+			}
+		}
+	}
 	for i := top; i < len(rows) && len(out) < n+1; i++ {
 		r := rows[i]
 		if r.header {
@@ -670,7 +691,7 @@ func (m Model) detailLines(w, n int) []string {
 		}
 	case len(msgs) == 0:
 		if room > 0 {
-			out = append(out, kv("messages", sDim.Render("none seen yet")))
+			out = append(out, kv("messages", "none seen yet"))
 		}
 	default:
 		for i, it := range msgs {

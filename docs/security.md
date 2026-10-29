@@ -25,7 +25,7 @@ A machine joins with a one-time code.
 
 - At enrollment the gateway gives the machine a node ID and a token (32 random bytes, hex). It stores only the SHA-256 hash of the token.
 - The token is saved in `~/.config/agent-net/node.json` with mode 0600. The daemon sends it as a bearer token when it opens its WebSocket. One node has one live connection, and a new one replaces the old.
-- The gateway only accepts a message from a session that belongs to the node on the connection, and a node can only read messages that were sent from or to its own sessions. It can list every agent on the network.
+- The gateway only accepts a message from a session that belongs to the node on the connection, and a node can only read messages that were sent from or to its own sessions. It can list every agent on the network and read the event feed (metadata, no bodies; see [the event feed](#what-every-node-can-read-the-event-feed)).
 - There is no token rotation and no revocation command yet. To remove a machine, delete its row from the `nodes` table in `gateway.db`, or stop trusting the network and start a new gateway data dir.
 
 ## Which local process is calling
@@ -111,11 +111,17 @@ Each daemon sends the gateway an inventory of the machine, and every enrolled ma
 - **Per session:** the working folder (already sent before), the git root, the project name, the `origin` remote URL and the current branch. The daemon removes passwords and tokens from the remote before it sends it. It runs `git` in the session's folder, with `core.fsmonitor` turned off, no prompts and no optional locks. A repository can hold configuration that we did not write, so only read-only plumbing commands run (`rev-parse`, `config --get`, `symbolic-ref`).
 - **Per machine:** which of `claude`, `opencode`, `pi` and `codex` are installed, their file paths and versions, and the model list of OpenCode. To get the versions and models the daemon runs those programs (`--version`, and `opencode models`) as your user. `opencode models` may start or contact the OpenCode background service. To find the programs it also runs your login shell once (`$SHELL -l -c`) when a harness is missing from the daemon's `PATH`.
 
+- **Per session:** whether it is in the foreground (a person has it open) or the background, and the model it runs. For Claude Code the daemon reads the `model` field of the newest assistant entry in the session's transcript file. It reads nothing else from the transcript, and sends and logs no transcript text.
+
 File paths and the remote URL name your projects. If that is sensitive, do not enroll the machine.
+
+## What every node can read: the event feed
+
+Since the TUI, every enrolled machine can read the network's event metadata, with `agent-net tui` or the daemon method `events` (gateway frame `query.events`). This is new: before, a machine could only read the messages of its own sessions. The feed has the kind and time of each message, delivery, session and connection event, which machine and session it concerns, the two session IDs and the type of each message, and the ID of the message it answers. It does not have message bodies, MCP events, enrollment events or machine addresses. Details are cut to 200 characters, and the delivery detail comes from the receiving machine (for example `plugin refused`). A message body is still given only to the two machines in the conversation (`message_status`), and the TUI uses exactly that call. The feed is open to every enrolled machine, which already could list all agents; a compromised machine now also sees who talks to whom and when. The events are kept for 90 days.
 
 ## What agent-net does not protect against
 
-- **A compromised enrolled machine.** Its token lets it list every agent on the network and send to any of them. It can send as any session that its own daemon reports, and read the messages to and from those sessions. Enroll only machines you would give a shell on the others.
+- **A compromised enrolled machine.** Its token lets it list every agent on the network and send to any of them. It can send as any session that its own daemon reports, and read the messages to and from those sessions, and it sees the metadata of every message on the network. Enroll only machines you would give a shell on the others.
 - **Prompt injection through a message.** A message is text that an agent will read. A hostile or confused peer, or a peer that read a poisoned web page, can send instructions. The wrapper, the sender label and the guidance text help the model see where the text came from. They do not stop a model that decides to obey. Your permission rules are the barrier.
 - **Anyone who is your user on a machine.** Any process running as your user can read `node.json` and the token, connect to the daemon socket (and claim to be a Pi session), and write to Claude's inbox sockets. agent-net adds no boundary between your own processes.
 - **Anyone who can reach the gateway port.** Without a valid code or token they cannot join, list agents or read messages. They can fetch the gateway CA certificate and the agent-net release binaries (`/v1/ca` and `/install/bin/<os>/<arch>` need no login). The gateway listens on `0.0.0.0:7420` by default. Keep it on a LAN, a VPN or Tailscale, and not on the public internet.

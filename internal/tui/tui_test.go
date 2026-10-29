@@ -35,7 +35,7 @@ var t0 = time.Date(2026, 10, 29, 14, 5, 0, 0, time.UTC)
 func fakeNodes() []protocol.NodeView {
 	return []protocol.NodeView{
 		{NodeID: "n_mac", Hostname: "Mac", Version: "v0.4.0", Online: true, Harnesses: []protocol.HarnessInfo{
-			{Name: "claude", Version: "2.1.312 (Claude Code)"}, {Name: "opencode", Version: "2.2.0"}, {Name: "pi", Version: "1.4.0"}}},
+			{Name: "claude", Version: "2.1.312 (Claude Code)"}, {Name: "opencode", Version: "opencode v2.2.0"}, {Name: "pi", Version: "1.4.0"}}},
 		{NodeID: "n_vm", Hostname: "build-vm", Version: "v0.4.0", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "pi", Version: "1.4.0"}}},
 		{NodeID: "n_old", Hostname: "old-box", Version: "v0.3.2", Online: false, Harnesses: nil},
 	}
@@ -459,6 +459,14 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	if len(lines(v)) > 24 {
 		t.Fatalf("%d lines", len(lines(v)))
 	}
+	// Scrolled into the middle of a machine, its heading stays on top.
+	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
+	if v := lines(m.View()); !strings.HasPrefix(strings.TrimSpace(v[5]), "build-vm") {
+		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
+	}
+	if !strings.Contains(m.View(), "> ") {
+		t.Fatal("the selection scrolled out of the table")
+	}
 	m = keys(m, "g")
 	if !strings.Contains(m.View(), m.visible()[0].Profile.Name) {
 		t.Fatal("going back to the top did not scroll back")
@@ -556,6 +564,29 @@ func TestClassifyError(t *testing.T) {
 		if got := ClassifyError(err); got != want {
 			t.Errorf("%v: %v, want %v", err, got, want)
 		}
+	}
+}
+
+// The screen keeps refreshing: Init starts a fetch and the clock, and every
+// tick starts the next tick.
+func TestInitStartsFetchAndClock(t *testing.T) {
+	m := New(&fakeSource{snap: fakeSnapshot()})
+	cmd := m.Init()
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok || len(batch) != 2 {
+		t.Fatalf("Init must batch a fetch and a tick, got %T", cmd())
+	}
+	var sawFetch bool
+	for _, c := range batch {
+		if _, ok := c().(fetchedMsg); ok {
+			sawFetch = true
+		}
+	}
+	if !sawFetch {
+		t.Fatal("Init does not fetch")
+	}
+	if !m.fetching {
+		t.Fatal("the first fetch is not counted as running")
 	}
 }
 
@@ -826,4 +857,25 @@ func (r *recordingSource) Snapshot(ctx context.Context) (Snapshot, error) {
 func (r *recordingSource) Events(ctx context.Context, a int64, l int) ([]protocol.FeedEvent, error) {
 	r.calls = append(r.calls, "events")
 	return r.fakeSource.Events(ctx, a, l)
+}
+
+// With colours on, the codes must be well formed and no text of ours may be
+// broken by the clean-up of network text: stripping them leaves the plain view.
+func TestColourOutputIsWellFormed(t *testing.T) {
+	m := keys(newModel(100, 30), "o", "G")
+	plain := m.View()
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	defer lipgloss.SetColorProfile(termenv.Ascii)
+	coloured := m.View()
+	if coloured == plain {
+		t.Skip("this terminal profile draws no colour")
+	}
+	if got := ansi.Strip(coloured); got != plain {
+		t.Fatalf("stripping the colours does not give the plain view.\n--- got ---\n%s\n--- plain ---\n%s", got, plain)
+	}
+	for i, l := range lines(coloured) {
+		if ansi.StringWidth(l) > 100 {
+			t.Fatalf("line %d is wider than the screen: %q", i, l)
+		}
+	}
 }

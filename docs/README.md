@@ -20,7 +20,7 @@ These files record how the project was planned and built. They are kept for cont
 
 - [brief.md](brief.md): the original brief.
 - [review.md](review.md): review of the brief and the build order.
-- [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects.
+- [decisions/](decisions/): decisions taken, one file each. [0003](decisions/0003-gateway-record-and-inventory.md) covers the gateway log, repo info, harness inventory and retention. [0005](decisions/0005-registered-projects.md) covers registered projects. [0004](decisions/0004-tui-and-event-feed.md) covers the TUI, session mode and model, and the event feed.
 - [spike/](spike/): what we measured about each agent before building.
 - [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.
 - [step2-run.md](step2-run.md): how to run the pieces by hand, one by one.

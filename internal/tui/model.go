@@ -76,7 +76,7 @@ func New(src Source) Model {
 	ti.Prompt = "/"
 	ti.CharLimit = 80
 	ti.Cursor.SetMode(cursor.CursorHide)
-	return Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti}
+	return Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true}
 }
 
 // ---- messages ----
@@ -97,8 +97,9 @@ type bodyMsg struct {
 	err error
 }
 
-// Init starts the first refresh.
-func (m Model) Init() tea.Cmd { return m.fetchCmd() }
+// Init starts the first refresh and the clock that asks for the next ones.
+// New marks a fetch as running, so the first tick does not start a second.
+func (m Model) Init() tea.Cmd { return tea.Batch(m.fetchCmd(), tick()) }
 
 func tick() tea.Cmd {
 	return tea.Tick(RefreshEvery, func(time.Time) tea.Msg { return tickMsg{} })
@@ -514,8 +515,16 @@ func (m *Model) fixScroll() {
 			m.tableTop = sel - 1
 		}
 	}
-	if sel >= m.tableTop+n {
-		m.tableTop = sel - n + 1
+	// A table scrolled past its machine heading repeats it on its first line,
+	// which leaves one row less for sessions.
+	room := func(top int) int {
+		if top > 0 && top < len(rows) && !rows[top].header {
+			return n - 1
+		}
+		return n
+	}
+	for sel >= m.tableTop+room(m.tableTop) {
+		m.tableTop++
 	}
 	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-n, 0))
 }

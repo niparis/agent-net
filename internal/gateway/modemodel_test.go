@@ -72,9 +72,9 @@ func TestOlderDaemonSendsNoModeOrModel(t *testing.T) {
 	}
 }
 
-func TestMigration5KeepsExistingData(t *testing.T) {
+func TestMigrationForModeAndModelKeepsExistingData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gw.db")
-	// A database as the build before this one left it: migrations 1 to 4.
+	// A database as the build before this one left it: every migration but the last.
 	db, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,7 @@ func TestMigration5KeepsExistingData(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 4; i++ {
+	for i := 0; i < len(migrations)-1; i++ {
 		if _, err := db.Exec(migrations[i]); err != nil {
 			t.Fatal(err)
 		}
@@ -97,7 +97,7 @@ func TestMigration5KeepsExistingData(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if v, _ := s.SchemaVersion(); v != len(migrations) || len(migrations) < 5 {
+	if v, _ := s.SchemaVersion(); v != len(migrations) {
 		t.Fatalf("schema version %d of %d", v, len(migrations))
 	}
 	a, ok, _ := s.Agent("s_1")
