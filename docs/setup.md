@@ -39,14 +39,14 @@ The line works for 10 minutes and for one machine. `-k` is safe here: `--pinnedp
 The script downloads the binary to `~/.local/bin/agent-net` and runs `agent-net setup`. Setup prints one line per step:
 
 ```
-join               ok (node n_...)
-daemon service     ok (restarted)
-claude code        ok
-claude peer messages held for review (default)
-pi extension       ok
-claude guidance    updated
-agent guidance     ok
-daemon status      connected to https://192.168.1.10:7420 as node n_...
+join                  ok (node n_...)
+daemon service        ok (restarted)
+claude code           ok
+claude peer messages  held for review (default)
+pi extension          ok
+claude guidance       updated
+agent guidance        ok
+daemon status         connected to https://192.168.1.10:7420 as node n_...
 ```
 
 Steps that do not apply say `skipped (reason)`. Setup:
@@ -73,8 +73,8 @@ Accept agent-net messages in Claude Code without holding them? [y/N]
 
 - The default is No. Only `y` or `yes` turns it on. Yes sets `"crossSessionInbound": "accept"` in the Claude Code user settings file (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`). No other key is changed.
 - The answer is read from the terminal (`/dev/tty`), so it works under `curl ... | sh`. With no terminal, setup changes nothing and prints how to turn it on later.
-- `--accept-peer-messages` sets it without a prompt. `--no-accept-peer-messages` skips it without a prompt. Both work on `install.sh` too, which passes them to setup: `curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --accept-peer-messages`.
-- If `crossSessionInbound` already has any value, setup never changes it and does not ask. The summary line shows it: `claude peer messages  hold (your setting)`.
+- `--accept-peer-messages` sets it without a prompt. `--no-accept-peer-messages` skips it without a prompt. Both work on `install.sh` and on the invite line, which pass them to setup: `curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --accept-peer-messages`, or add `-s -- --accept-peer-messages` after the `sh` of an invite line.
+- If `crossSessionInbound` already has any value, setup never changes it and does not ask. The summary line shows it: `claude peer messages hold (your setting)`.
 - After you answer once (yes or no), setup does not ask again. Run `agent-net setup --accept-peer-messages` later to change your mind.
 - If the settings file is not valid JSON, setup leaves it untouched and says so.
 - `agent-net uninstall` removes the key, but only if agent-net set it and the value is still `"accept"`.

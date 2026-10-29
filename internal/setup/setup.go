@@ -85,11 +85,11 @@ func (r *runner) step(name, result string, err error) {
 			r.failed = fmt.Errorf("%s: %w", name, err)
 		}
 	}
-	fmt.Fprintf(r.Out, "%-18s %s\n", name, result)
+	fmt.Fprintf(r.Out, "%-21s %s\n", name, result)
 }
 
 func (r *runner) hint(format string, a ...any) {
-	fmt.Fprintf(r.Out, "%-18s %s\n", "", fmt.Sprintf(format, a...))
+	fmt.Fprintf(r.Out, "%-21s %s\n", "", fmt.Sprintf(format, a...))
 }
 
 // Setup makes this machine part of the network. It prints one line per step.

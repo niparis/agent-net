@@ -97,6 +97,14 @@ PIN='{{.Pin}}'
 
 die() { echo "agent-net install: $*" >&2; exit 1; }
 
+PEER_FLAG=""
+for arg in "$@"; do
+  case "$arg" in
+    --accept-peer-messages|--no-accept-peer-messages) PEER_FLAG="$arg" ;;
+    *) die "unknown option: $arg (usage: install [--accept-peer-messages | --no-accept-peer-messages])" ;;
+  esac
+done
+
 command -v curl >/dev/null 2>&1 || die "curl is required"
 [ -n "${HOME:-}" ] || die "HOME is not set"
 
@@ -122,7 +130,7 @@ chmod 755 "$TMP"
 mv -f "$TMP" "$BIN_DIR/agent-net" || die "cannot install $BIN_DIR/agent-net"
 trap - EXIT
 
-"$BIN_DIR/agent-net" setup --join "$URL#$CODE#$CA"
+"$BIN_DIR/agent-net" setup --join "$URL#$CODE#$CA" ${PEER_FLAG:+"$PEER_FLAG"}
 `))
 
 // RenderInstallScript fills the install script template. The values end up
