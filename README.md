@@ -31,20 +31,20 @@ What the first line does depends on the machine. It prints which case it found.
 - **The gateway:** installs the new version and restarts the gateway and daemon services. It also keeps the binaries for Linux and macOS (amd64 and arm64) so the gateway can hand them to new machines.
 - **A machine that already joined:** updates the binary and the integrations, and skips the join.
 
-The invite line works once, for 10 minutes. It installs the binary from the gateway, joins the network, starts the daemon as a service, and adds the agent-net tools to Claude Code and Pi if they are installed. Every step prints `ok` or `skipped (reason)`.
+The invite line works once, for 10 minutes. It installs the binary from the gateway, joins the network, starts the daemon as a service, and adds the agent-net tools to Claude Code, Pi and OpenCode if they are installed. Every step prints `ok` or `skipped (reason)`.
 
-Then start a new Claude Code or Pi session. Details: [docs/setup.md](docs/setup.md). Problems (on a Mac, use the Tailscale line): [docs/troubleshooting.md](docs/troubleshooting.md). Why `curl -k --pinnedpubkey` is safe: [docs/security.md](docs/security.md).
+Then start a new Claude Code, Pi or OpenCode session. Details: [docs/setup.md](docs/setup.md). Problems (on a Mac, use the Tailscale line): [docs/troubleshooting.md](docs/troubleshooting.md). Why `curl -k --pinnedpubkey` is safe: [docs/security.md](docs/security.md).
 
 ## How it works
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/overview-dark.svg">
-  <img alt="Claude Code and Pi sessions on your laptop and your VM, each machine with an agent-net daemon, all linked over TLS to one agent network with a directory, messages and a registry" src="docs/img/overview-light.svg">
+  <img alt="Claude Code, Pi and OpenCode sessions on your laptop and your VM, each machine with an agent-net daemon, all linked over TLS to one agent network with a directory, messages and a registry" src="docs/img/overview-light.svg">
 </picture>
 
 - **One gateway** runs on one machine. It keeps the directory of agent sessions and stores every message until it is delivered.
 - **One daemon** runs on each machine. It finds the local sessions, delivers incoming messages into them, and queues outgoing ones while the gateway is down.
-- **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`. Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension.
+- **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`. Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
 - **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_reply`.
 
 ## What it looks like
@@ -99,7 +99,7 @@ Neither agent asked you to copy anything. Pi answered from its own files, and Cl
 |---|---|---|---|
 | Claude Code | live | A stdio MCP server per session (`agent-net mcp`) for the tools, and the session's own inbox socket for delivery | 2.1.312 |
 | Pi | live | An extension that talks to the local daemon socket | 1.4.x |
-| OpenCode | in progress | A plugin inside its v2 background service | 2.2.x |
+| OpenCode | live | A plugin inside its v2 background service, one daemon connection per session | 2.2.0 |
 | Codex | planned | `codex queue` and the app-server | 0.165 |
 
 Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64.
@@ -118,7 +118,7 @@ The short version. The full model, including what is not protected, is in [docs/
 
 ## Use
 
-Start a new Claude Code or Pi session after the install. Sessions that were open before can receive messages, but they can only send after a restart.
+Start a new Claude Code, Pi or OpenCode session after the install. Sessions that were open before can receive messages, but they can only send after a restart.
 
 Ask an agent things like:
 
@@ -149,13 +149,12 @@ To remove agent-net from a machine: `agent-net uninstall` (add `--purge` to dele
 | A2A | A protocol for agent services to call each other | Between agent services |
 | MCP | A protocol for an agent to use tools | Agent to tools |
 | Claude Code `SendMessage` and `ListAgents` | Built-in messaging between Claude Code sessions | One machine |
-| agent-net | Delivers messages into running interactive coding sessions, with presence and routed replies | Your machines, and different agents (Claude Code, Pi, and more to come) |
+| agent-net | Delivers messages into running interactive coding sessions, with presence and routed replies | Your machines, and different agents (Claude Code, Pi, OpenCode, and more to come) |
 
 agent-net uses MCP to give Claude Code its tools. It is not an implementation of A2A.
 
 ## Roadmap
 
-- OpenCode adapter (in progress)
 - Codex adapter
 - Leaving the network: let a session opt out of being listed
 - MCP server registry: add any MCP server once, from the CLI or from an agent, and use it from every agent on every machine (in progress)
@@ -179,6 +178,7 @@ go vet ./... && go test -race ./...
 | `internal/setup` | `setup`, `invite`, `uninstall`, service files |
 | `internal/guidance` | the guidance text added to agent instruction files |
 | `plugins/pi` | the Pi extension |
+| `plugins/opencode` | the OpenCode v2 plugin |
 | `install.sh` | the one-line installer, published with each release |
 | `scripts/dist.sh` | builds Linux and macOS binaries from source |
 
