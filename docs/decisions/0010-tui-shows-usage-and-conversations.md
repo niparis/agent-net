@@ -1,4 +1,4 @@
-# 0008 - The TUI shows CPU, memory and conversations, and is the only reader
+# 0010 - The TUI shows CPU, memory and conversations, and is the only reader
 
 **Date:** 2026-10-29
 **Status:** Built on branch `worktree-agent-aebf0f2ff28c64d2e`
@@ -6,13 +6,17 @@
 
 ## D1 - One reader: the TUI
 
-The owner wants one screen, not a screen and two commands. `agent-net top` and `agent-net show` are removed. The daemon methods stay, with their owner-only gate and their tests, because the TUI uses them and the phone app will later (0006, P1 and P8).
+The owner wants one screen, not a screen and two commands. `agent-net top` and `agent-net show` are removed. The daemon methods stay (they are on the operator interface of [0008](0008-operator-interface-and-worker-build.md)), with their owner-only gate and their tests, because the TUI uses them and the phone app will later (0006, P1 and P8).
 
 ## D2 - The TUI asks for owner data in three rhythms
 
 - `usage` and `counts` every 5 seconds, with the snapshot. Daemons report every 10 seconds, so a faster rhythm adds nothing. An older daemon or gateway turns this off after the first refusal and the screen shows `?`.
 - `usage_top` for the selected session only, kept for 5 seconds.
 - `session_text` only when the person opens a conversation. It follows once a second with the `newer` cursor and pages back with the `older` cursor, one request at a time.
+
+## D2b - One interface
+
+The four data calls are methods of `operator.Operator` (decision 0008): `Usage`, `UsageTop`, `SessionText` and `Counts`. The TUI has no source of its own, so the phone app gets the same calls.
 
 ## D3 - Data handling is in the model, drawing is in the view
 

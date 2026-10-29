@@ -24,7 +24,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0002](decisions/0002-workers.md): workers, accepted. [0008](decisions/0008-operator-interface-and-worker-build.md): the operator interface, the owner as a sender, and how workers were built (the OpenCode command, isolation from the user's service, hand-back, notices, worktrees).
 - [0009](decisions/0009-function-from-agents-md.md): FUNCTION is the project description read from AGENTS.md (the extraction rule), and announcing the task is required.
 - [0007](decisions/0007-usage-and-session-text.md): CPU and memory per machine and session, the text of a session (owner only), and session counts.
-- [0008](decisions/0008-tui-shows-usage-and-conversations.md): the TUI shows CPU, memory and conversations and is the only reader; `top` and `show` are removed.
+- [0010](decisions/0010-tui-shows-usage-and-conversations.md): the TUI shows CPU, memory and conversations and is the only reader; `top` and `show` are removed.
 - [0006](decisions/0006-phone-app.md): phone app, planned: same data and actions as the TUI, through one shared operator interface.
 - [spike/](spike/): what we measured about each agent before building.
 - [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.
