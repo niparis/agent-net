@@ -644,6 +644,9 @@ await test("session_text pages back and forward by cursor, and reports failures"
   hooks.contextFails = true;
   const failed = await ask("p7", {});
   if (failed.ok || !failed.error.includes("context failed")) throw new Error("failure: " + JSON.stringify(failed));
+  stop();
+});
+
 await test("agent_start and agent_stop reach the daemon and print a short result", async () => {
   freshHub();
   const sessions = new Map([["ses_w", session("ses_w", "/work/w")]]);
