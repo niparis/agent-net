@@ -58,3 +58,12 @@ func procCmdline(pid int) string {
 	}
 	return strings.ReplaceAll(string(raw), "\x00", " ")
 }
+
+// procExe returns the path of the process executable, or "".
+func procExe(pid int) string {
+	p, err := os.Readlink("/proc/" + strconv.Itoa(pid) + "/exe")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSuffix(p, " (deleted)")
+}

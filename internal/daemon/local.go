@@ -315,12 +315,14 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		lc.bind("mcp", ls)
 		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls)}, nil
 
-	case "pi":
-		if p.Harness != "pi" || p.NativeID == "" {
-			return nil, errors.New("pi clients must say harness pi and a native_id")
+	case "pi", "opencode":
+		// Plugin clients run inside the harness process. The OpenCode plugin
+		// opens one connection per session, all from the one service process.
+		if p.Harness != p.Client || p.NativeID == "" {
+			return nil, fmt.Errorf("%s clients must say harness %s and a native_id", p.Client, p.Client)
 		}
-		if !strings.Contains(strings.ToLower(d.cmdline(pid)), "pi") {
-			return nil, errors.New("peer check failed: the connecting process is not Pi")
+		if err := d.checkPluginPeer(p.Client, pid); err != nil {
+			return nil, err
 		}
 		status := p.Status
 		if status == "" {
@@ -330,9 +332,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			return nil, fmt.Errorf("bad status %q", status)
 		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
-			Harness: "pi", NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: filepath.Base(p.Cwd),
+			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: filepath.Base(p.Cwd),
 			Status: status, Delivery: "plugin"}}
-		k := key("pi", p.NativeID)
+		k := key(p.Client, p.NativeID)
 		d.mu.Lock()
 		old := d.sessions[k]
 		if old != nil {
@@ -343,11 +345,30 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		if old != nil && old.conn != nil {
 			old.conn.close()
 		}
-		lc.bind("pi", ls)
+		lc.bind(p.Client, ls)
 		d.pushSession(ls)
 		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls)}, nil
 	}
 	return nil, fmt.Errorf("unknown client %q", p.Client)
+}
+
+// checkPluginPeer checks that the process behind a plugin connection is the
+// harness it claims. Pi: the command line mentions pi. OpenCode: the
+// executable file is named opencode (the binary is opencode or opencode.exe;
+// the command line is not a reliable name for it).
+func (d *Daemon) checkPluginPeer(client string, pid int) error {
+	switch client {
+	case "pi":
+		if !strings.Contains(strings.ToLower(d.cmdline(pid)), "pi") {
+			return errors.New("peer check failed: the connecting process is not Pi")
+		}
+	case "opencode":
+		exe := strings.ToLower(filepath.Base(d.exe(pid)))
+		if !strings.HasPrefix(exe, "opencode") {
+			return errors.New("peer check failed: the connecting process is not OpenCode")
+		}
+	}
+	return nil
 }
 
 func validStatus(s string) bool {
