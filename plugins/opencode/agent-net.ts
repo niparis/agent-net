@@ -14,7 +14,12 @@ type Context = Plugin.Context;
 const REQUEST_TIMEOUT_MS = 10_000;
 const BACKOFF_START_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
-const RECENT_SESSION_MS = 60 * 60 * 1000;
+// Startup discovery: registers the newest sessions that were created or
+// updated within this window, in any directory.
+const RECENT_SESSION_MS = 24 * 60 * 60 * 1000;
+const DISCOVERY_LIMIT = 50;
+// session.created can arrive before the session can be read back.
+const CREATED_RETRY_DELAYS_MS = [200, 500, 1_000, 2_000, 4_000];
 const UNREACHABLE =
   "agent-net daemon not reachable. Start it with `agent-net daemon`; the plugin reconnects on its own.";
 
@@ -350,13 +355,14 @@ interface Hub {
   links: Map<string, { link: SessionLink; owner: symbol }>;
   rootOf: Map<string, string>; // child session -> root session
   gone: Set<string>; // deleted or archived sessions
+  instances: Map<symbol, () => Promise<void>>; // live plugin instances -> rediscover
 }
 
 const HUB_KEY = Symbol.for("agent-net.opencode.hub.v1");
 
 function hub(): Hub {
   const g = globalThis as any;
-  return (g[HUB_KEY] ??= { links: new Map(), rootOf: new Map(), gone: new Set() } satisfies Hub);
+  return (g[HUB_KEY] ??= { links: new Map(), rootOf: new Map(), gone: new Set(), instances: new Map() } satisfies Hub);
 }
 
 export default {
@@ -424,6 +430,17 @@ export default {
       return link;
     }
 
+    // A new session may not be readable the moment its created event arrives.
+    async function ensureLinkWithRetry(sessionID: string): Promise<SessionLink | undefined> {
+      for (const delay of [0, ...CREATED_RETRY_DELAYS_MS]) {
+        if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+        if (events.signal.aborted || h.gone.has(sessionID)) return undefined;
+        const link = await ensureLink(sessionID);
+        if (link) return link;
+      }
+      return undefined;
+    }
+
     function dropLink(sessionID: string) {
       h.gone.add(sessionID);
       const entry = h.links.get(sessionID);
@@ -440,6 +457,8 @@ export default {
           dropLink(sessionID);
           return;
         case "session.created":
+          await ensureLinkWithRetry(sessionID);
+          return;
         case "session.viewed":
         case "session.inbox.enqueued":
         case "session.inbox.delivered":
@@ -456,21 +475,30 @@ export default {
       }
     }
 
-    // Sessions that were active shortly before the plugin loaded (service
-    // restart, plugin reload) get registered now. Older ones register when
-    // they show activity.
-    void (async () => {
+    // Register the newest sessions of all directories that were created or
+    // updated recently, including ones nobody has used yet. This covers a
+    // service restart, a plugin reload and directories that have no plugin
+    // instance of their own. Older sessions register when they show activity.
+    async function discover() {
       try {
-        const page: any = await ctx.session.list({ directory: ctx.location.directory, limit: 20 } as any);
+        const page: any = await ctx.session.list({
+          limit: DISCOVERY_LIMIT,
+          order: "desc",
+          parentID: null,
+          archived: false,
+        } as any);
         const cutoff = Date.now() - RECENT_SESSION_MS;
-        for (const s of page?.items ?? page?.data ?? []) {
+        for (const s of page?.data ?? page?.items ?? []) {
+          if (events.signal.aborted) return;
           if (s?.parentID || s?.time?.archived || Number(s?.time?.updated ?? 0) < cutoff) continue;
           await ensureLink(String(s.id));
         }
       } catch {
         // Discovery is best effort; events still register sessions.
       }
-    })();
+    }
+    h.instances.set(me, discover);
+    void discover();
 
     void (async () => {
       try {
@@ -513,11 +541,15 @@ export default {
     // instance (or the reloaded one) takes them over on the next event.
     return () => {
       events.abort();
+      h.instances.delete(me);
       for (const [id, entry] of h.links) {
         if (entry.owner !== me) continue;
         h.links.delete(id);
         entry.link.stop();
       }
+      // Hand the sessions over right away instead of waiting for their next event.
+      const next = h.instances.values().next().value;
+      if (next) void next();
     };
   },
 } satisfies Plugin.Plugin;
