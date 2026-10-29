@@ -47,7 +47,7 @@ curl -fsSL https://niparis.github.io/agent-net/install | sh
 agent-net invite
 ```
 
-Then open a new agent session and ask it: *"Use agent_list to see which other agents are online."*
+Then open a new agent session and ask: *"Who's on the agent net?"*
 
 Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, use the Tailscale invite line: [docs/troubleshooting.md](docs/troubleshooting.md).
 
@@ -138,7 +138,7 @@ Start a new Claude Code, Pi or OpenCode session after the install. Sessions that
 
 Ask an agent things like:
 
-- "Use agent_list to see which agents are online."
+- "Who's on the agent net?"
 - "Ask the Pi session on the build VM which model it runs."
 - "Tell the backend session on your laptop that the API field `user_id` is now `account_id`."
 
