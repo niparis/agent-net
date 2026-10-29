@@ -41,6 +41,8 @@ const usage = `usage: agent-net <command>
   mcp        stdio MCP server for a Claude Code session
   status     show the daemon's state and local sessions
   list       list agents on the network
+  nodes      list machines with their agent-net version
+  upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
   version    print the version of this binary
 `
@@ -75,6 +77,10 @@ func main() {
 		err = cmdStatus(ctx, args)
 	case "list":
 		err = cmdList(ctx, args)
+	case "nodes":
+		err = cmdNodes(ctx, args)
+	case "upgrade":
+		err = cmdUpgrade(ctx, args)
 	case "messages":
 		err = cmdMessages(ctx, args)
 	case "version", "--version":
@@ -113,11 +119,15 @@ func cmdGateway(ctx context.Context, args []string) error {
 		}
 	}
 	logger := log.New(os.Stderr, "gateway: ", log.LstdFlags)
-	gw, err := gateway.New(gateway.Options{DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger})
+	gw, err := gateway.New(gateway.Options{DataDir: *data, DistDir: *dist, SANs: extra, Logger: logger,
+		Version: version, Restart: restartGateway})
 	if err != nil {
 		return err
 	}
 	defer gw.Close()
+	if err := gw.WriteAdminInfo(*listen); err != nil {
+		return err
+	}
 	go gw.RunExpiry(ctx)
 	srv := &http.Server{Addr: *listen, Handler: gw.Handler(), TLSConfig: gw.TLSConfig()}
 	go func() {
@@ -191,7 +201,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	logger := log.New(os.Stderr, "daemon: ", log.LstdFlags)
 	d, err := daemon.New(daemon.Config{
 		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
-		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger,
+		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 	})
 	if err != nil {
 		return err
@@ -212,7 +222,7 @@ func dialCLI(ctx context.Context) (*client.Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot reach the daemon at %s (is `agent-net daemon` running?): %w", daemon.SocketPath(), err)
 	}
-	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "cli"}); err != nil {
+	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "cli", "protocol": protocol.LocalProtocol}); err != nil {
 		cl.Close()
 		return nil, err
 	}
@@ -245,6 +255,7 @@ func cmdStatus(ctx context.Context, args []string) error {
 	}
 	var info struct {
 		Connected  bool                   `json:"connected"`
+		Version    string                 `json:"version"`
 		NodeID     string                 `json:"node_id"`
 		GatewayURL string                 `json:"gateway_url"`
 		Sessions   []protocol.SessionInfo `json:"sessions"`
@@ -256,7 +267,7 @@ func cmdStatus(ctx context.Context, args []string) error {
 	if info.Connected {
 		state = "connected"
 	}
-	fmt.Printf("gateway  %s (%s)\nnode     %s\n\n", info.GatewayURL, state, info.NodeID)
+	fmt.Printf("version  %s\ngateway  %s (%s)\nnode     %s\n\n", info.Version, info.GatewayURL, state, info.NodeID)
 	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "SESSION\tHARNESS\tNAME\tSTATUS\tCWD")
 	for _, s := range info.Sessions {
