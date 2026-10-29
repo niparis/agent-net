@@ -183,7 +183,7 @@ agent-net upgrade --rollback # go back to the previous version on this machine
 `agent-net upgrade` downloads the latest release, checks its SHA-256, keeps the old binary as `agent-net.prev`, and restarts the services. Then it tells each connected machine to upgrade from the gateway, and prints one line per machine:
 
 ```
-laptop   n_6d9a8f63e6a72bdf  v0.2.0 -> v0.2.1  ok
+laptop   n_89abcdef01234567  v0.2.0 -> v0.2.1  ok
 vm       n_0123456789abcdef  v0.2.0 -> v0.2.1  ok
 ```
 
