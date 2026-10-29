@@ -289,7 +289,7 @@ export default function (pi: ExtensionAPI) {
       async execute(_toolCallId: string, params: any) {
         try {
           // The daemon does not default online_only; the tool says it does.
-          const args = method === "list" ? { online_only: true, ...(params ?? {}) } : mapParams(params));
+          const args = method === "list" ? { online_only: true, ...(params ?? {}) } : mapParams(params);
           const result = await request(method, args);
           return {
             content: [{ type: "text" as const, text: format(result ?? {}) }],
