@@ -147,7 +147,7 @@ func (r *run) joinedMachine(ctx context.Context) error {
 		r.say("this machine   %s (%s)", r.Current, r.Exe)
 		r.say("latest release %s", orErr(latest, latestErr))
 		r.sayHold()
-		r.say("gateway       %s", orErr(gwVer, gwErr))
+		r.say("gateway        %s", orErr(gwVer, gwErr))
 		r.printNodesViaDaemon(ctx)
 		return nil
 	case r.Rollback:
