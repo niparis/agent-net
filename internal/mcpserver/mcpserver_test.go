@@ -57,7 +57,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	want := "agent_announce agent_get agent_list agent_message_status agent_messages agent_reply agent_send"
+	want := "agent_announce agent_get agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_reply agent_send"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("tools: %v", names)
 	}

@@ -216,6 +216,8 @@ type localClient struct {
 	nextID int
 	wait   map[string]chan map[string]json.RawMessage
 	Pushes chan protocol.Message
+	// Other gets the method name of every push that is not a delivery.
+	Other chan string
 	// AutoAck confirms every push with delivered ok.
 	AutoAck bool
 }
@@ -226,7 +228,7 @@ func dialLocal(t *testing.T, sock string) *localClient {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lc := &localClient{t: t, c: c, wait: map[string]chan map[string]json.RawMessage{}, Pushes: make(chan protocol.Message, 16)}
+	lc := &localClient{t: t, c: c, wait: map[string]chan map[string]json.RawMessage{}, Pushes: make(chan protocol.Message, 16), Other: make(chan string, 64)}
 	t.Cleanup(func() { c.Close() })
 	go lc.read()
 	return lc
@@ -253,6 +255,13 @@ func (lc *localClient) read() {
 		}
 		var method string
 		json.Unmarshal(m["method"], &method)
+		if method != "deliver" {
+			select {
+			case lc.Other <- method:
+			default:
+			}
+			continue
+		}
 		if method == "deliver" {
 			var p struct {
 				Message protocol.Message `json:"message"`

@@ -66,7 +66,7 @@ func (l *link) call(ctx context.Context, typ string, params any) (json.RawMessag
 		return nil, errNotConnected
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-time.After(20 * time.Second):
+	case <-time.After(callWait(ctx)):
 		return nil, errors.New("gateway did not answer in time")
 	}
 }
@@ -106,6 +106,12 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				l.write(ctx, res)
 			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
+		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.changed":
+			d.wg.Add(1)
+			go func() {
+				defer d.wg.Done()
+				d.onMCPFrame(ctx, l, h, raw)
+			}()
 		}
 	}
 }
@@ -154,7 +160,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	ws.SetReadLimit(1 << 20)
+	ws.SetReadLimit(4 << 20)
 	d.mu.Lock()
 	d.connecting = true
 	d.mu.Unlock()

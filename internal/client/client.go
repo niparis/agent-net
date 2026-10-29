@@ -14,6 +14,7 @@ import (
 
 type response struct {
 	ID     json.RawMessage `json:"id"`
+	Method string          `json:"method"`
 	Result json.RawMessage `json:"result"`
 	Error  string          `json:"error"`
 }
@@ -39,14 +40,19 @@ type Client struct {
 	next int
 	wait map[string]chan response
 	dead chan struct{}
+	// onPush gets the daemon's pushes (frames without an id).
+	onPush func(method string)
 }
 
-func Dial(path string) (*Client, error) {
+func Dial(path string) (*Client, error) { return DialPush(path, nil) }
+
+// DialPush is Dial with a handler for pushes such as "mcp_changed".
+func DialPush(path string, onPush func(method string)) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	cl := &Client{c: c, wait: map[string]chan response{}, dead: make(chan struct{})}
+	cl := &Client{c: c, wait: map[string]chan response{}, dead: make(chan struct{}), onPush: onPush}
 	go cl.read()
 	return cl, nil
 }
@@ -69,8 +75,14 @@ func (c *Client) read() {
 	sc.Buffer(make([]byte, 0, 64*1024), 4<<20)
 	for sc.Scan() {
 		var r response
-		if json.Unmarshal(sc.Bytes(), &r) != nil || len(r.ID) == 0 {
-			continue // pushes are for plugins; this client ignores them
+		if json.Unmarshal(sc.Bytes(), &r) != nil {
+			continue
+		}
+		if len(r.ID) == 0 {
+			if r.Method != "" && c.onPush != nil {
+				c.onPush(r.Method)
+			}
+			continue
 		}
 		var id string
 		json.Unmarshal(r.ID, &id)
