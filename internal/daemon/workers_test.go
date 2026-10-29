@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,6 +235,9 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	}
 	if !strings.HasPrefix(rec.Env["XDG_STATE_HOME"], filepath.Join(w.cfg.StateDir, "workers")) {
 		t.Errorf("the worker shares the user's OpenCode state folder: %s", rec.Env["XDG_STATE_HOME"])
+	}
+	if rec.LocationDir != url.QueryEscape(repo) {
+		t.Errorf("the project was not loaded with its folder: %q", rec.LocationDir)
 	}
 	if rec.Pgid != rec.Pid {
 		t.Errorf("the worker is not the leader of its own process group: pid %d pgid %d", rec.Pid, rec.Pgid)

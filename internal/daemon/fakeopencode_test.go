@@ -47,6 +47,7 @@ type fakeOCRecord struct {
 	ChildPid    int               `json:"child_pid"`
 	SessionID   string            `json:"session_id"`
 	SessionBody map[string]any    `json:"session_body"`
+	LocationDir string            `json:"location_dir"`
 }
 
 func runFakeOpenCode() {
@@ -97,6 +98,26 @@ func runFakeOpenCode() {
 		}
 		fmt.Fprint(w, `{"version":"fake"}`)
 	})
+	// OpenCode loads the plugin when a client first uses the project folder.
+	mux.HandleFunc("GET /api/location", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		mu.Lock()
+		rec.LocationDir = r.Header.Get("x-opencode-directory")
+		id := rec.SessionID
+		mu.Unlock()
+		write()
+		if id != "" && os.Getenv("FAKE_OC_NOPLUGIN") == "" {
+			hello := id
+			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
+				hello = "ses_other"
+			}
+			go fakeOCPlugin(hello, cwd)
+		}
+		fmt.Fprint(w, `{"data":{}}`)
+	})
 	mux.HandleFunc("GET /api/session/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
@@ -116,13 +137,6 @@ func runFakeOpenCode() {
 		rec.SessionID, rec.SessionBody = id, body
 		mu.Unlock()
 		write()
-		if os.Getenv("FAKE_OC_NOPLUGIN") == "" {
-			hello := id
-			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
-				hello = "ses_other"
-			}
-			go fakeOCPlugin(hello, cwd)
-		}
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
 	})
 	if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {

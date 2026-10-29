@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -83,7 +84,7 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	w.apiBase, w.apiPass = base, password
 	d.wmu.Unlock()
 	hc := &http.Client{Timeout: 10 * time.Second}
-	api := func(method, path string, body any) ([]byte, int, error) {
+	api := func(method, path string, body any, headers ...string) ([]byte, int, error) {
 		var rd io.Reader
 		if body != nil {
 			b, _ := json.Marshal(body)
@@ -94,6 +95,9 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 			return nil, 0, err
 		}
 		req.SetBasicAuth("opencode", password)
+		for i := 0; i+1 < len(headers); i += 2 {
+			req.Header.Set(headers[i], headers[i+1])
+		}
 		if body != nil {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -152,6 +156,13 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	}
 	if err := os.Rename(tmp, filepath.Join(w.dir, "session")); err != nil {
 		return err
+	}
+	// OpenCode loads its plugins when a client first uses a project folder.
+	// Creating a session over the API does not count, so ask for the
+	// location of the folder, as every OpenCode client does. The plugin then
+	// reads the session file.
+	if _, code, err := api("GET", "/api/location", nil, "x-opencode-directory", strings.ReplaceAll(url.QueryEscape(w.path), "+", "%20")); err != nil || code != http.StatusOK {
+		return fmt.Errorf("cannot load the project in the worker (HTTP %d): %v", code, err)
 	}
 
 	// The plugin registers the session. If it does not, the plugin is not

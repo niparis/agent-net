@@ -18,7 +18,7 @@ import (
 )
 
 // The owner's commands for workers and messages. They use the operator
-// interface (decision 0007), like the TUI: the daemon treats the caller as the
+// interface (decision 0008), like the TUI: the daemon treats the caller as the
 // person at this machine, and refuses it when it runs inside an agent session.
 
 func opClient() *operator.Client { return operator.New(daemon.SocketPath()) }
