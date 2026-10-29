@@ -44,3 +44,13 @@ The web app is a PWA. On iPhone it is added from Safari with Share, then "Add to
 - **When open:** the app shows live data only while it is open. It does not run in the background.
 - **Off Tailscale:** the app shows "not reachable".
 - **Not used:** TestFlight and sideloading, because builds expire.
+
+## P7 - Stack
+
+- **Pages:** Go `html/template`, served by the gateway and built from the same operator methods as the TUI (P1).
+- **Actions:** [htmx](https://htmx.org). Forms and buttons call the operator methods and swap in the changed part of the page.
+- **Live data:** Server-Sent Events carry the session list and the message feed.
+- **PWA:** a web app manifest and a small service worker for the home screen icon and push. This is the only hand-written JavaScript.
+- **Build:** the files are embedded in the binary with `go:embed`. There is no Node build step, and the release binaries stay pure Go.
+- **Not used:** Flutter. Its web output draws on a canvas, so it loads heavy and does not feel native in Safari.
+- **If the client side ever needs heavy logic:** use Svelte, built to static files and embedded the same way.
