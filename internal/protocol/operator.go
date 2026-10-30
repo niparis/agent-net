@@ -198,6 +198,8 @@ type WorkerStartRequest struct {
 	// the gateway resolves against the machine's model list. Optional: empty
 	// means the harness default.
 	Model string `json:"model,omitempty"`
+	// Difficulty selects the minimum score for automatic model choice.
+	Difficulty string `json:"difficulty,omitempty"`
 	// Task is what the worker should do. It is sent as a message from the caller.
 	Task string `json:"task"`
 	// Isolation is "" (the default: a new worktree on the branch

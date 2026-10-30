@@ -83,9 +83,9 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		args         map[string]any
 		check        func(map[string]any) bool
 	}{
-		{"agent_start", "worker_start", map[string]any{"project": "shop", "task": "do it", "model": "a/b", "isolation": "worktree"},
+		{"agent_start", "worker_start", map[string]any{"project": "shop", "task": "do it", "model": "a/b", "difficulty": "hard", "isolation": "worktree"},
 			func(p map[string]any) bool {
-				return p["project"] == "shop" && p["harness"] == "opencode" && p["model"] == "a/b" && p["isolation"] == "worktree" && p["task"] == "do it"
+				return p["project"] == "shop" && p["harness"] == "opencode" && p["model"] == "a/b" && p["difficulty"] == "hard" && p["isolation"] == "worktree" && p["task"] == "do it"
 			}},
 		{"agent_stop", "worker_stop", map[string]any{"session": "s_w"}, func(p map[string]any) bool { return p["session"] == "s_w" }},
 		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model_harness", "subject": "terra@pi",

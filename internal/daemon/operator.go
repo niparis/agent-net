@@ -221,7 +221,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 			return nil, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
 		}
-	} else if p.Project == "" || p.Harness == "" || p.Task == "" {
+	} else if p.Project == "" || p.Task == "" {
 		return nil, errors.New("worker_start needs project, harness and task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {

@@ -58,10 +58,11 @@ type Gateway struct {
 	// usage holds the newest CPU and memory report of each node (usage.go).
 	usage usageTable
 
-	mu     sync.Mutex
-	conns  map[string]*nodeConn
-	timers map[string]*time.Timer
-	closed bool
+	mu            sync.Mutex
+	conns         map[string]*nodeConn
+	timers        map[string]*time.Timer
+	closed        bool
+	modelRotation int
 }
 
 type nodeConn struct {
