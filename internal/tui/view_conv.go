@@ -207,7 +207,7 @@ func (m Model) helpView(w, h int) []string {
 		{"m", "send a message to the session as yourself"},
 		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x", "stop the selected worker (asks y/n)"},
-		{"t", "peer trust on/off: act on requests of other agents (y/n)"},
+		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"M", "map: charters, maturity, edges and history (read only)"},

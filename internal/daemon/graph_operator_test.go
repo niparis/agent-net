@@ -15,7 +15,7 @@ func TestGraphOwnerRelay(t *testing.T) {
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "graph-agent", "/w/graph", true)
 	cli := cliClient(t, n)
-	for _, method := range []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "edge_history"} {
+	for _, method := range []string{"held_list", "held_answer", "graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "edge_history"} {
 		if _, err := agent.call(method, map[string]any{}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
 			t.Fatalf("%s gate: %v", method, err)
 		}

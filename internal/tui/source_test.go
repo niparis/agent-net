@@ -111,6 +111,10 @@ func normalHandler(method string, params json.RawMessage) (any, string) {
 		return map[string]any{"connected": true, "node_id": "n_here", "version": "v9.9.9"}, ""
 	case "nodes":
 		return protocol.NodesInfo{Nodes: []protocol.NodeView{{NodeID: "n_here", Hostname: "here", Online: true}}}, ""
+	case "graph_get":
+		return protocol.Graph{}, ""
+	case "held_list":
+		return map[string]any{"messages": []protocol.Message{}}, ""
 	case "projects":
 		return map[string]any{"projects": []protocol.ProjectView{{Name: "p", NodeID: "n_here", Path: "/p", Source: "both"}}}, ""
 	case "list":
@@ -150,7 +154,7 @@ func TestDaemonSourceReads(t *testing.T) {
 	}
 	// Read-only: these are the only methods the screen ever calls, and it says
 	// it is a CLI client (which the daemon limits to read-only calls).
-	allowed := map[string]bool{"hello": true, "info": true, "nodes": true, "list": true, "projects": true, "events": true, "message_status": true}
+	allowed := map[string]bool{"hello": true, "info": true, "nodes": true, "list": true, "projects": true, "events": true, "message_status": true, "held_list": true, "graph_get": true}
 	for _, m := range d.called() {
 		if !allowed[m] {
 			t.Errorf("the screen called %q", m)

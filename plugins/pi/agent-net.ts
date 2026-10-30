@@ -53,6 +53,7 @@ interface DeliveredMessage {
   sender_worker?: boolean;
   sender_cto?: boolean;
   recipient_peer_trust?: boolean;
+  owner_approved?: boolean;
   recipient_relation?: string;
   message_type?: string;
   parent_message_id?: string;
@@ -81,6 +82,7 @@ function neutralizeMarkers(body: string): string {
 
 /** The note after a request: only agent-net writes it, never the body. */
 function authorityNote(m: DeliveredMessage): string {
+  if (m.owner_approved === true) return "your user approved this request";
   if (m.recipient_peer_trust === true) return TRUST_NOTE;
   return m.sender_worker ? WORKER_FOOTER : PEER_CHECK_NOTE;
 }

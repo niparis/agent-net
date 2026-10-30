@@ -150,6 +150,13 @@ CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT 
 CREATE INDEX graph_history_node ON graph_history(node, id);
 `, `
 ALTER TABLE messages ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0;
+`, `
+ALTER TABLE messages ADD COLUMN owner_approved INTEGER NOT NULL DEFAULT 0;
+`, `
+INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule)
+SELECT DISTINCT '*',COALESCE(NULLIF(s.repo_project,''),p.project,''),'depends','','auto'
+FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+WHERE s.peer_trust=1 AND COALESCE(NULLIF(s.repo_project,''),p.project,'')<>'';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -526,16 +533,22 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 // owner pseudo-session cannot be trusted: it is a person, not an agent. It
 // returns false when the session does not exist.
 func (s *Store) SetPeerTrust(sessionID string, on bool) (bool, error) {
-	v := 0
-	if on {
-		v = 1
-	}
-	res, err := s.db.Exec(`UPDATE sessions SET peer_trust = ? WHERE id = ? AND harness != ?`, v, sessionID, protocol.OwnerHarness)
-	if err != nil {
+	a, ok, err := s.Agent(sessionID)
+	if err != nil || !ok || a.Harness == protocol.OwnerHarness {
 		return false, err
 	}
-	n, _ := res.RowsAffected()
-	return n == 1, nil
+	project := projectOfSession(a)
+	if project != "" {
+		rule := "normal"
+		if on {
+			rule = "auto"
+		}
+		if err := s.SetEdge(protocol.Edge{From: "*", To: project, Kind: "depends", Rule: rule}, "owner"); err != nil {
+			return false, err
+		}
+	}
+	_, err = s.db.Exec(`UPDATE sessions SET peer_trust=? WHERE id=?`, boolInt(on), sessionID)
+	return err == nil, err
 }
 
 func (s *Store) SessionNode(sessionID string) (string, error) {
@@ -834,14 +847,14 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved)
 	if m.FromCTO {
 		m.FromHarness = "cto"
 	}
@@ -963,6 +976,23 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	case protocol.TypeRequest, protocol.TypeReply, protocol.TypeNotification:
 	default:
 		return msg, false, reject("unknown message_type %q", m.Type)
+	}
+	if m.Type == protocol.TypeRequest && !m.FromCTO {
+		var rule string
+		err := tx.QueryRow(`SELECT e.rule FROM graph_edges e
+			JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
+			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
+			WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
+			AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
+			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To).Scan(&rule)
+		if err != nil && err != sql.ErrNoRows {
+			return msg, false, err
+		}
+		if rule == "ask" {
+			m.State = protocol.StateHeld
+		} else if rule == "never" {
+			return msg, false, reject("refused by your user's rule")
+		}
 	}
 	if m.Hop > protocol.MaxHop {
 		return msg, false, reject("hop limit exceeded (%d)", protocol.MaxHop)
@@ -1104,7 +1134,7 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 // Expire marks overdue undelivered messages expired and returns how many.
 func (s *Store) Expire() (int, error) {
 	now := s.now().UnixNano()
-	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched') AND expires_at <= ?`, now)
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched','held') AND expires_at <= ?`, now)
 	if err != nil {
 		return 0, err
 	}
@@ -1123,16 +1153,17 @@ func (s *Store) Expire() (int, error) {
 	}
 	n := 0
 	for _, id := range ids {
-		res, err := s.db.Exec(`UPDATE messages SET state = 'expired' WHERE id = ? AND state IN ('stored','dispatched')`, id)
+		expired, err := s.expireMessage(id, now)
 		if err != nil {
 			return n, err
 		}
-		if c, _ := res.RowsAffected(); c == 1 {
+		if expired {
 			n++
 			s.Event("msg.expired", "", s.recipientOf(id), id, "")
 			s.logStep("msg.expired", id)
 		}
 	}
+
 	return n, nil
 }
 
@@ -1194,4 +1225,33 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (s *Store) expireMessage(id string, now int64) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	m, ok, err := s.message(tx, "m.id=?", id)
+	if err != nil || !ok {
+		return false, err
+	}
+	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND state IN ('stored','dispatched','held') AND expires_at<=?`, id, now)
+	if err != nil {
+		return false, err
+	}
+	count, err := res.RowsAffected()
+	if err != nil || count == 0 {
+		return false, err
+	}
+	if m.State == protocol.StateHeld {
+		if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
+			return false, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
