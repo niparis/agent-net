@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -44,5 +45,23 @@ func TestInboxCreateUsesAuthenticatedSession(t *testing.T) {
 	items, err := s.ListInbox()
 	if err != nil || len(items) != 1 || items[0].Node != "project" || items[0].SessionID != agent {
 		t.Fatalf("items: %+v %v", items, err)
+	}
+}
+
+func TestApprovalAnswerHasGatewayNote(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	_, _ = s.UpsertSession(node, owner("test"))
+	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	item, err := s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: agent, Text: "deploy abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInbox(item.ID, "approve"); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := s.Pending(node, false)
+	if err != nil || len(pending) != 1 || !strings.Contains(pending[0].ApprovalNote, "Nicolas approved: deploy abc,") {
+		t.Fatalf("pending: %+v %v", pending, err)
 	}
 }

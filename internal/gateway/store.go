@@ -157,6 +157,8 @@ CREATE TABLE inbox_items (
  conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL,
  answer TEXT NOT NULL DEFAULT '', answered_at INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX inbox_items_order ON inbox_items(created_at, id);
+`, `
+ALTER TABLE messages ADD COLUMN approval_note TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -841,14 +843,14 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.approval_note
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.ApprovalNote)
 	if m.FromCTO {
 		m.FromHarness = "cto"
 	}
