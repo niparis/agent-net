@@ -96,6 +96,22 @@ Add the hook? [y/N]
 - It adds one `UserPromptSubmit` entry under `hooks` and keeps everything else. `agent-net uninstall` removes only that entry and the `agent-net-coder-*.md` files it wrote.
 - Without the hook, a policy for a Claude Code session is stored but not applied; the TUI says so. The OpenCode plugin and the Pi extension apply it with no setting.
 
+### The Claude Code needs hooks
+
+A third set of hooks, for the "Needs you" section of the TUI. They tell agent-net when a Claude Code session waits for you, and clear it when you type a prompt. Setup asks once:
+
+```
+agent-net can add Claude Code hooks to ~/.claude/settings.json. They tell
+the agent-net TUI when Claude waits for your permission or input, so the
+session appears under "Needs you" with what it asks. A prompt clears that.
+Only the local daemon is called. No model is called.
+Add the hooks? [y/N]
+```
+
+- The default is No. With no terminal nothing changes. `--claude-needs-hook` adds them without a question, `--no-claude-needs-hook` skips them without a question.
+- They add `PermissionRequest`, `Notification` (idle and elicitation waits), `PreToolUse` and `UserPromptSubmit` entries under `hooks` and keep everything else. `agent-net uninstall` removes only those entries.
+- The Pi extension and the OpenCode plugin do this without a setting; other harnesses use `agent_announce` with `waiting`. See [Needs you](reference.md#needs-you).
+
 ### The Claude Code workers plugin
 
 Claude Code can show the agent-net workers that a session started: a band above the prompt with one row per worker, a status line entry, and a line when a worker ends. Setup installs the `agent-net-workers` plugin from a local marketplace. It asks once:

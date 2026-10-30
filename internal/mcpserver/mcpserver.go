@@ -26,7 +26,9 @@ type Caller func(ctx context.Context, method string, params any) (json.RawMessag
 // (Claude Code shows them to the model when the session starts), in the
 // agent_announce description and, in other words, in the guidance file.
 const AnnounceRule = "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
-	"Call it again whenever your task changes. Your project description is taken from the project's AGENTS.md automatically."
+	"Call it again whenever your task changes. " +
+	"When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+	"Your project description is taken from the project's AGENTS.md automatically."
 
 // Instructions are the MCP server instructions.
 const Instructions = "agent-net connects this session with agent sessions on the user's other machines. " + AnnounceRule
@@ -67,6 +69,9 @@ type announceIn struct {
 	Project      string   `json:"project,omitempty" jsonschema:"the project you work on"`
 	Capabilities []string `json:"capabilities,omitempty" jsonschema:"short capability tags others can search for"`
 	Expertise    string   `json:"expertise,omitempty" jsonschema:"what you can answer about, in one short line, for example: billing API and its deployment; live logs of homelab services"`
+	// Waiting is the question the session waits to hear from its user. Leave
+	// it out to clear an earlier one.
+	Waiting string `json:"waiting,omitempty" jsonschema:"when you stop to wait for your user's decision or answer, the question in one line; a later announce without it clears it"`
 }
 
 type sendIn struct {

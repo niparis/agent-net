@@ -45,6 +45,7 @@ func Uninstall(o Options) error {
 	r.removeCodexMCP()
 	r.removeHintHook()
 	r.removePolicyHook()
+	r.removeNeedsHook()
 	r.removeClaudeWorkersMod()
 	r.removePiExtension()
 	r.removeOpenCodePlugin()

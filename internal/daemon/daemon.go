@@ -381,8 +381,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
 		old.ToolsVersion, old.ToolsOld = "", false // set by the MCP hello, not by discovery
+		old.Waiting = nil                          // set by the local hello, not by discovery
 		probe := infos[i]
-		probe.Repo, probe.SessionID = protocol.RepoInfo{}, ""
+		probe.Repo, probe.SessionID, probe.Waiting = protocol.RepoInfo{}, "", nil
 		if known && old != probe {
 			infos[i].Repo = d.repo.Refresh(infos[i].Cwd)
 		} else {
@@ -407,11 +408,14 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			ls = &localSession{info: in}
 			d.sessions[k] = ls
 			changed = append(changed, ls)
-		} else if !ls.plugin() && ls.info != in {
-			sid := ls.info.SessionID
-			ls.info = in
-			ls.info.SessionID = sid
-			changed = append(changed, ls)
+		} else if !ls.plugin() {
+			in.Waiting = keepWaiting(before[k], in)
+			if ls.info != in {
+				sid := ls.info.SessionID
+				ls.info = in
+				ls.info.SessionID = sid
+				changed = append(changed, ls)
+			}
 		}
 	}
 	for k, ls := range d.sessions {

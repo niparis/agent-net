@@ -137,6 +137,8 @@ ALTER TABLE sessions ADD COLUMN tools_old INTEGER NOT NULL DEFAULT 0;
 `, `
 ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
 UPDATE sessions SET created_at = last_seen;
+`, `
+ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -376,10 +378,19 @@ func (s *Store) upsertSession(q interface {
 			newID = in.SessionID
 		}
 	}
+	waiting := ""
+	if w := protocol.CleanWaiting(in.Waiting); w != nil {
+		if w.Since == 0 {
+			w.Since = s.now().Unix()
+		}
+		if b, err := json.Marshal(w); err == nil {
+			waiting = string(b)
+		}
+	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
-		tools_version, tools_old, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
@@ -387,10 +398,10 @@ func (s *Store) upsertSession(q interface {
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
-		tools_version=excluded.tools_version, tools_old=excluded.tools_old`,
+		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting`,
 		newID, nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
-		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now)
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting)
 	if err != nil {
 		return "", false, err
 	}
@@ -685,7 +696,7 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.name, s.created_at, s.tools_version, s.tools_old
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.name, s.created_at, s.tools_version, s.tools_old, s.waiting
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -694,16 +705,22 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var lastSeen, created int64
 	var caps, worker string
 	var trust int
-	var deleg string
+	var deleg, waiting string
 	var toolsOld int
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld)
+		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting)
 	if err != nil {
 		return a, err
 	}
 	a.ToolsOld = toolsOld != 0
+	if waiting != "" {
+		var w protocol.Waiting
+		if json.Unmarshal([]byte(waiting), &w) == nil {
+			a.Waiting = protocol.CleanWaiting(&w)
+		}
+	}
 	if deleg != "" {
 		var p protocol.DelegationPolicy
 		if json.Unmarshal([]byte(deleg), &p) == nil && !p.Empty() {

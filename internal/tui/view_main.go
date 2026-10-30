@@ -21,6 +21,7 @@ import (
 type layout struct {
 	banner       bool
 	notice       int // rows of the result under the title (0 to 2)
+	needs        int // rows of the "Needs you" section
 	machines     int // machine rows shown
 	moreMachines int // machines not shown
 	sessions     int // rows of the table
@@ -38,6 +39,7 @@ func (m Model) layout() layout {
 	h := max(m.height, 10)
 	l.banner = m.problem != ProblemNone
 	l.notice = len(m.noticeLines(max(m.width, 40)))
+	l.needs = m.needsHeight()
 	n := len(m.machineRows())
 	l.machines = min(n, maxMachineRows)
 	if n > maxMachineRows {
@@ -45,7 +47,7 @@ func (m Model) layout() layout {
 		l.machines++ // the "+N more" line
 	}
 	// title, machines, column heads, detail heading, feed heading, key line
-	fixed := 1 + l.machines + 1 + 1 + 1 + 1
+	fixed := 1 + l.machines + 1 + 1 + 1 + 1 + l.needs
 	if l.banner {
 		fixed++
 	}
@@ -142,6 +144,9 @@ func (m Model) mainView(w, h int) []string {
 		add(m.bannerLine(w))
 	}
 	for _, s := range m.noticeLines(w) {
+		add(s)
+	}
+	for _, s := range m.needsLines(w) {
 		add(s)
 	}
 	rows := m.machineRows()
@@ -520,7 +525,7 @@ func (m Model) sessionsTable(w, n int) []string {
 			policy = policy || policyBadge(a.Delegation) != ""
 		}
 	}
-	cols := columnsFor(w-2, nameWant, policy) // two columns for the selection marker
+	cols := m.needsColumns(columnsFor(w-2, nameWant, policy)) // two columns for the selection marker
 	head := "  "
 	for i, c := range cols {
 		if i > 0 {
@@ -671,10 +676,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		case "MODEL":
 			v = shortModel(a.Model)
 		case "STATUS":
-			v = statusShort(a.Status)
-			if !a.Online {
-				v = "off"
-			}
+			v = m.statusCell(a)
 		case "TRUST":
 			if a.PeerTrust {
 				v = "peer"
@@ -695,7 +697,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		if !selected && a.Online {
 			switch c.name {
 			case "STATUS":
-				v = statusStyle(a.Status).Render(v)
+				v = m.statusCellStyle(a).Render(v)
 			case "AGENT", "POLICY", "TASK":
 				v = sDim.Render(v)
 			case "TRUST":

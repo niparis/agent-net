@@ -15,7 +15,9 @@ const UNREACHABLE =
 // The announce rule. Keep it in step with AnnounceRule in internal/mcpserver.
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
-  "Call it again whenever your task changes. Your project description is taken from the project's AGENTS.md automatically.";
+  "Call it again whenever your task changes. " +
+  "When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+  "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
 const ASK_PEER_RULE =
   "Ask another session early: when an error comes from a service, repo or machine that another session owns or can see " +
@@ -745,6 +747,9 @@ export default function (pi: ExtensionAPI) {
       capabilities: Type.Optional(Type.Array(Type.String(), { description: "List of capabilities" })),
       expertise: Type.Optional(
         Type.String({ description: "What you can answer about, in one short line, for example: billing API and its deployment; live logs of homelab services" }),
+      ),
+      waiting: Type.Optional(
+        Type.String({ description: "When you stop to wait for your user's decision or answer, the question in one line; a later announce without it clears it" }),
       ),
     }),
     "announce",
