@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
-	"sync"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -71,16 +73,7 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err != nil {
 		return err
 	}
-	// The daemon keeps this end open, so Pi never sees the end of its input.
-	// It is also how the daemon asks for the session statistics.
-	w.piIn = in
-	pr, pw, err := os.Pipe()
-	if err != nil {
-		in.Close()
-		return err
-	}
-	w.stdout = pw
-	w.piUsage = &piUsage{}
+	defer in.Close() // the process has its own copy, so its input never closes
 	env := workerEnv(os.Environ(), map[string]string{
 		"AGENT_NET_WORKER": w.id,
 		"AGENT_NET_SOCKET": d.cfg.SocketPath,
@@ -89,14 +82,10 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if w.model != "" {
 		args = append(args, "--model", w.model)
 	}
+	w.discardStdout = true // the rpc event stream; stderr (with the errors) goes to the log
 	if err := d.spawnWorkerStdin(w, bin, args, env, in); err != nil {
-		in.Close()
-		pr.Close()
-		pw.Close()
 		return err
 	}
-	pw.Close()
-	go readPiUsage(w, pr)
 	// The extension registers the session (the daemon binds it by process
 	// group). If it does not, it is not installed and the worker cannot answer.
 	for {
@@ -113,109 +102,175 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	}
 }
 
-// piUsage holds the answer to the last get_session_stats command, and the
-// channel a waiting stats call listens on.
-type piUsage struct {
-	mu      sync.Mutex
-	last    workerStats
-	waiting chan struct{}
+// stats reads the usage of the Pi worker's session file. Pi writes the session
+// as JSONL under its session folder, named with the session ID the daemon
+// picked, so this works while the worker runs and after a daemon restart. The
+// context window comes from `pi --list-models`, once per worker and model.
+func (piLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerStats {
+	d.wmu.Lock()
+	native := w.nativeID
+	d.wmu.Unlock()
+	if native == "" {
+		return workerStats{}
+	}
+	st := piSessionStats(d.cfg.PiSessionsDir, native)
+	if st.ContextTokens > 0 && st.Model != "" {
+		st.ContextLimit = d.piModelLimit(ctx, w, st.Model)
+	}
+	return st
 }
 
-// readPiUsage reads Pi's rpc event stream. The only response it needs is
-// get_session_stats; the rest of the stream is ignored.
-func readPiUsage(w *worker, r *os.File) {
-	defer r.Close()
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 1<<16), 8<<20)
+// piSessionStats reads the assistant usage of a Pi session file. Context is the
+// last assistant message (input plus cache read and cache write). Tokens are
+// the session's input plus output; Pi counts reasoning inside output, so it is
+// not added again.
+func piSessionStats(dir, session string) workerStats {
+	path := piSessionFile(dir, session)
+	if path == "" {
+		return workerStats{}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return workerStats{}
+	}
+	defer f.Close()
+	type usage struct{ in, out, cr, cw float64 }
+	var total, last usage
+	model := ""
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
 	for sc.Scan() {
-		var frame struct {
+		var line struct {
 			Type    string `json:"type"`
-			Command string `json:"command"`
-			Success bool   `json:"success"`
-			Data    struct {
-				Tokens struct {
+			Message struct {
+				Role     string `json:"role"`
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
+				Usage    struct {
 					Input      float64 `json:"input"`
 					Output     float64 `json:"output"`
 					CacheRead  float64 `json:"cacheRead"`
 					CacheWrite float64 `json:"cacheWrite"`
-				} `json:"tokens"`
-				ContextUsage *struct {
-					Tokens        *float64 `json:"tokens"`
-					ContextWindow float64  `json:"contextWindow"`
-				} `json:"contextUsage"`
-			} `json:"data"`
+				} `json:"usage"`
+			} `json:"message"`
+			Usage struct {
+				Input      float64 `json:"input"`
+				Output     float64 `json:"output"`
+				CacheRead  float64 `json:"cacheRead"`
+				CacheWrite float64 `json:"cacheWrite"`
+			} `json:"usage"`
 		}
-		if json.Unmarshal(sc.Bytes(), &frame) != nil || frame.Type != "response" || frame.Command != "get_session_stats" || !frame.Success {
+		if json.Unmarshal(sc.Bytes(), &line) != nil {
 			continue
 		}
-		t := frame.Data.Tokens
-		st := workerStats{Tokens: tokenText(t.Input, t.Output, 0, t.CacheRead, t.CacheWrite),
-			TotalTokens: int64(t.Input + t.Output)}
-		if c := frame.Data.ContextUsage; c != nil && c.Tokens != nil {
-			st.ContextTokens, st.ContextLimit = int64(*c.Tokens), int64(c.ContextWindow)
+		switch {
+		case line.Type == "message" && line.Message.Role == "assistant":
+			u := usage{line.Message.Usage.Input, line.Message.Usage.Output, line.Message.Usage.CacheRead, line.Message.Usage.CacheWrite}
+			total.in, total.out, total.cr, total.cw = total.in+u.in, total.out+u.out, total.cr+u.cr, total.cw+u.cw
+			last = u
+			if line.Message.Model != "" {
+				model = line.Message.Model
+				if line.Message.Provider != "" {
+					model = line.Message.Provider + "/" + model
+				}
+			}
+		case line.Type == "usage" || line.Type == "compaction":
+			total.in += line.Usage.Input
+			total.out += line.Usage.Output
+			total.cr += line.Usage.CacheRead
+			total.cw += line.Usage.CacheWrite
 		}
-		u := w.piUsage
-		if u == nil {
-			return
-		}
-		u.mu.Lock()
-		u.last = st
-		if u.waiting != nil {
-			close(u.waiting)
-			u.waiting = nil
-		}
-		u.mu.Unlock()
 	}
+	return workerStats{Tokens: tokenText(total.in, total.out, 0, total.cr, total.cw), Model: model,
+		ContextTokens: int64(last.in + last.cr + last.cw), TotalTokens: int64(total.in + total.out)}
 }
 
-// stats asks Pi's rpc mode for its session statistics. Pi reports the tokens,
-// cost, and the context usage of the active model (get_session_stats in
-// docs/rpc-commands.md). The answer is short and usually there at once; a slow
-// or busy Pi keeps the last answer.
-func (piLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerStats {
-	d.wmu.Lock()
-	in, u := w.piIn, w.piUsage
-	d.wmu.Unlock()
-	if in == nil || u == nil {
-		return workerStats{}
+// piSessionFile finds the JSONL file of a session: Pi groups sessions by
+// working folder under the session folder, in
+// <timestamp>_<session-id>.jsonl.
+func piSessionFile(dir, session string) string {
+	matches, _ := filepath.Glob(filepath.Join(dir, "*", "*_"+session+".jsonl"))
+	more, _ := filepath.Glob(filepath.Join(dir, "*_"+session+".jsonl"))
+	matches = append(matches, more...)
+	if len(matches) == 0 {
+		return ""
 	}
-	u.mu.Lock()
-	ch := make(chan struct{})
-	u.waiting = ch
-	u.mu.Unlock()
-	if _, err := in.Write([]byte("{\"type\":\"get_session_stats\"}\n")); err != nil {
-		u.mu.Lock()
-		if u.waiting == ch {
-			u.waiting = nil
+	best, bestTime := matches[0], time.Time{}
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && fi.ModTime().After(bestTime) {
+			best, bestTime = m, fi.ModTime()
 		}
-		last := u.last
-		u.mu.Unlock()
-		return last
 	}
-	select {
-	case <-ch:
-	case <-time.After(500 * time.Millisecond):
-	case <-ctx.Done():
-	}
-	u.mu.Lock()
-	if u.waiting == ch {
-		u.waiting = nil
-	}
-	last := u.last
-	u.mu.Unlock()
-	return last
+	return best
 }
 
-// end closes the pipes of a Pi worker. The process is killed by the worker
-// end; closing its input here lets the reader finish too.
-func (piLauncher) end(d *Daemon, w *worker) {
+// piModelLimit reads the context window of a model from `pi --list-models`.
+// The table is small, and the worker keeps the answer, so Pi is asked once per
+// worker and model.
+func (d *Daemon) piModelLimit(ctx context.Context, w *worker, model string) int64 {
 	d.wmu.Lock()
-	in := w.piIn
-	w.piIn = nil
-	d.wmu.Unlock()
-	if in != nil {
-		in.Close()
+	if w.piLimitModel == model {
+		limit := w.piLimit
+		d.wmu.Unlock()
+		return limit
 	}
+	d.wmu.Unlock()
+	bin, err := d.harnessBinary("pi")
+	if err != nil {
+		return 0
+	}
+	out, err := exec.CommandContext(ctx, bin, "--list-models").Output()
+	if err != nil {
+		return 0
+	}
+	limit := piModelLimitFromTable(string(out), model)
+	d.wmu.Lock()
+	w.piLimitModel, w.piLimit = model, limit
+	d.wmu.Unlock()
+	return limit
+}
+
+// piModelLimitFromTable picks the context column of the model in the table of
+// `pi --list-models`. The model is "provider/id"; a ":thinking" suffix is not
+// part of the id in the table.
+func piModelLimitFromTable(table, model string) int64 {
+	provider, id, ok := strings.Cut(model, "/")
+	if !ok {
+		return 0
+	}
+	if i := strings.LastIndexByte(id, ':'); i >= 0 {
+		id = id[:i] // a thinking level such as :low is not part of the id
+	}
+	for _, line := range strings.Split(table, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[0] != provider || f[1] != id {
+			continue
+		}
+		return parseTokenSize(f[2])
+	}
+	return 0
+}
+
+// parseTokenSize reads a size from `pi --list-models`: 200K, 1.0M, 8.2K.
+func parseTokenSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	mult := 1.0
+	switch s[len(s)-1] {
+	case 'k', 'K':
+		mult, s = 1e3, s[:len(s)-1]
+	case 'm', 'M':
+		mult, s = 1e6, s[:len(s)-1]
+	case 'g', 'G':
+		mult, s = 1e9, s[:len(s)-1]
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(v*mult + 0.5)
 }
 
 // newUUID returns a random version 4 UUID.

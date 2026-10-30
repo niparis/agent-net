@@ -340,8 +340,13 @@ func TestClaudeTranscriptStats(t *testing.T) {
 
 func startPiNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 	t.Helper()
+	dir := t.TempDir()
 	t.Setenv(envFakePi, "1")
-	return startWorkerNode(t, g, set, func(c *Config) { c.HarnessPaths = map[string]string{"pi": os.Args[0]} })
+	t.Setenv("PI_CODING_AGENT_SESSION_DIR", dir)
+	return startWorkerNode(t, g, set, func(c *Config) {
+		c.HarnessPaths = map[string]string{"pi": os.Args[0]}
+		c.PiSessionsDir = dir
+	})
 }
 
 func readPi(t *testing.T, dir string) fakePiRecord {
@@ -409,8 +414,9 @@ func TestPiWorkerLifecycle(t *testing.T) {
 	w.workerStopped(t, g, protocol.StopRequested)
 }
 
-// Pi's rpc mode answers get_session_stats with its tokens and the context
-// usage of the active model, so a running Pi worker shows both.
+// Pi writes its usage in its session file. The daemon reads the last assistant
+// message and the model's context window from `pi --list-models`, so a running
+// Pi worker shows both.
 func TestPiWorkerUsageReachesTheWorkersView(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
@@ -419,8 +425,44 @@ func TestPiWorkerUsageReachesTheWorkersView(t *testing.T) {
 	eventually(t, "the Pi worker's context and tokens", func() bool {
 		ws := w.workers(t)
 		return len(ws) == 1 && ws[0].SessionID == res.SessionID &&
-			ws[0].ContextTokens == 60000 && ws[0].ContextLimit == 200000 && ws[0].Tokens == 60000
+			ws[0].ContextTokens == 95000 && ws[0].ContextLimit == 200000 && ws[0].Tokens == 60000
 	})
+}
+
+// piSessionStats reads the assistant usage from the session file: the last
+// assistant message gives the context, and every assistant and usage entry
+// adds to the run total.
+func TestPiSessionStats(t *testing.T) {
+	dir := t.TempDir()
+	folder := filepath.Join(dir, "--work-shop--")
+	if err := os.MkdirAll(folder, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lines := []string{
+		`{"type":"session","version":3,"id":"abc","cwd":"/work/shop"}`,
+		`{"type":"message","id":"a1","message":{"role":"assistant","provider":"openai","model":"gpt-5","usage":{"input":100,"output":10,"cacheRead":50,"cacheWrite":5}}}`,
+		`{"type":"message","id":"a2","message":{"role":"assistant","provider":"openai","model":"gpt-5","usage":{"input":200,"output":20,"cacheRead":10,"cacheWrite":5}}}`,
+		`{"type":"usage","id":"u1","usage":{"input":30,"output":3,"cacheRead":0,"cacheWrite":0}}`,
+		`not json`,
+	}
+	if err := os.WriteFile(filepath.Join(folder, "1_abc.jsonl"), []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := piSessionStats(dir, "abc")
+	if st.Model != "openai/gpt-5" || st.ContextTokens != 215 || st.TotalTokens != 363 ||
+		st.Tokens != "330 in, 33 out, 60 cache read, 10 cache write" {
+		t.Errorf("stats: %+v", st)
+	}
+	if st := piSessionStats(dir, "missing"); st != (workerStats{}) {
+		t.Errorf("stats of a missing session: %+v", st)
+	}
+	table := "provider  model   context  max-out\nopenai    gpt-5   400K     128K\n"
+	if got := piModelLimitFromTable(table, "openai/gpt-5:low"); got != 400000 {
+		t.Errorf("model limit = %d", got)
+	}
+	if got := piModelLimitFromTable(table, "other/model"); got != 0 {
+		t.Errorf("unknown model limit = %d", got)
+	}
 }
 
 // A Pi worker hands back with agent_handback (the extension has it), with the

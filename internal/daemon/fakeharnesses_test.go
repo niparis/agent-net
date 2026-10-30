@@ -67,6 +67,8 @@ func runFakeHarness() bool {
 		fakeClaudeCLI()
 	case os.Getenv(envFakePi) != "" && len(os.Args) > 1 && os.Args[1] == "--mode":
 		fakePi()
+	case os.Getenv(envFakePi) != "" && len(os.Args) > 1 && os.Args[1] == "--list-models":
+		fakePiModels()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "app-server":
 		fakeCodex()
 	default:
@@ -481,25 +483,46 @@ func fakePi() {
 	}
 	writeRecord(cwd, "fake-pi.json", rec)
 	session := argValue(os.Args, "--session-id")
+	fakePiSessionFile(session, cwd)
 	go fakeOCPlugin("pi", session, cwd)
-	// RPC mode ends when stdin closes. It answers get_session_stats with the
-	// numbers of docs/rpc-commands.md.
+	// RPC mode ends when stdin closes. Its stdout is an event stream that the
+	// daemon discards; the usage comes from the session file.
 	in := bufio.NewReader(os.Stdin)
 	for {
-		line, err := in.ReadString('\n')
-		if err != nil {
+		if _, err := in.ReadByte(); err != nil {
 			os.Exit(0)
 		}
-		var cmd struct {
-			Type string `json:"type"`
-		}
-		if json.Unmarshal([]byte(line), &cmd) != nil || cmd.Type != "get_session_stats" {
-			continue
-		}
-		fmt.Fprintln(os.Stdout, `{"type":"response","command":"get_session_stats","success":true,"data":{`+
-			`"tokens":{"input":50000,"output":10000,"cacheRead":40000,"cacheWrite":5000,"total":105000},`+
-			`"cost":0.45,"contextUsage":{"tokens":60000,"contextWindow":200000,"percent":30}}}`)
 	}
+}
+
+// fakePiSessionFile writes the JSONL session Pi would write: a header and one
+// assistant message with usage, under the folder named by
+// PI_CODING_AGENT_SESSION_DIR.
+func fakePiSessionFile(session, cwd string) {
+	dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR")
+	if dir == "" {
+		return
+	}
+	folder := "--" + strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(strings.TrimPrefix(cwd, "/")) + "--"
+	path := filepath.Join(dir, folder)
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return
+	}
+	lines := []string{
+		`{"type":"session","version":3,"id":"` + session + `","cwd":"` + cwd + `"}`,
+		`{"type":"message","id":"a1","parentId":null,"timestamp":"2026-10-30T10:00:00.000Z","message":{` +
+			`"role":"assistant","provider":"openai","model":"gpt-4.1-nano","usage":{` +
+			`"input":50000,"output":10000,"cacheRead":40000,"cacheWrite":5000,"totalTokens":105000,` +
+			`"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}}`,
+	}
+	name := strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + session + ".jsonl"
+	os.WriteFile(filepath.Join(path, name), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+}
+
+// fakePiModels is `pi --list-models`: the table with the context window.
+func fakePiModels() {
+	fmt.Print("provider  model        context  max-out  thinking  images\n" +
+		"openai    gpt-4.1-nano 200K     32.8K    no        yes\n")
 }
 
 // ---- Codex ----
