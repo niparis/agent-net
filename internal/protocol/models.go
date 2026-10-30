@@ -86,7 +86,8 @@ func providerOf(id string) string {
 //  2. Otherwise the query is split into words (case does not matter, "4.1"
 //     matches "v4.1"), and the candidates are the ids that contain all words.
 //  3. The candidates are ranked by: how many sessions on the machine used the
-//     model in the last ModelUsageDays days (usage), the position of its
+//     model in the last ModelUsageDays days (usage), how many used any model
+//     of the same provider in that time (provider usage), the position of its
 //     provider in the owner's providers list, no "-free" variant, no dated
 //     snapshot (":0813"), and the shortest model name (without provider).
 //  4. If one candidate is strictly best, it is the answer. If the best ones
@@ -117,23 +118,29 @@ func ResolveModel(query string, models []string, usage map[string]int, providers
 	if len(cands) == 0 {
 		return "", fmt.Errorf("no model in the list matches %q (%d models; see `agent-net nodes --wide`)", query, len(models))
 	}
-	rank := func(m string) [5]int {
-		r := [5]int{-usage[m], len(providers), 0, 0, len(modelPart(m))}
+	// Sessions per provider: a provider the owner uses for other models wins
+	// over one the owner never used.
+	byProvider := map[string]int{}
+	for m, n := range usage {
+		byProvider[providerOf(m)] += n
+	}
+	rank := func(m string) [6]int {
+		r := [6]int{-usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
 		for i, p := range providers {
 			if providerOf(m) == p {
-				r[1] = i
+				r[2] = i
 				break
 			}
 		}
 		if strings.HasSuffix(m, "-free") {
-			r[2] = 1
+			r[3] = 1
 		}
 		if datedSuffix.MatchString(m) {
-			r[3] = 1
+			r[4] = 1
 		}
 		return r
 	}
-	cmp := func(a, b [5]int) int {
+	cmp := func(a, b [6]int) int {
 		for i := range a {
 			if a[i] != b[i] {
 				if a[i] < b[i] {
