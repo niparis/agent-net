@@ -820,3 +820,48 @@ func TestStartedHarnessesAreListed(t *testing.T) {
 		t.Error("gemini is supported")
 	}
 }
+
+func TestAdoptedCodexCompletesOriginalTurn(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+	w.d.Stop()
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	readCodex(t, repo, func(r fakeCodexRecord) bool { return r.Resumed == 1 })
+	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish"), []byte("finish"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "finished after restart") {
+		t.Fatalf("notice: %s", n.Body)
+	}
+	eventually(t, "adopted Codex process ends", func() bool { return !alive(rec.Pid) })
+}
+
+func TestAdoptedOpenCodeStartsTurn(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "initial"})
+	w.replyTo(t, w.ownerID(), res.Task.ID)
+	w.d.Stop()
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	eventually(t, "adopted OpenCode online", func() bool { a := w.agentOf(t, res.SessionID); return a != nil && a.Online })
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "after restart"}), &sent)
+	eventually(t, "new OpenCode turn", func() bool {
+		r := readFake(t, repo)
+		for _, turn := range r.Turns {
+			if strings.Contains(turn, "after restart") {
+				return true
+			}
+		}
+		return false
+	})
+}

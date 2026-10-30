@@ -653,6 +653,21 @@ func fakeCodex() {
 				mu.Unlock()
 				save()
 				write(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]any{"id": thread}}})
+				// A surviving turn can complete after a new subscriber resumes it.
+				go func(thread string) {
+					for {
+						if _, err := os.Stat(filepath.Join(cwd, "fake-codex-finish")); err == nil {
+							write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "item": map[string]any{"type": "agentMessage", "phase": "final_answer", "text": "finished after restart"}}})
+							write(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread, "turn": map[string]any{"status": "completed"}}})
+							return
+						}
+						select {
+						case <-r.Context().Done():
+							return
+						case <-time.After(10 * time.Millisecond):
+						}
+					}
+				}(thread)
 			case "turn/start":
 				text := ""
 				if in, ok := p["input"].([]any); ok && len(in) > 0 {

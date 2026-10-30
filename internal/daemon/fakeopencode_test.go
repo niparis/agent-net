@@ -59,6 +59,7 @@ type fakeOCRecord struct {
 	SessionID   string            `json:"session_id"`
 	SessionBody map[string]any    `json:"session_body"`
 	LocationDir string            `json:"location_dir"`
+	Turns       []string          `json:"turns"`
 }
 
 func runFakeOpenCode() {
@@ -81,6 +82,8 @@ func runFakeOpenCode() {
 		go child.Wait()
 	}
 	var mu sync.Mutex
+	var location atomic.Int64
+	var pluginOnce sync.Once
 	write := func() {
 		mu.Lock()
 		defer mu.Unlock()
@@ -143,7 +146,15 @@ func runFakeOpenCode() {
 			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
 				hello = "ses_other"
 			}
-			go fakeOCPlugin("opencode", hello, cwd)
+			location.Add(1)
+			pluginOnce.Do(func() {
+				go fakeOCPluginTracked("opencode", hello, cwd, &location, func(text string) {
+					mu.Lock()
+					rec.Turns = append(rec.Turns, text)
+					mu.Unlock()
+					write()
+				})
+			})
 		}
 		fmt.Fprint(w, `{"data":{}}`)
 	})
@@ -470,18 +481,26 @@ func fakeEdit(dir string) {
 // fakeOCPlugin is the agent-net plugin inside the fake OpenCode: one connection
 // to the daemon for the session, which it opens again when it drops.
 func fakeOCPlugin(client, sessionID, cwd string) {
+	var location atomic.Int64
+	location.Store(1 << 60)
+	fakeOCPluginTracked(client, sessionID, cwd, &location, func(string) {})
+}
+
+func fakeOCPluginTracked(client, sessionID, cwd string, location *atomic.Int64, turn func(string)) {
+	var previous int64
 	for {
-		fakeOCPluginOnce(client, sessionID, cwd)
+		previous = fakeOCPluginOnce(client, sessionID, cwd, location, previous, turn)
 		time.Sleep(50 * time.Millisecond)
 	}
 }
 
-func fakeOCPluginOnce(client, sessionID, cwd string) {
+func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, previous int64, turn func(string)) int64 {
 	c, err := net.Dial("unix", os.Getenv("AGENT_NET_SOCKET"))
 	if err != nil {
-		return
+		return previous
 	}
 	defer c.Close()
+	generation := location.Load()
 	var wmu sync.Mutex
 	next := 0
 	nextID := func() string {
@@ -535,6 +554,10 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 		msg := m.Params.Message
 		send("delivered", map[string]any{"message_id": msg.ID, "ok": true})
 		body := msg.Body
+		if location.Load() <= previous && location.Load() != 1<<60 {
+			continue
+		}
+		turn(body)
 		switch {
 		case strings.Contains(body, "FAKE:ignore"):
 		case strings.Contains(body, "FAKE:localfail"):
@@ -583,4 +606,5 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 			send("reply", map[string]any{"message_id": msg.ID, "body": "ok from worker (task was " + strconv.Itoa(len(body)) + " bytes)"})
 		}
 	}
+	return generation
 }
