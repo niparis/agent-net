@@ -141,6 +141,7 @@ type fakeSource struct {
 	evErr    error
 	messages map[string]protocol.Message
 	msgErr   error
+	msgReqs  []string // message IDs whose body was asked for
 
 	// What the actions were asked to do, and the error they answer with.
 	sentTo, sentBody string
@@ -229,6 +230,7 @@ func (f *fakeSource) Events(_ context.Context, after int64, _ int) ([]protocol.F
 	return out, f.evErr
 }
 func (f *fakeSource) Message(_ context.Context, id string) (protocol.Message, error) {
+	f.msgReqs = append(f.msgReqs, id)
 	if f.msgErr != nil {
 		return protocol.Message{}, f.msgErr
 	}
@@ -367,16 +369,17 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = refresh(m, src)
+	m = drainSnippets(t, m)
 	m = keys(m, "tab")
 	// Move up to the first message (the last items are newer).
 	for m.feed.items[m.feedCur].MsgID != "m_1" {
 		m = keys(m, "up")
 	}
 	golden(t, "view_80x24_feed_focus", m.View())
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = m2.(Model)
 	if cmd == nil || m.open == nil || !m.open.loading {
-		t.Fatal("enter did not start fetching the body")
+		t.Fatal("v did not start fetching the body")
 	}
 	m = send(m, cmd())
 	golden(t, "view_80x24_body", m.View())
@@ -414,7 +417,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 		"AGENT", "NAME", "PROJECT", "MODEL", "MODE", "STATUS", "CPU", "RAM", "PROC",
 		"tenebrae-53", "opus-5-5", "fg", "bg", "busy", "shell", "claude-opus-5-5",
 		"Selected session", "pid 4242", "/Users/n/code/tenebrae",
-		"Messages (live)", "tenebrae-53 (Mac) -> ci-runner (build-vm)", "request",
+		"Messages (live)", "tenebrae-53 -> ci-runner", "request", "✗",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -804,7 +807,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 	)
 	m = refresh(m, src)
 	v := m.View()
-	if !strings.Contains(v, "ci-runner (build-vm) -> tenebrae-53 (Mac)") || !strings.Contains(v, "build-vm disconnected") {
+	if !strings.Contains(v, "ci-runner -> tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
 	if m.feed.lastID != 15 {
@@ -870,11 +873,12 @@ func TestOpenMessageBody(t *testing.T) {
 	if next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); next.(Model).open != nil || next.(Model).conv == nil {
 		t.Fatal("enter on the sessions table opened the wrong thing")
 	}
+	m = keys(m, "esc") // back to the lists
 	m = keys(m, "tab")
 	for m.feed.items[m.feedCur].MsgID != "m_3" {
 		m = keys(m, "up")
 	}
-	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = m2.(Model)
 	if !strings.Contains(m.View(), "fetching...") {
 		t.Fatalf("no loading state:\n%s", m.View())
@@ -902,7 +906,7 @@ func TestOpenMessageBody(t *testing.T) {
 	for m.feed.items[m.feedCur].MsgID != "m_1" {
 		m = keys(m, "up")
 	}
-	m2, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m2, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = send(m2.(Model), cmd())
 	if v := m.View(); !strings.Contains(v, "The body is not available here") {
 		t.Fatalf("no explanation:\n%s", v)

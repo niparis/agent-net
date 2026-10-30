@@ -11,9 +11,9 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
-  o                    show offline and dormant sessions
-  d                    give the detail pane the room of the message feed
-  tab                  message feed and back; enter opens a message body
+  o, d                 o: show offline and dormant; d: detail takes the feed room
+  tab                  message feed and back; enter opens the conversation of the local end
+  v, l                 v: open the body of the message; l: feed events (worker, all, none)
   r                    refresh now
 
  Conversation
@@ -31,9 +31,9 @@ Keys ─────────────────────────
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
   shared               one process, many sessions (OpenCode); listed once
   ?                    a figure that is missing or older than 45 seconds
-
-
-
+  … ✓ ↩ ✗              message state: pending, delivered, replied, failed
+  ↳                    a reply, under the message it answers
+  "..."                the first line of the body, when this machine is in the conversation
 
 
 

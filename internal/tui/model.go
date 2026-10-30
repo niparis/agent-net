@@ -62,13 +62,16 @@ type Model struct {
 	selIdx      int    // position in the visible list, to move on when the session leaves
 	tableTop    int    // first table row on screen
 	showOffline bool
-	filter      string
-	filtering   bool
-	input       textinput.Model
-	focus       focus
-	feedCur     int // index in the feed items when the feed has focus
-	open        *openMsg
-	quitting    bool
+	// events says how much of the quiet session and worker news the feed
+	// shows (l).
+	events    feedEvents
+	filter    string
+	filtering bool
+	input     textinput.Model
+	focus     focus
+	feedCur   int // index in the feed items when the feed has focus
+	open      *openMsg
+	quitting  bool
 
 	// Actions (forms.go).
 	mode        inputMode
@@ -231,6 +234,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if c := nm.wantTop(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if c := nm.wantSnippets(); c != nil {
+		cmds = append(cmds, c)
+	}
 	return nm, tea.Batch(cmds...)
 }
 
@@ -287,6 +293,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case policySavedMsg:
 		return m.onPolicySaved(msg)
 
+	case snippetMsg:
+		m.applySnippet(msg)
+		return m, nil
+
 	case bodyMsg:
 		if m.open != nil && m.open.id == msg.id {
 			m.open.loading = false
@@ -337,10 +347,12 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		}
 		// Any other error shows up as a problem on the next refresh.
 	} else {
-		wasLast := m.feedCur >= len(m.feed.items)-1
+		wasLast := m.feedCur >= m.feedLastVisible()
 		m.feed.apply(r.events)
 		if m.focus != focusFeed || wasLast {
-			m.feedCur = len(m.feed.items) - 1
+			m.feedCur = m.feedLastVisible()
+		} else {
+			m.feedClamp()
 		}
 	}
 	m.ensureSelection()
@@ -483,10 +495,20 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
 		m.fixScroll()
+	case "l":
+		m.events = (m.events + 1) % 3
+		m.feedClamp()
+	case "v":
+		if m.focus == focusFeed {
+			if it := m.feedItemAt(m.feedCur); it != nil && it.isMessage() {
+				m.open = &openMsg{id: it.MsgID, loading: true}
+				return m, m.bodyCmd(it.MsgID)
+			}
+		}
 	case "tab":
 		if m.focus == focusSessions {
 			m.focus = focusFeed
-			m.feedCur = len(m.feed.items) - 1
+			m.feedCur = m.feedLastVisible()
 		} else {
 			m.focus = focusSessions
 		}
@@ -509,11 +531,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(1 << 20)
 	case "enter":
 		if m.focus == focusFeed {
-			if it := m.feedItemAt(m.feedCur); it != nil && it.isMessage() {
-				m.open = &openMsg{id: it.MsgID, loading: true}
-				return m, m.bodyCmd(it.MsgID)
+			it := m.feedItemAt(m.feedCur)
+			if it == nil || !it.isMessage() {
+				return m, nil
 			}
-			return m, nil
+			// Open the conversation of the end on this machine; when there is
+			// none, the message body explains why it cannot be read here.
+			if id := m.feedConvID(it); id != "" {
+				return m, m.openConvFor(id)
+			}
+			m.open = &openMsg{id: it.MsgID, loading: true}
+			return m, m.bodyCmd(it.MsgID)
 		}
 		return m, m.openConv()
 	}
@@ -550,7 +578,7 @@ func (m Model) convKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // move changes the selection by delta, in the list that has the focus.
 func (m *Model) move(delta int) {
 	if m.focus == focusFeed {
-		m.feedCur = min(max(m.feedCur+delta, 0), max(len(m.feed.items)-1, 0))
+		m.moveFeed(delta)
 		return
 	}
 	vis := m.visible()
