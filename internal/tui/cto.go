@@ -136,9 +136,9 @@ func ctoMessage(raw json.RawMessage) string {
 		}
 		if json.Unmarshal(v.Error, &e) == nil {
 			msg := firstNonEmpty(firstNonEmpty(e.Message, e.Data.Message), firstNonEmpty(e.Name, string(v.Error)))
-			return "error: " + msg
+			return "error: " + ctoErrorHint(msg)
 		}
-		return "error: " + string(v.Error)
+		return "error: " + ctoErrorHint(string(v.Error))
 	}
 	if v.Type != "user" && v.Type != "assistant" {
 		return ""
@@ -403,4 +403,14 @@ func (m Model) ctoModelCandidates(harness, query string) []string {
 		}
 	}
 	return out
+}
+
+func ctoErrorHint(msg string) string {
+	lower := strings.ToLower(msg)
+	for _, term := range []string{"credit", "quota", "unknown model", "model not found", "model does not exist"} {
+		if strings.Contains(lower, term) {
+			return msg + " (m to change the model)"
+		}
+	}
+	return msg
 }

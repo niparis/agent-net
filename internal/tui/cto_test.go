@@ -339,3 +339,23 @@ func TestCTOModelFormGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("cto_model_%dx%d", size[0], size[1]), m.View())
 	}
 }
+
+func TestCTOProviderErrorsSuggestModelChange(t *testing.T) {
+	for _, msg := range []string{"insufficient credits", "quota exceeded", "unknown model"} {
+		got := ctoMessage(json.RawMessage(fmt.Sprintf(`{"type":"idle","error":{"message":%q}}`, msg)))
+		if !strings.HasSuffix(got, " (m to change the model)") {
+			t.Errorf("missing hint: %q", got)
+		}
+	}
+	if got := ctoMessage(json.RawMessage(`{"error":{"message":"network unavailable"}}`)); strings.Contains(got, "m to change") {
+		t.Fatal(got)
+	}
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	model, _ := New(src).startCTO()
+	m := model.(Model)
+	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: m.cto.generation})
+	m = next.(Model)
+	if !strings.HasSuffix(m.cto.messages[0], " (m to change the model)") {
+		t.Fatal(m.cto.messages)
+	}
+}
