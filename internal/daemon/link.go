@@ -123,6 +123,9 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onWorkerFrame(ctx, l, h, raw)
 			}()
+		case "node.skill_bundle":
+			d.wg.Add(1)
+			go func() { defer d.wg.Done(); d.onSkillBundle(ctx, l, h, raw) }()
 		case "mcp.sync", "mcp.probe", "mcp.invoke", "mcp.changed":
 			d.wg.Add(1)
 			go func() {

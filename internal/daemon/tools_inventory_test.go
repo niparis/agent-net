@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,4 +120,49 @@ func TestProjectRegistrationRefreshesTools(t *testing.T) {
 		raw, err := cli.call("tools_items", map[string]any{"project": "demo"})
 		return err == nil && strings.Contains(string(raw), `"name":"example"`)
 	})
+}
+
+func TestToolsImportFromOwnerPreservesSource(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/import-me")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "SKILL.md")
+	if err := os.WriteFile(src, []byte("fixture skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var item protocol.ToolItem
+	eventually(t, "tool inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "skill", "harness": "claude"})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "import-me" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	loc := item.Locations[0]
+	req := map[string]any{"item": item.ID, "location": map[string]string{"node_id": loc.NodeID, "location": loc.Location}}
+	if _, err := cli.call("tools_import", req); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(src); err != nil || string(got) != "fixture skill" {
+		t.Fatalf("source changed: %q %v", got, err)
+	}
+	pi, _ := helloPi(t, n, "pi-import", "/work", true)
+	if _, err := pi.call("tools_import", req); err == nil {
+		t.Fatal("agent imported skill")
+	}
 }

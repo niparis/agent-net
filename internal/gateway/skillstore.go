@@ -2,11 +2,17 @@ package gateway
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"time"
+
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/niparis/agent-net/internal/inventory"
+	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -122,4 +128,66 @@ func (s *skillStore) put(item, hash string, bundle []byte, node, location string
 	v = skillVersion{Item: item, Hash: hash, Commit: commit, NodeID: node, Location: location, ImportedAt: s.db.now().UnixNano()}
 	_, err = s.db.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at) VALUES(?,?,?,?,?,?)`, v.Item, v.Hash, v.Commit, v.NodeID, v.Location, v.ImportedAt)
 	return v, err
+}
+
+func (g *Gateway) skillRepository() (*skillStore, error) {
+	g.skillsMu.Lock()
+	defer g.skillsMu.Unlock()
+	if g.skills != nil {
+		return g.skills, nil
+	}
+	s, err := openSkillStore(g.opts.DataDir, g.store)
+	if err == nil {
+		g.skills = s
+	}
+	return s, err
+}
+
+func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skillVersion, error) {
+	var v skillVersion
+	if p.Item == "" || p.Location.NodeID == "" || p.Location.Location == "" {
+		return v, reject("import needs an item and a location")
+	}
+	var name, hash string
+	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind='skill' AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&name, &hash)
+	if err != nil || hash == "" {
+		return v, reject("skill location is not a current observation")
+	}
+	host := g.conn(p.Location.NodeID)
+	if host == nil {
+		return v, reject("skill location is offline")
+	}
+	raw, err := host.request(ctx, "node.skill_bundle", protocol.SkillBundleRequest{Name: name, Hash: hash, Location: p.Location.Location}, 60*time.Second)
+	if err != nil {
+		return v, reject("cannot obtain skill bundle")
+	}
+	var result protocol.SkillBundle
+	if json.Unmarshal(raw, &result) != nil {
+		return v, reject("invalid skill bundle")
+	}
+	dir, err := os.MkdirTemp("", "agent-net-skill-import-")
+	if err != nil {
+		return v, errors.New("cannot stage skill import")
+	}
+	defer os.RemoveAll(dir)
+	if inventory.UnpackSkill(result.Data, dir) != nil {
+		return v, reject("invalid or oversized skill bundle")
+	}
+	got, err := inventory.SkillHash(dir)
+	if err != nil || got != hash {
+		return v, reject("skill changed since its inventory scan")
+	}
+	canonical, err := inventory.PackSkill(dir)
+	if err != nil {
+		return v, reject("cannot verify skill bundle")
+	}
+	repo, err := g.skillRepository()
+	if err != nil {
+		return v, errors.New("cannot open skill store")
+	}
+	v, err = repo.put(p.Item, hash, canonical, p.Location.NodeID, p.Location.Location)
+	if err != nil {
+		return v, errors.New("cannot save skill version")
+	}
+	return v, nil
 }

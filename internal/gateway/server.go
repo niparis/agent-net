@@ -44,13 +44,15 @@ type Options struct {
 }
 
 type Gateway struct {
-	opts   Options
-	store  *Store
-	ca     *authority
-	cert   tls.Certificate
-	fp     string
-	pin    string
-	logger *log.Logger
+	opts     Options
+	store    *Store
+	skillsMu sync.Mutex
+	skills   *skillStore
+	ca       *authority
+	cert     tls.Certificate
+	fp       string
+	pin      string
+	logger   *log.Logger
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -405,6 +407,10 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
+		if h.Type == "tools.import" {
+			go g.answer(ctx, nc, h, raw)
+			continue
+		}
 		if strings.HasPrefix(h.Type, "mcp.") {
 			go g.serveMCP(ctx, nc, h, raw)
 			continue
@@ -531,6 +537,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad node.inventory")
 		}
 		return nil, st.SetInventory(nc.id, p)
+
+	case "tools.import":
+		p, err := decode[protocol.ToolImport](raw)
+		if err != nil {
+			return nil, reject("invalid skill import")
+		}
+		return g.importSkill(ctx, p)
 
 	case "query.inventory":
 		p, err := decode[struct {
