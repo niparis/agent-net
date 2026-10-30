@@ -1,15 +1,9 @@
 1 Sessions  2 Messages  3 Quotas
- ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
- ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
- ○ old-box    v0.3.2 offline
-  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
- Mac (here) 4 sessions ─────────────────────────────────────────────────────────
-  strategies   claude   strategi… sonnet-5-5 idle   -         ?     ? backtest …
-  ↳ tenebrae   opencode tenebrae  haiku-4-5  busy   -         ?     ?
-  tenebrae-53  claude   tenebrae  opus-5-5   busy   -         ?     ?
-  web          opencode shop      sonnet-5   idle   -         ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────
-> ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                             │
+│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                             │
+│ ○ old-box    v0.3.2 offline                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
 Start a worker ─────────────────────────────────────────────────────────────────
   Project   tenebrae   on Mac
   Harness   opencode
@@ -20,5 +14,11 @@ Start a worker ─────────────────────�
   anthropic/claude-haiku-4-5
   anthropic/claude-sonnet-5
 
-
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, ask about the network          │
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
 tab completes  up/down or enter: field  enter on the task starts  esc cancels

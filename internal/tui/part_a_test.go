@@ -275,7 +275,7 @@ func TestIdleSessionsAreDim(t *testing.T) {
 	defer lipgloss.SetColorProfile(termenv.Ascii)
 	for _, l := range lines(m.View()) {
 		if strings.Contains(l, "web") {
-			if !strings.Contains(l, "\x1b[2m") {
+			if !strings.Contains(l, "\x1b[36m") {
 				t.Fatalf("the quiet session is not dim: %q", l)
 			}
 			return

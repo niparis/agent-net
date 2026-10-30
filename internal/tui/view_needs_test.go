@@ -136,3 +136,11 @@ func TestNeedsViewFitsEverySize(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedsStatusDoesNotPushTablePastWidth(t *testing.T) {
+	for _, line := range lines(needsModel(100, 30).View()) {
+		if strings.Contains(line, "NAME") && strings.Contains(line, "STATUS") && strings.HasSuffix(strings.TrimSpace(line), "…") {
+			t.Fatalf("table heading is clipped: %q", line)
+		}
+	}
+}
