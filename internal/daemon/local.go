@@ -405,7 +405,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			p.Mode = protocol.ModeUnknown
 		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
-			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: pluginName(p.Name, p.Cwd),
+			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: d.pluginName(p.Name, p.Cwd),
 			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
 		k := key(p.Client, p.NativeID)
@@ -506,12 +506,30 @@ func (d *Daemon) checkPluginPeer(client string, pid int) error {
 func validStatus(s string) bool { return protocol.ValidStatus(s) }
 
 // pluginName is the name a plugin gave its session, cleaned (control characters
-// removed, at most protocol.MaxModelLen bytes), or the folder name.
-func pluginName(name, cwd string) string {
-	if name = protocol.CleanModel(name); name != "" {
+// removed, at most protocol.MaxModelLen bytes), or the project name. The
+// project is the main repository, so a session in a linked worktree is not
+// named after the worktree folder. Plugins name a session "<folder>" or
+// "<folder>: <title>"; the folder part is swapped for the project.
+func (d *Daemon) pluginName(name, cwd string) string {
+	project := d.repo.Lookup(cwd).Project
+	if project == "" {
+		project = filepath.Base(cwd)
+	}
+	name = protocol.CleanModel(name)
+	if name == "" {
+		return project
+	}
+	folder := filepath.Base(cwd)
+	if folder == project {
 		return name
 	}
-	return filepath.Base(cwd)
+	if name == folder {
+		return project
+	}
+	if rest, ok := strings.CutPrefix(name, folder+": "); ok {
+		return project + ": " + rest
+	}
+	return name
 }
 
 func (lc *localConn) bind(client string, ls *localSession) {
@@ -600,7 +618,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			ls.info.Model = protocol.CleanModel(*p.Model)
 		}
 		if p.Name != nil {
-			ls.info.Name = pluginName(*p.Name, ls.info.Cwd)
+			ls.info.Name = d.pluginName(*p.Name, ls.info.Cwd)
 		}
 		cwd := ls.info.Cwd
 		d.mu.Unlock()

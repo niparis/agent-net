@@ -44,7 +44,7 @@ The daemon and the agents talk over Unix sockets, not network ports.
 
 | What | Default path | Notes |
 |---|---|---|
-| Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. |
+| Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
 | Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree) that lets the daemon take its workers back after a restart. Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its state folder and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Deleted when the worker ends. |
@@ -60,6 +60,8 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | macOS services | `~/Library/LaunchAgents/com.agent-net.daemon.plist`, `com.agent-net.gateway.plist` | launchd agents. |
 | Linux logs | `journalctl --user -u agent-net-daemon` (and `-u agent-net-gateway`) | |
 | macOS logs | `~/Library/Logs/agent-net-daemon.log`, `agent-net-gateway.log` | |
+
+**Machine name.** The HOST column of `agent-net nodes` and `list` is the name the daemon reports on every start. If `node.json` has `"hostname": "mac-mini"`, that name is used. Otherwise, on macOS it is the first of these that is set, cut at the first dot: `scutil --get HostName`, `scutil --get LocalHostName` (System Settings, Sharing), then `os.Hostname()`. macOS changes `os.Hostname()` with the network (`Laptop-1.local`, `Laptop1`), so it is not used while a setting exists. To get a short name, set `"hostname": "laptop-1"` in `node.json`, or run once `sudo scutil --set HostName laptop-1` (macOS then uses it for `hostname` too). On Linux it is `os.Hostname()` as it is. The gateway takes the new name at the next daemon start, so an upgraded machine shows its short name after a restart. `enter_ssh_hosts` keys must match this name. The gateway's own TLS and URL host (`enroll --host`, `invite`) is a network address and still comes from `os.Hostname()`.
 
 ## Gateway log format
 
@@ -149,6 +151,7 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 - `root`: the main working tree of the repository. Empty if the folder is not in a git repository. A linked git worktree has the root of the main tree it belongs to, found with `git rev-parse --git-common-dir`.
 - `worktree`: the working tree the session's folder is in. It is the same as `root`, except in a linked git worktree.
 - `project`: the base name of `root`, or of the folder if there is no git repository. So a worktree is not a project of its own: the sessions of `tenebrae` and of its worktrees `agent-a76c...` are all in project `tenebrae`.
+- The default name of an OpenCode, Pi or Codex session is the project too, so a session in a worktree is not named after the worktree folder. A name of the form `<folder>: <title>` from a plugin has its folder part swapped for the project. A name you chose is kept.
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
 - `description`: the one-line description of the project, read from `AGENTS.md` (else `CLAUDE.md`) in the main working tree, or in the session's folder when there is no repository. See "FUNCTION and the task" below.
