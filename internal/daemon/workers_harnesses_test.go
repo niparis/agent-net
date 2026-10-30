@@ -865,3 +865,25 @@ func TestAdoptedOpenCodeStartsTurn(t *testing.T) {
 		return false
 	})
 }
+
+// A turn can finish while there is no daemon to receive its completion event.
+func TestAdoptedCodexTurnFinishedWhileDaemonDown(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:offline"})
+	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+	w.d.Stop()
+	if err := os.WriteFile(filepath.Join(repo, "fake-codex-offline-finish"), []byte("finish"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	readCodex(t, repo, func(r fakeCodexRecord) bool { return r.CompletedOffline })
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "finished while daemon was down") {
+		t.Fatalf("notice: %s", n.Body)
+	}
+	eventually(t, "adopted Codex process ends", func() bool { return !alive(rec.Pid) })
+}
