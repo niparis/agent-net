@@ -3,6 +3,7 @@ Keys ─────────────────────────
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
   enter or c           open the conversation of the session
+  e                    enter the session (back here when you leave)
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
   x                    stop the selected worker (asks y/n)
@@ -27,7 +28,6 @@ Keys ─────────────────────────
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
   shared               one process, many sessions (OpenCode); listed once
   ?                    a figure that is missing or older than 45 seconds
-
 
 
 

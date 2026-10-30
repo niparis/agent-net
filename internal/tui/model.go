@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	osexec "os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -78,6 +79,11 @@ type Model struct {
 	form        workerForm
 	confirmID   string // worker the stop question is about
 	confirmName string
+
+	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
+	// execProcess replaces tea.ExecProcess in tests.
+	tmuxSocket  string
+	execProcess func(*osexec.Cmd, tea.ExecCallback) tea.Cmd
 
 	// CPU, memory and counts from the daemon (usage.go).
 	usage usageData
@@ -257,6 +263,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyFetch(msg)
 		return m, nil
 
+	case enterMsg:
+		return m.onEnter(msg)
+
+	case enterDoneMsg:
+		return m.onEnterDone(msg)
+
 	case actionMsg:
 		return m.onAction(msg)
 
@@ -417,6 +429,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startCompose()
 	case "s":
 		return m.startForm()
+	case "e":
+		return m.startEnter()
 	case "x":
 		return m.startConfirm()
 	case "?":

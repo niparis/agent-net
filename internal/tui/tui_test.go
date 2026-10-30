@@ -149,6 +149,11 @@ type fakeSource struct {
 	textFn  func(q protocol.TextQuery) (protocol.TextPage, error)
 	queries []protocol.TextQuery
 	topReqs []string
+
+	// What session_enter was asked, and the plan or error it answers with.
+	enters    []protocol.EnterRequest
+	enterPlan protocol.EnterPlan
+	enterErr  error
 }
 
 func (f *fakeSource) Usage(context.Context) (Usage, error) {
@@ -176,6 +181,11 @@ func (f *fakeSource) SessionText(_ context.Context, q protocol.TextQuery) (proto
 		return protocol.TextPage{}, errors.New("session_text is not available")
 	}
 	return f.textFn(q)
+}
+
+func (f *fakeSource) SessionEnter(_ context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {
+	f.enters = append(f.enters, q)
+	return f.enterPlan, f.enterErr
 }
 
 func (f *fakeSource) Snapshot(context.Context) (Snapshot, error) { return f.snap, f.snapErr }

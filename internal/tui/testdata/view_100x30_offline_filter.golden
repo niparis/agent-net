@@ -27,4 +27,4 @@ Messages (live) ─────────────────────�
   14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
   14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
   14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
-up/down select  enter conversation  m msg  s start  x stop  / filter  o offline  ? help  q quit
+up/down select  enter conversation  e enter it  m msg  s start  x stop  / filter  ? help  q quit
