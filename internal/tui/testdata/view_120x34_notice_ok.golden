@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued                    updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued        updated 14:05:00
   Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
@@ -12,23 +12,23 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
   scratch            pi       -         -          shell  -         ?     ?
-Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  strategies  claude  idle    CPU and memory need a newer daemon and gateway
-  id       s_0000000000000002 pid 4300                          │
-  folder   /Users/n/code/strategies/.claude/worktrees/agent-a7  │
-  branch   feature/risk-model                                   │
-  model    claude-sonnet-5-5, background                        │
-  function trading strategies                                   │
-  task     backtest v2                                          │
-  remote   git@git.example.com:team/strategies.git              │
-  worktree /Users/n/code/strategies/.claude/worktrees/agent-a7… │
-  project source: registered                                    │
-  messages 13:57  -> tenebrae-53 (Mac)  reply  delivered        │
-           13:56  <- tenebrae-53 (Mac)  request  replied        │
-                                                                │
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  14:00  worker started: tenebrae opencode in tenebrae for you
-  14:00  you -> tenebrae  request                                                                                      ↩
-   ↳ 14:03  tenebrae -> you  reply                                                                                     ✓
-  14:04  worker refused in nope: no project named nope is known
-1/2 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  ? help  q quit
+
+
+
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+
+
+> write to the CTO...
+1/2/3 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  tab CTO  ? help  q quit

@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 12 online · 1 busy · 2 needs you                           updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy · 2 needs you               updated 14:05:00
 Needs you (2) ──────────────────────────────────────────────────────────────────────────────────────
 > ⚠ strategies claude           12m "Merge tenebrae-nexus/truenas-stacks #817?"
   ⚠ ci-runner  pi     build-vm   3m permission: Bash(git push origin main)
@@ -13,18 +13,18 @@ Needs you (2) ──────────────────────
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────
   ci-runner          pi       agent-net gpt-6      needs you -        5%  300M                     …
   scratch            pi       -         -          shell     -       <1%   80M                     …
-Selected session ───────────────────────────────────────────────────────────────────────────────────
-  strategies  claude  idle    CPU 240% (5m 180%)  RAM 4.6G (4.6G)  34 procs
-  id       s_0000000000000002 pid 4300               │     PID   CPU   RAM by CPU
-  folder   …e/strategies/.claude/worktrees/agent-a7  │    4301  180%  900M node /srv/app/dev-server…
-  branch   feature/risk-model                        │    4300   40%  600M claude --resume
-  model    claude-sonnet-5-5, background             │    4402   18%  1.2G python3 backtest.py --ye…
-  function trading strategies                        │    4410    2%  300M cargo watch -x test
-  task     backtest v2                               │    4500    0%    1M sleep 600
-  remote   git@git.example.com:team/strategies.git   │     PID   CPU   RAM by RAM
-  worktree …e/strategies/.claude/worktrees/agent-a7… │    4402   18%  1.2G python3 backtest.py --ye…
-  project source: registered                         │    4301  180%  900M node /srv/app/dev-server…
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────
-  14:02  tenebrae-53 -> ci-runner  notification                                                    ✗
-  14:04  tenebrae-53 -> s_00000000  request                                                        …
-1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  ? help  q quit
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+> write to the CTO...
+1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  tab CTO  ? help  q quit

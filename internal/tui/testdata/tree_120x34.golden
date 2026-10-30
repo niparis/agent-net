@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 10 sessions, 9 online · 2 busy · workers 4 running, 0 queued                   updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 10 sessions, 9 online · 2 busy · workers 4 running, 0 queued       updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
  ○ old-box    v0.3.2 offline
@@ -14,21 +14,21 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner                        pi       agent-net gpt-6      idle   -         ?     ?
   scratch                          pi       -         -          shell  -         ?     ?
-Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  backtest-b  opencode  idle    CPU and memory need a newer daemon and gateway
-  worker   started by strategies (Mac), 14:02, project strateg… │
-  id       s_00000000000000a2 w_s_00000000000000a2              │
-  folder   -                                                    │
-  branch   -                                                    │
-  model    anthropic/claude-haiku-4-5, background               │
-  function none: add a `# Project: <one line>` line to AGENTS.… │
-  task     probe                                                │
-  remote   -                                                    │
-  messages none seen yet                                        │
-                                                                │
-                                                                │
-                                                                │
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  14:02  tenebrae-53 -> ci-runner  notification                                                                        ✗
-  14:04  tenebrae-53 -> s_00000000  request                                                                            …
-1/2 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  ? help  q quit
+
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+
+
+> write to the CTO...
+1/2/3 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  tab CTO  ? help  q quit

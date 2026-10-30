@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued                    updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued        updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
  ○ old-box    v0.3.2 offline
@@ -11,24 +11,24 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
   scratch            pi       -         -          shell  -         ?     ?
-Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  tenebrae  opencode  busy    CPU and memory need a newer daemon and gateway
-  worker   started by you (on Mac), 14:00, project tenebrae     │
-  id       s_0000000000000008 w_1                               │
-  folder   /Users/n/code/tenebrae                               │
-  branch   main                                                 │
-  model    anthropic/claude-haiku-4-5, background               │
-  function none: add a `# Project: <one line>` line to AGENTS.… │
-  remote   -                                                    │
-  project source: seen in a session and registered              │
-  messages 14:03  -> you (on Mac)  reply  delivered             │
-           14:00  <- you (on Mac)  request  replied             │
-                                                                │
-                                                                │
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  14:04  tenebrae-53 -> s_00000000  request                                                                            …
-  14:00  worker started: tenebrae opencode in tenebrae for you
-  14:00  you -> tenebrae  request                                                                                      ↩
-   ↳ 14:03  tenebrae -> you  reply                                                                                     ✓
-  14:04  worker refused in nope: no project named nope is known
+
+
+
+
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+
+
+> write to the CTO...
 Stop worker tenebrae (Mac)? y/n

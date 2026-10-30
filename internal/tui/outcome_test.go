@@ -14,7 +14,7 @@ func TestOutcomeKeys(t *testing.T) {
 	if cmd == nil || next.(Model).conv.id != "receiver" {
 		t.Fatal("recipient conversation")
 	}
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("R")})
 	if cmd == nil || next.(Model).conv.id != "sender" {
 		t.Fatal("sender conversation")
 	}

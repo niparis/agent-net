@@ -28,6 +28,7 @@ type focus int
 const (
 	focusSessions focus = iota
 	focusFeed
+	focusCTO
 )
 
 // openMsg is the message whose body is on screen.
@@ -132,8 +133,19 @@ func New(src Source) Model {
 	ti.Prompt = "/"
 	ti.CharLimit = 80
 	ti.Cursor.SetMode(cursor.CursorHide)
-	return Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
+	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}}
+	ct := textinput.New()
+	ct.Prompt = "> "
+	ct.Placeholder = "write to the CTO..."
+	ct.CharLimit = 65536
+	m.ctoGeneration = 1
+	m.cto = &ctoState{input: ct, generation: 1}
+	if _, ok := src.(ctoSource); ok {
+		m.cto.polling = true
+	}
+
+	return m
 }
 
 // ---- messages ----
@@ -171,7 +183,12 @@ type bodyMsg struct {
 
 // Init starts the first refresh and the clock that asks for the next ones.
 // New marks a fetch as running, so the first tick does not start a second.
-func (m Model) Init() tea.Cmd { return tea.Batch(m.fetchCmd(), tick()) }
+func (m Model) Init() tea.Cmd {
+	if m.cto != nil && m.cto.polling {
+		return tea.Batch(m.fetchCmd(), tick(), m.ctoPollCmd())
+	}
+	return tea.Batch(m.fetchCmd(), tick())
+}
 
 // tickDelay is RefreshEvery; tests shorten it.
 var tickDelay = RefreshEvery
@@ -283,7 +300,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
 		}
-		if m.cto != nil && !m.cto.polling {
+		if _, ok := m.src.(ctoSource); ok && m.cto != nil && !m.cto.polling {
 			m.cto.polling = true
 			cmds = append(cmds, m.ctoPollCmd())
 		}
@@ -551,11 +568,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if m.cto != nil {
+	if m.focus == focusCTO && m.cto != nil {
 		return m.ctoKey(k)
 	}
-	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil && !m.outcomeSelected() {
-		return m.startCTO()
+	if k.String() == "C" && !m.filtering {
+		m.tab, m.mapOn, m.focus = 0, false, focusCTO
+		m.open, m.conv = nil, nil
+		if m.cto == nil {
+			return m.startCTO()
+		}
+		m.cto.editing = true
+		return m, m.cto.input.Focus()
 	}
 	if m.mapOn {
 		return m.mapKey(k)
@@ -605,10 +628,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	for i := range tabNames {
 		if k.String() == fmt.Sprint(i+1) {
 			m.tab = i
+			m.focus = focusSessions
+			if i == 1 {
+				m.focus = focusFeed
+				m.feedCur = m.feedLastVisible()
+			}
 			return m, nil
 		}
 	}
-	if m.tab != 0 {
+	if m.tab == 2 {
 		switch k.String() {
 		case "q":
 			m.quitting = true
@@ -689,7 +717,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 	case "c":
 		return m, m.openConv()
-	case "C":
+	case "R":
 		for _, e := range m.snap.Outcomes {
 			if m.selected == "outcome:"+e.ReplyID {
 				return m, m.openConvFor(e.Sender)
@@ -729,11 +757,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "tab":
-		if m.focus == focusSessions {
-			m.focus = focusFeed
-			m.feedCur = m.feedLastVisible()
-		} else {
-			m.focus = focusSessions
+		if m.tab == 0 && m.cto != nil {
+			m.focus = focusCTO
+			m.cto.editing = true
+			return m, m.cto.input.Focus()
 		}
 	case "r":
 		if !m.fetching {
@@ -1167,5 +1194,5 @@ func (m *Model) fixScroll() {
 	for sel >= m.tableTop+room(m.tableTop) {
 		m.tableTop++
 	}
-	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-n, 0))
+	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-1, 0))
 }

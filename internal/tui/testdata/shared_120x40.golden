@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 12 online · 2 busy                                                             updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 12 online · 2 busy                                                 updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2  opencode service 2.1G 9 procs
  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
  ○ old-box    v0.3.2 offline
@@ -12,29 +12,29 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner          pi       agent-net gpt-6      idle   -        5%  300M
   scratch            pi       -         -          shell  -       <1%   80M
-Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  web  opencode  idle    CPU 22% (5m 15%)  RAM 2.1G (2.1G)  9 procs
-  id       s_0000000000000003                                   │ shared by 3 opencode sessions, not split
-  folder   /Users/n/code/shop/web                               │ processes: too old for this action
-  branch   main                                                 │
-  model    anthropic/claude-sonnet-5                            │
-  function none: add a `# Project: <one line>` line to AGENTS.… │
-  remote   -                                                    │
-  worktree /Users/n/code/shop                                   │
-  project source: seen in a session                             │
-  messages none seen yet                                        │
-                                                                │
-                                                                │
-                                                                │
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  13:55  build-vm connected
-  13:56  tenebrae-53 -> strategies  request                                                                            ↩
-   ↳ 13:57  strategies -> tenebrae-53  reply                                                                           ✓
-  14:01  ci-runner -> tenebrae-53  request                                                                             ✓
-  14:02  tenebrae-53 -> ci-runner  notification                                                                        ✗
-  14:04  tenebrae-53 -> s_00000000  request                                                                            …
 
 
 
 
-1/2 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  ? help  q quit
+
+
+
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+
+
+
+
+> write to the CTO...
+1/2/3 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  tab CTO  ? help  q quit

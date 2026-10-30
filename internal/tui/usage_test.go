@@ -136,11 +136,11 @@ func TestHeaderQuotaWarning(t *testing.T) {
 	u.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92}}}}}
 	m := modelWith(snap, u, 120, 40)
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "codex 92% week - see 2") || strings.Contains(v, "quotas:") {
+	if !strings.Contains(v, "codex 92% week - see 3") || strings.Contains(v, "quotas:") {
 		t.Fatal(v)
 	}
 	u.Local.Quotas.Providers[0].Windows[0].PercentUsed = 80
-	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "see 2") {
+	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "see 3") {
 		t.Fatal("80% should not warn")
 	}
 }
@@ -349,7 +349,7 @@ func TestTopProcessesAreFetchedOnDemandAndCached(t *testing.T) {
 	if len(src.topReqs) != 1 || src.topReqs[0] != m.selected {
 		t.Fatalf("requests %v", src.topReqs)
 	}
-	if !strings.Contains(m.View(), "node /srv/app") {
+	if !strings.Contains(detailText(m), "node /srv/app") {
 		t.Fatalf("top processes not shown:\n%s", m.View())
 	}
 	// Cached for a few seconds, fetched again after.
@@ -514,23 +514,23 @@ func TestFunctionIsInTheDetailPane(t *testing.T) {
 	const hint = "none: add a `# Project:"
 	m := newModel(120, 40)
 	m.selected = "s_0000000000000001"
-	if v := m.View(); !strings.Contains(v, "function research") {
+	if v := detailText(m); !strings.Contains(v, "function research") {
 		t.Errorf("description missing:\n%s", v)
 	}
 	for _, id := range []string{"s_0000000000000003", "s_0000000000000005"} {
 		m.selected = id
-		if v := m.View(); !strings.Contains(v, hint) {
+		if v := detailText(m); !strings.Contains(v, hint) {
 			t.Errorf("%s: empty description is not explained:\n%s", id, v)
 		}
 	}
 	m.selected = "s_0000000000000001"
-	for _, l := range lines(m.View()) {
+	for _, l := range lines(detailText(m)) {
 		if strings.Contains(l, "no AGENTS.md") {
 			t.Errorf("the table still says no AGENTS.md: %q", l)
 		}
 	}
 	m = keys(m, "o", "G")
-	for _, l := range lines(m.View()) {
+	for _, l := range lines(detailText(m)) {
 		if strings.Contains(l, "old-session") && strings.Contains(l, "none: add a") {
 			t.Errorf("an offline session must not say its description is missing: %q", l)
 		}

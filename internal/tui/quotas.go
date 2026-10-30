@@ -90,10 +90,10 @@ func (m Model) quotaWarning() string {
 		}
 		for _, w := range r.provider.Windows {
 			if w.Exhausted || w.PercentUsed >= 100 {
-				return fmt.Sprintf("%s exhausted %s - see 2", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w)))
+				return fmt.Sprintf("%s exhausted %s - see 3", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w)))
 			}
 			if w.PercentUsed > 80 {
-				return fmt.Sprintf("%s %.0f%% %s - see 2", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w)))
+				return fmt.Sprintf("%s %.0f%% %s - see 3", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w)))
 			}
 		}
 	}

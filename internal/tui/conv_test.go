@@ -187,7 +187,7 @@ func TestConversationOpensWithEnterOrC(t *testing.T) {
 	}
 	// Enter in the feed opens the conversation of the end on this machine.
 	m, _ := convModel(100, 30, newTranscript(5))
-	m = pressKey(m, "tab")
+	m = pressKey(m, "2")
 	m = pressKey(m, "enter")
 	if m.conv == nil || m.conv.id != "s_0000000000000001" {
 		t.Fatalf("enter in the feed opened %+v", m.conv)

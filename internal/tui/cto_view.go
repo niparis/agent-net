@@ -18,6 +18,16 @@ func (m Model) ctoView(w, h int) []string {
 	if c.err != "" {
 		lines = append(lines, "error: "+c.err)
 	}
+	if len(lines) == 0 {
+		hint := "write to the CTO: it can set charters, start workers, answer what the network is doing"
+		if w < 84 {
+			hint = "write to the CTO: set charters, start workers, answer what the network is doing"
+		}
+		lines = append(lines, sDim.Render(hint))
+	}
+	if c.confirming {
+		lines = append(lines, "Start a new conversation? y/n")
+	}
 	rows := max(h-2, 0)
 	if len(lines) > rows {
 		lines = lines[len(lines)-rows:]
@@ -28,40 +38,11 @@ func (m Model) ctoView(w, h int) []string {
 	for len(out) < h-1 {
 		out = append(out, "")
 	}
-	c.input.Width = max(w-2, 1)
+	c.input.Width = max(w-4, 1)
 	input := c.input.View()
 	if !c.editing {
-		input = "> press Enter to write"
+		input = "> write to the CTO..."
 	}
 	out = append(out, clip(input, w))
 	return out
-}
-func (m Model) ctoLayout(w, h int) []string {
-	if m.mapOn {
-		leftW := (w - 3) / 2
-		rightW := w - leftW - 3
-		left := m.mapView(leftW, h)
-		right := m.ctoView(rightW, h)
-		out := make([]string, 0, h)
-		for i := 0; i < h; i++ {
-			l, r := "", ""
-			if i < len(left) {
-				l = left[i]
-			}
-			if i < len(right) {
-				r = right[i]
-			}
-			out = append(out, clip(padStyled(l, leftW)+" │ "+r, w))
-		}
-		return out
-	}
-	top := h / 2
-	main := m.mainView(w, top)
-	if len(main) > top {
-		main = main[:top]
-	}
-	for len(main) < top {
-		main = append(main, "")
-	}
-	return append(main, m.ctoView(w, h-top)...)
 }

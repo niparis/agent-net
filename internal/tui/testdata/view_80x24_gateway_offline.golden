@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 12 online · 1 busy                     updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy         updated 14:05:00
 ! Gateway offline: the daemon cannot reach it. Showing last data. Retrying.
  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2
  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8
@@ -10,15 +10,15 @@
   web          opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ci-runner    pi       agent-net gpt-6      idle   -        5%  300M
-Selected session ───────────────────────────────────────────────────────────────
-  strategies  claude  idle    CPU 240% (5m 180%)  RAM 4.6G (4.6G)  34 procs
-  id       s_0000000000000002 pid 4300    │     PID   CPU   RAM by CPU
-  folder   …s/.claude/worktrees/agent-a7  │    4301  180%  900M node /srv/app/d…
-  branch   feature/risk-model             │    4300   40%  600M claude --resume
-  model    claude-sonnet-5-5, background  │    4402   18%  1.2G python3 backtes…
-  function trading strategies             │    4410    2%  300M cargo watch -x …
-  task     backtest v2                    │    4500    0%    1M sleep 600
-Messages (live) ────────────────────────────────────────────────────────────────
-  14:02  tenebrae-53 -> ci-runner  notification                                ✗
-  14:04  tenebrae-53 -> s_00000000  request                                    …
-1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
+  scratch      pi       -         -          shell  -       <1%   80M
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: set charters, start workers, answer what the network is doing
+
+
+
+
+> write to the CTO...
+1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

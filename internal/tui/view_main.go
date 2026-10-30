@@ -46,6 +46,15 @@ func (m Model) layout() layout {
 		l.moreMachines = n - maxMachineRows
 		l.machines++ // the "+N more" line
 	}
+	if m.mode == modeNormal {
+		box := min(max((h-1)/3, 6), max(h-4, 1))
+		fixed := 1 + max(l.machines, 1) + 1 + l.needs + l.notice + 1 + box
+		if l.banner {
+			fixed++
+		}
+		l.sessions = max(h-fixed, 1)
+		return l
+	}
 	// title, machines, column heads, detail heading, feed heading, key line
 	fixed := 1 + l.machines + 1 + 1 + 1 + 1 + l.needs
 	if l.banner {
@@ -126,16 +135,16 @@ func (m Model) View() string {
 		for _, s := range m.convView(w, h-1) {
 			add(s)
 		}
-	case m.cto != nil:
-		for _, s := range m.ctoLayout(w, h-1) {
+	case m.tab == 1:
+		for _, s := range m.messagesView(w, h-1) {
+			add(s)
+		}
+	case m.tab == 2:
+		for _, s := range m.quotasView(w, h-1) {
 			add(s)
 		}
 	case m.mapOn:
 		for _, s := range m.mapView(w, h-1) {
-			add(s)
-		}
-	case m.tab == 1 && m.mode == modeNormal && m.open == nil:
-		for _, s := range m.quotasView(w, h-1) {
 			add(s)
 		}
 	default:
@@ -180,6 +189,17 @@ func (m Model) mainView(w, h int) []string {
 	if len(rows) == 0 {
 		add(sDim.Render("  no machines yet"))
 	}
+	if m.expand && m.mode == modeNormal {
+		box := min(max(h/3, 6), max(h-3, 1))
+		add(section("Selected session", w))
+		for _, line := range m.detailLines(w, max(h-box-len(out), 0)) {
+			add(line)
+		}
+		for len(out) < h-box {
+			add("")
+		}
+		return append(out, m.ctoView(w, box)...)
+	}
 	for _, s := range m.sessionsTable(w, l.sessions) {
 		add(s)
 	}
@@ -207,21 +227,28 @@ func (m Model) mainView(w, h int) []string {
 		}
 		return out
 	}
-	add(section("Selected session", w))
-	for _, s := range m.detailLines(w, l.detail) {
-		add(s)
+	if m.cto != nil {
+		box := min(max(h/3, 6), max(h-3, 1))
+		if len(out) > h-box {
+			out = out[:max(h-box, 0)]
+		}
+		for len(out) < h-box {
+			add("")
+		}
+		out = append(out, m.ctoView(w, box)...)
+	} else {
+		add(section("Selected session", w))
+		out = append(out, m.detailLines(w, l.detail)...)
 	}
-	add(m.feedHeading(w))
-	for _, s := range m.feedLines(w, l.feed) {
-		add(s)
-	}
+
 	return out
 }
 
-var tabNames = []string{"Sessions", "Quotas"}
+var tabNames = []string{"Sessions", "Messages", "Quotas"}
 var sActiveTab = sBold.Underline(true)
 
 func (m Model) titleLine(w int) string {
+
 	var tabs []string
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
@@ -237,6 +264,7 @@ func (m Model) titleLine(w int) string {
 			left += "  " + sBusy.Render(warning)
 		}
 	}
+
 	online, total, workers, busy := 0, 0, 0, 0
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
@@ -294,6 +322,20 @@ func (m Model) titleLine(w int) string {
 		right = "connecting..."
 	}
 	used := ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	if used > w {
+		right = ""
+		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
+	}
+	if used > w {
+		mid = ""
+		used = ansi.StringWidth(left)
+	}
+	if mid == "" {
+		return clip(left, w)
+	}
+	if right == "" {
+		return clip(left+" │ "+mid, w)
+	}
 	gap := max(w-used, 2)
 	return clip(left+" │ "+mid+strings.Repeat(" ", gap)+sDim.Render(right), w)
 }
@@ -674,7 +716,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 		out = append(out, sDim.Render(msg))
 	}
-	top := min(m.tableTop, max(len(rows)-n, 0))
+	top := min(m.tableTop, max(len(rows)-1, 0))
 	if top > 0 && top < len(rows) && !rows[top].header {
 		// The machine heading has scrolled off: keep it as the first line.
 		for j := top - 1; j >= 0; j-- {
@@ -932,4 +974,13 @@ func (m Model) requestRuleBadge(a protocol.AgentView) string {
 		return fmt.Sprintf("%s +%d", rule, n)
 	}
 	return rule
+}
+
+func (m Model) messagesView(w, h int) []string {
+	out := []string{m.titleLine(w)}
+	if m.open != nil {
+		return append(out, m.messageView(w, h-1)...)
+	}
+	out = append(out, m.feedHeading(w))
+	return append(out, m.feedLines(w, max(h-2, 0))...)
 }

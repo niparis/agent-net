@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 12 online · 1 busy                     updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy         updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  (stale)
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?  (stale)
  ○ old-box    v0.3.2 offline
@@ -10,15 +10,15 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
   scratch      pi       -         -          shell  -         ?     ?
-Selected session ───────────────────────────────────────────────────────────────
-  strategies  claude  idle    cpu ? ram ? (figures are old)
-  id       s_0000000000000002 pid 4300    │
-  folder   …s/.claude/worktrees/agent-a7  │
-  branch   feature/risk-model             │
-  model    claude-sonnet-5-5, background  │
-  function trading strategies             │
-  task     backtest v2                    │
-Messages (live) ────────────────────────────────────────────────────────────────
-  14:02  tenebrae-53 -> ci-runner  notification                                ✗
-  14:04  tenebrae-53 -> s_00000000  request                                    …
-1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: set charters, start workers, answer what the network is doing
+
+
+
+
+> write to the CTO...
+1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
