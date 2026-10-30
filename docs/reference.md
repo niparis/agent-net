@@ -132,7 +132,10 @@ Press `/` to find a project, Enter to focus the first match, or Esc to cancel.
 The initial focus uses the most recent connected charter change, then the most
 connected node, then the first project. Your selection stays when you return.
 Press `z` for the
-overview. If it does not fit, the focus view stays visible. Enter opens
+overview. It wraps project boxes across rows and lists isolated projects below.
+Use the arrows to select a box, Page Up and Page Down to scroll, and Enter to
+focus the selected project. Edges are shown only when both endpoints are
+visible; a count shows the edges off screen. In focus view, Enter opens
 Sessions filtered to the selected project, and `c` starts a CTO question
 about it. Tab moves between the map and CTO box.
 

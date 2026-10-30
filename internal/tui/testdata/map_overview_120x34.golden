@@ -1,24 +1,24 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges                                               updated 14:05
-Overview  z focus
-╭──────────────────╮   ╭──────────────────╮   ╭──────────────────╮
-│wbg-architect     │   │trading-architect │   │api-architect     │
-│growing ○ 0       │   │mature ○ 0        │   │early ○ 0         │
-╰──────────────────╯   ╰──────────────────╯   ╰──────────────────╯
-          │                      │
-          ▼                      ▼
-╭──────────────────╮   ╔══════════════════╗   ╭──────────────────╮   ╭──────────────────╮
-│tenebrae          │   ║cogforge          ║   │shop              │   │homelab           │
-│growing ● 1 busy  │   ║early ○ 0         ║   │mature ○ 0        │   │growing ○ 0       │
-╰──────────────────╯   ╚══════════════════╝   ╰──────────────────╯   ╰──────────────────╯
-          │                      ▲                      │
-          └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘                      │
-                                 │                      ▲
-                                 └━━━━━━━━━━━━━━━━━━━━━━┘
-trading-architect ───▶ cogforge governs normal
-wbg-architect ───▶ tenebrae governs normal
-tenebrae ┄┄┄▶ cogforge depends ask
-cogforge ━━━▶ shop depends auto
-No architect: shop, homelab
+Overview  enter focus
+Architects
+╭ trading-architect · mature · ○0  ╮ ╭ wbg-architect · growing · ○0     ╮
+Components
+╭ cogforge · early · ○0            ╮ ╭ shop · mature · ○0               ╮ ╭ tenebrae · growing · ●1          ╮
+Isolated: api-architect, homelab
+trading-architect ───▶ cogforge · governs normal
+wbg-architect ───▶ tenebrae · governs normal
+tenebrae ┄┄┄▶ cogforge · depends ask
+cogforge ━━━▶ shop · depends auto
+
+
+
+
+
+
+
+
+
+
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ No architect: shop, homelab
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down projects  left/right follow  / find  z overview  enter sessions  c CTO  ? help  q quit
+up/down select/scroll  left/right select  pgup/pgdn scroll  enter focus  ? help

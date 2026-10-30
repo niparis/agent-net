@@ -471,3 +471,81 @@ func TestOverviewDownScrollsPastLastBoxToIsolated(t *testing.T) {
 		t.Fatal("down did not scroll to isolated projects")
 	}
 }
+
+func TestOverviewOnlyDrawsEdgesBetweenVisibleBoxes(t *testing.T) {
+	g := protocol.GraphView{}
+	for i := 0; i < 30; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("node-%02d", i), Kind: "component"})
+		if i > 0 {
+			g.Edges = append(g.Edges, protocol.Edge{From: fmt.Sprintf("node-%02d", i-1), To: fmt.Sprintf("node-%02d", i), Kind: "depends", Rule: "auto"})
+		}
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z", "pgdown")
+	out, _ := m.mapOverviewView(80, m.overviewHeight())
+	text := ansi.Strip(strings.Join(out, "\n"))
+	if !strings.Contains(text, "edges off screen") {
+		t.Fatal(text)
+	}
+	visible := map[string]bool{}
+	for _, line := range out {
+		plain := ansi.Strip(line)
+		if strings.Contains(plain, "╭") {
+			for _, n := range g.Nodes {
+				if strings.Contains(plain, n.Name) {
+					visible[n.Name] = true
+				}
+			}
+		}
+	}
+	for _, e := range g.Edges {
+		if strings.Contains(text, e.From+" ━━━▶ "+e.To) && (!visible[e.From] || !visible[e.To]) {
+			t.Fatalf("edge has hidden endpoint: %+v\n%s", e, text)
+		}
+	}
+}
+
+func largeOverviewGraph() protocol.GraphView {
+	g := protocol.GraphView{}
+	for i := 0; i < 3; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("architect-%d", i+1), Kind: "architect", Charter: protocol.Charter{Maturity: "mature"}})
+	}
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("project-%02d", i+1)
+		g.Nodes = append(g.Nodes, protocol.Node{Name: name, Kind: "component", Charter: protocol.Charter{Maturity: "growing"}})
+		rule := "normal"
+		if i%3 == 0 {
+			rule = "auto"
+		} else if i%3 == 1 {
+			rule = "ask"
+		}
+		g.Edges = append(g.Edges, protocol.Edge{From: fmt.Sprintf("architect-%d", i%3+1), To: name, Kind: "governs", Rule: rule})
+	}
+	for i := 0; i < 12; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("isolated-%02d", i+1), Kind: "component"})
+	}
+	g.Changes = []protocol.CharterChange{{Node: "project-01", Attr: "maturity", At: t0.UnixNano()}}
+	return g
+}
+func TestGoldenLargeOverview(t *testing.T) {
+	g := largeOverviewGraph()
+	if len(g.Nodes) != 25 || len(g.Edges) != 10 {
+		t.Fatal("bad fixture")
+	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := openMap(t, mapModel(size[0], size[1], g))
+		m = keys(m, "z")
+		v := m.View()
+		for _, line := range lines(v) {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatalf("wide line: %s", line)
+			}
+		}
+		if strings.Contains(v, "overview does not fit") || !strings.Contains(v, "Overview") {
+			t.Fatal(v)
+		}
+		golden(t, fmt.Sprintf("map_large_overview_%dx%d", size[0], size[1]), v)
+		m = keys(m, "pgdown")
+		golden(t, fmt.Sprintf("map_large_overview_scrolled_%dx%d", size[0], size[1]), m.View())
+	}
+}
