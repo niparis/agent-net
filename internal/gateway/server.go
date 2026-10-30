@@ -615,6 +615,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "cto.graph_history":
+		var p struct {
+			After int64 `json:"after"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.After < 0 {
+			return nil, reject("bad CTO history")
+		}
+		return st.CTOGraphHistory(p.After)
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true}, nil
 	case "graph.get":

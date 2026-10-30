@@ -35,7 +35,7 @@ var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
-	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true,
+	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 }
 
@@ -267,6 +267,14 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				}
 			}
 		}
+	case protocol.OpCTOGraphHistory:
+		var p struct {
+			After int64 `json:"after"`
+		}
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil || p.After < 0 {
+			return nil, true, errors.New("bad CTO graph history params")
+		}
+		res, err = d.call(ctx, "cto.graph_history", p)
 	case protocol.OpCTOSend:
 		var q protocol.CTOSendRequest
 		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {

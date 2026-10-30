@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -87,7 +89,11 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		if err != nil {
 			return nil, err
 		}
-		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
+		result, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
+		if err == nil {
+			err = d.recordCTOAction(fmt.Sprintf("sent to %s: %s", p.To, p.Body))
+		}
+		return result, err
 	case "worker_start":
 		var p protocol.WorkerStartRequest
 		if json.Unmarshal(raw, &p) != nil {
@@ -97,7 +103,11 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		if sid == "" {
 			return nil, errNotConnected
 		}
-		return d.workerStartCall(ctx, sid, p, false, "", true)
+		result, err := d.workerStartCall(ctx, sid, p, false, "", true)
+		if err == nil {
+			err = d.recordCTOAction(fmt.Sprintf("started worker %s: %s", p.Project, p.Task))
+		}
+		return result, err
 	}
 	return nil, errors.New("unknown CTO tool")
 }
@@ -122,4 +132,16 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
 	}
 	return l.call(ctx, typ, params)
+}
+
+func (d *Daemon) recordCTOAction(text string) error {
+	id, err := d.ctoSession()
+	if err != nil {
+		return err
+	}
+	if id == "" {
+		return errors.New("no CTO conversation")
+	}
+	_, err = d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at) VALUES(?,?,?)`, id, text, time.Now().UnixNano())
+	return err
 }

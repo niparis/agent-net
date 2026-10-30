@@ -32,3 +32,17 @@ func (s *Client) CTOEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	err = json.Unmarshal(b, &out)
 	return out, err
 }
+
+func (s *Client) CTOGraphHistory(ctx context.Context) ([]protocol.CTOGraphChange, error) {
+	var out []protocol.CTOGraphChange
+	b, err := s.action(ctx, protocol.OpCTOGraphHistory, nil)
+	if err != nil {
+		return nil, err
+	}
+	err = json.Unmarshal(b, &out)
+	return out, err
+}
+func (s *Client) CTOUndo(ctx context.Context, id int64) error {
+	_, err := s.action(ctx, protocol.OpGraphUndo, protocol.GraphUndoRequest{ID: id})
+	return err
+}

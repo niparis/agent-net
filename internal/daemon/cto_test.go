@@ -306,6 +306,13 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	if !foundTask {
 		t.Fatalf("worker task did not carry CTO attribution: %+v", messages)
 	}
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil {
+		t.Fatal(err)
+	}
+	if len(events.Actions) != 2 || !strings.Contains(events.Actions[0].Text, "sent to") || !strings.Contains(events.Actions[1].Text, "started worker") {
+		t.Fatalf("actions: %+v", events.Actions)
+	}
 
 }
 

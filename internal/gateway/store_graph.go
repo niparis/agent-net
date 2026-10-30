@@ -513,3 +513,21 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	}
 	return g, rows.Err()
 }
+
+// CTOGraphHistory returns all attributed CTO changes after a history ID.
+func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) {
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE actor='cto' AND id>? ORDER BY id`, after)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.CTOGraphChange{}
+	for rows.Next() {
+		var v protocol.CTOGraphChange
+		if err = rows.Scan(&v.ID, &v.Kind, &v.Node, &v.Attr, &v.OldValue, &v.NewValue, &v.At); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}

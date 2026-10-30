@@ -17,16 +17,20 @@ type ctoSource interface {
 	CTONew(context.Context) error
 	CTOSettings(context.Context) (protocol.CTOSettings, error)
 	CTOEvents(context.Context, int) (protocol.CTOEvents, error)
+	CTOGraphHistory(context.Context) ([]protocol.CTOGraphChange, error)
+	CTOUndo(context.Context, int64) error
 }
 type ctoState struct {
 	input            textinput.Model
 	editing, polling bool
 	model, err       string
 	messages         []string
+	history          []protocol.CTOGraphChange
 	generation       int
 }
 type ctoPollMsg struct {
 	events     protocol.CTOEvents
+	history    []protocol.CTOGraphChange
 	model      string
 	err        error
 	generation int
@@ -63,11 +67,15 @@ func (m Model) ctoPollCmd() tea.Cmd {
 			return ctoPollMsg{err: err, generation: generation}
 		}
 		events, err := src.CTOEvents(ctx, 0)
+		if err != nil {
+			return ctoPollMsg{err: err, generation: generation}
+		}
+		history, err := src.CTOGraphHistory(ctx)
 		model := settings.Model
 		if model == "" {
 			model = "default"
 		}
-		return ctoPollMsg{events: events, model: model, err: err, generation: generation}
+		return ctoPollMsg{events: events, history: history, model: model, err: err, generation: generation}
 	}
 }
 func ctoMessage(raw json.RawMessage) string {
@@ -158,6 +166,20 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c.err = ""
 	c.model = r.model
 	c.messages = nil
+	c.history = r.history
+	for _, h := range r.history {
+		switch h.Kind {
+		case "charter":
+			c.messages = append(c.messages, fmt.Sprintf("charter %s.%s: %s -> %s", h.Node, h.Attr, h.OldValue, h.NewValue))
+		case "edge":
+			c.messages = append(c.messages, "edge "+h.OldValue+" -> "+h.NewValue)
+		case "node":
+			c.messages = append(c.messages, "node "+h.Node+": "+h.OldValue+" -> "+h.NewValue)
+		}
+	}
+	for _, a := range r.events.Actions {
+		c.messages = append(c.messages, a.Text)
+	}
 	for _, raw := range r.events.Messages {
 		if text := ctoMessage(raw); text != "" {
 			c.messages = append(c.messages, text)

@@ -284,6 +284,24 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	if err != nil || id == "" {
 		return out, err
 	}
+	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? ORDER BY id`, id)
+	if err != nil {
+		return out, err
+	}
+	out.Actions = []protocol.CTOAction{}
+	for rows.Next() {
+		var a protocol.CTOAction
+		if err = rows.Scan(&a.ID, &a.Text, &a.At); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Actions = append(out.Actions, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
 	if err = d.startCTOLocked(ctx); err != nil {
 		return out, err
 	}
