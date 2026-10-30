@@ -65,8 +65,21 @@ you and the feed; change charters, nodes and edges or undo a change; send a
 message; and start a worker. They are listed only in the CTO's private config,
 not the network MCP registry. Graph changes and CTO sends are recorded with
 `by=cto`. CTO messages carry an agent-net authority note on delivery. The CTO's
-system brief treats information it reads as data and asks it to show actions,
-show graph changes as short diffs, offer undo and keep secrets out of charters.
+system brief treats information it reads as data, asks it to read the graph at
+the start of a conversation and before a change, show actions and graph changes
+as short diffs, offer undo and keep secrets out of charters.
+
+Its graph tools are `graph_get`, `charter_set`, `charter_history`, `node_add`,
+`node_remove`, `edge_set`, `edge_remove`, `edge_history` and `graph_undo`; the
+others are `agents`, `workers`, `needs_you`, `feed`, `send` and `worker_start`.
+`charter_set` takes the nine charter attributes, and a `maturity` value starts
+with `early`, `growing`, `mature` or `critical`. `edge_set` takes kind `depends`
+(consumer to provider), `governs` (architect to component, with mode `advisor`,
+`arbiter` or `owner`) or `deploys` (deployer to app), and rule `normal`, `auto`,
+`ask` or `never` ([request rules](#charters-and-component-relationships)). To
+let a sender act on another node's requests without the owner's confirmation,
+set its edge with rule `auto`. The tool descriptions and input fields say the
+same, and a field with fixed values carries an enum in its schema.
 
 
 In the TUI, `C` focuses the CTO box on the Sessions tab.
