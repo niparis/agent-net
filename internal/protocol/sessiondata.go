@@ -65,11 +65,15 @@ type UsageReport struct {
 	// Workers is the machine's worker load. Nil from an older daemon.
 	Workers *WorkerLoad `json:"workers,omitempty"`
 	// Quotas is the newest quota-axi reading of the machine. Nil when the
-	// owner turned the integration off, when quota-axi is not installed, or
-	// before the first reading.
+	// owner turned the integration off, when quota-axi is not installed and
+	// could not be installed, or before the first reading.
 	Quotas *Quotas `json:"quotas,omitempty"`
 	// QuotaError is the latest quota-axi command failure, if any.
 	QuotaError string `json:"quota_error,omitempty"`
+	// QuotaNote explains why no quota reading can be made yet, for example
+	// that Node 22.19 or newer is missing. The TUI shows it in the Quotas tab
+	// when there is nothing to show.
+	QuotaNote string `json:"quota_note,omitempty"`
 }
 
 // Room values of WorkerLoad: why a machine has no room for another worker, or

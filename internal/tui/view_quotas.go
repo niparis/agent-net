@@ -24,7 +24,14 @@ func (m Model) quotasView(w, h int) []string {
 		out = append(out, sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS"))
 	}
 	if len(rows) == 0 && len(errors) == 0 {
-		for _, line := range wrap("No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota).", w-2) {
+		empty := "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota)."
+		for _, id := range ids {
+			if note := nodes[id].Usage.QuotaNote; note != "" {
+				empty = sanitize(note)
+				break
+			}
+		}
+		for _, line := range wrap(empty, w-2) {
 			out = append(out, sDim.Render("  "+line))
 		}
 	}

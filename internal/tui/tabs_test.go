@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
 func TestTabSwitching(t *testing.T) {
@@ -128,6 +130,19 @@ func TestQuotaEmptyAndMachineErrors(t *testing.T) {
 	v = ansi.Strip(m.View())
 	if !strings.Contains(v, "build: it failed: exit status 1") || strings.Contains(v, "not installed on any machine") || strings.Contains(v, "PROVIDER") {
 		t.Fatal(v)
+	}
+}
+
+func TestQuotaEmptyStateReportsMissingNode(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.QuotaNote = quotaaxi.NeedNodeMessage
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, quotaaxi.NeedNodeMessage) {
+		t.Fatalf("the Node line is missing:\n%s", v)
+	}
+	if strings.Contains(v, "not installed on any machine") {
+		t.Fatalf("the old empty line is still shown:\n%s", v)
 	}
 }
 

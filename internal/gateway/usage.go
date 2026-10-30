@@ -128,6 +128,7 @@ func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 		r.Workers = &cp
 	}
 	r.QuotaError = clip(r.QuotaError, 300)
+	r.QuotaNote = clip(r.QuotaNote, 300)
 	r.Quotas = cleanQuotas(r.Quotas)
 	return r
 }

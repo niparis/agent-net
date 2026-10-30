@@ -129,6 +129,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.claudePolicyHook()
 	r.claudeNeedsHook()
 	r.claudeWorkersMod()
+	r.quotaAXI(ctx)
 	r.recordApplied()
 	r.piExtension()
 	r.opencodePlugin()

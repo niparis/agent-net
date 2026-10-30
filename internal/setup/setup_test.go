@@ -93,6 +93,7 @@ func newFixture(t *testing.T) *fixture {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "cfg"))
 	t.Setenv("AGENT_NET_NO_SERVICE", "1")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
@@ -100,6 +101,11 @@ func newFixture(t *testing.T) *fixture {
 	oldLook := lookPath
 	lookPath = func(string) (string, error) { return "", errors.New("not found") }
 	t.Cleanup(func() { lookPath = oldLook })
+	oldEnsure, oldAsync, oldRemove := ensureQuotaAXI, ensureQuotaAXIAsync, removeQuotaAXI
+	ensureQuotaAXI = func(context.Context, func(string, ...any)) error { return nil }
+	ensureQuotaAXIAsync = func(func(string, ...any)) {}
+	removeQuotaAXI = func() (bool, error) { return false, nil }
+	t.Cleanup(func() { ensureQuotaAXI, ensureQuotaAXIAsync, removeQuotaAXI = oldEnsure, oldAsync, oldRemove })
 	noTTY(t)
 	data := t.TempDir()
 	gw, err := gateway.New(gateway.Options{DataDir: data})
