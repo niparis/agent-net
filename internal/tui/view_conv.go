@@ -144,7 +144,7 @@ func (m Model) hints() []hint {
 	case m.focus == focusFeed:
 		return []hint{{"up/down", "move", 1}, {"enter", "open body", 1}, {"m", "msg", 1}, {"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
 	}
-	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5},
+	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
 }
 
@@ -162,6 +162,8 @@ func (m Model) helpLine(w int) string {
 		return clip(sBold.Render("Stop worker "+m.confirmName+"? y/n"), w)
 	case modeTrust:
 		return clip(sBold.Render("Let "+m.confirmName+" act on requests from your other agents without asking? y/n"), w)
+	case modePolicy:
+		return sDim.Render(clip("left/right: change a choice  up/down or enter: field  enter on Scope saves  esc cancels", w))
 	}
 	hs := m.hints()
 	text := func() string {
@@ -195,6 +197,7 @@ func (m Model) helpView(w, h int) []string {
 		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x", "stop the selected worker (asks y/n)"},
 		{"t", "peer trust on/off: act on requests of other agents (y/n)"},
+		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o", "show offline and dormant sessions"},
 		{"d", "give the detail pane the room of the message feed"},

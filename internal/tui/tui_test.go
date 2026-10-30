@@ -147,6 +147,8 @@ type fakeSource struct {
 	actErr           error
 	trusts           []trustCall
 	trustErr         error
+	policyFn         func(protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
+	policyErr        error
 
 	// CPU, memory, counts, top lists and conversations. Nil means the daemon
 	// is older than the feature.
@@ -188,6 +190,13 @@ func (f *fakeSource) SessionText(_ context.Context, q protocol.TextQuery) (proto
 		return protocol.TextPage{}, errors.New("session_text is not available")
 	}
 	return f.textFn(q)
+}
+
+func (f *fakeSource) SetSessionPolicy(_ context.Context, q protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error) {
+	if f.policyFn != nil {
+		return f.policyFn(q)
+	}
+	return protocol.SessionPolicyResult{SessionID: q.SessionID}, f.policyErr
 }
 
 func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {

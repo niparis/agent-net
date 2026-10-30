@@ -79,6 +79,7 @@ type Model struct {
 	form        workerForm
 	confirmID   string // worker the stop question is about
 	confirmName string
+	pol         policyForm
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
 	// execProcess replaces tea.ExecProcess in tests.
@@ -276,6 +277,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case actionMsg:
 		return m.onAction(msg)
 
+	case policyPreviewMsg:
+		return m.onPolicyPreview(msg)
+
+	case policySavedMsg:
+		return m.onPolicySaved(msg)
+
 	case bodyMsg:
 		if m.open != nil && m.open.id == msg.id {
 			m.open.loading = false
@@ -373,6 +380,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.confirmKey(k)
 	case modeTrust:
 		return m.trustKey(k)
+	case modePolicy:
+		return m.policyKey(k)
 	}
 	if m.help {
 		switch k.String() {
@@ -441,6 +450,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startConfirm()
 	case "t":
 		return m.startTrust()
+	case "p":
+		return m.startPolicy()
 	case "?":
 		m.help = true
 	case "d":

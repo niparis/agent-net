@@ -28,6 +28,7 @@ const (
 	modeForm              // the start-a-worker form
 	modeConfirm           // asking y/n before stopping a worker
 	modeTrust             // asking y/n before trusting a session with peer requests
+	modePolicy            // the delegation policy form (policy.go)
 )
 
 // noticeTTL is how long a result line stays when no key clears it.

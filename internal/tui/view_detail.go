@@ -125,6 +125,18 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if a.PeerTrust {
 		out = append(out, kv("trust", "acts on peer requests without asking (t: off)"))
 	}
+	if a.Delegation != nil {
+		out = append(out, kv("policy", policySummary(a.Delegation)+"  (p: change)"))
+		if a.Delegation.Main() != "" {
+			out = append(out, kv("main", a.Delegation.Main()))
+		}
+		if a.Delegation.CoderError != "" {
+			out = append(out, kv("", "coder model: "+a.Delegation.CoderError))
+		}
+		for _, s := range m.policySupport(a, a.Delegation) {
+			out = append(out, kv("", s))
+		}
+	}
 	out = append(out, kv("remote", dashIfEmpty(a.Repo.Remote)))
 	// A linked git worktree (not the main working tree), or a folder inside
 	// one: say which.

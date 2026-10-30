@@ -163,6 +163,12 @@ func (m Model) mainView(w, h int) []string {
 		}
 		return out
 	}
+	if m.mode == modePolicy {
+		for _, s := range m.policyView(w, l.detail+l.feed+2) {
+			add(s)
+		}
+		return out
+	}
 	if m.open != nil {
 		for _, s := range m.messageView(w, l.detail+l.feed+2) {
 			add(s)
@@ -360,7 +366,12 @@ type column struct {
 // (nameWant), so short names leave the room to the other columns. The usage
 // columns have a fixed width. When the terminal is narrow the least useful
 // columns go first: FUNCTION, TRUST (shown as [t] before the name), BRANCH, MODE, MODEL, PROJECT.
-func columns(avail, nameWant int) []column {
+func columns(avail, nameWant int) []column { return columnsFor(avail, nameWant, false) }
+
+// columnsFor is columns, with the POLICY column when some session has a
+// delegation policy (decision 0014). Without one the column would only take
+// room from the others.
+func columnsFor(avail, nameWant int, policy bool) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
 		{name: "AGENT", min: 8, max: 8},
@@ -375,7 +386,16 @@ func columns(avail, nameWant int) []column {
 		{name: "PROC", min: 4, max: 4, right: true},
 		{name: "FUNCTION", min: 12, max: 80},
 	}
-	for _, drop := range []string{"FUNCTION", "TRUST", "BRANCH", "MODE", "MODEL", "PROJECT"} {
+	if policy {
+		// After TRUST.
+		for i, c := range cols {
+			if c.name == "TRUST" {
+				cols = append(cols[:i+1], append([]column{{name: "POLICY", min: 6, max: 6}}, cols[i+1:]...)...)
+				break
+			}
+		}
+	}
+	for _, drop := range []string{"FUNCTION", "POLICY", "TRUST", "BRANCH", "MODE", "MODEL", "PROJECT"} {
 		if sumMin(cols) <= avail {
 			break
 		}
@@ -429,13 +449,14 @@ func cellR(s string, w int) string {
 }
 
 func (m Model) sessionsTable(w, n int) []string {
-	nameWant := 0
+	nameWant, policy := 0, false
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
 			nameWant = max(nameWant, utf8.RuneCountInString(nameText(a, g.marks[a.SessionID], 1<<20)))
+			policy = policy || policyBadge(a.Delegation) != ""
 		}
 	}
-	cols := columns(w-2, nameWant) // two columns for the selection marker
+	cols := columnsFor(w-2, nameWant, policy) // two columns for the selection marker
 	head := "  "
 	for i, c := range cols {
 		if i > 0 {
@@ -603,6 +624,8 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 			if a.PeerTrust {
 				v = "peer"
 			}
+		case "POLICY":
+			v = policyBadge(a.Delegation)
 		case "FUNCTION":
 			v = functionText(a)
 		}
@@ -614,7 +637,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 			switch c.name {
 			case "STATUS":
 				v = statusStyle(a.Status).Render(v)
-			case "MODE", "BRANCH", "AGENT":
+			case "MODE", "BRANCH", "AGENT", "POLICY":
 				v = sDim.Render(v)
 			case "TRUST":
 				if a.PeerTrust {
