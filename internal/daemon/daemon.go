@@ -169,6 +169,9 @@ type Daemon struct {
 	sendMu  sync.Mutex
 	lanesMu sync.Mutex
 	lanes   map[string]*lane
+	// adopted is closed when the workers of the last run are taken back. A
+	// plugin that says hello before that would not be seen as a worker.
+	adopted chan struct{}
 	wg      sync.WaitGroup
 	cancel  context.CancelFunc
 	ln      *localServer
@@ -251,7 +254,7 @@ func New(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{},
+	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, adopted: make(chan struct{}),
 		mcpHello: map[string]time.Time{}, workers: map[string]*worker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
@@ -307,6 +310,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 	d.startUsage(ctx)
 	d.adoptWorkers()
+	close(d.adopted)
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.workerLoop(ctx) }()
 	d.wg.Add(1)

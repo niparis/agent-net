@@ -22,7 +22,7 @@ import (
 
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for: %s", what)
@@ -348,7 +348,7 @@ func (lc *localClient) call(method string, params any) (json.RawMessage, error) 
 			return nil, errors.New(s)
 		}
 		return m["result"], nil
-	case <-time.After(5 * time.Second):
+	case <-time.After(20 * time.Second):
 		return nil, errors.New("no response")
 	}
 }

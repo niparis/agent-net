@@ -334,19 +334,17 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 // files of a folder, and delivers by writing a line to the inbox socket of the
 // session. The real adapter (package claude) does the same with Claude's frame.
 type fsClaudeAdapter struct {
-	dir  string
-	host Host
+	dir string
 }
 
 func (a *fsClaudeAdapter) Harness() string { return "claude" }
 
 func (a *fsClaudeAdapter) Start(ctx context.Context, h Host) error {
-	a.host = h
 	go func() {
 		t := time.NewTicker(20 * time.Millisecond)
 		defer t.Stop()
 		for {
-			a.poll()
+			a.poll(h)
 			select {
 			case <-ctx.Done():
 				return
@@ -357,7 +355,7 @@ func (a *fsClaudeAdapter) Start(ctx context.Context, h Host) error {
 	return nil
 }
 
-func (a *fsClaudeAdapter) poll() {
+func (a *fsClaudeAdapter) poll(h Host) {
 	entries, _ := os.ReadDir(a.dir)
 	var infos []protocol.SessionInfo
 	for _, e := range entries {
@@ -389,7 +387,7 @@ func (a *fsClaudeAdapter) poll() {
 		infos = append(infos, protocol.SessionInfo{NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd, Name: sf.Name,
 			Status: "idle", Delivery: "native-claude", Mode: mode})
 	}
-	a.host.SetSessions("claude", infos)
+	h.SetSessions("claude", infos)
 }
 
 func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) Result {

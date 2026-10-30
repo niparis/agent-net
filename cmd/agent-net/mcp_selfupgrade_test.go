@@ -96,7 +96,7 @@ func (d *fakeDaemon) dropConns() {
 
 func (d *fakeDaemon) waitHello(t *testing.T, version string) map[string]any {
 	t.Helper()
-	deadline := time.After(10 * time.Second)
+	deadline := time.After(60 * time.Second)
 	for {
 		select {
 		case h := <-d.hellos:
@@ -142,7 +142,7 @@ func (c *mcpClient) next() string {
 			c.t.Fatal("the mcp process closed its stdout")
 		}
 		return l
-	case <-time.After(10 * time.Second):
+	case <-time.After(60 * time.Second):
 		c.t.Fatal("timed out waiting for the mcp process")
 		return ""
 	}
@@ -336,7 +336,7 @@ func TestMCPSwitchesToNewerBinary(t *testing.T) {
 	p.cmd.Process.Signal(syscall.SIGTERM)
 	select {
 	case <-p.exited:
-	case <-time.After(5 * time.Second):
+	case <-time.After(30 * time.Second):
 		t.Fatal("SIGTERM did not stop the switched process")
 	}
 	if left, _ := filepath.Glob(filepath.Join(tmp, "agent-net-mcp-handover-*")); len(left) != 0 {

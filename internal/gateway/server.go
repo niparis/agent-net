@@ -775,11 +775,14 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	if err != nil {
 		return
 	}
-	if err := nc.write(ctx, frame); err != nil {
-		return
-	}
+	// Mark the message before the write. The node can answer "delivered" as soon
+	// as it has the frame, and a message that is already delivered can no
+	// longer be marked dispatched.
 	if err := g.store.MarkDispatched(m.ID); err != nil {
 		g.logLine("error", "where", "mark dispatched", "err", err)
+	}
+	if err := nc.write(ctx, frame); err != nil {
+		g.store.UnmarkDispatched(m.ID)
 	}
 }
 

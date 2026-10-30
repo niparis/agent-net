@@ -193,7 +193,8 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, Harnesses: inv, Launch: d.launchFlag()}); err != nil {
 		return false, err
 	}
-	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: d.snapshot()})
+	snap := d.snapshot()
+	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: snap})
 	if err != nil {
 		return false, err
 	}
@@ -215,9 +216,15 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.lk = l
 	d.connecting = false
+	// A session that is new or changed after the snapshot was taken was not
+	// pushed (there was no link yet), so push it now.
+	sent := map[string]protocol.SessionInfo{}
+	for _, in := range snap {
+		sent[key(in.Harness, in.NativeID)] = in
+	}
 	var missing []*localSession
-	for _, ls := range d.sessions {
-		if ls.sessionID == "" {
+	for k, ls := range d.sessions {
+		if in, ok := sent[k]; ls.sessionID == "" || !ok || in != ls.info {
 			missing = append(missing, ls)
 		}
 	}

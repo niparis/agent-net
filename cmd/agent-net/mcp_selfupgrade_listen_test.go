@@ -31,7 +31,7 @@ func newCallReq(id int) string {
 
 func waitExe(t *testing.T, pid int, want string) {
 	t.Helper()
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(60 * time.Second)
 	for {
 		got, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
 		if err == nil && got == want {

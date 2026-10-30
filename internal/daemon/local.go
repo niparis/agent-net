@@ -298,6 +298,15 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	if err := d.checkClientProtocol(p.Protocol, p.Version); err != nil {
 		return nil, err
 	}
+	// The socket opens before the workers of the last run are taken back.
+	// A worker's own plugin can say hello in that gap, and it must find its
+	// worker.
+	if d.adopted != nil {
+		select {
+		case <-d.adopted:
+		case <-time.After(30 * time.Second):
+		}
+	}
 	pid, err := peerPID(lc.c)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read the peer process: %w", err)

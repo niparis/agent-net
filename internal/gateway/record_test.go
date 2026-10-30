@@ -260,6 +260,25 @@ func TestProjects(t *testing.T) {
 	}
 }
 
+// A message whose write to the node failed goes back to stored, so the next
+// dispatch sends it again. A delivered message is left alone.
+func TestUnmarkDispatched(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	m, _, _ := send(s, a, b, "k", "")
+	s.MarkDispatched(m.ID)
+	s.UnmarkDispatched(m.ID)
+	if got, _ := s.Pending(mustNode(t, s, b), false); len(got) != 1 {
+		t.Fatalf("pending after unmark: %d, want 1", len(got))
+	}
+	s.MarkDispatched(m.ID)
+	s.ApplyDelivery(m.ID, protocol.StateDelivered, "")
+	s.UnmarkDispatched(m.ID)
+	if got, _ := s.Pending(mustNode(t, s, b), true); len(got) != 0 {
+		t.Fatalf("a delivered message is pending again: %d", len(got))
+	}
+}
+
 // ---- events ----
 
 func TestQueryEventsFilters(t *testing.T) {

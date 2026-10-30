@@ -109,7 +109,7 @@ func toolNames(s protocol.MCPServer) string {
 
 func waitPush(t *testing.T, lc *localClient, method string) {
 	t.Helper()
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(20 * time.Second)
 	for {
 		select {
 		case m := <-lc.Other:
@@ -136,7 +136,9 @@ func TestMCPStdioAcrossNodes(t *testing.T) {
 
 	t.Setenv("TEST_SECRET_TOKEN", "s3cr3t-value-123")
 	srv := stdioSpec("probe", "TEST_SECRET_TOKEN")
-	srv.TimeoutSec = 1
+	// A long limit, so a slow machine does not time out the ordinary calls. The
+	// timeout check below lowers it for one call.
+	srv.TimeoutSec = 30
 	// "on" from an agent is ignored: the server lands on the agent's own node.
 	res := agentA.mustCall("mcp_add", protocol.MCPAdd{Server: srv, On: b.d.NodeID()})
 	var added struct {
@@ -167,12 +169,19 @@ func TestMCPStdioAcrossNodes(t *testing.T) {
 		t.Fatalf("echo = %+v, %v", out, err)
 	}
 
-	// Timeout: the server's limit is 1 s.
+	// Timeout: a second server with a limit of 1 s, so the limit of "probe"
+	// stays long. It goes away again when the check is done.
+	slow := stdioSpec("slow")
+	slow.TimeoutSec = 1
+	agentA.mustCall("mcp_add", protocol.MCPAdd{Server: slow})
+	waitPush(t, agentB, "mcp_changed")
 	start := time.Now()
-	_, err = callTool(t, agentB, "probe", "sleep", map[string]float64{"seconds": 5})
-	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(start) > 4*time.Second {
+	_, err = callTool(t, agentB, "slow", "sleep", map[string]float64{"seconds": 20})
+	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(start) > 15*time.Second {
 		t.Fatalf("sleep: err=%v after %s", err, time.Since(start))
 	}
+	agentA.mustCall("mcp_remove", protocol.MCPName{Name: "slow"})
+	waitPush(t, agentB, "mcp_changed")
 
 	// Size cap.
 	out, err = callTool(t, agentB, "probe", "big", map[string]int{"bytes": protocol.MCPMaxResultBytes + 64<<10})

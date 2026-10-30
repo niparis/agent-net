@@ -868,6 +868,12 @@ func (s *Store) MarkDispatched(id string) error {
 	return err
 }
 
+// UnmarkDispatched puts a message back to stored when the write to the node
+// failed, so the next dispatch sends it again.
+func (s *Store) UnmarkDispatched(id string) {
+	s.db.Exec(`UPDATE messages SET state = 'stored' WHERE id = ? AND state = 'dispatched'`, id)
+}
+
 // ApplyDelivery records a daemon's report. A message that is already replied,
 // expired or failed keeps its state.
 func (s *Store) ApplyDelivery(id, state, detail string) error {
