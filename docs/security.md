@@ -138,9 +138,17 @@ A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegati
 - **What the gateway keeps.** A session's own policy lives in its session record and goes when the gateway deletes the old offline session (the retention flags). A project default is a small row in `project_policies` that the retention rules do not delete; clear it in the TUI (`p`, mode none, scope project).
 - **The hook adds text, not authority.** The `UserPromptSubmit` hook only prints the context for the prompt. It never blocks a prompt, never changes it, and prints nothing when it has no policy or the daemon does not answer within 700 ms.
 
+## Merge authority
+
+A node's maturity sets its merge authority (decision [0022](decisions/0022-component-graph-and-cto.md)): `full` lets the agent merge and push to the default branch; `delegated` needs an approval from the owner or a delegate (an architect with mode `owner` or `arbiter` over the node); `ask` needs the owner's written approval. The owner can override it per node with `node_settings_set`, behind the owner gate.
+
+This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. The approval note that counts is the one agent-net writes for one exact action. The owner's inbox that records written approvals is step 3b of decision 0022; `RequestWrittenApproval` is a stub in this build and says the inbox is not there, so a session under `ask` must ask its owner directly and treat only an agent-net approval note as approval.
+
+A critical repository should also have branch protection on its default branch: require a pull request, require review, and stop force-pushes. Branch protection is enforced by the repository host; agent-net's merge authority is not.
+
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. When the project policy sets no level, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
 
 | Level | Writes | Reads | Network |
 |---|---|---|---|

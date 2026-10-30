@@ -157,6 +157,8 @@ INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule)
 SELECT DISTINCT '*',COALESCE(NULLIF(s.repo_project,''),p.project,''),'depends','','auto'
 FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
 WHERE s.peer_trust=1 AND COALESCE(NULLIF(s.repo_project,''),p.project,'')<>'';
+`, `
+CREATE TABLE graph_node_settings (node TEXT NOT NULL, setting TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, setting));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

@@ -27,7 +27,7 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 	method := ""
 	var params any = struct{}{}
 	usage := func() error {
-		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>; edge set|remove <from> <kind> <to> [mode] [rule]")
+		return fmt.Errorf("usage: agent-net charter show|set|history ...; graph [undo [id]]; node add-architect|remove <name>|settings <name> [setting value...]; edge set|remove <from> <kind> <to> [mode] [rule]")
 	}
 	switch cmd {
 	case "charter":
@@ -73,15 +73,31 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 			return usage()
 		}
 	case "node":
-		if len(args) != 2 {
+		if len(args) < 2 {
 			return usage()
 		}
-		params = protocol.GraphNodeRequest{Name: args[1]}
 		switch args[0] {
-		case "add-architect":
-			method = protocol.OpNodeAdd
-		case "remove":
-			method = protocol.OpNodeRemove
+		case "add-architect", "remove":
+			if len(args) != 2 {
+				return usage()
+			}
+			params = protocol.GraphNodeRequest{Name: args[1]}
+			if args[0] == "add-architect" {
+				method = protocol.OpNodeAdd
+			} else {
+				method = protocol.OpNodeRemove
+			}
+		case "settings":
+			if len(args) == 2 {
+				method = protocol.OpNodeSettingsGet
+				params = protocol.NodeSettingsGetRequest{Node: args[1]}
+			} else {
+				if len(args) < 3 {
+					return usage()
+				}
+				method = protocol.OpNodeSettingsSet
+				params = protocol.NodeSettingsSetRequest{Node: args[1], Setting: args[2], Value: strings.Join(args[3:], " ")}
+			}
 		default:
 			return usage()
 		}
@@ -145,6 +161,12 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 		for _, c := range changes {
 			fmt.Fprintf(out, "%d %s %s %q -> %q by %s at %d\n", c.ID, c.Node, c.Attr, c.OldValue, c.NewValue, c.By, c.At)
 		}
+	} else if method == protocol.OpNodeSettingsGet || method == protocol.OpNodeSettingsSet {
+		var res protocol.NodeSettingsResult
+		if err = json.Unmarshal(raw, &res); err != nil {
+			return err
+		}
+		printNodeSettings(out, res)
 	} else {
 		fmt.Fprintln(out, "ok")
 	}
@@ -157,4 +179,29 @@ func printCharter(out io.Writer, c protocol.Charter) {
 			fmt.Fprintf(out, "  %s: %s\n", a.name, a.value)
 		}
 	}
+}
+
+func printNodeSettings(out io.Writer, res protocol.NodeSettingsResult) {
+	fmt.Fprintf(out, "%s (maturity %s)\n", res.Node, orDash(res.Maturity))
+	for _, setting := range protocol.NodeSettingNames() {
+		if value := res.Overrides[setting]; value != "" {
+			fmt.Fprintf(out, "  override %s: %s\n", setting, value)
+		}
+	}
+	for _, a := range []struct{ name, value string }{
+		{protocol.SettingTestsBeforeMerge, res.Effective.TestsBeforeMerge},
+		{protocol.SettingMergeAuthority, res.Effective.MergeAuthority},
+		{protocol.SettingWorkerSandbox, res.Effective.WorkerSandbox},
+		{protocol.SettingJudgeConsumers, res.Effective.JudgeConsumers},
+		{protocol.SettingDeployRule, res.Effective.DeployRule},
+	} {
+		fmt.Fprintf(out, "  effective %s: %s\n", a.name, a.value)
+	}
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
