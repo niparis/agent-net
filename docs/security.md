@@ -17,6 +17,8 @@ enrolled node token, which is an owner credential. Scores and minimums are
 limited to 0 through 100. The private CTO `score_set` tool uses the same
 settings when the owner instructs it.
 
+Worker profiles are stored at the gateway. The owner CLI, the private CTO tools and bound non-worker agent sessions may list, add or remove them. The daemon and gateway both reject worker sessions, and the gateway verifies that the requesting session belongs to the sending node. It resolves each added model against the advertised model list of a machine and records the requester and time. The gateway does not verify that an agent received an owner's instruction, so agents must follow their normal instruction and approval rules. Registered profiles remain subject to the owner-controlled worker provider filter.
+
 The OpenCode CTO server binds only to localhost and requires a random password.
 Its data, state, configuration and cache are private to the daemon. The OpenCode
 agent-net plugin is disabled in that process. The Claude Code CTO uses the
