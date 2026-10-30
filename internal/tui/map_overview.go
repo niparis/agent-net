@@ -11,8 +11,9 @@ import (
 )
 
 type overviewLine struct {
-	text  string
-	nodes []string
+	text     string
+	nodes    []string
+	isolated bool
 }
 
 func (m Model) overviewLines(w int) []overviewLine {
@@ -73,7 +74,7 @@ func (m Model) overviewLines(w int) []overviewLine {
 			names = append(names, name)
 		}
 		for _, line := range wrap("Isolated: "+strings.Join(names, ", "), max(w, 8)) {
-			out = append(out, overviewLine{text: sDim.Render(line)})
+			out = append(out, overviewLine{text: sDim.Render(line), isolated: true})
 		}
 	}
 	if len(out) == 0 {
@@ -102,7 +103,7 @@ func (m Model) overviewBox(n protocol.Node, w int) string {
 	if n.Name == m.mp.selected {
 		border = lipgloss.NewStyle().Foreground(roleAccent)
 	}
-	return border.Render("╭") + " " + padStyled(content, max(w-4, 0)) + " " + border.Render("╮")
+	return border.Render("[") + " " + padStyled(content, max(w-4, 0)) + " " + border.Render("]")
 }
 
 func overviewNodeRoom(h int) int { return max(h-5, 1) }
@@ -116,13 +117,18 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 	end := min(start+room, len(lines))
 	visible := map[string]bool{}
 	out := []string{clip(sTitle.Render("Overview")+sDim.Render("  enter focus"), w)}
+	var isolated []string
 	for _, l := range lines[start:end] {
+		if l.isolated {
+			isolated = append(isolated, clip(l.text, w))
+			continue
+		}
 		out = append(out, clip(l.text, w))
 		for _, n := range l.nodes {
 			visible[n] = true
 		}
 	}
-	remaining := max(h-len(out)-1, 0)
+	remaining := max(h-len(out)-len(isolated)-1, 0)
 	off := 0
 	for _, e := range m.mp.edges {
 		if !visible[e.From] || !visible[e.To] || remaining == 0 {
@@ -133,6 +139,7 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 		out = append(out, clip(line, w))
 		remaining--
 	}
+	out = append(out, isolated...)
 	if off > 0 {
 		out = append(out, sDim.Render(clip(fmt.Sprintf("+%d edges off screen", off), w)))
 	} else if start > 0 || end < len(lines) {

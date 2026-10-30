@@ -1,14 +1,14 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges                                               updated 14:05
 Overview  enter focus
 Architects
-╭ trading-architect · mature · ○0  ╮ ╭ wbg-architect · growing · ○0     ╮
+[ trading-architect · mature · ○0  ] [ wbg-architect · growing · ○0     ]
 Components
-╭ cogforge · early · ○0            ╮ ╭ shop · mature · ○0               ╮ ╭ tenebrae · growing · ●1          ╮
-Isolated: api-architect, homelab
+[ cogforge · early · ○0            ] [ shop · mature · ○0               ] [ tenebrae · growing · ●1          ]
 trading-architect ───▶ cogforge · governs normal
 wbg-architect ───▶ tenebrae · governs normal
 tenebrae ┄┄┄▶ cogforge · depends ask
 cogforge ━━━▶ shop · depends auto
+Isolated: api-architect, homelab
 
 
 

@@ -490,7 +490,7 @@ func TestOverviewOnlyDrawsEdgesBetweenVisibleBoxes(t *testing.T) {
 	visible := map[string]bool{}
 	for _, line := range out {
 		plain := ansi.Strip(line)
-		if strings.Contains(plain, "╭") {
+		if strings.Contains(plain, "[") {
 			for _, n := range g.Nodes {
 				if strings.Contains(plain, n.Name) {
 					visible[n.Name] = true
@@ -547,5 +547,23 @@ func TestGoldenLargeOverview(t *testing.T) {
 		golden(t, fmt.Sprintf("map_large_overview_%dx%d", size[0], size[1]), v)
 		m = keys(m, "pgdown")
 		golden(t, fmt.Sprintf("map_large_overview_scrolled_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestOverviewCompactBoxIsVisuallyClosed(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, fakeGraph()))
+	n, _ := m.mapNode("cogforge")
+	s := ansi.Strip(m.overviewBox(n, 32))
+	if !strings.HasPrefix(s, "[") || !strings.HasSuffix(s, "]") {
+		t.Fatal(s)
+	}
+}
+
+func TestOverviewIsolatedProjectsFollowEdges(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, largeOverviewGraph()))
+	m = keys(m, "z")
+	v := ansi.Strip(m.View())
+	if strings.Index(v, "Isolated:") < strings.Index(v, "governs auto") {
+		t.Fatal(v)
 	}
 }
