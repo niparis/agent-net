@@ -45,6 +45,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | Command | What it does |
 |---|---|
 | `agent-net gateway` | Run the gateway server. |
+| `agent-net phone owner LOGIN` | Set the phone owner Tailscale login once on the gateway machine. `--data DIR` selects its gateway data directory. |
 | `agent-net daemon` | Run the per-machine daemon. |
 | `agent-net mcp` | Stdio MCP server for one Claude Code session. Claude Code starts it, you do not. `agent-net mcp --codex` is the same for Codex: Codex starts one per thread. |
 | `agent-net setup` | Set this machine up. See [what setup changes](#what-setup-changes-on-your-machine). |
@@ -101,10 +102,43 @@ The owner's notes about models are behind the owner gate: only the owner's comma
 
 The model is required, and the note is at most 1024 bytes after cleaning (control characters other than newline and tab are removed). Gateway frames use `playbook.set`, `playbook.get` and `learn.add`. The CLI is `agent-net playbook set|get|pin|unpin`.
 
+## Phone app
+
+The phone app is off by default. Run a daemon on the gateway machine, joined to
+that gateway, under the same user as the gateway. The app uses that daemon's
+socket and the same operator calls as the TUI. Actions run as that machine's
+owner session. The gateway and daemon must both be running.
+
+After the gateway has created its data directory, set the Tailscale login once:
+
+```sh
+agent-net phone owner owner@example.com
+```
+
+Pass `--data DIR` before the login when the gateway uses a non-default data
+directory. The same login may be set again; a different login is refused.
+Start the gateway with `--phone-listen 127.0.0.1:7421` and run:
+
+```sh
+tailscale serve --bg http://127.0.0.1:7421
+```
+
+Open the HTTPS URL printed by Tailscale on a phone connected to the tailnet.
+In Safari, use Share, then Add to Home Screen. Tailscale Serve must be enabled
+for the tailnet. Do not use Funnel. Tagged devices do not send user identity
+headers. Only the configured login can use the app. See the [phone security
+boundary](security.md#phone-owner-identity).
+
+For a gateway installed as a service, add the flag to the gateway service
+command and restart it. A later `setup` run rewrites that command, so restore
+the flag after setup. The app refreshes its machine, session and Needs you
+sections while open. It does not send push notifications.
+
 ## Ports
 
 | Port | Used by |
 |---|---|
+| TCP 7421 | Optional phone HTTP listener, bound only to 127.0.0.1 when enabled. The port is configurable. |
 | TCP 7420 | The gateway. HTTPS and WebSocket, on `0.0.0.0` by default. Every daemon connects to it. Open it to your other machines and to nothing else. |
 
 The daemon and the agents talk over Unix sockets, not network ports.

@@ -1,1 +1,1 @@
-{"name":"Agent net","short_name":"Agent net","start_url":"/","display":"standalone","background_color":"#f4f5ef","theme_color":"#102c29","icons":[{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}
+{"name":"Agent net","short_name":"Agent net","start_url":"/","display":"standalone","background_color":"#f4f5ef","theme_color":"#102c29","icons":[{"src":"/static/icon.png","sizes":"192x192","type":"image/png"},{"src":"/static/icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any"}]}

@@ -73,3 +73,24 @@ func TestActionRejectsCrossOrigin(t *testing.T) {
 		t.Fatalf("cross-origin action: %d, %v", w.Code, f.calls)
 	}
 }
+
+func TestUnavailableDaemonIsVisibleInLiveSections(t *testing.T) {
+	var b strings.Builder
+	if err := shell.ExecuteTemplate(&b, "sections", page{Error: "daemon not reachable"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "daemon not reachable") {
+		t.Fatal("missing connection error")
+	}
+}
+
+func TestSessionsPreferRepositoryProjectAndWaitingIsNotEmpty(t *testing.T) {
+	p := page{Snapshot: operator.Snapshot{Connected: true, Agents: []protocol.AgentView{{SessionID: "s_1", Harness: "codex", Repo: protocol.RepoInfo{Project: "repo-project"}, Waiting: &protocol.Waiting{Text: "Need an answer"}}}}}
+	var b strings.Builder
+	if err := shell.ExecuteTemplate(&b, "sections", p); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(b.String(), "repo-project") || strings.Contains(b.String(), "No requests to review") {
+		t.Fatal(b.String())
+	}
+}
