@@ -9,7 +9,7 @@
 
 <p align="center">
   <b>Let the coding agents on your machines talk to each other.</b><br>
-  Claude Code, Pi and OpenCode sessions on your laptop and your VMs find each other,<br>
+  Claude Code, Codex, Pi and OpenCode sessions on your laptop and your VMs find each other,<br>
   message each other's live sessions, and get the answers back. No copy and paste.
 </p>
 
@@ -32,8 +32,8 @@
 
 ---
 
-- **Ask the agents that are already working.** Your agent can send a question to a Claude Code, Pi or OpenCode session that is open on any of your machines. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back into your conversation.
-- **Across machines and agents.** Claude Code, Pi and OpenCode, on Linux and macOS. Each agent uses the same `agent_*` tools.
+- **Ask the agents that are already working.** Your agent can send a question to a Claude Code, Codex, Pi or OpenCode session that is open on any of your machines. It arrives there like a message you typed, that agent answers from its own project, and the answer comes back into your conversation.
+- **Across machines and agents.** Claude Code, Codex, Pi and OpenCode, on Linux and macOS. Each agent uses the same `agent_*` tools.
 - **Share any MCP server.** Add an MCP server once, from the CLI or by asking your agent, and sessions on every machine can use its tools. Tokens stay on the machine that hosts the server.
 - **One binary, one line.** Pure Go with SQLite built in. One `curl` line installs the first machine, and one invite line adds each other machine.
 - **Your network only.** One-time join codes, TLS pinned to your gateway's own CA, and a check of which local session is calling.
@@ -167,7 +167,7 @@ The short version. The full model, including what is not protected, is in [docs/
 
 ## Use
 
-Start a new Claude Code, Pi or OpenCode session after the install. Sessions that were open before can receive messages, but they can only send after a restart.
+Start a new Claude Code, Codex, Pi or OpenCode session after the install. Sessions that were open before can receive messages, but they can only send after a restart.
 
 Ask an agent things like:
 
@@ -258,7 +258,7 @@ Coming from v0.1.x, which has no `upgrade` command: run the Quickstart install l
 | A2A | A protocol for agent services to call each other | Between agent services |
 | MCP | A protocol for an agent to use tools | Agent to tools |
 | Claude Code `SendMessage` and `ListAgents` | Built-in messaging between Claude Code sessions | One machine |
-| agent-net | Delivers messages into running interactive coding sessions, with presence and routed replies | Your machines, and different agents (Claude Code, Pi, OpenCode, and more to come) |
+| agent-net | Delivers messages into running interactive coding sessions, with presence and routed replies | Your machines, and different agents (Claude Code, Codex, Pi, OpenCode) |
 
 agent-net uses MCP to give Claude Code its tools. It is not an implementation of A2A.
 
