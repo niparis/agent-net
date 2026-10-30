@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -198,5 +199,37 @@ func TestToolsFilterReturnsAllLocationsOfMatchingIdentity(t *testing.T) {
 	items, err := s.ToolsItems(protocol.ToolsFilter{Harness: "codex"}, func(string) bool { return true })
 	if err != nil || len(items) != 1 || len(items[0].Locations) != 2 {
 		t.Fatalf("filtered locations: %+v %v", items, err)
+	}
+}
+
+func TestIdenticalScannedSkillsShareIdentityAcrossMachines(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	homes := []string{t.TempDir(), t.TempDir()}
+	for i, home := range homes {
+		dir := filepath.Join(home, ".claude/skills/demo")
+		if err = os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("same skill"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		report := inventory.Scan(inventory.Options{Home: home})
+		if report.State != protocol.InventoryOK {
+			t.Fatalf("scan: %+v", report)
+		}
+		if err = s.SetInventory(fmt.Sprintf("node-%d", i), report); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill, Harness: "claude"}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || len(items[0].Machines) != 2 {
+		t.Fatalf("identical skills: %+v", items)
 	}
 }
