@@ -375,7 +375,7 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
 			err = errors.New("bad node.session_enter")
 		} else {
-			q.TmuxSocket = "" // the asker's terminal means nothing here
+			q.TmuxSocket, q.HerdrSocket = "", "" // the asker's terminal means nothing here
 			data, err = d.localEnter(ctx, q, true)
 		}
 	case "node.session_text":

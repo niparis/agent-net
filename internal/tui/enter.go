@@ -48,11 +48,11 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 }
 
 func (m Model) enterCmd(id, name string) tea.Cmd {
-	src, sock := m.src, m.tmuxSocket
+	src, sock, hsock := m.src, m.tmuxSocket, m.herdrSocket
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock})
+		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock})
 		return enterMsg{name: name, plan: plan, err: err}
 	}
 }
@@ -68,6 +68,7 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 		return m, nil
 	}
 	cmd := enterCommand(r.plan)
+	m.enterNote = r.plan.Note
 	run := m.execProcess
 	if run == nil {
 		run = tea.ExecProcess
@@ -79,7 +80,9 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 // onEnterDone is the return from the session.
 func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 	if r.err != nil {
-		m.fail("Left " + r.name + ": " + explain(r.err))
+		// The note holds the way back and the usual cause (herdr: an attach is
+		// already open), which the screen of the entered command hid.
+		m.fail("Left " + r.name + ": " + explain(r.err) + noteSuffix(m.enterNote))
 	} else {
 		m.say("Back from " + r.name + ".")
 	}
@@ -88,6 +91,13 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		return m, m.fetchCmd()
 	}
 	return m, nil
+}
+
+func noteSuffix(n string) string {
+	if n == "" {
+		return ""
+	}
+	return ". " + sanitize(n)
 }
 
 // enterCommand turns a plan into the command to run on this terminal.

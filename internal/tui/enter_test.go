@@ -34,8 +34,9 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 	m, src := workerModel(100, 24)
 	m = selectID(m, workerID)
 	m.tmuxSocket = "/tmp/tmux-1/default"
+	m.herdrSocket = "/tmp/herdr-1/herdr.sock"
 	src.enterPlan = protocol.EnterPlan{Argv: []string{"opencode", "--session", "ses_9"}, Dir: "/work/tenebrae",
-		Env: map[string]string{"OPENCODE_SERVER_PASSWORD": "pw"}, Note: "ignored when there is a command"}
+		Env: map[string]string{"OPENCODE_SERVER_PASSWORD": "pw"}, Note: "Press ctrl+b q to come back."}
 	got, dir, env, done := capture(&m)
 
 	m, cmd := pressE(m)
@@ -49,7 +50,7 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 		t.Errorf("no status line while asking:\n%s", m.View())
 	}
 	msg := cmd()
-	if want := (protocol.EnterRequest{SessionID: workerID, TmuxSocket: "/tmp/tmux-1/default"}); !reflect.DeepEqual(src.enters, []protocol.EnterRequest{want}) {
+	if want := (protocol.EnterRequest{SessionID: workerID, TmuxSocket: "/tmp/tmux-1/default", HerdrSocket: "/tmp/herdr-1/herdr.sock"}); !reflect.DeepEqual(src.enters, []protocol.EnterRequest{want}) {
 		t.Fatalf("asked %+v", src.enters)
 	}
 	m, cmd = press2(m, msg)
@@ -69,7 +70,7 @@ func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {
 		t.Errorf("after the session:\n%s", m.View())
 	}
 	m, _ = press2(m, (*done)(errors.New("exit status 1")))
-	if !strings.Contains(m.View(), "Left tenebrae (Mac): exit status 1") {
+	if !strings.Contains(m.View(), "Left tenebrae (Mac): exit status 1. Press ctrl+b q to come back.") {
 		t.Errorf("after a failed session:\n%s", m.View())
 	}
 }
@@ -122,6 +123,14 @@ func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	if !strings.Contains(m.View(), "enter the session") {
 		t.Errorf("help does not list e:\n%s", m.View())
+	}
+}
+
+func TestHerdrSocketOf(t *testing.T) {
+	for _, c := range []struct{ env, sock, want string }{{"1", "/h/herdr.sock", "/h/herdr.sock"}, {"", "/h/herdr.sock", ""}, {"1", "", ""}, {"0", "/h/s", ""}} {
+		if got := herdrSocketOf(c.env, c.sock); got != c.want {
+			t.Errorf("herdrSocketOf(%q, %q) = %q, want %q", c.env, c.sock, got, c.want)
+		}
 	}
 }
 

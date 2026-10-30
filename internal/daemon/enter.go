@@ -21,7 +21,8 @@ import (
 // the phone app can show the same plan.
 //
 //	Claude Code background session   claude attach <id>
-//	Claude Code, Pi in a terminal    the tmux pane, when there is one
+//	Claude Code, Pi in a terminal    its herdr pane (herdr agent attach), else
+//	                                 its tmux pane, when there is one
 //	OpenCode                         opencode --session <id> (in the folder)
 //	a worker of OpenCode or Codex    their private server, with its password
 //	                                 in Env; only on the machine that has it
@@ -151,7 +152,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 			kind, job = p.EnterRef(info.NativeID)
 		}
 		if kind != "bg" {
-			return d.tmuxPlan(info, q, plan, name)
+			return d.terminalPlan(info, q, plan, name, viaGateway)
 		}
 		id := job
 		if w != nil && w.ref != "" {
@@ -168,6 +169,11 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		plan.Note = "Attached to the background session. The left arrow returns to the agent view; ctrl+z drops to the shell. It keeps running."
 		return plan, nil
 	case "opencode":
+		if w == nil { // a TUI the owner started in a herdr pane is the screen to show
+			if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
+				return p, nil
+			}
+		}
 		bin, err := d.harnessBinary("opencode")
 		if err != nil {
 			return no("%v", err)
@@ -211,7 +217,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		plan.Note = "Codex on the worker's app server. The daemon also drives this thread."
 		return plan, nil
 	case "pi":
-		return d.tmuxPlan(info, q, plan, name)
+		return d.terminalPlan(info, q, plan, name, viaGateway)
 	}
 	return no("entering %s sessions is not supported", info.Harness)
 }
@@ -230,12 +236,22 @@ type tmuxPane struct {
 	id, session, socket string
 }
 
+// terminalPlan takes the owner to the terminal that shows a session with no
+// attach command of its own: a herdr pane first (a herdr pane is not a tmux
+// pane), then a tmux pane.
+func (d *Daemon) terminalPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string, viaGateway bool) (protocol.EnterPlan, error) {
+	if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
+		return p, nil
+	}
+	return d.tmuxPlan(info, q, plan, name)
+}
+
 // tmuxPlan takes the owner to the tmux pane of a session that has no attach
 // command of its own, or says that it cannot.
 func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string) (protocol.EnterPlan, error) {
 	pane, ok := findTmuxPane(info.PID)
 	if !ok {
-		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a tmux pane agent-net can reach: open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr or tmux pane agent-net can reach: open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
 	}
 	tmux := []string{"tmux"}
 	if pane.socket != "" {

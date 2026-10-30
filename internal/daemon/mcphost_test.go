@@ -36,6 +36,7 @@ func TestMain(m *testing.M) {
 		runFakeOpenCode()
 		return
 	}
+	hideRealHerdr()
 	// Do not run the programs of the machine the tests run on.
 	defaultDetect = func(context.Context) []protocol.HarnessInfo { return nil }
 	os.Exit(m.Run())

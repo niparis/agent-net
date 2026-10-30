@@ -8,18 +8,18 @@ import (
 	"strconv"
 )
 
-// processEnvVar reads one variable of a process's environment from /proc. It
-// returns "" when the process is not ours or the variable is not set.
-func processEnvVar(pid int, key string) string {
+// osProcessEnviron reads a process's environment from /proc. It returns nil when
+// the process is not ours or is gone.
+func osProcessEnviron(pid int) []string {
 	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/environ")
 	if err != nil {
-		return ""
+		return nil
 	}
-	prefix := []byte(key + "=")
+	var out []string
 	for _, kv := range bytes.Split(raw, []byte{0}) {
-		if bytes.HasPrefix(kv, prefix) {
-			return string(kv[len(prefix):])
+		if len(kv) > 0 {
+			out = append(out, string(kv))
 		}
 	}
-	return ""
+	return out
 }

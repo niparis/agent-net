@@ -151,6 +151,10 @@ type EnterRequest struct {
 	// not in tmux. With it, the plan can switch the owner's tmux client to the
 	// session's pane instead of attaching a second client.
 	TmuxSocket string `json:"tmux_socket,omitempty"`
+	// HerdrSocket is the value of $HERDR_SOCKET_PATH when the asking terminal
+	// runs inside herdr (HERDR_ENV=1), else "". The plan then names the detach
+	// key that works inside herdr.
+	HerdrSocket string `json:"herdr_socket,omitempty"`
 }
 
 // EnterPlan answers OpSessionEnter. A front end runs Argv in Dir with Env added

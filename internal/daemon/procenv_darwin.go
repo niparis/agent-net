@@ -2,6 +2,15 @@
 
 package daemon
 
-// processEnvVar is not available on macOS without extra privileges: the
-// default tmux server is then used to find a pane.
-func processEnvVar(pid int, key string) string { return "" }
+import "golang.org/x/sys/unix"
+
+// osProcessEnviron reads a process's environment with sysctl
+// kern.procargs2.<pid> (pure Go, no cgo, no ps). macOS lets a process read this
+// for another process of the same user; for others it fails and nil comes back.
+func osProcessEnviron(pid int) []string {
+	raw, err := unix.SysctlRaw("kern.procargs2", pid)
+	if err != nil {
+		return nil
+	}
+	return parseProcArgs2(raw)
+}

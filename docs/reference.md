@@ -195,7 +195,7 @@ Each daemon samples its machine every 5 seconds, keeps 5 minutes, and reports a 
 - **Linux:** `/proc/<pid>/stat` (user, system and waited-for children time) and `/proc/stat`. CPU is the difference between two readings. The sampler costs about 5 ms per reading with 450 processes, about 0.1% of one core.
 - **macOS:** `ps -A -o pid=,ppid=,rss=,time=,comm=` for processes, `sysctl` for cores, memory size and load, `vm_stat` for memory in use (app + wired + compressed, like Activity Monitor). Load and memory are read every 4th sample. CPU time from `ps` has a resolution of 10 ms and misses processes that start and end between two readings, so tree CPU can read low for a tree that spawns many short jobs. Machine CPU is the sum of live processes' CPU time over the cores, with the same limit. This was written and tested against fixtures of the `ps`, `sysctl` and `vm_stat` output; it has not been run on a Mac.
 - **Top lists:** only on request, not in the report. Each process has its PID, short name, and the first 80 characters of its command line with tokens, `--password=`/`--token` values and `KEY=value` secrets masked.
-- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket}` (answers `{argv, dir, env, host, note}`, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
+- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket, herdr_socket}` (answers `{argv, dir, env, host, note}`, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
 - **Counts:** `counts` returns `online`, `offline_24h` and `offline_total`. The gateway keeps offline sessions for 30 days, so a header that says "134 sessions, 12 online" is mostly old restarts. Show "12 online, 5 offline in the last 24 h".
 
 ## The project registry
@@ -295,11 +295,17 @@ A message body can only be shown for a message that involves a session on this m
 | Session | What `e` runs |
 |---|---|
 | Claude Code background session (`kind` bg, which includes Claude workers) | `claude attach <id>`. The left arrow returns to the agent view, ctrl+z drops to the shell, the session keeps running. |
-| Claude Code interactive session | Cannot be attached twice. If its process runs in a tmux pane, the TUI switches its tmux client to that pane (when the TUI is in the same tmux server) or attaches a new client at that pane. Otherwise: "open its window on <machine>". |
-| Pi | The same tmux rule. A Pi worker has no screen, so there is nothing to enter. |
+| Claude Code interactive session | Cannot be attached twice. If its process runs in a herdr pane, `herdr agent attach <pane>` (see below). Else, if its process runs in a tmux pane, the TUI switches its tmux client to that pane (when the TUI is in the same tmux server) or attaches a new client at that pane. Otherwise: "open its window on <machine>". |
+| Pi | The same herdr and tmux rules. A Pi worker has no screen, so there is nothing to enter. |
 | OpenCode | `opencode --session <id>`, in the session's folder, through OpenCode's own background service. |
 | OpenCode worker | `opencode --server <its private url> --session <id>`, with its password in `OPENCODE_SERVER_PASSWORD`. Only from the machine that runs it. |
 | Codex worker | `codex resume <thread> --remote ws://<its private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN`. Only from the machine that runs it. The daemon drives the same thread, so do not type while it works. Other Codex sessions are not known to agent-net and cannot be entered. |
+
+**herdr.** A session whose process (or a parent) has `HERDR_ENV=1` and `HERDR_PANE_ID` in its environment is entered with `herdr agent attach <pane>`. The same plan is used when the TUI is outside herdr, inside the same herdr, or inside another one: herdr's `agent focus` does not move a client that is already open, so the TUI attaches instead. The daemon sends `HERDR_SOCKET_PATH` of the session's herdr in the command (`env -u HERDR_SESSION HERDR_SOCKET_PATH=<socket> herdr agent attach <pane>`), so it also works through `ssh -t`. If the pane moved or closed, the daemon looks for the pane that holds the process, and says so when none does. The herdr program is found from the pane's `HERDR_BIN_PATH`, `PATH`, then `~/.local/bin/herdr`.
+
+- Press `ctrl+b q` to come back to the TUI. If the TUI itself runs in a herdr pane, press `ctrl+b ctrl+b q` (the first `ctrl+b` goes to the outer herdr). The agent keeps running.
+- A pane takes one direct attach. If another `herdr agent attach` is open on the same pane, the new one fails with "already has an attached client". agent-net never uses `--takeover`: close the other attach first. Your normal herdr window is not affected.
+- On macOS the session's environment is read with `sysctl kern.procargs2` for processes of your user. This also finds tmux servers other than the default one.
 
 When the plan has nothing to run, the answer has only a note, and the TUI shows it in the result line.
 

@@ -82,7 +82,11 @@ type Model struct {
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
 	// execProcess replaces tea.ExecProcess in tests.
-	tmuxSocket  string
+	tmuxSocket string
+	// herdrSocket is the herdr server this terminal runs in, or "".
+	herdrSocket string
+	// enterNote is the daemon's note for the command that runs now.
+	enterNote   string
 	execProcess func(*osexec.Cmd, tea.ExecCallback) tea.Cmd
 
 	// CPU, memory and counts from the daemon (usage.go).
