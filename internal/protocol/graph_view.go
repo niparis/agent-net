@@ -8,6 +8,7 @@ const GraphHistoryPerNode = 5
 // every node. A project name keeps that node and the nodes on an edge with it.
 type QueryGraph struct {
 	Project string `json:"project,omitempty"`
+	All     bool   `json:"all,omitempty"`
 }
 
 // GraphView is a read-only snapshot of the graph: nodes with their charters,

@@ -295,6 +295,12 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	if _, err = s.db.Exec(`ALTER TABLE sessions DROP COLUMN title`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err = s.db.Exec(`ALTER TABLE sessions DROP COLUMN graph_excluded`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`ALTER TABLE projects DROP COLUMN graph_excluded`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.db.Exec(`DROP TABLE IF EXISTS model_successes`); err != nil {
 		t.Fatal(err)
 	}

@@ -187,6 +187,9 @@ func New(opts Options) (*Gateway, error) {
 	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
 	store.logf = g.logLine
+	if store.graphJunkMigrated {
+		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
+	}
 	return g, nil
 }
 
@@ -678,7 +681,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true}, nil
 	case "graph.get":
-		return st.Graph()
+		p, err := decode[protocol.QueryGraph](raw)
+		if err != nil {
+			return nil, reject("bad graph.get")
+		}
+		return st.visibleGraph(p.All)
 	case "playbook.set":
 		p, err := decode[protocol.PlaybookSetRequest](raw)
 		if err != nil {

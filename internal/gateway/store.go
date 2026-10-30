@@ -29,8 +29,10 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db                *sql.DB
+	graphJunkRemoved  int64
+	graphJunkMigrated bool
+	now               func() time.Time
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
 	logf func(event string, kv ...any)
@@ -219,6 +221,20 @@ INSERT OR IGNORE INTO playbook (subject_kind, subject, harness, note, source, su
 `, `
 ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT '';
 UPDATE sessions SET title = name;
+`, `
+DELETE FROM graph_nodes
+WHERE kind='component'
+  AND NOT EXISTS (SELECT 1 FROM graph_charter c WHERE c.node=graph_nodes.name AND c.value<>'')
+  AND NOT EXISTS (SELECT 1 FROM graph_edges e WHERE e.source=graph_nodes.name OR e.target=graph_nodes.name)
+  AND NOT EXISTS (SELECT 1 FROM graph_history h WHERE h.node=graph_nodes.name)
+  AND ( (name GLOB 'tmp*' AND length(name)>=9 AND substr(name,4) NOT GLOB '*[^a-z0-9_]*')
+        OR (EXISTS (SELECT 1 FROM sessions s WHERE s.repo_project=graph_nodes.name AND s.repo_root='')
+            AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.repo_project=graph_nodes.name AND s.repo_root<>'')
+            AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.name=graph_nodes.name))
+        OR NOT EXISTS (SELECT 1 FROM sessions s WHERE s.repo_project=graph_nodes.name AND (s.online=1 OR s.last_seen >= (CAST(strftime('%s','now') AS INTEGER)-604800)*1000000000)) );
+`, `
+ALTER TABLE sessions ADD COLUMN graph_excluded INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE projects ADD COLUMN graph_excluded INTEGER NOT NULL DEFAULT 0;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -263,7 +279,8 @@ func (s *Store) migrate() error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
+		result, err := tx.Exec(migrations[i])
+		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
@@ -273,6 +290,10 @@ func (s *Store) migrate() error {
 		}
 		if err := tx.Commit(); err != nil {
 			return err
+		}
+		if strings.Contains(migrations[i], "DELETE FROM graph_nodes") {
+			s.graphJunkRemoved, _ = result.RowsAffected()
+			s.graphJunkMigrated = true
 		}
 	}
 	return nil
@@ -484,8 +505,8 @@ func (s *Store) upsertSession(q interface {
 	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
-		tools_version, tools_old, created_at, waiting)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting, graph_excluded)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
@@ -493,10 +514,10 @@ func (s *Store) upsertSession(q interface {
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
-		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting`,
+		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
-		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting)
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting, graphExclusion(in.GraphExcluded, in.GraphChecked))
 	if err != nil {
 		return "", false, err
 	}
@@ -1465,4 +1486,15 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// graphExclusion distinguishes older daemons from an eligible checked root.
+func graphExclusion(excluded, checked bool) int {
+	if excluded {
+		return 1
+	}
+	if checked {
+		return 2
+	}
+	return 0
 }

@@ -140,13 +140,13 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 
 ## Graph operator methods (foundation)
 
-The gateway stores explicit nodes, charter attributes, node settings, edges and their history in `graph_nodes`, `graph_charter`, `graph_node_settings`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
+The gateway stores explicit nodes, charter attributes, node settings, edges and their history in `graph_nodes`, `graph_charter`, `graph_node_settings`, `graph_edges` and `graph_history`. Git working trees reported by sessions and registered projects also appear as implicit component nodes, except roots in temporary folders or the home folder itself. Registrations are checked for Git by the reporting daemon. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
 
 The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `node settings <name> [setting value...]`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`. Edge kinds are `depends` (consumer to provider), `governs` (architect to component, with mode `advisor`, `arbiter` or `owner`) and `deploys` (deployer to each app it deploys).
 
 Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`.
 
-- `graph_get {}` returns `nodes` and `edges`.
+- `graph_get {}` returns `nodes` and `edges`, hiding empty implicit projects without a live or recently seen session for seven days. `graph_get {"all":true}` includes those projects. The map uses the same default filter.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
 - `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges, and clears the node's settings with it.
 - `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
@@ -713,7 +713,7 @@ Decision: [0022](decisions/0022-component-graph-and-cto.md). The graph includes 
 
 The gateway keeps a graph of components and architects: a node per project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`; `deploys`: deployer to each app it deploys). A session speaks for the node of its project, as the PROJECT column resolves it. The graph is visible to every enrolled machine.
 
-**Reading it.** The daemon frame `graph.read` takes `{"project": "cogforge"}` and answers `{"graph": {"nodes": [...], "edges": [...]}}`. A project name returns that node, its charter, the nodes its edges name, and the edges that touch it; an empty name returns the whole graph. A node with no stored charter is still a node (an implicit project), with empty charter attributes. No session or peer identity is needed: this is a read, not a change.
+**Reading it.** The daemon frame `graph.read` takes `{"project": "cogforge"}` and answers `{"graph": {"nodes": [...], "edges": [...]}}`. A project name returns that node, its charter, the nodes its edges name, and the edges that touch it; an empty name returns the whole graph. An eligible project with no stored charter is still an implicit node, with empty charter attributes. Owner-facing graph reads hide inactive empty implicit nodes after seven days; `graph_get {"all":true}` includes them. Nodes with a charter, an edge or stored owner history are retained. No session or peer identity is needed: this is a read, not a change.
 
 **Maturity and its defaults.** A node's `maturity` level sets five controls. A node may override any one of them in a node setting; the owner sets it with `node_settings_set`, and the override is stored beside the charter.
 

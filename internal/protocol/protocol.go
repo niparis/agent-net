@@ -96,7 +96,9 @@ type SessionInfo struct {
 	Status    string `json:"status"` // idle | busy | shell | dormant | unknown
 	Delivery  string `json:"delivery"`
 	// Repo is worked out by the daemon from Cwd. It is empty from older daemons.
-	Repo RepoInfo `json:"repo"`
+	Repo          RepoInfo `json:"repo"`
+	GraphExcluded bool     `json:"graph_excluded,omitempty"`
+	GraphChecked  bool     `json:"graph_checked,omitempty"`
 	// Mode says whether a person has the session open: ModeForeground,
 	// ModeBackground or ModeUnknown. Empty from older daemons.
 	Mode string `json:"mode,omitempty"`

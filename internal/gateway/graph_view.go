@@ -1,6 +1,9 @@
 package gateway
 
-import "github.com/niparis/agent-net/internal/protocol"
+import (
+	"github.com/niparis/agent-net/internal/protocol"
+	"time"
+)
 
 // handleGraphView answers "query.graph" from a machine's daemon.
 func (g *Gateway) handleGraphView(raw []byte) (any, error) {
@@ -8,7 +11,7 @@ func (g *Gateway) handleGraphView(raw []byte) (any, error) {
 	if err != nil {
 		return nil, reject("bad query.graph")
 	}
-	return g.store.GraphView(p.Project, protocol.GraphHistoryPerNode)
+	return g.store.graphView(p.Project, protocol.GraphHistoryPerNode, p.All)
 }
 
 // GraphView reads the component graph for the map. With an empty project it
@@ -16,8 +19,12 @@ func (g *Gateway) handleGraphView(raw []byte) (any, error) {
 // edge with it and those edges. Changes are the newest per node, so a node's
 // history is always there, however busy the rest of the graph is.
 func (s *Store) GraphView(project string, historyPerNode int) (protocol.GraphView, error) {
+	return s.graphView(project, historyPerNode, false)
+}
+
+func (s *Store) graphView(project string, historyPerNode int, all bool) (protocol.GraphView, error) {
 	out := protocol.GraphView{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}, Changes: []protocol.CharterChange{}}
-	g, err := s.Graph()
+	g, err := s.visibleGraph(all)
 	if err != nil {
 		return out, err
 	}
@@ -74,4 +81,36 @@ func (s *Store) GraphView(project string, historyPerNode int) (protocol.GraphVie
 		}
 	}
 	return out, rows.Err()
+}
+
+// visibleGraph hides inactive implicit nodes from owner-facing graph reads.
+func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
+	g, err := s.Graph()
+	if err != nil || all {
+		return g, err
+	}
+	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT node FROM graph_charter WHERE value<>'' UNION SELECT source FROM graph_edges UNION SELECT target FROM graph_edges UNION SELECT repo_project FROM sessions WHERE repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
+	if err != nil {
+		return g, err
+	}
+	defer rows.Close()
+	keep := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return g, err
+		}
+		keep[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return g, err
+	}
+	nodes := make([]protocol.Node, 0, len(g.Nodes))
+	for _, n := range g.Nodes {
+		if keep[n.Name] {
+			nodes = append(nodes, n)
+		}
+	}
+	g.Nodes = nodes
+	return g, nil
 }

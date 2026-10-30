@@ -12,6 +12,8 @@ agent-net keeps a **graph of components**. A node is a repository or service (a 
 
 ## Nodes
 
+2026-10-30: Implicit components require a Git root outside temporary folders and the home folder itself; owner-facing graph reads hide empty inactive projects after seven days, with an all option.
+
 - **Component.** One per project (a repository or a service). It is the existing project of the project registry, on any machine. The node is the same on every machine: `cogforge` on the Mac and on the VM is one node.
 - **Architect.** A node with no code of its own, for example "WBG architect" or "trading architect". A session becomes the architect's voice when the owner starts it as one (an agent-net session with a role, see "Sessions and nodes"). There can be several architects, each governing a few nodes.
 

@@ -18,13 +18,14 @@ func graphTestStore(t *testing.T) *Store {
 	}
 	t.Cleanup(func() { s.Close() })
 	_, err = s.AddProjects("n_test", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{
-		{Name: "cogforge", Path: "/tmp/cogforge"},
-		{Name: "tenebrae", Path: "/tmp/tenebrae"},
-		{Name: "shop", Path: "/tmp/shop"},
+		{Name: "cogforge", Path: "/w/cogforge"},
+		{Name: "tenebrae", Path: "/w/tenebrae"},
+		{Name: "shop", Path: "/w/shop"},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	graphSessions(t, s, "shop")
 	if err := s.AddArchitect("trading-architect", "owner"); err != nil {
 		t.Fatal(err)
 	}
