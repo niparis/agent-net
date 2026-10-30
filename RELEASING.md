@@ -12,10 +12,12 @@
 
 Use a tag that starts with `v`. The release workflow (`.github/workflows/release.yml`) runs on every `v*` tag. It:
 
-1. runs `go vet ./...` and `go test -race ./...`,
+1. runs `go vet ./...` and `go test -race ./...` only when the tagged commit has no green CI run,
 2. builds `agent-net-{linux,darwin}-{amd64,arm64}` with `CGO_ENABLED=0 go build -trimpath` and sets the version from the tag (`-X main.version=<tag>`),
 3. writes `checksums.txt` (SHA-256 of the four binaries),
 4. creates a GitHub release with generated notes and attaches the four binaries, `checksums.txt` and `install.sh`.
+
+The release reuses a green CI run on the same commit: when the `ci` workflow already concluded `success` for the tagged commit, the release skips `go vet` and `go test -race` and goes straight to the build. If no green run is found, it runs them itself. Tag only commits that CI has passed.
 
 `install.sh` downloads the latest release and checks the binary against `checksums.txt`, so a release without that file cannot be installed.
 
