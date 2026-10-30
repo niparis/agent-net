@@ -171,7 +171,7 @@ func fakeClaudeCLI() {
 	spid := cmd.Process.Pid
 	cmd.Process.Release()
 	var sf claudeSessionFile
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(scaled(5 * time.Second))
 	for time.Now().Before(deadline) {
 		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && sf.JobID != "" {
 			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
@@ -675,7 +675,7 @@ func fakeCodex() {
 							rec.Answers = append(rec.Answers, v)
 							mu.Unlock()
 							save()
-						case <-time.After(3 * time.Second):
+						case <-time.After(scaled(3 * time.Second)):
 						}
 					}
 					status, errObj := "completed", any(nil)

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,9 +21,27 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// testScale is the factor for every wait that is not a negative check. It is 3
+// with the race detector (processes start slowly) and can be raised with
+// AGENT_NET_TEST_SCALE when the machine is loaded, e.g. AGENT_NET_TEST_SCALE=4.
+var testScale = func() float64 {
+	f := 1.0
+	if raceOn {
+		f = 3
+	}
+	if v, err := strconv.ParseFloat(os.Getenv("AGENT_NET_TEST_SCALE"), 64); err == nil && v > 0 {
+		f = v
+	}
+	return f
+}()
+
+// scaled stretches a wait for slow machines. Use it for the time a test gives
+// something to happen, never for the time it gives something not to happen.
+func scaled(d time.Duration) time.Duration { return time.Duration(float64(d) * testScale) }
+
 func eventually(t *testing.T, what string, cond func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(scaled(20 * time.Second))
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for: %s", what)
@@ -348,7 +367,7 @@ func (lc *localClient) call(method string, params any) (json.RawMessage, error) 
 			return nil, errors.New(s)
 		}
 		return m["result"], nil
-	case <-time.After(20 * time.Second):
+	case <-time.After(scaled(20 * time.Second)):
 		return nil, errors.New("no response")
 	}
 }
@@ -367,7 +386,7 @@ func (lc *localClient) nextPush() protocol.Message {
 	select {
 	case m := <-lc.Pushes:
 		return m
-	case <-time.After(5 * time.Second):
+	case <-time.After(scaled(5 * time.Second)):
 		lc.t.Fatal("no push received")
 		return protocol.Message{}
 	}

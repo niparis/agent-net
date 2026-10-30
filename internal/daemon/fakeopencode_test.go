@@ -485,7 +485,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 				select {
 				case text := <-ch:
 					send("reply", map[string]any{"message_id": msg.ID, "body": "start result: " + text})
-				case <-time.After(5 * time.Second):
+				case <-time.After(scaled(5 * time.Second)):
 					send("reply", map[string]any{"message_id": msg.ID, "body": "start result: timeout"})
 				}
 			}()
