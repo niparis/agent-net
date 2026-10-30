@@ -28,6 +28,8 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noHintHook := fs.Bool("no-claude-hint-hook", false, "do not add that hook and do not ask")
 	policyHook := fs.Bool("claude-policy-hook", false, "add the Claude Code hook that applies the delegation policy you set in the TUI (only if not asked before)")
 	noPolicyHook := fs.Bool("no-claude-policy-hook", false, "do not add that hook and do not ask")
+	needsHook := fs.Bool("claude-needs-hook", false, `add the Claude Code hooks that show a waiting session under "Needs you" in the TUI (only if not asked before)`)
+	noNeedsHook := fs.Bool("no-claude-needs-hook", false, "do not add those hooks and do not ask")
 	fs.Parse(args)
 	if *acceptCodex && *noAcceptCodex {
 		return errors.New("--accept-codex-tools and --no-accept-codex-tools cannot be used together")
@@ -37,6 +39,15 @@ func cmdSetup(ctx context.Context, args []string) error {
 	}
 	if *policyHook && *noPolicyHook {
 		return errors.New("--claude-policy-hook and --no-claude-policy-hook cannot be used together")
+	}
+	if *needsHook && *noNeedsHook {
+		return errors.New("--claude-needs-hook and --no-claude-needs-hook cannot be used together")
+	}
+	needs := ""
+	if *needsHook {
+		needs = setup.NeedsHookYes
+	} else if *noNeedsHook {
+		needs = setup.NeedsHookNo
 	}
 	policy := ""
 	if *policyHook {
@@ -65,7 +76,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

@@ -103,6 +103,8 @@ type SessionInfo struct {
 	// owner should reconnect agent-net in the session.
 	ToolsVersion string `json:"tools_version,omitempty"`
 	ToolsOld     bool   `json:"tools_old,omitempty"`
+	// Waiting is set while the session waits for its user (decision 0016).
+	Waiting *Waiting `json:"waiting,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -231,6 +233,9 @@ type AgentView struct {
 	// Delegation is the effective delegation policy of the session (decision
 	// 0014), nil when it has none. Only the owner sets it.
 	Delegation *DelegationView `json:"delegation,omitempty"`
+	// Waiting is what the session is waiting to hear from its user (decision
+	// 0016), nil when it is not waiting.
+	Waiting *Waiting `json:"waiting,omitempty"`
 }
 
 // Header is shared by every gateway <-> daemon frame.
@@ -303,6 +308,9 @@ type (
 		Capabilities []string `json:"capabilities"`
 		Task         string   `json:"task"`
 		Expertise    string   `json:"expertise,omitempty"`
+		// Waiting, when set, says the session now waits for its user. An
+		// announce without it clears an earlier wait (decision 0016).
+		Waiting *Waiting `json:"waiting,omitempty"`
 	}
 	// SessionTrust is the "session.trust" request: the owner turns peer trust
 	// on or off for one session.

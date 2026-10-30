@@ -361,6 +361,25 @@ class SessionLink {
     if (this.connected) this.request("status", { name: next }).catch(() => {});
   }
 
+  // "Needs you" (decision 0016): what this session waits to hear from its
+  // user. The daemon clears it when the session works again; this side clears
+  // it when the owner answers or a permission or form is settled.
+  waiting: { kind: "permission" | "question"; text: string } | undefined;
+
+  setWaiting(kind: "permission" | "question", text: string) {
+    const t = String(text ?? "").replace(/\s+/g, " ").trim();
+    if (!t) return;
+    if (this.waiting?.kind === kind && this.waiting.text === t) return;
+    this.waiting = { kind, text: t };
+    if (this.connected) this.request("waiting", { kind, text: t }).catch(() => {});
+  }
+
+  clearWaiting() {
+    if (!this.waiting) return;
+    this.waiting = undefined;
+    if (this.connected) this.request("waiting", { clear: true }).catch(() => {});
+  }
+
   /** Working state from execution events. This is activity too. */
   setStatus(next: "idle" | "busy") {
     const before = this.status;
@@ -637,7 +656,9 @@ function formatProjectAdd(r: any): string {
 // The announce rule. Keep it in step with AnnounceRule in internal/mcpserver.
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
-  "Call it again whenever your task changes. Your project description is taken from the project's AGENTS.md automatically.";
+  "Call it again whenever your task changes. " +
+  "When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+  "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
 const ASK_PEER_RULE =
   "Ask another session early: when an error comes from a service, repo or machine that another session owns or can see " +
@@ -760,6 +781,7 @@ const TOOLS: ToolDef[] = [
       project: str("Project this agent works on"),
       capabilities: { type: "array", items: { type: "string" }, description: "List of capabilities" },
       expertise: str("What you can answer about, in one short line, for example: billing API and its deployment; live logs of homelab services"),
+      waiting: str("When you stop to wait for your user's decision or answer, the question in one line; a later announce without it clears it"),
     },
     required: ["task"],
     method: "announce",
@@ -908,6 +930,9 @@ interface Hub {
   // however long they were quiet, so a reload never drops a session.
   released: Map<string, number>;
   instances: Map<symbol, () => Promise<void>>; // live plugin instances -> rediscover
+  // Pending permission and form requests per root session ("p:" or "f:" +
+  // id). The wait ends when the last one is settled (decision 0016).
+  asks: Map<string, Set<string>>;
 }
 
 const HUB_KEY = Symbol.for("agent-net.opencode.hub.v1");
@@ -937,6 +962,7 @@ function hub(): Hub {
   h.gone ??= new Set();
   h.released ??= new Map();
   h.instances ??= new Map();
+  h.asks ??= new Map();
   return h as Hub;
 }
 
@@ -1083,12 +1109,62 @@ export default {
       entry?.link.stop();
     }
 
+    // ---- "Needs you" (decision 0016) ----
+
+    /** The one-line text of a permission request: action and what it touches. */
+    function permissionText(data: any): string {
+      const action = String(data?.action ?? "").trim() || "tool";
+      const resources = Array.isArray(data?.resources) ? data.resources.map((r: any) => String(r)).filter(Boolean) : [];
+      return resources.length ? `${action}(${resources.join(", ")})` : action;
+    }
+
+    /** The one-line text of a form: its title, or the first field label. */
+    function formText(form: any): string {
+      const title = String(form?.title ?? form?.description ?? "").replace(/\s+/g, " ").trim();
+      if (title) return title;
+      const fields = Array.isArray(form?.fields) ? form.fields : [];
+      for (const f of fields) {
+        const label = String(f?.label ?? f?.title ?? f?.name ?? "").replace(/\s+/g, " ").trim();
+        if (label) return label;
+      }
+      return "input needed";
+    }
+
+    function settleAsk(root: string, id: string) {
+      const pending = h.asks.get(root);
+      if (!pending) return;
+      pending.delete(id);
+      if (pending.size === 0) {
+        h.asks.delete(root);
+        h.links.get(root)?.link.clearWaiting();
+      }
+    }
+
+    function clearAsks(root: string) {
+      if (!h.asks.delete(root)) return;
+      h.links.get(root)?.link.clearWaiting();
+    }
+
+    async function ask(root: string, id: string, kind: "permission" | "question", text: string) {
+      const link = h.links.get(root)?.link ?? (await ensureLink(root));
+      if (!link) return;
+      let pending = h.asks.get(root);
+      if (!pending) {
+        pending = new Set<string>();
+        h.asks.set(root, pending);
+      }
+      pending.add(id);
+      link.setWaiting(kind, text);
+    }
+
     async function handleEvent(event: any) {
-      const sessionID: string | undefined = event?.data?.sessionID;
+      const sessionID: string | undefined = event?.data?.sessionID ?? event?.data?.form?.sessionID;
       if (!sessionID) return;
+      const root = h.rootOf.get(sessionID) ?? sessionID;
       switch (event.type) {
         case "session.deleted":
         case "session.archived":
+          h.asks.delete(root);
           dropLink(sessionID);
           return;
         case "session.created":
@@ -1115,12 +1191,34 @@ export default {
           link?.touch();
           return;
         }
+        case "permission.asked": {
+          const id = String(event.data?.id ?? "");
+          if (id) await ask(root, "p:" + id, "permission", permissionText(event.data));
+          (await ensureLink(sessionID))?.touch();
+          return;
+        }
+        case "permission.replied":
+          settleAsk(root, "p:" + String(event.data?.requestID ?? ""));
+          return;
+        case "form.created": {
+          const form = event.data?.form;
+          const id = String(form?.id ?? "");
+          if (id) await ask(root, "f:" + id, "question", formText(form));
+          (await ensureLink(sessionID))?.touch();
+          return;
+        }
+        case "form.replied":
+        case "form.cancelled":
+          settleAsk(root, "f:" + String(event.data?.id ?? ""));
+          return;
         case "session.execution.started":
+          clearAsks(root);
           (await ensureLink(sessionID))?.setStatus("busy");
           return;
         case "session.execution.succeeded":
         case "session.execution.failed":
         case "session.execution.interrupted":
+          clearAsks(root);
           (await ensureLink(sessionID))?.setStatus("idle");
           return;
         default: {
@@ -1308,6 +1406,10 @@ export default {
         .hook("prompt", async (input: any) => {
           const sid = input?.sessionID ? String(input.sessionID) : "";
           if (!sid) return;
+          // A prompt means the owner answered, or the session moved on.
+          const root = h.rootOf.get(sid) ?? sid;
+          h.asks.delete(root);
+          h.links.get(root)?.link.clearWaiting();
           await applyMain(sid, await refreshPolicy(sid));
         })
         .catch(() => {});

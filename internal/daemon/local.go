@@ -413,6 +413,10 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		old := d.sessions[k]
 		if old != nil {
 			ls.sessionID = old.sessionID
+			// A plugin reconnect (a reload, or a service restart) does not
+			// clear a wait: the state lives in the daemon, and a session that
+			// is really working again sends status busy.
+			ls.info.Waiting = old.info.Waiting
 		}
 		d.sessions[k] = ls
 		d.mu.Unlock()
@@ -572,6 +576,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if method == protocol.MethodPolicy {
 		return lc.policyCall(ctx, client, ls, raw)
 	}
+	if method == protocol.MethodWaiting {
+		return lc.waitingCall(client, ls, raw)
+	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
 		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
@@ -610,6 +617,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		d.mu.Lock()
 		if p.Status != "" {
 			ls.info.Status = p.Status
+			if p.Status == "busy" {
+				// Working again: the user answered, or the session moved on.
+				ls.info.Waiting = nil
+			}
 		}
 		if p.Mode != nil && ls.info.Worker == nil { // a worker is always background
 			ls.info.Mode = *p.Mode
@@ -641,7 +652,16 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		p.SessionID = sid
 		// The function comes from the project's AGENTS.md, never from the agent.
 		p.Function = ""
-		return d.call(ctx, "profile.announce", p)
+		res, err := d.call(ctx, "profile.announce", p)
+		if err != nil {
+			return nil, err
+		}
+		// An announce without waiting clears an earlier one: the session went
+		// on to something else.
+		if ls != nil {
+			d.setWaiting(ls, protocol.CleanWaiting(p.Waiting))
+		}
+		return res, nil
 
 	case "list":
 		var p protocol.QueryAgents
