@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/term"
 )
 
 func TestProxy(t *testing.T) {
@@ -130,5 +132,74 @@ func TestEscapeMatcherOtherInput(t *testing.T) {
 	}
 	if got, want := out.String(), "ab\x1b[97;5u\x1b[<0;12;4Mpaste"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestProxyEscapeTiming(t *testing.T) {
+	if os.Getenv("PTY_PROXY_TIMING_CHILD") == "1" {
+		_, _ = term.MakeRaw(os.Stdin.Fd())
+		_, _ = os.Stdout.WriteString("ready")
+		b := make([]byte, 1)
+		if _, err := os.Stdin.Read(b); err == nil {
+			_, _ = os.Stdout.Write(append([]byte("received:"), b...))
+		}
+		select {}
+	}
+	for _, split := range []bool{false, true} {
+		t.Run(fmt.Sprintf("split=%v", split), func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run=^TestProxyEscapeTiming$")
+			cmd.Env = append(os.Environ(), "PTY_PROXY_TIMING_CHILD=1")
+			input, keys := io.Pipe()
+			output, screen := io.Pipe()
+			defer input.Close()
+			defer keys.Close()
+			defer output.Close()
+			defer screen.Close()
+			p := New(cmd)
+			p.SetStdin(input)
+			p.SetStdout(screen)
+			done := make(chan error, 1)
+			go func() { done <- p.Run() }()
+			seen := make(chan string, 1)
+			go func() {
+				reader := bufio.NewReader(output)
+				var text strings.Builder
+				for {
+					b, err := reader.ReadByte()
+					if err != nil {
+						return
+					}
+					text.WriteByte(b)
+					if strings.HasSuffix(text.String(), "ready") || strings.HasSuffix(text.String(), "received:\x1b") {
+						seen <- text.String()
+					}
+				}
+			}()
+			select {
+			case <-seen:
+			case <-time.After(2 * time.Second):
+				t.Fatal("child not ready")
+			}
+			_, _ = keys.Write([]byte("\x1b"))
+			if split {
+				time.Sleep(5 * time.Millisecond)
+				_, _ = keys.Write([]byte("[93;5u"))
+			} else {
+				select {
+				case <-seen:
+				case <-time.After(100 * time.Millisecond):
+					t.Error("escape not delivered")
+				}
+				_, _ = keys.Write([]byte("\x1d"))
+			}
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("proxy did not return")
+			}
+		})
 	}
 }

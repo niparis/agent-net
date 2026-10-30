@@ -67,17 +67,64 @@ func (p *Proxy) Run() error {
 	outputDone := make(chan struct{})
 	go func() { _, _ = io.Copy(p.out, pt); close(outputDone) }()
 	escaped := make(chan struct{}, 1)
+	inputDone := make(chan struct{})
+	defer close(inputDone)
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	reads := make(chan readResult)
 	go func() {
 		b := make([]byte, 4096)
-		var matcher escapeMatcher
 		for {
-			n, e := input.Read(b)
-			if n > 0 && matcher.write(pt, b[:n]) {
-				escaped <- struct{}{}
+			n, err := input.Read(b)
+			result := readResult{data: append([]byte(nil), b[:n]...), err: err}
+			select {
+			case reads <- result:
+			case <-inputDone:
 				return
 			}
-			if e != nil {
-				_, _ = pt.Write(matcher.pending)
+			if err != nil {
+				return
+			}
+		}
+	}()
+	go func() {
+		var matcher escapeMatcher
+		var timer *time.Timer
+		var timeout <-chan time.Time
+		defer func() {
+			if timer != nil {
+				timer.Stop()
+			}
+		}()
+		for {
+			select {
+			case result := <-reads:
+				if matcher.write(pt, result.data) {
+					escaped <- struct{}{}
+					return
+				}
+				if result.err != nil {
+					matcher.flush(pt)
+					return
+				}
+				if timer != nil {
+					timer.Stop()
+				}
+				timeout = nil
+				if len(matcher.pending) > 0 {
+					if timer == nil {
+						timer = time.NewTimer(25 * time.Millisecond)
+					} else {
+						timer.Reset(25 * time.Millisecond)
+					}
+					timeout = timer.C
+				}
+			case <-timeout:
+				matcher.flush(pt)
+				timeout = nil
+			case <-inputDone:
 				return
 			}
 		}
@@ -133,4 +180,9 @@ func (m *escapeMatcher) write(out io.Writer, input []byte) bool {
 		}
 	}
 	return false
+}
+
+func (m *escapeMatcher) flush(out io.Writer) {
+	_, _ = out.Write(m.pending)
+	m.pending = nil
 }
