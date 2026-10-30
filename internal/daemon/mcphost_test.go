@@ -115,7 +115,7 @@ func toolNames(s protocol.MCPServer) string {
 
 func waitPush(t *testing.T, lc *localClient, method string) {
 	t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(scaled(20 * time.Second))
 	for {
 		select {
 		case m := <-lc.Other:

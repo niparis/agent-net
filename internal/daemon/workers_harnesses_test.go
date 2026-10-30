@@ -159,9 +159,10 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 		t.Errorf("claude stop calls: %v, want [%s %s]", got, rec.ID, rec2.ID)
 	}
 	c.workerStopped(t, g, protocol.StopHandback)
-	if rows, _ := c.d.st.workers(); len(rows) != 1 || !rows[0].Resumable {
-		t.Errorf("rows left: %+v", rows)
-	}
+	eventually(t, "only the resumable record is left", func() bool {
+		rows, _ := c.d.st.workers()
+		return len(rows) == 1 && rows[0].Resumable
+	})
 }
 
 // If `claude stop` does nothing, and the process ignores SIGTERM, the group is
