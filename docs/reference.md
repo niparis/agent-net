@@ -16,11 +16,12 @@ setting alone does not start a CTO runtime.
 context is at or above that share of the model's context window, the daemon
 compacts at once. `floor_tokens` defaults to 40000 and applies only to the idle
 rule. `cache_window_seconds` is per provider and defaults to 300 seconds when
-the provider is not listed. The daemon compacts an idle conversation above the
-floor at the window minus 30 seconds, so the next message does not reread a
-large cold history. One compaction is allowed per idle period, and none runs
-while a turn is active. The model reports its context window through OpenCode;
-with no window known, only the idle floor rule applies.
+the provider is not listed. A `compaction` object replaces the previous rules:
+a field left out takes its default. The daemon compacts an idle conversation
+above the floor at the window minus 30 seconds, so the next message does not
+reread a large cold history. One compaction is allowed per idle period, and
+none runs while a turn is active. The model reports its context window through
+OpenCode; with no window known, only the idle floor rule applies.
 
 The daemon asks OpenCode 2.2.0 to compact with
 `POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the

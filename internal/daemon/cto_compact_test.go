@@ -43,12 +43,19 @@ type ctoFixture struct {
 }
 
 func startCTOCompactionFixture(t *testing.T) *ctoFixture {
+	return startCTOCompactionFixtureEvery(t, 0)
+}
+
+// startCTOCompactionFixtureEvery runs the daemon's background loop at the
+// given interval; zero drives compaction by calling ctoCompactOnce directly.
+func startCTOCompactionFixtureEvery(t *testing.T, every time.Duration) *ctoFixture {
 	t.Helper()
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
-	// Tests drive compaction with a fake clock, one call at a time.
-	n.d.ctoCompactEvery = 0
+	// Tests drive compaction with a fake clock, one call at a time; the loop
+	// test uses a short real interval instead.
+	n.d.ctoCompactEvery = every
 	clock := newCTOTestClock()
 	n.d.ctoNow = clock.Now
 	cli := cliClient(t, n)
@@ -89,20 +96,28 @@ func (f *ctoFixture) send(t *testing.T, text string) {
 	f.cli.mustCall("cto_send", map[string]string{"text": text})
 }
 
-func (f *ctoFixture) compactCount(t *testing.T) int {
-	t.Helper()
+func (f *ctoFixture) tryCompactCount() (int, bool) {
 	data, err := os.ReadFile(filepath.Join(f.n.cfg.StateDir, "cto", "fake-compact.json"))
-	if os.IsNotExist(err) {
-		return 0
-	}
 	if err != nil {
-		t.Fatal(err)
+		return 0, false
 	}
 	var calls []json.RawMessage
-	if err := json.Unmarshal(data, &calls); err != nil {
-		t.Fatal(err)
+	if json.Unmarshal(data, &calls) != nil {
+		return 0, false
 	}
-	return len(calls)
+	return len(calls), true
+}
+
+func (f *ctoFixture) compactCount(t *testing.T) int {
+	t.Helper()
+	if n, ok := f.tryCompactCount(); ok {
+		return n
+	}
+	if _, err := os.Stat(filepath.Join(f.n.cfg.StateDir, "cto", "fake-compact.json")); os.IsNotExist(err) {
+		return 0
+	}
+	t.Fatal("unreadable compaction record")
+	return 0
 }
 
 func (f *ctoFixture) actions(t *testing.T) []string {
@@ -159,6 +174,17 @@ func TestCTOCompactionThreshold(t *testing.T) {
 	if !strings.Contains(joined, "compacted: 800k -> 14k tokens") {
 		t.Fatalf("chat line missing: %s", joined)
 	}
+}
+
+func TestCTOCompactionLoopRunsAfterAReply(t *testing.T) {
+	f := startCTOCompactionFixtureEvery(t, 20*time.Millisecond)
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_big", 800_000), ctoUser("work")})
+	eventually(t, "the background loop compacts above the threshold", func() bool {
+		n, ok := f.tryCompactCount()
+		return ok && n == 1
+	})
 }
 
 func TestCTOCompactionIdleBeforeCacheExpiry(t *testing.T) {
@@ -269,6 +295,67 @@ func TestCTOCompactionNeverDuringTurn(t *testing.T) {
 	}
 	if got := f.compactCount(t); got != 1 {
 		t.Fatalf("did not compact after the turn: %d", got)
+	}
+}
+
+func TestCTOCompactionChatLineWhenTheNextSendComesFirst(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply", 50_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(5 * time.Minute)
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 1 {
+		t.Fatalf("idle compaction = %d, want 1", got)
+	}
+	// The owner sends again before the daemon has read the context after the
+	// compaction. That reply still reports it, and the line must not be lost
+	// when the turn ends.
+	f.send(t, "next")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_after", 14_000), ctoCompactionDone(), ctoAssistant("msg_reply", 50_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(f.actions(t), "|")
+	if !strings.Contains(joined, "compacted: 50k -> 14k tokens") {
+		t.Fatalf("chat line lost after the next send: %s", joined)
+	}
+}
+
+func TestCTOCompactionChatLineWaitsForTokens(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_big", 800_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 1 {
+		t.Fatalf("threshold compaction = %d, want 1", got)
+	}
+	// The next reply is still streaming: no token count yet, so no line and no
+	// half-written figure.
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_partial", 0), ctoCompactionDone(), ctoAssistant("msg_big", 800_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if joined := strings.Join(f.actions(t), "|"); strings.Contains(joined, "compacted:") {
+		t.Fatalf("line written before the tokens were known: %s", joined)
+	}
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_after", 14_000), ctoCompactionDone(), ctoAssistant("msg_big", 800_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(f.actions(t), "|")
+	if !strings.Contains(joined, "compacted: 800k -> 14k tokens") {
+		t.Fatalf("chat line missing: %s", joined)
 	}
 }
 

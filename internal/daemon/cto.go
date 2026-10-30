@@ -545,27 +545,33 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	if cs.sessionID != session {
 		cs.reset(session)
 	}
-	if state.AssistantID != "" && cs.turn {
-		if !busy && state.AssistantID != cs.lastAssistant {
+	// A new assistant message ends a turn and also reports the context after a
+	// compaction. Both must happen on this transition: the owner can send the
+	// next message before the daemon reads the reply, and the chat still gets
+	// its one line per compaction.
+	var line string
+	newAssistant := state.AssistantID != "" && state.AssistantID != cs.lastAssistant
+	if newAssistant && !busy {
+		if cs.turn {
 			cs.turn = false
-			cs.lastAssistant = state.AssistantID
 			cs.idleSince = now
 			cs.compactedIdle = false
 		}
+		// A message that is still streaming has no tokens yet. Leave the
+		// transition open so the same message reports them on a later tick.
+		if state.Tokens > 0 {
+			if cs.pendingBefore > 0 {
+				line = fmt.Sprintf("compacted: %s -> %s tokens", protocol.CompactTokens(cs.pendingBefore), protocol.CompactTokens(state.Tokens))
+				cs.pendingBefore = 0
+			}
+			cs.lastAssistant = state.AssistantID
+		}
 	}
 	if !cs.turn && cs.idleSince.IsZero() {
-		if state.AssistantID != "" {
+		if state.Tokens > 0 {
 			cs.lastAssistant = state.AssistantID
 			cs.idleSince = now
 		}
-	}
-
-	var line string
-	if !cs.turn && cs.pendingBefore > 0 && state.AssistantID != "" && state.AssistantID != cs.lastAssistant {
-		before, after := cs.pendingBefore, state.Tokens
-		cs.pendingBefore = 0
-		cs.lastAssistant = state.AssistantID
-		line = fmt.Sprintf("compacted: %s -> %s tokens", protocol.CompactTokens(before), protocol.CompactTokens(after))
 	}
 
 	reason := ""
