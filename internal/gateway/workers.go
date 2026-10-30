@@ -304,7 +304,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -324,7 +324,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
-		Worktree: launched.Worktree, Branch: launched.Branch}, nil
+		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules}, nil
 }
 
 func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame) (map[string]any, error) {

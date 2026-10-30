@@ -44,10 +44,24 @@ func isGitRepo(ctx context.Context, dir string) bool {
 // createWorktree makes the worker's own worktree of its project, on a new
 // branch, in a folder the daemon manages (not in the user's checkout). The
 // worker then runs in it.
-func (d *Daemon) createWorktree(ctx context.Context, w *worker) error {
+func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ...string) error {
 	main := w.path
-	base, err := gitOut(ctx, main, "rev-parse", "HEAD")
+	ref := "HEAD"
+	if len(requestedBase) > 0 && requestedBase[0] != "" {
+		name := requestedBase[0]
+		if strings.HasPrefix(name, "-") {
+			return fmt.Errorf("invalid base branch %q", name)
+		}
+		if _, err := gitOut(ctx, main, "check-ref-format", "--branch", name); err != nil {
+			return fmt.Errorf("invalid base branch %q: %w", name, err)
+		}
+		ref = "refs/heads/" + name
+	}
+	base, err := gitOut(ctx, main, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
+		if ref != "HEAD" {
+			return fmt.Errorf("base branch %q does not exist: %w", requestedBase[0], err)
+		}
 		return fmt.Errorf("cannot make a worktree: %s is not a git repository with a commit (%v)", main, err)
 	}
 	dir := filepath.Join(d.cfg.StateDir, "worktrees", w.id)
@@ -55,7 +69,7 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker) error {
 		return err
 	}
 	branch := protocol.WorktreeBranch(w.id)
-	if _, err := gitOut(ctx, main, "worktree", "add", dir, "-b", branch); err != nil {
+	if _, err := gitOut(ctx, main, "worktree", "add", dir, "-b", branch, base); err != nil {
 		return fmt.Errorf("cannot make a worktree: %w", err)
 	}
 	d.wmu.Lock()

@@ -1008,7 +1008,7 @@ export default function (pi: ExtensionAPI) {
       "The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). " +
       "The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. " +
       WORKER_NOTE +
-      " A worker cannot start workers." +
+      " A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief." +
       " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
       "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
     Type.Object({
@@ -1017,6 +1017,7 @@ export default function (pi: ExtensionAPI) {
       harness: Type.Optional(Type.String({ description: "opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree." })),
       model: Type.Optional(Type.String({ description: "The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default." })),
       machine: Type.Optional(Type.String({ description: "The machine, only when the project is on more than one" })),
+      base: Type.Optional(Type.String({ description: "Existing local branch to start the worktree from." })),
       isolation: Type.Optional(
         Type.String({ description: "Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks" }),
       ),

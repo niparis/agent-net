@@ -163,6 +163,8 @@ type WorkerStartRequest struct {
 	// (the same, and an error when it is not a repository) or "none" (work in
 	// the project folder).
 	Isolation string `json:"isolation,omitempty"`
+	// Base is an existing local branch to start the worker worktree from.
+	Base string `json:"base,omitempty"`
 }
 
 // WorkerStartResult answers OpWorkerStart.

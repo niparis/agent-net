@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -318,6 +320,31 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 
 // ---- starting ----
 
+// projectWorkerRules reads the main working tree copy, so local project rules
+// apply even before they are committed. Limit the read and remove control bytes.
+func projectWorkerRules(path string) string {
+	name := filepath.Join(path, ".agent-net", "worker.md")
+	fi, err := os.Stat(name)
+	if err != nil || !fi.Mode().IsRegular() {
+		return ""
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, 8192))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+		return -1
+	}, strings.ToValidUTF8(string(b), "")))
+}
+
 // startWorker handles "worker.launch" from the gateway.
 func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out protocol.WorkerLaunched, err error) {
 	set := d.cfg.Workers.filled()
@@ -343,6 +370,10 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
 	}
+	if l.Base != "" && l.Isolation != protocol.IsolationWorktree {
+		return refuse("a base branch needs worktree isolation")
+	}
+	rules := projectWorkerRules(l.Path)
 	if l.Harness == "pi" && l.Isolation != protocol.IsolationWorktree {
 		return refuse("a Pi worker needs isolation %q: Pi has no permission prompts, so it must not work in your own checkout", protocol.IsolationWorktree)
 	}
@@ -351,6 +382,13 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	}
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(l.Task)}
+	worktree, branch := "", ""
+	if l.Isolation == protocol.IsolationWorktree {
+		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
+	}
+	if len(protocol.WorkerTaskBodyWithRules(l.Harness, l.Task, worktree, branch, rules)) > protocol.MaxBodyBytes {
+		return refuse("the task and project rules exceed the message limit")
+	}
 	w.lastActive = w.startedAt
 	d.wmu.Lock()
 	if len(d.workers) >= set.Max {
@@ -365,7 +403,7 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	defer cancel()
 	var err2 error
 	if l.Isolation == protocol.IsolationWorktree {
-		err2 = d.createWorktree(cctx, w)
+		err2 = d.createWorktree(cctx, w, l.Base)
 	}
 	if err2 == nil {
 		err2 = ln.start(cctx, d, w)
@@ -384,7 +422,7 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	d.wmu.Unlock()
 	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s",
 		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br)
-	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br}, nil
+	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules}, nil
 }
 
 // spawnWorker starts the process for w in its own process group, in the project

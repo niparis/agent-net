@@ -223,3 +223,7 @@ What "resume" means per harness:
 A worker can be started again only while its record is younger than the longest run time (`max_age`, 4 hours by default). Every ended worker keeps its record until then, so the daemon knows that the harness session is a worker's and the plugin of another OpenCode server cannot register it as a normal session; a hand-back record is also what a follow-up starts again. After that, the record is cleaned: on the machine at daemon start and every 10 minutes, and on the gateway through `worker.cleanup`. A gateway record that is offline and past that age is deleted, so an old worker does not stay listed. A worker the machine says it does not run leaves the list at once.
 
 The idle time and the longest run time stay as safety nets for workers that are running. The owner-gone grace is unchanged.
+
+### W20 - Worker base and project rules
+
+A caller may name an existing local branch as the base for a new worktree. The daemon validates the branch and creates the worker branch from its commit. An optional `.agent-net/worker.md` is read from the project main working tree, so uncommitted local rules take effect. At most 8 KiB of cleaned text goes between the fixed brief and the task.

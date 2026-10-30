@@ -94,8 +94,9 @@ type (
 		// name was used as it was.
 		ModelNote string `json:"model_note,omitempty"`
 		// Worktree and Branch are set when the worker got its own worktree.
-		Worktree string `json:"worktree,omitempty"`
-		Branch   string `json:"branch,omitempty"`
+		Worktree     string `json:"worktree,omitempty"`
+		Branch       string `json:"branch,omitempty"`
+		ProjectRules string `json:"project_rules,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -110,13 +111,15 @@ type (
 		// Isolation is "" (a worktree if the folder is a repository),
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
+		Base      string `json:"base,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch".
 	WorkerLaunched struct {
-		SessionID string `json:"session_id"`
-		WorkerID  string `json:"worker_id"`
-		Worktree  string `json:"worktree,omitempty"`
-		Branch    string `json:"branch,omitempty"`
+		SessionID    string `json:"session_id"`
+		WorkerID     string `json:"worker_id"`
+		Worktree     string `json:"worktree,omitempty"`
+		Branch       string `json:"branch,omitempty"`
+		ProjectRules string `json:"project_rules,omitempty"`
 	}
 	// WorkerStopFrame is "worker.stop".
 	WorkerStopFrame struct {
@@ -193,6 +196,10 @@ func WorkerTaskBody(task, worktree, branch string) string {
 // WorkerTaskBodyFor builds the body of the task message: the brief of the
 // harness, a line about the worktree if there is one, then the task.
 func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
+	return WorkerTaskBodyWithRules(harness, task, worktree, branch, "")
+}
+
+func WorkerTaskBodyWithRules(harness, task, worktree, branch, rules string) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
@@ -203,6 +210,9 @@ func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
 			", not in the user's own checkout. Commit your work there if the task asks for it."
+	}
+	if rules != "" {
+		b += "\n\nProject rules for workers\n\n" + rules
 	}
 	return b + "\n\nTask:\n" + strings.TrimSpace(task)
 }
