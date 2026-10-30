@@ -19,6 +19,8 @@ agent-net keeps a **graph of components**. A node is a repository or service (a 
 
 ## The charter
 
+2026-10-30: Added one shared per-attribute writing guide in `internal/protocol/charter_guide.go`; the CTO and owner CLI use it to guide short values and warn about excess detail.
+
 A charter has fixed attribute names, so the TUI can lay it out and agents can read it, and free-text values, so the owner writes plain language.
 
 | Attribute | What it says | Example |

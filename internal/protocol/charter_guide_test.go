@@ -42,8 +42,11 @@ func TestCharterValueWarningForTooDetailedValues(t *testing.T) {
 	for _, value := range []string{
 		strings.Repeat("a", 201),
 		"Reach 192.168.50.65 for the service",
+		"Reach 2001:db8::1 for the service",
 		"Use bearer sk-abcdefghijklmnopqrstuvwxyz123456",
 		"Read /home/project/private/config",
+		"Read /private",
+		"AGENT_NET_CONFIG_DIR=/private",
 	} {
 		warning := CharterValueWarning("needs", value)
 		if !strings.Contains(warning, "too long/too detailed for a charter") || !strings.Contains(warning, "keep it to "+guide.Size) || !strings.Contains(warning, "put detail in AGENTS.md") {

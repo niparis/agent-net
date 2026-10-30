@@ -111,10 +111,12 @@ func containsAbsolutePath(value string) bool {
 		return true
 	}
 	for _, field := range strings.Fields(value) {
-		path := strings.Trim(field, `"'(){}[],;`)
-		path = strings.TrimRight(path, ".:!?`>")
-		if strings.HasPrefix(path, "/") && strings.Count(path, "/") >= 2 {
-			return true
+		for _, part := range strings.Split(field, "=") {
+			path := strings.Trim(part, `"'(){}[],;`)
+			path = strings.TrimRight(path, ".:!?`>")
+			if strings.HasPrefix(path, "/") {
+				return true
+			}
 		}
 	}
 	return false
