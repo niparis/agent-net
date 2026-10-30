@@ -183,9 +183,15 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}()
 	l := newLink(ws)
 	rctx, rcancel := context.WithCancel(ctx)
-	defer rcancel()
 	go l.readLoop(rctx, d)
-	defer ws.Close(websocket.StatusNormalClosure, "")
+	// readLoop adds to d.wg when a frame comes in. runLink is counted in d.wg
+	// (through linkLoop), so it must not return while readLoop still runs:
+	// an Add after the count has reached zero races with Stop's Wait.
+	defer func() {
+		ws.Close(websocket.StatusNormalClosure, "")
+		rcancel()
+		<-l.dead
+	}()
 
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
