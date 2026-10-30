@@ -92,6 +92,10 @@ Each Claude Code or Codex session keeps the `agent-net mcp` process it started w
 - A session on v0.3.5 or later normally switches by itself within seconds of the daemon restart. If it did not, check `AGENT_NET_NO_AUTO_UPGRADE` in its environment and the daemon log lines `mcp hello: ... runs agent-net ...`. See [upgrade.md](upgrade.md#running-sessions).
 - A newer agent also gets one line at the end of its next agent-net tool result that tells it to ask you for the reconnect. A process from before v0.4.7 cannot show that line.
 
+## Workers ended with "lost while the daemon was not running" after an upgrade
+
+Workers must survive a daemon restart. On Linux that needs `KillMode=process` in `~/.config/systemd/user/agent-net-daemon.service`; without it systemd kills the whole service group on restart. Check with `systemctl --user cat agent-net-daemon.service`. If the line is missing, run `agent-net setup`. The first restart after an automatic upgrade from an old version can still lose workers; after that they survive. On macOS the plist needs `AbandonProcessGroup` (also written by `setup`). `agent-net uninstall` stops the workers on purpose.
+
 ## A Codex thread is not listed, or cannot send
 
 - Not listed: only threads that the shared Codex app server has loaded are listed, which means a window has the thread open (or closed it a short time ago). Check that the server runs: `codex app-server daemon version`. Look in the daemon log for `codex: connected to the shared app server`. If your Codex home is not `~/.codex`, the daemon service needs `CODEX_HOME` too.

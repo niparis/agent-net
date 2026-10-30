@@ -74,6 +74,24 @@ func (r *runner) installLaunchd(s Service) (string, error) {
 	return "", fmt.Errorf("launchctl bootstrap: %s", firstLine(out, err))
 }
 
+// RefreshDaemonUnit is called when the daemon starts under systemd. A daemon
+// that an older version upgraded without running setup (an automatic or remote
+// upgrade) still has the old unit, without KillMode=process. This adds the line
+// and reloads systemd, without a restart, so the next restart keeps the
+// workers. It does nothing outside a systemd service. Failures are ignored: the
+// next `agent-net setup` writes the whole unit.
+func RefreshDaemonUnit() {
+	if runtime.GOOS != "linux" || os.Getenv("INVOCATION_ID") == "" || os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
+		return
+	}
+	path := filepath.Join(systemdDir(), Service{Name: "daemon"}.UnitName())
+	if changed, err := EnsureWorkersSurviveUnit(path); err == nil && changed {
+		if _, err := exec.LookPath("systemctl"); err == nil {
+			runCmd("", "systemctl", "--user", "daemon-reload")
+		}
+	}
+}
+
 // removeService stops a service and deletes its file. It reports whether the
 // file existed.
 func (r *runner) removeService(s Service) (string, error) {
