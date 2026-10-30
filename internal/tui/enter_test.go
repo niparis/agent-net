@@ -2,7 +2,7 @@ package tui
 
 import (
 	"errors"
-	osexec "os/exec"
+	"github.com/niparis/agent-net/internal/ptyproxy"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,8 +23,13 @@ func pressE(m Model) (Model, tea.Cmd) {
 // capture replaces the terminal hand-over and records the command it got.
 func capture(m *Model) (got *[]string, dir *string, env *[]string, done *func(error) tea.Msg) {
 	got, dir, env, done = new([]string), new(string), new([]string), new(func(error) tea.Msg)
-	m.execProcess = func(c *osexec.Cmd, cb tea.ExecCallback) tea.Cmd {
-		*got, *dir, *env, *done = c.Args, c.Dir, c.Env, cb
+	m.execProcess = func(c tea.ExecCommand, cb tea.ExecCallback) tea.Cmd {
+		proxy, ok := c.(*ptyproxy.Proxy)
+		if !ok {
+			panic("enter command is not proxied")
+		}
+		cmd := proxy.Cmd
+		*got, *dir, *env, *done = cmd.Args, cmd.Dir, cmd.Env, cb
 		return func() tea.Msg { return nil }
 	}
 	return

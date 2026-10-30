@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	osexec "os/exec"
 	"sort"
 	"strings"
 	"time"
@@ -100,13 +99,13 @@ type Model struct {
 	renameSet   bool             // that name is the owner's, not the reported one
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
-	// execProcess replaces tea.ExecProcess in tests.
+	// execProcess replaces tea.Exec in tests.
 	tmuxSocket string
 	// herdrSocket is the herdr server this terminal runs in, or "".
 	herdrSocket string
 	// enterNote is the daemon's note for the command that runs now.
 	enterNote   string
-	execProcess func(*osexec.Cmd, tea.ExecCallback) tea.Cmd
+	execProcess func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
 
 	// CPU, memory and counts from the daemon (usage.go).
 	usage usageData

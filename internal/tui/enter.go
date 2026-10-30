@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/ptyproxy"
 )
 
 // Enter a session (decision 0002, W16). The key e asks the daemon how to take
@@ -71,10 +72,10 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	m.enterNote = r.plan.Note
 	run := m.execProcess
 	if run == nil {
-		run = tea.ExecProcess
+		run = tea.Exec
 	}
 	name := r.name
-	return m, run(cmd, func(err error) tea.Msg { return enterDoneMsg{name: name, err: err} })
+	return m, run(ptyproxy.New(cmd), func(err error) tea.Msg { return enterDoneMsg{name: name, err: err} })
 }
 
 // onEnterDone is the return from the session.
