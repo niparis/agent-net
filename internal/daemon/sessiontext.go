@@ -228,7 +228,15 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
 		frame := strings.ReplaceAll(method, "_", ".")
-		var params any = raw
+		var p map[string]any
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad graph params")
+		}
+		if p == nil {
+			p = map[string]any{}
+		}
+		delete(p, "by")
+		var params any = p
 		if method == protocol.OpGraphUndo {
 			var q protocol.GraphUndoRequest
 			if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {

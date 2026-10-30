@@ -620,7 +620,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad charter.set")
 		}
-		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, "owner")
+		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw))
 	case "charter.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
 		if err != nil || p.Node == "" {
@@ -633,9 +633,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad node request")
 		}
 		if typ == "node.add" {
-			err = st.AddArchitect(p.Name, "owner")
+			err = st.AddArchitect(p.Name, graphActor(raw))
 		} else {
-			err = st.RemoveArchitect(p.Name, "owner")
+			err = st.RemoveArchitect(p.Name, graphActor(raw))
 		}
 		return map[string]bool{"ok": true}, err
 	case "edge.set", "edge.remove":
@@ -644,9 +644,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad edge request")
 		}
 		if typ == "edge.set" {
-			err = st.SetEdge(p, "owner")
+			err = st.SetEdge(p, graphActor(raw))
 		} else {
-			err = st.RemoveEdge(p, "owner")
+			err = st.RemoveEdge(p, graphActor(raw))
 		}
 		return map[string]bool{"ok": true}, err
 	case "edge.history":
@@ -660,7 +660,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.HistoryID < 0 {
 			return nil, reject("bad graph.undo")
 		}
-		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, "owner")
+		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)
@@ -913,4 +913,15 @@ func (g *Gateway) dispatchPending(ctx context.Context, nodeID string, includeDis
 	for _, m := range msgs {
 		g.sendDeliver(ctx, nodeID, m)
 	}
+}
+
+// The authenticated daemon supplies the actor after its local owner checks.
+func graphActor(raw json.RawMessage) string {
+	var p struct {
+		By string `json:"by"`
+	}
+	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
+		return "cto"
+	}
+	return "owner"
 }

@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/testmcp/tools"
 )
@@ -24,6 +26,13 @@ const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
 func TestMain(m *testing.M) {
 	if os.Getenv(helperEnv) != "" {
 		if err := tools.New().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "cto-mcp" {
+		if err := mcpserver.RunCTO(context.Background(), os.Getenv("AGENT_NET_SOCKET"), "test"); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return

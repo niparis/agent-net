@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 // ctoRuntime owns one private OpenCode process. It is separate from workers
 // and never registers a session with the gateway.
 type ctoRuntime struct {
+	pid            atomic.Int64
 	mu             sync.Mutex
 	cmd            *exec.Cmd
 	exited         chan struct{}
@@ -37,6 +39,7 @@ func (c *ctoRuntime) stopLocked() {
 		syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL)
 		<-c.exited
 	}
+	c.pid.Store(0)
 	c.cmd = nil
 	c.exited = nil
 	c.base = ""
@@ -106,6 +109,14 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 			return err
 		}
 	}
+	// This project configuration belongs only to the private CTO server.
+	configData, err := json.Marshal(map[string]any{"mcp": map[string]any{"servers": map[string]any{"agent-net-cto": map[string]any{"type": "local", "command": []string{d.cfg.Exe, "cto-mcp"}, "environment": map[string]string{"AGENT_NET_SOCKET": d.cfg.SocketPath}}}}})
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(filepath.Join(dir, "opencode.json"), configData, 0600); err != nil {
+		return err
+	}
 	port, err := freePort()
 	if err != nil {
 		return err
@@ -126,10 +137,11 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 		return fmt.Errorf("start CTO OpenCode: %w", err)
 	}
 	c.cmd = cmd
+	c.pid.Store(int64(cmd.Process.Pid))
 	c.exited = make(chan struct{})
 	c.base = "http://127.0.0.1:" + strconv.Itoa(port)
 	c.password = pass
-	go func() { cmd.Wait(); close(c.exited) }()
+	go func() { cmd.Wait(); c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0); close(c.exited) }()
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	for {
@@ -297,4 +309,23 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 		out.Messages = messages[index:]
 	}
 	return out, nil
+}
+
+// isCTOPeer admits only a live descendant of the private OpenCode server.
+func (d *Daemon) isCTOPeer(pid int) bool {
+	root := int(d.cto.pid.Load())
+	if root <= 1 || pid <= 1 {
+		return false
+	}
+	for i := 0; i < 64 && pid > 1; i++ {
+		if pid == root {
+			return int(d.cto.pid.Load()) == root
+		}
+		p, err := parentPID(pid)
+		if err != nil || p == pid {
+			return false
+		}
+		pid = p
+	}
+	return false
 }

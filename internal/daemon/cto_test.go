@@ -1,7 +1,10 @@
 package daemon
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -47,6 +50,23 @@ func TestCTORuntime(t *testing.T) {
 	}
 	if !strings.HasPrefix(rec.Env["XDG_DATA_HOME"], n.cfg.StateDir) || !strings.HasPrefix(rec.Env["XDG_STATE_HOME"], n.cfg.StateDir) {
 		t.Fatalf("not private: %+v", rec.Env)
+	}
+	var config struct {
+		MCP struct {
+			Servers map[string]struct {
+				Type        string            `json:"type"`
+				Command     []string          `json:"command"`
+				Environment map[string]string `json:"environment"`
+			} `json:"servers"`
+		} `json:"mcp"`
+	}
+	raw, err := os.ReadFile(filepath.Join(n.cfg.StateDir, "cto", "opencode.json"))
+	if err != nil || json.Unmarshal(raw, &config) != nil {
+		t.Fatalf("private config: %v", err)
+	}
+	server := config.MCP.Servers["agent-net-cto"]
+	if server.Type != "local" || len(server.Command) != 2 || server.Command[1] != "cto-mcp" || server.Environment["AGENT_NET_SOCKET"] != n.cfg.SocketPath {
+		t.Fatalf("CTO MCP config: %+v", server)
 	}
 	if _, err := os.Stat(filepath.Join(rec.Env["XDG_DATA_HOME"], "fake-imported-auth")); err != nil {
 		t.Fatalf("credentials not imported into private data: %v", err)
@@ -154,4 +174,101 @@ func TestCTOStartupFailure(t *testing.T) {
 	if _, err := cli.call("cto_send", map[string]string{"text": "hello"}); err == nil || !strings.Contains(err.Error(), "exited at start") {
 		t.Fatalf("startup: %v", err)
 	}
+}
+
+func TestCTOPrivatePeerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	outsider := dialLocal(t, n.sock)
+	if _, err := outsider.call("hello", map[string]string{"client": "cto-mcp"}); err == nil {
+		t.Fatal("unrelated process accepted as CTO")
+	}
+	cli := cliClient(t, n)
+	cli.mustCall("cto_send", map[string]string{"text": "start"})
+	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if !n.d.isCTOPeer(rec.ChildPid) {
+		t.Fatal("CTO child was refused")
+	}
+	if n.d.isCTOPeer(os.Getpid()) {
+		t.Fatal("unrelated process was accepted")
+	}
+	if _, err := outsider.call("hello", map[string]string{"client": "cto-mcp"}); err == nil {
+		t.Fatal("unrelated process accepted after start")
+	}
+}
+
+func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, WorkerSettings{}, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	peer, _ := helloPi(t, w.node, "target", "/w/target", true)
+	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
+	rec := readFake(t, filepath.Join(w.cfg.StateDir, "cto"))
+	base := w.d.cto.base
+	password := rec.Env["OPENCODE_SERVER_PASSWORD"]
+	call := func(name string, args any) {
+		t.Helper()
+		b, _ := json.Marshal(map[string]any{"name": name, "arguments": args})
+		req, _ := http.NewRequest("POST", base+"/fake/cto-tool", bytes.NewReader(b))
+		req.SetBasicAuth("opencode", password)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s HTTP %d: %s", name, resp.StatusCode, body)
+		}
+		var result struct {
+			IsError bool `json:"isError"`
+		}
+		if json.Unmarshal(body, &result) != nil || result.IsError {
+			t.Fatalf("%s: %s", name, body)
+		}
+	}
+	call("node_add", map[string]any{"name": "architecture"})
+	call("node_add", map[string]any{"name": "component"})
+	call("charter_set", map[string]any{"node": "architecture", "attr": "purpose", "value": "design"})
+	call("charter_history", map[string]any{"node": "architecture"})
+	var changes []protocol.CharterChange
+	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || changes[0].By != "cto" {
+		t.Fatalf("CTO history: %+v %v", changes, err)
+	}
+
+	call("edge_set", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
+	call("edge_history", map[string]any{"node": "component"})
+	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
+	call("graph_undo", map[string]any{})
+	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
+	call("node_remove", map[string]any{"name": "component"})
+	call("graph_get", map[string]any{})
+	call("agents", map[string]any{})
+	call("workers", map[string]any{})
+	call("needs_you", map[string]any{})
+	call("feed", map[string]any{})
+	var agents protocol.AgentsResult
+	json.Unmarshal(w.cli.mustCall("list", nil), &agents)
+	target := ""
+	for _, a := range agents.Agents {
+		if a.Harness == "pi" {
+			target = a.SessionID
+		}
+	}
+	if target == "" {
+		t.Fatal("peer missing")
+	}
+	call("send", map[string]any{"to": target, "body": "hello"})
+	select {
+	case msg := <-peer.Pushes:
+		if !msg.FromCTO {
+			t.Fatalf("missing CTO sender: %+v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("message not delivered")
+	}
+	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
 }

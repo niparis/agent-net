@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -299,6 +301,54 @@ func runFakeOpenCode() {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": item})
+	})
+	mux.HandleFunc("POST /fake/cto-tool", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var q struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		if json.NewDecoder(r.Body).Decode(&q) != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		var config struct {
+			MCP struct {
+				Servers map[string]struct {
+					Command     []string          `json:"command"`
+					Environment map[string]string `json:"environment"`
+				} `json:"servers"`
+			} `json:"mcp"`
+		}
+		data, err := os.ReadFile(filepath.Join(cwd, "opencode.json"))
+		if err != nil || json.Unmarshal(data, &config) != nil {
+			http.Error(w, "bad config", 500)
+			return
+		}
+		entry := config.MCP.Servers["agent-net-cto"]
+		if len(entry.Command) == 0 {
+			http.Error(w, "no MCP server", 500)
+			return
+		}
+		cmd := exec.Command(entry.Command[0], entry.Command[1:]...)
+		cmd.Env = workerEnv(os.Environ(), entry.Environment)
+		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		defer cancel()
+		sess, err := mcp.NewClient(&mcp.Implementation{Name: "fake-opencode", Version: "test"}, nil).Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer sess.Close()
+		out, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: q.Name, Arguments: q.Arguments})
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(out)
 	})
 	if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
 		fmt.Fprintln(os.Stderr, "fake opencode:", err)

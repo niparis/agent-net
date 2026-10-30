@@ -68,6 +68,7 @@ type Message struct {
 	// FromWorker is true when the sender is a worker (a session that agent-net
 	// started). A receiving adapter frames its text as model output.
 	FromWorker bool `json:"sender_worker,omitempty"`
+	FromCTO    bool `json:"sender_cto,omitempty"`
 	// RecipientTrust is filled by the gateway when it hands the message to
 	// the recipient's daemon: true when the owner turned peer trust on for the
 	// recipient session (decision 0012). A sender cannot set it: it is not a
@@ -326,6 +327,7 @@ type (
 		On        bool   `json:"on"`
 	}
 	MsgSend struct {
+		FromCTO        bool   `json:"sender_cto,omitempty"`
 		Sender         string `json:"sender_session_id"`
 		Recipient      string `json:"recipient_session_id"`
 		Type           string `json:"message_type"`
