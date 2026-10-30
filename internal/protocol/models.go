@@ -11,6 +11,10 @@ import (
 // the sessions of a machine used (see ResolveModel).
 const ModelUsageDays = 30
 
+// ModelFailureHours is how long a model that failed a worker (provider, billing
+// or auth error) is ranked last by ResolveModelFailed.
+const ModelFailureHours = 24
+
 // maxModelCandidates is how many candidates an ambiguity error lists.
 const maxModelCandidates = 5
 
@@ -85,7 +89,7 @@ func providerOf(id string) string {
 //  1. An exact match wins.
 //  2. Otherwise the query is split into words (case does not matter, "4.1"
 //     matches "v4.1"), and the candidates are the ids that contain all words.
-//  3. The candidates are ranked by: how many sessions on the machine used the
+//  3. The candidates are ranked by: no recent worker failure (ResolveModelFailed), how many sessions on the machine used the
 //     model in the last ModelUsageDays days (usage), how many used any model
 //     of the same provider in that time (provider usage), the position of its
 //     provider in the owner's providers list, no "-free" variant, no dated
@@ -94,15 +98,33 @@ func providerOf(id string) string {
 //     are equal on every rule, or none matches, the error says so and lists
 //     up to five.
 func ResolveModel(query string, models []string, usage map[string]int, providers []string) (string, error) {
+	r, err := ResolveModelFailed(query, models, usage, providers, nil)
+	return r.Model, err
+}
+
+// ModelResolution is the answer of ResolveModelFailed.
+type ModelResolution struct {
+	Model string
+	// Demoted lists the matching models that were ranked last because they
+	// failed a worker recently. It includes Model when that one failed too and
+	// nothing better matched.
+	Demoted []string
+}
+
+// ResolveModelFailed is ResolveModel with the models that failed a worker
+// recently (failed, by full id). They rank after every model that did not
+// fail, whatever their usage. The other models of the same provider rank
+// between the two. An exact match still wins: the caller named it.
+func ResolveModelFailed(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
 	query = strings.TrimSpace(query)
 	for _, m := range models {
 		if m == query {
-			return m, nil
+			return ModelResolution{Model: m}, nil
 		}
 	}
 	toks := modelTokens(query)
 	if len(toks) == 0 {
-		return "", fmt.Errorf("model %q has no letters or digits", query)
+		return ModelResolution{}, fmt.Errorf("model %q has no letters or digits", query)
 	}
 	var cands []string
 	for _, m := range models {
@@ -116,7 +138,7 @@ func ResolveModel(query string, models []string, usage map[string]int, providers
 		}
 	}
 	if len(cands) == 0 {
-		return "", fmt.Errorf("no model in the list matches %q (%d models; see `agent-net nodes --wide`)", query, len(models))
+		return ModelResolution{}, fmt.Errorf("no model in the list matches %q (%d models; see `agent-net nodes --wide`)", query, len(models))
 	}
 	// Sessions per provider: a provider the owner uses for other models wins
 	// over one the owner never used.
@@ -124,23 +146,37 @@ func ResolveModel(query string, models []string, usage map[string]int, providers
 	for m, n := range usage {
 		byProvider[providerOf(m)] += n
 	}
-	rank := func(m string) [6]int {
-		r := [6]int{-usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
+	// A billing or auth error is usually the provider's, not the model's: the
+	// other models of that provider rank after the rest too, but before the
+	// model that failed.
+	failedProv := map[string]bool{}
+	for m, f := range failed {
+		if f && providerOf(m) != "" {
+			failedProv[providerOf(m)] = true
+		}
+	}
+	rank := func(m string) [7]int {
+		r := [7]int{0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
+		if failed[m] {
+			r[0] = 2
+		} else if failedProv[providerOf(m)] {
+			r[0] = 1
+		}
 		for i, p := range providers {
 			if providerOf(m) == p {
-				r[2] = i
+				r[3] = i
 				break
 			}
 		}
 		if strings.HasSuffix(m, "-free") {
-			r[3] = 1
+			r[4] = 1
 		}
 		if datedSuffix.MatchString(m) {
-			r[4] = 1
+			r[5] = 1
 		}
 		return r
 	}
-	cmp := func(a, b [6]int) int {
+	cmp := func(a, b [7]int) int {
 		for i := range a {
 			if a[i] != b[i] {
 				if a[i] < b[i] {
@@ -157,8 +193,14 @@ func ResolveModel(query string, models []string, usage map[string]int, providers
 		}
 		return cands[i] < cands[j]
 	})
+	var demoted []string
+	for _, c := range cands {
+		if failed[c] {
+			demoted = append(demoted, c)
+		}
+	}
 	if len(cands) == 1 || cmp(rank(cands[0]), rank(cands[1])) < 0 {
-		return cands[0], nil
+		return ModelResolution{Model: cands[0], Demoted: demoted}, nil
 	}
 	var tied []string
 	for _, c := range cands {
@@ -170,5 +212,5 @@ func ResolveModel(query string, models []string, usage map[string]int, providers
 	if len(list) > maxModelCandidates {
 		list = list[:maxModelCandidates]
 	}
-	return "", fmt.Errorf("%q matches %d models equally well: %s. Name one of them in full", query, len(tied), strings.Join(list, ", "))
+	return ModelResolution{}, fmt.Errorf("%q matches %d models equally well: %s. Name one of them in full", query, len(tied), strings.Join(list, ", "))
 }

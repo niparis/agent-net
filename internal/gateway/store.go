@@ -121,6 +121,10 @@ ALTER TABLE sessions ADD COLUMN delegation TEXT NOT NULL DEFAULT '';
 CREATE TABLE project_policies (
 	node_id TEXT NOT NULL, project TEXT NOT NULL, policy TEXT NOT NULL, updated_at INTEGER NOT NULL,
 	PRIMARY KEY (node_id, project));
+`, `
+CREATE TABLE model_failures (
+	node_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL,
+	PRIMARY KEY (node_id, harness, model));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

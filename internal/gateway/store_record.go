@@ -455,3 +455,47 @@ func (s *Store) ModelUsage(nodeID, harness string, window time.Duration) (map[st
 	}
 	return out, rows.Err()
 }
+
+// RecordModelFailure notes that a worker on a node failed on a model call
+// (provider, billing or auth error). ResolveModel ranks the model last for
+// protocol.ModelFailureHours.
+func (s *Store) RecordModelFailure(nodeID, harness, model string) error {
+	if model == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT INTO model_failures (node_id, harness, model, at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (node_id, harness, model) DO UPDATE SET at = excluded.at`,
+		nodeID, harness, model, s.now().UnixNano())
+	return err
+}
+
+// FailedModels returns the models of a harness on a node that failed a worker
+// within protocol.ModelFailureHours, and when each last failed.
+func (s *Store) FailedModels(nodeID, harness string) (map[string]time.Time, error) {
+	rows, err := s.db.Query(`SELECT model, at FROM model_failures WHERE node_id = ? AND harness = ? AND at >= ?`,
+		nodeID, harness, s.now().Add(-protocol.ModelFailureHours*time.Hour).UnixNano())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var m string
+		var at int64
+		if err := rows.Scan(&m, &at); err != nil {
+			return nil, err
+		}
+		out[m] = time.Unix(0, at)
+	}
+	return out, rows.Err()
+}
+
+// failedSet is the model IDs of a FailedModels result, as ResolveModelFailed
+// takes them.
+func failedSet(m map[string]time.Time) map[string]bool {
+	out := make(map[string]bool, len(m))
+	for k := range m {
+		out[k] = true
+	}
+	return out
+}

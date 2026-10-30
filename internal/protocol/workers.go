@@ -25,6 +25,7 @@ const (
 	StopExited     = "process_exited" // the harness process ended by itself
 	StopLost       = "lost"           // gone while the daemon was not running
 	StopStartFails = "start_failed"   // it never became a session
+	StopModelFails = "model_failed"   // the model call failed (provider, billing or auth error)
 )
 
 // WorkerInfo is the worker part of a session. The daemon that started the
@@ -109,6 +110,10 @@ type (
 		Project   string `json:"project"`
 		Harness   string `json:"harness"`
 		Reason    string `json:"reason"`
+		// Model is the model the worker ran, as the gateway resolved it. The
+		// gateway uses it with Reason model_failed to rank the model last for a
+		// while (ModelFailureDays).
+		Model string `json:"model,omitempty"`
 	}
 )
 

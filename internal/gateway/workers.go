@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -66,7 +67,12 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if owner != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		detail := strings.TrimPrefix(pairs("reason", p.Reason, "harness", p.Harness, "project", p.Project), " ")
+		if p.Reason == protocol.StopModelFails && p.Model != "" {
+			if err := g.store.RecordModelFailure(nc.id, p.Harness, p.Model); err != nil {
+				return nil, err
+			}
+		}
+		detail := strings.TrimPrefix(pairs("reason", p.Reason, "harness", p.Harness, "project", p.Project, "model", p.Model), " ")
 		g.store.Event("worker.stopped", nc.id, p.SessionID, "", detail)
 		g.logLine("worker.stopped", "node", nc.id, "host", g.store.hostname(nc.id), "session", p.SessionID,
 			"worker", p.WorkerID, "reason", p.Reason, "harness", p.Harness, "project", p.Project)
@@ -243,12 +249,29 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, err
 		}
 		asked := p.Model
-		resolved, err := protocol.ResolveModel(asked, hi.Models, usage, hi.ModelProviders)
+		failedAt, err := g.store.FailedModels(pick.NodeID, p.Harness)
+		if err != nil {
+			return none, err
+		}
+		res, err := protocol.ResolveModelFailed(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt))
 		if err != nil {
 			return none, reject("model on %s: %v", node.Hostname, err)
 		}
-		if resolved != asked {
+		resolved := res.Model
+		if resolved != asked || len(res.Demoted) > 0 {
 			modelNote = asked + " -> " + resolved
+		}
+		if len(res.Demoted) > 0 {
+			var parts []string
+			for _, m := range res.Demoted {
+				parts = append(parts, fmt.Sprintf("%s failed a worker at %s", m, failedAt[m].Format("15:04 on 2006-01-02")))
+			}
+			sort.Strings(parts)
+			if failedAt[resolved].IsZero() {
+				modelNote += " (" + strings.Join(parts, "; ") + ", so it ranks last for " + fmt.Sprint(protocol.ModelFailureHours) + " hours)"
+			} else {
+				modelNote += " (" + strings.Join(parts, "; ") + ": no other model matched)"
+			}
 		}
 		p.Model = resolved
 	}
