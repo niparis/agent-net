@@ -101,6 +101,13 @@ and Esc returns focus to the session list. The chat polls once per second and sh
 tool calls, including reads and failures, plus graph diffs; a graph change
 refreshes an open map.
 
+Press `4` or `M` to open the Map tab. The focus view shows the selected
+project, its architect, incoming and outgoing edges, and charter. Left and
+right follow dependencies; up and down choose a neighbor. Press `z` for the
+overview. If it does not fit, the focus view stays visible. Enter opens
+Sessions filtered to the selected project, and `c` starts a CTO question
+about it. Tab moves between the map and CTO box.
+
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
 ## Commands
