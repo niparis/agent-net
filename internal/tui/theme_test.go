@@ -42,3 +42,23 @@ func TestSessionsUsePanels(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOHintFitsAndProgressShowsTrickle(t *testing.T) {
+	for _, line := range newModel(80, 24).ctoView(80, 7) {
+		if strings.Contains(line, "write to the CTO:") && strings.Contains(line, "…") {
+			t.Fatal("CTO hint is clipped")
+		}
+	}
+	if !strings.Contains(progressBar(.01, 4, roleGood), "█") {
+		t.Fatal("nonzero progress is invisible")
+	}
+}
+
+func TestPaddedBusyStatusHasBackground(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	if !strings.Contains(statusLabel("busy  "), ";48;") {
+		t.Fatalf("padded busy status has no background: %q", statusLabel("busy  "))
+	}
+}

@@ -7,7 +7,7 @@ import (
 )
 
 func statusLabel(status string) string {
-	switch status {
+	switch strings.TrimSpace(status) {
 	case "busy":
 		return lipgloss.NewStyle().Foreground(roleBase).Background(roleGood).Render(status)
 	case "needs you":
@@ -40,5 +40,8 @@ func keyHints(parts ...string) string {
 func progressBar(frac float64, n int, color lipgloss.TerminalColor) string {
 	n = max(n, 0)
 	filled := min(max(int(frac*float64(n)+0.5), 0), n)
+	if frac > 0 && n > 0 && filled == 0 {
+		filled = 1
+	}
 	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("░", n-filled))
 }

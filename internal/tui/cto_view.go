@@ -23,7 +23,7 @@ func (m Model) ctoView(w, h int) []string {
 	if len(lines) == 0 {
 		hint := "write to the CTO: it can set charters, start workers, answer what the network is doing"
 		if w < 84 {
-			hint = "write to the CTO: set charters, start workers, answer what the network is doing"
+			hint = "write to the CTO: set charters, start workers, ask about the network"
 		}
 		lines = append(lines, sDim.Render(hint))
 	}
