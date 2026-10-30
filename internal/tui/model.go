@@ -540,7 +540,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cto != nil {
 		return m.ctoKey(k)
 	}
-	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil {
+	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil && !m.outcomeSelected() {
 		return m.startCTO()
 	}
 	if m.mapOn {
@@ -623,6 +623,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		return m.startCompose()
 	case "s":
+		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
+			return m, cmd
+		}
 		return m.startForm()
 	case "e":
 		return m.startEnter()
@@ -645,6 +648,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 	case "c":
 		return m, m.openConv()
+	case "C":
+		for _, e := range m.snap.Outcomes {
+			if m.selected == "outcome:"+e.ReplyID {
+				return m, m.openConvFor(e.Sender)
+			}
+		}
 	case "/":
 		m.filtering = true
 		m.input.SetValue(m.filter)
@@ -658,6 +667,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fixScroll()
 		}
 	case "o":
+		if cmd := m.resolveOutcome("overrule"); cmd != nil {
+			return m, cmd
+		}
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
 		m.fixScroll()

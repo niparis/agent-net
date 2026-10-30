@@ -27,6 +27,13 @@ var sNeeds = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130",
 // follows the same filter and offline switch as the table.
 func (m Model) needsRows() []protocol.AgentView {
 	var out []protocol.AgentView
+	for _, e := range m.snap.Outcomes {
+		text := e.Request + " | " + e.Outcome + ": " + e.Reason
+		if e.Recommendation != "" {
+			text += " | " + e.Recommendation
+		}
+		out = append(out, protocol.AgentView{SessionID: "outcome:" + e.ReplyID, Harness: "outcome", Online: true, Profile: protocol.Profile{Name: e.From + " -> " + e.To}, Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text, Since: e.At / 1e9}})
+	}
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) || a.Waiting == nil {
 			continue

@@ -138,9 +138,17 @@ A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegati
 - **What the gateway keeps.** A session's own policy lives in its session record and goes when the gateway deletes the old offline session (the retention flags). A project default is a small row in `project_policies` that the retention rules do not delete; clear it in the TUI (`p`, mode none, scope project).
 - **The hook adds text, not authority.** The `UserPromptSubmit` hook only prints the context for the prompt. It never blocks a prompt, never changes it, and prints nothing when it has no policy or the daemon does not answer within 700 ms.
 
+## Merge authority
+
+A node's maturity sets its merge authority (decision [0022](decisions/0022-component-graph-and-cto.md)): `full` lets the agent merge and push to the default branch; `delegated` needs an approval from the owner or a delegate (an architect with mode `owner` or `arbiter` over the node); `ask` needs the owner's written approval. The owner can override it per node with `node_settings_set`, behind the owner gate.
+
+This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. The approval note that counts is the one agent-net writes for one exact action. The owner's inbox that records written approvals is step 3b of decision 0022; `RequestWrittenApproval` is a stub in this build and says the inbox is not there, so a session under `ask` must ask its owner directly and treat only an agent-net approval note as approval.
+
+A critical repository should also have branch protection on its default branch: require a pull request, require review, and stop force-pushes. Branch protection is enforced by the repository host; agent-net's merge authority is not.
+
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. When the project policy sets no level, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
 
 | Level | Writes | Reads | Network |
 |---|---|---|---|
@@ -301,6 +309,14 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues). For something sensitive, use GitHub's private vulnerability reporting on the repository's Security tab.
 
+### Request outcome decisions
+
+Only the owner can use `outcome_overrule`: the daemon applies the owner gate used for `session_text`, refusing agent clients and command lines inside an agent session's process tree. As with other owner-gated methods, the gateway trusts enrolled daemons. An enrolled machine can send the gateway frame, so keep enrollment credentials private.
+
+An overruled request has a gateway-stored marker separate from its body. Adapters write `[agent-net] Nicolas overrules: do it.` only when that marker is present. The marker cannot be supplied to `agent_send` or `agent_reply`. Message bodies have the `[agent-net` marker broken before delivery, so a peer cannot imitate the framed note. The owner's gate is a barrier against a command running inside a session, not a defense against a program that detaches from its process tree.
+
+Outcome reasons and recommendations are visible to enrolled machines through the owner inbox. They are limited to 2048 bytes each and cleaned of controls. Do not put secrets in them. Unresolved rejections and escalations keep their request and reply messages and both session records past the normal retention period; normal retention applies after the owner answers.
+
 ## Graph foundation
 
 Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
@@ -310,3 +326,5 @@ Graph operator methods use the owner gate, including history and graph reads. Th
 The daemon accepts `inbox_list` and `inbox_answer` only through the owner operator gate. Agent tools can create requests only for their bound session; the gateway checks that the session belongs to the authenticated daemon and derives the project from it. As with other owner operations, a compromised enrolled machine is within the trust boundary.
 
 An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that Nicolas approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
+
+Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.

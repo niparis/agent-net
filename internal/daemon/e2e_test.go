@@ -413,3 +413,31 @@ func TestBadTokenRefused(t *testing.T) {
 type writerFunc func([]byte) (int, error)
 
 func (f writerFunc) Write(p []byte) (int, error) { return f(p) }
+
+func TestOutcomeOverruleEndToEnd(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "fake"}
+	startNode(t, g, nodeOpts{adapter: fa})
+	b := startNode(t, g, nodeOpts{cmdline: "pi"})
+	fa.setSessions(fakeSession("na", "alice"))
+	eventually(t, "alice registered", func() bool { return fa.host.SessionID("fake", "na") != "" })
+	pi, bobID := helloPi(t, b, "nb", "/work/bob", true)
+	if err := fa.host.Send(context.Background(), protocol.MsgSend{Sender: fa.host.SessionID("fake", "na"), Recipient: bobID, Body: "please do this\ncontext"}); err != nil {
+		t.Fatal(err)
+	}
+	req := pi.nextPush()
+	rep := sendResult(t, pi.mustCall("reply", map[string]any{"message_id": req.ID, "body": "I cannot decide", "outcome": "escalate", "reason": "unclear", "recommendation": "do it"}))
+	cli := cliClient(t, b)
+	var entries struct {
+		Entries []protocol.OutcomeInboxEntry `json:"entries"`
+	}
+	raw := cli.mustCall("outcome_inbox", nil)
+	if err := json.Unmarshal(raw, &entries); err != nil || len(entries.Entries) != 1 || entries.Entries[0].ReplyID != rep.ID {
+		t.Fatalf("inbox %s %v", raw, err)
+	}
+	cli.mustCall("outcome_overrule", map[string]any{"reply_id": rep.ID, "action": "overrule"})
+	msg := pi.nextPush()
+	if !msg.Overruled || msg.Body != req.Body || msg.FromHarness != protocol.OwnerHarness {
+		t.Fatalf("overrule: %+v", msg)
+	}
+}

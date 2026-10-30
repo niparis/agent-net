@@ -451,12 +451,22 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 func TestWorkerEndsAtMaxAge(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
-	set.MaxAge = 400 * time.Millisecond
+	set.MaxAge = time.Hour
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	ageWorkers(w, 2*time.Hour)
 	w.workerStopped(t, g, protocol.StopMaxAge)
+}
+
+// ageWorkers moves the clock for the running workers after their task arrives.
+func ageWorkers(w *workerNode, age time.Duration) {
+	w.d.wmu.Lock()
+	defer w.d.wmu.Unlock()
+	for _, wk := range w.d.workers {
+		wk.startedAt = wk.startedAt.Add(-age)
+	}
 }
 
 // When the owner session ends and stays away longer than the grace time, its

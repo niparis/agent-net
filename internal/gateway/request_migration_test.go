@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"testing"
@@ -18,21 +19,20 @@ func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Recreate the schema just before the peer-trust migration. Later inbox
-	// migrations also need to run when this database is reopened.
-	for _, statement := range []string{
-		`DROP TABLE inbox_items`,
-		`ALTER TABLE messages DROP COLUMN approval_note`,
-		`DELETE FROM schema_version WHERE version >= ?`,
-	} {
-		if statement == `DELETE FROM schema_version WHERE version >= ?` {
-			_, err = s.db.Exec(statement, len(migrations)-2)
-		} else {
-			_, err = s.db.Exec(statement)
+	// The trust migration is no longer the last one: request outcomes follow
+	// it, and their tables cannot be replayed. Run the trust migration itself
+	// again, as a gateway that never applied it would.
+	trust := ""
+	for _, m := range migrations {
+		if strings.Contains(m, "INSERT OR IGNORE INTO graph_edges") {
+			trust = m
 		}
-		if err != nil {
-			t.Fatal(err)
-		}
+	}
+	if trust == "" {
+		t.Fatal("no trust migration")
+	}
+	if _, err = s.db.Exec(trust); err != nil {
+		t.Fatal(err)
 	}
 	s.Close()
 	s, err = OpenStore(path)

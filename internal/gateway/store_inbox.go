@@ -11,6 +11,19 @@ import (
 // CreateInboxItem stores an item for the owner. Callers must derive the session
 // and node from authenticated state rather than trusting agent-supplied values.
 func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, error) {
+	return s.createInboxItem(s.db, item)
+}
+
+// RequestWrittenApproval adds the exact action to the owner's inbox.
+func (s *Store) RequestWrittenApproval(session, node string, req protocol.ApprovalRequest) (protocol.InboxItem, error) {
+	return s.CreateInboxItem(protocol.InboxItem{Kind: "approval", SessionID: session, Node: node, Text: req.Action, Recommendation: req.Recommendation})
+}
+
+type inboxExecer interface {
+	Exec(string, ...any) (sql.Result, error)
+}
+
+func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protocol.InboxItem, error) {
 	switch item.Kind {
 	case "approval", "feature_idea", "question", "rejection", "escalation":
 	default:
@@ -27,7 +40,7 @@ func (s *Store) CreateInboxItem(item protocol.InboxItem) (protocol.InboxItem, er
 	item.Status = "open"
 	item.Answer = ""
 	item.AnsweredAt = time.Time{}
-	_, err := s.db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status) VALUES (?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status)
+	_, err := db.Exec(`INSERT INTO inbox_items (id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status) VALUES (?,?,?,?,?,?,?,?,?,?)`, item.ID, item.Kind, item.SessionID, item.Node, item.Text, item.Recommendation, item.MessageID, item.ConversationID, item.CreatedAt.UnixNano(), item.Status)
 	return item, err
 }
 
@@ -109,12 +122,17 @@ func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
 	}
 	note := ""
 	if item.Kind == "approval" && answer == "approve" {
-		note = "Nicolas approved: " + protocol.NeutralizeMarkers(item.Text) + ", " + item.AnsweredAt.Format(time.RFC3339)
+		note = protocol.WrittenApprovalNote("Nicolas", protocol.NeutralizeMarkers(item.Text), item.AnsweredAt)
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state,approval_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		protocol.NewID("m"), protocol.NewID("c"), "", sender, item.SessionID, protocol.TypeNotification, answer, 0, protocol.NewID("k"), item.AnsweredAt.UnixNano(), item.AnsweredAt.Add(protocol.DefaultTTL).UnixNano(), protocol.StateStored, note)
 	if err != nil {
 		return item, err
+	}
+	if item.Kind == "rejection" || item.Kind == "escalation" {
+		if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution='answered' WHERE reply_id=? AND resolution=''`, item.MessageID); err != nil {
+			return item, err
+		}
 	}
 	if err = tx.Commit(); err != nil {
 		return item, err

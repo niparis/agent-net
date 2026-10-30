@@ -362,6 +362,9 @@ func codexFrame(m protocol.Message) string {
 			foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
 		}
 	}
+	if m.Overruled {
+		foot += "\n[agent-net] " + protocol.OverruleNote
+	}
 	if m.Type == protocol.TypeReply && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		foot += "\n" + protocol.NoAuthorityNote
 	}

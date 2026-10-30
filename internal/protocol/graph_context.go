@@ -24,7 +24,7 @@ func charterSet(c Charter) bool {
 // CharterBrief is the whole charter, for a worker's brief. Empty when the node
 // has no charter.
 func CharterBrief(n Node) string {
-	if !charterSet(n.Charter) {
+	if !charterSet(n.Charter) && NodeDefaults(n.Charter.Maturity, n.Settings).RulesText() == "" {
 		return ""
 	}
 	var b strings.Builder
@@ -43,21 +43,44 @@ func CharterBrief(n Node) string {
 			fmt.Fprintf(&b, "%s: %s\n", a.name, a.value)
 		}
 	}
+	d := NodeDefaults(n.Charter.Maturity, n.Settings)
+	if rules := d.RulesText(); rules != "" {
+		b.WriteString(rules + "\n")
+		b.WriteString(d.ConsumerText() + "\n")
+	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// nodeNamed returns the node with this name from a graph, or nil.
+func nodeNamed(g Graph, name string) *Node {
+	for i := range g.Nodes {
+		if g.Nodes[i].Name == name {
+			return &g.Nodes[i]
+		}
+	}
+	return nil
 }
 
 // NodeContext is the short text a session of the node gets every turn. It is
 // empty when the node is unknown or has no charter.
 func NodeContext(g Graph, name string) string {
-	var node *Node
-	for i := range g.Nodes {
-		if g.Nodes[i].Name == name {
-			node = &g.Nodes[i]
-			break
-		}
-	}
-	if node == nil || !charterSet(node.Charter) {
+	node := nodeNamed(g, name)
+	if node == nil {
 		return ""
+	}
+	if !charterSet(node.Charter) && NodeDefaults(node.Charter.Maturity, node.Settings).RulesText() == "" {
+		needsDeployApproval := false
+		for _, edge := range g.Edges {
+			if edge.Kind == "deploys" && edge.From == name {
+				if target := nodeNamed(g, edge.To); target != nil && NodeDefaults(target.Charter.Maturity, target.Settings).DeployRule == DeployOwner {
+					needsDeployApproval = true
+					break
+				}
+			}
+		}
+		if !needsDeployApproval {
+			return ""
+		}
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "[agent-net] Your node's charter for %s, from agent-net:\n", node.Name)
@@ -71,6 +94,11 @@ func NodeContext(g Graph, name string) string {
 			fmt.Fprintf(&b, "%s: %s\n", a.name, a.value)
 		}
 	}
+	d := NodeDefaults(node.Charter.Maturity, node.Settings)
+	if rules := d.RulesText(); rules != "" {
+		b.WriteString(rules + "\n")
+		b.WriteString(d.ConsumerText() + "\n")
+	}
 	// Only the edges that matter to this node: who governs it, what it
 	// depends on, what depends on it, and, for an architect, what it governs.
 	for _, e := range g.Edges {
@@ -83,10 +111,22 @@ func NodeContext(g Graph, name string) string {
 			fmt.Fprintf(&b, "%s depends on your node.\n", e.From)
 		case e.Kind == "governs" && e.From == name:
 			fmt.Fprintf(&b, "You govern %s as %s.\n", e.To, e.Mode)
+		case e.Kind == "deploys" && e.From == name:
+			// A deployer applies the target's rule, not its own (0022).
+			if target := nodeNamed(g, e.To); target != nil {
+				td := NodeDefaults(target.Charter.Maturity, target.Settings)
+				if rules := td.RulesText(); rules != "" {
+					fmt.Fprintf(&b, "You deploy %s; its %s.\n", target.Name, rules)
+				} else {
+					fmt.Fprintf(&b, "You deploy %s; its deploys follow the brief.\n", target.Name)
+				}
+			}
 		}
 	}
-	b.WriteString(DecideRule)
-	return b.String()
+	if charterSet(node.Charter) {
+		b.WriteString(DecideRule)
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // RelationText says how the sender's node relates to the recipient's node, for
@@ -108,4 +148,24 @@ func RelationText(g Graph, from, to string) string {
 		}
 	}
 	return fmt.Sprintf("[agent-net] Relationship: no graph relation between %s and your node %s.", from, to)
+}
+
+// WorkerDeployApprovalRules carries the target's written deploy rule into a
+// worker brief, including for a deployer with no charter of its own.
+func WorkerDeployApprovalRules(g Graph, name string) string {
+	var lines []string
+	for _, edge := range g.Edges {
+		if edge.Kind != "deploys" || edge.From != name {
+			continue
+		}
+		target := nodeNamed(g, edge.To)
+		if target == nil {
+			continue
+		}
+		defaults := NodeDefaults(target.Charter.Maturity, target.Settings)
+		if defaults.DeployRule == DeployOwner {
+			lines = append(lines, fmt.Sprintf("You deploy %s: %s.", target.Name, defaults.DeployText()))
+		}
+	}
+	return strings.Join(lines, "\n")
 }

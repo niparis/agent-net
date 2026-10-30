@@ -145,3 +145,16 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		}
 	}
 }
+
+func TestReplyOutcomeForwarded(t *testing.T) {
+	var got map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		raw, _ := json.Marshal(params)
+		json.Unmarshal(raw, &got)
+		return json.RawMessage(`{}`), nil
+	})
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_reply", Arguments: map[string]any{"message_id": "m", "body": "no", "outcome": "escalate", "reason": "unclear", "recommendation": "ask"}})
+	if err != nil || r.IsError || got["outcome"] != "escalate" || got["reason"] != "unclear" || got["recommendation"] != "ask" {
+		t.Fatalf("reply: %+v %v %+v", r, err, got)
+	}
+}

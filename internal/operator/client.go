@@ -121,6 +121,14 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		return snap, err
 	}
 	snap.Agents = r.Agents
+	if raw, err := s.Call(ctx, "outcome_inbox", nil); err == nil {
+		var in struct {
+			Entries []protocol.OutcomeInboxEntry `json:"entries"`
+		}
+		if json.Unmarshal(raw, &in) == nil {
+			snap.Outcomes = in.Entries
+		}
+	}
 	if raw, err := s.Call(ctx, protocol.OpHeldList, nil); err == nil {
 		var held struct {
 			Messages []protocol.Message `json:"messages"`
@@ -308,6 +316,12 @@ func (s *Client) Close() {
 		s.cl.Close()
 		s.cl = nil
 	}
+}
+
+// ResolveOutcome records an owner decision on a rejected or escalated request.
+func (s *Client) ResolveOutcome(ctx context.Context, replyID, action string) error {
+	_, err := s.action(ctx, "outcome_overrule", protocol.OutcomeResolution{ReplyID: replyID, Action: action})
+	return err
 }
 
 func (s *Client) AnswerHeld(ctx context.Context, q protocol.HeldAnswer) error {

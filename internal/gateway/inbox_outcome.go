@@ -1,10 +1,12 @@
 package gateway
 
-import "github.com/niparis/agent-net/internal/protocol"
+import (
+	"database/sql"
+	"github.com/niparis/agent-net/internal/protocol"
+)
 
-// inboxFromOutcome is called by outcome recording when a rejection or
-// escalation reaches the owner. The outcome code is being merged separately.
-func (s *Store) inboxFromOutcome(kind, session, node, text, recommendation, message, conversation string) (protocol.InboxItem, error) {
+// inboxFromOutcome records a rejection or escalation in the outcome transaction.
+func (s *Store) inboxFromOutcome(tx *sql.Tx, kind, session, node, text, recommendation, message, conversation string) (protocol.InboxItem, error) {
 	switch kind {
 	case "reject":
 		kind = "rejection"
@@ -14,5 +16,5 @@ func (s *Store) inboxFromOutcome(kind, session, node, text, recommendation, mess
 	if kind != "rejection" && kind != "escalation" {
 		return protocol.InboxItem{}, reject("invalid inbox outcome")
 	}
-	return s.CreateInboxItem(protocol.InboxItem{Kind: kind, SessionID: session, Node: node, Text: text, Recommendation: recommendation, MessageID: message, ConversationID: conversation})
+	return s.createInboxItem(tx, protocol.InboxItem{Kind: kind, SessionID: session, Node: node, Text: text, Recommendation: recommendation, MessageID: message, ConversationID: conversation})
 }

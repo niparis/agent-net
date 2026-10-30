@@ -81,3 +81,33 @@ func TestMessagePreservesBothApprovalFields(t *testing.T) {
 		t.Fatalf("message: %+v %v", got, err)
 	}
 }
+
+func TestMaturityApprovalUsesInboxAndSharedNote(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	_, _ = s.UpsertSession(node, owner("test"))
+	agent, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "p"})
+	for _, action := range []string{"merge project abc123", "deploy project abc123 to prod"} {
+		item, err := s.RequestWrittenApproval(agent, "project", protocol.ApprovalRequest{Action: action, Recommendation: "approve"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		answered, err := s.AnswerInbox(item.ID, "approve")
+		if err != nil {
+			t.Fatal(err)
+		}
+		msgs, err := s.Pending(node, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, m := range msgs {
+			if m.ApprovalNote == protocol.WrittenApprovalNote("Nicolas", action, answered.AnsweredAt) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("no shared note for %s: %+v", action, msgs)
+		}
+	}
+}

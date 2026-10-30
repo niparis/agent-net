@@ -53,6 +53,7 @@ interface DeliveredMessage {
   sender_worker?: boolean;
   sender_cto?: boolean;
   recipient_peer_trust?: boolean;
+  overruled?: boolean;
   owner_approved?: boolean;
   recipient_relation?: string;
   approval_note?: string;
@@ -90,6 +91,7 @@ function authorityNote(m: DeliveredMessage): string {
 
 function formatDelivery(m: DeliveredMessage): string {
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  if (m.overruled === true) text += `\n[agent-net] Nicolas overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;
   // A worker's report (a reply) is model output whatever the recipient's trust.
   return m.sender_worker && m.sender_harness !== "owner" && m.message_type === "reply" ? `${text}\n${WORKER_FOOTER}` : text;
@@ -850,6 +852,10 @@ export default function (pi: ExtensionAPI) {
     Type.Object({
       message_id: Type.String({ description: "The message_id you are answering" }),
       body: Type.String({ description: "Reply text" }),
+      outcome: Type.Optional(Type.String({ description: "accept, reject, redirect or escalate" })),
+      reason: Type.Optional(Type.String({ description: "Required for reject, redirect and escalate" })),
+      redirect_to: Type.Optional(Type.String({ description: "Node to redirect to" })),
+      recommendation: Type.Optional(Type.String({ description: "Required for escalate" })),
     }),
     "reply",
     formatSent,

@@ -415,10 +415,10 @@ func (r *run) gatewayHost(ctx context.Context) error {
 
 	if tag == r.Current && !r.Force {
 		r.say("already on %s", tag)
+		r.clearHold()
 	} else if err := r.installRelease(ctx, tag); err != nil {
 		return err
 	}
-	r.clearHold()
 	return r.upgradeNodes(ctx, tag, wasOnline, before)
 }
 
@@ -450,6 +450,9 @@ func (r *run) installRelease(ctx context.Context, tag string) error {
 	if err := upgrade.Replace(r.Exe, mine); err != nil {
 		return fmt.Errorf("nothing changed: %w", err)
 	}
+	// The binary is replaced: the person chose to move on. Clear the hold now,
+	// so a later failure (setup, restarts, a cancelled context) cannot leave it.
+	r.clearHold()
 	for _, name := range upgrade.AllAssets() {
 		if err := upgrade.PlaceFile(filepath.Join(tmp, name), filepath.Join(dist, name)); err != nil {
 			return fmt.Errorf("the binary is replaced but the dist dir is not refreshed: %w", err)

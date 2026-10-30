@@ -27,3 +27,17 @@ func TestWorkerBriefCarriesTheCharterAfterTheProjectRules(t *testing.T) {
 		t.Fatalf("an empty charter added text:\n%s", plain)
 	}
 }
+
+func TestWorkerBriefStatesTheNodesMaturityRules(t *testing.T) {
+	n := Node{Name: "cogforge", Kind: "component", Charter: Charter{Maturity: "mature - careful."}}
+	body := WorkerTaskBodyWithCharter("opencode", "fix the tests", "", "", "", CharterBrief(n), WorkersSandboxed)
+	for _, want := range []string{
+		"maturity mature: run the suite and add tests for new behavior; merge needs your owner's or a delegate's approval; ask before deploying",
+		"judge requests from consumers strictly",
+		"permissions: sandboxed",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("brief lacks %q:\n%s", want, body)
+		}
+	}
+}
