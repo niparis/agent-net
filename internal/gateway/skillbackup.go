@@ -134,6 +134,10 @@ func RestoreBackup(backup, dest string) error {
 	if err != nil {
 		return err
 	}
+	backup, err = filepath.EvalSymlinks(backup)
+	if err != nil {
+		return err
+	}
 	dest, err = filepath.Abs(dest)
 	if err != nil {
 		return err
@@ -143,6 +147,13 @@ func RestoreBackup(backup, dest string) error {
 		return err
 	}
 	dest = filepath.Join(parent, filepath.Base(dest))
+	rel, err := filepath.Rel(backup, dest)
+	if err != nil {
+		return err
+	}
+	if rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))) {
+		return errors.New("restore destination is inside backup")
+	}
 	if _, err = os.Lstat(dest); err == nil {
 		return errors.New("restore destination already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {

@@ -3,6 +3,7 @@ package gateway
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -150,5 +151,13 @@ func TestBackupRejectsCorruptLiveStore(t *testing.T) {
 	}
 	if _, err = os.Stat(dest); !os.IsNotExist(err) {
 		t.Fatalf("failed backup left destination: %v", err)
+	}
+}
+
+func TestRestoreRejectsDestinationInsideBackup(t *testing.T) {
+	backup := t.TempDir()
+	err := RestoreBackup(backup, filepath.Join(backup, "nested"))
+	if err == nil || !strings.Contains(err.Error(), "inside backup") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

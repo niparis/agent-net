@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -44,6 +45,13 @@ func openSkillStore(dir string, db *Store) (*skillStore, error) {
 	}
 	s := &skillStore{path: path, db: db}
 	if _, err := os.Stat(filepath.Join(path, "HEAD")); errors.Is(err, os.ErrNotExist) {
+		entries, readErr := os.ReadDir(path)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if len(entries) != 0 {
+			return nil, errors.New("skill repository is incomplete")
+		}
 		if _, err = s.git(nil, "init", "--bare", "--quiet", "--template="); err != nil {
 			return nil, err
 		}
@@ -227,8 +235,19 @@ func (s *skillStore) read(item, hash string) ([]byte, error) {
 	}
 	cmd := exec.Command("git", "--git-dir", s.path, "-c", "core.hooksPath=/dev/null", "cat-file", "blob", commit+":"+skillPath(item))
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + s.path, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0"}
-	out, err := cmd.Output()
-	if err != nil || len(out) > inventory.MaxBundleBytes {
+	pipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, errors.New("cannot read skill version")
+	}
+	if err = cmd.Start(); err != nil {
+		return nil, errors.New("cannot read skill version")
+	}
+	out, readErr := io.ReadAll(io.LimitReader(pipe, inventory.MaxBundleBytes+1))
+	if readErr != nil || len(out) > inventory.MaxBundleBytes {
+		_ = cmd.Process.Kill()
+	}
+	waitErr := cmd.Wait()
+	if readErr != nil || waitErr != nil || len(out) > inventory.MaxBundleBytes {
 		return nil, errors.New("cannot read skill version")
 	}
 	dir, err := os.MkdirTemp("", "agent-net-skill-check-")

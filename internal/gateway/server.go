@@ -189,6 +189,12 @@ func New(opts Options) (*Gateway, error) {
 	}
 	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+	skills, err := openSkillStore(opts.DataDir, store)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	g.skills = skills
 	store.logf = g.logLine
 	if store.graphJunkMigrated {
 		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
