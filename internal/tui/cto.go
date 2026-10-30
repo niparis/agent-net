@@ -98,8 +98,9 @@ func (m Model) ctoPollCmd() tea.Cmd {
 }
 func ctoMessage(raw json.RawMessage) string {
 	var v struct {
-		Type    string `json:"type"`
-		Text    string `json:"text"`
+		Type    string          `json:"type"`
+		Error   json.RawMessage `json:"error"`
+		Text    string          `json:"text"`
 		Content []struct {
 			Type string `json:"type"`
 			Text string `json:"text"`
@@ -107,6 +108,20 @@ func ctoMessage(raw json.RawMessage) string {
 	}
 	if json.Unmarshal(raw, &v) != nil {
 		return ""
+	}
+	if len(v.Error) > 0 && string(v.Error) != "null" {
+		var e struct {
+			Message string `json:"message"`
+			Name    string `json:"name"`
+			Data    struct {
+				Message string `json:"message"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(v.Error, &e) == nil {
+			msg := firstNonEmpty(firstNonEmpty(e.Message, e.Data.Message), firstNonEmpty(e.Name, string(v.Error)))
+			return "error: " + msg
+		}
+		return "error: " + string(v.Error)
 	}
 	if v.Type != "user" && v.Type != "assistant" {
 		return ""

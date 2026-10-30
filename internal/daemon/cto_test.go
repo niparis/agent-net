@@ -392,3 +392,27 @@ func TestCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
 		t.Fatalf("new conversation retained old undo: %+v %v", out, err)
 	}
 }
+
+func TestCTOEventsIncludeAcceptedPromptFailure(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	cli.mustCall("cto_send", map[string]string{"text": "FAKE:ctofail"})
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &events); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mustMarshalCTOEvents(t, events.Messages)), "unknown model") {
+		t.Fatalf("failure missing: %s", events.Messages)
+	}
+}
+
+func mustMarshalCTOEvents(t *testing.T, messages []json.RawMessage) []byte {
+	t.Helper()
+	b, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}

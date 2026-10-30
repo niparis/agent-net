@@ -263,3 +263,11 @@ func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 		t.Fatalf("title: %s", got)
 	}
 }
+
+func TestCTOMessageShowsHarnessFailure(t *testing.T) {
+	for _, raw := range []string{`{"type":"idle","outcome":"failed","error":{"type":"provider.upstream","message":"unknown model"}}`, `{"type":"assistant","error":{"name":"APIError","data":{"message":"no credentials"}}}`} {
+		if got := ctoMessage(json.RawMessage(raw)); !strings.HasPrefix(got, "error: ") {
+			t.Errorf("failure hidden: %s -> %q", raw, got)
+		}
+	}
+}
