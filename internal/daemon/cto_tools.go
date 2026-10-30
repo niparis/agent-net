@@ -90,6 +90,12 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			return nil, err
 		}
 		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
+	case "worker_providers_set":
+		var p protocol.WorkerProviders
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad worker providers")
+		}
+		return d.workerProviders(ctx, &p)
 	case "score_set":
 		var p protocol.ScoreSetRequest
 		if json.Unmarshal(raw, &p) != nil {

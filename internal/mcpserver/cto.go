@@ -118,6 +118,10 @@ var ctoTools = map[string]ctoToolDef{
 			"body": {typ: "string", desc: "Message text, sent as a request from the owner's CTO."},
 		},
 	},
+	"worker_providers_set": {
+		desc:   "Set the network worker provider allowlist only when the owner asks. Pass provider IDs as an array; omit providers to restore the defaults.",
+		fields: map[string]ctoField{"providers": {typ: "array", desc: "Provider IDs to allow. Omit this field to restore the subscription defaults."}},
+	},
 	"score_set": {
 		desc: "Set or clear an owner model capability score when the owner asks. Scores range from 0 to 100 and override the bundled table.",
 		fields: map[string]ctoField{
@@ -147,6 +151,9 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			prop := map[string]any{"type": f.typ, "description": f.desc}
+			if f.typ == "array" {
+				prop["items"] = map[string]any{"type": "string"}
+			}
 			if len(f.enum) > 0 {
 				prop["enum"] = f.enum
 			}

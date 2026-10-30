@@ -403,6 +403,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if difficulty == "" {
 			difficulty = "normal"
 		}
+		providers, err := g.store.workerProviders()
+		if err != nil {
+			return none, err
+		}
+		quotas := g.nodeQuotas(pick.NodeID)
 		scores, err := g.store.scores()
 		if err != nil {
 			return none, err
@@ -432,9 +437,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, err
 			}
 			for _, model := range h.Models {
-				candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: failures[model]})
 				if _, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], scores); ok {
 					scored = true
+				}
+				if protocol.WorkerProviderAllowed(h.Name, model, providers.Providers, quotas) {
+					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: failures[model]})
 				}
 			}
 		}
@@ -444,11 +451,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			automaticNote = "no scored models; using the harness default model"
 		} else {
+			if scored && len(candidates) == 0 {
+				return none, reject("no scored models are on an allowed worker provider; see agent-net scores providers")
+			}
 			g.mu.Lock()
 			rotation := g.modelRotation
 			g.modelRotation++
 			g.mu.Unlock()
-			choice, err := protocol.ChooseWorkerModel(candidates, difficulty, scores, minimums, g.nodeQuotas(pick.NodeID), running, rotation)
+			choice, err := protocol.ChooseWorkerModel(candidates, difficulty, scores, minimums, quotas, running, rotation)
 			if err != nil {
 				return none, reject("%v", err)
 			}

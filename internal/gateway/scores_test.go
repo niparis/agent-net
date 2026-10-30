@@ -70,3 +70,36 @@ func TestDifficultySettings(t *testing.T) {
 		t.Fatalf("invalid: %d", w.Code)
 	}
 }
+
+func TestWorkerProvidersSettings(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	_, token, err := g.Store().CreateNode("test", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, tok, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "/v1/worker-providers", bytes.NewBufferString(body))
+		if tok != "" {
+			r.Header.Set("Authorization", "Bearer "+tok)
+		}
+		w := httptest.NewRecorder()
+		g.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := request(http.MethodGet, "", ""); w.Code != 401 {
+		t.Fatalf("unauthorized %d", w.Code)
+	}
+	if w := request(http.MethodPut, token, `{"providers":["openrouter","codex"]}`); w.Code != 200 {
+		t.Fatalf("set %d %s", w.Code, w.Body)
+	}
+	if w := request(http.MethodGet, token, ""); !bytes.Contains(w.Body.Bytes(), []byte(`"openrouter"`)) {
+		t.Fatalf("get %s", w.Body)
+	}
+	if w := request(http.MethodPut, token, `{"providers":["bad/name"]}`); w.Code != 400 {
+		t.Fatalf("invalid %d", w.Code)
+	}
+}

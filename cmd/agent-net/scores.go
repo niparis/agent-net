@@ -29,6 +29,9 @@ func scoreArguments(args []string) (string, *protocol.ScoreSetRequest, error) {
 	return "", nil, usage
 }
 func cmdScores(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "providers" {
+		return cmdWorkerProviders(ctx, args[1:])
+	}
 	method, request, err := scoreArguments(args)
 	if err != nil {
 		return err
@@ -53,6 +56,38 @@ func cmdScores(ctx context.Context, args []string) error {
 	fmt.Println("Embedded scores:")
 	for _, s := range protocol.EmbeddedModelScores() {
 		fmt.Printf("%s  %g (%s)\n", s.Match, s.Score, s.Source)
+	}
+	return nil
+}
+
+func workerProviderArguments(args []string) (string, *protocol.WorkerProviders) {
+	if len(args) == 0 {
+		return protocol.OpWorkerProvidersGet, nil
+	}
+	if len(args) == 1 && args[0] == "--default" {
+		return protocol.OpWorkerProvidersSet, &protocol.WorkerProviders{}
+	}
+	return protocol.OpWorkerProvidersSet, &protocol.WorkerProviders{Providers: args}
+}
+func cmdWorkerProviders(ctx context.Context, args []string) error {
+	method, req := workerProviderArguments(args)
+	cl, err := dialCLI(ctx)
+	if err != nil {
+		return err
+	}
+	defer cl.Close()
+	raw, err := cl.Call(ctx, method, req)
+	if err != nil {
+		return err
+	}
+	var out protocol.WorkerProviders
+	if err = json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
+	if out.Providers == nil {
+		fmt.Println("Worker providers: subscription defaults and providers with quota readings")
+	} else {
+		fmt.Println("Worker providers:", strings.Join(out.Providers, ", "))
 	}
 	return nil
 }

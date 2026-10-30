@@ -88,3 +88,40 @@ func (d *Daemon) difficulty(ctx context.Context, change map[string]float64) (map
 	err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
 	return out, err
 }
+
+func (d *Daemon) workerProviders(ctx context.Context, change *protocol.WorkerProviders) (protocol.WorkerProviders, error) {
+	c, ok := d.integrationsClient()
+	if !ok {
+		return protocol.WorkerProviders{}, errNotConnected
+	}
+	method := http.MethodGet
+	var body io.Reader
+	if change != nil {
+		method = http.MethodPut
+		b, err := json.Marshal(change)
+		if err != nil {
+			return protocol.WorkerProviders{}, err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+"/v1/worker-providers", body)
+	if err != nil {
+		return protocol.WorkerProviders{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return protocol.WorkerProviders{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return protocol.WorkerProviders{}, fmt.Errorf("gateway answered %s", resp.Status)
+	}
+	var out protocol.WorkerProviders
+	err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
+	return out, err
+}

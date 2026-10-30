@@ -42,3 +42,21 @@ func TestDifficultyOwnerGate(t *testing.T) {
 		t.Fatalf("got %s: %v", raw, err)
 	}
 }
+
+func TestWorkerProvidersOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	q := protocol.WorkerProviders{Providers: []string{"openrouter"}}
+	if _, err := pi.call(protocol.OpWorkerProvidersSet, q); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("gate: %v", err)
+	}
+	cli := cliClient(t, n)
+	cli.mustCall(protocol.OpWorkerProvidersSet, q)
+	raw := cli.mustCall(protocol.OpWorkerProvidersGet, nil)
+	var out protocol.WorkerProviders
+	if err := json.Unmarshal(raw, &out); err != nil || len(out.Providers) != 1 || out.Providers[0] != "openrouter" {
+		t.Fatalf("got %s %v", raw, err)
+	}
+}

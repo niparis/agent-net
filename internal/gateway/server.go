@@ -275,6 +275,8 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
+	mux.HandleFunc("GET /v1/worker-providers", g.handleWorkerProviders)
+	mux.HandleFunc("PUT /v1/worker-providers", g.handleWorkerProviders)
 	mux.HandleFunc("GET /v1/difficulty", g.handleDifficulty)
 	mux.HandleFunc("PUT /v1/difficulty", g.handleDifficulty)
 	mux.HandleFunc("GET /v1/scores", g.handleScoresGet)

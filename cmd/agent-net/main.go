@@ -64,6 +64,7 @@ const usage = `usage: agent-net <command>
   node       add or remove an architect
   edge       set or remove an edge
   send       send a message as yourself: agent-net send <session or name> <message...>
+  scores     model scores and worker providers: scores providers [provider ...|--default]
   playbook   the owner's notes about a model: playbook set <model> [--harness H] [--pin] <text>,
              playbook get <model> [--harness H], playbook pin|unpin <model> [--harness H]
   version    print the version of this binary
