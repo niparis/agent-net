@@ -54,9 +54,19 @@ func (r *runner) claudeWorkersMod() {
 		r.step(workersModStepName, "skipped (claude not found)", nil)
 		return
 	}
+	if r.want != nil && !r.want.WorkersMod {
+		if !loadWorkersModState().Installed && !exists(agentfiles.ClaudeWorkersDir()) {
+			r.step(workersModStepName, "off", nil)
+			return
+		}
+		r.removeClaudeWorkersMod()
+		return
+	}
 	st := loadWorkersModState()
 	install := false
 	switch {
+	case r.want != nil:
+		install = r.want.WorkersMod
 	case r.WorkersMod == WorkersModYes:
 		install = true
 	case r.WorkersMod == WorkersModNo:

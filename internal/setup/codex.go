@@ -150,6 +150,8 @@ func (r *runner) codexMCP() {
 	st := loadCodexState()
 	approve := st.Approve
 	switch {
+	case r.want != nil:
+		approve = r.want.CodexTools
 	case r.CodexTools == CodexToolsApprove:
 		approve = true
 	case r.CodexTools == CodexToolsNo:
@@ -171,7 +173,7 @@ func (r *runner) codexMCP() {
 			}
 		}
 	}
-	if r.CodexTools != "" {
+	if r.CodexTools != "" || r.want != nil {
 		if err := saveCodexState(codexState{Asked: true, Approve: approve}); err != nil {
 			r.step(codexStepName, "", err)
 			return

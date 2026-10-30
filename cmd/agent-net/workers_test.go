@@ -68,6 +68,12 @@ func (f *fakeOp) SetSessionPolicy(context.Context, protocol.SessionPolicyRequest
 func (f *fakeOp) RenameNode(context.Context, string, string) (protocol.NodeRenameResult, error) {
 	return protocol.NodeRenameResult{}, nil
 }
+func (f *fakeOp) Integrations(context.Context) (protocol.IntegrationsResult, error) {
+	return protocol.IntegrationsResult{}, nil
+}
+func (f *fakeOp) SetIntegrations(context.Context, protocol.Integrations) (protocol.IntegrationsResult, error) {
+	return protocol.IntegrationsResult{}, nil
+}
 func (f *fakeOp) Close() {}
 
 func TestStartCommand(t *testing.T) {

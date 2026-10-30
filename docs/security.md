@@ -77,7 +77,7 @@ By default Claude Code holds a cross-session message for your review when the se
 
 What stays the same: a peer message is still not your approval. Claude Code's permission rules and prompts still apply to what the agent does next. Claude Code also keeps its stricter sources: a managed (organization) setting or a repository setting of `hold` or `refuse` wins over your `accept`. The accepted values are `accept`, `hold` and `refuse`.
 
-Setup never turns this on by itself. It asks, default No, or follows `--accept-peer-messages`. It never changes a value that is already set. It records that it set the value, and `agent-net uninstall` removes the key only if agent-net set it and it is still `"accept"`. See [setup.md](setup.md#the-claude-code-question).
+Setup never turns this on by itself. It follows the answer to the one integrations question, or `--accept-peer-messages` (a local answer for that machine). It never changes a value that is already set. It records that it set the value, and `agent-net uninstall` removes the key only if agent-net set it and it is still `"accept"`. See [Integrations](setup.md#integrations).
 
 ## Delivery into a Pi session
 
@@ -87,7 +87,7 @@ The extension turns the message into a follow-up message in the running session,
 
 The daemon is a client of the shared Codex app server's control socket (mode 0600 in a 0700 folder, so only your user and root reach it; there is no token). It follows the symlink at `$CODEX_HOME/app-server-control/app-server-control.sock` to its target and requires a socket owned by your user. It only reads thread lists and thread metadata and adds messages to a thread's queue. It never starts, resumes or interrupts an interactive thread, so it is never a subscriber: it receives no approval requests and keeps no thread loaded. A queued message appears in the window as a message from the user; the text says in plain words that it is from another agent and carries no approval. Codex's own approval policy and sandbox still decide what the agent does next. Messages from a worker add the "model output, not your user's words" line.
 
-Setup can set `default_tools_approval_mode = "approve"` for the `agent-net` MCP server only. That lets a Codex thread call the agent-net tools (list, send, reply, start workers) with no prompt, including under approval policy `never`, where Codex would otherwise refuse them. Setup asks first, default No.
+Setup can set `default_tools_approval_mode = "approve"` for the `agent-net` MCP server only. That lets a Codex thread call the agent-net tools (list, send, reply, start workers) with no prompt, including under approval policy `never`, where Codex would otherwise refuse them. Setup follows the answer to the one integrations question, or `--accept-codex-tools` (a local answer for that machine).
 
 ## Delegation policy
 
@@ -148,7 +148,7 @@ The TUI's "Needs you" section shows what a session waits for: a permission, a qu
 - **What leaves the machine.** The text comes from the harness: a Claude Code permission request (the tool name and its command, path or URL) or notification, an OpenCode permission or form title, or the agent's own `waiting` line. It is cut to 200 characters, turned into one line and stripped of control characters at the daemon and again at the gateway. A permission request can name a file, a command or a URL, so treat the line as metadata that every enrolled machine can see. Do not put secrets in a question you ask an agent to announce.
 - **Who may set it.** A plugin is bound to its session by the local socket. A command line hook names `harness` and `native_id`, and the daemon silently ignores an unknown session. Like `hint`, the `waiting` method is not owner-only: it must work inside a harness turn. Any process of your user can call it for a session the daemon knows, which is no more than that process can already do.
 - **What it changes.** Nothing but a row and a STATUS cell. It is not a message, carries no authority, and is cleared when the session becomes busy or you answer. A session can lie about waiting, just as it can lie in its announced task; the worst result is a row you look at and dismiss.
-- **The hooks.** The Claude Code hooks are added only with your consent (`--claude-needs-hook`), removed by `agent-net uninstall`, talk to the local daemon only, give up after 300 ms and print nothing on any error. They run inside the session's process tree and use the session ID Claude gives them.
+- **The hooks.** The Claude Code hooks are added only with your consent (the one integrations question, or `--claude-needs-hook`), removed by `agent-net uninstall`, talk to the local daemon only, give up after 300 ms and print nothing on any error. They run inside the session's process tree and use the session ID Claude gives them.
 
 ## Guidance text is advice, not enforcement
 

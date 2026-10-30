@@ -38,12 +38,13 @@ type Options struct {
 	Dist         string // gateway dist dir
 	Port         string // gateway port (default 7420)
 	Exe          string // path of the agent-net binary; default: this binary
-	PeerMessages string // "" ask; PeerMessagesAccept or PeerMessagesNo choose without a prompt
-	CodexTools   string // "" ask; CodexToolsApprove or CodexToolsNo choose without a prompt
-	HintHook     string // "" ask; HintHookYes or HintHookNo choose without a prompt
-	PolicyHook   string // "" ask; PolicyHookYes or PolicyHookNo choose without a prompt
-	NeedsHook    string // "" ask; NeedsHookYes or NeedsHookNo choose without a prompt
-	WorkersMod   string // "" ask; WorkersModYes or WorkersModNo choose without a prompt
+	All          string // "" ask; AllYes or AllNo answer every integration without a prompt
+	PeerMessages string // "" leave to All/network; PeerMessagesAccept or PeerMessagesNo is a local answer
+	CodexTools   string // "" leave; CodexToolsApprove or CodexToolsNo is a local answer
+	HintHook     string // "" leave; HintHookYes or HintHookNo is a local answer
+	PolicyHook   string // "" leave; PolicyHookYes or PolicyHookNo is a local answer
+	NeedsHook    string // "" leave; NeedsHookYes or NeedsHookNo is a local answer
+	WorkersMod   string // "" leave; WorkersModYes or WorkersModNo is a local answer
 	Out          io.Writer
 }
 
@@ -63,6 +64,10 @@ func home() string {
 type runner struct {
 	Options
 	failed error
+	// want is the answer for the six integrations. When it is set, the steps
+	// apply it and turn an item off as well as on. When it is nil, the steps
+	// keep their old ask-once behavior.
+	want *protocol.Integrations
 }
 
 func newRunner(o Options) (*runner, error) {
@@ -115,6 +120,7 @@ func Setup(ctx context.Context, o Options) error {
 	}
 	r.workersSetting()
 	r.daemonService()
+	r.chooseIntegrations(ctx)
 	r.claudeMCP()
 	r.claudePeerMessages()
 	r.codexMCP()
@@ -122,6 +128,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.claudePolicyHook()
 	r.claudeNeedsHook()
 	r.claudeWorkersMod()
+	r.recordApplied()
 	r.piExtension()
 	r.opencodePlugin()
 	r.guidance()

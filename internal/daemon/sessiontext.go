@@ -34,6 +34,7 @@ import (
 var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
+	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -230,6 +231,22 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 					d.Logf("session.policy session=%s scope=%s delegate=%s", q.SessionID, q.Scope, q.Policy.Delegate)
 				}
 			}
+		}
+	case protocol.OpIntegrationsGet:
+		// The answers decide which integrations run with the owner's consent:
+		// only the owner at the keyboard reads or changes them (decision 0021).
+		res, err = d.integrationsGet(ctx)
+		if err == nil {
+			d.Logf("integrations.get")
+		}
+	case protocol.OpIntegrationsSet:
+		var in protocol.Integrations
+		if json.Unmarshal(raw, &in) != nil {
+			return nil, true, errors.New("integrations_set needs the six answers")
+		}
+		res, err = d.integrationsSet(ctx, in)
+		if err == nil {
+			d.Logf("integrations.set on=%d", in.CountOn())
 		}
 	case "session_enter":
 		var q protocol.EnterRequest

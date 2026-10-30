@@ -29,12 +29,12 @@ func callsContain(calls []string, want string) bool {
 	return false
 }
 
-func TestClaudeWorkersModIsAskedAndInstalledOnYes(t *testing.T) {
+func TestClaudeWorkersModIsInstalledWithTheOneQuestion(t *testing.T) {
 	f := newFixture(t)
 	logPath := fakeClaude(t, f.home)
 	answer(t, "y\n")
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo})
-	for _, want := range []string{"Install the plugin? [y/N]", "claude workers mod on (plugin agent-net-workers@agent-net, user scope)"} {
+	out := runAskingAll(t, Options{Join: f.newJoin(t)})
+	for _, want := range []string{"Turn all on? [Y/n/c]", "claude workers mod on (plugin agent-net-workers@agent-net, user scope)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
@@ -65,29 +65,26 @@ func TestClaudeWorkersModIsAskedAndInstalledOnYes(t *testing.T) {
 	// The owner agreed once: a later run refreshes the folder, does not ask,
 	// and calls the CLI again so registration is repaired if it was removed.
 	noTTY(t)
-	out = runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo})
-	if strings.Contains(out, "[y/N]") || !strings.Contains(out, "claude workers mod ok (unchanged)") {
+	out = runAskingAll(t, Options{})
+	if strings.Contains(out, "[Y/n/c]") || !strings.Contains(out, "claude workers mod ok (unchanged)") {
 		t.Errorf("second run:\n%s", out)
 	}
 }
 
-func TestClaudeWorkersModDefaultsToOffAndDoesNotAskAgain(t *testing.T) {
+func TestClaudeWorkersModOffWithTheOneQuestion(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
-	answer(t, "\n")
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo})
+	answer(t, "n\n")
+	out := runAskingAll(t, Options{Join: f.newJoin(t)})
 	if !strings.Contains(out, "claude workers mod off") {
 		t.Errorf("output:\n%s", out)
 	}
 	if _, err := os.Stat(agentfiles.ClaudeWorkersDir()); err == nil {
-		t.Error("the marketplace was written without consent")
-	}
-	if st := loadWorkersModState(); !st.Asked || st.Installed {
-		t.Errorf("state: %+v", st)
+		t.Error("the marketplace was written on a no")
 	}
 	answer(t, "y\n")
-	out = runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo})
-	if strings.Contains(out, "[y/N]") || strings.Contains(out, "claude workers mod on") {
+	out = runAskingAll(t, Options{})
+	if strings.Contains(out, "[Y/n/c]") || strings.Contains(out, "claude workers mod on") {
 		t.Errorf("asked or installed after a no:\n%s", out)
 	}
 }
@@ -95,11 +92,9 @@ func TestClaudeWorkersModDefaultsToOffAndDoesNotAskAgain(t *testing.T) {
 func TestClaudeWorkersModWithoutATerminal(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo})
-	for _, want := range []string{"claude workers mod off (default)", "agent-net setup --claude-workers-mod"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("lacks %q:\n%s", want, out)
-		}
+	out := runAskingAll(t, Options{Join: f.newJoin(t)})
+	if !strings.Contains(out, "claude workers mod off") {
+		t.Errorf("lacks the off line:\n%s", out)
 	}
 	if _, err := os.Stat(workersModStatePath()); err == nil {
 		t.Error("a no-terminal run recorded an answer")
@@ -108,7 +103,7 @@ func TestClaudeWorkersModWithoutATerminal(t *testing.T) {
 		t.Error("the marketplace was written without an answer")
 	}
 
-	out = runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo, WorkersMod: WorkersModYes})
+	out = runAskingAll(t, Options{WorkersMod: WorkersModYes})
 	if !strings.Contains(out, "claude workers mod on (plugin agent-net-workers@agent-net, user scope)") {
 		t.Errorf("flag did not install:\n%s", out)
 	}

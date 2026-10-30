@@ -9,6 +9,7 @@ Keys ─────────────────────────
   x                    stop the selected worker (asks y/n)
   t                    peer trust on/off: act on requests of other agents (y/n)
   p                    delegation policy: subagent or worker for code changes (…
+  I                    integrations for all machines: six checkboxes (a form)
   N                    name the machine of the session (every machine sees it; …
   /                    filter (words match name, project, branch, model, ...)
   o, d                 o: show offline and dormant; d: detail takes the feed ro…
@@ -20,5 +21,4 @@ Keys ─────────────────────────
   up/down, pgup/pgdn   scroll; at the top, older entries load
   g                    go to the oldest loaded entry
   G, end, f            back to the end and follow new entries
-  esc                  back to the sessions
 esc close help  q quit

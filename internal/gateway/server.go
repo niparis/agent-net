@@ -264,6 +264,8 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
+	mux.HandleFunc("GET /v1/integrations", g.handleIntegrationsGet)
+	mux.HandleFunc("PUT /v1/integrations", g.handleIntegrationsSet)
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
 	mux.HandleFunc("GET /install/{code}", g.handleInstallScript)
 	g.upgradeRoutes(mux)

@@ -260,6 +260,24 @@ func (s *Client) RenameNode(ctx context.Context, nodeID, name string) (protocol.
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) Integrations(ctx context.Context) (protocol.IntegrationsResult, error) {
+	var out protocol.IntegrationsResult
+	raw, err := s.action(ctx, protocol.OpIntegrationsGet, nil)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) SetIntegrations(ctx context.Context, in protocol.Integrations) (protocol.IntegrationsResult, error) {
+	var out protocol.IntegrationsResult
+	raw, err := s.action(ctx, protocol.OpIntegrationsSet, in)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 	var out protocol.SessionCounts
 	raw, err := s.action(ctx, protocol.OpCounts, nil)

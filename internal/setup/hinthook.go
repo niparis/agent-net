@@ -240,6 +240,9 @@ func withHint(doc *settingsDoc, cmd string) (changed bool, err error) {
 
 // withHooks adds cmd on each event (after removing older hooks of ours).
 func withHooks(doc *settingsDoc, cmd string, ours func(string) bool, events []struct{ event, matcher string }, timeout int) (changed bool, err error) {
+	if hooksAreCurrent(doc, cmd, ours, events, timeout) {
+		return false, nil
+	}
 	before := string(doc.encode())
 	if _, err := withoutHooks(doc, ours); err != nil {
 		return false, err
@@ -269,11 +272,67 @@ func withHooks(doc *settingsDoc, cmd string, ours func(string) bool, events []st
 	return string(doc.encode()) != before, nil
 }
 
+// hooksAreCurrent says whether every event already has exactly one group of
+// ours, with this command and timeout. Then a setup or daemon run does not
+// rewrite the file, which would move our hooks after the owner's others.
+func hooksAreCurrent(doc *settingsDoc, cmd string, ours func(string) bool, events []struct{ event, matcher string }, timeout int) bool {
+	hooks, err := hooksOf(doc)
+	if err != nil {
+		return false
+	}
+	for _, ev := range events {
+		i := hooks.indexOf(ev.event)
+		if i < 0 {
+			return false
+		}
+		gs, err := groupsOf(hooks.members[i].val)
+		if err != nil {
+			return false
+		}
+		found := false
+		for _, g := range gs {
+			all, some, hs := groupHas(g, ours)
+			if !some {
+				continue
+			}
+			if !all || found || len(hs) != 1 {
+				return false
+			}
+			var m hookGroup
+			if json.Unmarshal(g, &m) != nil {
+				return false
+			}
+			var matcher string
+			json.Unmarshal(m["matcher"], &matcher)
+			var entry struct {
+				Command string `json:"command"`
+				Timeout int    `json:"timeout"`
+			}
+			if json.Unmarshal(hs[0], &entry) != nil || matcher != ev.matcher || entry.Command != cmd || entry.Timeout != timeout {
+				return false
+			}
+			found = true
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
 // ---- setup step ----
 
 func (r *runner) claudeHintHook() {
 	if claudePath() == "" {
 		r.step(hintStepName, "skipped (claude not found)", nil)
+		return
+	}
+	if r.want != nil && !r.want.HintHook {
+		if !loadHintState().Installed {
+			r.step(hintStepName, "off", nil)
+			return
+		}
+		r.removeHintHook()
 		return
 	}
 	path := claudeSettingsPath()
@@ -289,6 +348,8 @@ func (r *runner) claudeHintHook() {
 	st := loadHintState()
 	install := false
 	switch {
+	case r.want != nil:
+		install = r.want.HintHook
 	case r.HintHook == HintHookYes:
 		install = true
 	case r.HintHook == HintHookNo:

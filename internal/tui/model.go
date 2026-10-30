@@ -84,10 +84,11 @@ type Model struct {
 	confirmID   string // worker the stop question is about
 	confirmName string
 	pol         policyForm
-	rename      textinput.Model // the machine name prompt
-	renameNode  string          // node ID the name is for
-	renameShown string          // the name shown when the prompt opened
-	renameSet   bool            // that name is the owner's, not the reported one
+	intg        integrationsForm // the setup integrations of the whole network
+	rename      textinput.Model  // the machine name prompt
+	renameNode  string           // node ID the name is for
+	renameShown string           // the name shown when the prompt opened
+	renameSet   bool             // that name is the owner's, not the reported one
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
 	// execProcess replaces tea.ExecProcess in tests.
@@ -294,6 +295,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case policySavedMsg:
 		return m.onPolicySaved(msg)
 
+	case integrationsLoadedMsg:
+		return m.onIntegrationsLoaded(msg)
+
+	case integrationsSavedMsg:
+		return m.onIntegrationsSaved(msg)
+
 	case snippetMsg:
 		m.applySnippet(msg)
 		return m, nil
@@ -401,6 +408,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.policyKey(k)
 	case modeRename:
 		return m.renameKey(k)
+	case modeIntegrations:
+		return m.integrationsKey(k)
 	}
 	if m.help {
 		switch k.String() {
@@ -471,6 +480,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startTrust()
 	case "p":
 		return m.startPolicy()
+	case "I":
+		return m.startIntegrations()
 	case "N":
 		return m.startRename()
 	case "?":

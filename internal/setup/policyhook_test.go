@@ -15,8 +15,8 @@ func TestPolicyHookIsAskedAndAddedOnYes(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	answer(t, "y\n")
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
-	if !strings.Contains(out, "Add the hook? [y/N]") || !strings.Contains(out, "claude policy hook on") {
+	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, NeedsHook: NeedsHookNo})
+	if !strings.Contains(out, "Turn all on? [Y/n/c]") || !strings.Contains(out, "claude policy hook on") {
 		t.Fatalf("output:\n%s", out)
 	}
 	got := hooksOfFile(t, f)["UserPromptSubmit"]
@@ -35,23 +35,23 @@ func TestPolicyHookIsAskedAndAddedOnYes(t *testing.T) {
 	// A second run changes nothing and does not ask again.
 	before := readSettingsFile(t, f)
 	noTTY(t)
-	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
+	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, NeedsHook: NeedsHookNo})
 	if readSettingsFile(t, f) != before {
 		t.Error("second run changed the settings")
 	}
 }
 
-func TestPolicyHookDefaultsToOffAndNeverAsksTwice(t *testing.T) {
+func TestPolicyHookOffAndNeverAsksTwice(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
-	answer(t, "\n")
-	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
+	answer(t, "n\n")
+	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
 	if readSettingsFile(t, f) != otherKeys {
 		t.Fatalf("settings changed on a no:\n%s", readSettingsFile(t, f))
 	}
 	answer(t, "y\n")
-	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
+	runAskingAll(t, Options{PeerMessages: PeerMessagesNo})
 	if readSettingsFile(t, f) != otherKeys {
 		t.Fatal("asked a second time")
 	}
@@ -62,11 +62,11 @@ func TestPolicyHookWithoutTerminalAndFlags(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	noTTY(t)
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
-	if !strings.Contains(out, "agent-net setup --claude-policy-hook") || readSettingsFile(t, f) != otherKeys {
+	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
+	if !strings.Contains(out, "claude policy hook off") || readSettingsFile(t, f) != otherKeys {
 		t.Fatalf("no tty:\n%s", out)
 	}
-	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookYes})
+	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, PolicyHook: PolicyHookYes})
 	if len(hooksOfFile(t, f)["UserPromptSubmit"]) != 1 {
 		t.Fatal("flag did not add the hook")
 	}

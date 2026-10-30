@@ -67,6 +67,14 @@ func (r *runner) claudePolicyHook() {
 		r.step(policyStepName, "skipped (claude not found)", nil)
 		return
 	}
+	if r.want != nil && !r.want.PolicyHook {
+		if !loadPolicyState().Installed {
+			r.step(policyStepName, "off", nil)
+			return
+		}
+		r.removePolicyHook()
+		return
+	}
 	path := claudeSettingsPath()
 	doc, err := readSettings(path)
 	if err != nil {
@@ -80,6 +88,8 @@ func (r *runner) claudePolicyHook() {
 	st := loadPolicyState()
 	install := false
 	switch {
+	case r.want != nil:
+		install = r.want.PolicyHook
 	case r.PolicyHook == PolicyHookYes:
 		install = true
 	case r.PolicyHook == PolicyHookNo:

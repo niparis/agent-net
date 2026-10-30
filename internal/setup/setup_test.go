@@ -123,32 +123,17 @@ func (f *fixture) newJoin(t *testing.T) string {
 
 func run(t *testing.T, o Options) string {
 	t.Helper()
-	// The hint hook has its own tests (hinthook_test.go); the others do not ask.
-	if o.HintHook == "" {
-		o.HintHook = HintHookNo
+	// Most tests are about one step: answer the one integrations question
+	// with none, without a terminal. A per-item flag still wins over this.
+	if o.All == "" {
+		o.All = AllNo
 	}
-	if o.PolicyHook == "" {
-		o.PolicyHook = PolicyHookNo
-	}
-	if o.NeedsHook == "" {
-		o.NeedsHook = NeedsHookNo
-	}
-	if o.WorkersMod == "" {
-		o.WorkersMod = WorkersModNo
-	}
-	return runAsking(t, o)
+	return runAskingAll(t, o)
 }
 
-// runAsking is run without that default: the hint hook question is asked. The
-// policy hook has its own tests (policyhook_test.go) and is not asked here.
+// runAsking leaves the one integrations question to the terminal.
 func runAsking(t *testing.T, o Options) string {
 	t.Helper()
-	if o.PolicyHook == "" {
-		o.PolicyHook = PolicyHookNo
-	}
-	if o.NeedsHook == "" {
-		o.NeedsHook = NeedsHookNo
-	}
 	return runAskingAll(t, o)
 }
 

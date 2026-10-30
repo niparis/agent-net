@@ -139,6 +139,9 @@ ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
 UPDATE sessions SET created_at = last_seen;
 `, `
 ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
+`, `
+CREATE TABLE owner_settings (
+	key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
