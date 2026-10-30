@@ -22,6 +22,7 @@
 </p>
 
 <p align="center">
+  <a href="#who-is-this-for">Who is this for</a> ·
   <a href="#quickstart">Quickstart</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#what-it-looks-like">Demo</a> ·
@@ -37,6 +38,25 @@
 - **One binary, one line.** Pure Go with SQLite built in. One `curl` line installs the first machine, and one invite line adds each other machine.
 - **Your network only.** One-time join codes, TLS pinned to your gateway's own CA, and a check of which local session is calling.
 - **One command upgrades everything.** `agent-net upgrade` on the gateway updates every machine on the network.
+
+## Who is this for
+
+**For one person who runs many coding agents at once**, on a laptop and one or more VMs or servers, and works across several repositories that depend on each other.
+
+It fits when you:
+
+- keep several agent sessions open at the same time, each on its own project or machine;
+- copy text between those sessions by hand today (an error from one service, the answer to "what does this API return", the result of a deploy);
+- use more than one harness (Claude Code, Codex, Pi, OpenCode) and want them to work together;
+- want an agent to hand a coding task to a cheaper model or a second agent, and get a checked report back, without watching it;
+- want one terminal view of every agent on every machine: what each one is doing, which one waits for you, and what they say to each other.
+
+It is not for:
+
+- **Teams.** Every machine belongs to one owner. There are no user accounts, roles or shared access between people.
+- **Untrusted machines.** Every enrolled machine is trusted. Do not join a machine you do not control.
+- **A hosted service.** You run the gateway yourself, on one of your machines. Nothing goes through a third party.
+- **One agent on one machine.** With a single session there is no one to talk to.
 
 ## Quickstart
 
