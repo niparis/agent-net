@@ -57,6 +57,7 @@ func TestQuotaViewGoldens(t *testing.T) {
 		m.tab = 2
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5"}}}
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"}, {Name: "sol", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}, {Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
+		m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "claude", Model: "claude-opus-5-5:high", Runs: 12, Complete: 10, Failed: 2}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
 			{Provider: "codex", Plan: "pro", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92, Pace: protocol.QuotaPaceAhead, ResetsAt: t0.Add(2 * time.Hour).Unix()}}},
 			{Provider: "cursor", Plan: "business", Windows: []protocol.QuotaWindow{{ID: "month", PercentUsed: 100, Exhausted: true}}},
@@ -349,7 +350,7 @@ func TestQuotaModelsSection(t *testing.T) {
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "unknown-model"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}, {Name: "unscored", Harness: "codex", Model: "unknown-model"}}
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"MODELS", "gpt-6.1-terra:high", "42.3/high", "USED 7 DAYS", "LAST", "scores: Artificial Analysis (artificialanalysis.ai)", "unscored"} {
+	for _, want := range []string{"Workers · 2 registered", "gpt-6.1-terra:high", "42.3/high", "USED", "scores: Artificial Analysis", "unscored"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
 		}
@@ -365,7 +366,7 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "normal -> #2") {
+	if !strings.Contains(v, "b          codex    fake/b                 51          E E E E G  0 runs 0 done 0 failed  ◀ T,S,N,H,V") {
 		t.Fatalf("choice ignored failed run:\n%s", v)
 	}
 }
@@ -388,7 +389,7 @@ func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "normal -> #2") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "b          codex    fake/b                 51          E E E E G  0 runs 0 done 0 failed  ◀ T,S,N,H,V") {
 		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }
@@ -399,7 +400,7 @@ func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol"}}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "my worker", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"my worker", "gpt-6.1-terra:high", "1 registered workers"} {
+	for _, want := range []string{"my worker", "gpt-6.1-terra:high", "1 registered"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}

@@ -82,7 +82,7 @@ func (m Model) quotasView(w, h int) []string {
 				pctText = sBad.Render(pct)
 			}
 			usage := progressBar(window.PercentUsed/100, 10, color) + " " + pctText
-			usage = cell(usage, 20)
+			usage = padStyled(usage, 20)
 
 			paceStyle := sDim
 			if window.Pace == protocol.QuotaPaceAhead {
