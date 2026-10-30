@@ -150,6 +150,13 @@ CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT 
 CREATE INDEX graph_history_node ON graph_history(node, id);
 `, `
 ALTER TABLE messages ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0;
+`, `
+CREATE TABLE inbox_items (
+ id TEXT PRIMARY KEY, kind TEXT NOT NULL, session_id TEXT NOT NULL, node TEXT NOT NULL,
+ text TEXT NOT NULL, recommendation TEXT NOT NULL, message_id TEXT NOT NULL,
+ conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL,
+ answer TEXT NOT NULL DEFAULT '', answered_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX inbox_items_order ON inbox_items(created_at, id);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
