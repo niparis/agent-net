@@ -79,7 +79,15 @@ func (r *Resolver) lookup(cwd string, fresh bool) protocol.RepoInfo {
 	ctx, cancel := context.WithTimeout(context.Background(), r.Timeout)
 	defer cancel()
 	if !e.set || now.Sub(e.staticAt) >= r.StaticTTL {
-		e.info = r.readAll(ctx, cwd)
+		info := r.readAll(ctx, cwd)
+		// A folder that is gone keeps the repository it was last seen in, for
+		// example a worktree removed after its pull request merged. A folder
+		// that still exists and is not a repository gives its folder name.
+		if info.Root == "" && e.info.Root != "" && folderGone(cwd) {
+			info.Project, info.Root, info.Remote = e.info.Project, e.info.Root, e.info.Remote
+			info.Worktree, info.Branch = e.info.Worktree, e.info.Branch
+		}
+		e.info = info
 		e.staticAt, e.branchAt, e.set = now, now, true
 	} else if e.info.Root != "" && (fresh || now.Sub(e.branchAt) >= r.BranchTTL) {
 		e.info.Branch = r.readBranch(ctx, cwd)
@@ -94,6 +102,14 @@ func (r *Resolver) lookup(cwd string, fresh bool) protocol.RepoInfo {
 	}
 	e.info.Description = r.desc.get(dir)
 	return e.info
+}
+
+// folderGone tells whether the folder itself no longer exists. A folder that
+// exists but holds no repository is not gone: git simply has nothing to say
+// about it.
+func folderGone(path string) bool {
+	_, err := os.Stat(path)
+	return os.IsNotExist(err)
 }
 
 func (r *Resolver) readAll(ctx context.Context, cwd string) protocol.RepoInfo {

@@ -217,6 +217,77 @@ func TestWorktreeUsesMainWorkingTree(t *testing.T) {
 	}
 }
 
+// A worktree folder that was deleted, for example after its pull request
+// merged, keeps the repository it belonged to.
+func TestDeletedFolderKeepsLastRepoInfo(t *testing.T) {
+	needGit(t)
+	base := evalDir(t)
+	main := filepath.Join(base, "tenebrae")
+	if err := os.MkdirAll(main, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runIn(t, main, "init", "-q", "-b", "main")
+	runIn(t, main, "remote", "add", "origin", "https://example.com/o/tenebrae.git")
+	runIn(t, main, "commit", "-q", "--allow-empty", "-m", "one")
+	wt := filepath.Join(base, "fix-embed-token-budget")
+	runIn(t, main, "worktree", "add", "-q", "-b", "fix-embed-token-budget", wt)
+
+	now := time.Unix(1000, 0)
+	r := New()
+	r.now = func() time.Time { return now }
+	if got := r.Lookup(wt); got.Project != "tenebrae" || got.Root != main {
+		t.Fatalf("before removal: %+v", got)
+	}
+
+	runIn(t, main, "worktree", "remove", "--force", wt)
+	if _, err := os.Stat(wt); !os.IsNotExist(err) {
+		t.Fatalf("the worktree folder still exists: %v", err)
+	}
+	now = now.Add(r.StaticTTL + time.Second)
+	got := r.Lookup(wt)
+	want := protocol.RepoInfo{Root: main, Worktree: wt, Project: "tenebrae",
+		Remote: "https://example.com/o/tenebrae.git", Branch: "fix-embed-token-budget"}
+	if got != want {
+		t.Fatalf("after removal: got %+v, want %+v", got, want)
+	}
+}
+
+// A folder that still exists but holds no repository gives its folder name, as
+// before: the repository really is gone.
+func TestExistingFolderWithoutRepoUsesFolderName(t *testing.T) {
+	needGit(t)
+	base := evalDir(t)
+	t.Setenv("GIT_CEILING_DIRECTORIES", base)
+	plain := filepath.Join(base, "plain-folder")
+	if err := os.MkdirAll(plain, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got := New().Lookup(plain); got.Project != "plain-folder" || got.Root != "" {
+		t.Fatalf("plain folder: %+v", got)
+	}
+
+	main := filepath.Join(base, "my-project")
+	sub := filepath.Join(main, "pkg")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runIn(t, main, "init", "-q", "-b", "main")
+	runIn(t, main, "commit", "-q", "--allow-empty", "-m", "one")
+	now := time.Unix(1000, 0)
+	r := New()
+	r.now = func() time.Time { return now }
+	if got := r.Lookup(sub); got.Project != "my-project" || got.Root != main {
+		t.Fatalf("before removing .git: %+v", got)
+	}
+	if err := os.RemoveAll(filepath.Join(main, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(r.StaticTTL + time.Second)
+	if got := r.Lookup(sub); got.Project != "pkg" || got.Root != "" {
+		t.Fatalf("after removing .git: %+v", got)
+	}
+}
+
 // A submodule has its own repository: it is not part of the parent project.
 func TestSubmoduleKeepsItsOwnProject(t *testing.T) {
 	needGit(t)
