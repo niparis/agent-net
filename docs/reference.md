@@ -511,12 +511,12 @@ A message body, including the first line the feed quotes, can only be shown for 
 
 ### Enter a session
 
-`e` in the TUI asks the daemon (`session_enter`) how to take over the terminal for the selected session, runs the answer, and draws the TUI again when you leave. The daemon of the machine that holds the session works out the command. The TUI builds none. Your own input in the session counts as yours, so approvals you give are yours.
+`e` in the TUI asks the daemon (`session_enter`) how to take over the terminal for the selected session, runs the answer, and draws the TUI again when you leave. The daemon of the machine that holds the session works out the command. The TUI builds none. Press `ctrl+]` to return to the TUI; the session keeps running. The TUI closes the attach client. Your own input in the session counts as yours, so approvals you give are yours.
 
 | Session | What `e` runs |
 |---|---|
 | Claude Code background session (`kind` bg, which includes Claude workers) | `claude attach <id>`. The left arrow returns to the agent view, ctrl+z drops to the shell, the session keeps running. |
-| Claude Code interactive session | Cannot be attached twice. If its process runs in a herdr pane, `herdr agent attach <pane>` (see below). Else, if its process runs in a tmux pane, the TUI switches its tmux client to that pane (when the TUI is in the same tmux server) or attaches a new client at that pane. Otherwise: "open its window on <machine>". |
+| Claude Code interactive session | Cannot be attached twice. If its process runs in a herdr pane, `herdr agent attach <pane>` (see below). Else, if its process runs in a tmux pane, the TUI attaches a new client at that pane, including inside the same tmux server. Otherwise: "open its window on <machine>". |
 | Pi | The same herdr and tmux rules. A Pi worker has no screen, so there is nothing to enter. |
 | OpenCode | `opencode --session <id>`, in the session's folder, through OpenCode's own background service. |
 | OpenCode worker | `opencode --server <its private url> --session <id>`, with its password in `OPENCODE_SERVER_PASSWORD`. Only from the machine that runs it. |
@@ -525,7 +525,7 @@ A message body, including the first line the feed quotes, can only be shown for 
 
 **herdr.** A session whose process (or a parent) has `HERDR_ENV=1` and `HERDR_PANE_ID` in its environment is entered with `herdr agent attach <pane>`. The same plan is used when the TUI is outside herdr, inside the same herdr, or inside another one: herdr's `agent focus` does not move a client that is already open, so the TUI attaches instead. The daemon sends `HERDR_SOCKET_PATH` of the session's herdr in the command (`env -u HERDR_SESSION HERDR_SOCKET_PATH=<socket> herdr agent attach <pane>`), so it also works through `ssh -t`. If the pane moved or closed, the daemon looks for the pane that holds the process, and says so when none does. The herdr program is found from the pane's `HERDR_BIN_PATH`, `PATH`, then `~/.local/bin/herdr`.
 
-- Press `ctrl+b q` to come back to the TUI. If the TUI itself runs in a herdr pane, press `ctrl+b ctrl+b q` (the first `ctrl+b` goes to the outer herdr). The agent keeps running.
+- Herdr detach keys also work: `ctrl+b q`, or `ctrl+b ctrl+b q` when the TUI runs inside herdr.
 - A pane takes one direct attach. If another `herdr agent attach` is open on the same pane, the new one fails with "already has an attached client". agent-net never uses `--takeover`: close the other attach first. Your normal herdr window is not affected.
 - On macOS the session's environment is read with `sysctl kern.procargs2` for processes of your user. This also finds tmux servers other than the default one.
 

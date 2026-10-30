@@ -138,7 +138,7 @@ func TestEnterHerdrAttach(t *testing.T) {
 	if !ok || !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("ok=%v argv %v, want %v", ok, p.Argv, want)
 	}
-	if !strings.Contains(p.Note, "Press ctrl+b q to") || strings.Contains(p.Note, "ctrl+b ctrl+b q") {
+	if !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Errorf("note outside herdr: %q", p.Note)
 	}
 	// Never takes the terminal over from another attach.
@@ -154,12 +154,12 @@ func TestEnterHerdrAttach(t *testing.T) {
 	// ctrl+b goes to the outer herdr. There is still one plan: focus would not
 	// move the TUI's client.
 	p, _ = herdrPlanFor(pid, protocol.EnterRequest{HerdrSocket: f.sock}, false)
-	if !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "ctrl+b ctrl+b q") {
+	if !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Errorf("inside herdr: %v %q", p.Argv, p.Note)
 	}
 	// Asked by another machine: its terminal is not known.
 	p, _ = herdrPlanFor(pid, protocol.EnterRequest{}, true)
-	if !strings.Contains(p.Note, "ctrl+b q (ctrl+b ctrl+b q if") {
+	if !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Errorf("via gateway: %q", p.Note)
 	}
 }
@@ -310,7 +310,7 @@ func TestEnterHerdrThroughSessionEnter(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w1:pB"}
-	if !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "ctrl+b ctrl+b q") {
+	if !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
 		t.Fatalf("plan %+v", p)
 	}
 }

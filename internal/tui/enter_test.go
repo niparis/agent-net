@@ -2,7 +2,7 @@ package tui
 
 import (
 	"errors"
-	osexec "os/exec"
+	"github.com/niparis/agent-net/internal/ptyproxy"
 	"reflect"
 	"strings"
 	"testing"
@@ -23,8 +23,19 @@ func pressE(m Model) (Model, tea.Cmd) {
 // capture replaces the terminal hand-over and records the command it got.
 func capture(m *Model) (got *[]string, dir *string, env *[]string, done *func(error) tea.Msg) {
 	got, dir, env, done = new([]string), new(string), new([]string), new(func(error) tea.Msg)
-	m.execProcess = func(c *osexec.Cmd, cb tea.ExecCallback) tea.Cmd {
-		*got, *dir, *env, *done = c.Args, c.Dir, c.Env, cb
+	m.execProcess = func(c tea.ExecCommand, cb tea.ExecCallback) tea.Cmd {
+		proxy, ok := c.(*ptyproxy.Proxy)
+		if !ok {
+			panic("enter command is not proxied")
+		}
+		if proxy.Title != "tenebrae (Mac) - ctrl+] to come back" {
+			panic("wrong proxy title: " + proxy.Title)
+		}
+		if proxy.Name != "tenebrae (Mac)" {
+			panic("wrong proxy name: " + proxy.Name)
+		}
+		cmd := proxy.Cmd
+		*got, *dir, *env, *done = cmd.Args, cmd.Dir, cmd.Env, cb
 		return func() tea.Msg { return nil }
 	}
 	return
@@ -117,11 +128,11 @@ func TestEnterWithoutASelection(t *testing.T) {
 
 func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	m, _ := workerModel(140, 30)
-	if !strings.Contains(lines(m.View())[29], "e enter it") {
+	if !strings.Contains(lines(m.View())[29], "e enter (ctrl+] back)") {
 		t.Errorf("footer: %q", lines(m.View())[29])
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	if !strings.Contains(m.View(), "enter the session") {
+	if !strings.Contains(m.View(), "enter the session (ctrl+] to return)") {
 		t.Errorf("help does not list e:\n%s", m.View())
 	}
 }
