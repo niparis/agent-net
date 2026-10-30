@@ -68,6 +68,7 @@ func runFakeOpenCode() {
 	if os.Getenv("FAKE_OC_IGNORE_TERM") != "" {
 		signal.Ignore(syscall.SIGTERM)
 	}
+	fakeRegister()
 	cwd, _ := os.Getwd()
 	rec := fakeOCRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
