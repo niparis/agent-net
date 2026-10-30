@@ -601,8 +601,18 @@ func fingerprint(_ string, m map[string]any) string {
 				if !ok {
 					continue
 				}
-				if i > 0 && args[i-1] == "--config" && !strings.ContainsAny(v, "?=#@ \t\n") && !strings.Contains(strings.ToLower(v), "secret") && !strings.Contains(strings.ToLower(v), "token") {
+				lower := strings.ToLower(v)
+				safePath := !strings.ContainsAny(v, "?=#@ \t\n") && !strings.Contains(lower, "secret") && !strings.Contains(lower, "token") && !strings.Contains(lower, "password") && !strings.Contains(lower, "credential")
+				if i > 0 && args[i-1] == "--config" && safePath {
 					parts = append(parts, "config", v)
+					continue
+				}
+				if (i == 0 || (field == "command" && i == 1)) && safePath && (strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".mjs") || strings.HasSuffix(lower, ".py")) {
+					parts = append(parts, "script", v)
+					continue
+				}
+				if i > 0 && args[i-1] == "--mode" && (v == "read" || v == "write" || v == "serve" || v == "development" || v == "production") {
+					parts = append(parts, "mode", v)
 					continue
 				}
 				if i > 0 && args[i-1] == "--port" {
@@ -611,7 +621,7 @@ func fingerprint(_ string, m map[string]any) string {
 						continue
 					}
 				}
-				if v == "--port" || v == "--host" || v == "--transport" || v == "--stdio" || v == "--sse" || v == "--http" {
+				if v == "--port" || v == "--config" || v == "--mode" || v == "--host" || v == "--transport" || v == "--stdio" || v == "--sse" || v == "--http" {
 					parts = append(parts, "flag", v)
 				} else {
 					parts = append(parts, "redacted")

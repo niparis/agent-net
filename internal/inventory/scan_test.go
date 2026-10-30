@@ -592,3 +592,16 @@ func TestMCPFingerprintIncludesCommandPath(t *testing.T) {
 		t.Fatal("command paths collapsed")
 	}
 }
+
+func TestMCPFingerprintIncludesSafeScriptAndMode(t *testing.T) {
+	desc := func(script, mode, secret string) map[string]any {
+		return map[string]any{"command": "node", "args": []any{script, "--mode", mode, "--api-key", secret}}
+	}
+	base := fingerprint("demo", desc("first.js", "read", "fixture-secret-one"))
+	if base == fingerprint("demo", desc("second.js", "read", "fixture-secret-one")) || base == fingerprint("demo", desc("first.js", "write", "fixture-secret-one")) {
+		t.Fatal("safe arguments were omitted")
+	}
+	if base != fingerprint("demo", desc("first.js", "read", "fixture-secret-two")) {
+		t.Fatal("secret changed fingerprint")
+	}
+}
