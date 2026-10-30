@@ -18,3 +18,18 @@ func TestThemeRolesProduceColor(t *testing.T) {
 		t.Fatal("missing accent role")
 	}
 }
+
+func TestSharedPieces(t *testing.T) {
+	if got := statusLabel("busy"); !strings.Contains(got, "busy") {
+		t.Fatalf("status: %q", got)
+	}
+	if got := panel("Machines", []string{"one"}, 20, roleAccent); len(got) != 3 || !strings.Contains(got[0], "Machines") {
+		t.Fatalf("panel: %q", got)
+	}
+	if got := keyHints("q", "quit"); !strings.Contains(got, "q quit") {
+		t.Fatalf("keys: %q", got)
+	}
+	if got := progressBar(.5, 4, roleGood); !strings.Contains(got, "██░░") {
+		t.Fatalf("bar: %q", got)
+	}
+}

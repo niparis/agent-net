@@ -245,7 +245,7 @@ func (m Model) mainView(w, h int) []string {
 }
 
 var tabNames = []string{"Sessions", "Messages", "Quotas"}
-var sActiveTab = sBold.Underline(true)
+var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 func (m Model) titleLine(w int) string {
 
