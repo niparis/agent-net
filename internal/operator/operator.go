@@ -80,8 +80,10 @@ type Snapshot struct {
 	// OwnerSession is the owner's session ID on this machine ("" if unknown).
 	OwnerSession string
 	// Launch is false when this machine refuses workers.
-	Launch bool
-	Nodes  []protocol.NodeView
+	Launch             bool
+	Scores             []protocol.ModelScore
+	DifficultyMinimums map[string]float64
+	Nodes              []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.
 	Outcomes []protocol.OutcomeInboxEntry
 	Agents   []protocol.AgentView

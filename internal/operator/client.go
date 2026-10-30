@@ -112,6 +112,12 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	} else if errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
 		return snap, err
 	}
+	if raw, err := s.Call(ctx, protocol.OpScoresGet, nil); err == nil {
+		_ = json.Unmarshal(raw, &snap.Scores)
+	}
+	if raw, err := s.Call(ctx, "difficulty_get", nil); err == nil {
+		_ = json.Unmarshal(raw, &snap.DifficultyMinimums)
+	}
 	raw, err = s.Call(ctx, protocol.OpAgents, protocol.QueryAgents{IncludeOwners: true})
 	if err != nil {
 		return snap, err

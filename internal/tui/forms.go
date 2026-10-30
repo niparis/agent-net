@@ -330,11 +330,12 @@ const (
 	fProject formField = iota
 	fHarness
 	fModel
+	fDifficulty
 	fTask
 	nFields
 )
 
-var fieldLabels = [nFields]string{"Project", "Harness", "Model", "Task"}
+var fieldLabels = [nFields]string{"Project", "Harness", "Model", "Difficulty", "Task"}
 
 // workerForm is the start-a-worker form. Project and model complete from the
 // project list and the models that machine reports.
@@ -536,6 +537,14 @@ func (m Model) candidates() []candidate {
 		return m.harnessCandidates(text)
 	case fModel:
 		return m.modelCandidates(text)
+	case fDifficulty:
+		var out []candidate
+		for _, v := range []string{"trivial", "simple", "normal", "hard", "very_complex"} {
+			if strings.Contains(v, strings.ToLower(text)) {
+				out = append(out, candidate{value: v})
+			}
+		}
+		return out
 	}
 	return nil
 }
@@ -612,12 +621,19 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	case f.value(fHarness) == "":
 		f.err = "Name the harness."
 		return m, f.focus(fHarness)
+	case f.value(fDifficulty) != "":
+		if _, err := protocol.DifficultyFit(0, f.value(fDifficulty), nil); err != nil {
+			f.err = err.Error()
+			return m, f.focus(fDifficulty)
+		}
+	}
+	switch {
 	case f.value(fTask) == "":
 		f.err = "Write the task."
 		return m, f.focus(fTask)
 	}
 	req := protocol.WorkerStartRequest{Project: name, Machine: machine, Harness: f.value(fHarness),
-		Model: f.value(fModel), Task: f.value(fTask)}
+		Model: f.value(fModel), Difficulty: f.value(fDifficulty), Task: f.value(fTask)}
 	m.mode = modeNormal
 	m.say("Starting a worker in " + sanitize(name) + "... (this can take half a minute)")
 	return m, m.startCmd(req)

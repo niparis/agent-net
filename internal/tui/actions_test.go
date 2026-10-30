@@ -312,6 +312,8 @@ func TestStartFormCompletesAndStarts(t *testing.T) {
 		t.Fatalf("model: %q", m.form.value(fModel))
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	// Difficulty is optional. Move to task.
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	// Task. Enter with an empty task is refused with a line in the form.
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.mode != modeForm || m.form.err != "Write the task." {
@@ -371,7 +373,7 @@ func TestStartFormMachineAndErrors(t *testing.T) {
 		t.Fatalf("common prefix: %q", m.form.value(fProject))
 	}
 	m = typeText(m, "build-vm")
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	}
 	m = typeText(m, "write tests")
@@ -483,5 +485,14 @@ func TestActionScreensFitEverySize(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestWorkerDifficultyField(t *testing.T) {
+	m := newModel(120, 34)
+	m, _ = m.startForm()
+	m.form.in[fDifficulty].SetValue("hard")
+	if !strings.Contains(m.View(), "Difficulty") {
+		t.Fatal("difficulty missing from form")
 	}
 }

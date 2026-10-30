@@ -12,14 +12,14 @@
 > ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
   scratch            pi       -         -          shell  -         ?     ?
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-> Project   t
-  Harness   opencode
-  Model        harness default
+> Project    t
+  Harness    opencode
+  Model         automatic choice
+  Difficulty
   Task
 
   strategies                                   registered on Mac
   tenebrae                                     both on Mac
-
 
 
 

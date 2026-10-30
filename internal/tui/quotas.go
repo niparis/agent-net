@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -98,4 +99,124 @@ func (m Model) quotaWarning() string {
 		}
 	}
 	return ""
+}
+
+type quotaModel struct {
+	harness, model string
+	score          protocol.ModelScore
+	used           int
+	last           int64
+}
+
+// quotaModels combines the models advertised by live machines with session use.
+func (m Model) quotaModels() ([]quotaModel, int) {
+	seen := map[string]bool{}
+	var rows []quotaModel
+	unscored := 0
+	for _, n := range m.snap.Nodes {
+		if !n.Online {
+			continue
+		}
+		for _, h := range n.Harnesses {
+			for _, model := range h.Models {
+				key := h.Name + "\x00" + model
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				score, ok := protocol.LookupModelScore(model, m.snap.Scores)
+				if !ok {
+					unscored++
+					continue
+				}
+				row := quotaModel{harness: h.Name, model: model, score: score}
+				for _, a := range m.snap.Agents {
+					if a.Harness == h.Name && a.Model == model {
+						if a.LastSeen > row.last {
+							row.last = a.LastSeen
+						}
+						if a.LastSeen >= m.now().Add(-7*24*time.Hour).Unix() {
+							row.used++
+						}
+					}
+				}
+				rows = append(rows, row)
+			}
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].model != rows[j].model {
+			return rows[i].model < rows[j].model
+		}
+		return rows[i].harness < rows[j].harness
+	})
+	return rows, unscored
+}
+
+func (m Model) quotaModelsView(w int) []string {
+	rows, unscored := m.quotaModels()
+	if len(rows) == 0 && unscored == 0 {
+		return nil
+	}
+	out := []string{"", sBold.Render("  MODELS"), sBold.Render(clip("  #  MODEL                      HARNESS   SCORE T  S  N  H  V  USED 7 DAYS LAST", w))}
+	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
+	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
+	for _, r := range rows {
+		candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model})
+	}
+	q := &protocol.Quotas{}
+	for _, r := range m.quotaRows() {
+		q.Providers = append(q.Providers, r.provider)
+		if r.at > q.GeneratedAt {
+			q.GeneratedAt = r.at
+		}
+	}
+	running := map[string]int{}
+	for _, a := range m.snap.Agents {
+		if a.Online && a.Worker != nil {
+			running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
+		}
+	}
+	picks := make([]protocol.WorkerModelChoice, len(levels))
+	for i, level := range levels {
+		picks[i], _ = protocol.ChooseWorkerModel(candidates, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
+	}
+	attribution := false
+	for rowIndex, r := range rows {
+		attribution = attribution || r.score.Source == "artificialanalysis"
+		var fits []string
+		for i, level := range levels {
+			fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
+			letter := map[string]string{"excellent": "E", "good": "G", "poor": "P", "denied": "-"}[fit]
+			if picks[i].Model == r.model && picks[i].Harness == r.harness {
+				letter += "*"
+			}
+			fits = append(fits, fmt.Sprintf("%-2s", letter))
+		}
+		last := "-"
+		if r.last > 0 {
+			last = time.Unix(r.last, 0).In(m.loc).Format("Jan 02")
+		}
+		line := fmt.Sprintf("  %-2d %-26s %-8s %5g %s %11d %s", rowIndex+1, cell(r.model, 26), cell(r.harness, 8), r.score.Score, strings.Join(fits, " "), r.used, last)
+		out = append(out, clip(line, w))
+	}
+	if unscored > 0 {
+		out = append(out, sDim.Render(fmt.Sprintf("  %d unscored models", unscored)))
+	}
+	var choices []string
+	for i, level := range levels {
+		name := "-"
+		for j, r := range rows {
+			if picks[i].Model == r.model && picks[i].Harness == r.harness {
+				name = fmt.Sprintf("#%d", j+1)
+				break
+			}
+		}
+		choices = append(choices, level+" -> "+name)
+	}
+	out = append(out, sDim.Render(clip("  now: "+strings.Join(choices, ", "), w)))
+	if attribution {
+		out = append(out, sDim.Render("  scores: Artificial Analysis (artificialanalysis.ai)"))
+	}
+	return out
 }

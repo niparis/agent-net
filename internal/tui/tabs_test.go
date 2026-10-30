@@ -53,6 +53,7 @@ func TestQuotaViewGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := newModel(size[0], size[1])
 		m.tab = 2
+		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra:high", "gpt-6.1-sol:medium", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5:high"}}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
 			{Provider: "codex", Plan: "pro", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92, Pace: protocol.QuotaPaceAhead, ResetsAt: t0.Add(2 * time.Hour).Unix()}}},
 			{Provider: "cursor", Plan: "business", Windows: []protocol.QuotaWindow{{ID: "month", PercentUsed: 100, Exhausted: true}}},
@@ -288,6 +289,18 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 		line := ansi.Strip(m.helpLine(width))
 		if ansi.StringWidth(line) > width || strings.Contains(line, "…") {
 			t.Fatalf("%d: %q", width, line)
+		}
+	}
+}
+
+func TestQuotaModelsSection(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra:high", "unknown-model"}}}
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"MODELS", "gpt-6.1-terra:high", "42.3", "USED 7 DAYS", "LAST", "scores: Artificial Analysis (artificialanalysis.ai)", "unscored"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q in:\n%s", want, v)
 		}
 	}
 }

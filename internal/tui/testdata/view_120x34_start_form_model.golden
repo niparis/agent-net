@@ -12,15 +12,15 @@
 > ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
   scratch            pi       -         -          shell  -         ?     ?
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Project   tenebrae   on Mac
-  Harness   opencode
-> Model     anthropic/
+  Project    tenebrae   on Mac
+  Harness    opencode
+> Model      anthropic/
+  Difficulty
   Task
   permissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)
 
   anthropic/claude-haiku-4-5
   anthropic/claude-sonnet-5
-
 
 
 

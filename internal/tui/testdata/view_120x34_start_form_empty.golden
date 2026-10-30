@@ -13,14 +13,14 @@
   scratch            pi       -         -          shell  -         ?     ?
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 > Project
-  Harness   opencode
-  Model        harness default
+  Harness    opencode
+  Model         automatic choice
+  Difficulty
   Task
 
   shop                                         seen on Mac
   strategies                                   registered on Mac
   tenebrae                                     both on Mac
-
 
 
 

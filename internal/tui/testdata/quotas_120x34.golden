@@ -7,14 +7,14 @@
   cursor         business     month    ██████████ exhausted -         -
     (read on Mac)
 
-
-
-
-
-
-
-
-
+  MODELS
+  #  MODEL                      HARNESS   SCORE T  S  N  H  V  USED 7 DAYS LAST
+  1  claude-opus-5-5:high       claude    51.7 E* E* E* E* G*           0 -
+  2  gpt-6.1-sol:medium         codex     46.1 E  E  E  G  P            0 -
+  3  gpt-6.1-terra:high         codex     42.3 E  E  E  G  P            0 -
+  1 unscored models
+  now: trivial -> #1, simple -> #1, normal -> #1, hard -> #1, very_complex -> #1
+  scores: Artificial Analysis (artificialanalysis.ai)
 
 
 
