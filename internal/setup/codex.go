@@ -27,7 +27,7 @@ const (
 )
 
 // codexMCP registers `agent-net mcp --codex` as an MCP server of Codex, as a
-// marked block at the end of Codex's config.toml (decision 0011, C3). Codex
+// marked block at the end of Codex's config.toml (decision 0012, C3). Codex
 // has no command that sets a server's approval mode, and the file is TOML, so
 // agent-net owns one block and leaves the rest of the file alone.
 

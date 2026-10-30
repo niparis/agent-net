@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-// The real Codex, with a fake model (decision 0011). It starts a private
+// The real Codex, with a fake model (decision 0012). It starts a private
 // `codex app-server --listen unix://` in a throwaway CODEX_HOME and HOME, a
 // model server on a loopback port that answers Codex's Responses API requests,
 // and the real `agent-net mcp --codex` binary as the thread's MCP server. No

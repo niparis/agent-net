@@ -424,7 +424,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 // process per thread, as a child of the shared app server, and tells it nothing
 // about the thread. The shim learns the thread from the _meta of its first tool
 // call (set by Codex, not by the model) and says hello again with it
-// (decision 0011, C3). Two checks:
+// (decision 0012, C3). Two checks:
 //
 //   - the parent process is the app server that this daemon is connected to.
 //     The daemon reads that process ID from the control socket (the kernel

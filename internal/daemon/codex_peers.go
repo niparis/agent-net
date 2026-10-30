@@ -14,7 +14,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Interactive Codex sessions as peers (decision 0011).
+// Interactive Codex sessions as peers (decision 0012).
 //
 // Codex windows run their threads on a shared local app server (the "daemon",
 // `daemon_auto_start`). This adapter is a read-only client of it: it lists the

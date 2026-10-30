@@ -13,7 +13,7 @@ import (
 )
 
 // RunCodex is `agent-net mcp --codex`: the MCP server of one Codex thread
-// (decision 0011, C3).
+// (decision 0012, C3).
 //
 // Codex starts this process once per thread, as a child of its shared app
 // server, and does not say which thread. Every tools/call carries the thread in

@@ -18,7 +18,7 @@ import (
 )
 
 // codexRPC is a JSON-RPC connection to the shared Codex app server, over its
-// control socket (decision 0011). The socket speaks WebSocket at ws://localhost/
+// control socket (decision 0012). The socket speaks WebSocket at ws://localhost/
 // and has no token: it is a 0600 socket in a 0700 folder.
 //
 // This client only reads and queues. It never starts or resumes a thread, so it

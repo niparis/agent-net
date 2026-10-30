@@ -1,6 +1,6 @@
 # Codex
 
-Codex threads that you have open join the network as peers: they show in `agent-net list` and the TUI, they can receive messages, and they can send. The design and the facts behind it are in [decisions/0011-codex-peers.md](decisions/0011-codex-peers.md). Codex workers are a separate thing (see [reference.md](reference.md#workers)).
+Codex threads that you have open join the network as peers: they show in `agent-net list` and the TUI, they can receive messages, and they can send. The design and the facts behind it are in [decisions/0012-codex-peers.md](decisions/0012-codex-peers.md). Codex workers are a separate thing (see [reference.md](reference.md#workers)).
 
 ## How it works
 

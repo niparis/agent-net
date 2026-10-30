@@ -1,4 +1,4 @@
-# 0011 - Interactive Codex sessions are peers
+# 0012 - Interactive Codex sessions are peers
 
 **Date:** 2026-10-30
 **Status:** Built on branch `worktree-agent-a6b5a98a502fdac19`. The owner approved the goal. Proposed until the owner has read it.

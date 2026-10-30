@@ -129,7 +129,7 @@ The worker works with nobody watching, under the project's own permission settin
 | Claude Code | live | A stdio MCP server per session (`agent-net mcp`) for the tools, and the session's own inbox socket for delivery | 2.1.312 |
 | Pi | live | An extension that talks to the local daemon socket | 1.4.x |
 | OpenCode | live | A plugin inside its v2 background service, one daemon connection per session | 2.2.0 |
-| Codex | live | A stdio MCP server per thread (`agent-net mcp --codex`) for the tools; the daemon finds open threads and queues messages through the shared Codex app server ([decision 0011](docs/decisions/0011-codex-peers.md)) | 0.163 |
+| Codex | live | A stdio MCP server per thread (`agent-net mcp --codex`) for the tools; the daemon finds open threads and queues messages through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.163 |
 
 Platforms: Linux (systemd user services) and macOS (launchd), on amd64 and arm64.
 
