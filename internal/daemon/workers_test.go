@@ -1074,7 +1074,7 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	}
 	// The owner is told, with the status failed.
 	n := w.waitNotice(t, 1)[0]
-	if n.From != dying.SessionID || !strings.Contains(n.Body, "status: failed") || !strings.Contains(n.Body, "lost while the daemon was not running") {
+	if n.From != dying.SessionID || !strings.Contains(n.Body, "status: lost after daemon restart") || !strings.Contains(n.Body, "lost while the daemon was not running") {
 		t.Errorf("lost notice: %+v", n)
 	}
 	// The adopted worker can be stopped like any other: the process is the

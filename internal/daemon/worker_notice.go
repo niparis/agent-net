@@ -336,7 +336,7 @@ func (d *Daemon) noticeFor(reason string) (status, note string) {
 	case protocol.StopRequested:
 		return protocol.StatusStopped, "stopped on request, with no hand-back"
 	case protocol.StopLost:
-		return protocol.StatusFailed, "the worker was lost while the daemon was not running"
+		return "lost after daemon restart", "the worker was lost while the daemon was not running"
 	}
 	return "", ""
 }
