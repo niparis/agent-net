@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -49,5 +50,34 @@ func TestWorkersCommandShowsMachineRoom(t *testing.T) {
 	}
 	if strings.Contains(out.String(), "old:") || strings.Contains(out.String(), "running, 0 queued \u00b7 room: ok\nmac") {
 		t.Errorf("a machine with no report or a duplicate is listed:\n%s", out.String())
+	}
+}
+
+// Queued starts show in the table and in the JSON, and the room line prints
+// for a machine that has only a queue.
+func TestWorkersCommandShowsQueuedStarts(t *testing.T) {
+	q := protocol.QueuedWorker{QueueID: "q_ab12", Position: 1, Hostname: "mac", Harness: "opencode", Model: "deepseek/x",
+		Owner: "s_owner", Project: "shop", QueuedAt: 1700000000, Reason: "a worker needs about 1.2 GB"}
+	f := &fakeOp{usage: protocol.UsageResult{NodeID: "n_1", Hostname: "mac",
+		Local: &protocol.UsageReport{Workers: &protocol.WorkerLoad{Queued: 1, Room: protocol.RoomMem, Queue: []protocol.QueuedWorker{q}}}}}
+	var out bytes.Buffer
+	if err := runWorkers(context.Background(), f, &out, nil); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range []string{"mac: workers 0 running, 1 queued \u00b7 room: mem", "q_ab12", "shop", "opencode", "deepseek/x", "s_owner", "a worker needs about 1.2 GB"} {
+		if !strings.Contains(out.String(), s) {
+			t.Errorf("table lacks %q:\n%s", s, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "no workers") {
+		t.Errorf("said no workers while a start is queued:\n%s", out.String())
+	}
+	out.Reset()
+	if err := runWorkers(context.Background(), f, &out, []string{"-json"}); err != nil {
+		t.Fatal(err)
+	}
+	var res protocol.WorkersResult
+	if err := json.Unmarshal(out.Bytes(), &res); err != nil || len(res.Queued) != 1 || res.Queued[0].QueueID != "q_ab12" {
+		t.Errorf("json: %v %s", err, out.String())
 	}
 }

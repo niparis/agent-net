@@ -90,6 +90,23 @@ type WorkerLoad struct {
 	// Reason is the sentence that goes with Room, for example "CPU 5-min
 	// average 82% (target 75%)". Empty when Room is ok.
 	Reason string `json:"reason,omitempty"`
+	// Queue lists the waiting starts, first in line first.
+	Queue []QueuedWorker `json:"queue,omitempty"`
+}
+
+// QueuedWorker is a start that waits for room on a machine (decision 0018).
+type QueuedWorker struct {
+	QueueID  string `json:"queue_id"`
+	Position int    `json:"position"`
+	Hostname string `json:"hostname,omitempty"`
+	Harness  string `json:"harness"`
+	Model    string `json:"model,omitempty"`
+	Owner    string `json:"owner"`
+	Project  string `json:"project"`
+	// QueuedAt is Unix seconds.
+	QueuedAt int64 `json:"queued_at"`
+	// Reason is why it waits now.
+	Reason string `json:"reason,omitempty"`
 }
 
 // RoomText is a short phrase for a WorkerLoad.

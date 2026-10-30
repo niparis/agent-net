@@ -142,15 +142,19 @@ func fmtBytes(b float64) string {
 	return fmt.Sprintf("%.0f MB", b/(1<<20))
 }
 
-// percentile90 is the 90th percentile (nearest rank) of the values.
-func percentile90(vals []float64) float64 {
+// median is the middle of the values (the mean of the two middle ones when
+// the count is even).
+func median(vals []float64) float64 {
 	if len(vals) == 0 {
 		return 0
 	}
 	v := append([]float64(nil), vals...)
 	sort.Float64s(v)
-	rank := (len(v)*9 + 9) / 10 // ceil(0.9 * n)
-	return v[rank-1]
+	n := len(v)
+	if n%2 == 1 {
+		return v[n/2]
+	}
+	return (v[n/2-1] + v[n/2]) / 2
 }
 
 // load returns the machine load: the configured probe, or the sampler.
@@ -194,5 +198,12 @@ func (d *Daemon) workerLoad() *protocol.WorkerLoad {
 	running := len(d.workers)
 	d.wmu.Unlock()
 	queued, _ := d.st.queueLen()
-	return &protocol.WorkerLoad{Running: running, Queued: queued, Room: dec.Room, Headroom: dec.Headroom, Reason: dec.Reason}
+	wl := &protocol.WorkerLoad{Running: running, Queued: queued, Room: dec.Room, Headroom: dec.Headroom, Reason: dec.Reason}
+	if entries, err := d.st.queue(); err == nil {
+		for i, e := range entries {
+			wl.Queue = append(wl.Queue, protocol.QueuedWorker{QueueID: e.ID, Position: i + 1, Hostname: d.hostName(), Harness: e.Harness,
+				Model: e.Model, Owner: e.Owner, Project: e.Project, QueuedAt: e.QueuedAt.Unix(), Reason: dec.Reason})
+		}
+	}
+	return wl
 }

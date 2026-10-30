@@ -130,15 +130,30 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 	if err != nil {
 		return err
 	}
+	var loads []machineLoad
+	if u, err := op.Usage(cctx); err == nil {
+		loads = machineLoads(u)
+	}
+	var queued []protocol.QueuedWorker
+	for _, m := range loads {
+		queued = append(queued, m.load.Queue...)
+	}
 	if *asJSON {
-		b, _ := json.MarshalIndent(protocol.WorkersResult{Workers: ws}, "", "  ")
+		b, _ := json.MarshalIndent(protocol.WorkersResult{Workers: ws, Queued: queued}, "", "  ")
 		fmt.Fprintln(out, string(b))
 		return nil
 	}
-	machineLoadLines(cctx, op, out)
-	if len(ws) == 0 {
+	for _, m := range loads {
+		if m.load.Running > 0 || m.load.Queued > 0 || len(m.load.Queue) > 0 {
+			fmt.Fprintf(out, "%s: %s\n", m.host, m.load.RoomText())
+		}
+	}
+	if len(ws) == 0 && len(queued) == 0 {
 		fmt.Fprintln(out, "no workers")
 		return nil
+	}
+	if len(ws) == 0 {
+		fmt.Fprintln(out, "no running workers")
 	}
 	tw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
 	fmt.Fprintln(tw, "SESSION\tMACHINE\tPROJECT\tHARNESS\tMODEL\tOWNER\tSTATE\tSTARTED")
@@ -154,29 +169,46 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", w.SessionID, w.Hostname, w.Project, w.Harness, dash(w.Model),
 			owner, state, time.Unix(w.StartedAt, 0).Local().Format("Jan 02 15:04"))
 	}
-	return tw.Flush()
+	if len(ws) > 0 {
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+	if len(queued) > 0 {
+		fmt.Fprintln(out, "\nQUEUED STARTS (cancel with agent-net stop <queue id>)")
+		qw := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
+		fmt.Fprintln(qw, "QUEUE ID\tPOS\tMACHINE\tPROJECT\tHARNESS\tMODEL\tOWNER\tQUEUED\tREASON")
+		for _, q := range queued {
+			fmt.Fprintf(qw, "%s\t%d\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", q.QueueID, q.Position, q.Hostname, q.Project, q.Harness, dash(q.Model),
+				q.Owner, time.Unix(q.QueuedAt, 0).Local().Format("Jan 02 15:04"), dash(q.Reason))
+		}
+		return qw.Flush()
+	}
+	return nil
 }
 
-// machineLoadLines prints one line per machine that reports its worker load:
-// "mac: workers 2 running, 1 queued · room: ok". It prints nothing when the
-// usage report is not available.
-func machineLoadLines(ctx context.Context, op operator.Operator, out io.Writer) {
-	u, err := op.Usage(ctx)
-	if err != nil {
-		return
-	}
+type machineLoad struct {
+	host string
+	load protocol.WorkerLoad
+}
+
+// machineLoads lists the machines that report their worker load, this one
+// first, each once.
+func machineLoads(u protocol.UsageResult) []machineLoad {
+	var out []machineLoad
 	seen := map[string]bool{}
 	if u.Local != nil && u.Local.Workers != nil {
-		fmt.Fprintf(out, "%s: %s\n", u.Hostname, u.Local.Workers.RoomText())
+		out = append(out, machineLoad{u.Hostname, *u.Local.Workers})
 		seen[u.NodeID] = true
 	}
 	if u.Gateway != nil {
 		for _, n := range u.Gateway.Nodes {
 			if !seen[n.NodeID] && n.Usage.Workers != nil {
-				fmt.Fprintf(out, "%s: %s\n", n.Hostname, n.Usage.Workers.RoomText())
+				out = append(out, machineLoad{n.Hostname, *n.Usage.Workers})
 			}
 		}
 	}
+	return out
 }
 
 // cmdSend: agent-net send <session or name> <text...>. It sends as the owner.

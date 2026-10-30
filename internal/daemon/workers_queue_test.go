@@ -93,16 +93,48 @@ func TestDefaultsOfWorkerSettings(t *testing.T) {
 	}
 }
 
-func TestPercentile90(t *testing.T) {
-	if percentile90(nil) != 0 || percentile90([]float64{7}) != 7 {
+func TestMedian(t *testing.T) {
+	if median(nil) != 0 || median([]float64{7}) != 7 {
 		t.Error("small sets")
 	}
-	var v []float64
-	for i := 1; i <= 10; i++ {
-		v = append(v, float64(i))
+	if got := median([]float64{4, 1, 3, 2}); got != 2.5 {
+		t.Errorf("median of 1..4 = %v, want 2.5", got)
 	}
-	if got := percentile90(v); got != 9 {
-		t.Errorf("p90 of 1..10 = %v, want 9", got)
+	if got := median([]float64{9, 1, 5}); got != 5 {
+		t.Errorf("median of 1,5,9 = %v, want 5", got)
+	}
+}
+
+// The real history of a 15 GB machine: one go test -race burst peaked at 9.3 GB.
+func TestLearnedCostIgnoresPeaks(t *testing.T) {
+	const gb = 1 << 30
+
+	avg := []float64{0.27, 1.25, 1.05, 0.95, 1.58, 1.39}
+	peak := []float64{0.28, 3.6, 3.5, 3.5, 9.3, 4.2}
+	var cs []workerCost
+	for i := range avg {
+		cs = append(cs, workerCost{AvgRSS: avg[i] * gb, PeakRSS: peak[i] * gb, AvgCPU: 30})
+	}
+	c := learnedCost(cs, 15*gb)
+	// Median of the six averages: (1.05 + 1.25) / 2 = 1.15 GB.
+	if !c.Learned || float64(c.RAM)/gb < 1.14 || float64(c.RAM)/gb > 1.16 || c.Cores != 0.3 {
+		t.Errorf("cost %+v, want about 1.15 GB and 0.3 cores", c)
+	}
+	// A huge history is capped at 25% of the machine.
+	big := []workerCost{{AvgRSS: 20 * gb}, {AvgRSS: 30 * gb}, {AvgRSS: 40 * gb}}
+	if c := learnedCost(big, 16*gb); c.RAM != 4*gb {
+		t.Errorf("capped cost %v, want 4 GB", c.RAM)
+	}
+	// Unknown total: no cap.
+	if c := learnedCost(big, 0); c.RAM != 30*gb {
+		t.Errorf("uncapped cost %v, want 30 GB", c.RAM)
+	}
+	// Fewer than two samples: the default.
+	if c := learnedCost(cs[:1], 15*gb); c.Learned || c.RAM != 600<<20 {
+		t.Errorf("one sample: %+v", c)
+	}
+	if c := learnedCost(nil, 15*gb); c.Learned {
+		t.Errorf("no sample: %+v", c)
 	}
 }
 
@@ -116,7 +148,7 @@ func TestWorkerCostLearning(t *testing.T) {
 	if c := d.expectedCost("opencode", "fake/m1"); c.RAM != 600<<20 || c.Cores != 1 || c.Learned {
 		t.Fatalf("no history: %+v", c)
 	}
-	// 25 workers: only the last 20 are kept, and the expected cost is the p90.
+	// 25 workers: only the last 20 are kept, and the expected cost is the median of the averages.
 	for i := 1; i <= 25; i++ {
 		d.recordWorkerCost("opencode", "fake/m1", usage.Life{CPUAvg: float64(i * 10), CPUPeak: float64(i * 20), RSSAvg: float64(i) * 1e8, RSSPeak: float64(i) * 1e8}, time.Minute)
 	}
@@ -124,10 +156,10 @@ func TestWorkerCostLearning(t *testing.T) {
 	if len(cs) != protocol.WorkerCostKeep {
 		t.Fatalf("kept %d, want %d", len(cs), protocol.WorkerCostKeep)
 	}
-	// Kept: 6..25. p90 of 20 values is the 18th: 23.
+	// Kept: 6..25. The median of 20 values is the mean of the 10th and 11th: 15.5.
 	c := d.expectedCost("opencode", "fake/m1")
-	if !c.Learned || c.RAM != uint64(23e8) || c.Cores != 2.3 {
-		t.Errorf("expected cost %+v, want 2.3 GB-ish and 2.3 cores", c)
+	if !c.Learned || c.RAM != uint64(15.5e8) || c.Cores < 1.549 || c.Cores > 1.551 {
+		t.Errorf("expected cost %+v, want 1.55e9 bytes and 1.55 cores", c)
 	}
 	// Another model has its own history, so it still gets the default.
 	if c := d.expectedCost("opencode", "fake/m2"); c.Learned {
