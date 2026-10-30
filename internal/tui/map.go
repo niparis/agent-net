@@ -126,16 +126,39 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.help = true
 	case "left":
-		m.mapFollow("in")
+		if m.mp.overview {
+			m.overviewMove("left")
+		} else {
+			m.mapFollow("in")
+		}
 	case "right":
-		m.mapFollow("out")
+		if m.mp.overview {
+			m.overviewMove("right")
+		} else {
+			m.mapFollow("out")
+		}
 	case "up", "k":
-		m.mapMove(-1)
+		if m.mp.overview {
+			m.overviewMove("up")
+		} else {
+			m.mapMove(-1)
+		}
 	case "down", "j":
-		m.mapMove(1)
+		if m.mp.overview {
+			m.overviewMove("down")
+		} else {
+			m.mapMove(1)
+		}
 	case "z":
 		m.mp.overview = !m.mp.overview
+		if m.mp.overview {
+			m.overviewRevealSelection()
+		}
 	case "enter":
+		if m.mp.overview {
+			m.mp.overview = false
+			return m, nil
+		}
 		m.mapOn, m.tab, m.focus = false, 0, focusSessions
 		m.filter = m.mp.selected
 		m.input.SetValue(m.filter)
@@ -150,9 +173,17 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.cto.input.Focus()
 		}
 	case "pgup":
-		m.mapMove(-m.mapBodyRows())
+		if m.mp.overview {
+			m.overviewPage(-1)
+		} else {
+			m.mapMove(-m.mapBodyRows())
+		}
 	case "pgdown":
-		m.mapMove(m.mapBodyRows())
+		if m.mp.overview {
+			m.overviewPage(1)
+		} else {
+			m.mapMove(m.mapBodyRows())
+		}
 	case "home", "g":
 		m.mapMove(-1 << 20)
 	case "end", "G":

@@ -422,3 +422,37 @@ func TestLargeOverviewNeverFallsBack(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestOverviewNavigationAndFocus(t *testing.T) {
+	g := fakeGraph()
+	m := openMap(t, mapModel(80, 24, g))
+	m.mp.selected = "cogforge"
+	m = keys(m, "z", "right")
+	if !m.mp.overview || m.mp.selected == "cogforge" {
+		t.Fatalf("right did not select a box: %q", m.mp.selected)
+	}
+	selected := m.mp.selected
+	m = keys(m, "enter")
+	if !m.mapOn || m.mp.overview || m.mp.selected != selected {
+		t.Fatal("enter did not return to focus")
+	}
+}
+func TestOverviewScrollKeepsEdgesWithinVisibleBoxes(t *testing.T) {
+	g := fakeGraph()
+	for i := 0; i < 60; i++ {
+		name := fmt.Sprintf("node-%02d", i)
+		g.Nodes = append(g.Nodes, protocol.Node{Name: name, Kind: "component"})
+		g.Edges = append(g.Edges, protocol.Edge{From: "trading-architect", To: name, Kind: "governs"})
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z")
+	before := ansi.Strip(m.View())
+	if !strings.Contains(before, "edges off screen") {
+		t.Fatal(before)
+	}
+	m = keys(m, "pgdown")
+	after := ansi.Strip(m.View())
+	if m.mp.overviewScroll == 0 || before == after {
+		t.Fatal("page did not scroll")
+	}
+}

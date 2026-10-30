@@ -136,3 +136,90 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 	}
 	return out, true
 }
+
+func (m Model) overviewHeight() int {
+	h := max(m.height, 10)
+	box := min(max((h-1)/3, 6), max(h-4, 1))
+	return max(h-2-box, 1)
+}
+func (m *Model) overviewRevealSelection() {
+	rows := m.overviewLines(max(m.width, 40))
+	room := overviewNodeRoom(m.overviewHeight())
+	for i, row := range rows {
+		for _, name := range row.nodes {
+			if name == m.mp.selected {
+				if i < m.mp.overviewScroll {
+					m.mp.overviewScroll = i
+				}
+				if i >= m.mp.overviewScroll+room {
+					m.mp.overviewScroll = i - room + 1
+				}
+				return
+			}
+		}
+	}
+}
+func (m *Model) overviewMove(direction string) {
+	rows := m.overviewLines(max(m.width, 40))
+	type position struct {
+		row, col int
+		name     string
+	}
+	var positions []position
+	for r, line := range rows {
+		for c, name := range line.nodes {
+			positions = append(positions, position{r, c, name})
+		}
+	}
+	if len(positions) == 0 {
+		return
+	}
+	index := 0
+	for i, p := range positions {
+		if p.name == m.mp.selected {
+			index = i
+			break
+		}
+	}
+	current := positions[index]
+	target := index
+	switch direction {
+	case "left":
+		target = max(index-1, 0)
+	case "right":
+		target = min(index+1, len(positions)-1)
+	case "up", "down":
+		bestRow := -1
+		for _, p := range positions {
+			if direction == "up" && p.row < current.row && p.row > bestRow {
+				bestRow = p.row
+			}
+			if direction == "down" && p.row > current.row && (bestRow < 0 || p.row < bestRow) {
+				bestRow = p.row
+			}
+		}
+		if bestRow >= 0 {
+			distance := int(^uint(0) >> 1)
+			for i, p := range positions {
+				if p.row == bestRow {
+					d := p.col - current.col
+					if d < 0 {
+						d = -d
+					}
+					if d < distance {
+						distance = d
+						target = i
+					}
+				}
+			}
+		}
+	}
+	m.mp.selected = positions[target].name
+	m.mp.choice = 0
+	m.overviewRevealSelection()
+}
+func (m *Model) overviewPage(delta int) {
+	room := overviewNodeRoom(m.overviewHeight())
+	total := len(m.overviewLines(max(m.width, 40)))
+	m.mp.overviewScroll = min(max(m.mp.overviewScroll+delta*room, 0), max(total-room, 0))
+}
