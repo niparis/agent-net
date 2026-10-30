@@ -22,14 +22,24 @@ contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The
 daemon excludes this working directory from Claude session discovery, so the
 CTO is not registered with the gateway and cannot receive peer messages.
 
-The private MCP server can read and change the graph, read agents, workers,
-Needs you and the feed, send messages, and start workers as the owner. The
-daemon accepts its channel only from the active CTO runtime's process tree and
-checks the peer on every call. For Claude, it identifies the background session
-from Claude's session file, including its job, name, private working directory
-and PID file name. It checks the root process start token as well as its ancestry. It exposes no other owner methods on that channel. The owner
-gate also checks the CTO process tree, so a command it runs cannot use the
-owner CLI. Switching harnesses stops the old runtime and revokes its channel.
+The private MCP server exposes the owner operations listed in
+[the CTO parity table](reference.md), including network and conversation reads,
+worker and registry actions, graph changes and settings. These operations reuse
+the daemon's owner implementations; the larger tool list does not grant a new
+authority path. The daemon accepts the channel only from the active CTO
+runtime's process tree and checks the peer on every call. For Claude, it
+identifies the background session from Claude's session file, including its
+job, name, private working directory and PID file name. It checks the root
+process start token as well as its ancestry. The owner gate also checks the CTO
+process tree, so a command it runs cannot use the owner CLI. Switching harnesses
+stops the old runtime and revokes its channel. The CTO brief requires the owner's
+explicit words in the chat before it stops a worker, declines a held request,
+removes an MCP server or changes integrations. This is an instruction to the
+model, not a separate technical confirmation gate.
+
+The CTO can send interface requests to local TUI connections that subscribed
+and passed the owner gate. The requests select a view, selection and filter or
+show a notice; they do not run an operator action in the TUI.
 
 The gateway trusts enrolled daemons to attribute CTO graph writes and sends.
 Those writes and sends are marked `by=cto`. A CTO write or send checks that
@@ -337,7 +347,7 @@ Graph operator methods use the owner gate, including history and graph reads. Th
 
 ## Playbook notes
 
-`playbook_set` and `playbook_get` use the same owner gate: your command line or the TUI, never an agent client and never a CLI inside an agent session. The CTO will call them later through the owner gate. A note is at most 1024 bytes after control characters other than newline and tab are removed, and it appears in every `agent_start` result for that model. It is not a secret store: the note reaches any agent that starts a worker with that model, so do not put credentials in it.
+`playbook_set` and `playbook_get` use the same owner gate: your command line or the TUI, never an agent client and never a CLI inside an agent session. The CTO can also call them through its process-tree-checked private channel. A note is at most 1024 bytes after control characters other than newline and tab are removed, and it appears in every `agent_start` result for that model. It is not a secret store: the note reaches any agent that starts a worker with that model, so do not put credentials in it.
 
 `agent_learn` is the other direction: it is open to agent sessions, because they are the ones that notice things, and refused for the command line. A finding is at most 500 bytes, names a subject and may carry up to 20 session or worker IDs. A session may record at most 3 findings in 24 hours; the fourth is refused. Findings are not messages and never appear in Needs you. They are stored in the gateway's `findings` table with the reporting session and a status. Automatic notes built from them are not secrets either, and they reach every agent at the moment of choice.
 

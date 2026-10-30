@@ -111,6 +111,11 @@ charter attributes. Node settings can override merge authority and worker
 sandbox defaults. The tool schemas describe the other fields and fixed values.
 
 
+`ui_show` switches every open local TUI to `sessions`, `messages`, `quotas`
+or `map`, with an optional session ID, exact session name or project node,
+filter text and a short reason. `ui_notice` shows a short note. Both show a
+`CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
+
 In the TUI, `C` focuses the CTO box on the Sessions tab.
 Its title shows the selected harness and model.
 Type in the focused input and press Enter to send. When the input is empty,
