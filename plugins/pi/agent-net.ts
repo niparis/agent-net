@@ -26,6 +26,9 @@ const RELAY_RULE =
   "If your user asked you to get something done by another agent, send it, and say in the message that your user approved it.";
 // How long a failed tool call waits for a hint before it goes on without one.
 const HINT_WAIT_MS = 400;
+// Delegation policy (decision 0014): the daemon says what to add to the system
+// prompt every turn. The call has a budget, so a slow daemon cannot hold a turn.
+const POLICY_WAIT_MS = 1_500;
 // Output that may be a failed network or service call. The daemon decides; this only keeps most output from being sent.
 const FAILURE_PREFILTER = /\b[45]\d\d\b|refused|reset|time[ds]? ?out|unreachable|ECONN|ETIMEDOUT|ENOTFOUND|resolve host|bad gateway|unavailable|curl: \(/i;
 const ANNOUNCE_REMINDER = "Reminder: call agent_announce with your current task.";
@@ -619,9 +622,43 @@ export default function (pi: ExtensionAPI) {
 
   // Put the announce rule into the system prompt. The handler gets the prompt
   // of each turn fresh, so it is added once per turn and never piles up.
+  //
+  // The same hook carries the delegation policy: the owner sets it in agent-net
+  // (a session or a project), and each turn asks the daemon for it. Pi has no
+  // native subagents, so the daemon sends the workers wording for "native" too.
+  // The last answer is kept, so a daemon that is slow for a moment does not
+  // drop the policy.
+  let lastPolicy: { text?: string; main?: string } | undefined;
+  let mainApplied = "";
+  async function fetchPolicy() {
+    if (!connected) return lastPolicy;
+    let timer: NodeJS.Timeout | undefined;
+    const wait = new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), POLICY_WAIT_MS)));
+    const res = await Promise.race([request("policy", {}).catch(() => undefined), wait]);
+    if (timer) clearTimeout(timer);
+    if (res && typeof res === "object") lastPolicy = res;
+    return lastPolicy;
+  }
+  /** Switch the session model once per value the owner sets. Only an exact "provider/id" is found. */
+  async function applyMain(main: string | undefined) {
+    if (!main || main === mainApplied) return;
+    mainApplied = main;
+    const i = main.indexOf("/");
+    if (i <= 0) return;
+    try {
+      const m = sessionCtx?.modelRegistry?.find(main.slice(0, i), main.slice(i + 1));
+      if (m) await pi.setModel(m);
+    } catch {
+      // The owner can switch the model by hand.
+    }
+  }
   pi.on("before_agent_start", async (event) => {
-    if (event.systemPrompt.includes(ANNOUNCE_RULE)) return;
-    return { systemPrompt: `${event.systemPrompt}\n\nagent-net: ${ANNOUNCE_RULE}` };
+    let systemPrompt = event.systemPrompt;
+    if (!systemPrompt.includes(ANNOUNCE_RULE)) systemPrompt = `${systemPrompt}\n\nagent-net: ${ANNOUNCE_RULE}`;
+    const pol = await fetchPolicy();
+    if (pol?.text && !systemPrompt.includes(pol.text)) systemPrompt = `${systemPrompt}\n\n${pol.text}`;
+    await applyMain(pol?.main);
+    return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
   });
 
   const NOT_INSTRUCTIONS =

@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -106,5 +108,31 @@ func TestSessionPolicyIsAnOperatorMethodButTheLocalPolicyCallIsNot(t *testing.T)
 	}
 	if !found {
 		t.Error("OpSessionPolicy is not listed")
+	}
+}
+
+func TestPluginsCarryTheCoderPromptAndTheTestsTheRealText(t *testing.T) {
+	joined := func(path string) string {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return regexp.MustCompile("[\"'`]\\s*\\+\\s*[\"'`]").ReplaceAllString(string(b), "")
+	}
+	oc := joined("../../plugins/opencode/agent-net.ts")
+	for name, want := range map[string]string{"CoderAgentPrompt": CoderAgentPrompt, "CoderAgentDescription": CoderAgentDescription} {
+		if !strings.Contains(oc, want) {
+			t.Errorf("the OpenCode plugin does not carry %s:\n%s", name, want)
+		}
+	}
+	// The plugin tests use the exact words the daemon sends.
+	v := DelegationView{DelegationPolicy: DelegationPolicy{Delegate: DelegateNative, CoderModel: "x"}, CoderResolved: "deepseek/deepseek-v4.1-flash"}
+	native := PolicyText(v, "opencode", CoderAgentID(v.Coder()))
+	if !strings.Contains(joined("../../plugins/opencode/test/plugin.test.mjs"), native) {
+		t.Errorf("the OpenCode plugin test does not use the daemon's native text:\n%s", native)
+	}
+	workers := PolicyText(v, "pi", "")
+	if !strings.Contains(joined("../../plugins/pi/test/plugin.test.mjs"), workers) {
+		t.Errorf("the Pi plugin test does not use the daemon's workers text:\n%s", workers)
 	}
 }

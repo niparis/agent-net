@@ -81,6 +81,7 @@ async function test(name, fn) {
 function makePi() {
   const handlers = new Map();
   const tools = new Map();
+  const models = [];
   return {
     handlers,
     tools,
@@ -93,7 +94,12 @@ function makePi() {
         tools.set(t.name, t);
       },
       sendMessage() {},
+      async setModel(m) {
+        models.push(m);
+        return true;
+      },
     },
+    models,
     fire: (event, ...args) => handlers.get(event)?.(...args),
   };
 }
@@ -388,6 +394,69 @@ await test("agent_list, agent_send and agent_announce carry the new rules", asyn
   if (!p.tools.get("agent_list").description.includes("owns or can see")) throw new Error("agent_list");
   const ann = p.tools.get("agent_announce");
   if (!ann.description.includes("fill expertise once")) throw new Error("agent_announce: " + ann.description);
+});
+
+// ---- delegation policy (decision 0014) ----
+
+const POLICY_TEXT =
+  "[agent-net] Your user's standing policy for this session, set in agent-net: delegate all code changes to a worker. " +
+  'Start one with agent_start in this project with model "deepseek/deepseek-v4.1-flash" (it gets its own git worktree by default), give it a brief, and wait for its report. ' +
+  "You plan, review its diff and run the tests. Do not edit code yourself unless the worker fails twice.";
+
+async function startedWithModels(registry) {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx({ modelRegistry: registry }));
+  await until("hello", () => hellos.length === n + 1);
+  return p;
+}
+
+await test("the policy text is added to the system prompt of every turn, never twice", async () => {
+  const p = await started();
+  replies.policy = { text: POLICY_TEXT, mode: "workers", coder: "deepseek/deepseek-v4.1-flash" };
+  for (let turn = 0; turn < 3; turn++) {
+    const out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
+    const parts = out.systemPrompt.split(POLICY_TEXT);
+    if (parts.length !== 2 || !out.systemPrompt.startsWith("You are Pi.") || !out.systemPrompt.includes("agent_announce")) {
+      throw new Error("turn " + turn + ": " + out.systemPrompt);
+    }
+    // The prompt of a turn that already has it is left alone.
+    const again = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: out.systemPrompt });
+    if (again !== undefined) throw new Error("added twice");
+  }
+  // Changed, then cleared by the owner.
+  replies.policy = { text: "[agent-net] Your user's standing policy for this session, set in agent-net: do the code changes yourself." };
+  let out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
+  if (!out.systemPrompt.includes("do the code changes yourself") || out.systemPrompt.includes("worker")) throw new Error(out.systemPrompt);
+  replies.policy = {};
+  out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
+  if (out.systemPrompt.includes("standing policy")) throw new Error("a cleared policy stayed: " + out.systemPrompt);
+  delete replies.policy;
+  await p.fire("session_shutdown", {});
+});
+
+await test("the main model is set once per value, from the model registry", async () => {
+  const found = [];
+  const registry = { find: (provider, id) => (found.push([provider, id]), provider === "sol" ? { provider, id } : undefined) };
+  const p = await startedWithModels(registry);
+  replies.policy = { text: POLICY_TEXT, main: "sol/sol-6.1" };
+  for (let i = 0; i < 3; i++) await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "x" });
+  if (p.models.length !== 1 || p.models[0].id !== "sol-6.1" || found.length !== 1) throw new Error(JSON.stringify([p.models, found]));
+  // A model the registry does not know is skipped without a failure.
+  replies.policy = { text: POLICY_TEXT, main: "nobody/none" };
+  await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "x" });
+  if (p.models.length !== 1) throw new Error("set an unknown model");
+  delete replies.policy;
+  await p.fire("session_shutdown", {});
+});
+
+await test("without a connection the turn is not blocked and no policy is invented", async () => {
+  const p = makePi();
+  extension(p.api); // no session_start: never connected
+  const t0 = Date.now();
+  const out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
+  if (Date.now() - t0 > 1000 || out.systemPrompt.includes("standing policy")) throw new Error("blocked or invented a policy: " + out.systemPrompt);
 });
 
 server.close();

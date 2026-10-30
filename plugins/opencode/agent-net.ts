@@ -648,6 +648,33 @@ const RELAY_RULE =
   "If your user asked you to get something done by another agent, send it, and say in the message that your user approved it.";
 // How long a failed tool call waits for a hint before it goes on without one.
 const HINT_WAIT_MS = 400;
+// Delegation policy (decision 0014). The daemon answers a "policy" call with
+// the text to add to the system prompt, the native coder subagent to define and
+// the main model. The call has a budget, so a slow daemon cannot hold a turn.
+const POLICY_WAIT_MS = 1_500;
+// Keep these in step with CoderAgentPrompt and CoderAgentDescription in
+// internal/protocol/delegation.go (a Go test compares them).
+const CODER_AGENT_PROMPT =
+  "You implement the brief you are given, in the working tree you are in. " +
+  "Make the change, run the tests, and fix what fails. Then report what you changed (the diff in short), the test result, and anything you could not finish. " +
+  "Ask a question only if you are blocked.";
+const CODER_AGENT_DESCRIPTION =
+  "Implements a coding brief: edits the code, runs the tests and reports the diff. Defined by agent-net for your user's delegation policy.";
+
+interface PolicyReply {
+  text?: string;
+  mode?: string;
+  agent_id?: string;
+  coder?: string;
+  main?: string;
+}
+
+/** "provider/model" to OpenCode's model reference; the model id may hold more slashes. */
+function modelRef(name: string | undefined): { providerID: string; id: string } | undefined {
+  const i = String(name ?? "").indexOf("/");
+  if (i <= 0 || i === name!.length - 1) return undefined;
+  return { providerID: name!.slice(0, i), id: name!.slice(i + 1) };
+}
 // Output that may be a failed network or service call. The daemon decides; this only keeps most output from being sent.
 const FAILURE_PREFILTER = /\b[45]\d\d\b|refused|reset|time[ds]? ?out|unreachable|ECONN|ETIMEDOUT|ENOTFOUND|resolve host|bad gateway|unavailable|curl: \(/i;
 
@@ -1184,6 +1211,70 @@ export default {
     // session, and goes into the system prompt of the next model request of
     // that session (OpenCode has no hook that adds text to a tool result).
     const pendingHints = new Map<string, string>();
+
+    // Delegation policy (decision 0014). The owner sets it in agent-net; the
+    // daemon says what it is for this session. Each request gets the text, and
+    // the native coder subagent is defined at run time (no file for the owner
+    // to write). One agent per coder model, because one service hosts many
+    // sessions: the agent's name carries the model.
+    const policyAgents = new Map<string, string>(); // agent name -> "provider/model"
+    const lastPolicy = new Map<string, PolicyReply>(); // root session -> last answer
+    const mainApplied = new Map<string, string>(); // root session -> main model already switched to
+    try {
+      void (ctx as any).agent
+        ?.transform((editor: any) => {
+          for (const [name, model] of policyAgents) {
+            const ref = modelRef(model);
+            if (!ref) continue;
+            editor.update(name, (agent: any) => {
+              agent.name = name;
+              agent.description = CODER_AGENT_DESCRIPTION;
+              agent.system = CODER_AGENT_PROMPT;
+              agent.mode = "subagent";
+              agent.model = ref;
+            });
+          }
+        })
+        ?.catch?.(() => {});
+    } catch {
+      // An OpenCode without agent transforms cannot get the native subagent.
+    }
+    /**
+     * The policy for a session. A subagent's own session has none: the coder
+     * must not be told to delegate. A daemon that does not answer in time gives
+     * the last answer, so the policy does not blink off.
+     */
+    async function refreshPolicy(sid: string): Promise<PolicyReply | undefined> {
+      if (!sid || h.rootOf.has(sid)) return undefined;
+      const link = h.links.get(sid)?.link;
+      if (!link) return undefined;
+      let timer: NodeJS.Timeout | undefined;
+      const wait = new Promise<undefined>((resolve) => (timer = setTimeout(() => resolve(undefined), POLICY_WAIT_MS)));
+      const res: PolicyReply | undefined = await Promise.race([link.request("policy", {}).catch(() => undefined), wait]);
+      if (timer) clearTimeout(timer);
+      if (!res || typeof res !== "object") return lastPolicy.get(sid);
+      lastPolicy.set(sid, res);
+      if (res.agent_id && res.coder && policyAgents.get(res.agent_id) !== res.coder) {
+        policyAgents.set(res.agent_id, res.coder);
+        try {
+          await (ctx as any).agent?.reload?.();
+        } catch {
+          // The agent appears with the next reload.
+        }
+      }
+      return res;
+    }
+    /** Switch the session to the main model, once per value the owner sets. */
+    async function applyMain(sid: string, pol: PolicyReply | undefined) {
+      const ref = modelRef(pol?.main);
+      if (!ref || mainApplied.get(sid) === pol!.main) return;
+      mainApplied.set(sid, pol!.main!);
+      try {
+        await (ctx.session as any).switchModel?.({ sessionID: sid, model: ref });
+      } catch {
+        // The owner can switch the model by hand.
+      }
+    }
     try {
       void ctx.session
         .hook("context", (input: any) => {
@@ -1193,12 +1284,35 @@ export default {
             pendingHints.delete(h.rootOf.get(sid) ?? sid);
             input.system.push({ type: "text", text: hint });
           }
-          if (input.system.some((part: any) => part.text.includes(ANNOUNCE_RULE))) return;
-          input.system.push({ type: "text", text: `agent-net: ${ANNOUNCE_RULE}` });
+          if (!input.system.some((part: any) => part.text.includes(ANNOUNCE_RULE))) {
+            input.system.push({ type: "text", text: `agent-net: ${ANNOUNCE_RULE}` });
+          }
+          // The policy is asked for on every request, so a change by the owner
+          // shows on the next turn. The parts above are added before the first await.
+          if (!sid) return;
+          return refreshPolicy(sid).then(async (pol) => {
+            if (pol?.text && !input.system.some((part: any) => part.text.includes(pol.text))) {
+              input.system.push({ type: "text", text: pol.text });
+            }
+            await applyMain(sid, pol);
+          });
         })
         .catch(() => {});
     } catch {
       // An OpenCode without this hook still has the tool description and the reminder.
+    }
+    try {
+      // On a new prompt, before the model is called: define the subagent and
+      // switch the model, so both are there for the first request.
+      void ctx.session
+        .hook("prompt", async (input: any) => {
+          const sid = input?.sessionID ? String(input.sessionID) : "";
+          if (!sid) return;
+          await applyMain(sid, await refreshPolicy(sid));
+        })
+        .catch(() => {});
+    } catch {
+      // Without this hook the first request of a session may lack the subagent.
     }
     try {
       void (ctx.tool as any)

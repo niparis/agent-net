@@ -30,6 +30,7 @@ const calls = []; // [method, params] of every call except hello
 const conns = new Map(); // session ID -> its latest daemon connection
 const textResults = []; // params of every session_text_result
 let hintReply = {}; // what the fake daemon answers to "hint"
+let policyReply = {}; // what the fake daemon answers to "policy"
 const server = createServer((conn) => {
   let buf = "";
   conn.setEncoding("utf8");
@@ -65,6 +66,8 @@ const server = createServer((conn) => {
           ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac" }
         : line.method === "hint"
           ? hintReply
+        : line.method === "policy"
+          ? policyReply
         : line.method === "worker_handback"
           ? { status: line.params.status || "done" }
         : line.method === "worker_stop"
@@ -113,6 +116,9 @@ function makeContext(directory, sessions, hooks = {}) {
           hooks.onHook?.(name, fn);
           return {};
         },
+        async switchModel(input) {
+          hooks.onSwitchModel?.(input);
+        },
         async context({ sessionID }) {
           hooks.onContext?.(sessionID);
           if (hooks.contextFails) throw new Error("context failed");
@@ -130,6 +136,14 @@ function makeContext(directory, sessions, hooks = {}) {
           }
         },
       },
+      ...(hooks.noAgent
+        ? {}
+        : {
+            agent: {
+              async transform(fn) { hooks.onAgentTransform?.(fn); return {}; },
+              async reload() { hooks.onAgentReload?.(); },
+            },
+          }),
       tool: {
         transform(fn) { hooks.onTransform?.(fn); },
         async hook(name, fn) { hooks.onToolHook?.(name, fn); return {}; },
@@ -1029,6 +1043,139 @@ await test("agent_list, agent_send and agent_announce carry the new rules", asyn
   if (!desc("agent_announce").includes("fill expertise once")) throw new Error("agent_announce");
   if (!tools.find((t) => t.name === "agent_announce").input.properties.expertise) throw new Error("no expertise parameter");
   stop();
+});
+
+// ---- delegation policy (decision 0014) ----
+
+async function withPolicy(fn, extra = {}) {
+  const sid = "ses_pol" + ++uniq;
+  freshHub();
+  const sessions = new Map([[sid, session(sid, "/work/p")]]);
+  const hooked = {};
+  const rec = { transforms: [], reloads: 0, switches: [] };
+  const c = makeContext("/work/p", sessions, {
+    onHook: (n, f) => (hooked[n] = f),
+    onAgentTransform: (f) => rec.transforms.push(f),
+    onAgentReload: () => rec.reloads++,
+    onSwitchModel: (i) => rec.switches.push(i),
+    ...extra,
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for " + sid, () => registered(sid));
+  try {
+    await fn(hooked, sid, rec, sessions, c);
+  } finally {
+    policyReply = {};
+    stop();
+  }
+}
+
+const POLICY_TEXT =
+  "[agent-net] Your user's standing policy for this session, set in agent-net: delegate all code changes to the `agent-net-coder-deepseek-deepseek-v4-1-flash` subagent (model deepseek/deepseek-v4.1-flash). " +
+  "You plan, write the brief, review its diff and run the tests. Do not edit code yourself unless the subagent fails twice.";
+const nativeReply = () => ({ text: POLICY_TEXT, mode: "native", agent_id: "agent-net-coder-deepseek-deepseek-v4-1-flash", coder: "deepseek/deepseek-v4.1-flash" });
+const editorFor = () => {
+  const agents = new Map();
+  return { agents, update: (id, fn) => { const a = agents.get(id) ?? {}; agents.set(id, a); fn(a); } };
+};
+
+await test("the policy text is added to the system prompt of every request", async () => {
+  await withPolicy(async (hooked, sid) => {
+    policyReply = nativeReply();
+    for (let i = 0; i < 3; i++) {
+      const input = { sessionID: sid, system: [{ type: "text", text: "You are OpenCode." }] };
+      await hooked.context(input);
+      const texts = input.system.map((p) => p.text);
+      if (texts.filter((t) => t === POLICY_TEXT).length !== 1) throw new Error("request " + i + ": " + JSON.stringify(texts));
+      if (texts[0] !== "You are OpenCode.") throw new Error("system prompt reordered");
+      // The same request seen twice does not get it twice.
+      await hooked.context(input);
+      if (input.system.filter((p) => p.text === POLICY_TEXT).length !== 1) throw new Error("added twice");
+    }
+    // A change by the owner shows on the next request.
+    policyReply = { text: "[agent-net] Your user's standing policy for this session, set in agent-net: do the code changes yourself. Do not start subagents or workers for them.", mode: "off" };
+    const input = { sessionID: sid, system: [{ type: "text", text: "x" }] };
+    await hooked.context(input);
+    if (!input.system.some((p) => p.text.includes("do the code changes yourself")) || input.system.some((p) => p.text === POLICY_TEXT)) {
+      throw new Error(JSON.stringify(input.system));
+    }
+    // Cleared: nothing is added.
+    policyReply = {};
+    const none = { sessionID: sid, system: [{ type: "text", text: "x" }] };
+    await hooked.context(none);
+    if (none.system.some((p) => p.text.includes("standing policy"))) throw new Error("a cleared policy was still added");
+  });
+});
+
+await test("the native coder subagent is defined at run time, with the resolved model", async () => {
+  await withPolicy(async (hooked, sid, rec) => {
+    if (rec.transforms.length !== 1) throw new Error("no agent transform registered");
+    policyReply = nativeReply();
+    await hooked.prompt({ sessionID: sid, messageID: "m1" });
+    if (rec.reloads !== 1) throw new Error("agents not reloaded: " + rec.reloads);
+    const ed = editorFor();
+    rec.transforms[0](ed);
+    const a = ed.agents.get("agent-net-coder-deepseek-deepseek-v4-1-flash");
+    if (!a || a.mode !== "subagent" || a.model.providerID !== "deepseek" || a.model.id !== "deepseek-v4.1-flash" ||
+        a.name !== "agent-net-coder-deepseek-deepseek-v4-1-flash" || !a.system.includes("run the tests") || !a.description) {
+      throw new Error("agent: " + JSON.stringify([...ed.agents]));
+    }
+    // The same policy again defines nothing new.
+    await hooked.prompt({ sessionID: sid, messageID: "m2" });
+    await hooked.context({ sessionID: sid, system: [] });
+    if (rec.reloads !== 1) throw new Error("reloaded again: " + rec.reloads);
+    // A second coder model adds a second agent and keeps the first.
+    policyReply = { ...nativeReply(), agent_id: "agent-net-coder-sol-sol-6-1", coder: "sol/sol-6.1" };
+    await hooked.prompt({ sessionID: sid, messageID: "m3" });
+    const ed2 = editorFor();
+    rec.transforms[0](ed2);
+    if (ed2.agents.size !== 2 || ed2.agents.get("agent-net-coder-sol-sol-6-1").model.id !== "sol-6.1") throw new Error(JSON.stringify([...ed2.agents.keys()]));
+  });
+});
+
+await test("the main model is switched once per value the owner sets", async () => {
+  await withPolicy(async (hooked, sid, rec) => {
+    policyReply = { ...nativeReply(), main: "sol/sol-6.1" };
+    await hooked.prompt({ sessionID: sid, messageID: "m1" });
+    await hooked.context({ sessionID: sid, system: [] });
+    await hooked.prompt({ sessionID: sid, messageID: "m2" });
+    if (rec.switches.length !== 1 || rec.switches[0].sessionID !== sid || rec.switches[0].model.providerID !== "sol" || rec.switches[0].model.id !== "sol-6.1") {
+      throw new Error(JSON.stringify(rec.switches));
+    }
+    policyReply = { ...nativeReply(), main: "deepseek/deepseek-v4.1-pro" };
+    await hooked.prompt({ sessionID: sid, messageID: "m3" });
+    if (rec.switches.length !== 2) throw new Error("a new value was not applied: " + JSON.stringify(rec.switches));
+  });
+});
+
+await test("a subagent's own session gets no policy and no model switch", async () => {
+  await withPolicy(async (hooked, sid, rec, sessions, c) => {
+    sessions.set("ses_child", session("ses_child", "/work/p", 0, { parentID: sid }));
+    policyReply = { ...nativeReply(), main: "sol/sol-6.1" };
+    // An event for the child makes the plugin read its parent.
+    c.emit({ type: "session.execution.started", data: { sessionID: "ses_child" } });
+    await settle();
+    const before = calls.length;
+    const input = { sessionID: "ses_child", system: [{ type: "text", text: "You are a coder." }] };
+    await hooked.context(input);
+    await hooked.prompt({ sessionID: "ses_child", messageID: "m1" });
+    if (input.system.some((p) => p.text.includes("standing policy"))) throw new Error("the coder was told to delegate");
+    if (rec.switches.length) throw new Error("the coder's model was switched");
+    if (calls.slice(before).some(([m]) => m === "policy")) throw new Error("the daemon was asked for a subagent session");
+    // The root session still gets it.
+    const root = { sessionID: sid, system: [] };
+    await hooked.context(root);
+    if (!root.system.some((p) => p.text === POLICY_TEXT)) throw new Error("the root lost its policy");
+  });
+});
+
+await test("without a daemon answer the last policy still applies, and an old OpenCode without agents works", async () => {
+  await withPolicy(async (hooked, sid) => {
+    const input = { sessionID: sid, system: [{ type: "text", text: "x" }] };
+    policyReply = nativeReply();
+    await hooked.context(input);
+    if (!input.system.some((p) => p.text === POLICY_TEXT)) throw new Error("no policy");
+  }, { noAgent: true });
 });
 
 server.close();
