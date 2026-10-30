@@ -10,6 +10,13 @@ that token is an owner credential and must not be shared with agents. The
 same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
 
+Model score overrides and difficulty minimums are owner settings. The daemon's
+`scores_get`, `scores_set`, `difficulty_get` and `difficulty_set` methods use the
+owner gate and refuse agent sessions. Their gateway endpoints require an
+enrolled node token, which is an owner credential. Scores and minimums are
+limited to 0 through 100. The private CTO `score_set` tool uses the same
+settings when the owner instructs it.
+
 The OpenCode CTO server binds only to localhost and requires a random password.
 Its data, state, configuration and cache are private to the daemon. The OpenCode
 agent-net plugin is disabled in that process. The Claude Code CTO uses the
