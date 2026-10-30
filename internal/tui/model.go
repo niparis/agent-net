@@ -589,6 +589,29 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.notice = notice{} // the result of the last action goes with the next key
+	if m.focus == focusSessions {
+		for _, held := range m.snap.Held {
+			if held.ID == m.selected && (k.String() == "a" || k.String() == "A" || k.String() == "r" || k.String() == "R") {
+				answerer, ok := m.src.(interface {
+					AnswerHeld(context.Context, protocol.HeldAnswer) error
+				})
+				if !ok {
+					m.fail("Held request actions unavailable.")
+					return m, nil
+				}
+				answer := protocol.HeldAnswer{MessageID: held.ID, Action: k.String()}
+				return m, func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+					defer cancel()
+					err := answerer.AnswerHeld(ctx, answer)
+					if err != nil {
+						return actionMsg{err: err}
+					}
+					return actionMsg{text: "Request answered."}
+				}
+			}
+		}
+	}
 	switch k.String() {
 	case "q":
 		m.quitting = true

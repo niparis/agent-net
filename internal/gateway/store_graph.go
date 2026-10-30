@@ -306,8 +306,10 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 			if err = json.Unmarshal([]byte(old), &e); err != nil {
 				return err
 			}
-			if _, err = graphKind(tx, e.From); err != nil {
-				return err
+			if e.From != "*" {
+				if _, err = graphKind(tx, e.From); err != nil {
+					return err
+				}
 			}
 			if _, err = graphKind(tx, e.To); err != nil {
 				return err
@@ -360,7 +362,7 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	if e.Rule == "" {
 		e.Rule = "normal"
 	}
-	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" {
+	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" && e.Rule != "never" {
 		return reject("invalid edge rule")
 	}
 	if e.Kind != "depends" && e.Kind != "governs" {
@@ -377,9 +379,14 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 		return err
 	}
 	defer tx.Rollback()
-	from, err := graphKind(tx, e.From)
-	if err != nil {
-		return err
+	from := "component"
+	if e.From != "*" {
+		from, err = graphKind(tx, e.From)
+		if err != nil {
+			return err
+		}
+	} else if e.Kind != "depends" {
+		return reject("wildcard requires dependency")
 	}
 	to, err := graphKind(tx, e.To)
 	if err != nil {

@@ -574,6 +574,23 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 	}
 	cols := m.needsColumns(columnsFor(w-2, nameWant, policy)) // two columns for the selection marker
+	wanted := 5
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			wanted = max(wanted, utf8.RuneCountInString(m.requestRuleBadge(a)))
+		}
+	}
+	for i := range cols {
+		if cols[i].name == "TRUST" && wanted > cols[i].width {
+			for j := range cols {
+				if cols[j].name == "TASK" {
+					delta := min(wanted-cols[i].width, max(0, cols[j].width-cols[j].min))
+					cols[i].width += delta
+					cols[j].width -= delta
+				}
+			}
+		}
+	}
 	head := "  "
 	for i, c := range cols {
 		if i > 0 {
@@ -726,9 +743,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		case "STATUS":
 			v = m.statusCell(a)
 		case "TRUST":
-			if a.PeerTrust {
-				v = "peer"
-			}
+			v = m.requestRuleBadge(a)
 		case "POLICY":
 			v = policyBadge(a.Delegation)
 		case "TASK":
@@ -749,7 +764,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 			case "AGENT", "POLICY", "TASK":
 				v = sDim.Render(v)
 			case "TRUST":
-				if a.PeerTrust {
+				if m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project)) != "normal" {
 					v = sBusy.Render(v)
 				} else {
 					v = sDim.Render(v)
@@ -839,4 +854,30 @@ func functionText(a protocol.AgentView) string {
 		return noAgentsMD
 	}
 	return ""
+}
+
+func (m Model) wildcardRule(project string) string {
+	for _, e := range m.snap.Edges {
+		if e.From == "*" && e.To == project {
+			return e.Rule
+		}
+	}
+	return "normal"
+}
+func (m Model) requestRuleBadge(a protocol.AgentView) string {
+	project := firstNonEmpty(a.Repo.Project, a.Profile.Project)
+	rule := m.wildcardRule(project)
+	if rule == "normal" {
+		rule = "-"
+	}
+	n := 0
+	for _, e := range m.snap.Edges {
+		if e.To == project && e.From != "*" {
+			n++
+		}
+	}
+	if n > 0 {
+		return fmt.Sprintf("%s +%d", rule, n)
+	}
+	return rule
 }

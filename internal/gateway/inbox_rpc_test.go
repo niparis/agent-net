@@ -65,3 +65,19 @@ func TestApprovalAnswerHasGatewayNote(t *testing.T) {
 		t.Fatalf("pending: %+v %v", pending, err)
 	}
 }
+
+func TestMessagePreservesBothApprovalFields(t *testing.T) {
+	s, _ := newTestStore(t)
+	sender, recipient := twoSessions(t, s)
+	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: sender, Recipient: recipient, Body: "request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE messages SET owner_approved=1, approval_note=? WHERE id=?`, "Nicolas approved: action, time", m.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.Message(m.ID)
+	if err != nil || !ok || !got.OwnerApproved || got.ApprovalNote != "Nicolas approved: action, time" {
+		t.Fatalf("message: %+v %v", got, err)
+	}
+}

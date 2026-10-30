@@ -358,10 +358,15 @@ func codexFrame(m protocol.Message) string {
 			m.ID, who, firstNonEmpty(m.FromHarness, "unknown harness"), m.From, conv, m.ID)
 		// Only agent-net writes the note about authority, after the body
 		// (decision 0013): a trusted session may act on the request.
-		foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+		if !m.OwnerApproved {
+			foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+		}
 	}
 	if m.Type == protocol.TypeReply && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		foot += "\n" + protocol.NoAuthorityNote
+	}
+	if m.Type == protocol.TypeRequest && m.OwnerApproved {
+		foot += " " + protocol.OwnerApprovalNote
 	}
 	// The gateway computes the graph relation from the sender's node to this
 	// node (decision 0022). It is agent-net's own text, after the body.
