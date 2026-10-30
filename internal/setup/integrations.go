@@ -20,7 +20,9 @@ import (
 func ApplyIntegrations(net protocol.Integrations, logf func(format string, args ...any)) error {
 	local := integrations.LoadLocal(daemon.ConfigDir())
 	want := integrations.Effective(net, local)
-	if applied, ok := integrations.LoadApplied(daemon.ConfigDir()); ok && applied == want {
+	applied, ok := integrations.LoadApplied(daemon.ConfigDir())
+	if ok && applied == want {
+		applyQuotaAnswer(want.QuotaAXI, logf)
 		return nil
 	}
 	r, err := newRunner(Options{Out: logWriter(logf)})
@@ -37,7 +39,21 @@ func ApplyIntegrations(net protocol.Integrations, logf func(format string, args 
 	if r.failed == nil {
 		integrations.SaveApplied(daemon.ConfigDir(), want)
 	}
+	applyQuotaAnswer(want.QuotaAXI, logf)
 	return r.failed
+}
+
+// applyQuotaAnswer starts the private install in the background when the item
+// is on, or removes the private copy when it is off. A daemon start never
+// waits for npm (decision 0025).
+func applyQuotaAnswer(on bool, logf func(format string, args ...any)) {
+	if on {
+		ensureQuotaAXIAsync(logf)
+		return
+	}
+	if _, err := removeQuotaAXI(); err != nil && logf != nil {
+		logf("quota-axi: could not remove the private copy: %v", err)
+	}
 }
 
 // recordApplied remembers the answers this run applied, so the daemon does not

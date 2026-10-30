@@ -142,7 +142,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			"(claude, opencode, pi, codex) with path and version. For opencode it also lists the models it can use. "+
 			"Each machine also shows its worker track record per harness and model, and the playbook notes for a model. "+
 			"A machine with harnesses null runs an older agent-net that does not report them. "+
-			"Each machine may also show its subscription quotas (percent used per provider window, or exhausted) when quota-axi is installed."),
+			"Each machine may also show its subscription quotas (percent used per provider window, or exhausted) through quota-axi, which agent-net installs when needed."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "nodes", nil)
 			if err != nil {

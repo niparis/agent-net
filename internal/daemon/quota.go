@@ -3,22 +3,23 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
 // This file reads the owner's subscription quotas with quota-axi (decision
 // 0022). quota-axi is a Node CLI that reads the logins already on the machine.
-// agent-net never installs it, never asks it to refresh a credential, and
-// never asks for account identity: the call is exactly
+// agent-net installs a pinned private copy when the owner has none (decision
+// 0025), never asks quota-axi to refresh a credential, and never asks for
+// account identity: the call is exactly
 //
 //	quota-axi --json --max-age 5m --no-credential-refresh
 //
@@ -41,11 +42,18 @@ const (
 // it would include account identity and derivation detail.
 var quotaArgs = []string{"--json", "--max-age", "5m", "--no-credential-refresh"}
 
+// ensureQuotaAXI installs the private copy. Tests replace it so they never
+// run npm.
+var ensureQuotaAXI = quotaaxi.Ensure
+
 type quotaState struct {
 	mu   sync.Mutex
 	last *protocol.Quotas
 	at   time.Time
 	err  string
+	// note is why no reading can be made yet, for example missing Node. It is
+	// shown only in the empty state of the TUI Quotas tab.
+	note string
 }
 
 func (q *quotaState) lock()   { q.mu.Lock() }
@@ -89,6 +97,20 @@ func (q *quotaState) errorText() string {
 	return q.err
 }
 
+// setNote records why quota-axi cannot run yet, or "" to clear it.
+func (q *quotaState) setNote(note string) {
+	q.lock()
+	defer q.unlock()
+	q.note = note
+}
+
+// noteText returns the current install note.
+func (q *quotaState) noteText() string {
+	q.lock()
+	defer q.unlock()
+	return q.note
+}
+
 func cloneQuotas(q *protocol.Quotas) *protocol.Quotas {
 	if q == nil {
 		return nil
@@ -103,27 +125,10 @@ func cloneQuotas(q *protocol.Quotas) *protocol.Quotas {
 }
 
 // FindQuotaAXI finds the quota-axi to run: the configured path, else the one
-// on PATH, else ~/.local/bin/quota-axi (a common npm global prefix that is not
-// always on a daemon's PATH).
+// on PATH, else ~/.local/bin/quota-axi, else the usual Node folders on macOS,
+// else agent-net's private copy. A copy the owner installed always wins.
 func FindQuotaAXI(configured string) (string, bool) {
-	usable := func(path string) bool {
-		st, err := os.Stat(path)
-		return err == nil && !st.IsDir() && st.Mode()&0o111 != 0
-	}
-	if configured = strings.TrimSpace(configured); configured != "" {
-		if filepath.IsAbs(configured) {
-			return configured, usable(configured)
-		}
-		if p, err := exec.LookPath(configured); err == nil {
-			return p, true
-		}
-		return "", false
-	}
-	if p, err := exec.LookPath(quotaCommand); err == nil {
-		return p, true
-	}
-	p := filepath.Join(home(), ".local", "bin", quotaCommand)
-	return p, usable(p)
+	return quotaaxi.Path(configured)
 }
 
 // quotaAllowed is the owner's answer for the quota-axi integration. It is on
@@ -138,20 +143,43 @@ func quotaAllowed(configDir string) bool {
 }
 
 // startQuota runs the quota reader when quota-axi is installed and the owner
-// allowed it.
+// allowed it. When it is allowed but missing, it installs the private copy in
+// the background (decision 0025), then reads with it.
 func (d *Daemon) startQuota(ctx context.Context) {
-	path, ok := FindQuotaAXI(d.cfg.QuotaAXIPath)
-	if !ok {
-		return
-	}
-	if !quotaAllowed(ConfigDir()) {
-		d.Logf("quota-axi is installed but the integration is off")
-		return
-	}
+	allowed := quotaAllowed(ConfigDir())
 	every := d.cfg.QuotaInterval
 	if every <= 0 {
 		every = defaultQuotaInterval
 	}
+	path, ok := FindQuotaAXI(d.cfg.QuotaAXIPath)
+	if !ok {
+		if !allowed {
+			return
+		}
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			if err := ensureQuotaAXI(ctx, d.Logf); err != nil {
+				if errors.Is(err, quotaaxi.ErrNeedNode) {
+					d.quota.setNote(quotaaxi.NeedNodeMessage)
+					d.Logf("%s", quotaaxi.NeedNodeMessage)
+				}
+				return
+			}
+			p, ok := FindQuotaAXI(d.cfg.QuotaAXIPath)
+			if !ok {
+				return
+			}
+			d.quota.setNote("")
+			d.quotaLoop(ctx, p, every)
+		}()
+		return
+	}
+	if !allowed {
+		d.Logf("quota-axi is installed but the integration is off")
+		return
+	}
+	d.quota.setNote("")
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -190,6 +218,7 @@ func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas
 // readQuotaAXI runs the CLI and parses its JSON.
 func readQuotaAXI(ctx context.Context, path string) (*protocol.Quotas, error) {
 	cmd := exec.CommandContext(ctx, path, quotaArgs...)
+	cmd.Env = quotaaxi.ExecEnv(path)
 	// A shell wrapper can leave a child holding stdout after the context kills
 	// it. Stop waiting for the pipe after a short delay.
 	cmd.WaitDelay = time.Second

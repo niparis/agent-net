@@ -43,7 +43,8 @@ func (u *usageState) disable(l *link) {
 }
 
 // startUsage runs the sampler and the reporter when a sampler was configured,
-// and the quota reader when quota-axi is installed (decision 0022).
+// and the quota reader when quota-axi is available or can be installed
+// (decision 0022).
 func (d *Daemon) startUsage(ctx context.Context) {
 	s := d.cfg.UsageSampler
 	if s != nil {
@@ -53,8 +54,12 @@ func (d *Daemon) startUsage(ctx context.Context) {
 	}
 	d.startQuota(ctx)
 	if s == nil {
-		if _, ok := FindQuotaAXI(d.cfg.QuotaAXIPath); !ok {
-			return
+		// A machine with only quotas (no usage sampler) still reports, because
+		// startQuota may install quota-axi and begin reading.
+		if !quotaAllowed(ConfigDir()) {
+			if _, ok := FindQuotaAXI(d.cfg.QuotaAXIPath); !ok {
+				return
+			}
 		}
 	}
 	d.wg.Add(1)
@@ -123,16 +128,16 @@ func (d *Daemon) usageLoop(ctx context.Context) {
 // usageReport builds the summary for the gateway. ok is false before the first sample.
 func (d *Daemon) usageReport() (protocol.UsageReport, bool) {
 	quotas, quotaError := d.quota.report()
-	rep := protocol.UsageReport{Trees: []protocol.TreeUsage{}, Workers: d.workerLoad(), Quotas: quotas, QuotaError: quotaError}
+	rep := protocol.UsageReport{Trees: []protocol.TreeUsage{}, Workers: d.workerLoad(), Quotas: quotas, QuotaError: quotaError, QuotaNote: d.quota.noteText()}
 	s := d.cfg.UsageSampler
 	if s != nil {
 		m, ok := s.Machine()
 		if ok {
 			rep.Machine = machineUsage(m)
-		} else if rep.Quotas == nil && rep.QuotaError == "" {
+		} else if rep.Quotas == nil && rep.QuotaError == "" && rep.QuotaNote == "" {
 			return protocol.UsageReport{}, false
 		}
-	} else if rep.Quotas == nil && rep.QuotaError == "" {
+	} else if rep.Quotas == nil && rep.QuotaError == "" && rep.QuotaNote == "" {
 		return protocol.UsageReport{}, false
 	}
 	// Group the sessions by process: OpenCode runs many in one.

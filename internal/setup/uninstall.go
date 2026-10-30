@@ -47,6 +47,7 @@ func Uninstall(o Options) error {
 	r.removePolicyHook()
 	r.removeNeedsHook()
 	r.removeClaudeWorkersMod()
+	r.removeQuotaAXI()
 	r.removePiExtension()
 	r.removeOpenCodePlugin()
 	r.removeGuidance()
@@ -108,6 +109,18 @@ func (r *runner) removePiExtension() {
 			return
 		}
 		r.step("pi extension", "ok (removed)", nil)
+	}
+}
+
+func (r *runner) removeQuotaAXI() {
+	removed, err := removeQuotaAXI()
+	switch {
+	case err != nil:
+		r.step(quotaStepName, "", err)
+	case removed:
+		r.step(quotaStepName, "ok (removed)", nil)
+	default:
+		r.step(quotaStepName, "skipped (not installed)", nil)
 	}
 }
 

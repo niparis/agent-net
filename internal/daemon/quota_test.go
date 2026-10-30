@@ -14,6 +14,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
 const fakeQuotaJSON = `{
@@ -158,6 +159,68 @@ func TestReadQuotaAXIStopsAtTheTimeout(t *testing.T) {
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("waited %s", d)
+	}
+}
+
+func TestFindQuotaAXIUsesThePrivateCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("PATH", t.TempDir())
+	path := quotaaxi.Binary()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\n/bin/cat <<'EOF'\n" + fakeQuotaJSON + "\nEOF\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := FindQuotaAXI("")
+	if !ok || got != path {
+		t.Fatalf("private copy: %q %v", got, ok)
+	}
+	q, err := readQuotaAXI(context.Background(), got)
+	if err != nil || len(q.Providers) != 4 {
+		t.Fatalf("reading with the private copy: %+v %v", q, err)
+	}
+}
+
+func TestFindQuotaAXIPrefersTheUserCopy(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("PATH", t.TempDir())
+	private := quotaaxi.Binary()
+	if err := os.MkdirAll(filepath.Dir(private), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(private, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	local := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	user := filepath.Join(local, quotaCommand)
+	if err := os.WriteFile(user, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := FindQuotaAXI(""); !ok || got != user {
+		t.Fatalf("user copy lost: %q %v", got, ok)
+	}
+}
+
+func TestUsageReportCarriesQuotaNote(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{cfg: Config{}, st: st}
+	d.quota.setNote(quotaaxi.NeedNodeMessage)
+	rep, ok := d.usageReport()
+	if !ok || rep.QuotaNote != quotaaxi.NeedNodeMessage {
+		t.Fatalf("report: %+v ok=%v", rep, ok)
 	}
 }
 

@@ -25,6 +25,9 @@ const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
 // TestMain lets the test binary double as a stdio MCP server: a hosted server
 // is started with this binary and the helper variable set.
 func TestMain(m *testing.M) {
+	// A test daemon must never run npm. The quota tests use a fake binary.
+	ensureQuotaAXI = func(context.Context, func(string, ...any)) error { return nil }
+
 	if len(os.Args) > 1 && os.Args[1] == "fake-tui" {
 		if err := tui.Run(context.Background(), tui.NewDaemonSource(os.Getenv("AGENT_NET_SOCKET"))); err != nil {
 			fmt.Fprintln(os.Stderr, err)

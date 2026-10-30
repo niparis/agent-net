@@ -34,7 +34,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noNeedsHook := fs.Bool("no-claude-needs-hook", false, "do not add those hooks and do not ask")
 	workersMod := fs.Bool("claude-workers-mod", false, "install the Claude Code plugin that shows this session's workers (only if not asked before)")
 	noWorkersMod := fs.Bool("no-claude-workers-mod", false, "do not install that plugin and do not ask")
-	quotaAXI := fs.Bool("quota-axi", false, "read your subscription quotas with quota-axi when it is installed")
+	quotaAXI := fs.Bool("quota-axi", false, "read your subscription quotas with quota-axi (agent-net installs it when needed)")
 	noQuotaAXI := fs.Bool("no-quota-axi", false, "do not read subscription quotas and do not ask")
 	fs.Parse(args)
 	if *all && *none {
