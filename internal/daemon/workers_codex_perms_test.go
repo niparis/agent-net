@@ -175,10 +175,10 @@ func TestCodexWorkerTurnsOffTheAgentNetMCPServer(t *testing.T) {
 }
 
 // The brief for a Codex worker says the end of the turn is the report and
-// names no agent-net tool.
+// does not tell it to use agent-net tools (it names agent_announce only to say to ignore it).
 func TestCodexBriefHasNoAgentNetTools(t *testing.T) {
 	b := protocol.WorkerTaskBodyFor("codex", "do it", "", "")
-	for _, bad := range []string{"agent_handback", "agent_reply", "agent_announce"} {
+	for _, bad := range []string{"agent_handback", "agent_reply"} {
 		if strings.Contains(b, bad) {
 			t.Errorf("the Codex brief mentions %s", bad)
 		}
