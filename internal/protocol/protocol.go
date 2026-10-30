@@ -423,6 +423,9 @@ type NodeView struct {
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`
+	// Quotas is the newest quota-axi reading of the machine, from its usage
+	// report (decision 0022). Nil when it has none or the report is stale.
+	Quotas *Quotas `json:"quotas,omitempty"`
 	// Launch says whether the machine accepts workers: nil when it never
 	// said (an older daemon), false after `setup --no-launch`.
 	Launch *bool `json:"launch,omitempty"`

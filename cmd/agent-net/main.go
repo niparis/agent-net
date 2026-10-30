@@ -36,7 +36,7 @@ var version = "dev"
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod
+  setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod, --[no-]quota-axi
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)
@@ -284,6 +284,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
 		NoLaunch:          nc.NoLaunch, ModelProviders: nc.ModelProviders, Workers: ws, EnterSSH: nc.EnterSSH, EnterSSHHosts: nc.EnterSSHHosts,
+		QuotaAXIPath: nc.QuotaAXI,
 		// Tests set this to 0s so they need not wait up to 10 s.
 		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),
 	})

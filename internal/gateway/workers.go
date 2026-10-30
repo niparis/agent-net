@@ -367,6 +367,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// A loose model name is resolved against the machine's own list (W17).
 	// Without a list (claude, or a harness that cannot list), it passes through.
 	var modelNote string
+	quotas := g.nodeQuotas(pick.NodeID)
 	if p.Model != "" && len(hi.Models) > 0 {
 		usage, err := g.store.ModelUsage(pick.NodeID, p.Harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
 		if err != nil {
@@ -377,13 +378,20 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
-		res, err := protocol.ResolveModelFailed(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt))
+		res, err := protocol.ResolveModelQuota(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), quotas)
 		if err != nil {
 			return none, reject("model on %s: %v", node.Hostname, err)
 		}
 		resolved := res.Model
 		if resolved != asked || len(res.Demoted) > 0 {
 			modelNote = asked + " -> " + resolved
+		}
+		if res.QuotaNote != "" {
+			if modelNote == "" {
+				modelNote = asked + " (" + res.QuotaNote + ")"
+			} else {
+				modelNote += " (" + res.QuotaNote + ")"
+			}
 		}
 		if len(res.Demoted) > 0 {
 			var parts []string
@@ -398,6 +406,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 		p.Model = resolved
+	}
+	// A provider with no allowance left refuses the start now, with the reset
+	// time, instead of failing at the first model call (decision 0022).
+	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" {
+		return none, reject("machine %s: %s", node.Hostname, reason)
 	}
 
 	g.mu.Lock()

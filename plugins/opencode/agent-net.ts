@@ -563,6 +563,37 @@ function formatAgent(a: any): string {
   return line;
 }
 
+function quotaSummary(q: any): string {
+  if (!q?.providers?.length) return "";
+  const order = ["claude", "codex", "opencode-go", "cursor", "copilot", "grok", "kimi", "zai", "agy", "alibaba", "minimax", "mimo", "deepseek", "openrouter"];
+  const providers = [...q.providers].sort((a: any, b: any) => {
+    const ia = order.indexOf(a.provider), ib = order.indexOf(b.provider);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return String(a.provider).localeCompare(String(b.provider));
+  });
+  const suffix = (kind: string) =>
+    kind === "weekly" || kind === "week" || !kind ? "w"
+      : kind === "session" || kind === "five_hour" || kind === "5h" ? "s"
+      : kind === "monthly" || kind === "month" ? "m"
+      : kind === "daily" || kind === "day" ? "d"
+      : kind === "credits" ? "c"
+      : String(kind).slice(0, 1);
+  const parts: string[] = [];
+  for (const p of providers) {
+    const windows = p.windows ?? [];
+    if (!windows.length) continue;
+    if (windows.some((w: any) => w.exhausted || (w.percent_used ?? 0) >= 100)) {
+      parts.push(`${p.provider} exhausted`);
+      continue;
+    }
+    const worst = windows.reduce((a: any, b: any) => ((b.percent_used ?? 0) > (a.percent_used ?? 0) ? b : a));
+    parts.push(`${p.provider} ${Math.round(worst.percent_used ?? 0)}%${suffix(worst.kind)}`);
+  }
+  return parts.join(" · ");
+}
+
 function formatNodes(r: any): string {
   const nodes: any[] = r.nodes ?? [];
   if (!nodes.length) return "No machines found.";
@@ -577,7 +608,8 @@ function formatNodes(r: any): string {
                 .map((h) => `${h.name} ${h.version || "?"}${h.models?.length ? ` (${h.models.length} models)` : ""} at ${h.path}`)
                 .join("; ")
             : "no harnesses installed";
-      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}`;
+      const quotas = quotaSummary(n.quotas);
+      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}${quotas ? ` · quotas: ${quotas}` : ""}`;
     })
     .join("\n");
 }

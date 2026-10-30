@@ -64,6 +64,10 @@ type UsageReport struct {
 	Trees   []TreeUsage  `json:"trees"`
 	// Workers is the machine's worker load. Nil from an older daemon.
 	Workers *WorkerLoad `json:"workers,omitempty"`
+	// Quotas is the newest quota-axi reading of the machine. Nil when the
+	// owner turned the integration off, when quota-axi is not installed, or
+	// before the first reading.
+	Quotas *Quotas `json:"quotas,omitempty"`
 }
 
 // Room values of WorkerLoad: why a machine has no room for another worker, or

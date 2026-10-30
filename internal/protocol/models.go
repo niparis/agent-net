@@ -76,6 +76,15 @@ func modelPart(id string) string {
 	return id
 }
 
+// quotaHigh tells whether a provider is above QuotaHighPercent in a window.
+func quotaHigh(q *Quotas, provider string) bool {
+	if q == nil {
+		return false
+	}
+	_, ok := q.HighWindow(provider)
+	return ok
+}
+
 func providerOf(id string) string {
 	if i := strings.Index(id, "/"); i >= 0 {
 		return id[:i]
@@ -105,10 +114,15 @@ func ResolveModel(query string, models []string, usage map[string]int, providers
 // ModelResolution is the answer of ResolveModelFailed.
 type ModelResolution struct {
 	Model string
+	// Exact is true when the query was the full model id.
+	Exact bool
 	// Demoted lists the matching models that were ranked last because they
 	// failed a worker recently. It includes Model when that one failed too and
 	// nothing better matched.
 	Demoted []string
+	// QuotaNote warns that an exact model id draws on a provider that is
+	// exhausted or above QuotaHighPercent. Empty otherwise (decision 0022).
+	QuotaNote string
 }
 
 // ResolveModelFailed is ResolveModel with the models that failed a worker
@@ -116,10 +130,19 @@ type ModelResolution struct {
 // fail, whatever their usage. The other models of the same provider rank
 // between the two. An exact match still wins: the caller named it.
 func ResolveModelFailed(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
+	return ResolveModelQuota(query, models, usage, providers, failed, nil)
+}
+
+// ResolveModelQuota is ResolveModelFailed with the machine's quotas (decision
+// 0022). A loose model name skips a provider that is exhausted or above
+// QuotaHighPercent; a provider ahead of its reset clock ranks below providers
+// on pace. An exact model id still wins, with QuotaNote when its provider is
+// exhausted or nearly so.
+func ResolveModelQuota(query string, models []string, usage map[string]int, providers []string, failed map[string]bool, quotas *Quotas) (ModelResolution, error) {
 	query = strings.TrimSpace(query)
 	for _, m := range models {
 		if m == query {
-			return ModelResolution{Model: m}, nil
+			return ModelResolution{Model: m, Exact: true, QuotaNote: QuotaWarning(quotas, "", m)}, nil
 		}
 	}
 	toks := modelTokens(query)
@@ -140,6 +163,37 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 	if len(cands) == 0 {
 		return ModelResolution{}, fmt.Errorf("no model in the list matches %q (%d models; see `agent-net nodes --wide`)", query, len(models))
 	}
+	// A provider that is exhausted, or above QuotaHighPercent of any window,
+	// is skipped for a loose name. An exact id was handled above.
+	var blocked []string
+	if quotas != nil {
+		keep := cands[:0:0]
+		seen := map[string]bool{}
+		for _, m := range cands {
+			qp := QuotaProviderForModel(m)
+			if qp == "" {
+				keep = append(keep, m)
+				continue
+			}
+			if _, ok := quotas.ExhaustedWindow(qp); ok || quotaHigh(quotas, qp) {
+				if !seen[qp] {
+					seen[qp] = true
+					if w, ok := quotas.ExhaustedWindow(qp); ok {
+						blocked = append(blocked, fmt.Sprintf("%s is exhausted (%s; %s)", qp, QuotaWindowName(w), QuotaResetText(w)))
+					} else if w, ok := quotas.HighWindow(qp); ok {
+						blocked = append(blocked, fmt.Sprintf("%s is at %.0f%% of its %s window", qp, w.PercentUsed, QuotaWindowName(w)))
+					}
+				}
+				continue
+			}
+			keep = append(keep, m)
+		}
+		if len(keep) == 0 {
+			sort.Strings(blocked)
+			return ModelResolution{}, fmt.Errorf("every model that matches %q is out of quota: %s", query, strings.Join(blocked, "; "))
+		}
+		cands = keep
+	}
 	// Sessions per provider: a provider the owner uses for other models wins
 	// over one the owner never used.
 	byProvider := map[string]int{}
@@ -155,28 +209,31 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 			failedProv[providerOf(m)] = true
 		}
 	}
-	rank := func(m string) [7]int {
-		r := [7]int{0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
+	rank := func(m string) [8]int {
+		r := [8]int{0, 0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
 		if failed[m] {
 			r[0] = 2
 		} else if failedProv[providerOf(m)] {
 			r[0] = 1
 		}
+		if quotas != nil && quotas.Ahead(QuotaProviderForModel(m)) {
+			r[1] = 1
+		}
 		for i, p := range providers {
 			if providerOf(m) == p {
-				r[3] = i
+				r[4] = i
 				break
 			}
 		}
 		if strings.HasSuffix(m, "-free") {
-			r[4] = 1
+			r[5] = 1
 		}
 		if datedSuffix.MatchString(m) {
-			r[5] = 1
+			r[6] = 1
 		}
 		return r
 	}
-	cmp := func(a, b [7]int) int {
+	cmp := func(a, b [8]int) int {
 		for i := range a {
 			if a[i] != b[i] {
 				if a[i] < b[i] {

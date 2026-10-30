@@ -131,6 +131,28 @@ func TestGoldenOpenCodeSharedTree(t *testing.T) {
 	golden(t, "shared_120x40", m.View())
 }
 
+func TestHeaderShowsQuotaLine(t *testing.T) {
+	snap, u := openCodeSnapshot()
+	u.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{
+		{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "seven_day", Kind: "weekly", PercentUsed: 59}}},
+		{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "weekly", Kind: "weekly", PercentUsed: 90}}},
+		{Provider: "opencode-go", Windows: []protocol.QuotaWindow{{ID: "weekly", Kind: "weekly", PercentUsed: 76}}},
+		{Provider: "cursor", Windows: []protocol.QuotaWindow{{ID: "month", Kind: "monthly", PercentUsed: 100, Exhausted: true}}},
+	}}
+	m := modelWith(snap, u, 120, 40)
+	view := ansi.Strip(m.View())
+	want := "quotas: claude 59%w · codex 90%w · opencode-go 76%w · cursor exhausted"
+	if !strings.Contains(view, want) {
+		t.Fatalf("header lacks %q:\n%s", want, view)
+	}
+	// A model without quotas keeps the old header.
+	u.Local.Quotas = nil
+	plain := ansi.Strip(modelWith(snap, u, 120, 40).View())
+	if strings.Contains(plain, "quotas:") {
+		t.Errorf("quota line without quotas:\n%s", plain)
+	}
+}
+
 func TestGoldenHelp(t *testing.T) {
 	golden(t, "help_80x24", keys(newModel(80, 24), "?").View())
 	golden(t, "help_120x40", keys(newModel(120, 40), "?").View())

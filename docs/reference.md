@@ -62,7 +62,7 @@ The daemon and the agents talk over Unix sockets, not network ports.
 
 | What | Default path | Notes |
 |---|---|---|
-| Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). |
+| Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). Optional `"quota_axi"` is an absolute path to quota-axi when it is not on `PATH` or in `~/.local/bin`. |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
 | Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its private data and state folders and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Kept after hand-back for resume, otherwise deleted when the worker ends. OpenCode configuration remains shared. At each start OpenCode credentials are exported and imported through memory into the private database (mode 0600); OAuth token refresh in the copy may affect the original login. |
@@ -149,8 +149,8 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | | `--launch` | off. Accept workers again. |
 | | `--gateway` | off. Also install and start the gateway here. |
 | | `--no-service` | off |
-| | `--all` | off. Answer the one integrations question with all six on, without asking. |
-| | `--none` | off. Answer it with all six off, without asking. |
+| | `--all` | off. Answer the one integrations question with all seven on, without asking. |
+| | `--none` | off. Answer it with all seven off, without asking. |
 | | `--accept-peer-messages` | off. Set Claude Code `crossSessionInbound` to `accept` as a local answer for this machine, if it is not set. It wins over the network answer. |
 | | `--no-accept-peer-messages` | off. Do not set it on this machine and do not ask. It wins over the network answer. |
 | | `--claude-hint-hook` | off. Add the Claude Code hook that suggests which session to ask after a failed tool call, as a local answer for this machine. It wins over the network answer. |
@@ -159,6 +159,8 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | | `--no-claude-needs-hook` | off. Do not add them on this machine and do not ask. It wins over the network answer. |
 | | `--claude-workers-mod` | off. Install the Claude Code plugin that shows the session's workers and register its marketplace, as a local answer for this machine. It wins over the network answer. |
 | | `--no-claude-workers-mod` | off. Do not install it on this machine and do not ask. It wins over the network answer. |
+| | `--quota-axi` | off. Read subscription quotas with quota-axi as a local answer for this machine. It wins over the network answer. |
+| | `--no-quota-axi` | off. Do not read subscription quotas on this machine and do not ask. It wins over the network answer. |
 | | `--data DIR`, `--dist DIR`, `--port P` | gateway data, dist dir, `7420` (with `--gateway`) |
 | `invite` | `--host H` | the IPv4 address of the interface with the default route. A second line is printed for a Tailscale address if there is one. |
 | | `--port P`, `--data DIR` | `7420`, gateway data |
@@ -184,6 +186,8 @@ The name of a machine is the host name its daemon reports in `hello`. On macOS t
 - **`enter_ssh_hosts`.** Its keys are the names the gateway lists, so after a rename use the display name as the key (`{"laptop-1": "me@laptop-1.example"}`). Matching is exact. The name is also the ssh target when the entry is missing, which is why the rules above are those of a host name.
 
 ## Integrations
+
+Seven items: Claude peer messages, Codex tool approval, the Claude hint hook, the Claude policy hook, the Claude "Needs you" hooks, the Claude workers plugin, and reading subscription quotas with quota-axi. The quota item needs no install step; the other six change Claude Code or Codex settings. See [setup.md](setup.md#integrations).
 
 The six setup integrations ([decision 0021](decisions/0021-network-integrations.md)) are one answer for the whole network. The gateway keeps them in `owner_settings` and serves them to each machine with its node token. The owner answers once, with the one question in `agent-net setup` or with `I` in the TUI. The operator methods are `integrations_get` (answers `{"set": true, "integrations": {...}}`) and `integrations_set` (takes the same `integrations` object, answers it). They are served only to the owner's command line or TUI, like `session_policy`, and refused for an agent client and for a command line inside an agent session's process tree. No MCP, Pi or OpenCode tool sets them.
 
@@ -251,7 +255,7 @@ The version manager folders are: nvm (`$NVM_DIR` if set, and `~/.nvm/versions/no
 
 A harness can be installed more than once, for example OpenCode v1 from its install script and v2 from npm. The daemon finds every copy and drops copies that are the same file (same real path after symlinks). It reports one entry per harness. The `path`, `version` and `models` fields describe the primary copy. This is the copy that comes first in your login shell's `PATH`, and then `primary` is `true`. If the login shell does not find the harness, the primary copy is the first one in the search order and `primary` is absent: the daemon cannot tell which one you run. The other copies are in `others`, each with `path` and `version`. Models are listed only for the primary copy. Both fields are new after v0.3.5 and are left out when empty, so v0.3.5 daemons, gateways and clients still work with them.
 
-`agent-net nodes` shows the result. A machine on an older agent-net shows `unknown`. A machine that reports an empty list shows `none`. Agents get the same data from the `agent_nodes` tool (Claude Code and Pi).
+`agent-net nodes` shows the result. A machine on an older agent-net shows `unknown`. A machine that reports an empty list shows `none`. Agents get the same data from the `agent_nodes` tool (Claude Code, Pi and OpenCode), including each machine's subscription quotas when it reported them.
 
 ## CPU and memory
 
@@ -265,6 +269,39 @@ Each daemon samples its machine every 5 seconds, keeps 5 minutes, and reports a 
 - **Top lists:** only on request, not in the report. Each process has its PID, short name, and the first 80 characters of its command line with tokens, `--password=`/`--token` values and `KEY=value` secrets masked.
 - **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `graph_view {project}` (the component graph for the TUI map: nodes with charters, edges and the newest charter changes), `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket, herdr_socket}` (answers `{argv, dir, env, host, note}`, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.graph`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
 - **Counts:** `counts` returns `online`, `offline_24h` and `offline_total`. The gateway keeps offline sessions for 30 days, so a header that says "134 sessions, 12 online" is mostly old restarts. Show "12 online, 5 offline in the last 24 h".
+
+## Subscription quotas
+
+agent-net does not measure quotas itself. It reads [quota-axi](https://github.com/kunchenguid/quota-axi), a CLI that reports the subscription windows of your model providers from the logins already on the machine (decision [0022](decisions/0022-component-graph-and-cto.md)).
+
+- **When it runs.** The daemon runs `quota-axi --json --max-age 5m --no-credential-refresh` at start and every 5 minutes, with a 90 second limit. It uses the CLI found on `PATH`, then `~/.local/bin/quota-axi`, then the absolute path in `node.json` `quota_axi`. agent-net never installs it, and never runs it with `--full`. The integration is on by default when the CLI is installed; turn it off in the integrations question or with `agent-net setup --no-quota-axi`.
+- **What is kept.** One row per provider and window: window id, label and kind, percent used, reset time, pace (`ahead`, `on_pace`, `behind` or `unknown`) and whether the window is exhausted now. The newest good reading stays when a later run fails. It travels with the machine's usage report (`node.usage`, field `quotas`) and the gateway keeps the newest one in memory, like CPU and memory.
+- **Model choice.** A loose model name skips a provider that is exhausted, or above 95 percent of any window. An exact model id still works, and the start result says why in `model_note`. A provider ahead of its reset clock ranks below providers on pace.
+- **Admission.** A start whose model's provider is exhausted is refused before any model call, with the provider, the limiting window and its reset time. An exact id does not override an exhausted provider.
+- **Where it shows.** One compact line in the TUI header for this machine (`quotas: claude 59%w · codex 90%w · opencode-go 76%w · cursor exhausted`), and per machine in `agent_nodes` for agents. The suffix is the window kind: `w` weekly, `s` session, `m` monthly, `d` daily, `c` credits.
+- **Stale readings.** A reading quota-axi itself marks stale is shown but never used to choose or refuse a model.
+
+The provider mapping is fixed. It is the table used by model choice and admission (code: `internal/protocol/quota.go`):
+
+| quota-axi provider | Model provider prefixes it serves |
+|---|---|
+| `claude` | `anthropic`, `claude`; also the Claude Code harness |
+| `codex` | `openai`, `codex`, `openai-codex`; also the Codex harness |
+| `opencode-go` | `opencode-go` |
+| `cursor` | `cursor` |
+| `copilot` | `github-copilot`, `copilot` |
+| `grok` | `xai`, `grok` |
+| `kimi` | `kimi`, `moonshot` |
+| `zai` | `zai`, `z-ai`, `zhipu` |
+| `agy` | `google`, `gemini`, `agy`, `antigravity` |
+| `alibaba` | `alibaba`, `qwen` |
+| `minimax` | `minimax` |
+| `mimo` | `xiaomi`, `mimo` |
+| `deepseek` | `deepseek` |
+| `openrouter` | `openrouter` |
+| `commandcode` | `commandcode`, `command-code` |
+
+A provider without a row (for example `elevenlabs`) has no model provider in agent-net. A model id with no provider part is mapped through its harness, which is why the Claude Code and Codex harnesses are named above.
 
 ## The project registry
 
@@ -331,7 +368,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   - **Worktree:** when `isolation` is empty and the project is a git repository, the worker works in its own worktree. `isolation: none` (`--isolation none`) opts out, for read-only or non-code tasks. A folder that is not a repository gets no worktree. Pi always needs one. The `agent_start` tool accepts `base`, the name of an existing local branch, to start the worktree from that branch instead of the main working tree's HEAD. It requires worktree isolation.
   - **Project rules:** the target daemon reads `.agent-net/worker.md` from the project's main working tree, including uncommitted changes, so local rules take effect without a commit. It adds up to 8 KiB of cleaned text after the fixed brief and before the task. The file is optional.
   - **Project:** an agent that leaves `project` empty gets the project of its own session. If the project is on several machines, the caller's machine wins when it has the harness, else the one machine that has it. The command line must name a project.
-  - **Model:** a loose name is resolved against the model list of the machine that runs the worker (OpenCode has one; Claude aliases and harnesses with no list pass through). An exact id wins. Else the name is split into words (case does not matter; `4.1` matches `v4.1`) and every model id that contains all words is a candidate. Candidates are ranked by: no worker failure in the last 24 hours (a model that failed a worker with a model error goes last, and the other models of its provider go after the other providers; an exact id still wins); sessions on that machine that used the model in the last 30 days; sessions that used any model of the same provider in that time; the order of `model_providers` in `node.json`; not `-free`; not a dated snapshot (`:0813`); the shortest name. The usage counts are all sessions of that harness on that machine that the gateway saw in the last 30 days, the user's own sessions included, not only workers. If one candidate is strictly best, it is used and the result says `model: deepseek 4.1 -> opencode-go/deepseek-v4.1-flash`. When a matching model was ranked last for a recent failure, the note says so. If the best are equal, the start fails and lists up to five.
+  - **Model:** a loose name is resolved against the model list of the machine that runs the worker (OpenCode has one; Claude aliases and harnesses with no list pass through). An exact id wins. Else the name is split into words (case does not matter; `4.1` matches `v4.1`) and every model id that contains all words is a candidate. Candidates are ranked by: no worker failure in the last 24 hours (a model that failed a worker with a model error goes last, and the other models of its provider go after the other providers; an exact id still wins); sessions on that machine that used the model in the last 30 days; sessions that used any model of the same provider in that time; the order of `model_providers` in `node.json`; not `-free`; not a dated snapshot (`:0813`); the shortest name. The usage counts are all sessions of that harness on that machine that the gateway saw in the last 30 days, the user's own sessions included, not only workers. A provider that is exhausted, or above 95 percent of a quota window, is skipped for a loose name; a provider ahead of pace ranks below providers on pace. An exact id still wins, with the reason in `model_note`. See [subscription quotas](#subscription-quotas). If one candidate is strictly best, it is used and the result says `model: deepseek 4.1 -> opencode-go/deepseek-v4.1-flash`. When a matching model was ranked last for a recent failure, the note says so. If the best are equal, the start fails and lists up to five.
   - **Checklist:** every worker notice ends with a line from agent-net: read the diff in the worktree, run the project's tests there, report what you checked, merge only if your user asked.
   - `model_providers` in `node.json` is a list of provider prefixes to prefer, first is best: `"model_providers": ["opencode-go", "opencode"]`. Restart the daemon after a change.
 - **Limits and load (decision 0018):** a worker starts only when the machine has room. The daemon keeps 1-minute and 5-minute averages of whole-machine CPU busy percent and of available memory. A start is let through when: fewer than `max` workers run (default 12, a safety net); the 5-minute available memory minus the expected RAM of the worker (the median of the average RSS of the last 20 workers of that harness and model, at most 25 percent of the machine's RAM, 600 MB with fewer than 2 workers in the history) minus the reserve (the larger of 1.5 GB and 10 percent of RAM) is above zero; the 5-minute CPU average is below `cpu_target` (default 75) and the 1-minute average is below 95; and the last start on the machine was at least 60 seconds ago. Running workers are never stopped for load. On Linux, available memory is `MemAvailable`; on macOS it is total RAM minus app, wired and compressed memory.
@@ -347,7 +384,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 `agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top`, `session_text` and `session_enter` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
-- **Header.** `12 online · 5 offline today`, from `counts`. The total of old offline sessions is left out. An older gateway has no counts: the header then says `N sessions, M online`. Also the active filters, when there are any (`filter: active, /cogforge`), and the time of the last refresh.
+- **Header.** `12 online · 5 offline today`, from `counts`. Under it, one compact line of this machine's subscription quotas when quota-axi is read: `quotas: claude 59%w · codex 90%w · cursor exhausted` (see [subscription quotas](#subscription-quotas)). The total of old offline sessions is left out. An older gateway has no counts: the header then says `N sessions, M online`. Also the active filters, when there are any (`filter: active, /cogforge`), and the time of the last refresh.
 - **Needs you,** a section above the machines when at least one session waits for you (decision [0016](decisions/0016-needs-you.md)). Each row has a warning mark, the session name, its harness, its machine when that is not this one, how long it has waited, and what it asks: `permission: Bash(git push origin main)`, or the question in quotes. Oldest wait first. At most five rows; more are counted in one line. The section follows the filter and the offline switch, and it is hidden when nobody waits. Its rows are the same sessions as in the table, so enter, `e` and `m` work on them. A waiting session also says `needs you` in STATUS, in the warning colour. The two sources: the Claude Code `needs-hook` hooks, and the OpenCode plugin (a permission request or a form); any other agent can say it with `agent_announce` and `waiting`.
 - **Machines,** one line each: online state, name, agent-net version, CPU now with a bar and the 5 minute average in brackets, memory used and total with a bar, 1 minute load, and the installed harnesses when the line has room. A machine with the user's shared OpenCode service shows a short dim note here (`opencode service 2.1G 9 procs`). This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
 - **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, MODEL (shortened: no provider, no `claude-` prefix), STATUS (`idle`, `busy`, `shell`, `needs you`, `dorm` for dormant, `off` for offline), TRUST (`peer` when peer trust is on, a dim `-` otherwise; always shown), POLICY (only when some session has a [delegation policy](#delegation-policy): `own`, `sub` or `wrk`), CPU, RAM and TASK (the task the session announced; when it never announced, the harness title if it differs from NAME, else blank). Sessions stay in the order they were first seen, oldest first, so a new session appears at the bottom of its machine and nothing re-sorts a row. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL, PROJECT and POLICY go first; TRUST always stays. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row.
