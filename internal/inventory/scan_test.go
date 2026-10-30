@@ -2,8 +2,10 @@ package inventory
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -231,5 +233,46 @@ func TestEveryHarnessReportsOversizedConfig(t *testing.T) {
 			}
 			t.Fatal("missing oversize error")
 		})
+	}
+}
+
+func TestPiExtensionsReportedManual(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".pi/agent/extensions")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	report := Scan(Options{Home: home})
+	for _, item := range report.Items {
+		if item.Harness == "pi" && item.Kind == protocol.InventoryMCP && len(item.Unsupported) > 0 && item.Source == protocol.InventoryPlugin {
+			return
+		}
+	}
+	t.Fatal("missing extension warning")
+}
+
+func TestHarnessProjectTrust(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	files := map[string]string{
+		filepath.Join(home, ".codex/config.toml"):    "[projects." + strconv.Quote(project) + "]\ntrust_level = 'trusted'\n",
+		filepath.Join(home, ".pi/agent/trust.json"):  fmt.Sprintf("{%q:true}", project),
+		filepath.Join(project, ".codex/config.toml"): "[mcp_servers.codex-local]\ncommand='node'\n",
+		filepath.Join(project, ".pi/mcp.json"):       `{"mcpServers":{"pi-local":{"command":"node"}}}`,
+	}
+	for path, data := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := Scan(Options{Home: home, Projects: []protocol.ProjectEntry{{Name: "p", Path: project}}})
+	seen := map[string]bool{}
+	for _, item := range report.Items {
+		seen[item.Harness+":"+item.Name] = true
+	}
+	if !seen["codex:codex-local"] || !seen["pi:pi-local"] {
+		t.Fatalf("missing trusted project MCP: %+v", report.Items)
 	}
 }

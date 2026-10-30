@@ -261,8 +261,58 @@ func Scan(o Options) protocol.InventoryReport {
 	for _, f := range []string{"opencode.json", "opencode.jsonc"} {
 		config("opencode", protocol.InventoryUser, "", "", home, filepath.Join(home, ".config/opencode", f), "mcp", false)
 	}
+	extensions := filepath.Join(home, ".pi/agent/extensions")
+	if _, err := os.Lstat(extensions); err == nil {
+		add("pi", protocol.InventoryMCP, protocol.InventoryUser, "", "", extensions, "extensions", "", protocol.InventoryOK, "", "extension MCP requires manual inspection")
+		report.Items[len(report.Items)-1].Source = protocol.InventoryPlugin
+	}
 	piSettings(protocol.InventoryUser, "", "", home, filepath.Join(home, ".pi/agent/settings.json"))
 	config("pi", protocol.InventoryUser, "", "", home, filepath.Join(home, ".pi/agent/mcp.json"), "mcpServers", false)
+	// Trust is harness-specific; do not infer one harness's decision from another.
+	readTrust := func(base, path string) []byte {
+		if !safe(base, path) {
+			return nil
+		}
+		r, err := os.OpenRoot(base)
+		if err != nil {
+			return nil
+		}
+		defer r.Close()
+		rel, err := filepath.Rel(base, path)
+		if err != nil {
+			return nil
+		}
+		f, err := r.Open(rel)
+		if err != nil {
+			return nil
+		}
+		defer f.Close()
+		b, err := io.ReadAll(io.LimitReader(f, 1<<20+1))
+		if err != nil || len(b) > 1<<20 {
+			return nil
+		}
+		return b
+	}
+	var codexTrust struct {
+		Projects map[string]struct {
+			TrustLevel string `toml:"trust_level"`
+		} `toml:"projects"`
+	}
+	_ = toml.Unmarshal(readTrust(codex, filepath.Join(codex, "config.toml")), &codexTrust)
+	var piTrust map[string]bool
+	_ = json.Unmarshal(readTrust(home, filepath.Join(home, ".pi/agent/trust.json")), &piTrust)
+	piTrusted := func(path string) bool {
+		for {
+			if decision, ok := piTrust[path]; ok {
+				return decision
+			}
+			parent := filepath.Dir(path)
+			if parent == path {
+				return false
+			}
+			path = parent
+		}
+	}
 	for _, p := range o.Projects {
 		base := filepath.Clean(p.Path)
 		for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}} {
@@ -273,11 +323,14 @@ func Scan(o Options) protocol.InventoryReport {
 		for _, f := range []string{"opencode.json", "opencode.jsonc"} {
 			config("opencode", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, f), "mcp", false)
 		}
-		if o.TrustedProjects[base] {
-			piSettings(protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".pi/settings.json"))
+		if o.TrustedProjects[base] || codexTrust.Projects[base].TrustLevel == "trusted" {
 			config("codex", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".codex/config.toml"), "mcp_servers", true)
+		}
+		if o.TrustedProjects[base] || piTrusted(base) {
+			piSettings(protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".pi/settings.json"))
 			config("pi", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".pi/mcp.json"), "mcpServers", false)
 		}
+
 	}
 	return report
 }
