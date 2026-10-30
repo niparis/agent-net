@@ -39,6 +39,7 @@ type Options struct {
 	Port         string // gateway port (default 7420)
 	Exe          string // path of the agent-net binary; default: this binary
 	PeerMessages string // "" ask; PeerMessagesAccept or PeerMessagesNo choose without a prompt
+	CodexTools   string // "" ask; CodexToolsApprove or CodexToolsNo choose without a prompt
 	Out          io.Writer
 }
 
@@ -112,6 +113,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.daemonService()
 	r.claudeMCP()
 	r.claudePeerMessages()
+	r.codexMCP()
 	r.piExtension()
 	r.opencodePlugin()
 	r.guidance()

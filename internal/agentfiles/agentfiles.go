@@ -54,6 +54,19 @@ func OpencodePluginPath() string {
 	return filepath.Join(OpencodeDir(), "plugins", "agent-net.ts")
 }
 
+// CodexHome is Codex's home folder: $CODEX_HOME, else ~/.codex. It holds the
+// config.toml that setup registers the MCP server in, the AGENTS.md that Codex
+// reads as global instructions, and the control socket of the shared app server.
+func CodexHome() string {
+	if x := os.Getenv("CODEX_HOME"); x != "" {
+		return x
+	}
+	return filepath.Join(home(), ".codex")
+}
+
+// CodexConfigPath is Codex's config.toml.
+func CodexConfigPath() string { return filepath.Join(CodexHome(), "config.toml") }
+
 // GuidanceFile is a file that holds an agent-net guidance block.
 type GuidanceFile struct {
 	Name    string
@@ -69,6 +82,7 @@ func GuidanceFiles() []GuidanceFile {
 		{"claude guidance", filepath.Join(h, ".claude"), filepath.Join(h, ".claude", "CLAUDE.md"), guidance.Claude},
 		{"agent guidance", filepath.Join(h, ".pi"), filepath.Join(h, ".pi", "agent", "AGENTS.md"), guidance.Other},
 		{"opencode guidance", OpencodeDir(), filepath.Join(OpencodeDir(), "AGENTS.md"), guidance.Other},
+		{"codex guidance", CodexHome(), filepath.Join(CodexHome(), "AGENTS.md"), guidance.Other},
 	}
 }
 

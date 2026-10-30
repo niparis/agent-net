@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -91,6 +92,10 @@ func newFixture(t *testing.T) *fixture {
 	t.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(home, "cfg"))
 	t.Setenv("AGENT_NET_NO_SERVICE", "1")
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	t.Setenv("CODEX_HOME", "")
+	oldLook := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("not found") }
+	t.Cleanup(func() { lookPath = oldLook })
 	noTTY(t)
 	data := t.TempDir()
 	gw, err := gateway.New(gateway.Options{DataDir: data})
