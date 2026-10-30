@@ -36,6 +36,9 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		}
 		for i := range list {
 			list[i].ModelProviders = d.cfg.ModelProviders
+			if list[i].Name == "claude" {
+				list[i].PolicyReady = policyHookInstalled()
+			}
 		}
 		d.hmu.Lock()
 		d.installed = list

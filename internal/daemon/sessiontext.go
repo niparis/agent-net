@@ -33,7 +33,7 @@ import (
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
-	protocol.OpSessionTrust: true,
+	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -182,6 +182,25 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		if _, err = d.call(ctx, "session.trust", protocol.SessionTrust{SessionID: q.SessionID, On: q.On}); err == nil {
 			res = protocol.SessionTrustResult{SessionID: q.SessionID, On: q.On}
 			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
+		}
+	case protocol.OpSessionPolicy:
+		// The policy is owner text that goes into the model's context every
+		// turn: only the owner at the keyboard sets it (decision 0014). The
+		// gate above refuses agent sessions, and no agent tool exists for it.
+		var q protocol.SessionPolicyRequest
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+			return nil, true, errors.New("session_policy needs session_id")
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, "session.policy", q); err == nil {
+			var out protocol.SessionPolicyResult
+			if err = json.Unmarshal(data, &out); err == nil {
+				res = out
+				d.policy.forget(q.SessionID)
+				if out.Saved {
+					d.Logf("session.policy session=%s scope=%s delegate=%s", q.SessionID, q.Scope, q.Policy.Delegate)
+				}
+			}
 		}
 	case "session_enter":
 		var q protocol.EnterRequest

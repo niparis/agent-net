@@ -51,6 +51,9 @@ type Operator interface {
 	// SetPeerTrust turns peer trust on or off for a session: whether it may act
 	// on requests from other agents without asking (decision 0012). Owner only.
 	SetPeerTrust(ctx context.Context, session string, on bool) error
+	// SetSessionPolicy sets (or with DryRun only checks) the delegation policy
+	// of a session or its project (decision 0014). Owner only.
+	SetSessionPolicy(ctx context.Context, q protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
 	// Counts is how many sessions are online and offline. Owner only.
 	Counts(ctx context.Context) (protocol.SessionCounts, error)
 	Close()

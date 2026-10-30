@@ -180,6 +180,8 @@ type Daemon struct {
 	usage usageState
 	// hints holds the rate limits and the session cache of hints (hint.go).
 	hints hintState
+	// policy caches the delegation policy per session (policy.go).
+	policy policyState
 	// wmu guards the workers started by this daemon (workers.go).
 	wmu       sync.Mutex
 	workers   map[string]*worker

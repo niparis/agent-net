@@ -242,6 +242,15 @@ func (s *Client) SetPeerTrust(ctx context.Context, session string, on bool) erro
 	return err
 }
 
+func (s *Client) SetSessionPolicy(ctx context.Context, q protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error) {
+	var out protocol.SessionPolicyResult
+	raw, err := s.action(ctx, protocol.OpSessionPolicy, q)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 	var out protocol.SessionCounts
 	raw, err := s.action(ctx, protocol.OpCounts, nil)

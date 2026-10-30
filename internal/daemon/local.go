@@ -542,6 +542,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if method == protocol.MethodHint {
 		return lc.hintCall(ctx, client, ls, raw)
 	}
+	if method == protocol.MethodPolicy {
+		return lc.policyCall(ctx, client, ls, raw)
+	}
 	readOnly := map[string]bool{"info": true, "list": true, "get": true, "messages": true, "message_status": true,
 		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
