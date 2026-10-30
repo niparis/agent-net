@@ -20,9 +20,15 @@ import (
 // claudeCTOState is protected by cto.mu, except pid, which is read by the
 // private-channel peer check without taking that lock.
 type claudeCTOState struct {
-	pid                 atomic.Int64
+	root                atomic.Pointer[claudeCTORoot]
+	starting            atomic.Bool
 	token               string
 	ref, session, model string
+}
+
+type claudeCTORoot struct {
+	pid   int
+	token string
 }
 
 type claudeCTOHarness struct{}
@@ -31,7 +37,7 @@ func (claudeCTOHarness) name() string { return "claude" }
 
 func (d *Daemon) stopClaudeCTOLocked() {
 	c := &d.claudeCTO
-	c.pid.Store(0)
+	c.root.Store(nil)
 	if c.ref != "" {
 		(claudeLauncher{}).stopID(d, c.ref)
 	}
@@ -42,8 +48,12 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	c := &d.claudeCTO
 	if c.ref != "" {
 		sf, ok := findClaudeBg(d.cfg.ClaudeSessionsDir, c.ref)
-		tok, alive := procToken(int(c.pid.Load()))
-		if ok && alive && tok == c.token && sf.PID == int(c.pid.Load()) && c.session == id && c.model == model {
+		root := c.root.Load()
+		tok, alive := "", false
+		if root != nil {
+			tok, alive = procToken(root.pid)
+		}
+		if ok && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
 			return nil
 		}
 		d.stopClaudeCTOLocked()
@@ -64,6 +74,10 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if model != "" {
 		args = append(args, "--model", model)
 	}
+	mcp, _ := json.Marshal(map[string]any{"mcpServers": map[string]any{"agent-net-cto": map[string]any{"command": d.cfg.Exe, "args": []string{"cto-mcp"}}}})
+	args = append(args, "--mcp-config", string(mcp), "--strict-mcp-config")
+	c.starting.Store(true)
+	defer c.starting.Store(false)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
@@ -83,7 +97,7 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 			token, alive := procToken(sf.PID)
 			if alive && (id == "" || sf.SessionID == id) {
 				c.ref, c.session, c.model, c.token = ref, sf.SessionID, model, token
-				c.pid.Store(int64(sf.PID))
+				c.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
 				return nil
 			}
 		}

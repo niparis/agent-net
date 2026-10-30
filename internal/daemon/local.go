@@ -313,6 +313,17 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 	}
 	switch p.Client {
 	case "cto-mcp":
+		// Claude may start its MCP child before --bg returns its session id.
+		// Wait for the launcher to establish the process-tree root.
+		deadline := time.NewTimer(15 * time.Second)
+		defer deadline.Stop()
+		for !d.isCTOPeer(pid) && d.claudeCTO.starting.Load() {
+			select {
+			case <-deadline.C:
+				return nil, errors.New("CTO session startup timed out")
+			case <-time.After(25 * time.Millisecond):
+			}
+		}
 		if !d.isCTOPeer(pid) {
 			return nil, errors.New("only the CTO server's process tree can use this channel")
 		}

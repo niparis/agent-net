@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -410,6 +411,16 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	}
 	d.mu.Unlock()
 	infos = append([]protocol.SessionInfo(nil), infos...)
+	if harness == "claude" {
+		privateDir := filepath.Join(d.cfg.StateDir, "cto", "claude")
+		kept := infos[:0]
+		for _, in := range infos {
+			if filepath.Clean(in.Cwd) != filepath.Clean(privateDir) {
+				kept = append(kept, in)
+			}
+		}
+		infos = kept
+	}
 	for i := range infos {
 		infos[i].Harness = harness
 		// A session that agent-net started as a worker carries the worker flag,

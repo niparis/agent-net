@@ -383,13 +383,18 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 
 // isCTOPeer admits only a live descendant of the private OpenCode server.
 func (d *Daemon) isCTOPeer(pid int) bool {
-	root := int(d.cto.pid.Load())
-	if root <= 1 || pid <= 1 {
+	if pid <= 1 {
 		return false
 	}
+	openRoot := int(d.cto.pid.Load())
+	claudeRoot := d.claudeCTO.root.Load()
 	for i := 0; i < 64 && pid > 1; i++ {
-		if pid == root {
-			return int(d.cto.pid.Load()) == root
+		if openRoot > 1 && pid == openRoot {
+			return int(d.cto.pid.Load()) == openRoot
+		}
+		if claudeRoot != nil && pid == claudeRoot.pid {
+			token, alive := procToken(pid)
+			return alive && token == claudeRoot.token && d.claudeCTO.root.Load() == claudeRoot
 		}
 		p, err := parentPID(pid)
 		if err != nil || p == pid {

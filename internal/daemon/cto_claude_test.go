@@ -68,3 +68,48 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 		t.Fatalf("resume: %+v", rec)
 	}
 }
+
+func TestClaudeCTOPrivateToolsAndSession(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
+		t.Fatal(err)
+	}
+	rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	strict := false
+	for _, a := range rec.Args {
+		if a == "--strict-mcp-config" {
+			strict = true
+		}
+	}
+	var conf struct {
+		Servers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
+	}
+	if !strict || json.Unmarshal([]byte(argValue(rec.Args, "--mcp-config")), &conf) != nil || len(conf.Servers) != 1 {
+		t.Fatalf("private config: %v", rec.Args)
+	}
+	server := conf.Servers["agent-net-cto"]
+	if server.Command != n.d.cfg.Exe || len(server.Args) != 1 || server.Args[0] != "cto-mcp" {
+		t.Fatalf("server: %+v", server)
+	}
+	if !n.d.isCTOPeer(rec.ChildPid) || n.d.isCTOPeer(os.Getpid()) {
+		t.Fatal("wrong process tree accepted")
+	}
+	if !n.d.insideSession(rec.ChildPid) {
+		t.Fatal("CTO child passed owner gate")
+	}
+	eventually(t, "Claude adapter discovery", func() bool { sf, ok := findClaudeBg(n.sessions, rec.ID); return ok && sf.SessionID == rec.Session })
+	n.d.SetSessions("claude", []protocol.SessionInfo{{NativeID: rec.Session, PID: rec.Pid, Cwd: rec.Cwd}})
+	n.d.mu.Lock()
+	_, registered := n.d.sessions[key("claude", rec.Session)]
+	n.d.mu.Unlock()
+	if registered {
+		t.Fatal("private CTO registered as network session")
+	}
+}

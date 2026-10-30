@@ -141,6 +141,9 @@ func (d *Daemon) insideSession(pid int) bool {
 		}
 	}
 	d.wmu.Unlock()
+	if root := d.claudeCTO.root.Load(); root != nil {
+		sess[root.pid] = true
+	}
 	// The private CTO is also an agent process, even though it is not a
 	// registered session or worker. Its children cannot use the owner CLI.
 	d.cto.mu.Lock()
