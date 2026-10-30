@@ -49,3 +49,14 @@ func progressBar(frac float64, n int, color lipgloss.TerminalColor) string {
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("░", n-filled))
 }
+
+// selectedRow restores the background after each embedded style reset.
+func selectedRow(line string) string {
+	sample := lipgloss.NewStyle().Background(roleSelection).Render("x")
+	i := strings.Index(sample, "x")
+	if i <= 0 {
+		return line
+	}
+	prefix := sample[:i]
+	return prefix + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+prefix) + "\x1b[0m"
+}

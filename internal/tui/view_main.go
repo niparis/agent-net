@@ -432,13 +432,7 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	if !r.online {
 		return clip(sDim.Render(ansi.Strip(line)), w)
 	}
-	if hl := harnessText(r.harnesses, false); hl != "" {
-		column := 13 + nameW + versionW + machineCPUW + machineMemW + machineLoadW + 4
-		gap := max(2, column-ansi.StringWidth(line))
-		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) <= w {
-			line += strings.Repeat(" ", gap) + sDim.Render(hl)
-		}
-	}
+
 	rest := w - ansi.StringWidth(line) - 2
 	// The shared OpenCode service belongs to the machine, not to any one
 	// session: a short note here, its process list in a session's detail.
@@ -462,6 +456,13 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 		}
 	}
 
+	if hl := harnessText(r.harnesses, false); hl != "" {
+		column := 13 + nameW + versionW + machineCPUW + machineMemW + machineLoadW + 4
+		gap := max(2, column-ansi.StringWidth(line))
+		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) <= w {
+			line += strings.Repeat(" ", gap) + sDim.Render(hl)
+		}
+	}
 	return clip(line, w)
 }
 
@@ -874,7 +875,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	line := marker + strings.Join(parts, " ")
 	switch {
 	case selected:
-		return lipgloss.NewStyle().Background(roleSelection).Render(clip(line, w))
+		return selectedRow(clip(line, w))
 	case !a.Online || m.idleLong(a):
 		return sDim.Render(clip(stripStyles(line), w))
 	}

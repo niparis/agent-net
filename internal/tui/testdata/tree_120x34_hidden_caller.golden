@@ -1,7 +1,7 @@
 1 Sessions  2 Messages  3 Quotas │ 10 sessions, 9 online · 2 busy · workers 4 running, 0 queued  filter: /probe
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude  opencode  pi                   │
-│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0                               │
+│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi                                     │
 │ ○ old-box    v0.3.2 offline                                                                                          │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME                           AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK

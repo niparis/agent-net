@@ -77,6 +77,11 @@ func TestSelectedSessionKeepsColors(t *testing.T) {
 	if !strings.Contains(v, "48;2;34;48;58") {
 		t.Fatal("missing subtle selection background")
 	}
+	for _, line := range strings.Split(v, "\n") {
+		if strings.Contains(line, "▸") && strings.Count(line, "48;2;34;48;58") < 3 {
+			t.Fatal("selection background is lost after styled cells")
+		}
+	}
 }
 
 func TestMachineDotColors(t *testing.T) {

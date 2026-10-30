@@ -263,7 +263,7 @@ func TestMapRefreshesWhenCTOPaneClosed(t *testing.T) {
 
 func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 	m := Model{cto: &ctoState{harness: "claude", model: "opus"}}
-	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO (claude · opus)") {
+	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO · claude · opus") {
 		t.Fatalf("title: %s", got)
 	}
 }
@@ -318,7 +318,7 @@ func TestCTOModelFormSaveAndCancel(t *testing.T) {
 	}
 	next, _ = m.update(cmd())
 	m = next.(Model)
-	if src.saved.Harness == nil || *src.saved.Harness != "claude" || src.saved.Model == nil || *src.saved.Model != "opus" || !strings.Contains(m.View(), "CTO (claude · opus)") {
+	if src.saved.Harness == nil || *src.saved.Harness != "claude" || src.saved.Model == nil || *src.saved.Model != "opus" || !strings.Contains(m.View(), "CTO · claude · opus") {
 		t.Fatalf("save: %+v view %s", src.saved, m.View())
 	}
 	m = keys(m, "m")
