@@ -95,9 +95,19 @@ func (lc *localConn) operatorGate(method string) error {
 		return fmt.Errorf("method %q is only available to the owner's command line or TUI, not to agent sessions", method)
 	}
 	if lc.d.inSession(pid) {
-		return fmt.Errorf("method %q is not available from inside an agent session: run it in your own terminal", method)
+		return fmt.Errorf("method %q is not available from inside an agent session: run it in your own terminal. %s", method, insideSessionAdvice(method))
 	}
 	return nil
+}
+
+// insideSessionAdvice tells an agent that ran an owner-only command what to
+// use instead. An agent that lacks the tool runs old agent-net tools.
+func insideSessionAdvice(method string) string {
+	const reconnect = "ask your user to reconnect agent-net (in Claude Code: /mcp)."
+	if method == protocol.OpWorkerStart {
+		return "agents start workers with the agent_start tool, not this command. If you do not have agent_start, your agent-net tools are out of date: " + reconnect
+	}
+	return "agents use the agent-net tools, not this command. If a tool you need is missing, your agent-net tools are out of date: " + reconnect
 }
 
 // insideSession tells whether pid is a local session's process or a descendant

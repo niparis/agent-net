@@ -357,6 +357,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
+		old.ToolsVersion, old.ToolsOld = "", false // set by the MCP hello, not by discovery
 		probe := infos[i]
 		probe.Repo, probe.SessionID = protocol.RepoInfo{}, ""
 		if known && old != probe {
@@ -374,6 +375,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		k := key(harness, in.NativeID)
 		seen[k] = true
 		ls := d.sessions[k]
+		if ls != nil {
+			// The tools state comes from the session's MCP hello. Discovery
+			// does not know it, and must not erase it.
+			in.ToolsVersion, in.ToolsOld = ls.info.ToolsVersion, ls.info.ToolsOld
+		}
 		if ls == nil {
 			ls = &localSession{info: in}
 			d.sessions[k] = ls

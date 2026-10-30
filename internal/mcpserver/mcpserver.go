@@ -91,12 +91,15 @@ type statusIn struct {
 
 // New builds the server. Each tool forwards to the daemon.
 // version is the agent-net version reported to the MCP client ("dev" when empty).
-func New(call Caller, version string) *mcp.Server {
+func New(call Caller, version string, note ...func(ctx context.Context) string) *mcp.Server {
 	if version == "" {
 		version = "dev"
 	}
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: version}, &mcp.ServerOptions{Instructions: Instructions})
 	s.AddReceivingMiddleware(announceReminder())
+	if len(note) > 0 && note[0] != nil {
+		s.AddReceivingMiddleware(staleToolsNote(note[0]))
+	}
 
 	tool := func(name, desc string) *mcp.Tool { return &mcp.Tool{Name: name, Description: desc} }
 	run := func(ctx context.Context, method string, params any) (any, error) {
@@ -189,6 +192,30 @@ func New(call Caller, version string) *mcp.Server {
 	return s
 }
 
+// staleToolsNote is a receiving middleware. When take returns a note (the
+// daemon said these tools are older than the machine's agent-net), it adds the
+// note to the end of the next agent-net tool result. take gives the note out
+// once, so it shows once per session.
+func staleToolsNote(take func(ctx context.Context) string) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			res, err := next(ctx, method, req)
+			if method != "tools/call" || err != nil {
+				return res, err
+			}
+			call, ok := req.(*mcp.CallToolRequest)
+			out, ok2 := res.(*mcp.CallToolResult)
+			if !ok || !ok2 || out == nil || call.Params == nil || !strings.HasPrefix(call.Params.Name, "agent_") {
+				return res, err
+			}
+			if n := take(ctx); n != "" {
+				out.Content = append(out.Content, &mcp.TextContent{Text: n})
+			}
+			return res, err
+		}
+	}
+}
+
 // announceReminder is a receiving middleware. Until this session has called
 // agent_announce with success, it adds the reminder line to the end of every
 // agent-net tool result, errors included. Tools of registered MCP servers
@@ -233,6 +260,32 @@ type Daemon struct {
 	// OnHello, if set, gets the daemon's agent-net version after every
 	// successful hello (the first connection and each redial). It must not block.
 	OnHello func(daemonVersion string)
+
+	// noteMu guards the stale-tools note. The daemon sends it in the hello
+	// answer when this process is older than the daemon. It is given out once
+	// per Daemon (one session), however many times the hello is repeated.
+	noteMu    sync.Mutex
+	note      string
+	noteGiven bool
+}
+
+// takeNote returns the stale-tools note once, then "".
+func (d *Daemon) takeNote() string {
+	d.noteMu.Lock()
+	defer d.noteMu.Unlock()
+	if d.noteGiven || d.note == "" {
+		return ""
+	}
+	d.noteGiven = true
+	return d.note
+}
+
+// dropNote forgets the note: this process is about to become the new binary,
+// whose tools are not stale.
+func (d *Daemon) dropNote() {
+	d.noteMu.Lock()
+	d.note, d.noteGiven = "", true
+	d.noteMu.Unlock()
 }
 
 func NewDaemon(socket string, hello map[string]any) *Daemon {
@@ -276,6 +329,14 @@ func (d *Daemon) conn(ctx context.Context) (*client.Client, error) {
 		return nil, err
 	}
 	d.cl = cl
+	var hr struct {
+		Note string `json:"tools_note"`
+	}
+	if json.Unmarshal(res, &hr) == nil && hr.Note != "" {
+		d.noteMu.Lock()
+		d.note = hr.Note
+		d.noteMu.Unlock()
+	}
 	if d.OnHello != nil {
 		var r struct {
 			Version string `json:"version"`
@@ -373,7 +434,8 @@ func Run(ctx context.Context, socket string, opts Options) error {
 	d.OnHello = func(v string) { go sw.consider(ctx, v) }
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
-	srv := New(d.Call, opts.Version)
+	srv := New(d.Call, opts.Version, func(context.Context) string { return d.takeNote() })
+	sw.dropNote = d.dropNote
 	// Registered MCP servers' tools follow the registry while this runs.
 	dyn := NewDynamic(srv, d.Call)
 	// Load them before serving, so the first tools/list already has them.
@@ -391,6 +453,8 @@ type switcher struct {
 	opts Options
 	conn *stdioConn
 	logf func(string, ...any)
+	// dropNote, if set, is called when the switch is requested.
+	dropNote func()
 
 	mu     sync.Mutex
 	failed map[string]bool // daemon versions already tried and refused
@@ -429,5 +493,8 @@ func (s *switcher) consider(ctx context.Context, daemonVersion string) {
 		return
 	}
 	s.logf("switching from %s to %s", s.opts.Version, disk)
+	if s.dropNote != nil {
+		s.dropNote()
+	}
 	s.conn.requestExec(exe)
 }

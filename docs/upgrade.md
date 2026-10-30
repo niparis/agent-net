@@ -97,6 +97,8 @@ From v0.3.5 on, a running Claude Code session picks up the new version without a
 
 The switch is logged to the session's MCP stderr (`agent-net mcp: switching from v0.3.2 to v0.3.3`). Claude Code does not show that stderr, so the daemon also logs one line for each `hello` from a session: `mcp hello: claude session ID pid PID runs agent-net v0.3.2, daemon runs v0.3.3`. A session that switched says hello again with the new version. If it stays on the old one, that line is the proof, and the process logs `still waiting to switch` after 15 seconds with the reason. If it fails, the process stays on the old code and logs why. It does not try the same daemon version again until the daemon restarts. `AGENT_NET_NO_AUTO_UPGRADE=1` in the environment of the Claude session turns the switch off. The `agent-net mcp` process reads it, so setting it only on the daemon is not enough.
 
+If a session did not switch (the switch failed, `AGENT_NET_NO_AUTO_UPGRADE=1`, or the process is older than v0.3.5), the daemon still knows: it compares the version in the `hello` with its own and marks the session `tools_old`. The TUI shows it in the detail pane, and a process of v0.4.7 or later adds a one-line note to its next tool result so the agent asks you to reconnect. See "Tools version for each session" in [reference.md](reference.md#what-each-machine-reports).
+
 A session started before v0.3.5 has no such code. It needs one restart. After that the next upgrades do not need one. Until then it keeps the old process and talks to the new daemon. The local socket protocol stays compatible within a release, and the client says which protocol it speaks. If a daemon ever needs a newer client, the old one gets the error "restart this session" and not a silent failure.
 
 ### Pi
