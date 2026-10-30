@@ -69,3 +69,16 @@ func TestQuotaViewGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("quotas_%dx%d", size[0], size[1]), view)
 	}
 }
+
+func TestQuotaViewKeepsFooterWithManyRows(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 1
+	q := &protocol.Quotas{GeneratedAt: t0.Unix()}
+	for i := 0; i < 30; i++ {
+		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("provider%d", i), Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 50}}})
+	}
+	m.usage.raw.Local.Quotas = q
+	if !strings.Contains(ansi.Strip(m.View()), "workers now:") {
+		t.Fatal("footer lost")
+	}
+}

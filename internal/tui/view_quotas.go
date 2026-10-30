@@ -117,6 +117,10 @@ func (m Model) quotasView(w, h int) []string {
 		}
 		bottom += fmt.Sprintf("   ·   reading %s old", age.Truncate(time.Second))
 	}
+	if len(out) > h-1 {
+		out = out[:h-2]
+		out = append(out, sDim.Render("  more subscriptions omitted"))
+	}
 	for len(out) < h-1 {
 		out = append(out, "")
 	}
