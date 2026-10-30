@@ -97,3 +97,12 @@ func TestMachineDotColors(t *testing.T) {
 		}
 	}
 }
+
+func TestMachineLoadColors(t *testing.T) {
+	if loadStyle(warmMachine).GetForeground() != roleWarning {
+		t.Fatal("warm load should use warning")
+	}
+	if loadStyle(hotMachine).GetForeground() != roleError {
+		t.Fatal("hot load should use error")
+	}
+}

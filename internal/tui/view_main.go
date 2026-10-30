@@ -401,7 +401,7 @@ func loadStyle(pct float64) lipgloss.Style {
 	case pct >= hotMachine:
 		return sBad
 	case pct >= warmMachine:
-		return sBusy
+		return sNeeds
 	}
 	return sIdle
 }
