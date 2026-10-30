@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -117,11 +118,41 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		if err != nil {
 			return nil, err
 		}
-		var models []string
+		var models, providers []string
+		usage := map[string]int{}
+		failed, succeeded := map[string]bool{}, map[string]bool{}
+		providerSeen := map[string]bool{}
 		seen := map[string]bool{}
 		for _, node := range nodes {
 			for _, h := range node.Harnesses {
 				if h.Name == harness {
+					used, err := g.store.ModelUsage(node.NodeID, harness, protocol.ModelUsageDays*24*time.Hour)
+					if err != nil {
+						return nil, err
+					}
+					for id, n := range used {
+						usage[id] += n
+					}
+					failures, err := g.store.FailedModels(node.NodeID, harness)
+					if err != nil {
+						return nil, err
+					}
+					for id := range failures {
+						failed[id] = true
+					}
+					successes, err := g.store.SucceededModels(node.NodeID, harness)
+					if err != nil {
+						return nil, err
+					}
+					for id := range successes {
+						succeeded[id] = true
+					}
+					for _, provider := range h.ModelProviders {
+						if !providerSeen[provider] {
+							providerSeen[provider] = true
+							providers = append(providers, provider)
+						}
+					}
 					for _, m := range h.Models {
 						if !seen[m] {
 							seen[m] = true
@@ -134,10 +165,11 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 		if len(models) == 0 {
 			return nil, reject("no machine reports models for %s", harness)
 		}
-		resolved, err := protocol.ResolveModel(model, models, nil, nil)
+		resolution, err := protocol.ResolveModelRanked(model, models, usage, providers, failed, succeeded)
 		if err != nil {
 			return nil, reject("model: %v", err)
 		}
+		resolved := resolution.Model
 		name := strings.TrimSpace(p.Name)
 		if name == "" {
 			name = harness + " " + resolved

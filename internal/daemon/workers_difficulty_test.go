@@ -151,3 +151,20 @@ func TestWorkerRegisteredOpenCodeEffort(t *testing.T) {
 		t.Fatalf("result %+v model %v", res, model)
 	}
 }
+
+func TestWorkerProfilesResolveUsingTrackRecord(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	if err := g.gw.Store().RecordModelSuccess(w.node.d.NodeID(), "opencode", "fake/m2"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := w.cli.call(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var profile protocol.WorkerProfile
+	if json.Unmarshal(raw, &profile) != nil || profile.Model != "fake/m2" {
+		t.Fatalf("profile: %s", raw)
+	}
+}
