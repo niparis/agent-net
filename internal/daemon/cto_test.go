@@ -17,7 +17,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo", "stop a worker", "decline a held request", "remove an MCP server", "change integrations", "explicit words"} {
+	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo", "stop a worker", "decline a held request", "remove an MCP server", "change integrations", "explicit words", "manage the network", "workers", "settings", "ui_show"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
