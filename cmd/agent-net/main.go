@@ -36,7 +36,7 @@ var version = "dev"
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages
+  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages, --[no-]accept-codex-tools
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)
@@ -87,6 +87,10 @@ func main() {
 		// No subcommand: the stdio server Claude Code starts. Anything else is the registry CLI.
 		if len(args) == 0 {
 			err = mcpserver.Run(ctx, daemon.SocketPath(), mcpserver.Options{Version: version,
+				Exe: startExe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"})
+		} else if len(args) == 1 && args[0] == "--codex" {
+			// The stdio server Codex starts, once per thread.
+			err = mcpserver.RunCodex(ctx, daemon.SocketPath(), mcpserver.Options{Version: version,
 				Exe: startExe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"})
 		} else {
 			err = cmdMCP(ctx, args)
@@ -261,6 +265,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	d, err := daemon.New(daemon.Config{
 		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
+		CodexHome:         agentfiles.CodexHome(),
 		RefreshAgentFiles: agentfiles.SyncAndLog,
 		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
