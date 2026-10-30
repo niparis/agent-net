@@ -520,6 +520,49 @@ sensitive descriptor values. Extension-provided MCP servers, package-managed ski
 locations, Pi standalone Markdown skills and session-specific trust overrides need
 manual inspection. A row summarizes observations, not proof that a running session has loaded it.
 
+### Managed skill versions
+
+The owner can import an observed skill with the `tools_import` operator method.
+Pass `item` as the ID from `tools_items` and `location` as an object with
+`node_id` and `location` from that item's locations. The source machine must be
+online. The owner should inspect the skill files for secrets before importing.
+Import reads the selected directory and does not change it. The gateway rejects
+an import if its contents no longer match the observed hash. The packed bundle
+must be at most 2 MiB and may contain at most 10,000 entries. A larger skill can
+still appear in inventory but cannot currently be imported.
+
+`tools_versions` takes `item` and returns the saved hashes, Git commits, source
+machine and path, and import times. `tools_export` takes `item` and `version`
+(the content hash) and returns a JSON object with a base64 `data` field holding
+the tar bundle. Export verifies the bundle hash. Import, version listing and
+export require the owner connection. Reimporting the same content hash for an
+item returns the existing version. A saved version remains available when its
+observed locations disappear.
+
+The gateway keeps the private bare Git repository in `skills.git` under its
+data directory. Each imported identity has its own directory in the repository;
+SQLite records the commit, content hash and provenance. Imports do not deploy
+skills to any machine.
+
+To back up a running gateway, connect through an owner daemon and use:
+
+```
+agent-net gateway backup --out /absolute/path/to/new-backup
+```
+
+The path is on the gateway machine and must be a new directory outside its data
+directory. The backup includes a consistent database snapshot, the skill Git
+repository, and the gateway CA and server keys. Keep it private. To restore on
+the gateway machine, run:
+
+```
+agent-net gateway restore --backup /path/to/backup --to /path/to/new-data
+```
+
+The destination must not exist. Restore checks database integrity, Git objects,
+and every stored skill hash before creating it. Configure the gateway to use the
+new data directory before starting it. It never replaces a live data directory.
+
 ## The project registry
 
 Without a registry, a project exists only after a session ran in it. The registry lets you (or an agent, when you ask) say "this repository is a project" ahead of time. Workers (see [decision 0002](decisions/0002-workers.md)) start sessions only in known projects, and a registered project is known even if no session ever ran there.

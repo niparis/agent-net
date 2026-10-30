@@ -396,7 +396,31 @@ argument values. They retain URL paths, environment variable names, safe config
 arguments, and numeric `--port` values.
 The local inventory scan and read methods use the owner gate. The gateway stores
 observations from authenticated daemons and keeps the previous records marked
-stale after a failed scan. Skill contents and raw MCP configuration are not
-sent to the gateway.
+stale after a failed scan. Discovery does not send skill contents or raw MCP configuration to the gateway.
 
 Inventory reads are paged to at most 240 KiB of encoded report data per response.
+
+
+### Managed skill store and backups
+
+Only an owner connection can request `tools_import`, `tools_versions`,
+`tools_export` or `gateway_backup` through the daemon. The gateway trusts its
+enrolled daemons, as it does for other operator requests. Before importing, the
+owner must review the source files for secrets. Import sends the skill contents
+to the gateway. It does not run them or modify their source. The gateway checks
+the observed hash and rejects traversal, escaping links, special files and
+bundles over 2 MiB or 10,000 entries. A source that changed since its scan is
+rejected. Unknown and unsafe content is not made safe by hashing it.
+
+The gateway data directory contains `skills.git`, a private bare Git repository.
+Its directory is mode 0700. Imported file contents, including any secrets in
+those files, are retained in Git history. SQLite stores the item ID, content
+hash, commit and source location. The gateway account and anyone who can read
+its data directory or a backup can read these contents. Git history does not
+erase a secret when a later version removes it. Nothing is pushed to a remote.
+
+Gateway backups contain the database, skill repository, CA private key and
+server key. The backup directory and copied files are owner-only. Protect the
+backup as carefully as the gateway data. Backup serializes imports with the
+SQLite snapshot and repository copy. Restore writes only to a new directory and
+checks SQLite, Git objects and every saved skill hash before making it available.
