@@ -398,7 +398,10 @@ func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 
 func codexWorkerText(m protocol.Message) string {
 	text := m.Body
-	if !strings.HasPrefix(text, "[agent-net worker brief]") {
+	const brief = "[agent-net worker brief]"
+	if strings.HasPrefix(text, brief) {
+		text = brief + protocol.NeutralizeMarkers(strings.TrimPrefix(text, brief))
+	} else {
 		text = protocol.NeutralizeMarkers(text)
 	}
 	if m.FromHarness == protocol.OwnerHarness && !strings.HasPrefix(text, "[agent-net worker brief]") {
