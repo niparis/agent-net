@@ -453,6 +453,21 @@ The provider mapping is fixed. It is the table used by model choice and admissio
 
 A provider without a row (for example `elevenlabs`) has no model provider in agent-net. A model id with no provider part is mapped through its harness, which is why the Claude Code and Codex harnesses are named above.
 
+## Tools inventory
+
+`agent-net tools` shows the latest observed skills and MCP servers from each
+machine. The table lists the name, kind, harness, scope, project, machine and
+state. The daemon scans at startup, after reconnecting and every five minutes.
+The owner can request a refresh through the `inventory_scan` operator method;
+`inventory_get` returns the stored reports. These methods require the owner
+connection and cannot be called by an agent session.
+
+A failed scan leaves the previous observations marked stale. The inventory is
+read-only and does not execute skills or servers. MCP fingerprints omit
+sensitive descriptor values. Some sources, including extension-provided MCP
+servers and package-managed skills, need manual inspection; a row is an
+observation, not proof that a running session has loaded it.
+
 ## The project registry
 
 Without a registry, a project exists only after a session ran in it. The registry lets you (or an agent, when you ask) say "this repository is a project" ahead of time. Workers (see [decision 0002](decisions/0002-workers.md)) start sessions only in known projects, and a registered project is known even if no session ever ran there.

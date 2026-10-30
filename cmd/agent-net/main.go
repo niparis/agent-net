@@ -51,6 +51,7 @@ const usage = `usage: agent-net <command>
   list       list agents on the network
   nodes      list machines with their agent-net version and installed harnesses
              (nodes rename <node-id|name> [new name] sets a display name)
+  tools      show observed skills and MCP servers
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
   tui        live terminal view of every agent session on the network; send as yourself, start and stop workers
@@ -120,6 +121,8 @@ func main() {
 		err = cmdList(ctx, args)
 	case "nodes":
 		err = cmdNodes(ctx, args)
+	case "tools":
+		err = cmdTools(ctx, args)
 	case "projects":
 		err = cmdProjects(ctx, args)
 	case "events":
