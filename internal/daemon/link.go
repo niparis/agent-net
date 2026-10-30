@@ -106,6 +106,11 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				l.write(ctx, res)
 			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
+		case "node.name":
+			var p protocol.NodeName
+			if json.Unmarshal(raw, &p) == nil && p.Hostname != "" {
+				d.shownHost.Store(p.Hostname)
+			}
 		case "node.usage_top", "node.session_text", "node.session_enter":
 			d.wg.Add(1)
 			go func() {
@@ -196,8 +201,13 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	hctx, hcancel := context.WithTimeout(ctx, 20*time.Second)
 	defer hcancel()
 	inv, gen := d.inventory()
-	if _, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, Harnesses: inv, Launch: d.launchFlag()}); err != nil {
+	hello, err := l.call(hctx, "hello", protocol.Hello{Version: d.helloVersion(), Hostname: d.cfg.Hostname, Harnesses: inv, Launch: d.launchFlag()})
+	if err != nil {
 		return false, err
+	}
+	var hr protocol.NodeName
+	if json.Unmarshal(hello, &hr) == nil && hr.Hostname != "" {
+		d.shownHost.Store(hr.Hostname)
 	}
 	snap := d.snapshot()
 	data, err := l.call(hctx, "session.sync", protocol.SessionSync{Sessions: snap})

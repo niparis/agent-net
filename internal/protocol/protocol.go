@@ -348,6 +348,17 @@ type (
 	MsgDeliver struct {
 		Message Message `json:"message"`
 	}
+	// NodeRename is the "node.rename" request: the owner gives a machine a
+	// display name, or clears it with an empty name.
+	NodeRename struct {
+		NodeID string `json:"node_id"`
+		Name   string `json:"name"`
+	}
+	// NodeName is the gateway's "node.name" push: the name the gateway now
+	// lists for this machine, so the daemon uses the same one.
+	NodeName struct {
+		Hostname string `json:"hostname"`
+	}
 	// NodeUpgrade is the gateway's "node.upgrade" request: install this version
 	// and restart. The daemon answers with NodeUpgradeResult before it restarts.
 	NodeUpgrade struct {
@@ -374,6 +385,12 @@ type NodeView struct {
 	// Launch says whether the machine accepts workers: nil when it never
 	// said (an older daemon), false after `setup --no-launch`.
 	Launch *bool `json:"launch,omitempty"`
+	// Hostname is the name to show: the owner's display name when one is set
+	// (decision 0015), else the host name the daemon reported.
+	// DisplayName is the owner's name alone ("" when none); Reported is the
+	// host name the daemon reported in its hello.
+	DisplayName string `json:"display_name,omitempty"`
+	Reported    string `json:"reported_hostname,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.

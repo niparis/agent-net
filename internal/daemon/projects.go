@@ -108,7 +108,7 @@ func (lc *localConn) dispatchProject(ctx context.Context, client, method string,
 
 // projectAdd checks the folders of a request and registers them.
 func (d *Daemon) projectAdd(ctx context.Context, req protocol.ProjectAddRequest, session, harness string) (*protocol.ProjectAddOutcome, error) {
-	out := &protocol.ProjectAddOutcome{Machine: d.cfg.Hostname, DryRun: req.DryRun,
+	out := &protocol.ProjectAddOutcome{Machine: d.hostName(), DryRun: req.DryRun,
 		Added: []protocol.ProjectEntry{}, Existing: []protocol.ProjectEntry{}, Skipped: []protocol.ProjectSkip{}}
 	var entries []protocol.ProjectEntry
 	seen := map[string]bool{}

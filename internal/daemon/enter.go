@@ -135,7 +135,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		return protocol.EnterPlan{}, errors.New("no such session on this machine")
 	}
 	info := d.infoOf(ls)
-	plan := protocol.EnterPlan{Host: d.cfg.Hostname}
+	plan := protocol.EnterPlan{Host: d.hostName()}
 	name := firstNonEmpty(info.Name, info.NativeID)
 	if st, err := os.Stat(info.Cwd); err == nil && st.IsDir() {
 		plan.Dir = info.Cwd

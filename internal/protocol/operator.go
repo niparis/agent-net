@@ -1,6 +1,11 @@
 package protocol
 
-import "sort"
+import (
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+)
 
 // The operator interface: the one set of methods a person uses to look at the
 // network and act on it. The terminal screen (`agent-net tui`) calls these
@@ -38,6 +43,10 @@ const (
 	// (decision 0014). Owner only, no agent tool.
 	OpSessionPolicy = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
 
+	// OpNodeRename gives a machine a display name that every machine sees
+	// (decision 0015). Owner only, no agent tool.
+	OpNodeRename = "node_rename" // takes NodeRenameRequest, answers NodeRenameResult
+
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
 	// the limits of decision 0002.
@@ -52,7 +61,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSend, OpWorkerStart, OpWorkerStop}
+	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.
@@ -264,4 +273,49 @@ type SessionTrustRequest struct {
 type SessionTrustResult struct {
 	SessionID string `json:"session_id"`
 	On        bool   `json:"on"`
+}
+
+// NodeRenameRequest is OpNodeRename. An empty Name clears the display name.
+type NodeRenameRequest struct {
+	NodeID string `json:"node_id"`
+	Name   string `json:"name"`
+}
+
+// NodeRenameResult answers OpNodeRename.
+type NodeRenameResult struct {
+	NodeID string `json:"node_id"`
+	// Hostname is the name now listed for the machine.
+	Hostname    string `json:"hostname"`
+	DisplayName string `json:"display_name,omitempty"`
+	Reported    string `json:"reported_hostname,omitempty"`
+}
+
+// MaxNodeName is the longest display name of a machine.
+const MaxNodeName = 63
+
+// CleanNodeName checks a display name and returns it trimmed. It is 1 to 63
+// letters, digits, '-', '_' or '.', and starts with a letter or digit, because
+// it can be the key of enter_ssh_hosts. An empty name is fine and means "clear".
+func CleanNodeName(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	if len(s) > MaxNodeName {
+		return "", fmt.Errorf("a machine name is at most %d characters", MaxNodeName)
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		alnum := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+		if alnum {
+			continue
+		}
+		if i == 0 {
+			return "", errors.New("a machine name starts with a letter or digit")
+		}
+		if c != '-' && c != '_' && c != '.' {
+			return "", errors.New("a machine name has only letters, digits, '-', '_' and '.'")
+		}
+	}
+	return s, nil
 }

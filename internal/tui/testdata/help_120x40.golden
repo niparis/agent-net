@@ -9,6 +9,7 @@ Keys ─────────────────────────
   x                    stop the selected worker (asks y/n)
   t                    peer trust on/off: act on requests of other agents (y/n)
   p                    delegation policy: subagent or worker for code changes (a form)
+  N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
   o                    show offline and dormant sessions
   d                    give the detail pane the room of the message feed
@@ -30,7 +31,6 @@ Keys ─────────────────────────
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
   shared               one process, many sessions (OpenCode); listed once
   ?                    a figure that is missing or older than 45 seconds
-
 
 
 

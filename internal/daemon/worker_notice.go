@@ -163,7 +163,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		model = st.Model
 	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project,
-		Host: d.cfg.Hostname, RunTime: time.Since(started), Tokens: st.Tokens, Cost: st.Cost, Worktree: wt, Branch: br}
+		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Cost: st.Cost, Worktree: wt, Branch: br}
 	n.DiffStat, _ = d.worktreeFacts(w)
 	return n
 }

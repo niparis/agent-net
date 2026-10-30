@@ -44,6 +44,9 @@ func cmdUpgrade(ctx context.Context, args []string) error {
 }
 
 func cmdNodes(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "rename" {
+		return cmdNodesRename(ctx, args[1:])
+	}
 	fs := flag.NewFlagSet("nodes", flag.ExitOnError)
 	wide := fs.Bool("wide", false, "also list each installed harness with its path, version and models")
 	asJSON := fs.Bool("json", false, "print JSON")

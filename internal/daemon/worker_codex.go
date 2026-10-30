@@ -609,7 +609,7 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 // the person can approve it.
 func (cc *codexConn) blockedReport(blocked []codexBlock, final string) string {
 	cc.d.wmu.Lock()
-	path, host := cc.w.path, cc.d.cfg.Hostname
+	path, host := cc.w.path, cc.d.hostName()
 	cc.d.wmu.Unlock()
 	var b strings.Builder
 	b.WriteString("BLOCKED: the Codex worker needs an approval that it cannot get. agent-net never approves for the worker; it declined.\n")
