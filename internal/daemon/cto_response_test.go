@@ -20,6 +20,14 @@ func TestCTOCompactNodesAndAgents(t *testing.T) {
 		nodes.Nodes = append(nodes.Nodes, protocol.NodeView{NodeID: fmt.Sprint(i), Hostname: fmt.Sprintf("machine-%d", i), Online: true, Harnesses: []protocol.HarnessInfo{h}})
 		agents.Agents = append(agents.Agents, protocol.AgentView{SessionID: fmt.Sprint(i), NodeID: fmt.Sprint(i), Hostname: "machine", Profile: protocol.Profile{Name: "builder", Task: "work", Expertise: strings.Repeat("long", 1000)}})
 	}
+	summary := compactCTONodes(nodes, agents.Agents).(map[string]any)["nodes"].([]ctoNode)
+	if len(summary) != 50 || len(summary[0].Harnesses) != 1 || summary[0].Harnesses[0].ModelCount != 400 {
+		t.Fatalf("nodes: %+v", summary)
+	}
+	sessions := compactCTOAgents(agents.Agents).(map[string]any)["agents"].([]ctoAgent)
+	if len(sessions) != 50 || sessions[0].ID != "0" || sessions[0].Name != "builder" || sessions[0].Task != "work" {
+		t.Fatalf("agents: %+v", sessions)
+	}
 	beforeNodes, _ := json.Marshal(nodes)
 	beforeAgents, _ := json.Marshal(agents)
 	t.Logf("before: nodes %d bytes, agents %d bytes", len(beforeNodes), len(beforeAgents))
