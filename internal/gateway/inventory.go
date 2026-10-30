@@ -45,6 +45,24 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 	if _, err = tx.Exec(`INSERT INTO inventory_reports(node_id,report) VALUES(?,?) ON CONFLICT(node_id) DO UPDATE SET report=excluded.report`, nodeID, string(b)); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(`DELETE FROM tool_locations WHERE node_id=?`, nodeID); err != nil {
+		return err
+	}
+	for i, item := range r.Items {
+		b, err := json.Marshal(item)
+		if err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT OR IGNORE INTO tool_identities(id,kind,name,hash) VALUES(json_array(?,?,?),?,?,?)`, item.Kind, item.Name, item.Hash, item.Kind, item.Name, item.Hash); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(`INSERT INTO tool_locations(node_id,ordinal,identity_id,observation) VALUES(?,?,json_array(?,?,?),?)`, nodeID, i, item.Kind, item.Name, item.Hash, string(b)); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id)`); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -64,6 +82,7 @@ func (s *Store) Inventories() ([]protocol.InventoryReport, error) {
 		if err = json.Unmarshal([]byte(raw), &r); err != nil {
 			return nil, err
 		}
+		r.NodeID = id
 		r.Machine = host
 		if r.Machine == "" {
 			r.Machine = id
@@ -113,4 +132,11 @@ func inventoryPage(reports []protocol.InventoryReport, offset int) (protocol.Inv
 		}
 	}
 	return page, nil
+}
+
+func markInventoryOffline(r *protocol.InventoryReport) {
+	r.State = protocol.InventoryStale
+	for i := range r.Items {
+		r.Items[i].State = protocol.InventoryStale
+	}
 }

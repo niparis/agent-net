@@ -237,6 +237,14 @@ ALTER TABLE sessions ADD COLUMN graph_excluded INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN graph_excluded INTEGER NOT NULL DEFAULT 0;
 `, `
 CREATE TABLE inventory_reports (node_id TEXT PRIMARY KEY, report TEXT NOT NULL);
+`, `
+CREATE TABLE tool_identities (id TEXT PRIMARY KEY, kind TEXT NOT NULL, name TEXT NOT NULL, hash TEXT NOT NULL, UNIQUE(kind,name,hash));
+CREATE TABLE tool_locations (node_id TEXT NOT NULL, ordinal INTEGER NOT NULL, identity_id TEXT NOT NULL REFERENCES tool_identities(id), observation TEXT NOT NULL, PRIMARY KEY(node_id,ordinal));
+CREATE INDEX tool_locations_identity ON tool_locations(identity_id);
+INSERT OR IGNORE INTO tool_identities(id,kind,name,hash)
+SELECT json_array(COALESCE(json_extract(j.value,'$.kind'),''),COALESCE(json_extract(j.value,'$.name'),''),COALESCE(json_extract(j.value,'$.hash'),'')), COALESCE(json_extract(j.value,'$.kind'),''), COALESCE(json_extract(j.value,'$.name'),''), COALESCE(json_extract(j.value,'$.hash'),'') FROM inventory_reports r, json_each(r.report,'$.items') j;
+INSERT INTO tool_locations(node_id,ordinal,identity_id,observation)
+SELECT r.node_id, CAST(j.key AS INTEGER), json_array(COALESCE(json_extract(j.value,'$.kind'),''),COALESCE(json_extract(j.value,'$.name'),''),COALESCE(json_extract(j.value,'$.hash'),'')), j.value FROM inventory_reports r, json_each(r.report,'$.items') j;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

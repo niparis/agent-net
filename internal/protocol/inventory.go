@@ -20,6 +20,7 @@ const (
 // InventoryReport is a machine's latest read-only observation. It must not
 // contain skill contents or secret values from configuration.
 type InventoryReport struct {
+	NodeID    string          `json:"node_id,omitempty"`
 	Machine   string          `json:"machine"`
 	ScannedAt time.Time       `json:"scanned_at"`
 	Items     []InventoryItem `json:"items"`

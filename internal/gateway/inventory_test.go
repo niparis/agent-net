@@ -49,3 +49,51 @@ func TestInventoryPagesAreBounded(t *testing.T) {
 		t.Fatalf("second page: %+v %v", page2, err)
 	}
 }
+
+func TestInventoryIdentitiesAndReplacement(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	item := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "hash-a", Harness: "codex", Scope: "user", Location: "/a", State: "ok"}
+	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	item.Harness = "claude"
+	item.Location = "/b"
+	if err = s.SetInventory("two", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	var identities, locations int
+	if err = s.db.QueryRow(`SELECT count(*) FROM tool_identities`).Scan(&identities); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.db.QueryRow(`SELECT count(*) FROM tool_locations`).Scan(&locations); err != nil {
+		t.Fatal(err)
+	}
+	if identities != 1 || locations != 2 {
+		t.Fatalf("identities=%d locations=%d", identities, locations)
+	}
+	item.Hash = "hash-b"
+	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.db.QueryRow(`SELECT count(*) FROM tool_identities`).Scan(&identities); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.db.QueryRow(`SELECT count(*) FROM tool_locations`).Scan(&locations); err != nil {
+		t.Fatal(err)
+	}
+	if identities != 2 || locations != 2 {
+		t.Fatalf("replacement identities=%d locations=%d", identities, locations)
+	}
+}
+
+func TestInventoryOfflineIsStale(t *testing.T) {
+	reports := []protocol.InventoryReport{{Machine: "node", State: protocol.InventoryOK, Items: []protocol.InventoryItem{{State: protocol.InventoryOK}}}}
+	markInventoryOffline(&reports[0])
+	if reports[0].State != protocol.InventoryStale || reports[0].Items[0].State != protocol.InventoryStale {
+		t.Fatalf("not stale: %+v", reports)
+	}
+}

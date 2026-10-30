@@ -543,6 +543,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		for i := range reports {
+			if g.conn(reports[i].NodeID) == nil {
+				markInventoryOffline(&reports[i])
+			}
+		}
 		return inventoryPage(reports, p.Offset)
 
 	case "node.harnesses":
