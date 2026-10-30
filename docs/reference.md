@@ -53,6 +53,11 @@ model resolver. If none is available, it uses the first model in the inventory.
 A changed model takes effect on the next send. OpenCode uses private XDG data,
 state, config and cache directories under `cto` in the daemon state directory.
 Its credentials are copied with its auth export and import commands at start.
+The private configuration copies the owner's general OpenCode settings and plugins,
+except the agent-net plugin, and uses only the CTO's agent and MCP server. The
+owner's agents, MCP servers, permissions, instructions, server and autoupdate
+settings are excluded. A config that cannot be read falls back to private defaults
+and is reported in the daemon log.
 
 Claude Code uses a private working directory under `cto/claude` in daemon
 state. The daemon passes a private MCP configuration with `--mcp-config` and

@@ -12,7 +12,10 @@ these can include message and task text.
 
 The OpenCode CTO server binds only to localhost and requires a random password.
 Its data, state, configuration and cache are private to the daemon. The OpenCode
-agent-net plugin is disabled in that process. The Claude Code CTO uses the
+agent-net plugin is disabled in that process. The private configuration copies
+the owner's OpenCode provider and other general settings and non-agent-net plugins.
+It excludes the owner's agents, MCP servers, permissions and instructions to keep
+the CTO's tools private. The Claude Code CTO uses the
 owner's Claude login and a background session in a private working directory.
 Its session receives `--strict-mcp-config` and a private MCP configuration that
 contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The
