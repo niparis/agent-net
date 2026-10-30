@@ -164,3 +164,39 @@ func TestInventoryNativeSecretsStayOutOfStoreAndJSON(t *testing.T) {
 		t.Fatal("secret in stored inventory or JSON")
 	}
 }
+
+func TestInventoryMigrationBackfillsReports(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err = s.db.Exec(`DROP TABLE tool_locations; DROP TABLE tool_identities; DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return false })
+	if err != nil || len(items) != 1 || items[0].State != protocol.InventoryStale {
+		t.Fatalf("backfill: %+v %v", items, err)
+	}
+}
+
+func TestToolsFilterReturnsAllLocationsOfMatchingIdentity(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, h := range []string{"codex", "claude"} {
+		item := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "same", Scope: "user", Harness: h, State: "ok"}
+		if err = s.SetInventory(h, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{item}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{Harness: "codex"}, func(string) bool { return true })
+	if err != nil || len(items) != 1 || len(items[0].Locations) != 2 {
+		t.Fatalf("filtered locations: %+v %v", items, err)
+	}
+}

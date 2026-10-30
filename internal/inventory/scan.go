@@ -49,6 +49,22 @@ func Scan(o Options) protocol.InventoryReport {
 		}
 		report.Items = append(report.Items, protocol.InventoryItem{Harness: h, Kind: k, Scope: scope, Project: project, ProjectRoot: root, Location: path, Name: name, Source: protocol.InventoryNative, Hash: hash, ScannedAt: now, State: state, Reason: reason, Unsupported: unsupported})
 	}
+	attachFiles := func(index int, files []string) {
+		if index >= len(report.Items) {
+			return
+		}
+		size := 0
+		for _, file := range files {
+			size += len(file)
+		}
+		if totalFields+size > 256<<10 {
+			report.State = protocol.InventoryError
+			report.Reason = "inventory exceeds report limit"
+			return
+		}
+		totalFields += size
+		report.Items[index].Files = files
+	}
 	// Never traverse links in a source path or skill root.
 	safe := func(base, path string) bool {
 		rel, err := filepath.Rel(base, path)
@@ -157,8 +173,9 @@ func Scan(o Options) protocol.InventoryReport {
 				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot hash skill safely")
 				continue
 			}
+			index := len(report.Items)
 			add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), hash, protocol.InventoryOK, "")
-			report.Items[len(report.Items)-1].Files = files
+			attachFiles(index, files)
 		}
 	}
 	config := func(h, scope, project, root, base, path, key string, tomlFormat bool) {
@@ -328,8 +345,9 @@ func Scan(o Options) protocol.InventoryReport {
 				if err != nil {
 					add("pi", protocol.InventorySkill, scope, project, root, source, name, "", protocol.InventoryError, "cannot hash skill safely")
 				} else {
+					index := len(report.Items)
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
-					report.Items[len(report.Items)-1].Files = files
+					attachFiles(index, files)
 				}
 				continue
 			}
@@ -542,8 +560,8 @@ func stripComments(b []byte) []byte {
 // fingerprint hashes only an allowlisted, redacted descriptor. Unknown argument
 // values, environment variable values, headers and URL query strings never
 // enter the hash.
-func fingerprint(name string, m map[string]any) string {
-	parts := []string{"mcp-v1", name}
+func fingerprint(_ string, m map[string]any) string {
+	parts := []string{"mcp-v2"}
 	command, _ := m["command"].(string)
 	if command == "" {
 		if a, ok := m["command"].([]any); ok && len(a) > 0 {
@@ -551,7 +569,7 @@ func fingerprint(name string, m map[string]any) string {
 		}
 	}
 	if command != "" && !strings.ContainsAny(command, "?=#@ \t\n") {
-		parts = append(parts, "command", filepath.Base(command))
+		parts = append(parts, "command", command)
 	}
 	for _, field := range []string{"type", "transport"} {
 		if value, ok := m[field].(string); ok && (value == "stdio" || value == "http" || value == "sse" || value == "local" || value == "remote") {

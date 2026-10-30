@@ -85,3 +85,38 @@ func TestToolsItemsOwnerGate(t *testing.T) {
 		t.Fatal("agent accessed tools_item")
 	}
 }
+
+func TestFederationAppearsInInventory(t *testing.T) {
+	useHelper(t)
+	home := t.TempDir()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	cli.mustCall("mcp_add", protocol.MCPAdd{Server: stdioSpec("fixture")})
+	eventually(t, "federation in inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "mcp"})
+		return err == nil && strings.Contains(string(raw), `"source":"agent-net federation"`)
+	})
+}
+
+func TestProjectRegistrationRefreshesTools(t *testing.T) {
+	home := t.TempDir()
+	root := filepath.Join(t.TempDir(), "demo")
+	dir := filepath.Join(root, ".agents/skills/example")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, root, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("example"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	cli.mustCall("inventory_scan", map[string]any{})
+	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{root}})
+	eventually(t, "project skill", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"project": "demo"})
+		return err == nil && strings.Contains(string(raw), `"name":"example"`)
+	})
+}

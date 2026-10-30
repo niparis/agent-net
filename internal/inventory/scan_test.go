@@ -151,8 +151,8 @@ func TestDescriptorFingerprintDistinguishesNonsecretInputs(t *testing.T) {
 	if fingerprint("server", a) != fingerprint("server", c) {
 		t.Fatal("secret affected fingerprint")
 	}
-	if fingerprint("server", a) == fingerprint("other", a) {
-		t.Fatal("name ignored")
+	if fingerprint("server", a) != fingerprint("other", a) {
+		t.Fatal("name affected descriptor fingerprint")
 	}
 }
 
@@ -561,5 +561,34 @@ func TestFederationItemRedactsRegistryValues(t *testing.T) {
 	s.Args[1] = "another-secret"
 	if FederationItem(s, time.Time{}).Hash != item.Hash {
 		t.Fatal("secret changes hash")
+	}
+}
+
+func TestSkillFileListsRespectReportLimit(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 1400; i++ {
+		name := fmt.Sprintf("%04d-%s", i, strings.Repeat("x", 190))
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := Scan(Options{Home: home})
+	if report.State != protocol.InventoryError {
+		t.Fatalf("large file list accepted: %s", report.State)
+	}
+}
+
+func TestMCPFingerprintIncludesCommandPath(t *testing.T) {
+	a := map[string]any{"command": "/opt/one/server"}
+	b := map[string]any{"command": "/opt/two/server"}
+	if fingerprint("demo", a) == fingerprint("demo", b) {
+		t.Fatal("command paths collapsed")
 	}
 }

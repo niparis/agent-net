@@ -153,6 +153,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	}
 	defer rows.Close()
 	all := map[string]*protocol.ToolItem{}
+	matched := map[string]bool{}
 	order := []string{}
 	variants := map[string]map[string]bool{}
 	for rows.Next() {
@@ -175,8 +176,8 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		if obs.Scope == protocol.InventoryProject {
 			obs.Project = project
 		}
-		if f.Kind != "" && kind != f.Kind || f.Harness != "" && obs.Harness != f.Harness || f.Project != "" && obs.Project != f.Project || f.State != "" && obs.State != f.State {
-			continue
+		if (f.Kind == "" || kind == f.Kind) && (f.Harness == "" || obs.Harness == f.Harness) && (f.Project == "" || obs.Project == f.Project) && (f.State == "" || obs.State == f.State) {
+			matched[id] = true
 		}
 		item := all[id]
 		if item == nil {
@@ -211,6 +212,9 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	out := make([]protocol.ToolItem, 0, len(order))
 	for _, id := range order {
 		item := all[id]
+		if !matched[id] {
+			continue
+		}
 		item.Variants = len(variants[item.Kind+"\x00"+item.Name])
 		out = append(out, *item)
 	}

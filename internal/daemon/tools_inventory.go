@@ -78,3 +78,12 @@ func (d *Daemon) toolsLoop(ctx context.Context) {
 		}
 	}
 }
+
+func (d *Daemon) wakeTools() {
+	if d.toolsWake != nil {
+		select {
+		case d.toolsWake <- struct{}{}:
+		default:
+		}
+	}
+}
