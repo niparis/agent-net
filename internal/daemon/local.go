@@ -102,6 +102,7 @@ type localConn struct {
 	acks   map[string]chan ack
 	// peerPID is the process ID of the other end, read in hello.
 	peerPID int
+	tui     bool // an owner-gated TUI subscribed to interface pushes
 	// tx holds the session_text requests sent to this plugin (sessiontext.go).
 	tx textState
 }
@@ -273,6 +274,7 @@ func (lc *localConn) delivered(raw json.RawMessage) any {
 
 type helloParams struct {
 	Client   string `json:"client"`
+	TUI      bool   `json:"tui"`
 	Harness  string `json:"harness"`
 	NativeID string `json:"native_id"`
 	Cwd      string `json:"cwd"`
@@ -339,6 +341,14 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		lc.client = "cli"
 		lc.peerPID = pid
 		lc.mu.Unlock()
+		if p.TUI {
+			if err := lc.operatorGate("tui"); err != nil {
+				return nil, err
+			}
+			lc.mu.Lock()
+			lc.tui = true
+			lc.mu.Unlock()
+		}
 		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
 
 	case "mcp":

@@ -78,6 +78,7 @@ type Model struct {
 	// shows (l).
 	events    feedEvents
 	filter    string
+	uiFilter  string
 	filtering bool
 	input     textinput.Model
 	focus     focus
@@ -289,6 +290,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case protocol.UIRequest:
+		return m.applyCTOUI(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.fixScroll()
@@ -662,6 +665,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	for i := range tabNames {
 		if k.String() == fmt.Sprint(i+1) {
 			m.tab = i
+			m.uiFilter = ""
 			m.focus = focusSessions
 			if i == 1 {
 				m.focus = focusFeed
@@ -1229,4 +1233,83 @@ func (m *Model) fixScroll() {
 		m.tableTop++
 	}
 	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-1, 0))
+}
+
+// applyCTOUI applies an owner-authorized request from the local CTO channel.
+func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
+	if q.Text != "" {
+		m.say("CTO: " + q.Text)
+		return m, nil
+	}
+	m.inboxOn, m.help, m.learned, m.mapOn = false, false, false, false
+	m.conv, m.open = nil, nil
+	m.mode = modeNormal
+	m.filtering = false
+	m.uiFilter = q.Filter
+	m.filter = q.Filter
+	m.input.SetValue(q.Filter)
+	m.focus = focusSessions
+	var cmd tea.Cmd
+	switch q.Tab {
+	case "sessions":
+		m.tab = 0
+	case "messages":
+		m.tab = 1
+		m.focus = focusFeed
+	case "quotas":
+		m.tab = 2
+	case "map":
+		m.tab = 0
+		m.mapOn = true
+		if q.Select != "" {
+			m.mp.selected = q.Select
+			for _, a := range m.snap.Agents {
+				if (strings.EqualFold(q.Select, a.SessionID) || strings.EqualFold(q.Select, a.Profile.Name)) && a.Repo.Project != "" {
+					m.mp.selected = a.Repo.Project
+					break
+				}
+			}
+			for _, node := range m.mp.nodes {
+				if strings.EqualFold(node.Name, m.mp.selected) {
+					m.mp.selected = node.Name
+					break
+				}
+			}
+		}
+		if !m.mp.loading {
+			m.mp.loading = true
+			cmd = m.mapCmd()
+		}
+	}
+	if q.Tab == "sessions" || q.Tab == "messages" {
+		for _, a := range m.snap.Agents {
+			if strings.EqualFold(q.Select, a.SessionID) || q.Select != "" && (strings.EqualFold(q.Select, a.Profile.Name) || strings.EqualFold(q.Select, a.Repo.Project)) {
+				m.selected = a.SessionID
+				if m.idleLong(a) {
+					m.activeOnly = false
+				}
+				if !a.Online {
+					m.showOffline = true
+				}
+				break
+			}
+		}
+		if q.Tab == "sessions" {
+			m.ensureSelection()
+		} else {
+			m.feedCur = m.feedLastVisible()
+			for i := len(m.feed.items) - 1; i >= 0; i-- {
+				it := m.feed.items[i]
+				if q.Select != "" && (it.From == m.selected || it.To == m.selected) && m.feedShows(it) {
+					m.feedCur = i
+					break
+				}
+			}
+		}
+	}
+	if q.Why == "" {
+		q.Why = "Showing " + q.Tab
+	}
+	m.say("CTO: " + q.Why)
+	return m, cmd
 }

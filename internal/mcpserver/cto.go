@@ -12,9 +12,10 @@ import (
 // ctoField is one input field of a CTO tool. A fixed set of values carries an
 // enum, so the model sees the allowed values in the schema as well as the text.
 type ctoField struct {
-	typ  string
-	desc string
-	enum []string
+	typ        string
+	desc       string
+	enum       []string
+	properties map[string]any
 }
 
 // ctoToolDef is one CTO tool: its description and its input fields.
@@ -96,8 +97,12 @@ var ctoTools = map[string]ctoToolDef{
 	"agents": {
 		desc: "List the agent sessions on the network, with their project, task, expertise and whether they wait for the owner.",
 		fields: map[string]ctoField{
-			"text":    {typ: "string", desc: "Only agents whose name, function or task matches this text."},
-			"project": {typ: "string", desc: "Only agents in this project."},
+			"text":           {typ: "string", desc: "Only agents whose name, function or task matches this text."},
+			"harness":        {typ: "string", desc: "Only agents on this harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"capability":     {typ: "string", desc: "Only agents with this announced capability."},
+			"online_only":    {typ: "boolean", desc: "Only online agents when true."},
+			"include_owners": {typ: "boolean", desc: "Include owner sessions."},
+			"project":        {typ: "string", desc: "Only agents in this project."},
 		},
 	},
 	"workers": {
@@ -142,6 +147,8 @@ var ctoTools = map[string]ctoToolDef{
 			"harness":    {typ: "string", desc: "Harness for the worker. Empty lets automatic model selection choose one.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":      {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty or auto selects by difficulty and quota."},
 			"difficulty": {typ: "string", desc: "Task difficulty for automatic model selection; defaults to normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
+			"base":       {typ: "string", desc: "Existing branch to base the worker worktree on."},
+			"continue":   {typ: "string", desc: "Session or worker ID of an ended worker to continue."},
 			"task":       {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
 			"machine":    {typ: "string", desc: "Machine that holds the project, when more than one does."},
 			"isolation":  {typ: "string", desc: "worktree gives the worker its own git worktree (the default in a git repository). none works in the project folder, for read-only tasks.", enum: []string{"worktree", "none"}},
@@ -157,6 +164,10 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			prop := map[string]any{"type": f.typ, "description": f.desc}
+			if f.properties != nil {
+				prop["properties"] = f.properties
+				prop["additionalProperties"] = false
+			}
 			if f.typ == "array" {
 				prop["items"] = map[string]any{"type": "string"}
 			}

@@ -175,6 +175,12 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 	if err := lc.operatorGate(method); err != nil {
 		return nil, true, err
 	}
+	return lc.dispatchOwner(ctx, method, raw)
+}
+
+// dispatchOwner runs a checked owner operation. Only the owner gate or the
+// private CTO process-tree gate may call it.
+func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.RawMessage) (res any, ok bool, err error) {
 	d := lc.d
 	switch method {
 	case "inbox_list":

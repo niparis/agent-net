@@ -94,6 +94,7 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "M", "esc":
 		m.mapOn, m.tab = false, 0
+		m.uiFilter = ""
 	case "?":
 		m.help = true
 	case "left":
@@ -223,6 +224,15 @@ func (m Model) mapRows() []mapRow {
 		for _, a := range empty {
 			rows = append(rows, mapRow{node: a.Name, level: maturityLevel(a.Charter.Maturity), indent: 2})
 		}
+	}
+	if m.uiFilter != "" && m.mapOn {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.node != "" && strings.Contains(strings.ToLower(row.node), strings.ToLower(m.uiFilter)) {
+				filtered = append(filtered, row)
+			}
+		}
+		return filtered
 	}
 	return rows
 }

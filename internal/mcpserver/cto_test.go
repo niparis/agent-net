@@ -61,8 +61,14 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 		tools[tl.Name] = tl
 	}
 	wantTools := []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo", "agents", "workers", "needs_you", "feed", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove", "worker_profile_list"}
-	if len(tools) != len(wantTools) {
-		t.Fatalf("got %d tools, want %d: %v", len(tools), len(wantTools), tools)
+	have := map[string]bool{}
+	for _, name := range tools {
+		have[name.Name] = true
+	}
+	for _, name := range wantTools {
+		if !have[name] {
+			t.Fatalf("missing tool %s in %v", name, tools)
+		}
 	}
 	for _, name := range wantTools {
 		tl, ok := tools[name]
@@ -139,4 +145,55 @@ func TestCTOToolsForward(t *testing.T) {
 			t.Errorf("%s: %+v %v", name, out, err)
 		}
 	}
+}
+
+func TestCTOParityTools(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, tool := range list.Tools {
+		got[tool.Name] = true
+	}
+	for _, name := range []string{"info", "nodes", "projects", "project_add", "project_remove", "get", "messages", "message_status", "session_text", "usage", "usage_top", "counts", "graph_view", "session_enter", "session_trust", "session_policy", "node_rename", "integrations_get", "integrations_set", "worker_stop", "held_list", "held_answer", "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule", "node_settings_get", "node_settings_set", "playbook_get", "playbook_set", "learn", "mcp_list", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings", "cto_enter", "cto_send", "cto_new", "cto_events", "cto_graph_history"} {
+		if !got[name] {
+			t.Errorf("missing CTO tool %s", name)
+		}
+	}
+}
+
+func TestCTOSettingsSchemasDescribeNestedValues(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		switch tool.Name {
+		case "session_policy", "mcp_add", "cto_settings":
+			props, _ := ctoToolSchema(t, tool)
+			field := map[string]string{"session_policy": "policy", "mcp_add": "server", "cto_settings": "compaction"}[tool.Name]
+			if _, ok := props[field]["properties"].(map[string]any); !ok {
+				t.Errorf("%s.%s lacks nested properties", tool.Name, field)
+			}
+		}
+	}
+}
+
+func TestCTOSessionPolicyToolDescribesWrite(t *testing.T) {
+	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name == "session_policy" {
+			if strings.Contains(strings.ToLower(tool.Description), "read or set") || !strings.Contains(tool.Description, "get") {
+				t.Fatalf("misleading policy description: %s", tool.Description)
+			}
+			return
+		}
+	}
+	t.Fatal("session_policy missing")
 }

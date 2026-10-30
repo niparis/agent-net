@@ -17,7 +17,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo"} {
+	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo", "stop a worker", "decline a held request", "remove an MCP server", "change integrations", "explicit words", "manage the network", "workers", "settings", "ui_show"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -280,6 +280,19 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
 	call("node_remove", map[string]any{"name": "component"})
 	call("graph_get", map[string]any{})
+	call("nodes", map[string]any{})
+	call("projects", map[string]any{})
+	call("messages", map[string]any{})
+	call("held_list", map[string]any{})
+	call("inbox_list", map[string]any{})
+	call("outcome_inbox", map[string]any{})
+	call("node_settings_set", map[string]any{"node": "architecture", "setting": "merge_authority", "value": "ask"})
+	call("node_settings_get", map[string]any{"node": "architecture"})
+	call("playbook_set", map[string]any{"model": "fake/m1", "note": "use tests"})
+	call("playbook_get", map[string]any{"model": "fake/m1"})
+	call("integrations_get", map[string]any{})
+	call("mcp_list", map[string]any{})
+	call("cto_settings", map[string]any{})
 	call("agents", map[string]any{})
 	call("workers", map[string]any{})
 	call("needs_you", map[string]any{})
@@ -304,6 +317,23 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("message not delivered")
 	}
+	var incoming protocol.MessageSent
+	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ownerSessionID(), "body": "question"})
+	if err := json.Unmarshal(rawIncoming, &incoming); err != nil || incoming.Message == nil {
+		t.Fatalf("incoming message: %s %v", rawIncoming, err)
+	}
+	call("reply", map[string]any{"message_id": incoming.Message.ID, "body": "answer"})
+	select {
+	case msg := <-peer.Pushes:
+		if !msg.FromCTO || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
+			t.Fatalf("CTO reply: %+v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("CTO reply not delivered")
+	}
+	call("get", map[string]any{"session_id": target})
+	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
+	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
 	workers := w.workers(t)
 	if len(workers) != 1 {

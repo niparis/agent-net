@@ -17,8 +17,9 @@ import (
 type Client struct {
 	path string
 
-	mu sync.Mutex
-	cl *client.Client
+	mu     sync.Mutex
+	cl     *client.Client
+	uiPush func(protocol.UIRequest)
 }
 
 var _ Operator = (*Client)(nil)
@@ -26,6 +27,13 @@ var _ Operator = (*Client)(nil)
 // New returns a client for the daemon socket at path. It does not connect
 // until the first call, so a daemon that starts later is found.
 func New(path string) *Client { return &Client{path: path} }
+
+// SetUIPush registers the TUI callback before the first connection.
+func (s *Client) SetUIPush(push func(protocol.UIRequest)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.uiPush = push
+}
 
 func (s *Client) conn(ctx context.Context) (*client.Client, error) {
 	s.mu.Lock()
@@ -37,11 +45,20 @@ func (s *Client) conn(ctx context.Context) (*client.Client, error) {
 		s.cl.Close()
 		s.cl = nil
 	}
-	cl, err := client.Dial(s.path)
+	push := s.uiPush
+	cl, err := client.DialPushData(s.path, func(method string, raw json.RawMessage) {
+		if method != "cto_ui" || push == nil {
+			return
+		}
+		var q protocol.UIRequest
+		if json.Unmarshal(raw, &q) == nil {
+			push(q)
+		}
+	})
 	if err != nil {
 		return nil, fmt.Errorf("%w (%s)", ErrDaemonDown, s.path)
 	}
-	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "cli", "protocol": protocol.LocalProtocol}); err != nil {
+	if _, err := cl.Call(ctx, "hello", map[string]any{"client": "cli", "protocol": protocol.LocalProtocol, "tui": s.uiPush != nil}); err != nil {
 		cl.Close()
 		if client.IsConnError(err) {
 			return nil, fmt.Errorf("%w (%s)", ErrDaemonDown, s.path)

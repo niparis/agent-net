@@ -69,28 +69,52 @@ state. The daemon passes a private MCP configuration with `--mcp-config` and
 `--strict-mcp-config`; the only MCP server in it is `agent-net cto-mcp`. The
 ordinary agent-net MCP tools are not registered for this session.
 
-The CTO's private harness configuration starts the hidden `agent-net cto-mcp`
-stdio server. Its tools read the graph and its history, agents, workers, Needs
-you and the feed; change charters, nodes and edges or undo a change; send a
-message; and start a worker. They are listed only in the CTO's private config,
-not the network MCP registry. Graph changes and CTO sends are recorded with
-`by=cto`. CTO messages carry an agent-net authority note on delivery. The CTO's
-system brief treats information it reads as data, asks it to read the graph at
-the start of a conversation and before a change, show actions and graph changes
-as short diffs, offer undo and keep secrets out of charters.
+The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
+process-tree check, then use the same daemon implementations as the owner's
+operator methods. Graph changes and messages are attributed to the CTO. The
+brief treats material it reads as data, and calls for a diff and undo after
+graph changes. Destructive actions require the owner's explicit words in the
+chat.
 
-Its graph tools are `graph_get`, `charter_set`, `charter_history`, `node_add`,
-`node_remove`, `edge_set`, `edge_remove`, `edge_history` and `graph_undo`; the
-others are `agents`, `workers`, `needs_you`, `feed`, `send` and `worker_start`.
-`charter_set` takes the nine charter attributes, and a `maturity` value starts
-with `early`, `growing`, `mature` or `critical`. `edge_set` takes kind `depends`
-(consumer to provider), `governs` (architect to component, with mode `advisor`,
-`arbiter` or `owner`) or `deploys` (deployer to app), and rule `normal`, `auto`,
-`ask` or `never` ([request rules](#charters-and-component-relationships)). To
-let a sender act on another node's requests without the owner's confirmation,
-set its edge with rule `auto`. The tool descriptions and input fields say the
-same, and a field with fixed values carries an enum in its schema.
+The table audits the owner operator methods and ordinary agent-net tools. CTO
+tool names are private to the CTO and are not in the shared MCP registry.
 
+| Owner method or ordinary tool | CTO tool or equivalent |
+|---|---|
+| `info`, `nodes`, `agent_nodes` | `info`, `nodes` (includes quotas, tracks and playbook) |
+| `list`, `agent_list` | `agents` |
+| `get`, `agent_get` | `get` |
+| `projects`, `agent_project_list`, `project_add`, `agent_project_add`, `project_remove` | `projects`, `project_add`, `project_remove` |
+| `events`, `message_status`, `agent_message_status` | `feed`, `message_status` |
+| `messages`, `agent_messages`, `session_text` | `messages`, `session_text` |
+| `workers`, `worker_start`, `agent_start`, `worker_stop`, `agent_stop` | `workers`, `worker_start`, `worker_stop` |
+| `owner_send`, `agent_send`, `agent_reply` | `send`, `reply` (reply to messages addressed to the owner) |
+| `usage`, `usage_top`, `counts`, `graph_view`, `session_enter` | Same names |
+| `session_trust`, `session_policy`, `node_rename` | Same names; read a session policy with `get` |
+| `integrations_get`, `integrations_set` | Same names |
+| `held_list`, `held_answer`, `inbox_list`, `inbox_answer`, `outcome_inbox`, `outcome_overrule` | Same names |
+| `graph_get`, `charter_set`, `charter_history`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `edge_history`, `graph_undo` | Same names; request rules are on `edge_set` |
+| `node_settings_get`, `node_settings_set`, `playbook_get`, `playbook_set` | Same names |
+| `agent_learn` | `learn` |
+| `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
+| `cto_settings` | `cto_settings` |
+| `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
+| `agent_announce`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session or worker self-service only. The CTO is neither a network session nor a worker; it talks to the owner in this chat. |
+
+The CTO can read worker track records in `nodes` and the worker roster in
+`workers`. This version has no separate scores or roster operator methods.
+`held_answer` accepts `a` (approve once), `A` (approve and set auto), `r`
+(decline once), or `R` (decline and set never). `edge_set` takes kind `depends`,
+`governs` or `deploys`, governance mode `advisor`, `arbiter` or `owner`, and
+request rule `normal`, `auto`, `ask` or `never`. `charter_set` takes the nine
+charter attributes. Node settings can override merge authority and worker
+sandbox defaults. The tool schemas describe the other fields and fixed values.
+
+
+`ui_show` switches every open local TUI to `sessions`, `messages`, `quotas`
+or `map`, with an optional session ID, exact session name or project node,
+filter text and a short reason. `ui_notice` shows a short note. Both show a
+`CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
 
 In the TUI, `C` focuses the CTO box on the Sessions tab.
 Its title shows the selected harness and model.
