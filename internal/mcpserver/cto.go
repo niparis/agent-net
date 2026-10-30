@@ -95,7 +95,7 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"agents": {
-		desc: "List the agent sessions on the network, with their project, task, expertise and whether they wait for the owner.",
+		desc: "List compact agent session summaries with project, machine, folder, harness, model, status and task.",
 		fields: map[string]ctoField{
 			"text":           {typ: "string", desc: "Only agents whose name, function or task matches this text."},
 			"harness":        {typ: "string", desc: "Only agents on this harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
