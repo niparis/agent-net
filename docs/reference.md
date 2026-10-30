@@ -491,3 +491,9 @@ The Pi extension, the OpenCode plugin, the Claude workers plugin folder and the 
 Setup does not use `sudo`. On Linux it may print a hint to run `sudo loginctl enable-linger <user>`, which keeps the user services running when you are logged out. You run that yourself.
 
 Setup does not change any other Claude Code or Pi setting (the one exception is the peer-message setting above, and only with your yes), and it does not touch other MCP servers.
+
+### Request outcomes
+
+`agent_reply` accepts optional `outcome`: `accept`, `reject`, `redirect` or `escalate`. Reject, redirect and escalate need `reason`; redirect also needs `redirect_to` (a node name), and escalate needs `recommendation`. Each text field is limited to 2048 bytes, and the node name to the project name limit. Control characters are removed. Outcomes apply to replies to requests. The gateway records the request's source and target project names, request and reply IDs, outcome, reason, redirect, recommendation and time. Projects unknown to the sessions appear as empty names.
+
+A rejection or escalation of another agent's request appears as a separate Needs you entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Select it and press `c` for the receiving session's conversation or `C` for the requesting session's conversation. Press `s` to let the decision stand or `o` to overrule it. Overrule sends the original request again from the owner with the agent-net note `Nicolas overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
