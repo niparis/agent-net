@@ -269,6 +269,15 @@ func Scan(o Options) protocol.InventoryReport {
 				add("pi", protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "configured skill path is outside allowed root or contains a symlink", "manual")
 				continue
 			}
+			if filepath.Base(source) != "SKILL.md" {
+				candidate := filepath.Join(source, "SKILL.md")
+				rel, relErr := filepath.Rel(base, candidate)
+				if relErr == nil {
+					if info, statErr := dir.Lstat(rel); statErr == nil && info.Mode().IsRegular() {
+						source = candidate
+					}
+				}
+			}
 			if filepath.Base(source) == "SKILL.md" {
 				relDir, err := filepath.Rel(base, filepath.Dir(source))
 				if err != nil {

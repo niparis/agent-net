@@ -433,3 +433,23 @@ func TestDescriptorIncludesSafePortArgument(t *testing.T) {
 		t.Fatal("safe port ignored")
 	}
 }
+
+func TestPiSettingsSingleSkillDirectory(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".pi/agent/extra/one")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("one"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".pi/agent/settings.json"), []byte(`{"skills":["extra/one"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range Scan(Options{Home: home}).Items {
+		if item.Harness == "pi" && item.Name == "one" && item.State == protocol.InventoryOK {
+			return
+		}
+	}
+	t.Fatal("missing configured skill directory")
+}
