@@ -106,11 +106,12 @@ type quotaModel struct {
 	score                         protocol.ModelScore
 	used                          int
 	last                          int64
+	failed                        bool
 }
 
 // quotaModels combines the models advertised by live machines with session use.
 func (m Model) quotaModels() ([]quotaModel, int) {
-	seen := map[string]bool{}
+	seen := map[string]int{}
 	var rows []quotaModel
 	unscored := 0
 	for _, n := range m.snap.Nodes {
@@ -120,16 +121,19 @@ func (m Model) quotaModels() ([]quotaModel, int) {
 		for _, h := range n.Harnesses {
 			for _, model := range h.Models {
 				key := h.Name + "\x00" + model
-				if seen[key] {
+				if index, ok := seen[key]; ok {
+					if index >= 0 {
+						rows[index].failed = rows[index].failed && n.RecentModelFailures[h.Name][model]
+					}
 					continue
 				}
-				seen[key] = true
+				seen[key] = -1
 				score, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], m.snap.Scores)
 				if !ok {
 					unscored++
 					continue
 				}
-				row := quotaModel{harness: h.Name, model: model, defaultEffort: h.ModelDefaultEfforts[model], score: score}
+				row := quotaModel{harness: h.Name, model: model, defaultEffort: h.ModelDefaultEfforts[model], score: score, failed: n.RecentModelFailures[h.Name][model]}
 				for _, a := range m.snap.Agents {
 					if a.Harness == h.Name && a.Model == model {
 						if a.LastSeen > row.last {
@@ -140,6 +144,7 @@ func (m Model) quotaModels() ([]quotaModel, int) {
 						}
 					}
 				}
+				seen[key] = len(rows)
 				rows = append(rows, row)
 			}
 		}
@@ -162,7 +167,7 @@ func (m Model) quotaModelsView(w int) []string {
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
-		candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort})
+		candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed})
 	}
 	q := &protocol.Quotas{}
 	for _, r := range m.quotaRows() {

@@ -445,6 +445,8 @@ type NodeView struct {
 	// Tracks is the worker track record of this machine, one entry per
 	// harness and model (decision 0022).
 	Tracks []TrackRecord `json:"tracks,omitempty"`
+	// RecentModelFailures reports real failed runs per harness in the failure window.
+	RecentModelFailures map[string]map[string]bool `json:"recent_model_failures,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.

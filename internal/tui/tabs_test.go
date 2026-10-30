@@ -304,3 +304,15 @@ func TestQuotaModelsSection(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
+	m.snap.Nodes[0].RecentModelFailures = map[string]map[string]bool{"codex": {"fake/a": true}}
+	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "normal -> #2") {
+		t.Fatalf("choice ignored failed run:\n%s", v)
+	}
+}

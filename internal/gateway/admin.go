@@ -108,6 +108,18 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			return protocol.NodesInfo{}, err
 		}
 		nodes[i].Tracks = tracks
+		for _, h := range nodes[i].Harnesses {
+			failures, err := g.store.RecentWorkerFailures(nodes[i].NodeID, h.Name)
+			if err != nil {
+				return protocol.NodesInfo{}, err
+			}
+			if len(failures) > 0 {
+				if nodes[i].RecentModelFailures == nil {
+					nodes[i].RecentModelFailures = map[string]map[string]bool{}
+				}
+				nodes[i].RecentModelFailures[h.Name] = failures
+			}
+		}
 		nodes[i].Quotas = g.nodeQuotas(nodes[i].NodeID)
 	}
 	notes, err := g.store.PlaybookNotes()

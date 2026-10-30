@@ -47,3 +47,24 @@ func TestCleanQuotaError(t *testing.T) {
 		t.Fatalf("error length %d", len(r.QuotaError))
 	}
 }
+
+func TestNodesInfoCarriesRecentWorkerFailures(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("mac", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetNodeHello(node, "mac", "v1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.SetNodeHarnesses(node, []protocol.HarnessInfo{{Name: "codex", Models: []string{"model"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, Harness: "codex", Model: "model", Outcome: protocol.OutcomeFailed, EndedAt: s.now().Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := (&Gateway{store: s}).NodesInfo()
+	if err != nil || !info.Nodes[0].RecentModelFailures["codex"]["model"] {
+		t.Fatalf("info: %+v %v", info, err)
+	}
+}
