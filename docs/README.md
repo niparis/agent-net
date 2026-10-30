@@ -25,6 +25,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0009](decisions/0009-function-from-agents-md.md): FUNCTION is the project description read from AGENTS.md (the extraction rule), and announcing the task is required.
 - [0007](decisions/0007-usage-and-session-text.md): CPU and memory per machine and session, the text of a session (owner only), and session counts.
 - [0010](decisions/0010-tui-shows-usage-and-conversations.md): the TUI shows CPU, memory and conversations and is the only reader; `top` and `show` are removed.
+- [0011](decisions/0011-opencode-sessions-stay-visible.md): OpenCode sessions survive a plugin reload; discovery looks back 7 days; dormant after 24 hours.
 - [0006](decisions/0006-phone-app.md): phone app, planned: same data and actions as the TUI, through one shared operator interface.
 - [spike/](spike/): what we measured about each agent before building.
 - [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.

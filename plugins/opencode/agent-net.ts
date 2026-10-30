@@ -17,10 +17,16 @@ const BACKOFF_START_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 // A session with no activity for this long is reported as "dormant". It stays
 // reachable: a message to it still arrives, and activity makes it active again.
-// Startup discovery uses the same window: it registers only the newest sessions
-// that were updated within it, in any directory. Older ones register on activity.
+// OpenCode 2.2.0 cannot say which sessions a window has open (see below), so
+// the quiet time is long: a session left open over lunch or a meeting must not
+// vanish from the TUI. It only goes dormant after a day without any activity.
 // AGENT_NET_OPENCODE_DORMANT_MS overrides it (the tests use a short value).
-const DORMANT_AFTER_MS = 60 * 60 * 1000;
+const DORMANT_AFTER_MS = 24 * 60 * 60 * 1000;
+// Startup discovery registers the newest sessions that were updated within
+// this window, in any directory, so they are reachable after a service restart.
+// The ones quiet longer than DORMANT_AFTER_MS start out dormant. Older sessions
+// register when something happens in them.
+const DISCOVERY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 function dormantAfterMs(): number {
   const v = Number(process.env.AGENT_NET_OPENCODE_DORMANT_MS);
   return Number.isFinite(v) && v > 0 ? v : DORMANT_AFTER_MS;
@@ -802,6 +808,10 @@ interface Hub {
   links: Map<string, { link: SessionLink; owner: symbol }>;
   rootOf: Map<string, string>; // child session -> root session
   gone: Set<string>; // deleted or archived sessions
+  // Sessions whose link was released by a disposed instance (a plugin reload)
+  // -> when they were last active. The next instance registers them again
+  // however long they were quiet, so a reload never drops a session.
+  released: Map<string, number>;
   instances: Map<symbol, () => Promise<void>>; // live plugin instances -> rediscover
 }
 
@@ -818,8 +828,10 @@ function hub(): Hub {
     // instances that were disposed on reload, and their owner ids are not in
     // this version's instance map, so nobody would ever release them. Stop
     // them and drop them: the new instances register the sessions again.
-    for (const entry of h.links?.values() ?? []) {
+    h.released = new Map();
+    for (const [id, entry] of h.links ?? []) {
       try {
+        h.released.set(id, Number(entry.link?.lastActive) || Date.now());
         entry.link?.stop?.();
       } catch {}
     }
@@ -828,6 +840,7 @@ function hub(): Hub {
   h.links ??= new Map();
   h.rootOf ??= new Map();
   h.gone ??= new Set();
+  h.released ??= new Map();
   h.instances ??= new Map();
   return h as Hub;
 }
@@ -951,6 +964,7 @@ export default {
       link.name = sessionName(found.cwd, found.title);
       if (activeAt !== undefined) link.lastActive = activeAt;
       h.links.set(sessionID, { link, owner: me });
+      h.released.delete(sessionID);
       link.start();
       return link;
     }
@@ -968,6 +982,7 @@ export default {
 
     function dropLink(sessionID: string) {
       h.gone.add(sessionID);
+      h.released.delete(sessionID);
       const entry = h.links.get(sessionID);
       h.links.delete(sessionID);
       entry?.link.stop();
@@ -1035,11 +1050,17 @@ export default {
           parentID: null,
           archived: false,
         } as any);
-        const cutoff = Date.now() - dormantAfterMs();
+        const cutoff = Date.now() - DISCOVERY_WINDOW_MS;
         for (const s of page?.data ?? page?.items ?? []) {
           if (events.signal.aborted) return;
           if (s?.parentID || s?.time?.archived || Number(s?.time?.updated ?? 0) < cutoff) continue;
-          await ensureLink(String(s.id), Number(s.time?.updated ?? Date.now()));
+          const at = Math.max(Number(s.time?.updated ?? Date.now()), h.released.get(String(s.id)) ?? 0);
+          await ensureLink(String(s.id), at);
+        }
+        // Sessions that a reload released come back whatever their age.
+        for (const [id, at] of [...h.released]) {
+          if (events.signal.aborted) return;
+          await ensureLink(id, at);
         }
       } catch {
         // Discovery is best effort; events still register sessions.
@@ -1140,6 +1161,7 @@ export default {
       for (const [id, entry] of h.links) {
         if (entry.owner !== me) continue;
         h.links.delete(id);
+        h.released.set(id, entry.link.lastActive);
         entry.link.stop();
       }
       // Hand the sessions over right away instead of waiting for their next event.

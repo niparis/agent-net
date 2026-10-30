@@ -198,11 +198,10 @@ await test("startup discovery registers unused sessions of other directories", a
   stop();
 });
 
-await test("startup discovery skips old, archived and sub-agent sessions", async () => {
+await test("startup discovery skips very old, archived and sub-agent sessions", async () => {
   freshHub();
   const sessions = new Map([
-    ["ses_old", session("ses_old", "/work/a", 3 * 24 * 60 * 60 * 1000)],
-    ["ses_90min", session("ses_90min", "/work/a", 90 * 60 * 1000)],
+    ["ses_old", session("ses_old", "/work/a", 30 * 24 * 60 * 60 * 1000)],
     ["ses_arch", session("ses_arch", "/work/a", 0, { time: { updated: Date.now(), archived: Date.now() } })],
     ["ses_child", session("ses_child", "/work/a", 0, { parentID: "ses_new2" })],
     ["ses_new2", session("ses_new2", "/work/a")],
@@ -211,9 +210,23 @@ await test("startup discovery skips old, archived and sub-agent sessions", async
   const stop = await plugin.setup(a.ctx);
   await until("hello for ses_new2", () => registered("ses_new2"));
   await settle();
-  for (const id of ["ses_old", "ses_90min", "ses_arch", "ses_child"]) {
+  for (const id of ["ses_old", "ses_arch", "ses_child"]) {
     if (registered(id)) throw new Error(id + " must not be registered");
   }
+  stop();
+});
+
+await test("discovery registers a session quiet for hours or days; only the day-old one is dormant", async () => {
+  freshHub();
+  const sessions = new Map([
+    ["ses_3h", session("ses_3h", "/work/a", 3 * 60 * 60 * 1000)],
+    ["ses_3d", session("ses_3d", "/work/a", 3 * 24 * 60 * 60 * 1000)],
+  ]);
+  const stop = await plugin.setup(makeContext("/work/a", sessions).ctx);
+  await until("hellos", () => registered("ses_3h") && registered("ses_3d"));
+  await until("3 day old session dormant", () => statuses.some((s) => s.id === "ses_3d" && s.params.status === "dormant"));
+  await settle();
+  if (statuses.some((s) => s.id === "ses_3h" && s.params.status === "dormant")) throw new Error("a session quiet for 3 hours must not be dormant");
   stop();
 });
 
@@ -449,6 +462,44 @@ await test("a session that reconnects while dormant says idle in hello, then dor
     if (h.id !== "ses_re" || h.status !== "idle") throw new Error("hello after reconnect: " + JSON.stringify(h));
     await until("dormant again", () => statuses.filter((x) => x.id === "ses_re" && x.params.status === "dormant").length >= 2);
     stop();
+  });
+});
+
+await test("a plugin reload keeps a quiet session registered", async () => {
+  // OpenCode hot-reloads the plugin file when an upgrade rewrites it. The old
+  // instance releases its links. The new one must register the same sessions
+  // again, even those that were quiet longer than the discovery window.
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_reload", session("ses_reload", "/work/rl")]]);
+    const a = makeContext("/work/rl", sessions);
+    const stopA = await plugin.setup(a.ctx);
+    await until("dormant", () => lastStatus("ses_reload") === "dormant");
+    const n = hellos.filter((h) => h.id === "ses_reload").length;
+    stopA(); // the old file version is disposed
+    const b = makeContext("/work/rl", sessions); // the new version loads
+    const stopB = await plugin.setup(b.ctx);
+    await until("hello after the reload", () => hellos.filter((h) => h.id === "ses_reload").length > n);
+    await until("dormant again", () => lastStatus("ses_reload") === "dormant");
+    stopB();
+  });
+});
+
+await test("a deleted session is not brought back by a reload", async () => {
+  await withDormantAfter(300, async () => {
+    freshHub();
+    const sessions = new Map([["ses_del", session("ses_del", "/work/dl")]]);
+    const a = makeContext("/work/dl", sessions);
+    const stopA = await plugin.setup(a.ctx);
+    await until("hello", () => registered("ses_del"));
+    a.emit({ type: "session.deleted", data: { sessionID: "ses_del" } });
+    await settle();
+    const n = hellos.length;
+    stopA();
+    const stopB = await plugin.setup(makeContext("/work/dl", sessions).ctx);
+    await settle();
+    if (hellos.length !== n) throw new Error("a deleted session was registered again");
+    stopB();
   });
 });
 
