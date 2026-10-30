@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	"outcome_inbox": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 }
@@ -162,6 +162,8 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 	}
 	d := lc.d
 	switch method {
+	case "outcome_inbox":
+		res, err = d.call(ctx, "query.outcome_inbox", struct{}{})
 	case "usage":
 		res, err = d.localUsage(ctx)
 	case "counts":

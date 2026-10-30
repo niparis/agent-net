@@ -82,6 +82,11 @@ func (m *Model) convCmd(kind convKind) tea.Cmd {
 
 // openConv starts the conversation of the selected session.
 func (m *Model) openConv() tea.Cmd {
+	for _, e := range m.snap.Outcomes {
+		if m.selected == "outcome:"+e.ReplyID {
+			return m.openConvFor(e.Recipient)
+		}
+	}
 	a, ok := m.selectedAgent()
 	if !ok {
 		return nil

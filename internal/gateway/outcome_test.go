@@ -27,3 +27,23 @@ func TestRecordOutcome(t *testing.T) {
 		t.Fatalf("outcome: %+v", list[0])
 	}
 }
+
+func TestOutcomeInbox(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "first line\nmore"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "unclear", ParentID: req.ID, ReplyOutcome: protocol.ReplyOutcome{Outcome: "escalate", Reason: "unclear", Recommendation: "ask owner"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.OutcomeInbox()
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("inbox: %+v %v", rows, err)
+	}
+	if rows[0].Request != "first line" || rows[0].Reason != "unclear" || rows[0].Recommendation != "ask owner" || rows[0].Sender != a || rows[0].Recipient != b {
+		t.Fatalf("entry: %+v", rows[0])
+	}
+}

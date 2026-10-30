@@ -491,6 +491,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 	case "c":
 		return m, m.openConv()
+	case "C":
+		for _, e := range m.snap.Outcomes {
+			if m.selected == "outcome:"+e.ReplyID {
+				return m, m.openConvFor(e.Sender)
+			}
+		}
 	case "/":
 		m.filtering = true
 		m.input.SetValue(m.filter)

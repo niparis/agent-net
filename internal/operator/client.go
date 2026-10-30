@@ -121,6 +121,14 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		return snap, err
 	}
 	snap.Agents = r.Agents
+	if raw, err := s.Call(ctx, "outcome_inbox", nil); err == nil {
+		var in struct {
+			Entries []protocol.OutcomeInboxEntry `json:"entries"`
+		}
+		if json.Unmarshal(raw, &in) == nil {
+			snap.Outcomes = in.Entries
+		}
+	}
 	// Best effort, like the node list.
 	if raw, err := s.Call(ctx, protocol.OpProjects, protocol.QueryProjects{}); err == nil {
 		var pr protocol.ProjectsResult

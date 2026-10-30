@@ -80,7 +80,8 @@ type Snapshot struct {
 	Launch bool
 	Nodes  []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.
-	Agents []protocol.AgentView
+	Outcomes []protocol.OutcomeInboxEntry
+	Agents   []protocol.AgentView
 	// Projects is the project list (registered, seen or both). Empty when the
 	// gateway cannot list them; a screen then shows no project source.
 	Projects []protocol.ProjectView

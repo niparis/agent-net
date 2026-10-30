@@ -751,6 +751,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.ApplyDelivery(p.MessageID, p.State, p.Detail)
 
+	case "query.outcome_inbox":
+		entries, err := st.OutcomeInbox()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"entries": entries}, nil
+
 	case "query.agents":
 		p, err := decode[protocol.QueryAgents](raw)
 		if err != nil {

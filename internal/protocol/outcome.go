@@ -61,3 +61,11 @@ type EdgeOutcome struct {
 	ReplyOutcome
 	At int64 `json:"at"`
 }
+
+// OutcomeInboxEntry is an unresolved decision for the owner.
+type OutcomeInboxEntry struct {
+	EdgeOutcome
+	Sender    string `json:"sender"`
+	Recipient string `json:"recipient"`
+	Request   string `json:"request"`
+}
