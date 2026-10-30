@@ -3,6 +3,7 @@ package gateway
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,7 +109,17 @@ func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(migrations[len(migrations)-2]); err != nil {
+	migration := ""
+	for _, candidate := range migrations {
+		if strings.Contains(candidate, "DELETE FROM graph_nodes\nWHERE kind=") {
+			migration = candidate
+			break
+		}
+	}
+	if migration == "" {
+		t.Fatal("missing graph cleanup migration")
+	}
+	if _, err := s.db.Exec(migration); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
