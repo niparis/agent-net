@@ -302,23 +302,58 @@ func (m *Model) mapMove(delta int) {
 }
 
 func (m *Model) mapEnsureSelection() {
+	if _, ok := m.mapNode(m.mp.selected); ok {
+		return
+	}
 	list := m.mapSelectable()
 	if len(list) == 0 {
 		m.mp.selected = ""
 		return
 	}
-	for _, name := range list {
-		if name == m.mp.selected {
-			return
+	degree := map[string]int{}
+	for _, e := range m.mp.edges {
+		if _, ok := m.mapNode(e.From); ok {
+			if _, ok := m.mapNode(e.To); ok {
+				degree[e.From]++
+				degree[e.To]++
+			}
 		}
 	}
+	connected := false
 	for _, name := range list {
-		if n, ok := m.mapNode(name); ok && n.Kind != "architect" {
-			m.mp.selected = name
-			return
+		if degree[name] > 0 {
+			connected = true
+			break
 		}
 	}
-	m.mp.selected = list[0]
+	allowed := map[string]bool{}
+	for _, name := range list {
+		if !connected || degree[name] > 0 {
+			allowed[name] = true
+		}
+	}
+	var newest int64
+	choice := ""
+	found := false
+	for _, c := range m.mp.changes {
+		if allowed[c.Node] && (!found || c.At > newest) {
+			newest = c.At
+			choice = c.Node
+			found = true
+		}
+	}
+	if found {
+		m.mp.selected = choice
+		return
+	}
+	best := -1
+	for _, name := range list {
+		if allowed[name] && degree[name] > best {
+			best = degree[name]
+			choice = name
+		}
+	}
+	m.mp.selected = choice
 }
 
 func (m Model) mapSelectedName() string { return m.mp.selected }

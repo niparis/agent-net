@@ -351,3 +351,29 @@ func TestMapFindFiltersAndConfirmsOrCancels(t *testing.T) {
 		t.Fatal("cancel changed selection")
 	}
 }
+
+func TestMapInitialFocusPrefersChangedConnectedNode(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	g.Changes = append(g.Changes, protocol.CharterChange{Node: "a2a-ocs", Attr: "purpose", At: t0.UnixNano()})
+	m := openMap(t, mapModel(120, 34, g))
+	if m.mp.selected != "cogforge" {
+		t.Fatalf("initial selected %q", m.mp.selected)
+	}
+	m.mp.selected = "shop"
+	m = keys(m, "1")
+	m = openMap(t, m)
+	if m.mp.selected != "shop" {
+		t.Fatalf("selection lost: %q", m.mp.selected)
+	}
+	g.Changes = nil
+	m = openMap(t, mapModel(120, 34, g))
+	if m.mp.selected != "cogforge" {
+		t.Fatalf("most connected: %q", m.mp.selected)
+	}
+	g.Edges = nil
+	m = openMap(t, mapModel(120, 34, g))
+	if m.mp.selected != "api-architect" {
+		t.Fatalf("first node: %q", m.mp.selected)
+	}
+}
