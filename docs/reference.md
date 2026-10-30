@@ -603,7 +603,7 @@ A message body, including the first line the feed quotes, can only be shown for 
 
 ### Enter a session
 
-`e` in the TUI asks the daemon (`session_enter`) how to take over the terminal for the selected session, runs the answer, and draws the TUI again when you leave. The daemon of the machine that holds the session works out the command. The TUI builds none. Press `ctrl+]` to return to the TUI; the session keeps running. The TUI closes the attach client. Your own input in the session counts as yours, so approvals you give are yours.
+`e` in the TUI asks the daemon (`session_enter`) how to take over the terminal for the selected session, runs the answer, and draws the TUI again when you leave. The daemon of the machine that holds the session works out the command. The TUI builds none. Press `ctrl+]` to return to the TUI; the session keeps running. This also works when the session uses enhanced keyboard reporting. The TUI closes the attach client. Your own input in the session counts as yours, so approvals you give are yours.
 
 | Session | What `e` runs |
 |---|---|
