@@ -192,6 +192,25 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 	if m.mp.err != "" {
 		add("")
 	}
+	if node.Kind == "component" {
+		add(section("Locations", width))
+		for _, loc := range node.Locations {
+			add(mapCharterLines(loc.Machine, loc.Path, width)...)
+		}
+		if len(node.Locations) == 0 {
+			add(sDim.Render("  no locations"))
+		}
+		add(section("Live sessions", width))
+		for _, session := range node.Sessions {
+			add(mapCharterLines(session.Machine, session.Name+" ("+session.ID+", "+session.Status+")", width)...)
+		}
+		if node.SessionCount > len(node.Sessions) {
+			add(fmt.Sprintf("  %d more", node.SessionCount-len(node.Sessions)))
+		}
+		if node.SessionCount == 0 {
+			add(sDim.Render("  no live sessions"))
+		}
+	}
 	add(section("Charter", width))
 	for _, a := range []struct{ name, value string }{
 		{"purpose", node.Charter.Purpose},
