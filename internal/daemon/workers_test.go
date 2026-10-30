@@ -470,32 +470,32 @@ func TestWorkerLimitPerMachine(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Max = 2
+	set.QueueTick = 50 * time.Millisecond
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}
 	a := w.mustStart(t, req)
 	w.mustStart(t, req)
-	_, err := w.start(req)
-	if err == nil || !strings.Contains(err.Error(), "already runs 2 workers, which is the limit") {
-		t.Fatalf("third worker: %v", err)
+	// At the hard cap a start is queued, not refused (decision 0018), and
+	// nothing was started.
+	third, err := w.start(req)
+	if err != nil || third.Status != "queued" || !strings.Contains(third.QueueReason, "2 workers, which is its cap") {
+		t.Fatalf("third worker: %+v %v", third, err)
 	}
-	// The refusal is an event and a log line, and nothing was started.
-	refused, _ := g.gw.Store().Events("worker.refused")
-	if len(refused) != 1 || !strings.Contains(refused[0], "project=shop") || !strings.Contains(refused[0], "limit") {
+	if queued, _ := g.gw.Store().Events("worker.queued"); len(queued) != 1 || !strings.Contains(queued[0], "project=shop") {
+		t.Errorf("worker.queued events: %v", queued)
+	}
+	if refused, _ := g.gw.Store().Events("worker.refused"); len(refused) != 0 {
 		t.Errorf("worker.refused events: %v", refused)
 	}
-	if len(g.logs.lines("event=worker.refused", "reason=")) != 1 {
-		t.Errorf("gateway refused lines: %v", g.logs.lines("event=worker.refused"))
+	if w.d.workerCount() != 2 {
+		t.Errorf("workers %d", w.d.workerCount())
 	}
-	if len(w.logs.lines("worker.refused", "project=shop")) != 1 || w.d.workerCount() != 2 {
-		t.Errorf("daemon refused lines: %v, workers %d", w.logs.lines("worker.refused"), w.d.workerCount())
-	}
-	// Stopping one makes room.
+	// Stopping one makes room: the queued start goes.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: a.SessionID})
-	eventually(t, "room for a third", func() bool {
-		_, err := w.start(req)
-		return err == nil
+	eventually(t, "the queued third starts", func() bool {
+		return len(w.logs.lines("worker.dequeued")) == 1
 	})
 }
 

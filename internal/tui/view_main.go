@@ -303,6 +303,18 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 			rest -= ansi.StringWidth(note) + 2
 		}
 	}
+	// How many workers run and wait here, and whether a new one would start.
+	if n, st := m.nodeUsage(r.nodeID); st == usageOK && n.Usage.Workers != nil && (n.Usage.Workers.Running > 0 || n.Usage.Workers.Queued > 0 || n.Usage.Workers.Room != protocol.RoomOK) {
+		wl := *n.Usage.Workers
+		if note := wl.RoomText(); ansi.StringWidth(note) <= rest {
+			style := sDim
+			if wl.Room != protocol.RoomOK {
+				style = sBusy
+			}
+			line += "  " + style.Render(note)
+			rest -= ansi.StringWidth(note) + 2
+		}
+	}
 	if rest >= 8 && r.harnesses != nil {
 		for _, withVersions := range []bool{true, false} {
 			if hl := harnessText(r.harnesses, withVersions); ansi.StringWidth(hl) <= rest {

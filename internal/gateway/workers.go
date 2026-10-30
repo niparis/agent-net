@@ -83,6 +83,13 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			"worker", p.WorkerID, "reason", p.Reason, "harness", p.Harness, "project", p.Project)
 		return nil, nil
 
+	case "worker.queued_start":
+		p, err := decode[protocol.WorkerQueuedStart](raw)
+		if err != nil {
+			return nil, reject("bad worker.queued_start")
+		}
+		return nil, g.relayQueuedTask(ctx, nc, p)
+
 	case "worker.cleanup":
 		p, err := decode[protocol.WorkerCleanup](raw)
 		if err != nil || p.MaxAgeSeconds <= 0 {
@@ -211,6 +218,18 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 	}
+	var machineNote string
+	if len(nodes) > 1 {
+		// Several machines can run it: the one with the most room wins, when
+		// every one of them reports its room (decision 0018).
+		if keep, note := g.mostHeadroom(cands, nodeByID, p.Harness); len(keep) > 0 {
+			cands, machineNote = keep, note
+			nodes = map[string]bool{}
+			for _, v := range cands {
+				nodes[v.NodeID] = true
+			}
+		}
+	}
 	if len(nodes) > 1 {
 		var hosts []string
 		for _, v := range cands {
@@ -313,6 +332,17 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("machine %s refused the worker: %v", pick.Hostname, err)
 	}
 	launched, err := decode[protocol.WorkerLaunched](raw)
+	if err == nil && launched.Queued && launched.QueueID != "" {
+		g.store.Event("worker.queued", pick.NodeID, p.Owner, "",
+			strings.TrimPrefix(pairs("project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner,
+				"queue", launched.QueueID, "position", fmt.Sprint(launched.Position)), " "))
+		g.logLine("worker.queued", "node", pick.NodeID, "host", pick.Hostname, "queue", launched.QueueID,
+			"project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner, "position", launched.Position,
+			"reason", launched.Reason)
+		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
+			Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Queued: true, QueueID: launched.QueueID,
+			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote}, nil
+	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
 	}
@@ -324,7 +354,100 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
-		Worktree: launched.Worktree, Branch: launched.Branch}, nil
+		Worktree: launched.Worktree, Branch: launched.Branch, MachineNote: machineNote}, nil
+}
+
+// mostHeadroom picks, among the machines that hold the project, the one with
+// the most room for a worker. It returns nothing unless at least two machines
+// can run the harness now and every one of them reported its room recently.
+// The note says why the machine won.
+func (g *Gateway) mostHeadroom(cands []protocol.ProjectView, nodeByID func(string) *protocol.NodeView, harness string) ([]protocol.ProjectView, string) {
+	have := g.usage.all()
+	now := g.store.now()
+	type scored struct {
+		view protocol.ProjectView
+		load protocol.WorkerLoad
+	}
+	var ok []scored
+	seen := map[string]bool{}
+	for _, v := range cands {
+		if seen[v.NodeID] {
+			continue
+		}
+		n := nodeByID(v.NodeID)
+		if n == nil || !n.Online || n.Launch == nil || !*n.Launch {
+			continue
+		}
+		has := false
+		for _, h := range n.Harnesses {
+			if h.Name == harness {
+				has = true
+			}
+		}
+		if !has {
+			continue
+		}
+		seen[v.NodeID] = true
+		e, fresh := have[v.NodeID]
+		if !fresh || now.Sub(e.at) > protocol.UsageStaleSeconds*time.Second || e.rep.Workers == nil || e.rep.Workers.Headroom < -0.999 {
+			return nil, "" // one machine cannot say: keep the old rule
+		}
+		ok = append(ok, scored{v, *e.rep.Workers})
+	}
+	if len(ok) < 2 {
+		return nil, ""
+	}
+	sort.SliceStable(ok, func(i, j int) bool {
+		a, b := ok[i].load, ok[j].load
+		if (a.Room == protocol.RoomOK) != (b.Room == protocol.RoomOK) {
+			return a.Room == protocol.RoomOK
+		}
+		return a.Headroom > b.Headroom
+	})
+	best := ok[0]
+	var others []string
+	for _, o := range ok[1:] {
+		others = append(others, fmt.Sprintf("%s %s, %d queued", o.view.Hostname, roomWord(o.load), o.load.Queued))
+	}
+	note := fmt.Sprintf("picked %s: most room for a worker (%s, %d running, %d queued; %s)",
+		best.view.Hostname, roomWord(best.load), best.load.Running, best.load.Queued, strings.Join(others, "; "))
+	return []protocol.ProjectView{best.view}, note
+}
+
+func roomWord(l protocol.WorkerLoad) string {
+	if l.Room == protocol.RoomOK {
+		return fmt.Sprintf("room ok, %.0f%% free", max(l.Headroom, 0)*100)
+	}
+	return "room: " + l.Room
+}
+
+// relayQueuedTask passes a queued start that has become a worker to the
+// machine of its owner, which sends the task. The sending machine must hold
+// the worker, and the worker must name that owner.
+func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.WorkerQueuedStart) error {
+	w, ok, err := g.store.Agent(p.SessionID)
+	if err != nil {
+		return err
+	}
+	if !ok || w.NodeID != nc.id || w.Worker == nil || w.Worker.Owner != p.Owner {
+		return reject("session %q is not a worker of this node with that owner", p.SessionID)
+	}
+	ownerNode, err := g.store.SessionNode(p.Owner)
+	if err != nil {
+		return err
+	}
+	g.mu.Lock()
+	target := g.conns[ownerNode]
+	g.mu.Unlock()
+	if target == nil {
+		return reject("the machine of the owner is offline")
+	}
+	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if _, err := target.call(cctx, "worker.task", p); err != nil {
+		return reject("the owner's machine did not send the task: %v", err)
+	}
+	return nil
 }
 
 func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame) (map[string]any, error) {
@@ -334,6 +457,9 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 	}
 	if !ok || req.NodeID != nc.id {
 		return nil, reject("requester session %q does not belong to this node", p.Requester)
+	}
+	if protocol.IsQueueID(p.Session) {
+		return g.cancelQueuedStart(ctx, req, p)
 	}
 	w, ok, err := g.store.Agent(p.Session)
 	if err != nil {
@@ -357,7 +483,7 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 	}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	if _, err := target.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session}); err != nil {
+	if _, err := target.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)}); err != nil {
 		// The machine says it does not run this worker. Drop it from the list;
 		// its record and the machine's own cleanup decide about a resume.
 		if strings.Contains(err.Error(), "no worker with session") {
@@ -366,6 +492,36 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 		return nil, reject("machine %s did not stop the worker: %v", w.Hostname, err)
 	}
 	return map[string]any{"stopped": true}, nil
+}
+
+// cancelQueuedStart asks the machines that accept workers to cancel a queued
+// start. The gateway does not know which one holds it: the one that does
+// answers, and it checks that the requester is the owner of the start.
+func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView, p protocol.WorkerStopFrame) (map[string]any, error) {
+	g.mu.Lock()
+	var targets []*nodeConn
+	for _, c := range g.conns {
+		targets = append(targets, c)
+	}
+	g.mu.Unlock()
+	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	var refusal error
+	for _, t := range targets {
+		_, err := t.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)})
+		if err == nil {
+			g.store.Event("worker.queue_cancelled", t.id, p.Requester, "", "queue="+p.Session)
+			g.logLine("worker.queue_cancelled", "node", t.id, "queue", p.Session, "by", p.Requester)
+			return map[string]any{"stopped": true}, nil
+		}
+		if !strings.Contains(err.Error(), "no worker with session") {
+			refusal = err
+		}
+	}
+	if refusal != nil {
+		return nil, reject("%v", refusal)
+	}
+	return nil, reject("no queued start has the ID %q (it may have started: see `agent-net workers`)", p.Session)
 }
 
 // resumeEndedWorker starts again the worker whose session this is, when its

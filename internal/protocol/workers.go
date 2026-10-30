@@ -10,11 +10,46 @@ import (
 // Worker limits and timeouts. They are the start values: a machine changes
 // them in the "workers" part of node.json.
 const (
-	DefaultWorkerMax        = 4
+	DefaultWorkerMax        = 12 // the hard cap, a safety net behind the load check (decision 0018)
 	DefaultWorkerIdle       = 60 * time.Minute
 	DefaultWorkerMaxAge     = 4 * time.Hour
 	DefaultWorkerOwnerGrace = 10 * time.Minute
 )
+
+// Admission by machine load (decision 0018). A worker starts only when the
+// machine has room for it; otherwise the start waits in a queue.
+const (
+	// DefaultWorkerCPUTarget is the 5-minute whole-machine CPU busy percent
+	// above which no worker starts.
+	DefaultWorkerCPUTarget = 75.0
+	// WorkerCPUHot is the 1-minute CPU busy percent above which no worker
+	// starts, whatever the target is.
+	WorkerCPUHot = 95.0
+	// DefaultWorkerRAM and DefaultWorkerCores are the expected cost of a worker
+	// of a harness and model this machine has no history for.
+	DefaultWorkerRAM   = 600 << 20
+	DefaultWorkerCores = 1.0
+	// DefaultMemReserveBytes and DefaultMemReserveShare make the memory
+	// reserve: the larger of the two (10 percent of RAM).
+	DefaultMemReserveBytes = 1536 << 20
+	DefaultMemReserveShare = 0.10
+	// WorkerStartGap is the least time between two worker starts on a
+	// machine: the averages lag, so a new worker must show in them first.
+	WorkerStartGap = 60 * time.Second
+	// WorkerQueueTick is how often a daemon looks at its queue.
+	WorkerQueueTick = 15 * time.Second
+	// DefaultWorkerQueueTimeout is how long a start may wait in the queue.
+	DefaultWorkerQueueTimeout = 2 * time.Hour
+	// WorkerCostKeep is how many ended workers per harness and model the
+	// daemon keeps to learn the cost of the next one.
+	WorkerCostKeep = 20
+	// QueueIDPrefix starts the ID of a queued start. agent_stop takes it like
+	// a worker session ID.
+	QueueIDPrefix = "q_"
+)
+
+// IsQueueID tells whether id names a queued start and not a session.
+func IsQueueID(id string) bool { return strings.HasPrefix(id, QueueIDPrefix) }
 
 // Why a worker ended. They are the "reason" of worker.stopped.
 const (
@@ -44,6 +79,23 @@ type WorkerResume struct {
 // MaxAge. The daemon sends it at start and periodically (W7). Running lists
 // the session IDs of the workers the machine runs or has adopted: the gateway
 // never drops those records, whatever their age or state.
+// WorkerNotStartedText is the text of the notice for a queued start that did not
+// become a worker.
+func WorkerNotStartedText(project, harness, why string) string {
+	return "[agent-net worker notice]\nstatus: not started\nnote: " + why + "\nworker: none (" + harness + "), project " + project + "\n"
+}
+
+// WorkerStartedText is the notice for a queued start that has become a worker.
+func WorkerStartedText(session, harness, model, project, host string, waited time.Duration) string {
+	b := "[agent-net worker notice]\nstatus: started\nnote: the queued start has begun; the task is being sent to the worker\nworker: " +
+		session + " (" + harness
+	if model != "" {
+		b += ", " + model
+	}
+	b += "), project " + project + " on " + host + "\nqueue wait: " + waited.Round(time.Second).String() + "\n"
+	return b
+}
+
 type WorkerCleanup struct {
 	MaxAgeSeconds int64    `json:"max_age_seconds"`
 	Running       []string `json:"running,omitempty"`
@@ -99,6 +151,17 @@ type (
 		// Worktree and Branch are set when the worker got its own worktree.
 		Worktree string `json:"worktree,omitempty"`
 		Branch   string `json:"branch,omitempty"`
+		// Queued is true when the machine has no room now: the start waits
+		// in its queue, SessionID is empty, and QueueID names the start. A
+		// notice follows when it starts.
+		Queued   bool   `json:"queued,omitempty"`
+		QueueID  string `json:"queue_id,omitempty"`
+		Position int    `json:"position,omitempty"`
+		// Reason says why there is no room, or what happened in the queue.
+		Reason string `json:"reason,omitempty"`
+		// MachineNote says why the gateway picked this machine when the
+		// project is on several.
+		MachineNote string `json:"machine_note,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -114,10 +177,27 @@ type (
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
 	}
-	// WorkerLaunched answers "worker.launch".
+	// WorkerLaunched answers "worker.launch". When the machine queued the
+	// start, Queued is true and SessionID is empty.
 	WorkerLaunched struct {
 		SessionID string `json:"session_id"`
 		WorkerID  string `json:"worker_id"`
+		Worktree  string `json:"worktree,omitempty"`
+		Branch    string `json:"branch,omitempty"`
+		Queued    bool   `json:"queued,omitempty"`
+		QueueID   string `json:"queue_id,omitempty"`
+		Position  int    `json:"position,omitempty"`
+		Reason    string `json:"reason,omitempty"`
+	}
+	// WorkerQueuedStart is "worker.queued_start", machine to gateway: a queued
+	// start has become a worker. The gateway passes it to the owner's machine
+	// as "worker.task", and that machine sends the task, because only the
+	// owner's machine may send as the owner.
+	WorkerQueuedStart struct {
+		Owner     string `json:"owner_session"`
+		SessionID string `json:"session_id"`
+		Harness   string `json:"harness"`
+		Task      string `json:"task"`
 		Worktree  string `json:"worktree,omitempty"`
 		Branch    string `json:"branch,omitempty"`
 	}
@@ -129,6 +209,11 @@ type (
 	// WorkerKill is "worker.kill", gateway to the machine.
 	WorkerKill struct {
 		Session string `json:"session"`
+		// Requester is the session that asked; AsOwner is true when it is the
+		// person at a command line. Both only matter for a queued start,
+		// which only its owner or the person may cancel.
+		Requester string `json:"requester_session,omitempty"`
+		AsOwner   bool   `json:"as_owner,omitempty"`
 	}
 	// WorkerStopped is "worker.stopped", machine to gateway.
 	WorkerStopped struct {

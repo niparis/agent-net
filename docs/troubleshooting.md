@@ -76,7 +76,7 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 - `does not accept workers`: that machine was set up with `--no-launch`; run `agent-net setup --launch` there.
 - `model ... is not in the opencode model list`: see `agent-net nodes --wide`.
 - `the agent-net plugin did not register the worker session`: the OpenCode plugin is not installed on that machine. Run `agent-net setup` there. The daemon log has the worker's output.
-- `already runs 4 workers`: stop one (`agent-net workers`, `agent-net stop`) or raise `workers.max` in `node.json`.
+- `queued #N on HOST: ...`: the machine has no room (CPU, memory, the 60 second gap between starts, or the cap of 12 workers). The start waits and a notice comes when it begins. `agent-net workers` shows the room of each machine (`room: cpu|mem|cap|gap|measuring`). Cancel with `agent-net stop <queue id>`. To allow more, raise `workers.cpu_target`, lower `workers.mem_reserve` or raise `workers.max` in `node.json`.
 - `runs inside an agent session`: `agent-net start`, `send` and `stop` act as you, so they refuse to run from an agent's shell. Run them in your own terminal.
 
 - `is not available from inside an agent session ... If you do not have agent_start`: the agent tried the command in a shell because its own agent-net tools are older than the machine (no `agent_start`). See the next entry.
