@@ -139,6 +139,10 @@ func (m Model) View() string {
 		for _, s := range m.mapView(w, h-1) {
 			add(s)
 		}
+	case m.tab == 1 && m.mode == modeNormal && m.open == nil:
+		for _, s := range m.quotasView(w, h-1) {
+			add(s)
+		}
 	default:
 		for _, s := range m.mainView(w, h-1) {
 			add(s)

@@ -606,6 +606,21 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
+	if m.tab != 0 {
+		switch k.String() {
+		case "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "?":
+			m.help = true
+		case "r":
+			if !m.fetching {
+				m.fetching = true
+				return m, m.fetchCmd()
+			}
+		}
+		return m, nil
+	}
 	m.notice = notice{} // the result of the last action goes with the next key
 	if m.focus == focusSessions {
 		for _, held := range m.snap.Held {

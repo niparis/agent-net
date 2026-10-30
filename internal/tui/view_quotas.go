@@ -1,0 +1,120 @@
+package tui
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+func (m Model) quotasView(w, h int) []string {
+	out := []string{m.titleLine(w), "", sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE             PACE      RESETS")}
+	rows := m.quotaRows()
+	if len(rows) == 0 {
+		out = append(out, sDim.Render(clip("  quota-axi is not set up; install quota-axi and enable it in integrations (I).", w)))
+	}
+	var newest int64
+	for _, r := range rows {
+		if r.at > newest {
+			newest = r.at
+		}
+		p := r.provider
+		windows := p.Windows
+		if len(windows) == 0 {
+			windows = []protocol.QuotaWindow{{}}
+		}
+		for i, window := range windows {
+			provider, plan := "", ""
+			if i == 0 {
+				provider = sanitize(p.Provider)
+				plan = sanitize(p.Plan)
+			}
+			name := protocol.QuotaWindowName(window)
+			if name == "quota" && len(p.Windows) == 0 {
+				name = "-"
+			}
+			pace := strings.ReplaceAll(window.Pace, "_", " ")
+			if pace == "" || pace == "unknown" {
+				pace = "-"
+			}
+			pct := fmt.Sprintf("%3.0f%%", window.PercentUsed)
+			if window.Exhausted || window.PercentUsed >= 100 {
+				pct = "exhausted"
+			}
+			usage := bar(window.PercentUsed/100, 10) + " " + pct
+			if window.Exhausted || window.PercentUsed >= 100 {
+				usage = sBad.Render(usage)
+			}
+			if window.Pace == protocol.QuotaPaceAhead {
+				pace = sBusy.Render(pace)
+			}
+			reset := "-"
+			if window.ResetsAt > 0 {
+				t := time.Unix(window.ResetsAt, 0).In(m.loc)
+				d := t.Sub(m.now())
+				if d > 0 && d < 24*time.Hour {
+					reset = "in " + d.Truncate(time.Minute).String()
+				} else if d >= 0 && d < 7*24*time.Hour {
+					reset = t.Format("Mon 15:04")
+				} else {
+					reset = t.Format("Jan 02 15:04")
+				}
+			}
+			line := fmt.Sprintf("  %-14s %-12s %-8s %-17s %-9s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
+			if p.Stale || p.Error != "" {
+				line = sDim.Render(stripStyles(line))
+			}
+			out = append(out, clip(line, w))
+		}
+		var notes []string
+		if r.machine != "" {
+			if r.readers == 1 {
+				notes = append(notes, "read on "+sanitize(r.machine))
+			} else {
+				notes = append(notes, sanitize(r.machine))
+			}
+		}
+		if p.Stale {
+			notes = append(notes, "stale reading")
+		}
+		if p.Error != "" {
+			notes = append(notes, sanitize(p.Error))
+		}
+		if len(notes) > 0 {
+			out = append(out, sDim.Render(clip("    ("+strings.Join(notes, "; ")+")", w)))
+		}
+	}
+	counts := map[string]int{}
+	for _, a := range m.snap.Agents {
+		if a.Online && a.Worker != nil {
+			counts[a.Harness]++
+		}
+	}
+	names := make([]string, 0, len(counts))
+	for k := range counts {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	var parts []string
+	for _, k := range names {
+		parts = append(parts, fmt.Sprintf("%s %d", sanitize(k), counts[k]))
+	}
+	if len(parts) == 0 {
+		parts = append(parts, "none")
+	}
+	bottom := "  workers now: " + strings.Join(parts, " · ")
+	if newest > 0 {
+		age := m.now().Sub(time.Unix(newest, 0))
+		if age < 0 {
+			age = 0
+		}
+		bottom += fmt.Sprintf("   ·   reading %s old", age.Truncate(time.Second))
+	}
+	for len(out) < h-1 {
+		out = append(out, "")
+	}
+	out = append(out, sDim.Render(clip(bottom, w)))
+	return out
+}

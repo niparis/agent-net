@@ -1,9 +1,11 @@
 package tui
 
 import (
+	"fmt"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 )
@@ -42,5 +44,28 @@ func TestMergeQuotaReadings(t *testing.T) {
 		if r.provider.Provider == "claude" && r.machine == "" {
 			t.Fatalf("different plans need machine: %+v", r)
 		}
+	}
+}
+
+func TestQuotaViewGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		m.tab = 1
+		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
+			{Provider: "codex", Plan: "pro", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92, Pace: protocol.QuotaPaceAhead, ResetsAt: t0.Add(2 * time.Hour).Unix()}}},
+			{Provider: "cursor", Plan: "business", Windows: []protocol.QuotaWindow{{ID: "month", PercentUsed: 100, Exhausted: true}}},
+			{Provider: "claude", Plan: "max", Stale: true, Windows: []protocol.QuotaWindow{{ID: "5h", PercentUsed: 50, Pace: protocol.QuotaPaceBehind}}},
+		}}
+		m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "other", Hostname: "other", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Add(-time.Minute).Unix(), Providers: []protocol.QuotaProvider{{Provider: "codex", Plan: "pro"}}}}})
+		view := m.View()
+		for _, line := range lines(view) {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatalf("wide line: %q", line)
+			}
+		}
+		if !strings.Contains(ansi.Strip(view), "exhausted") {
+			t.Fatal(view)
+		}
+		golden(t, fmt.Sprintf("quotas_%dx%d", size[0], size[1]), view)
 	}
 }
