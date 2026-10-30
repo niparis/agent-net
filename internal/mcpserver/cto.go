@@ -32,7 +32,8 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
 	"graph_get": {
-		desc: "Read the component graph: every node with its charter, and every edge with its kind, mode and request rule. Read it at the start of a conversation and before any graph change.",
+		desc:   "Read the component graph with charters and edges. Read it at the start of a conversation and before any graph change.",
+		fields: map[string]ctoField{"all": {typ: "boolean", desc: "Include inactive empty projects."}},
 	},
 	"charter_set": {
 		desc: "Set one charter attribute of a node. An empty value clears the attribute. Show the change as a short diff and offer undo.",

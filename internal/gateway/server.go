@@ -678,7 +678,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true}, nil
 	case "graph.get":
-		return st.Graph()
+		p, err := decode[protocol.QueryGraph](raw)
+		if err != nil {
+			return nil, reject("bad graph.get")
+		}
+		return st.visibleGraph(p.All)
 	case "playbook.set":
 		p, err := decode[protocol.PlaybookSetRequest](raw)
 		if err != nil {

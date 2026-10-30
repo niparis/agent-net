@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -61,5 +62,36 @@ func TestGraphProjectRoots(t *testing.T) {
 		if found[tc.name] != tc.want {
 			t.Errorf("%s present=%v, want %v", tc.name, found[tc.name], tc.want)
 		}
+	}
+}
+
+func TestGraphViewHidesOldEmptyImplicitProjects(t *testing.T) {
+	s, _ := newTestStore(t)
+	ids, _ := graphSessions(t, s, "old", "live")
+	_, err := s.db.Exec(`UPDATE sessions SET online=0,last_seen=? WHERE id=?`, s.now().Add(-8*24*time.Hour).UnixNano(), ids["old"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := s.GraphView("", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range view.Nodes {
+		if n.Name == "old" {
+			t.Fatal("old empty project is visible")
+		}
+	}
+	all, err := s.visibleGraph(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, n := range all.Nodes {
+		if n.Name == "old" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("all omitted old project")
 	}
 }
