@@ -49,6 +49,22 @@ func Scan(o Options) protocol.InventoryReport {
 		}
 		report.Items = append(report.Items, protocol.InventoryItem{Harness: h, Kind: k, Scope: scope, Project: project, ProjectRoot: root, Location: path, Name: name, Source: protocol.InventoryNative, Hash: hash, ScannedAt: now, State: state, Reason: reason, Unsupported: unsupported})
 	}
+	attachFiles := func(index int, files []string) {
+		if index >= len(report.Items) {
+			return
+		}
+		size := 0
+		for _, file := range files {
+			size += len(file)
+		}
+		if totalFields+size > 256<<10 {
+			report.State = protocol.InventoryError
+			report.Reason = "inventory exceeds report limit"
+			return
+		}
+		totalFields += size
+		report.Items[index].Files = files
+	}
 	// Never traverse links in a source path or skill root.
 	safe := func(base, path string) bool {
 		rel, err := filepath.Rel(base, path)
@@ -148,12 +164,18 @@ func Scan(o Options) protocol.InventoryReport {
 				continue
 			}
 			hash, err := skillHashRoot(skillRoot)
+			files, filesErr := skillFilesRoot(skillRoot)
+			if err == nil {
+				err = filesErr
+			}
 			skillRoot.Close()
 			if err != nil {
 				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot hash skill safely")
 				continue
 			}
+			index := len(report.Items)
 			add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), hash, protocol.InventoryOK, "")
+			attachFiles(index, files)
 		}
 	}
 	config := func(h, scope, project, root, base, path, key string, tomlFormat bool) {
@@ -314,12 +336,18 @@ func Scan(o Options) protocol.InventoryReport {
 					continue
 				}
 				hash, err := skillHashRoot(skillRoot)
+				files, filesErr := skillFilesRoot(skillRoot)
+				if err == nil {
+					err = filesErr
+				}
 				skillRoot.Close()
 				name := filepath.Base(filepath.Dir(source))
 				if err != nil {
 					add("pi", protocol.InventorySkill, scope, project, root, source, name, "", protocol.InventoryError, "cannot hash skill safely")
 				} else {
+					index := len(report.Items)
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
+					attachFiles(index, files)
 				}
 				continue
 			}
@@ -530,10 +558,10 @@ func stripComments(b []byte) []byte {
 }
 
 // fingerprint hashes only an allowlisted, redacted descriptor. Unknown argument
-// values, environment variables, headers, URL paths and query strings never
+// values, environment variable values, headers and URL query strings never
 // enter the hash.
-func fingerprint(name string, m map[string]any) string {
-	parts := []string{"mcp-v1", name}
+func fingerprint(_ string, m map[string]any) string {
+	parts := []string{"mcp-v2"}
 	command, _ := m["command"].(string)
 	if command == "" {
 		if a, ok := m["command"].([]any); ok && len(a) > 0 {
@@ -541,7 +569,7 @@ func fingerprint(name string, m map[string]any) string {
 		}
 	}
 	if command != "" && !strings.ContainsAny(command, "?=#@ \t\n") {
-		parts = append(parts, "command", filepath.Base(command))
+		parts = append(parts, "command", command)
 	}
 	for _, field := range []string{"type", "transport"} {
 		if value, ok := m[field].(string); ok && (value == "stdio" || value == "http" || value == "sse" || value == "local" || value == "remote") {
@@ -550,7 +578,17 @@ func fingerprint(name string, m map[string]any) string {
 	}
 	if raw, ok := m["url"].(string); ok {
 		if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" {
-			parts = append(parts, "url", u.Scheme, strings.ToLower(u.Hostname()))
+			parts = append(parts, "url", u.Scheme, strings.ToLower(u.Host), u.EscapedPath())
+		}
+	}
+	if env, ok := m["env"].(map[string]any); ok {
+		names := make([]string, 0, len(env))
+		for name := range env {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			parts = append(parts, "env", name)
 		}
 	}
 	for _, field := range []string{"args", "command"} {
@@ -563,13 +601,27 @@ func fingerprint(name string, m map[string]any) string {
 				if !ok {
 					continue
 				}
+				lower := strings.ToLower(v)
+				safePath := !strings.ContainsAny(v, "?=#@ \t\n") && !strings.Contains(lower, "secret") && !strings.Contains(lower, "token") && !strings.Contains(lower, "password") && !strings.Contains(lower, "credential")
+				if i > 0 && args[i-1] == "--config" && safePath {
+					parts = append(parts, "config", v)
+					continue
+				}
+				if (i == 0 || (field == "command" && i == 1)) && safePath && (strings.HasSuffix(lower, ".js") || strings.HasSuffix(lower, ".mjs") || strings.HasSuffix(lower, ".py")) {
+					parts = append(parts, "script", v)
+					continue
+				}
+				if i > 0 && args[i-1] == "--mode" && (v == "read" || v == "write" || v == "serve" || v == "development" || v == "production") {
+					parts = append(parts, "mode", v)
+					continue
+				}
 				if i > 0 && args[i-1] == "--port" {
 					if port, err := strconv.Atoi(v); err == nil && port > 0 && port <= 65535 {
 						parts = append(parts, "port", strconv.Itoa(port))
 						continue
 					}
 				}
-				if v == "--port" || v == "--host" || v == "--transport" || v == "--stdio" || v == "--sse" || v == "--http" {
+				if v == "--port" || v == "--config" || v == "--mode" || v == "--host" || v == "--transport" || v == "--stdio" || v == "--sse" || v == "--http" {
 					parts = append(parts, "flag", v)
 				} else {
 					parts = append(parts, "redacted")
@@ -580,4 +632,18 @@ func fingerprint(name string, m map[string]any) string {
 	data, _ := json.Marshal(parts)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// FederationItem converts a registry entry to a non-secret observation.
+func FederationItem(s protocol.MCPServer, now time.Time) protocol.InventoryItem {
+	args := make([]any, len(s.Args))
+	for i, a := range s.Args {
+		args[i] = a
+	}
+	env := make(map[string]any)
+	for _, e := range s.Env {
+		env[e] = nil
+	}
+	desc := map[string]any{"command": s.Command, "args": args, "env": env, "url": s.URL, "transport": s.Transport}
+	return protocol.InventoryItem{Harness: "agent-net", Kind: protocol.InventoryMCP, Scope: protocol.InventoryUser, Location: s.Name, Name: s.Name, Source: protocol.InventoryFederation, Hash: fingerprint(s.Name, desc), ScannedAt: now, State: protocol.InventoryOK}
 }

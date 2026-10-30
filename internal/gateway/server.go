@@ -533,7 +533,52 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return nil, st.SetInventory(nc.id, p)
 
 	case "query.inventory":
-		return st.Inventories()
+		p, err := decode[struct {
+			Offset int `json:"offset"`
+		}](raw)
+		if err != nil {
+			return nil, reject("bad query.inventory")
+		}
+		reports, err := st.Inventories()
+		if err != nil {
+			return nil, err
+		}
+		for i := range reports {
+			if g.conn(reports[i].NodeID) == nil {
+				markInventoryOffline(&reports[i])
+			}
+		}
+		return inventoryPage(reports, p.Offset)
+
+	case "query.tools_items":
+		p, err := decode[protocol.ToolsFilter](raw)
+		if err != nil || p.Offset < 0 {
+			return nil, reject("bad query.tools_items")
+		}
+		items, err := st.ToolsItems(p, func(id string) bool { return g.conn(id) != nil })
+		if err != nil {
+			return nil, err
+		}
+		return toolsPage(items, p.Offset)
+	case "query.tools_item":
+		p, err := decode[struct {
+			ID string `json:"id"`
+		}](raw)
+		if err != nil || p.ID == "" {
+			return nil, reject("bad query.tools_item")
+		}
+		detail, err := st.ToolsItem(p.ID, func(id string) bool { return g.conn(id) != nil })
+		if err != nil {
+			return nil, err
+		}
+		data, err := json.Marshal(detail)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) > 3<<20 {
+			return nil, reject("tool detail exceeds response limit")
+		}
+		return detail, nil
 
 	case "node.harnesses":
 		p, err := decode[protocol.NodeHarnesses](raw)

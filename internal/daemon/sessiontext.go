@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"inventory_scan": true, "inventory_get": true,
+	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
@@ -190,7 +190,11 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		res = d.scanTools(ctx)
 	case "inventory_get":
-		res, err = d.call(ctx, "query.inventory", struct{}{})
+		res, err = d.call(ctx, "query.inventory", json.RawMessage(raw))
+	case "tools_items":
+		res, err = d.call(ctx, "query.tools_items", json.RawMessage(raw))
+	case "tools_item":
+		res, err = d.call(ctx, "query.tools_item", json.RawMessage(raw))
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":

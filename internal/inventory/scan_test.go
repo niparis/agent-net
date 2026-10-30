@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -150,8 +151,8 @@ func TestDescriptorFingerprintDistinguishesNonsecretInputs(t *testing.T) {
 	if fingerprint("server", a) != fingerprint("server", c) {
 		t.Fatal("secret affected fingerprint")
 	}
-	if fingerprint("server", a) == fingerprint("other", a) {
-		t.Fatal("name ignored")
+	if fingerprint("server", a) != fingerprint("other", a) {
+		t.Fatal("name affected descriptor fingerprint")
 	}
 }
 
@@ -519,5 +520,88 @@ func TestPiCompatibleAndNestedSkillRoots(t *testing.T) {
 		if !found[name] {
 			t.Errorf("missing %s", name)
 		}
+	}
+}
+
+func TestMCPFingerprintIncludesURLPathAndEnvironmentNames(t *testing.T) {
+	base := map[string]any{"url": "https://example.invalid/first?token=secret-one", "env": map[string]any{"API_KEY": "secret-one"}}
+	otherPath := map[string]any{"url": "https://example.invalid/second?token=secret-two", "env": map[string]any{"API_KEY": "secret-two"}}
+	otherEnv := map[string]any{"url": "https://example.invalid/first?token=secret-two", "env": map[string]any{"OTHER_KEY": "secret-two"}}
+	same := map[string]any{"url": "https://example.invalid/first?token=secret-two", "env": map[string]any{"API_KEY": "secret-two"}}
+	if fingerprint("server", base) == fingerprint("server", otherPath) || fingerprint("server", base) == fingerprint("server", otherEnv) {
+		t.Fatal("URL path or environment variable names omitted from fingerprint")
+	}
+	if fingerprint("server", base) != fingerprint("server", same) {
+		t.Fatal("secret values changed fingerprint")
+	}
+}
+
+func TestMCPFingerprintMasksSecretArguments(t *testing.T) {
+	desc := func(path, token string) map[string]any {
+		return map[string]any{"command": "node", "args": []any{"server.js", "--config", path, "--token", token}}
+	}
+	if fingerprint("s", desc("one.json", "secret-one")) != fingerprint("s", desc("one.json", "secret-two")) {
+		t.Fatal("secret changed fingerprint")
+	}
+	if fingerprint("s", desc("one.json", "secret-one")) == fingerprint("s", desc("two.json", "secret-one")) {
+		t.Fatal("non-secret argument omitted")
+	}
+}
+
+func TestFederationItemRedactsRegistryValues(t *testing.T) {
+	s := protocol.MCPServer{Name: "demo", Transport: "stdio", Command: "node", Args: []string{"--token", "fixture-secret"}, Env: []string{"API_KEY"}}
+	item := FederationItem(s, time.Time{})
+	b, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Source != protocol.InventoryFederation || item.Hash == "" || strings.Contains(string(b), "fixture-secret") {
+		t.Fatalf("unsafe federation item: %s", b)
+	}
+	s.Args[1] = "another-secret"
+	if FederationItem(s, time.Time{}).Hash != item.Hash {
+		t.Fatal("secret changes hash")
+	}
+}
+
+func TestSkillFileListsRespectReportLimit(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 1400; i++ {
+		name := fmt.Sprintf("%04d-%s", i, strings.Repeat("x", 190))
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := Scan(Options{Home: home})
+	if report.State != protocol.InventoryError {
+		t.Fatalf("large file list accepted: %s", report.State)
+	}
+}
+
+func TestMCPFingerprintIncludesCommandPath(t *testing.T) {
+	a := map[string]any{"command": "/opt/one/server"}
+	b := map[string]any{"command": "/opt/two/server"}
+	if fingerprint("demo", a) == fingerprint("demo", b) {
+		t.Fatal("command paths collapsed")
+	}
+}
+
+func TestMCPFingerprintIncludesSafeScriptAndMode(t *testing.T) {
+	desc := func(script, mode, secret string) map[string]any {
+		return map[string]any{"command": "node", "args": []any{script, "--mode", mode, "--api-key", secret}}
+	}
+	base := fingerprint("demo", desc("first.js", "read", "fixture-secret-one"))
+	if base == fingerprint("demo", desc("second.js", "read", "fixture-secret-one")) || base == fingerprint("demo", desc("first.js", "write", "fixture-secret-one")) {
+		t.Fatal("safe arguments were omitted")
+	}
+	if base != fingerprint("demo", desc("first.js", "read", "fixture-secret-two")) {
+		t.Fatal("secret changed fingerprint")
 	}
 }

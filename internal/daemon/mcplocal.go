@@ -40,6 +40,7 @@ func (d *Daemon) onMCPFrame(ctx context.Context, l *link, h protocol.Header, raw
 		}
 	case "mcp.changed":
 		d.broadcastLocal("mcp_changed")
+		d.wakeTools()
 	case "mcp.probe":
 		var p protocol.MCPProbe
 		if err = json.Unmarshal(raw, &p); err == nil {
