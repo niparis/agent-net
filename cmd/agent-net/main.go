@@ -309,7 +309,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		ApplyIntegrations: setup.ApplyIntegrations,
 		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
-		NoLaunch:          nc.NoLaunch, ModelProviders: nc.ModelProviders, Workers: ws, EnterSSH: nc.EnterSSH, EnterSSHHosts: nc.EnterSSHHosts,
+		NoLaunch:          nc.NoLaunch, ModelProviders: nc.ModelProviders, Workers: ws, EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		QuotaAXIPath: nc.QuotaAXI,
 		// Tests set this to 0s so they need not wait up to 10 s.
 		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),

@@ -605,14 +605,14 @@ A message body, including the first line the feed quotes, can only be shown for 
 
 When the plan has nothing to run, the answer has only a note, and the TUI shows it in the result line.
 
-**A session on another machine.** The question goes through the gateway to that machine. By default the TUI shows the command to run there. To let `e` run it through `ssh -t`, set in `node.json` on the machine where you use the TUI, and restart the daemon:
+**A session on another machine.** The question goes through the gateway to that machine. By default the TUI runs the command there through `ssh -t -o ConnectTimeout=5 -- <target> <command>`. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
 
 ```json
-"enter_ssh": true,
+"enter_ssh": false,
 "enter_ssh_hosts": {"build-box": "me@build-box.example"}
 ```
 
-`enter_ssh` is off by default. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh must already work without a prompt for anything but a key passphrase or a Tailscale SSH check. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
+`enter_ssh` is on by default. `"enter_ssh": false` turns it off, and then `e` shows the command to run there instead. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh runs in your terminal, with your own keys and ssh config, so it may ask for a password, a key passphrase or a Tailscale SSH check. If ssh exits with status 255 (it could not connect or log in), the TUI shows the command to run on the machine, with a hint to set `enter_ssh_hosts`. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
 
 ## Peer trust and hints
 

@@ -248,6 +248,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	sock := filepath.Join(shortDir(t), "d.sock")
 	cfg := Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
 		Hostname: "host-" + nc.NodeID, StateDir: t.TempDir(), SocketPath: sock,
+		EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger}
 	if o.adapter != nil {

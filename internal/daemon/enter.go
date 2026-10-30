@@ -29,9 +29,10 @@ import (
 //	                                 in Env; only on the machine that has it
 //
 // A session on another machine is planned by that machine (the gateway relays
-// the question), and wrapped in `ssh -t` here only when the owner turned on
-// enter_ssh in node.json. Without it the plan has no argv and the note gives
-// the command to run there.
+// the question), and wrapped in `ssh -t` here unless enter_ssh is false in
+// node.json. Without it the plan has no argv and the note gives the command to
+// run there. The ssh plan also carries that command as Fallback, for when ssh
+// cannot connect (exit status 255).
 //
 // Same gate as session_text: the owner's CLI or TUI, never an agent session.
 
@@ -67,18 +68,22 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	host := d.hostOfSession(ctx, q.SessionID)
 	run := remoteCommand(plan.Dir, plan.Argv)
 	where := firstNonEmpty(host, "the other machine")
-	if !d.cfg.EnterSSH || host == "" {
-		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("On %s run: %s   (set enter_ssh in node.json to enter through ssh)", where, run)}, nil
+	fallback := fmt.Sprintf("On %s run: %s", where, run)
+	if host == "" {
+		return protocol.EnterPlan{Host: host, Note: fallback}, nil
+	}
+	if !d.cfg.EnterSSH {
+		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh is off in node.json)"}, nil
 	}
 	target := host
 	if t := d.cfg.EnterSSHHosts[host]; t != "" {
 		target = t
 	}
 	if !sshTargetOK(target) {
-		return protocol.EnterPlan{Host: host, Note: fmt.Sprintf("On %s run: %s   (enter_ssh_hosts gives a bad ssh target)", where, run)}, nil
+		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh_hosts gives a bad ssh target)"}, nil
 	}
-	return protocol.EnterPlan{Argv: []string{"ssh", "-t", "--", target, run}, Host: host,
-		Note: "Through ssh to " + target + ". " + plan.Note}, nil
+	return protocol.EnterPlan{Argv: []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", target, run}, Host: host,
+		Note: "Through ssh to " + target + ". " + plan.Note, Fallback: fallback}, nil
 }
 
 // hostOfSession is the host name the gateway lists for a session, or "".
