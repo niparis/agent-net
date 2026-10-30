@@ -25,6 +25,7 @@ const (
 	StopExited     = "process_exited" // the harness process ended by itself
 	StopLost       = "lost"           // gone while the daemon was not running
 	StopStartFails = "start_failed"   // it never became a session
+	StopRunFailed  = "run_failed"     // a local or unclassified run failure
 	StopModelFails = "model_failed"   // the model call failed (provider, billing or auth error)
 	// StopHandback means the worker handed back its report and the daemon
 	// ended it, like a Claude Code subagent. The harness session is kept, so

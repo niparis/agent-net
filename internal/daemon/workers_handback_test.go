@@ -125,7 +125,7 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 		t.Errorf("follow-up: %+v", r)
 	}
 	rec2 := readFake(t, res.Worktree)
-	if rec2.SessionID != rec.SessionID || rec2.Pid == rec.Pid || rec2.Cwd != res.Worktree {
+	if rec2.SessionID != rec.SessionID || rec2.Pid == rec.Pid || rec2.Cwd != res.Worktree || rec2.Env["XDG_DATA_HOME"] != rec.Env["XDG_DATA_HOME"] {
 		t.Errorf("the resumed worker: %+v (first run %+v)", rec2, rec)
 	}
 	if len(w.logs.lines("worker.resumed", res.SessionID)) != 1 {
@@ -258,6 +258,23 @@ func TestWorkerModelFailureSendsANotice(t *testing.T) {
 	res2 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "m", Task: "FAKE:ignore retry"})
 	if res2.Model != "fake/m2" || !strings.Contains(res2.ModelNote, "m -> fake/m2") || !strings.Contains(res2.ModelNote, "fake/m1 failed a worker at") {
 		t.Errorf("retry: model %q, note %q", res2.Model, res2.ModelNote)
+	}
+}
+
+func TestWorkerLocalFailureDoesNotDemote(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:localfail"})
+	w.workerStopped(t, g, protocol.StopRunFailed)
+	n := w.waitNotice(t, 1)[0]
+	if !strings.Contains(n.Body, "status: failed") || !strings.Contains(n.Body, "Failed to execute statement") {
+		t.Errorf("notice: %s", n.Body)
+	}
+	failed, err := g.gw.Store().FailedModels(w.d.NodeID(), "opencode")
+	if err != nil || !failed["fake/m1"].IsZero() {
+		t.Errorf("local failure demoted model: %v %v", failed, err)
 	}
 }
 

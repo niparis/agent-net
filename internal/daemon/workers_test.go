@@ -250,6 +250,9 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	if !strings.HasPrefix(rec.Env["XDG_STATE_HOME"], filepath.Join(w.cfg.StateDir, "workers")) {
 		t.Errorf("the worker shares the user's OpenCode state folder: %s", rec.Env["XDG_STATE_HOME"])
 	}
+	if rec.Env["XDG_DATA_HOME"] != filepath.Join(w.cfg.StateDir, "workers", rec.Env["AGENT_NET_WORKER"], "data") {
+		t.Errorf("worker data folder: %q", rec.Env["XDG_DATA_HOME"])
+	}
 	if rec.LocationDir != url.QueryEscape(repo) {
 		t.Errorf("the project was not loaded with its folder: %q", rec.LocationDir)
 	}
@@ -610,6 +613,8 @@ func TestWorkerStartFailures(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			// The fake auth commands are separate race-instrumented processes.
+			t.Setenv("GORACE", "atexit_sleep_ms=0")
 			t.Setenv(c.env, "1")
 			g := startGateway(t, t.TempDir(), "")
 			set := shortSet
