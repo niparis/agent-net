@@ -676,6 +676,7 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "second turn FAKE:wait-second"}), &sent)
+	eventually(t, "second message queued", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
 	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}

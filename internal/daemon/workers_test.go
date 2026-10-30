@@ -477,6 +477,17 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 		native = rows[0].NativeID
 		return true
 	})
+	// Let the fake's first turn report idle before setting the next busy state.
+	eventually(t, "the first turn is idle", func() bool {
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		for _, worker := range w.d.workers {
+			if worker.sessionID == res.SessionID {
+				return !worker.turnActive
+			}
+		}
+		return false
+	})
 	// The harness says the session is busy: it is in the middle of a turn.
 	w.d.mu.Lock()
 	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
