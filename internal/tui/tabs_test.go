@@ -462,3 +462,18 @@ func TestWorkersNowIsInsidePanel(t *testing.T) {
 	}
 	t.Fatal("footer missing")
 }
+
+func TestQuotaUnconfiguredFold(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "inactive", Error: "credential_unavailable"}, {Provider: "active", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 5}}}}}
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if !strings.Contains(v, "1 providers not set up · s to show") || strings.Contains(v, "inactive") {
+		t.Fatal(v)
+	}
+	m = keys(m, "s")
+	v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if !strings.Contains(v, "inactive") || !strings.Contains(v, "credential_unavailable") {
+		t.Fatal(v)
+	}
+}

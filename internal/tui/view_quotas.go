@@ -43,7 +43,21 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	var newest int64
+	var configured, unset []quotaRow
 	for _, r := range rows {
+		if quotaNotSetUp(r.provider) {
+			unset = append(unset, r)
+		} else {
+			configured = append(configured, r)
+		}
+		if r.at > newest {
+			newest = r.at
+		}
+	}
+	if m.quotaShowUnset {
+		configured = append(configured, unset...)
+	}
+	for _, r := range configured {
 		if r.at > newest {
 			newest = r.at
 		}
@@ -133,6 +147,13 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sDim.Render(clip("  ("+strings.Join(notes, "; ")+")", w-4)))
 		}
 	}
+	if len(unset) > 0 {
+		action := "s to show"
+		if m.quotaShowUnset {
+			action = "s to hide"
+		}
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d providers not set up · %s", len(unset), action)))
+	}
 	title := "Subscriptions"
 	if newest > 0 {
 		age := m.now().Sub(time.Unix(newest, 0))
@@ -178,4 +199,12 @@ func (m Model) quotasView(w, h int) []string {
 		out = append(out, "")
 	}
 	return out
+}
+
+func quotaNotSetUp(p protocol.QuotaProvider) bool {
+	if len(p.Windows) > 0 {
+		return false
+	}
+	reason := strings.ToLower(strings.ReplaceAll(p.Error, "_", " "))
+	return strings.Contains(reason, "credential unavailable") || strings.Contains(reason, "sign-in required") || strings.Contains(reason, "sign in required") || strings.Contains(reason, "not running") || strings.Contains(reason, "cli unavailable")
 }
