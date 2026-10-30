@@ -578,7 +578,16 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 					}
 					time.Sleep(10 * time.Millisecond)
 				}
-				send("worker_handback", map[string]any{"report": "first report"})
+				id := nextID()
+				ch := make(chan string, 1)
+				rmu.Lock()
+				results[id] = ch
+				rmu.Unlock()
+				b, _ := json.Marshal(map[string]any{"id": id, "method": "worker_handback", "params": map[string]any{"report": "first report"}})
+				wmu.Lock()
+				c.Write(append(b, '\n'))
+				wmu.Unlock()
+				<-ch
 				send("status", map[string]any{"status": "idle"})
 				close(waitTurn)
 			}()

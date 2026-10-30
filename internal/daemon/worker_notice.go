@@ -375,8 +375,18 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
 	st := d.workerStats(w)
+	d.wmu.Lock()
+	pending, cc := len(w.turnQueue) > 0, w.codex
+	d.wmu.Unlock()
+	if cc != nil {
+		cc.mu.Lock()
+		pending = pending || len(cc.queue) > 0
+		cc.mu.Unlock()
+	}
 	note := "the worker ended after its hand-back; a message from you starts it again"
-	if _, canResume := d.launchers[w.harness].(resumer); !canResume {
+	if pending {
+		note = "the worker will run its queued messages before ending"
+	} else if _, canResume := d.launchers[w.harness].(resumer); !canResume {
 		note = "the worker ended after its hand-back; this harness cannot be started again (" + cannotResumeReason(w.harness) + ")"
 	}
 	if sandboxNote != "" {

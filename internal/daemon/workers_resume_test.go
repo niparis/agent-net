@@ -81,7 +81,7 @@ func TestOpenCodeWorkerQueuedTurnAfterHandback(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := w.replyTo(t, owner, res.Task.ID)
-	if !strings.Contains(first.Body, "first report") {
+	if !strings.Contains(first.Body, "first report") || !strings.Contains(first.Body, "queued messages before ending") {
 		t.Fatalf("first report: %s", first.Body)
 	}
 	second := w.replyTo(t, owner, sent.Message.ID)

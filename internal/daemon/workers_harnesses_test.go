@@ -680,7 +680,7 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 		t.Fatal(err)
 	}
 	first := w.replyTo(t, owner, res.Task.ID)
-	if !strings.Contains(first.Body, "codex done") {
+	if !strings.Contains(first.Body, "codex done") || !strings.Contains(first.Body, "queued messages before ending") {
 		t.Fatalf("first report: %s", first.Body)
 	}
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 2 })
