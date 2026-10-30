@@ -48,6 +48,7 @@ func New(src source) http.Handler {
 	})
 	mux.HandleFunc("GET /{$}", a.home)
 	mux.HandleFunc("GET /session/{id}", a.session)
+	mux.HandleFunc("GET /events", a.stream)
 	mux.HandleFunc("POST /action", a.action)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
