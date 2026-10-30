@@ -161,6 +161,9 @@ func (m Model) hints() []hint {
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
 func (m Model) helpLine(w int) string {
+	if m.mapOn && m.mp.finding {
+		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
+	}
 	if m.inboxOn {
 		if m.inboxEditing {
 			return clip(m.inboxInput.View()+" enter sends, esc cancels", w)

@@ -329,3 +329,25 @@ func TestMapListMovesFromIsolatedNode(t *testing.T) {
 		t.Fatalf("down from isolated selected %q", m.mp.selected)
 	}
 }
+
+func TestMapFindFiltersAndConfirmsOrCancels(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "a2a-ocs"
+	m = keys(m, "/", "c", "o", "g")
+	if m.mp.selected != "a2a-ocs" || len(m.mapSelectable()) != 1 || m.mapSelectable()[0] != "cogforge" {
+		t.Fatalf("find: %s %v", m.mp.selected, m.mapSelectable())
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "find: cog") {
+		t.Fatal("find prompt missing")
+	}
+	m = keys(m, "enter")
+	if m.mp.selected != "cogforge" || len(m.mapSelectable()) < 2 {
+		t.Fatal("find did not focus and restore list")
+	}
+	m = keys(m, "/", "s", "h", "esc")
+	if m.mp.selected != "cogforge" || len(m.mapSelectable()) < 2 {
+		t.Fatal("cancel changed selection")
+	}
+}

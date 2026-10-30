@@ -26,16 +26,18 @@ type mapMsg struct {
 
 // mapState is the map's part of the model.
 type mapState struct {
-	nodes    []protocol.Node
-	edges    []protocol.Edge
-	changes  []protocol.CharterChange
-	at       time.Time
-	loaded   bool
-	loading  bool
-	err      string
-	selected string
-	choice   int
-	overview bool
+	nodes     []protocol.Node
+	edges     []protocol.Edge
+	changes   []protocol.CharterChange
+	at        time.Time
+	loaded    bool
+	loading   bool
+	err       string
+	selected  string
+	choice    int
+	overview  bool
+	finding   bool
+	findQuery string
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a
@@ -88,7 +90,32 @@ func (m *Model) applyMap(r mapMsg) {
 
 // mapKey handles the keys of the map. M and esc return to the session list.
 func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mp.finding {
+		switch k.Type {
+		case tea.KeyEsc:
+			m.mp.finding = false
+			m.mp.findQuery = ""
+		case tea.KeyEnter:
+			if nodes := m.mapProjectNodes(); len(nodes) > 0 {
+				m.mp.selected = nodes[0].Name
+				m.mp.choice = 0
+			}
+			m.mp.finding = false
+			m.mp.findQuery = ""
+		case tea.KeyBackspace, tea.KeyCtrlH:
+			r := []rune(m.mp.findQuery)
+			if len(r) > 0 {
+				m.mp.findQuery = string(r[:len(r)-1])
+			}
+		case tea.KeyRunes:
+			m.mp.findQuery += string(k.Runes)
+		}
+		return m, nil
+	}
 	switch k.String() {
+	case "/":
+		m.mp.finding = true
+		m.mp.findQuery = ""
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
@@ -243,7 +270,7 @@ func (m Model) mapProjectNodes() []protocol.Node {
 	})
 	var out []protocol.Node
 	for _, n := range nodes {
-		if m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter)) {
+		if (m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter))) && (!m.mp.finding || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.mp.findQuery))) {
 			out = append(out, n)
 		}
 	}
