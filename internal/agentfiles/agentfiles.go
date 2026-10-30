@@ -22,9 +22,16 @@ type Result struct {
 	Path    string
 	Text    string // the result text setup prints, like "updated" or "skipped (symlink, left as is)"
 	Changed bool   // the file was written
-	Symlink bool   // the file is a symlink and was left alone
+	Symlink bool   // the file is a symlink to a foreign file and was left alone
 	Err     error
 }
+
+// The first line of every version of the plugin files agent-net writes. A
+// symlink whose target starts with one of these holds an agent-net copy.
+const (
+	piPluginMarker       = "// agent-net extension for Pi"
+	opencodePluginMarker = "// agent-net plugin for OpenCode"
+)
 
 func home() string {
 	h, err := os.UserHomeDir()
@@ -88,16 +95,17 @@ func GuidanceFiles() []GuidanceFile {
 
 // Sync brings the Pi extension, the OpenCode plugin and the guidance blocks in
 // line with this binary. It only touches what setup would manage: the harness
-// folder must exist. A symlinked plugin file is left alone, and guidance
-// changes only the part between the markers.
+// folder must exist. A symlink to a foreign file is left alone; a symlink to an
+// older agent-net copy is replaced with a real file. Guidance changes only the
+// part between the markers.
 func Sync() []Result {
 	rs := []Result{SyncPi(), SyncOpencode(), SyncClaudeWorkers()}
 	return append(rs, SyncGuidance()...)
 }
 
 // SyncAndLog runs Sync and logs one line for each file it changed, failed on
-// or left alone because it is a symlink. Files that are up to date, and
-// harnesses that are not installed, log nothing.
+// or left alone because it is a symlink to a foreign file. Files that are up
+// to date, and harnesses that are not installed, log nothing.
 func SyncAndLog(logf func(format string, args ...any)) {
 	for _, r := range Sync() {
 		switch {
@@ -107,6 +115,8 @@ func SyncAndLog(logf func(format string, args ...any)) {
 			logf("agent files: %s left alone (symlink): %s", r.Name, DisplayPath(r.Path))
 		case r.Changed && r.Text == "updated":
 			logf("agent files: %s updated: %s", r.Name, DisplayPath(r.Path))
+		case r.Changed && strings.HasPrefix(r.Text, "replaced "):
+			logf("agent files: %s %s: %s", r.Name, r.Text, DisplayPath(r.Path))
 		case r.Changed:
 			logf("agent files: %s created: %s", r.Name, DisplayPath(r.Path))
 		}
@@ -120,7 +130,7 @@ func SyncPi() Result {
 		r.Text = "skipped (~/.pi not found)"
 		return r
 	}
-	return syncPlugin(r, pi.Extension)
+	return syncPlugin(r, pi.Extension, piPluginMarker)
 }
 
 // SyncOpencode installs the OpenCode plugin.
@@ -130,19 +140,89 @@ func SyncOpencode() Result {
 		r.Text = "skipped (" + DisplayPath(OpencodeDir()) + " not found)"
 		return r
 	}
-	return syncPlugin(r, opencode.Plugin)
+	return syncPlugin(r, opencode.Plugin, opencodePluginMarker)
 }
 
-func syncPlugin(r Result, data []byte) Result {
+func syncPlugin(r Result, data []byte, marker string) Result {
 	if st, err := os.Lstat(r.Path); err == nil && st.Mode()&os.ModeSymlink != 0 {
-		r.Text = "skipped (symlink, left as is)"
-		r.Symlink = true
+		target, err := os.Readlink(r.Path)
+		if err != nil {
+			r.Err = err
+			return r
+		}
+		linked, err := os.ReadFile(r.Path)
+		if err != nil || bytes.Equal(linked, data) || !hasPluginMarker(linked, marker) {
+			r.Text = "skipped (symlink, left as is)"
+			r.Symlink = true
+			return r
+		}
+		if err := replaceSymlink(r.Path, data); err != nil {
+			r.Err = err
+			return r
+		}
+		r.Changed = true
+		r.Text = "replaced an old symlink to " + target + " with the current file"
 		return r
 	}
 	changed, existed, err := WriteIfChanged(r.Path, data, 0o644)
 	r.Changed, r.Err = changed, err
 	r.Text = fileResult(changed, existed)
 	return r
+}
+
+// hasPluginMarker reports whether data starts with the header agent-net writes
+// for the harness named by marker. The header line is stable across versions,
+// so a missing trust note or an old tool list still starts with it.
+func hasPluginMarker(data []byte, marker string) bool {
+	line := data
+	if i := bytes.IndexByte(line, '\n'); i >= 0 {
+		line = line[:i]
+	}
+	return bytes.HasPrefix(line, []byte(marker))
+}
+
+// isAgentNetPlugin reports whether data is one of the plugin files agent-net
+// writes, for either harness.
+func isAgentNetPlugin(data []byte) bool {
+	return hasPluginMarker(data, piPluginMarker) || hasPluginMarker(data, opencodePluginMarker)
+}
+
+// SymlinkTargetIsAgentNet reports whether path is a symlink to a file that
+// holds an agent-net plugin header. A broken link or a foreign file is false.
+func SymlinkTargetIsAgentNet(path string) bool {
+	st, err := os.Lstat(path)
+	if err != nil || st.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	data, err := os.ReadFile(path)
+	return err == nil && isAgentNetPlugin(data)
+}
+
+// replaceSymlink replaces the symlink at path with a real file holding data.
+// The rename changes the link itself, never the file it points at.
+func replaceSymlink(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	name := tmp.Name()
+	defer os.Remove(name)
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(name, path)
 }
 
 // SyncGuidance writes the guidance blocks.

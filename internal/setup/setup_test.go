@@ -241,6 +241,45 @@ func TestSetupLeavesPiSymlink(t *testing.T) {
 	}
 }
 
+// Uninstall removes a symlink to an old agent-net copy, but leaves a symlink to
+// a file agent-net did not write, and never deletes either target.
+func TestUninstallRemovesOldAgentNetSymlinks(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	extDir := filepath.Join(f.home, ".pi", "agent", "extensions")
+	os.MkdirAll(extDir, 0o755)
+	stale := filepath.Join(f.home, "old-agent-net.ts")
+	os.WriteFile(stale, []byte("// agent-net extension for Pi. old\n"), 0o644)
+	os.Symlink(stale, filepath.Join(extDir, "agent-net.ts"))
+
+	ocDir := filepath.Join(f.home, ".config", "opencode", "plugins")
+	os.MkdirAll(ocDir, 0o755)
+	foreign := filepath.Join(f.home, "my-plugin.ts")
+	os.WriteFile(foreign, []byte("// my own plugin\n"), 0o644)
+	os.Symlink(foreign, filepath.Join(ocDir, "agent-net.ts"))
+
+	var buf bytes.Buffer
+	if err := Uninstall(Options{Out: &buf, Exe: "/x"}); err != nil {
+		t.Fatal(err)
+	}
+	out := norm(buf.String())
+	if !strings.Contains(out, "pi extension ok (removed an agent-net symlink)") {
+		t.Errorf("output:\n%s", out)
+	}
+	if _, err := os.Lstat(filepath.Join(extDir, "agent-net.ts")); err == nil {
+		t.Error("uninstall kept the old agent-net symlink")
+	}
+	if b, _ := os.ReadFile(stale); string(b) != "// agent-net extension for Pi. old\n" {
+		t.Error("uninstall changed the old target")
+	}
+	if _, err := os.Lstat(filepath.Join(ocDir, "agent-net.ts")); err != nil {
+		t.Error("uninstall removed a foreign symlink")
+	}
+	if b, _ := os.ReadFile(foreign); string(b) != "// my own plugin\n" {
+		t.Error("uninstall changed the foreign target")
+	}
+}
+
 func TestSetupGatewayJoinsItself(t *testing.T) {
 	f := newFixture(t)
 	t.Setenv("PATH", t.TempDir())
