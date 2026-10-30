@@ -71,12 +71,18 @@ func TestWorkerOutcome(t *testing.T) {
 		{StopHandback, StatusFailed, nil, OutcomeFailed},
 		{StopHandback, "", nil, OutcomeComplete}, // an older daemon sends no status
 		{StopIdle, "", nil, OutcomeTimedOut},
+		{StopIdle, StatusTimedOut, nil, OutcomeTimedOut},
 		{StopMaxAge, "", nil, OutcomeTimedOut},
+		{StopMaxAge, StatusTimedOut, nil, OutcomeTimedOut},
 		// A stop is not the model's fault: a stop on request, a worker lost
 		// at a daemon restart, an owner that went away, and a start that
 		// never ran the model are neither success nor failure.
 		{StopRequested, "", nil, OutcomeStopped},
+		{StopRequested, StatusStopped, nil, OutcomeStopped},
 		{StopLost, "", nil, OutcomeStopped},
+		// The daemon's notice for a lost run says failed to its owner. That
+		// is the run's fate, not the model's: it is still neutral.
+		{StopLost, StatusFailed, nil, OutcomeStopped},
 		{StopOwnerGone, "", nil, OutcomeStopped},
 		{StopStartFails, "", nil, OutcomeStopped},
 		{StopExited, "", nil, OutcomeFailed},

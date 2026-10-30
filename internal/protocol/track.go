@@ -59,8 +59,28 @@ type TrackRecord struct {
 // WorkerOutcome maps why a worker ended and its hand-back to an outcome. A
 // worker that says complete:false counts as partial, whatever its status.
 func WorkerOutcome(reason, status string, complete *bool) string {
-	if complete != nil && !*complete {
-		return OutcomePartial
+	// A hand-back carries the worker's own status and complete flag, so it
+	// decides the outcome before the reason does.
+	if complete != nil {
+		if !*complete {
+			return OutcomePartial
+		}
+		switch status {
+		case StatusDone:
+			return OutcomeComplete
+		case StatusBlocked, StatusFailed:
+			return OutcomeFailed
+		}
+	}
+	// These reasons say nothing about the model, whatever status the daemon
+	// put on the notice: the owner stopped it, the daemon lost it at a
+	// restart (the owner is told "failed"), the owner went away, or it never
+	// ran the task.
+	switch reason {
+	case StopRequested, StopLost, StopOwnerGone, StopStartFails:
+		return OutcomeStopped
+	case StopIdle, StopMaxAge:
+		return OutcomeTimedOut
 	}
 	switch status {
 	case StatusDone:
@@ -73,12 +93,6 @@ func WorkerOutcome(reason, status string, complete *bool) string {
 		// A daemon from before the complete field sends no status: its
 		// hand-back counted as complete.
 		return OutcomeComplete
-	case StopIdle, StopMaxAge:
-		return OutcomeTimedOut
-	case StopRequested, StopLost, StopOwnerGone, StopStartFails:
-		// Nobody's model call failed: the owner stopped it, the daemon lost
-		// it at a restart, the owner went away, or it never ran the task.
-		return OutcomeStopped
 	}
 	return OutcomeFailed
 }

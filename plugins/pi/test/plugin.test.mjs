@@ -257,16 +257,16 @@ await test("agent_nodes and agent_start show the track record and playbook", asy
   await until("hello", () => hellos.length === n + 1);
   replies.nodes = { nodes: [{ node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
     harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x"] }],
-    tracks: [{ harness: "opencode", model: "a/x", runs: 4, complete: 1, partial: 3, median_run_seconds: 540, resumable: false }] }],
+    tracks: [{ harness: "opencode", model: "a/x", runs: 5, complete: 1, partial: 3, stopped: 1, median_run_seconds: 540, resumable: false }] }],
     playbook: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff", support: 3, source: "auto" }] };
   const nodes = (await p.tools.get("agent_nodes").execute("id", {})).content[0].text;
-  const track = "a/x · opencode: 4 runs: 1 complete, 3 partial (median 9 min) · cannot resume";
+  const track = "a/x · opencode: 5 runs: 1 complete, 3 partial, 1 stopped (median 9 min) · cannot resume";
   if (!nodes.includes(track) || !nodes.includes("playbook [a/x] 3 findings: ask for the diff")) throw new Error("nodes: " + JSON.stringify(nodes));
   replies.worker_start = { status: "started", session_id: "s_w", harness: "opencode", model: "a/x", project: "p", hostname: "mac",
-    permissions: "sandboxed", track: { harness: "opencode", model: "a/x", runs: 3, complete: 3, median_run_seconds: 60, resumable: true },
+    permissions: "sandboxed", track: { harness: "opencode", model: "a/x", runs: 4, complete: 3, stopped: 1, median_run_seconds: 60, resumable: true },
     playbooks: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff" }] };
   const started = (await p.tools.get("agent_start").execute("id", { project: "p", task: "t" })).content[0].text;
-  for (const want of ["a/x · opencode: 3 runs: 3 complete (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
+  for (const want of ["a/x · opencode: 4 runs: 3 complete, 1 stopped (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
     if (!started.includes(want)) throw new Error("start misses " + JSON.stringify(want) + ": " + JSON.stringify(started));
   }
   const hb = p.tools.get("agent_handback");

@@ -110,9 +110,14 @@ func TestCodexRecentSuccessBreaksTheTie(t *testing.T) {
 // failed a worker.
 func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"fake/m1", "fake/zzz"}), nil)
+	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"fake/m1", "fake/m2"}), nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
+	// A success on fake/m1 makes it the best match for the loose name "m", so
+	// a failure on it would visibly push it behind fake/m2.
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback done"})
+	w.workerStopped(t, g, protocol.StopHandback)
+	w.waitNotice(t, 1)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:ignore first"})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
@@ -125,7 +130,7 @@ func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
 		track = tr
 		return true
 	})
-	if track.Failed != 0 || track.Complete != 0 || track.Stopped != 1 {
+	if track.Failed != 0 || track.Complete != 1 || track.Stopped != 1 {
 		t.Fatalf("a stop on request was counted as an outcome: %+v", track)
 	}
 	if failed, err := g.gw.Store().FailedModels(w.d.NodeID(), "opencode"); err != nil || len(failed) != 0 {
@@ -138,7 +143,7 @@ func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
 	if strings.Contains(next.ModelNote, "failed a worker") || strings.Contains(next.ModelNote, "ranks last") {
 		t.Errorf("the start note treats a stop as a model failure: %q", next.ModelNote)
 	}
-	if next.Track == nil || next.Track.Stopped != 1 || next.Track.Failed != 0 ||
+	if next.Track == nil || next.Track.Stopped != 1 || next.Track.Failed != 0 || next.Track.Complete != 1 ||
 		strings.Contains(next.Track.Line(), "failed") || !strings.Contains(next.Track.Line(), "1 stopped") {
 		t.Errorf("the start track line treats a stop as a failure: %+v", next.Track)
 	}
