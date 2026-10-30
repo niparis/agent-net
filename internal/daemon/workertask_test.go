@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -23,15 +24,15 @@ func TestWorkerTaskReachesTheAgentList(t *testing.T) {
 		return false
 	})
 
-	// A later request from the owner updates the task, without changing the
-	// value another response may still be writing.
+	// A later request from the owner does not replace the title: it is the
+	// first line of the FIRST task, and lists and the band keep it.
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "and run the smoke test\nonce"}), &struct{}{})
-	eventually(t, "the worker's later task in the agent list", func() bool {
-		for _, a := range w.agents(t, false) {
-			if a.SessionID == res.SessionID {
-				return a.Worker != nil && a.Worker.Task == "and run the smoke test"
+	time.Sleep(100 * time.Millisecond)
+	for _, a := range w.agents(t, false) {
+		if a.SessionID == res.SessionID {
+			if a.Worker == nil || a.Worker.Task != "deploy the routes" {
+				t.Errorf("a later request replaced the title: %+v", a.Worker)
 			}
 		}
-		return false
-	})
+	}
 }

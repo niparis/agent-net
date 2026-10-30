@@ -93,6 +93,17 @@ func TestWorkerUsageNumbersFormat(t *testing.T) {
 	}
 }
 
+func TestWorkerNoticeContext(t *testing.T) {
+	n := WorkerNotice{Status: StatusDone, Session: "s_w", Harness: "opencode", Project: "shop", Host: "mac",
+		Tokens: "1200 in, 340 out", Context: ContextText(210000, 1000000)}
+	text := FormatWorkerNotice(n, "the report")
+	for _, want := range []string{"tokens: 1200 in, 340 out\n", "context at end: 210k / 1M (21%)\n"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("notice lacks %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestWorkerTaskBody(t *testing.T) {
 	b := WorkerTaskBody("  do it \n", "", "")
 	if !strings.HasPrefix(b, WorkerPreamble) || !strings.HasSuffix(b, "\n\nTask:\ndo it") || strings.Contains(b, "worktree") {

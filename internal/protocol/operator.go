@@ -3,6 +3,7 @@ package protocol
 import (
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 )
@@ -243,6 +244,11 @@ type WorkerView struct {
 	// Task is the first line of the task the owner gave, cut to about 120
 	// characters. Empty when this machine did not start the worker.
 	Task string `json:"task,omitempty"`
+	// ContextTokens, ContextLimit and Tokens are the worker's usage, as in
+	// WorkerInfo. 0 when the harness cannot say.
+	ContextTokens int64 `json:"context_tokens,omitempty"`
+	ContextLimit  int64 `json:"context_limit,omitempty"`
+	Tokens        int64 `json:"tokens,omitempty"`
 	// EndedAt, EndStatus and EndNote are set for a worker that ended in the
 	// last two minutes, when the query asked for recent workers.
 	EndedAt   int64  `json:"ended_at,omitempty"`
@@ -253,6 +259,38 @@ type WorkerView struct {
 // WorkersResult answers OpWorkers.
 type WorkersResult struct {
 	Workers []WorkerView `json:"workers"`
+}
+
+// CompactTokens writes a token count short enough for a band: 840, 2k, 84k,
+// 345k, 1M, 1.5M. It returns "" for zero.
+func CompactTokens(n int64) string {
+	if n <= 0 {
+		return ""
+	}
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1000000 {
+		return fmt.Sprintf("%.0fk", float64(n)/1000)
+	}
+	s := fmt.Sprintf("%.1f", float64(n)/1000000)
+	s = strings.TrimSuffix(s, ".0")
+	return s + "M"
+}
+
+// ContextText writes the context a worker's model saw on its last step and the
+// model's context window: "84k / 1M (8%)". With no limit it is just the
+// tokens; with no tokens it is empty.
+func ContextText(tokens, limit int64) string {
+	if tokens <= 0 {
+		return ""
+	}
+	text := CompactTokens(tokens)
+	if limit <= 0 {
+		return text
+	}
+	percent := int64(math.Round(float64(tokens) / float64(limit) * 100))
+	return fmt.Sprintf("%s / %s (%d%%)", text, CompactTokens(limit), percent)
 }
 
 // WorkersOf picks the workers out of a list of sessions, with the name of
@@ -271,7 +309,8 @@ func WorkersOf(agents []AgentView) []WorkerView {
 		}
 		out = append(out, WorkerView{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname,
 			Harness: a.Harness, Model: a.Model, Project: a.Worker.Project, Path: a.Cwd, Online: a.Online, Status: a.Status,
-			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt})
+			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt,
+			Task: a.Worker.Task, ContextTokens: a.Worker.ContextTokens, ContextLimit: a.Worker.ContextLimit, Tokens: a.Worker.Tokens})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].StartedAt > out[j].StartedAt

@@ -106,6 +106,13 @@ func runFakeOpenCode() {
 		}
 		fmt.Fprint(w, `{"version":"fake"}`)
 	})
+	mux.HandleFunc("GET /api/model", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		fmt.Fprint(w, `{"data":[{"providerID":"fake","id":"m1","modelID":"m1","limit":{"context":1000000}}]}`)
+	})
 	// OpenCode loads the plugin when a client first uses the project folder.
 	mux.HandleFunc("GET /api/location", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
@@ -152,7 +159,12 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
-		items := []map[string]any{{"id": "msg_user", "type": "user", "text": "task"}}
+		items := []map[string]any{
+			{"id": "msg_assistant", "type": "assistant", "tokens": map[string]any{
+				"input": 80000, "output": 2000, "reasoning": 0, "cache": map[string]any{"read": 3000, "write": 1000},
+			}},
+			{"id": "msg_user", "type": "user", "text": "task"},
+		}
 		if fakeOCFailed.Load() {
 			items = append([]map[string]any{{"id": "msg_idle", "type": "idle", "outcome": "failed",
 				"error": map[string]any{"type": "provider.upstream", "message": fakeOCError}}}, items...)

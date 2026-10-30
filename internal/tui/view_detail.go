@@ -112,6 +112,16 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		// line: the table shows the task instead (decision 0017).
 		out = append(out, kv("worker", fmt.Sprintf("started by %s, %s, project %s", m.who(a.Worker.Owner),
 			m.clock(time.Unix(a.Worker.StartedAt, 0)), dashIfEmpty(a.Worker.Project))))
+		context := protocol.ContextText(a.Worker.ContextTokens, a.Worker.ContextLimit)
+		tokens := protocol.CompactTokens(a.Worker.Tokens)
+		switch {
+		case context != "" && tokens != "":
+			out = append(out, kv("context", context+"  tokens "+tokens))
+		case context != "":
+			out = append(out, kv("context", context))
+		case tokens != "":
+			out = append(out, kv("tokens", tokens))
+		}
 	}
 	out = append(out,
 		kv("id", id),

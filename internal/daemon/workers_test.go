@@ -368,6 +368,31 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	}
 }
 
+// A running worker carries the context figure of its last step and its token
+// total, refreshed on the tick, in the workers view that a TUI on another
+// machine also reads.
+func TestWorkerUsageReachesTheWorkersView(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "say ok"})
+
+	eventually(t, "the worker's context and tokens", func() bool {
+		ws := w.workers(t)
+		return len(ws) == 1 && ws[0].SessionID == res.SessionID &&
+			ws[0].ContextTokens == 84000 && ws[0].ContextLimit == 1000000 && ws[0].Tokens == 1540
+	})
+	// The same figures are on the agent list, from which the gateway stores
+	// them for a TUI on another machine.
+	for _, a := range w.agents(t, false) {
+		if a.SessionID == res.SessionID {
+			if a.Worker == nil || a.Worker.ContextTokens != 84000 || a.Worker.ContextLimit != 1000000 || a.Worker.Tokens != 1540 {
+				t.Fatalf("agent list worker: %+v", a.Worker)
+			}
+		}
+	}
+}
+
 // A worker that ignores SIGTERM is killed anyway.
 func TestWorkerStopKillsAProcessThatIgnoresTerm(t *testing.T) {
 	t.Setenv("FAKE_OC_IGNORE_TERM", "1")

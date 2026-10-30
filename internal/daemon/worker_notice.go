@@ -121,6 +121,13 @@ type workerStats struct {
 	Tokens string
 	Cost   string
 	Model  string
+	// ContextTokens is the tokens the model saw on its last step, ContextLimit
+	// the model's context window, both 0 when the harness cannot say.
+	ContextTokens int64
+	ContextLimit  int64
+	// TotalTokens is input plus output plus reasoning for the run, no cache
+	// reads. 0 when the harness cannot say.
+	TotalTokens int64
 }
 
 // workerStats asks the launcher, with a short time limit. It is empty when the
@@ -163,7 +170,8 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		model = st.Model
 	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project,
-		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Cost: st.Cost, Worktree: wt, Branch: br}
+		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
+		Cost: st.Cost, Worktree: wt, Branch: br}
 	n.DiffStat, _ = d.worktreeFacts(w)
 	return n
 }
@@ -285,7 +293,10 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	d.wmu.Lock()
 	w.taskMsg = m.ID
 	var updated *protocol.WorkerInfo
-	if task := protocol.WorkerTaskSummary(m.Body); task != "" {
+	// The task in a list is the title: the first line of the FIRST task. A
+	// later request from the owner must not replace it. Only an older worker
+	// with no title yet takes the line of its first message.
+	if task := protocol.WorkerTaskSummary(m.Body); task != "" && w.taskText == "" {
 		w.taskText = task
 		if w.info != nil {
 			// Replace, never change in place: a response on another goroutine

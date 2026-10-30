@@ -320,6 +320,17 @@ func TestClaudeTranscriptStats(t *testing.T) {
 	if st.Tokens != "13 in, 11 out, 100 cache read, 5 cache write" || st.Model != "claude-haiku-5-5" {
 		t.Errorf("stats: %+v", st)
 	}
+	// The last assistant message is m2: its input plus cache read and write.
+	// A haiku 5 has a 1M context window.
+	if st.ContextTokens != 3 || st.ContextLimit != 1000000 || st.TotalTokens != 24 {
+		t.Errorf("context stats: %+v", st)
+	}
+	if got := claudeContextLimit("claude-sonnet-4-5"); got != 200000 {
+		t.Errorf("sonnet 4.5 limit = %d", got)
+	}
+	if got := claudeContextLimit("gpt-5"); got != 0 {
+		t.Errorf("unknown model limit = %d", got)
+	}
 	if st := claudeTranscriptStats(dir, "missing"); st != (workerStats{}) {
 		t.Errorf("stats of a missing transcript: %+v", st)
 	}
@@ -396,6 +407,20 @@ func TestPiWorkerLifecycle(t *testing.T) {
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the process and its child are gone", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
 	w.workerStopped(t, g, protocol.StopRequested)
+}
+
+// Pi's rpc mode answers get_session_stats with its tokens and the context
+// usage of the active model, so a running Pi worker shows both.
+func TestPiWorkerUsageReachesTheWorkersView(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startPiNode(t, g, shortSet)
+	w.register(t, newRepo(t, "shop"))
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "FAKE:ignore keep working", Isolation: protocol.IsolationWorktree})
+	eventually(t, "the Pi worker's context and tokens", func() bool {
+		ws := w.workers(t)
+		return len(ws) == 1 && ws[0].SessionID == res.SessionID &&
+			ws[0].ContextTokens == 60000 && ws[0].ContextLimit == 200000 && ws[0].Tokens == 60000
+	})
 }
 
 // A Pi worker hands back with agent_handback (the extension has it), with the
@@ -559,7 +584,7 @@ func TestCodexWorkerLifecycle(t *testing.T) {
 	if n.From != res.SessionID || n.To != owner || n.ParentID != res.Task.ID {
 		t.Fatalf("notice: %+v", n)
 	}
-	for _, want := range []string{"status: done", "(codex, gpt-fake)", "tokens: 500 in, 200 out, 1000 cache read", protocol.ReportMarker, "codex done in " + repo} {
+	for _, want := range []string{"status: done", "(codex, gpt-fake)", "tokens: 500 in, 200 out, 1000 cache read", "context at end: 2k / 200k (1%)", protocol.ReportMarker, "codex done in " + repo} {
 		if !strings.Contains(n.Body, want) {
 			t.Errorf("notice lacks %q:\n%s", want, n.Body)
 		}
@@ -647,8 +672,11 @@ func TestCodexWorkerRefusesOtherAgents(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "x"})
-	w.waitNotice(t, 1)
+	// Keep the turn open so the worker is still running when another agent
+	// sends to it. A hand-back would end it, and then the test would check the
+	// resume rule instead.
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow keep the turn open"})
+	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	stranger := dialLocal(t, w.sock)
 	stranger.mustCall("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_stranger", "cwd": "/w/x"})
 	stranger.AutoAck = true

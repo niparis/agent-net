@@ -482,12 +482,23 @@ func fakePi() {
 	writeRecord(cwd, "fake-pi.json", rec)
 	session := argValue(os.Args, "--session-id")
 	go fakeOCPlugin("pi", session, cwd)
-	// RPC mode ends when stdin closes.
-	io := bufio.NewReader(os.Stdin)
+	// RPC mode ends when stdin closes. It answers get_session_stats with the
+	// numbers of docs/rpc-commands.md.
+	in := bufio.NewReader(os.Stdin)
 	for {
-		if _, err := io.ReadByte(); err != nil {
+		line, err := in.ReadString('\n')
+		if err != nil {
 			os.Exit(0)
 		}
+		var cmd struct {
+			Type string `json:"type"`
+		}
+		if json.Unmarshal([]byte(line), &cmd) != nil || cmd.Type != "get_session_stats" {
+			continue
+		}
+		fmt.Fprintln(os.Stdout, `{"type":"response","command":"get_session_stats","success":true,"data":{`+
+			`"tokens":{"input":50000,"output":10000,"cacheRead":40000,"cacheWrite":5000,"total":105000},`+
+			`"cost":0.45,"contextUsage":{"tokens":60000,"contextWindow":200000,"percent":30}}}`)
 	}
 }
 
@@ -636,7 +647,11 @@ func fakeCodex() {
 					write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
 						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": "codex done in " + cwd + " (" + strconv.Itoa(len(text)) + " bytes)"}}})
 					write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{"threadId": thread, "turnId": turn,
-						"tokenUsage": map[string]any{"total": map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0}}}})
+						"tokenUsage": map[string]any{
+							"last":               map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0},
+							"total":              map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0},
+							"modelContextWindow": 200000,
+						}}})
 					write(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread,
 						"turn": map[string]any{"id": turn, "status": status, "error": errObj}}})
 				}()

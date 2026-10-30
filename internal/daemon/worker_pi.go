@@ -1,12 +1,15 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -68,7 +71,16 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close() // the process has its own copy
+	// The daemon keeps this end open, so Pi never sees the end of its input.
+	// It is also how the daemon asks for the session statistics.
+	w.piIn = in
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		in.Close()
+		return err
+	}
+	w.stdout = pw
+	w.piUsage = &piUsage{}
 	env := workerEnv(os.Environ(), map[string]string{
 		"AGENT_NET_WORKER": w.id,
 		"AGENT_NET_SOCKET": d.cfg.SocketPath,
@@ -77,10 +89,14 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if w.model != "" {
 		args = append(args, "--model", w.model)
 	}
-	w.discardStdout = true // the rpc event stream; stderr (with the errors) goes to the log
 	if err := d.spawnWorkerStdin(w, bin, args, env, in); err != nil {
+		in.Close()
+		pr.Close()
+		pw.Close()
 		return err
 	}
+	pw.Close()
+	go readPiUsage(w, pr)
 	// The extension registers the session (the daemon binds it by process
 	// group). If it does not, it is not installed and the worker cannot answer.
 	for {
@@ -94,6 +110,111 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		if d.gone(w) {
 			return errors.New("pi exited at start")
 		}
+	}
+}
+
+// piUsage holds the answer to the last get_session_stats command, and the
+// channel a waiting stats call listens on.
+type piUsage struct {
+	mu      sync.Mutex
+	last    workerStats
+	waiting chan struct{}
+}
+
+// readPiUsage reads Pi's rpc event stream. The only response it needs is
+// get_session_stats; the rest of the stream is ignored.
+func readPiUsage(w *worker, r *os.File) {
+	defer r.Close()
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 0, 1<<16), 8<<20)
+	for sc.Scan() {
+		var frame struct {
+			Type    string `json:"type"`
+			Command string `json:"command"`
+			Success bool   `json:"success"`
+			Data    struct {
+				Tokens struct {
+					Input      float64 `json:"input"`
+					Output     float64 `json:"output"`
+					CacheRead  float64 `json:"cacheRead"`
+					CacheWrite float64 `json:"cacheWrite"`
+				} `json:"tokens"`
+				ContextUsage *struct {
+					Tokens        *float64 `json:"tokens"`
+					ContextWindow float64  `json:"contextWindow"`
+				} `json:"contextUsage"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(sc.Bytes(), &frame) != nil || frame.Type != "response" || frame.Command != "get_session_stats" || !frame.Success {
+			continue
+		}
+		t := frame.Data.Tokens
+		st := workerStats{Tokens: tokenText(t.Input, t.Output, 0, t.CacheRead, t.CacheWrite),
+			TotalTokens: int64(t.Input + t.Output)}
+		if c := frame.Data.ContextUsage; c != nil && c.Tokens != nil {
+			st.ContextTokens, st.ContextLimit = int64(*c.Tokens), int64(c.ContextWindow)
+		}
+		u := w.piUsage
+		if u == nil {
+			return
+		}
+		u.mu.Lock()
+		u.last = st
+		if u.waiting != nil {
+			close(u.waiting)
+			u.waiting = nil
+		}
+		u.mu.Unlock()
+	}
+}
+
+// stats asks Pi's rpc mode for its session statistics. Pi reports the tokens,
+// cost, and the context usage of the active model (get_session_stats in
+// docs/rpc-commands.md). The answer is short and usually there at once; a slow
+// or busy Pi keeps the last answer.
+func (piLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerStats {
+	d.wmu.Lock()
+	in, u := w.piIn, w.piUsage
+	d.wmu.Unlock()
+	if in == nil || u == nil {
+		return workerStats{}
+	}
+	u.mu.Lock()
+	ch := make(chan struct{})
+	u.waiting = ch
+	u.mu.Unlock()
+	if _, err := in.Write([]byte("{\"type\":\"get_session_stats\"}\n")); err != nil {
+		u.mu.Lock()
+		if u.waiting == ch {
+			u.waiting = nil
+		}
+		last := u.last
+		u.mu.Unlock()
+		return last
+	}
+	select {
+	case <-ch:
+	case <-time.After(500 * time.Millisecond):
+	case <-ctx.Done():
+	}
+	u.mu.Lock()
+	if u.waiting == ch {
+		u.waiting = nil
+	}
+	last := u.last
+	u.mu.Unlock()
+	return last
+}
+
+// end closes the pipes of a Pi worker. The process is killed by the worker
+// end; closing its input here lets the reader finish too.
+func (piLauncher) end(d *Daemon, w *worker) {
+	d.wmu.Lock()
+	in := w.piIn
+	w.piIn = nil
+	d.wmu.Unlock()
+	if in != nil {
+		in.Close()
 	}
 }
 

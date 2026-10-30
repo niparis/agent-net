@@ -305,7 +305,9 @@ func (claudeLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerSta
 }
 
 // claudeTranscriptStats sums the usage of the assistant messages in the
-// transcript ~/.claude/projects/<folder>/<session>.jsonl.
+// transcript ~/.claude/projects/<folder>/<session>.jsonl. The context is the
+// usage of the last assistant message, and the limit comes from
+// claudeContextLimit.
 func claudeTranscriptStats(projectsDir, session string) workerStats {
 	matches, _ := filepath.Glob(filepath.Join(projectsDir, "*", session+".jsonl"))
 	if len(matches) == 0 {
@@ -319,6 +321,7 @@ func claudeTranscriptStats(projectsDir, session string) workerStats {
 	type usage struct{ in, out, cr, cw float64 }
 	byMsg := map[string]usage{} // a message is written once per content block: keep the last
 	model := ""
+	var last usage
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
 	n := 0
@@ -346,6 +349,7 @@ func claudeTranscriptStats(projectsDir, session string) workerStats {
 		}
 		u := line.Message.Usage
 		byMsg[id] = usage{u.In, u.Out, u.CR, u.CW}
+		last = byMsg[id]
 		if line.Message.Model != "" && !strings.HasPrefix(line.Message.Model, "<") {
 			model = line.Message.Model
 		}
@@ -354,5 +358,29 @@ func claudeTranscriptStats(projectsDir, session string) workerStats {
 	for _, u := range byMsg {
 		t.in, t.out, t.cr, t.cw = t.in+u.in, t.out+u.out, t.cr+u.cr, t.cw+u.cw
 	}
-	return workerStats{Tokens: tokenText(t.in, t.out, 0, t.cr, t.cw), Model: model}
+	st := workerStats{Tokens: tokenText(t.in, t.out, 0, t.cr, t.cw), Model: model,
+		ContextTokens: int64(last.in + last.cr + last.cw), ContextLimit: claudeContextLimit(model),
+		TotalTokens: int64(t.in + t.out)}
+	return st
+}
+
+// claudeContextLimit is the context window of a Claude model, by family. The
+// values are the ones in Claude Code 2.1.314's model list: the 5 series and
+// Opus 4.7 and later have 1M, the rest have 200k. An unknown model has no
+// limit (0), so the views show no percentage.
+func claudeContextLimit(model string) int64 {
+	m := strings.ToLower(model)
+	switch {
+	case strings.HasPrefix(m, "claude-haiku-5"),
+		strings.HasPrefix(m, "claude-sonnet-5"),
+		strings.HasPrefix(m, "claude-opus-5"),
+		strings.HasPrefix(m, "claude-opus-4-7"),
+		strings.HasPrefix(m, "claude-opus-4-8"),
+		strings.HasPrefix(m, "claude-fable-5"),
+		strings.HasPrefix(m, "claude-mythos-5"):
+		return 1_000_000
+	case strings.HasPrefix(m, "claude-"):
+		return 200_000
+	}
+	return 0
 }
