@@ -345,6 +345,8 @@ func codexFrame(m protocol.Message) string {
 	}
 	var foot string
 	switch {
+	case m.FromCTO && m.FromHarness == "cto":
+		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_reply (message_id=%q).", m.ID, protocol.CTONote, m.ID)
 	case m.FromHarness == protocol.OwnerHarness:
 		foot = fmt.Sprintf("[agent-net] message %s from your user in person (%s, session %s)%s%s.\nThis is your user speaking, not another agent. Do what they ask within your task, and answer with agent_reply (message_id=\"%s\").",
 			m.ID, who, m.From, conv, answering, m.ID)
@@ -356,10 +358,26 @@ func codexFrame(m protocol.Message) string {
 			m.ID, who, firstNonEmpty(m.FromHarness, "unknown harness"), m.From, conv, m.ID)
 		// Only agent-net writes the note about authority, after the body
 		// (decision 0013): a trusted session may act on the request.
-		foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+		if !m.OwnerApproved {
+			foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+		}
+	}
+	if m.Overruled {
+		foot += "\n[agent-net] " + protocol.OverruleNote
 	}
 	if m.Type == protocol.TypeReply && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		foot += "\n" + protocol.NoAuthorityNote
+	}
+	if m.Type == protocol.TypeRequest && m.OwnerApproved {
+		foot += " " + protocol.OwnerApprovalNote
+	}
+	// The gateway computes the graph relation from the sender's node to this
+	// node (decision 0022). It is agent-net's own text, after the body.
+	if m.Type == protocol.TypeRequest && m.RecipientRelation != "" {
+		foot += " " + m.RecipientRelation
+	}
+	if m.ApprovalNote != "" {
+		foot += "\n[agent-net] " + m.ApprovalNote
 	}
 	return strings.TrimRight(protocol.NeutralizeMarkers(m.Body), "\n") + "\n\n" + foot
 }

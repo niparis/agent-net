@@ -64,7 +64,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	want := "agent_announce agent_get agent_handback agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_project_add agent_project_list agent_reply agent_send agent_start agent_stop"
+	want := "agent_announce agent_get agent_handback agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_project_add agent_project_list agent_propose_idea agent_reply agent_request_approval agent_send agent_start agent_stop"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("tools: %v", names)
 	}
@@ -143,5 +143,18 @@ func TestToolsForwardToDaemon(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestReplyOutcomeForwarded(t *testing.T) {
+	var got map[string]any
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		raw, _ := json.Marshal(params)
+		json.Unmarshal(raw, &got)
+		return json.RawMessage(`{}`), nil
+	})
+	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_reply", Arguments: map[string]any{"message_id": "m", "body": "no", "outcome": "escalate", "reason": "unclear", "recommendation": "ask"}})
+	if err != nil || r.IsError || got["outcome"] != "escalate" || got["reason"] != "unclear" || got["recommendation"] != "ask" {
+		t.Fatalf("reply: %+v %v %+v", r, err, got)
 	}
 }

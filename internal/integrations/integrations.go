@@ -29,6 +29,7 @@ const (
 	PolicyHook   = protocol.IntegrationPolicyHook
 	NeedsHook    = protocol.IntegrationNeedsHook
 	WorkersMod   = protocol.IntegrationWorkersMod
+	QuotaAXI     = protocol.IntegrationQuotaAXI
 )
 
 // Spec is one integration line.

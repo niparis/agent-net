@@ -229,8 +229,18 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			return
 		case <-t.C:
 			// Expire writes one log line per message.
-			if _, err := g.store.Expire(); err != nil {
+			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)
+			} else if n > 0 {
+				g.mu.Lock()
+				nodes := make([]string, 0, len(g.conns))
+				for id := range g.conns {
+					nodes = append(nodes, id)
+				}
+				g.mu.Unlock()
+				for _, id := range nodes {
+					g.dispatchPending(ctx, id, false)
+				}
 			}
 		}
 	}
@@ -264,6 +274,8 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
+	mux.HandleFunc("GET /v1/cto-settings", g.handleCTOSettingsGet)
+	mux.HandleFunc("PUT /v1/cto-settings", g.handleCTOSettingsSet)
 	mux.HandleFunc("GET /v1/integrations", g.handleIntegrationsGet)
 	mux.HandleFunc("PUT /v1/integrations", g.handleIntegrationsSet)
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
@@ -409,15 +421,18 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 	}
 }
 
-// msgSendMayResume tells whether a msg.send is addressed to an ended worker.
-// Only then can the gateway ask the machine to start the worker again.
+// msgSendMayResume tells whether a msg.send is addressed to a worker session.
+// The worker may end between this check and the handler, which then asks the
+// machine to start it again; that ask waits for this same node's answer, so
+// the handler must not run in the read loop. Any worker session qualifies:
+// online or not, the handler decides whether a resume is needed.
 func (g *Gateway) msgSendMayResume(raw []byte) bool {
 	var p protocol.MsgSend
 	if json.Unmarshal(raw, &p) != nil || p.Recipient == "" {
 		return false
 	}
 	a, ok, err := g.store.Agent(p.Recipient)
-	return err == nil && ok && a.Worker != nil && !a.Online
+	return err == nil && ok && a.Worker != nil
 }
 
 // answer handles one frame and writes its result. A link error ends the loop.
@@ -548,6 +563,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "query.nodes":
 		return g.NodesInfo()
 
+	case "query.graph":
+		return g.handleGraphView(raw)
+	case "graph.read":
+		return g.handleGraphRead(raw)
+
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {
@@ -607,6 +627,104 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		st.Event("session.trust", nc.id, p.SessionID, "", "on="+strconv.FormatBool(p.On))
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
+
+	case "cto.graph_latest":
+		id, err := st.CTOLastGraphID()
+		return map[string]int64{"id": id}, err
+	case "cto.graph_history":
+		var p struct {
+			After int64 `json:"after"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.After < 0 {
+			return nil, reject("bad CTO history")
+		}
+		return st.CTOGraphHistory(p.After)
+	case "held.list":
+		messages, err := st.HeldRequests()
+		return map[string]any{"messages": messages}, err
+	case "held.answer":
+		p, err := decode[protocol.HeldAnswer](raw)
+		if err != nil {
+			return nil, reject("bad held.answer")
+		}
+		m, err := st.AnswerHeld(p.MessageID, p.Action)
+		if err != nil {
+			return nil, err
+		}
+		if m.OwnerApproved {
+			g.dispatch(ctx, m)
+		} else {
+			if a, ok, err := st.Agent(m.From); err == nil && ok && a.Online {
+				g.dispatchPending(ctx, a.NodeID, false)
+			}
+		}
+		return map[string]any{"message": m}, nil
+
+	case "cto.capabilities":
+		return map[string]bool{"attribution": true}, nil
+	case "graph.get":
+		return st.Graph()
+	case "charter.set":
+		p, err := decode[protocol.CharterSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad charter.set")
+		}
+		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw))
+	case "charter.history":
+		p, err := decode[protocol.GraphHistoryRequest](raw)
+		if err != nil || p.Node == "" {
+			return nil, reject("bad charter.history")
+		}
+		return st.CharterHistory(p.Node, p.Limit)
+	case "node.add", "node.remove":
+		p, err := decode[protocol.GraphNodeRequest](raw)
+		if err != nil || p.Name == "" {
+			return nil, reject("bad node request")
+		}
+		if typ == "node.add" {
+			err = st.AddArchitect(p.Name, graphActor(raw))
+		} else {
+			err = st.RemoveArchitect(p.Name, graphActor(raw))
+		}
+		return map[string]bool{"ok": true}, err
+	case "edge.set", "edge.remove":
+		p, err := decode[protocol.Edge](raw)
+		if err != nil {
+			return nil, reject("bad edge request")
+		}
+		if typ == "edge.set" {
+			err = st.SetEdge(p, graphActor(raw))
+		} else {
+			err = st.RemoveEdge(p, graphActor(raw))
+		}
+		return map[string]bool{"ok": true}, err
+	case "edge.history":
+		p, err := decode[protocol.GraphHistoryRequest](raw)
+		if err != nil {
+			return nil, reject("bad edge.history")
+		}
+		return st.EdgeHistory(p.Node, p.Limit)
+	case "graph.undo":
+		p, err := decode[protocol.GraphUndoFrame](raw)
+		if err != nil || p.HistoryID < 0 {
+			return nil, reject("bad graph.undo")
+		}
+		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
+	case "node.settings.get":
+		p, err := decode[protocol.NodeSettingsGetRequest](raw)
+		if err != nil || p.Node == "" {
+			return nil, reject("bad node.settings.get")
+		}
+		return st.NodeSettings(p.Node)
+	case "node.settings.set":
+		p, err := decode[protocol.NodeSettingsSetRequest](raw)
+		if err != nil || p.Node == "" || p.Setting == "" {
+			return nil, reject("bad node.settings.set")
+		}
+		if err := st.SetNodeSetting(p.Node, p.Setting, p.Value, graphActor(raw)); err != nil {
+			return nil, err
+		}
+		return st.NodeSettings(p.Node)
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)
@@ -673,7 +791,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || a.NodeID != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation}, nil
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a)}, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)
@@ -685,6 +803,56 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]any{"profile": prof}, nil
+
+	case "inbox.create":
+		var p struct {
+			SessionID      string `json:"session_id"`
+			Kind           string `json:"kind"`
+			Text           string `json:"text"`
+			Recommendation string `json:"recommendation"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.create")
+		}
+		if p.Kind != "approval" && p.Kind != "feature_idea" {
+			return nil, reject("invalid inbox kind")
+		}
+		agent, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
+			return nil, reject("session does not belong to this node")
+		}
+		var item protocol.InboxItem
+		if p.Kind == "approval" {
+			item, err = st.RequestWrittenApproval(agent.SessionID, agent.Repo.Project, protocol.ApprovalRequest{Action: p.Text, Recommendation: p.Recommendation})
+		} else {
+			item, err = st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation})
+		}
+		return map[string]any{"item": item}, err
+
+	case "inbox.list":
+		items, err := st.ListInbox()
+		return map[string]any{"items": items}, err
+
+	case "inbox.answer":
+		var p struct {
+			ID     string `json:"id"`
+			Answer string `json:"answer"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.answer")
+		}
+		item, err := st.AnswerInbox(p.ID, p.Answer)
+		if err != nil {
+			return nil, err
+		}
+		node, err := st.SessionNode(item.SessionID)
+		if err == nil {
+			g.dispatchPending(ctx, node, false)
+		}
+		return map[string]any{"item": item}, nil
 
 	case "msg.send":
 		p, err := decode[protocol.MsgSend](raw)
@@ -722,7 +890,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 			return nil, err
 		}
-		if created {
+		if created && m.State != protocol.StateHeld {
 			g.dispatch(ctx, m)
 		}
 		if cur, ok, _ := st.Message(m.ID); ok {
@@ -750,6 +918,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("message %q is not addressed to this node", p.MessageID)
 		}
 		return nil, st.ApplyDelivery(p.MessageID, p.State, p.Detail)
+
+	case "outcome.resolve":
+		p, err := decode[protocol.OutcomeResolution](raw)
+		if err != nil {
+			return nil, reject("bad resolution")
+		}
+		node, err := st.SessionNode(p.Owner)
+		if err != nil || node != nc.id {
+			return nil, reject("owner session not on this node")
+		}
+		m, err := st.ResolveOutcome(p.ReplyID, p.Owner, p.Action)
+		if err != nil {
+			return nil, err
+		}
+		if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+		return map[string]any{"message": m}, nil
+
+	case "query.outcome_inbox":
+		entries, err := st.OutcomeInbox()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"entries": entries}, nil
 
 	case "query.agents":
 		p, err := decode[protocol.QueryAgents](raw)
@@ -832,9 +1025,25 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	}
 	// The gateway, and only the gateway, says whether the recipient is trusted.
 	m.RecipientTrust = false
-	if a, ok, err := g.store.Agent(m.To); err == nil && ok {
+	if m.Type == protocol.TypeRequest {
+		rule, err := g.store.RequestRule(m.From, m.To)
+		if err != nil {
+			g.logLine("error", "where", "request rule", "err", err)
+			return
+		}
+		if rule == "ask" && !m.OwnerApproved {
+			if _, err := g.store.db.Exec(`UPDATE messages SET state='held' WHERE id=? AND state IN ('stored','dispatched')`, m.ID); err != nil {
+				g.logLine("error", "where", "hold message", "err", err)
+			}
+			return
+		}
+		m.RecipientTrust = rule == "auto"
+	} else if a, ok, err := g.store.Agent(m.To); err == nil && ok {
 		m.RecipientTrust = a.PeerTrust
 	}
+	// The relation from the sender's node to the recipient's node is graph
+	// data, computed here and never set by a sender (decision 0022).
+	m.RecipientRelation = g.relationForDelivery(m)
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {
 		return
@@ -859,4 +1068,15 @@ func (g *Gateway) dispatchPending(ctx context.Context, nodeID string, includeDis
 	for _, m := range msgs {
 		g.sendDeliver(ctx, nodeID, m)
 	}
+}
+
+// The authenticated daemon supplies the actor after its local owner checks.
+func graphActor(raw json.RawMessage) string {
+	var p struct {
+		By string `json:"by"`
+	}
+	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
+		return "cto"
+	}
+	return "owner"
 }

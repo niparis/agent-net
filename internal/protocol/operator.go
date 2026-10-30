@@ -33,6 +33,7 @@ const (
 	// owner's command line or TUI, never an agent session.
 	OpUsage        = "usage"         // takes nothing, answers UsageResult
 	OpUsageTop     = "usage_top"     // takes QueryUsageTop, answers UsageTop
+	OpGraphView    = "graph_view"    // takes QueryGraph, answers GraphView
 	OpSessionText  = "session_text"  // takes TextQuery, answers TextPage
 	OpCounts       = "counts"        // takes nothing, answers SessionCounts
 	OpSessionEnter = "session_enter" // takes EnterRequest, answers EnterPlan
@@ -66,9 +67,31 @@ const (
 	OpWorkerHandback = "worker_handback" // takes WorkerHandbackRequest, answers WorkerHandbackResult
 )
 
+// Graph operator methods are available only to the owner.
+const (
+	OpHeldList       = "held_list"
+	OpHeldAnswer     = "held_answer"
+	OpGraphGet       = "graph_get"
+	OpCharterSet     = "charter_set"
+	OpCharterHistory = "charter_history"
+	OpNodeAdd        = "node_add"
+	OpNodeRemove     = "node_remove"
+	OpEdgeSet        = "edge_set"
+	OpEdgeRemove     = "edge_remove"
+	OpEdgeHistory    = "edge_history"
+	OpGraphUndo      = "graph_undo"
+	// OpNodeSettingsGet and OpNodeSettingsSet read and change a node's
+	// overrides of its maturity defaults (decision 0022). Owner only, no
+	// agent tool.
+	OpNodeSettingsGet = "node_settings_get"
+	OpNodeSettingsSet = "node_settings_set"
+)
+
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
+	OpNodeSettingsGet, OpNodeSettingsSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
@@ -403,4 +426,10 @@ func CleanNodeName(s string) (string, error) {
 		}
 	}
 	return s, nil
+}
+
+// HeldAnswer is an owner decision for a request awaiting approval.
+type HeldAnswer struct {
+	MessageID string `json:"message_id"`
+	Action    string `json:"action"`
 }

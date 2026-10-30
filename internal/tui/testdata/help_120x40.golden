@@ -7,9 +7,11 @@ Keys ─────────────────────────
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
   x                    stop the selected worker (asks y/n)
-  t                    peer trust on/off: act on requests of other agents (y/n)
+  t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
+  M                    map: charters, maturity, edges and history (read only)
+  C                    CTO: chat, new conversation and undo graph changes
   N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
   o, d                 o: show offline and dormant; d: detail takes the feed room
@@ -17,17 +19,14 @@ Keys ─────────────────────────
   tab                  message feed and back; enter opens the conversation of the local end
   v, l                 v: open the body of the message; l: feed events (worker, all, none)
   r                    refresh now
-
  Conversation
   up/down, pgup/pgdn   scroll; at the top, older entries load
   g                    go to the oldest loaded entry
   G, end, f            back to the end and follow new entries
   esc                  back to the sessions
-
  Everywhere
   ?                    this help
   q, ctrl+c            quit
-
  Reading the screen
   CPU                  machine: all cores. session: one core. (x%): 5 min avg
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
@@ -37,4 +36,5 @@ Keys ─────────────────────────
   … ✓ ↩ ✗              message state: pending, delivered, replied, failed
   ↳                    a reply, under the message it answers
   "..."                the first line of the body, when this machine is in the conversation
+
 esc close help  q quit

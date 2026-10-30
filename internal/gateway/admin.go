@@ -102,6 +102,9 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 		_, nodes[i].Online = g.conns[nodes[i].NodeID]
 	}
 	g.mu.Unlock()
+	for i := range nodes {
+		nodes[i].Quotas = g.nodeQuotas(nodes[i].NodeID)
+	}
 	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, nil
 }
 

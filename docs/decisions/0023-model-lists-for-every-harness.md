@@ -22,8 +22,11 @@ the failed start still counted towards the start gap.
   through.
 - **Resolution.** The gateway uses the same resolver for every harness,
   against the list of the machine that runs the worker. The start result says
-  `model: luna 6 -> gpt-6-luna`. An exact id still wins. A Pi `:thinking`
-  suffix is kept while the base id is resolved.
+  `model: luna 6 -> gpt-6-luna`. An exact id still wins. A Pi `:thinking` or
+  Codex `:effort` suffix is kept while the base id is resolved. Decision
+  0022's quota rules stay in the same resolver: a loose name skips an
+  exhausted or high provider first, and the quota-pace warning ranks between
+  a recent success and the other models.
 - **Recent success.** A model that finished a worker with a hand-back status
   done on that node and harness ranks before models without such a success.
   The gateway remembers it for `ModelSuccessDays` in `model_successes`, like

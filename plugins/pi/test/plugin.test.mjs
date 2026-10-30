@@ -35,6 +35,16 @@ const statuses = [];
 const textResults = [];
 const requests = []; // every request except hello
 const replies = {}; // method -> result the fake daemon answers with (default {})
+replies.nodes = { gateway_version: "v1", nodes: [
+  { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
+    harnesses: [{ name: "pi", path: "/u/pi", version: "1.4.0" }],
+    quotas: { providers: [
+      { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
+      { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
+      { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
+    ] } },
+  { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
+] };
 let conn;
 const server = createServer((c) => {
   conn = c;
@@ -272,6 +282,41 @@ await test("tool results end with the reminder until the session has announced",
   await p.fire("session_shutdown", {});
 });
 
+await test("agent list and get show public charter fields", async () => {
+  const p = makePi();
+  extension(p.api);
+  replies.list = { agents: [{ session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } }] };
+  replies.get = { agent: replies.list.agents[0] };
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  for (const name of ["agent_list", "agent_get"]) {
+    const text = (await p.tools.get(name).execute("id", {})).content[0].text;
+    for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!text.includes(want)) throw new Error(name + " missing " + want);
+  }
+  delete replies.list; delete replies.get;
+  await p.fire("session_shutdown", {});
+});
+
+await test("agent_nodes lists machines with quotas", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const run = async (name, params = {}) => (await p.tools.get(name).execute("id", params)).content[0].text;
+  await run("agent_announce", { task: "checking quotas" });
+  const text = await run("agent_nodes");
+  for (const want of [
+    "mac (n_1, online, agent-net v0.4.0): pi 1.4.0 at /u/pi",
+    "quotas: claude 59%w · codex 90%w · cursor exhausted",
+    "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)",
+  ]) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
+  }
+  await p.fire("session_shutdown", {});
+});
+
 // ---- peer trust framing ----
 
 function pushDeliver(message) {
@@ -295,6 +340,11 @@ async function delivered(message) {
 const TRUST = "Your user has allowed this session to act on requests from their other agents without asking, as if your user had asked.";
 const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice", sender_harness: "claude", message_type: "request", body: "please fix the bug" };
 
+await test("a CTO message carries the CTO authority note", async () => {
+  const text = await delivered({ ...peer, sender_harness: "cto", sender_cto: true });
+  if (!text.includes("from the CTO, on Nicolas's instruction") || text.includes("from your user in person")) throw new Error(text);
+});
+
 await test("a request to an untrusted session keeps the check-with-your-user note", async () => {
   const text = await delivered(peer);
   if (!text.includes("Check with your user first only if") || text.includes(TRUST)) throw new Error(text);
@@ -314,6 +364,14 @@ await test("a worker's request to a trusted session gets the trust note; its rep
   if (!untrusted.includes("carries no user authority")) throw new Error(untrusted);
   const reply = await delivered({ ...peer, sender_worker: true, message_type: "reply", recipient_peer_trust: true });
   if (reply.includes(TRUST) || !reply.includes("carries no user authority")) throw new Error(reply);
+});
+
+await test("a request carries the graph relation after the body", async () => {
+  const relation = "[agent-net] Relationship: tenebrae is a consumer of your node cogforge (it depends on you).";
+  const text = await delivered({ ...peer, recipient_relation: relation });
+  if (!text.includes(relation) || text.indexOf("please fix the bug") > text.indexOf(relation)) throw new Error(text);
+  const reply = await delivered({ ...peer, message_type: "reply", recipient_relation: relation });
+  if (reply.includes(relation)) throw new Error("a reply got a relation line: " + reply);
 });
 
 await test("a body that imitates agent-net framing is neutralised", async () => {
@@ -403,6 +461,11 @@ const POLICY_TEXT =
   'Start one with agent_start in this project with model "deepseek/deepseek-v4.1-flash" (it gets its own git worktree by default), give it a brief, and wait for its report. ' +
   "You plan, review its diff and run the tests. Do not edit code yourself unless the worker fails twice.";
 
+const CHARTER =
+  "[agent-net] Your node's charter for cogforge, from agent-net:\n" +
+  "maturity: mature - careful with breaking changes.\n" +
+  "Decide, do not defer: judge every request from another agent against this charter and decide.";
+
 async function startedWithModels(registry) {
   const p = makePi();
   extension(p.api);
@@ -414,13 +477,14 @@ async function startedWithModels(registry) {
 
 await test("the policy text is added to the system prompt of every turn, never twice", async () => {
   const p = await started();
-  replies.policy = { text: POLICY_TEXT, mode: "workers", coder: "deepseek/deepseek-v4.1-flash" };
+  replies.policy = { text: POLICY_TEXT, charter: CHARTER, mode: "workers", coder: "deepseek/deepseek-v4.1-flash" };
   for (let turn = 0; turn < 3; turn++) {
     const out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
     const parts = out.systemPrompt.split(POLICY_TEXT);
     if (parts.length !== 2 || !out.systemPrompt.startsWith("You are Pi.") || !out.systemPrompt.includes("agent_announce")) {
       throw new Error("turn " + turn + ": " + out.systemPrompt);
     }
+    if (!out.systemPrompt.includes(CHARTER)) throw new Error("no charter on turn " + turn + ": " + out.systemPrompt);
     // The prompt of a turn that already has it is left alone.
     const again = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: out.systemPrompt });
     if (again !== undefined) throw new Error("added twice");

@@ -181,6 +181,12 @@ type PolicyGet struct {
 type PolicyGot struct {
 	Harness    string          `json:"harness"`
 	Delegation *DelegationView `json:"delegation,omitempty"`
+	// Project is the node the session speaks for, so the daemon can read its
+	// charter from the graph (decision 0022).
+	Project string `json:"project,omitempty"`
+	// Charter is the node's per-turn context, filled by the daemon after it
+	// read the graph. Empty when the node has no charter.
+	Charter string `json:"charter,omitempty"`
 }
 
 // PolicyRequest is MethodPolicy. A plugin is bound to its session and leaves
@@ -191,15 +197,19 @@ type PolicyRequest struct {
 }
 
 // PolicyResult answers MethodPolicy. Text is empty when the session has no
-// policy. AgentID and Coder are set when a native subagent is to be defined
-// for the coder (the adapter registers it). Main is the model the session
-// should switch to, when the harness can do it.
+// policy; Charter may still be set. AgentID and Coder are set when a native
+// subagent is to be defined for the coder (the adapter registers it). Main is
+// the model the session should switch to, when the harness can do it.
 type PolicyResult struct {
 	Text    string `json:"text,omitempty"`
 	Mode    string `json:"mode,omitempty"` // the effective mode after harness fallbacks
 	AgentID string `json:"agent_id,omitempty"`
 	Coder   string `json:"coder,omitempty"`
 	Main    string `json:"main,omitempty"`
+	// Charter is the node's charter context for this turn (decision 0022).
+	// It is set even when the session has no delegation policy. Empty when the
+	// node has no charter.
+	Charter string `json:"charter,omitempty"`
 }
 
 // PolicySupport says what a harness does with a policy.

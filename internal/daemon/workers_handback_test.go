@@ -207,11 +207,12 @@ func TestWorkerTimedOutSendsANotice(t *testing.T) {
 	// The same for the longest run time.
 	g2 := startGateway(t, t.TempDir(), "")
 	set = shortSet
-	set.MaxAge = 400 * time.Millisecond
+	set.MaxAge = time.Hour
 	w2 := startWorkerNode(t, g2, set, nil)
 	repo2 := newRepo(t, "shop")
 	w2.register(t, repo2)
 	w2.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	ageWorkers(w2, 2*time.Hour)
 	if n := w2.waitNotice(t, 1)[0]; !strings.Contains(n.Body, "status: timed out") || !strings.Contains(n.Body, "longest time allowed") {
 		t.Errorf("max age notice:\n%s", n.Body)
 	}

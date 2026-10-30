@@ -190,7 +190,8 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 // workerStartCall asks the gateway to start a worker, then sends the task as
 // a message from the caller.
-func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
+func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string, fromCTO ...bool) (*protocol.WorkerStartResult, error) {
+	cto := len(fromCTO) > 0 && fromCTO[0]
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
 	p.Continue = strings.TrimSpace(p.Continue)
 	if p.Continue != "" {
@@ -207,7 +208,14 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return nil, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}
 	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
-	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath})
+	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
+	var data json.RawMessage
+	var err error
+	if cto {
+		data, err = d.ctoAttributedCall(cctx, "worker.start", frame)
+	} else {
+		data, err = d.call(cctx, "worker.start", frame)
+	}
 	if err != nil {
 		return nil, tooOldGateway(err)
 	}
@@ -231,8 +239,9 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if ans.Task != "" {
 		task = ans.Task // a continued worker gets the old first task
 	}
-	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithPermissions(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, ans.Permissions)})
+	charter := d.charterBrief(ctx, ans.Project)
+	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest, FromCTO: cto,
+		Body: protocol.WorkerTaskBodyWithCharter(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions)})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}
@@ -300,6 +309,8 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	var data any
 	var err error
 	switch h.Type {
+	case "cto.worker_capabilities":
+		data = map[string]bool{"attribution": true}
 	case "worker.launch":
 		var p protocol.WorkerLaunch
 		if err = json.Unmarshal(raw, &p); err == nil {

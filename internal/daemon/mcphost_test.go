@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,8 +14,10 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/testmcp/tools"
+	"github.com/niparis/agent-net/internal/tui"
 )
 
 const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
@@ -21,8 +25,23 @@ const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
 // TestMain lets the test binary double as a stdio MCP server: a hosted server
 // is started with this binary and the helper variable set.
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "fake-tui" {
+		if err := tui.Run(context.Background(), tui.NewDaemonSource(os.Getenv("AGENT_NET_SOCKET"))); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if os.Getenv(helperEnv) != "" {
 		if err := tools.New().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "cto-mcp" {
+		if err := mcpserver.RunCTO(context.Background(), os.Getenv("AGENT_NET_SOCKET"), "test"); err != nil {
+			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
@@ -34,6 +53,14 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == "auth" {
 		if os.Args[2] == "export" {
 			os.Stdout.WriteString("[]")
+		} else if os.Args[2] == "import" && os.Getenv("FAKE_OC_AUTH_RECORD") == "1" {
+			data, _ := io.ReadAll(os.Stdin)
+			if string(data) != "[]" {
+				os.Exit(1)
+			}
+			if err := os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-imported-auth"), data, 0o600); err != nil {
+				os.Exit(1)
+			}
 		}
 		return
 	}
@@ -45,7 +72,19 @@ func TestMain(m *testing.M) {
 	hideRealHerdr()
 	// Do not run the programs of the machine the tests run on.
 	defaultDetect = func(context.Context) []protocol.HarnessInfo { return nil }
-	os.Exit(m.Run())
+	fakes, err := os.MkdirTemp("", "agent-net-fakes.")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv(envFakePids, fakes)
+	code := m.Run()
+	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: fake harness processes still alive after the tests (killed): %v\n", leaked)
+		code = 1
+	}
+	os.RemoveAll(fakes)
+	os.Exit(code)
 }
 
 // useHelper makes the daemon (this process) pass the helper variable on to hosted servers.
@@ -115,7 +154,7 @@ func toolNames(s protocol.MCPServer) string {
 
 func waitPush(t *testing.T, lc *localClient, method string) {
 	t.Helper()
-	deadline := time.After(20 * time.Second)
+	deadline := time.After(scaled(20 * time.Second))
 	for {
 		select {
 		case m := <-lc.Other:

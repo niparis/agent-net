@@ -213,7 +213,7 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 	})
 }
 
-var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: 8 * time.Second, MCPSettle: -1}
+var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
 
 // ---- the lifecycle ----
 
@@ -526,12 +526,22 @@ func TestWorkerWithGrowingTokensIsNotIdle(t *testing.T) {
 func TestWorkerEndsAtMaxAge(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
-	set.MaxAge = 400 * time.Millisecond
+	set.MaxAge = time.Hour
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	ageWorkers(w, 2*time.Hour)
 	w.workerStopped(t, g, protocol.StopMaxAge)
+}
+
+// ageWorkers moves the clock for the running workers after their task arrives.
+func ageWorkers(w *workerNode, age time.Duration) {
+	w.d.wmu.Lock()
+	defer w.d.wmu.Unlock()
+	for _, wk := range w.d.workers {
+		wk.startedAt = wk.startedAt.Add(-age)
+	}
 }
 
 // When the owner session ends and stays away longer than the grace time, its
@@ -772,7 +782,7 @@ func TestWorkerStartFailures(t *testing.T) {
 			t.Setenv(c.env, "1")
 			g := startGateway(t, t.TempDir(), "")
 			set := shortSet
-			set.StartTimeout = 1500 * time.Millisecond
+			set.StartTimeout = scaled(1500 * time.Millisecond)
 			w := startWorkerNode(t, g, set, nil)
 			repo := newRepo(t, "shop")
 			w.register(t, repo)

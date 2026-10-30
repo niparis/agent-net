@@ -65,24 +65,53 @@ func (s *Store) SetDelegation(sessionID, scope string, p protocol.DelegationPoli
 }
 
 // WorkerPermissions is the permission level of workers started in a project
-// on a machine (decision 0020): the owner's setting in the project policy, else
-// the default. Only the project policy counts: a session's own policy has no
-// workers level.
+// on a machine (decision 0020): the owner's setting in the project policy,
+// else the node's worker sandbox default from its maturity (decision 0022).
+// Only the project policy counts: a session's own policy has no workers level.
 func (s *Store) WorkerPermissions(nodeID, project string) (string, error) {
 	var raw string
 	err := s.db.QueryRow(`SELECT policy FROM project_policies WHERE node_id = ? AND project = ?`,
 		nodeID, strings.ToLower(strings.TrimSpace(project))).Scan(&raw)
+	if err == nil {
+		var p protocol.DelegationPolicy
+		if json.Unmarshal([]byte(raw), &p) == nil && protocol.ValidWorkerPermissions(p.Workers) && p.Workers != "" {
+			return p.Workers, nil
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	return s.nodeWorkerSandbox(project)
+}
+
+// nodeWorkerSandbox is the sandbox level a node's maturity gives its workers,
+// after the node's own override. A node with no maturity keeps today's default.
+func (s *Store) nodeWorkerSandbox(project string) (string, error) {
+	var maturity string
+	err := s.db.QueryRow(`SELECT value FROM graph_charter WHERE node = ? AND attr = 'maturity'`, project).Scan(&maturity)
 	if errors.Is(err, sql.ErrNoRows) {
 		return protocol.WorkersSandboxed, nil
 	}
 	if err != nil {
 		return "", err
 	}
-	var p protocol.DelegationPolicy
-	if json.Unmarshal([]byte(raw), &p) != nil || !protocol.ValidWorkerPermissions(p.Workers) {
-		return protocol.WorkersSandboxed, nil
+	settings := map[string]string{}
+	rows, err := s.db.Query(`SELECT setting,value FROM graph_node_settings WHERE node = ?`, project)
+	if err != nil {
+		return "", err
 	}
-	return p.Workers, nil
+	for rows.Next() {
+		var setting, value string
+		if err := rows.Scan(&setting, &value); err != nil {
+			rows.Close()
+			return "", err
+		}
+		settings[setting] = value
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	return protocol.NodeDefaults(maturity, settings).WorkerSandbox, nil
 }
 
 // projectPolicies loads every project default, keyed by node and project.

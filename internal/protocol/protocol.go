@@ -15,6 +15,7 @@ import (
 
 // Message states.
 const (
+	StateHeld       = "held"
 	StateStored     = "stored"
 	StateDispatched = "dispatched"
 	StateDelivered  = "delivered"
@@ -49,6 +50,7 @@ const (
 )
 
 type Message struct {
+	Overruled      bool      `json:"overruled,omitempty"`
 	ID             string    `json:"message_id"`
 	ConversationID string    `json:"conversation_id"`
 	ParentID       string    `json:"parent_message_id,omitempty"`
@@ -67,12 +69,20 @@ type Message struct {
 	FromHarness string `json:"sender_harness,omitempty"`
 	// FromWorker is true when the sender is a worker (a session that agent-net
 	// started). A receiving adapter frames its text as model output.
-	FromWorker bool `json:"sender_worker,omitempty"`
+	FromWorker    bool   `json:"sender_worker,omitempty"`
+	FromCTO       bool   `json:"sender_cto,omitempty"`
+	OwnerApproved bool   `json:"owner_approved,omitempty"`
+	ApprovalNote  string `json:"approval_note,omitempty"`
 	// RecipientTrust is filled by the gateway when it hands the message to
 	// the recipient's daemon: true when the owner turned peer trust on for the
 	// recipient session (decision 0012). A sender cannot set it: it is not a
 	// field of MsgSend, and the gateway overwrites it on every delivery.
 	RecipientTrust bool `json:"recipient_peer_trust,omitempty"`
+	// RecipientRelation is filled by the gateway when it hands a request to
+	// the recipient's daemon: the graph relation from the sender's node to the
+	// recipient's node (decision 0022). It is agent-net's own text, after the
+	// body, and a sender cannot set it.
+	RecipientRelation string `json:"recipient_relation,omitempty"`
 }
 
 // SessionInfo is what a daemon reports about one local session.
@@ -204,16 +214,27 @@ type Profile struct {
 }
 
 // AgentView keeps what the daemon verified apart from what the agent claims.
+// AgentCharter is the public part of a project's charter.
+type AgentCharter struct {
+	Purpose         string `json:"purpose,omitempty"`
+	PurposeFallback bool   `json:"purpose_fallback,omitempty"`
+	Maturity        string `json:"maturity,omitempty"`
+	Accepts         string `json:"accepts,omitempty"`
+	Refuses         string `json:"refuses,omitempty"`
+	FeatureRequests string `json:"feature_requests,omitempty"`
+}
+
 type AgentView struct {
-	SessionID string  `json:"session_id"`
-	NodeID    string  `json:"node_id"`
-	Hostname  string  `json:"hostname"`
-	Harness   string  `json:"harness"`
-	Cwd       string  `json:"cwd"`
-	Status    string  `json:"status"`
-	Online    bool    `json:"online"`
-	LastSeen  int64   `json:"last_seen"`
-	Profile   Profile `json:"profile"`
+	Charter   AgentCharter `json:"charter"`
+	SessionID string       `json:"session_id"`
+	NodeID    string       `json:"node_id"`
+	Hostname  string       `json:"hostname"`
+	Harness   string       `json:"harness"`
+	Cwd       string       `json:"cwd"`
+	Status    string       `json:"status"`
+	Online    bool         `json:"online"`
+	LastSeen  int64        `json:"last_seen"`
+	Profile   Profile      `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
 	// Mode and Model are what the session's daemon reported. Empty from an
@@ -326,6 +347,8 @@ type (
 		On        bool   `json:"on"`
 	}
 	MsgSend struct {
+		ReplyOutcome
+		FromCTO        bool   `json:"sender_cto,omitempty"`
 		Sender         string `json:"sender_session_id"`
 		Recipient      string `json:"recipient_session_id"`
 		Type           string `json:"message_type"`
@@ -407,6 +430,9 @@ type NodeView struct {
 	// Harnesses is what the node's daemon last reported. Nil means the node
 	// never reported (an older daemon).
 	Harnesses []HarnessInfo `json:"harnesses"`
+	// Quotas is the newest quota-axi reading of the machine, from its usage
+	// report (decision 0022). Nil when it has none or the report is stale.
+	Quotas *Quotas `json:"quotas,omitempty"`
 	// Launch says whether the machine accepts workers: nil when it never
 	// said (an older daemon), false after `setup --no-launch`.
 	Launch *bool `json:"launch,omitempty"`

@@ -40,6 +40,9 @@ type NodeConfig struct {
 	// a loose model name matches models of several providers (W17). For
 	// example ["opencode-go", "opencode"]. Edited by hand.
 	ModelProviders []string `json:"model_providers,omitempty"`
+	// QuotaAXI is an absolute path to quota-axi, when it is not on PATH or in
+	// ~/.local/bin (decision 0022). Edited by hand.
+	QuotaAXI string `json:"quota_axi,omitempty"`
 	// Workers sets the worker limits and timeouts. Absent fields take the
 	// defaults of decision 0002.
 	Workers *NodeWorkers `json:"workers,omitempty"`

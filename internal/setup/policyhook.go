@@ -143,9 +143,10 @@ func (r *runner) askPolicyHook() (yes, ok bool) {
 	defer tty.Close()
 	fmt.Fprintln(r.Out, "agent-net can add a second Claude Code hook to ~/.claude/settings.json. On each")
 	fmt.Fprintln(r.Out, "prompt it asks agent-net for the delegation policy that you set for the session")
-	fmt.Fprintln(r.Out, "in the TUI (for example: hand code changes to a subagent or a worker), and adds")
-	fmt.Fprintln(r.Out, "it as context. When you set a policy that names a subagent, agent-net also writes")
-	fmt.Fprintln(r.Out, "a marked file in ~/.claude/agents/. Uninstall removes both. No model is called.")
+	fmt.Fprintln(r.Out, "in the TUI (for example: hand code changes to a subagent or a worker) and the")
+	fmt.Fprintln(r.Out, "charter of the session's node, and adds them as context. When you set a policy")
+	fmt.Fprintln(r.Out, "that names a subagent, agent-net also writes a marked file in ~/.claude/agents/.")
+	fmt.Fprintln(r.Out, "Uninstall removes both. No model is called.")
 	fmt.Fprint(r.Out, "Add the hook? [y/N] ")
 	line, _ := bufio.NewReader(tty).ReadString('\n')
 	switch strings.ToLower(strings.TrimSpace(line)) {

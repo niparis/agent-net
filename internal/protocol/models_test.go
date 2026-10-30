@@ -79,6 +79,25 @@ func TestResolveModel(t *testing.T) {
 
 // A model that failed a worker recently ranks after every other match, whatever
 // its usage, so a retry of the same short request picks the other provider.
+// A reasoning or thinking level after the last colon is not part of the model
+// id: the name before it is resolved and the suffix is kept.
+func TestResolveModelKeepsEffortSuffix(t *testing.T) {
+	for _, c := range []struct{ query, want string }{
+		{"gpt 6.1 mini:low", "openai/gpt-6.1-mini:low"},
+		{"opencode/deepseek-v4.1-flash:xhigh", "opencode/deepseek-v4.1-flash:xhigh"},
+		{"deepseek v4 pro:high", "opencode-go/deepseek-v4-pro:high"},
+	} {
+		got, err := ResolveModel(c.query, testModels, nil, nil)
+		if err != nil || got != c.want {
+			t.Errorf("ResolveModel(%q) = %q, %v, want %q", c.query, got, err, c.want)
+		}
+	}
+	// A colon that is not a level is part of the id, as the dated suffix is.
+	if got, err := ResolveModel("deepseek 4.1 flash:1017", testModels, nil, nil); err != nil || !strings.HasSuffix(got, ":1017") {
+		t.Errorf("a numbered suffix: %q, %v", got, err)
+	}
+}
+
 func TestResolveModelDemotesRecentFailures(t *testing.T) {
 	usage := map[string]int{"opencode/deepseek-v4.1-flash": 3}
 	r, err := ResolveModelFailed("deepseek 4.1", testModels, usage, nil, nil)
@@ -139,6 +158,24 @@ func TestResolveModelRanksRecentSuccessFirst(t *testing.T) {
 	r, err = ResolveModelRanked("openai/gpt-6.1-luna", models, usage, nil, failed, ok)
 	if err != nil || r.Model != "openai/gpt-6.1-luna" || len(r.Demoted) != 0 {
 		t.Fatalf("exact: %+v, %v", r, err)
+	}
+}
+
+// A recent success still ranks first when the other match is on quota pace and
+// the successful model's provider is ahead of its reset clock.
+func TestResolveModelRankedQuotaKeepsSuccessFirst(t *testing.T) {
+	models := []string{"codex/gpt-6-luna", "openai/gpt-6.1"}
+	q := &Quotas{Providers: []QuotaProvider{
+		quotaAt("codex", window("weekly", "weekly", 40, QuotaPaceAhead)),
+		quotaAt("openai", window("weekly", "weekly", 20, QuotaPaceOnPace)),
+	}}
+	got, err := ResolveModelRankedQuota("gpt 6", models, nil, nil, nil, nil, q)
+	if err != nil || got.Model != "openai/gpt-6.1" {
+		t.Fatalf("on pace should win without a success: %+v, %v", got, err)
+	}
+	got, err = ResolveModelRankedQuota("gpt 6", models, nil, nil, nil, map[string]bool{"codex/gpt-6-luna": true}, q)
+	if err != nil || got.Model != "codex/gpt-6-luna" {
+		t.Fatalf("a recent success should beat the pace warning: %+v, %v", got, err)
 	}
 }
 

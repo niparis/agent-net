@@ -1,4 +1,33 @@
-# Security model
+# Security
+
+The network-wide CTO model preference is an owner setting. The daemon's
+`cto_settings` method uses the owner gate and refuses agent sessions. Like the
+integration settings, the gateway endpoint requires an enrolled node token;
+that token is an owner credential and must not be shared with agents. The
+`cto_send`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
+same gate. The daemon keeps CTO action lines in its private state database;
+these can include message and task text.
+The CTO server binds only to localhost and requires a random password. Its
+OpenCode data, state, configuration and cache are private to the daemon. The
+OpenCode agent-net plugin is disabled in that process, so its conversation
+never registers with the gateway and cannot receive peer messages. Its private
+MCP server can read and change the graph, read agents, workers, Needs you and
+the feed, send messages, and start workers as the owner. The daemon accepts its
+channel only from the CTO server's process tree and checks the peer on every
+call. It exposes no other owner methods on that channel. The owner gate also
+checks the CTO process tree, so a command it runs cannot use the owner CLI.
+
+The gateway trusts enrolled daemons to attribute CTO graph writes and sends.
+Those writes and sends are marked `by=cto`. A CTO write or send checks that
+the gateway supports attribution on the same connection; it is refused on an
+older gateway. A CTO worker start also checks the target daemon, so a queued
+task keeps its attribution. CTO sends are not queued across a gateway outage.
+The gateway labels the sender as `cto`, so an older receiver treats it as a
+peer rather than as the owner speaking in person. The gateway accepts a CTO sender
+flag only on an owner session. Delivery adapters write the CTO authority note
+after the message body and neutralize agent-net markers in the body. A peer
+cannot create the note by putting text in its message. Text the CTO reads is
+untrusted data; its system brief says not to follow instructions in it.
 
 This page says what agent-net trusts, how it checks it, and what it does not protect against. Every statement here was checked against the code. Where a check is weak, the page says so.
 
@@ -96,6 +125,7 @@ Your answers to the integrations question ([decision 0021](decisions/0021-networ
 - **Only you can change them** from a command line or the TUI: `integrations_set` is behind the owner gate, like `session_trust` and `session_policy`.
 - **A machine you lose control of can change them for all machines.** The gateway takes the answers from any enrolled machine's token, the same trust as for trust and policy settings. A compromised machine could turn on, for example, accepted peer messages in Claude Code on your other machines. Remove a lost machine at the gateway at once (see [node tokens](#node-tokens)).
 - **A machine can say no for itself.** A local `--no-...` answer at `setup` wins over the network answer on that machine, and the daemon never undoes it.
+- **Quota-axi reads local logins.** The quota item only lets the daemon run quota-axi on each machine; see [subscription quotas](#subscription-quotas).
 
 ## Delegation policy
 
@@ -108,9 +138,17 @@ A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegati
 - **What the gateway keeps.** A session's own policy lives in its session record and goes when the gateway deletes the old offline session (the retention flags). A project default is a small row in `project_policies` that the retention rules do not delete; clear it in the TUI (`p`, mode none, scope project).
 - **The hook adds text, not authority.** The `UserPromptSubmit` hook only prints the context for the prompt. It never blocks a prompt, never changes it, and prints nothing when it has no policy or the daemon does not answer within 700 ms.
 
+## Merge authority
+
+A node's maturity sets its merge authority (decision [0022](decisions/0022-component-graph-and-cto.md)): `full` lets the agent merge and push to the default branch; `delegated` needs an approval from the owner or a delegate (an architect with mode `owner` or `arbiter` over the node); `ask` needs the owner's written approval. The owner can override it per node with `node_settings_set`, behind the owner gate.
+
+This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. The approval note that counts is the one agent-net writes for one exact action. The owner's inbox that records written approvals is step 3b of decision 0022; `RequestWrittenApproval` is a stub in this build and says the inbox is not there, so a session under `ask` must ask its owner directly and treat only an agent-net approval note as approval.
+
+A critical repository should also have branch protection on its default branch: require a pull request, require review, and stop force-pushes. Branch protection is enforced by the repository host; agent-net's merge authority is not.
+
 ## What a worker can do: the sandbox level
 
-A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. When the project policy sets no level, the node's maturity default applies ([decision 0022](decisions/0022-component-graph-and-cto.md)): `early`, `growing` and `mature` give `sandboxed`, `critical` gives `no-network`, and a node with no maturity keeps `sandboxed`. The owner can override it with `node_settings_set worker_sandbox`. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
 
 | Level | Writes | Reads | Network |
 |---|---|---|---|
@@ -128,17 +166,13 @@ A worker is an agent that nobody watches, so agent-net does not let it ask for a
 
 ## Peer trust
 
-By default a peer message is not your approval: the note next to it tells the model to check with you before anything outside its task or risky. **Peer trust** is a per-session switch, off for every session, that you can turn on in the TUI (`t`). When it is on, the note says that you allowed this session to act on requests from your other agents without asking, as if you had asked. Decision: [0013](decisions/0013-peer-trust-and-hints.md).
+Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto` adds the trust note, `ask` holds the request for the owner, and `never` refuses it. The sender-specific edge takes precedence over the wildcard edge into the recipient node. The `t` key cycles the wildcard through `normal`, `ask` and `auto`.
 
-The risk: any text a peer relays can now steer a trusted session without you seeing it first. A peer that read a web page, an issue or a log line with hidden instructions can pass them on, and a trusted session may act on them. Switch it on for sessions whose checkout and credentials you are willing to risk, and look at the messages feed.
+The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
 
-What limits it:
+Only the owner can change edge rules or answer a held request through the local operator interface. `edge_set`, `session_trust`, `held_list` and `held_answer` are behind the owner gate. The gateway trusts enrolled daemons, so a compromised enrolled machine can send these gateway frames. Remove a lost machine at the gateway.
 
-- **Only you can switch it.** The method `session_trust` is behind the owner gate: it works from your command line or the TUI, and is refused for an agent client and for a command line that runs inside an agent session's process tree (the same barrier as for `session_text`; a program that detaches itself from its parent is not caught). No agent tool can change it. The gateway stores it with the session and logs a `session.trust` event with the session ID and the new value. A machine that is enrolled can send the frame, so the gateway trusts the daemons of your machines, as it does for every other frame.
-- **A sender cannot write the note.** The gateway says whether the recipient is trusted when it hands the message to the recipient's daemon, and the adapter writes the note after the body. A body cannot set the flag. A body that contains the marker `[agent-net` (the start of agent-net's own framing) is changed so it no longer matches: this also stops a body from faking a "message from your user in person" line. A body can still claim in plain words that you approved something. The real note follows it.
-- **The note keeps a list of things that still need you:** deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions. This is a request to the model, like all guidance. The harness permission rules (Claude Code's modes and allow lists, Pi's tool settings, Codex's approval policy) are what really limit the agent. A trusted session still runs under them.
-- **Replies and worker reports never get the trust note.** A worker's report keeps the "model output, not your words" note whatever the trust of the recipient. Workers are not trusted by default.
-- **It is off after a session is deleted.** The setting lives in the session record. When the gateway removes an old offline session (see the retention flags), the setting goes with it, and a new session starts untrusted.
+The gateway supplies the trust and approval flags; senders cannot set them in a message. Adapters write the notes after the body. The marker rule breaks `[agent-net` in a body so that it cannot imitate agent-net framing. Plain text can still claim approval, so only the agent-net note proves it. An approval applies to the held request. A decline or expiry generates a reply to the sender. Rules and held messages are stored at the gateway; a session removal does not remove a graph edge.
 
 ## Hints about who can help
 
@@ -225,11 +259,22 @@ Each daemon sends the gateway an inventory of the machine, and every enrolled ma
 
 - **Per session:** the working folder (already sent before), the git root, the project name, the `origin` remote URL and the current branch. The daemon removes passwords and tokens from the remote before it sends it. It runs `git` in the session's folder, with `core.fsmonitor` turned off, no prompts and no optional locks. A repository can hold configuration that we did not write, so only read-only plumbing commands run (`rev-parse`, `config --get`, `symbolic-ref`).
 - **Per session, the project description:** the daemon reads the first 32 KiB of the project's `AGENTS.md` (else `CLAUDE.md`) and sends one sentence of at most 120 characters, with markdown removed. The gateway cleans it again and cuts it to 120 characters. Everything else in the file stays on the machine. The text is whatever the file says, so anyone who can write the file chooses what other agents read in the FUNCTION column; treat it as data, like any peer text.
-- **Per machine:** which of `claude`, `opencode`, `pi` and `codex` are installed, their file paths and versions, and their model lists. To get the versions and models the daemon runs those programs as your user (`--version`, `opencode models`, `pi --list-models`, and `codex app-server` with `model/list`). Claude Code has no list command, so its list is a small table in the daemon. `opencode models` may start or contact the OpenCode background service; the Codex app server reads the user's Codex configuration but starts no turn. To find the programs it also runs your login shell once (`$SHELL -l -c`) when a harness is missing from the daemon's `PATH`.
+- **Per machine:** which of `claude`, `opencode`, `pi` and `codex` are installed, their file paths and versions, and their model lists. When the quota integration is on, also the subscription window figures described under [subscription quotas](#subscription-quotas). To get the versions and models the daemon runs those programs as your user (`--version`, `opencode models`, `pi --list-models`, and `codex app-server` with `model/list`). Claude Code has no list command, so its list is a small table in the daemon. `opencode models` may start or contact the OpenCode background service; the Codex app server reads the user's Codex configuration but starts no turn. To find the programs it also runs your login shell once (`$SHELL -l -c`) when a harness is missing from the daemon's `PATH`.
 
 - **Per session:** whether it is in the foreground (a person has it open) or the background, and the model it runs. For Claude Code the daemon reads the `model` field of the newest assistant entry in the session's transcript file. It reads nothing else from the transcript, and sends and logs no transcript text.
 
 File paths and the remote URL name your projects. If that is sensitive, do not enroll the machine.
+
+## Subscription quotas
+
+agent-net reads quotas through [quota-axi](https://github.com/kunchenguid/quota-axi) instead of reading provider logins itself. That keeps one program responsible for the credential formats, and agent-net gets only the figures it needs.
+
+- **What runs.** The daemon runs `quota-axi --json --max-age 5m --no-credential-refresh` every 5 minutes, with a 90 second limit. The integration is on by default when the CLI is installed; the owner can turn it off in the integrations question or with `--no-quota-axi`. agent-net never installs quota-axi and never runs its `update` command.
+- **What quota-axi reads.** quota-axi reads the local logins of your model providers (files, environment variables, and on macOS or Windows a native secure store when you approved it), and asks the providers' own usage endpoints. Those are the same sources the provider CLIs use. The risk is quota-axi's, not a new one: it already runs as your user on the machine that holds the logins.
+- **No refresh, no identity.** `--no-credential-refresh` tells quota-axi never to run a vendor CLI's refresh command, so agent-net cannot make a login rotate (the risk in decision [0019](decisions/0019-opencode-worker-logins.md)). agent-net never passes `--full`, the audit tier that carries account identity and source attempts. It passes no `--provider`, so quota-axi reads what is set up on the machine.
+- **What leaves the machine.** Only provider id, plan name (when quota-axi reports one), and per window: id, label, kind, percent used, reset time, pace and exhausted. No token, credential file path, account id, email, or account key is kept or sent. The reading travels to the gateway with the usage report and is kept in memory there, readable by every enrolled machine like the agent list.
+- **What it changes.** The figures choose a model for a loose name, rank a provider ahead of pace lower, and refuse a start whose provider is exhausted. A reading quota-axi marks stale is shown but never decides anything.
+- **Failures.** A failed or slow run changes nothing: the last good reading stays, and the daemon logs the error.
 
 ## What every node can read: the event feed
 
@@ -263,3 +308,23 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 ## Reporting a problem
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues). For something sensitive, use GitHub's private vulnerability reporting on the repository's Security tab.
+
+### Request outcome decisions
+
+Only the owner can use `outcome_overrule`: the daemon applies the owner gate used for `session_text`, refusing agent clients and command lines inside an agent session's process tree. As with other owner-gated methods, the gateway trusts enrolled daemons. An enrolled machine can send the gateway frame, so keep enrollment credentials private.
+
+An overruled request has a gateway-stored marker separate from its body. Adapters write `[agent-net] Nicolas overrules: do it.` only when that marker is present. The marker cannot be supplied to `agent_send` or `agent_reply`. Message bodies have the `[agent-net` marker broken before delivery, so a peer cannot imitate the framed note. The owner's gate is a barrier against a command running inside a session, not a defense against a program that detaches from its process tree.
+
+Outcome reasons and recommendations are visible to enrolled machines through the owner inbox. They are limited to 2048 bytes each and cleaned of controls. Do not put secrets in them. Unresolved rejections and escalations keep their request and reply messages and both session records past the normal retention period; normal retention applies after the owner answers.
+
+## Graph foundation
+
+Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
+
+## Written approvals and the inbox
+
+The daemon accepts `inbox_list` and `inbox_answer` only through the owner operator gate. Agent tools can create requests only for their bound session; the gateway checks that the session belongs to the authenticated daemon and derives the project from it. As with other owner operations, a compromised enrolled machine is within the trust boundary.
+
+An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that Nicolas approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
+
+Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.

@@ -32,6 +32,8 @@ func openState(dir string) (*state, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cto_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS workers (
@@ -92,6 +94,22 @@ CREATE TABLE IF NOT EXISTS workers (
 				db.Close()
 				return nil, err
 			}
+		}
+	}
+	var hasCTO int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'sender_cto'`).Scan(&hasCTO)
+	if hasCTO == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	var hasCTOGraphAfter int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto') WHERE name = 'graph_after'`).Scan(&hasCTOGraphAfter)
+	if hasCTOGraphAfter == 0 {
+		if _, err := db.Exec(`ALTER TABLE cto ADD COLUMN graph_after INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
 		}
 	}
 	// Fix files that an older version made with the default mode.

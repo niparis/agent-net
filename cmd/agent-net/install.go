@@ -34,6 +34,8 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noNeedsHook := fs.Bool("no-claude-needs-hook", false, "do not add those hooks and do not ask")
 	workersMod := fs.Bool("claude-workers-mod", false, "install the Claude Code plugin that shows this session's workers (only if not asked before)")
 	noWorkersMod := fs.Bool("no-claude-workers-mod", false, "do not install that plugin and do not ask")
+	quotaAXI := fs.Bool("quota-axi", false, "read your subscription quotas with quota-axi when it is installed")
+	noQuotaAXI := fs.Bool("no-quota-axi", false, "do not read subscription quotas and do not ask")
 	fs.Parse(args)
 	if *all && *none {
 		return errors.New("--all and --none cannot be used together")
@@ -52,6 +54,9 @@ func cmdSetup(ctx context.Context, args []string) error {
 	}
 	if *workersMod && *noWorkersMod {
 		return errors.New("--claude-workers-mod and --no-claude-workers-mod cannot be used together")
+	}
+	if *quotaAXI && *noQuotaAXI {
+		return errors.New("--quota-axi and --no-quota-axi cannot be used together")
 	}
 	allAnswer := ""
 	if *all {
@@ -89,6 +94,12 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noWorkersMod {
 		workers = setup.WorkersModNo
 	}
+	quota := ""
+	if *quotaAXI {
+		quota = setup.QuotaAXIYes
+	} else if *noQuotaAXI {
+		quota = setup.QuotaAXINo
+	}
 	if *accept && *noAccept {
 		return errors.New("--accept-peer-messages and --no-accept-peer-messages cannot be used together")
 	}
@@ -98,7 +109,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

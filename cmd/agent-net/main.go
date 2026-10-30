@@ -36,7 +36,7 @@ var version = "dev"
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod
+  setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod, --[no-]quota-axi
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)
@@ -56,6 +56,10 @@ const usage = `usage: agent-net <command>
   start      start a worker session: --project NAME --harness opencode --model M "<task>"
   stop       stop a worker: agent-net stop <session>
   workers    list the workers on the network with their owners
+  charter    show, set or list the history of a node's charter
+  graph      show the graph or undo a change
+  node       add or remove an architect
+  edge       set or remove an edge
   send       send a message as yourself: agent-net send <session or name> <message...>
   version    print the version of this binary
 `
@@ -84,6 +88,12 @@ func main() {
 		err = cmdJoin(ctx, args)
 	case "daemon":
 		err = cmdDaemon(ctx, args)
+	case "cto-mcp":
+		if len(args) != 0 {
+			err = errors.New("cto-mcp takes no arguments")
+		} else {
+			err = mcpserver.RunCTO(ctx, daemon.SocketPath(), version)
+		}
 	case "mcp":
 		// No subcommand: the stdio server Claude Code starts. Anything else is the registry CLI.
 		if len(args) == 0 {
@@ -118,6 +128,8 @@ func main() {
 		err = cmdStop(ctx, args)
 	case "workers":
 		err = cmdWorkers(ctx, args)
+	case "charter", "graph", "node", "edge":
+		err = cmdGraph(ctx, os.Args[1], args)
 	case "send":
 		err = cmdSend(ctx, args)
 	case "hint": // hidden: the Claude Code hook (decision 0013)
@@ -278,6 +290,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		UsageSampler:      sysusage.New(nil),
 		NoAutoUpgrade:     *noAuto || os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1",
 		NoLaunch:          nc.NoLaunch, ModelProviders: nc.ModelProviders, Workers: ws, EnterSSH: nc.EnterSSH, EnterSSHHosts: nc.EnterSSHHosts,
+		QuotaAXIPath: nc.QuotaAXI,
 		// Tests set this to 0s so they need not wait up to 10 s.
 		AutoUpgradeMaxDelay: envDuration("AGENT_NET_AUTO_UPGRADE_MAX_DELAY"),
 	})

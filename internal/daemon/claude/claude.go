@@ -228,7 +228,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 	}
 	// The body goes first: Claude shows only the first line as a preview.
 	var details string
-	if m.FromHarness == protocol.OwnerHarness {
+	if m.FromCTO && m.FromHarness == "cto" {
+		details = fmt.Sprintf("[agent-net] message %s %s Answer it directly with your SendMessage tool to this sender.", m.ID, protocol.CTONote)
+	} else if m.FromHarness == protocol.OwnerHarness {
 		// The person at the keyboard of a machine, not another agent.
 		answering := ""
 		if m.ParentID != "" {
@@ -248,10 +250,26 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 			m.ID, name, harness, m.From, conv)
 		// The authority note comes from agent-net, after the body, never from
 		// the body (decision 0012): a trusted recipient may act on the request.
-		details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+		if !m.OwnerApproved {
+			details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+		}
+	}
+	if m.Overruled {
+		details += " [agent-net] " + protocol.OverruleNote
 	}
 	if m.Type == "reply" && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		details += " " + protocol.NoAuthorityNote
+	}
+	if m.Type == protocol.TypeRequest && m.OwnerApproved {
+		details += " " + protocol.OwnerApprovalNote
+	}
+	// The gateway computes the graph relation from the sender's node to this
+	// node (decision 0022). It is agent-net's own text, after the body.
+	if m.Type == "request" && m.RecipientRelation != "" {
+		details += " " + m.RecipientRelation
+	}
+	if m.ApprovalNote != "" {
+		details += "\n[agent-net] " + m.ApprovalNote
 	}
 	var attrs []string
 	if from != "" {
