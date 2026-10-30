@@ -141,7 +141,10 @@ UPDATE sessions SET created_at = last_seen;
 ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
 `, `
 CREATE TABLE owner_settings (
-	key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+ key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+`, `
+CREATE TABLE graph_outcomes (source TEXT NOT NULL, target TEXT NOT NULL, message_id TEXT NOT NULL, reply_id TEXT NOT NULL PRIMARY KEY, outcome TEXT NOT NULL, reason TEXT NOT NULL, redirect_to TEXT NOT NULL, recommendation TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX graph_outcomes_edge ON graph_outcomes(source, target, at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -963,6 +966,15 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State)
 	if err != nil {
 		return msg, false, err
+	}
+	if p.Outcome != "" {
+		var from, to string
+		if err := tx.QueryRow(`SELECT a.repo_project,b.repo_project FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient WHERE q.id=? AND q.type=?`, p.ParentID, protocol.TypeRequest).Scan(&from, &to); err != nil {
+			return msg, false, reject("outcome requires a request parent")
+		}
+		if _, err := tx.Exec(`INSERT INTO graph_outcomes VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
+			return msg, false, err
+		}
 	}
 	if m.ParentID != "" {
 		if _, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN (?,?,?)`,

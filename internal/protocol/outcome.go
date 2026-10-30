@@ -51,3 +51,13 @@ func CleanOutcome(o ReplyOutcome) (ReplyOutcome, error) {
 	}
 	return o, nil
 }
+
+// EdgeOutcome records a decision on a request between two nodes.
+type EdgeOutcome struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	MessageID string `json:"message_id"`
+	ReplyID   string `json:"reply_id"`
+	ReplyOutcome
+	At int64 `json:"at"`
+}
