@@ -220,10 +220,12 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		// machine sends the task when it begins (decision 0018).
 		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
-			Model: ans.Model, ModelNote: ans.ModelNote, MachineNote: ans.MachineNote}, nil
+			Model: ans.Model, ModelNote: ans.ModelNote, MachineNote: ans.MachineNote,
+			Permissions: ans.Permissions}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
-		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch}
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch,
+		Permissions: ans.Permissions}
 	// The task is a normal message from the caller, with the fixed preamble.
 	task := p.Task
 	if ans.Task != "" {

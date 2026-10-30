@@ -190,6 +190,9 @@ type WorkerStartResult struct {
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`
+	// Permissions is the level the worker runs with (sandboxed, no-network
+	// or read-only), set by the owner per project (decision 0020).
+	Permissions string `json:"permissions,omitempty"`
 	// Task is the message that carried the task, with its message ID.
 	Task *Message `json:"task,omitempty"`
 	// Queued is true when the task message waits in the outbox.

@@ -171,6 +171,9 @@ type WorkerInfo struct {
 	// Tokens is the cumulative input plus output plus reasoning of the run,
 	// without cache reads. 0 when the harness cannot say.
 	Tokens int64 `json:"tokens,omitempty"`
+	// Permissions is the level the worker was started with (decision 0020):
+	// sandboxed, no-network or read-only. Only Codex workers apply it today.
+	Permissions string `json:"permissions,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -226,6 +229,8 @@ type (
 		// MachineNote says why the gateway picked this machine when the
 		// project is on several.
 		MachineNote string `json:"machine_note,omitempty"`
+		// Permissions is the worker permission level of the project.
+		Permissions string `json:"permissions,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -234,6 +239,8 @@ type (
 		Harness string `json:"harness"`
 		Model   string `json:"model,omitempty"`
 		Owner   string `json:"owner_session"`
+		// Permissions is the project's worker level ("" means sandboxed).
+		Permissions string `json:"permissions,omitempty"`
 		// Task is what the worker should do. The machine that starts it uses
 		// the first line as the worker's name in a status view.
 		Task string `json:"task,omitempty"`

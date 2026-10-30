@@ -136,6 +136,8 @@ type worker struct {
 	// unfinished is true when the daemon committed the unfinished changes of
 	// the worktree on the worker's branch.
 	unfinished bool
+	// permissions is the level the worker was started with (decision 0020).
+	permissions string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
@@ -207,7 +209,8 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText,
+			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
 	}
 	// The figures follow the info value, so every reader sees one version.
 	w.info.ContextTokens, w.info.ContextLimit, w.info.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
@@ -378,7 +381,8 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref, TaskFull: w.taskFull}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref, TaskFull: w.taskFull,
+		Permissions: w.permissions}
 }
 
 // ---- starting ----
@@ -475,7 +479,8 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	rules := projectWorkerRules(l.Path)
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
-		taskFull: boundTask(first(l.RecordTask, l.Task))}
+		taskFull:    boundTask(first(l.RecordTask, l.Task)),
+		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions)}
 	worktree, branch := "", ""
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
@@ -857,7 +862,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
-		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, ref: row.Ref,
+		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
@@ -1210,7 +1215,8 @@ func (d *Daemon) adoptWorkers() {
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
 			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref,
-			taskFull: r.TaskFull}
+			taskFull:    r.TaskFull,
+			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions)}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()

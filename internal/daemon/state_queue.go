@@ -24,18 +24,20 @@ type queuedStart struct {
 	// Base is the branch to start the worktree from; RecordTask is what the
 	// worker record keeps as the first task (both empty for a plain start).
 	Base, RecordTask string
-	QueuedAt         time.Time
+	// Permissions is the worker permission level of the project at queue time.
+	Permissions string
+	QueuedAt    time.Time
 }
 
 func (s *state) addQueued(q queuedStart) error {
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask)
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions)
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -44,7 +46,7 @@ func (s *state) queue() ([]queuedStart, error) {
 	for rows.Next() {
 		var q queuedStart
 		var at int64
-		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask); err != nil {
+		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)

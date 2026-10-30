@@ -47,7 +47,8 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	if p.Model != "" {
 		model = p.Model
 	}
-	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner}
+	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner,
+		Permissions: r.Permissions} // the old worker's level, not the project's current one
 	where := ""
 	switch {
 	case r.Worktree == "":

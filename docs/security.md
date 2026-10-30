@@ -100,6 +100,24 @@ A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegati
 - **What the gateway keeps.** A session's own policy lives in its session record and goes when the gateway deletes the old offline session (the retention flags). A project default is a small row in `project_policies` that the retention rules do not delete; clear it in the TUI (`p`, mode none, scope project).
 - **The hook adds text, not authority.** The `UserPromptSubmit` hook only prints the context for the prompt. It never blocks a prompt, never changes it, and prints nothing when it has no policy or the daemon does not answer within 700 ms.
 
+## What a worker can do: the sandbox level
+
+A worker is an agent that nobody watches, so agent-net does not let it ask for approval: the daemon declines every approval, and the worker runs in a sandbox instead ([decision 0020](decisions/0020-worker-sandbox.md)). You set the level per project in the TUI (`p`, line Workers). Only you can: the method is `session_policy`, behind the owner gate, and an agent cannot widen the sandbox of the workers it starts. Today only Codex workers are sandboxed. Claude Code, OpenCode and Pi workers record the level and behave as before (a worker uses the project's own permission settings).
+
+| Level | Writes | Reads | Network |
+|---|---|---|---|
+| `sandboxed` (default) | Only its worktree, the temp folders, and `objects`, `refs`, `logs` and `worktrees/<name>` of the main repository's git dir | Anything your user can read | on |
+| `no-network` | The same | The same | off |
+| `read-only` | Nothing | The same | on |
+
+- **Reads are not limited.** A sandboxed worker can read any file your user can read: `~/.ssh`, `~/.aws`, browser profiles, other projects. Treat what a worker can read as what it can leak.
+- **With the network on, it can send what it reads.** `sandboxed` and `read-only` allow network access, so a worker that reads a secret (or a prompt-injected worker) can send it out. `no-network` blocks this. Use it for projects with secrets next to the code, or for tasks that need no network. The cost: no package installs, no `git fetch`, no web calls.
+- **Writes are limited, but a commit is a write to your repository.** The worker can create objects, move refs (branches and tags) and write reflogs in the main repository, and change its own worktree's index and HEAD. It cannot change `config` or `hooks` of the main repository (Codex keeps `.git` read-only, and agent-net grants only the folders above), so a worker cannot plant a hook that runs outside the sandbox the next time you use git. It can still make commits on branches other than its own, and delete refs. The branch `agent-net/<worker-id>` is its own; read the diff before you merge.
+- **`--isolation none` cannot commit.** A worker in your own checkout has no write access to `.git`. Writes to the working tree itself are allowed.
+- **No approvals means no way to ask.** A step the sandbox refuses fails inside the worker. It may report that it is blocked, or work around it. The report is model output: check it.
+- **The agent-net tools are off for a Codex worker.** Its private app server runs with `mcp_servers.agent-net.enabled=false` when your Codex config defines the server, so it cannot list, message or start anything on the network. A server defined only in a project's `.codex/config.toml` is not turned off. Other MCP servers stay available to it, with their own authority.
+- **The sandbox is Codex's.** Its strength is the strength of Codex's Linux (bubblewrap/seccomp) and macOS (Seatbelt) sandbox on that machine. agent-net chooses the policy and does not test the isolation itself.
+
 ## Peer trust
 
 By default a peer message is not your approval: the note next to it tells the model to check with you before anything outside its task or risky. **Peer trust** is a per-session switch, off for every session, that you can turn on in the TUI (`t`). When it is on, the note says that you allowed this session to act on requests from your other agents without asking, as if you had asked. Decision: [0013](decisions/0013-peer-trust-and-hints.md).

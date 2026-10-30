@@ -36,21 +36,24 @@ type workerRow struct {
 	// TaskFull is the full first task of the worker (at most 64 KiB), so that
 	// a new worker can continue it.
 	TaskFull string
+	// Permissions is the permission level the worker was started with.
+	Permissions string
 }
 
 func (s *state) saveWorker(w workerRow) error {
 	_, err := s.db.Exec(`INSERT INTO workers (id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
-		task_msg, task_text, done_status, harness_ref, task_full)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		task_msg, task_text, done_status, harness_ref, task_full, permissions)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET native_id=excluded.native_id, session_id=excluded.session_id,
 		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
 		last_active=excluded.last_active, ended_reason=excluded.ended_reason, resumable=excluded.resumable,
 		reported=excluded.reported, task_msg=excluded.task_msg, task_text=excluded.task_text,
-		done_status=excluded.done_status, harness_ref=excluded.harness_ref, task_full=excluded.task_full`,
+		done_status=excluded.done_status, harness_ref=excluded.harness_ref, task_full=excluded.task_full,
+		permissions=excluded.permissions`,
 		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.NativeID, w.SessionID, w.PID, w.PGID,
 		w.StartToken, w.StartedAt.UnixNano(), w.LastActive.UnixNano(), w.EndedReason, boolInt(w.Resumable),
-		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.DoneStatus, w.Ref, w.TaskFull)
+		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.DoneStatus, w.Ref, w.TaskFull, w.Permissions)
 	return err
 }
 
@@ -64,7 +67,7 @@ func boolInt(b bool) int {
 func (s *state) workers() ([]workerRow, error) {
 	rows, err := s.db.Query(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
-		task_msg, task_text, done_status, harness_ref, task_full
+		task_msg, task_text, done_status, harness_ref, task_full, permissions
 		FROM workers ORDER BY started_at`)
 	if err != nil {
 		return nil, err
@@ -77,7 +80,7 @@ func (s *state) workers() ([]workerRow, error) {
 		var resumable, reported int
 		if err := rows.Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
-			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &w.Ref, &w.TaskFull); err != nil {
+			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &w.Ref, &w.TaskFull, &w.Permissions); err != nil {
 			return nil, err
 		}
 		w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)
@@ -94,11 +97,11 @@ func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 	var resumable, reported int
 	err := s.db.QueryRow(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
-		task_msg, task_text, done_status, harness_ref, task_full
+		task_msg, task_text, done_status, harness_ref, task_full, permissions
 		FROM workers WHERE session_id = ?`, sessionID).
 		Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
-			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &w.Ref, &w.TaskFull)
+			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &w.Ref, &w.TaskFull, &w.Permissions)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return w, false, nil
