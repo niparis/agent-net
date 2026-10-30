@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -555,16 +557,28 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string) error {
 // Graph returns explicit and implicit nodes and all edges.
 func (s *Store) Graph() (protocol.Graph, error) {
 	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
-	rows, err := s.db.Query(`SELECT name,kind,created_at FROM graph_nodes UNION SELECT name,'component',0 FROM projects WHERE name NOT IN (SELECT name FROM graph_nodes) UNION SELECT repo_project,'component',0 FROM sessions WHERE repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
+	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'' FROM graph_nodes
+ UNION ALL SELECT name,'component',0,0,path FROM projects WHERE name NOT IN (SELECT name FROM graph_nodes)
+ UNION ALL SELECT repo_project,'component',0,0,repo_root FROM sessions WHERE repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {
 		return g, err
 	}
+	seen := map[string]bool{}
 	for rows.Next() {
 		var n protocol.Node
-		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt); err != nil {
+		var root string
+		var explicit int
+		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt, &explicit, &root); err != nil {
 			rows.Close()
 			return g, err
 		}
+		if explicit == 0 && !graphProjectRoot(root) {
+			continue
+		}
+		if seen[n.Name] {
+			continue
+		}
+		seen[n.Name] = true
 		g.Nodes = append(g.Nodes, n)
 	}
 	err = rows.Err()
@@ -676,4 +690,31 @@ func (s *Store) CTOLastGraphID() (int64, error) {
 	var id int64
 	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto'`).Scan(&id)
 	return id, err
+}
+
+// graphProjectRoot rejects scratch roots while leaving paths on other machines
+// alone. Registered project paths have already been checked by their daemon.
+func graphProjectRoot(root string) bool {
+	if root == "" || !filepath.IsAbs(root) {
+		return false
+	}
+	root = filepath.Clean(root)
+	for _, dir := range []string{os.TempDir(), os.Getenv("TMPDIR"), "/tmp", "/var/folders", "/private/var/folders"} {
+		if dir == "" {
+			continue
+		}
+		dir = filepath.Clean(dir)
+		if root == dir || strings.HasPrefix(root, dir+string(filepath.Separator)) {
+			return false
+		}
+	}
+	home, _ := os.UserHomeDir()
+	if home != "" && root == filepath.Clean(home) {
+		return false
+	}
+	parts := strings.Split(strings.Trim(root, "/"), "/")
+	if len(parts) == 2 && (parts[0] == "home" || parts[0] == "Users") {
+		return false
+	}
+	return true
 }
