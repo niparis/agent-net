@@ -419,7 +419,10 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	}
 	dot, state, style := "○", "offline", sDim
 	if r.online {
-		dot, state, style = "●", "online", sIdle
+		dot, state, style = "●", "online", sBusy
+		if _, st := m.nodeUsage(r.nodeID); st == usageStale {
+			style = sNeeds
+		}
 	}
 	if w < 50 {
 		version, versionW = "", 0
