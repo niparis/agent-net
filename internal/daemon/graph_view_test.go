@@ -15,8 +15,8 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	eventually(t, "connected", func() bool { return n.d.Connected() })
 	st := g.gw.Store()
 	if _, err := st.AddProjects(n.d.cfg.NodeID, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{
-		{Name: "cogforge", Path: "/tmp/cogforge"},
-		{Name: "tenebrae", Path: "/tmp/tenebrae"},
+		{Name: "cogforge", Path: "/w/cogforge"},
+		{Name: "tenebrae", Path: "/w/tenebrae"},
 	}}); err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	if err := json.Unmarshal(raw, &view); err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Nodes) != 3 || len(view.Edges) != 1 {
+	if len(view.Nodes) != 2 || len(view.Edges) != 1 {
 		t.Fatalf("graph through the daemon: %#v", view)
 	}
 	found := false
@@ -50,6 +50,13 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no cogforge charter: %#v", view.Nodes)
+	}
+	var all protocol.Graph
+	if err := json.Unmarshal(cli.mustCall("graph_get", map[string]any{"all": true}), &all); err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Nodes) != 3 {
+		t.Fatalf("all graph through the daemon: %#v", all)
 	}
 	if len(view.Changes) == 0 || view.Changes[0].Attr != "maturity" {
 		t.Fatalf("no history: %#v", view.Changes)
