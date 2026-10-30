@@ -407,7 +407,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "tools.import" {
+		if h.Type == "tools.import" || h.Type == "gateway.backup" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -537,6 +537,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad node.inventory")
 		}
 		return nil, st.SetInventory(nc.id, p)
+
+	case "gateway.backup":
+		p, err := decode[struct {
+			Path string `json:"path"`
+		}](raw)
+		if err != nil || p.Path == "" {
+			return nil, reject("backup needs a path")
+		}
+		if err = g.Backup(p.Path); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 
 	case "tools.import":
 		p, err := decode[protocol.ToolImport](raw)

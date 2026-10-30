@@ -44,7 +44,7 @@ func openSkillStore(dir string, db *Store) (*skillStore, error) {
 	}
 	s := &skillStore{path: path, db: db}
 	if _, err := os.Stat(filepath.Join(path, "HEAD")); errors.Is(err, os.ErrNotExist) {
-		if _, err = s.git(nil, "init", "--bare", "--quiet"); err != nil {
+		if _, err = s.git(nil, "init", "--bare", "--quiet", "--template="); err != nil {
 			return nil, err
 		}
 	} else if err != nil {
@@ -53,7 +53,7 @@ func openSkillStore(dir string, db *Store) (*skillStore, error) {
 	return s, nil
 }
 func (s *skillStore) git(input []byte, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"--git-dir", s.path}, args...)...)
+	cmd := exec.Command("git", append([]string{"--git-dir", s.path, "-c", "core.hooksPath=/dev/null"}, args...)...)
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + s.path, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0", "GIT_AUTHOR_NAME=agent-net", "GIT_AUTHOR_EMAIL=agent-net@localhost", "GIT_COMMITTER_NAME=agent-net", "GIT_COMMITTER_EMAIL=agent-net@localhost", "LC_ALL=C"}
 	cmd.Stdin = bytes.NewReader(input)
 	out, err := cmd.Output()
@@ -92,7 +92,7 @@ func (s *skillStore) put(item, hash string, bundle []byte, node, location string
 	defer os.Remove(name)
 	gitIndex := func(input []byte, args ...string) (string, error) {
 		args = append([]string{"-c", "core.hooksPath=/dev/null"}, args...)
-		cmd := exec.Command("git", append([]string{"--git-dir", s.path}, args...)...)
+		cmd := exec.Command("git", append([]string{"--git-dir", s.path, "-c", "core.hooksPath=/dev/null"}, args...)...)
 		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + s.path, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_INDEX_FILE=" + name, "GIT_AUTHOR_NAME=agent-net", "GIT_AUTHOR_EMAIL=agent-net@localhost", "GIT_COMMITTER_NAME=agent-net", "GIT_COMMITTER_EMAIL=agent-net@localhost"}
 		cmd.Stdin = bytes.NewReader(input)
 		out, e := cmd.Output()
@@ -225,7 +225,7 @@ func (s *skillStore) read(item, hash string) ([]byte, error) {
 	if _, err := hex.DecodeString(commit); err != nil {
 		return nil, errors.New("invalid skill commit")
 	}
-	cmd := exec.Command("git", "--git-dir", s.path, "cat-file", "blob", commit+":"+skillPath(item))
+	cmd := exec.Command("git", "--git-dir", s.path, "-c", "core.hooksPath=/dev/null", "cat-file", "blob", commit+":"+skillPath(item))
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + s.path, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0"}
 	out, err := cmd.Output()
 	if err != nil || len(out) > inventory.MaxBundleBytes {
