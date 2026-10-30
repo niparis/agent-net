@@ -181,39 +181,39 @@ func (m Model) needsLines(w int) []string {
 	harnessW = min(harnessW, 8)
 	hostW = min(hostW, 14)
 	out := []string{section(fmt.Sprintf("Needs you (%d)", len(rows)), w)}
-	for i, a := range shown {
-		marker := "│ ⚠ "
-		if a.Waiting.Kind == "held" {
-			if m.focus == focusSessions && a.SessionID == m.selected {
-				marker = "│>⚠ "
-			}
-			line := marker + sanitize(a.Waiting.Text) + "  [a/A approve, r/R reject]"
-			if strings.Contains(marker, ">") {
-				out = append(out, sNeeds.Render("│")+sSel.Render(clip(strings.TrimPrefix(line, "│"), w-1)))
-			} else {
-				out = append(out, sNeeds.Render(clip(line, w)))
-			}
-			continue
+	for _, a := range shown {
+		marker := "  "
+		if m.focus == focusSessions && a.SessionID == m.selected {
+			marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 		}
-		if m.focus == focusSessions && i < len(rows) && rows[i].SessionID == m.selected {
-			marker = "│>⚠ "
-		}
-		line := marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)
+		prefix := sNeeds.Render("▍") + marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)
 		if hostW > 0 {
-			line += " " + cell(m.needsHost(a), hostW)
+			prefix += " " + cell(m.needsHost(a), hostW)
 		}
-		line += " " + cellR(needsAge(m.now(), a.Waiting.Since), 4) + " "
-		text := needsText(a.Waiting)
-		room := w - ansi.StringWidth(line)
-		if room > 0 {
-			line += clip(text, room)
+		kind := a.Waiting.Kind
+		switch kind {
+		case protocol.WaitingPermission, protocol.WaitingQuestion, "input":
+		case "held":
+			kind = "permission"
+		default:
+			kind = "input"
 		}
-		if strings.Contains(marker, ">") {
-			out = append(out, sNeeds.Render("│")+sSel.Render(clip(strings.TrimPrefix(stripStyles(line), "│"), w-1)))
-		} else {
-			out = append(out, clip(sNeeds.Render(marker)+stripStyles(line)[len(marker):], w))
+		question := sanitize(a.Waiting.Text)
+		if a.Waiting.Kind == "held" {
+			question += "  [a/A approve, r/R reject]"
 		}
+		if question != "" && (a.Waiting.Kind == protocol.WaitingQuestion || a.Waiting.Kind == "input") {
+			question = "\"" + question + "\""
+		}
+		label := sNeeds.Render(kind + ":")
+		head := prefix + " " + label + " "
+		age := sDim.Render(cellR(needsAge(m.now(), a.Waiting.Since), 4))
+		room := max(w-ansi.StringWidth(head)-5, 0)
+		text := clip(question, room)
+		line := head + padStyled(text, room) + " " + age
+		out = append(out, clip(line, w))
 	}
+
 	if more > 0 {
 		out = append(out, sDim.Render(clip(fmt.Sprintf("   +%d more waiting (o shows offline)", more), w)))
 	}

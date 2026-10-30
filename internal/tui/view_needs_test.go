@@ -144,3 +144,14 @@ func TestNeedsStatusDoesNotPushTablePastWidth(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedsRowsShowKindAndRightAlignedAge(t *testing.T) {
+	m := needsModel(100, 30)
+	rows := m.needsLines(100)
+	if !strings.Contains(rows[1], "▍") || !strings.Contains(rows[1], "question:") {
+		t.Fatalf("question: %q", rows[1])
+	}
+	if !strings.HasSuffix(strings.TrimSpace(ansi.Strip(rows[1])), "12m") || !strings.HasSuffix(strings.TrimSpace(ansi.Strip(rows[2])), "3m") {
+		t.Fatalf("ages: %q", rows)
+	}
+}

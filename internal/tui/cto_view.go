@@ -5,13 +5,17 @@ import "strings"
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := "CTO"
-	if c.model != "" {
-		if c.harness != "" {
-			title += " (" + c.harness + " · " + c.model + ")"
-		} else {
-			title += " (" + c.model + ")"
-		}
+	if c.harness != "" {
+		title += " · " + sanitize(c.harness)
 	}
+	if c.model != "" {
+		title += " · " + sDim.Render(sanitize(c.model))
+	}
+	borderColor := roleFaint
+	if m.focus == focusCTO {
+		borderColor = roleCTO
+	}
+
 	w = max(w-2, 1)
 	h = max(h-2, 1)
 	out := []string{}
@@ -34,7 +38,7 @@ func (m Model) ctoView(w, h int) []string {
 		for len(out) < h {
 			out = append(out, "")
 		}
-		return panel(title, out[:min(len(out), h)], w+2, roleCTO)
+		return panelWithBorder(title, out[:min(len(out), h)], w+2, roleCTO, borderColor)
 	}
 	var lines []string
 	for _, v := range c.messages {
@@ -69,5 +73,5 @@ func (m Model) ctoView(w, h int) []string {
 		input = "> write to the CTO..."
 	}
 	out = append(out, clip(input, w))
-	return panel(title, out, w+2, roleCTO)
+	return panelWithBorder(title, out, w+2, roleCTO, borderColor)
 }

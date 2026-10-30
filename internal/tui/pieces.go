@@ -18,8 +18,12 @@ func statusLabel(status string) string {
 }
 
 func panel(title string, body []string, width int, color lipgloss.TerminalColor) []string {
+	return panelWithBorder(title, body, width, color, roleFaint)
+}
+
+func panelWithBorder(title string, body []string, width int, color, borderColor lipgloss.TerminalColor) []string {
 	width = max(width, 4)
-	border := lipgloss.NewStyle().Foreground(roleFaint)
+	border := lipgloss.NewStyle().Foreground(borderColor)
 	heading := lipgloss.NewStyle().Foreground(color).Bold(true).Render(clip(title, width-4))
 	top := border.Render("╭─") + heading + border.Render(strings.Repeat("─", max(width-3-ansi.StringWidth(heading), 0))+"╮")
 	out := []string{top}
@@ -44,4 +48,15 @@ func progressBar(frac float64, n int, color lipgloss.TerminalColor) string {
 		filled = 1
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("░", n-filled))
+}
+
+// selectedRow restores the background after each embedded style reset.
+func selectedRow(line string) string {
+	sample := lipgloss.NewStyle().Background(roleSelection).Render("x")
+	i := strings.Index(sample, "x")
+	if i <= 0 {
+		return line
+	}
+	prefix := sample[:i]
+	return prefix + strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+prefix) + "\x1b[0m"
 }

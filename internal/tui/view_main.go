@@ -401,7 +401,7 @@ func loadStyle(pct float64) lipgloss.Style {
 	case pct >= hotMachine:
 		return sBad
 	case pct >= warmMachine:
-		return sBusy
+		return sNeeds
 	}
 	return sIdle
 }
@@ -419,7 +419,10 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	}
 	dot, state, style := "○", "offline", sDim
 	if r.online {
-		dot, state, style = "●", "online", sIdle
+		dot, state, style = "●", "online", sBusy
+		if _, st := m.nodeUsage(r.nodeID); st == usageStale {
+			style = sNeeds
+		}
 	}
 	if w < 50 {
 		version, versionW = "", 0
@@ -429,6 +432,7 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	if !r.online {
 		return clip(sDim.Render(ansi.Strip(line)), w)
 	}
+
 	rest := w - ansi.StringWidth(line) - 2
 	// The shared OpenCode service belongs to the machine, not to any one
 	// session: a short note here, its process list in a session's detail.
@@ -451,12 +455,12 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 			rest -= ansi.StringWidth(note) + 2
 		}
 	}
-	if rest >= 8 && r.harnesses != nil {
-		for _, withVersions := range []bool{true, false} {
-			if hl := harnessText(r.harnesses, withVersions); ansi.StringWidth(hl) <= rest {
-				line += "  " + sDim.Render(hl)
-				break
-			}
+
+	if hl := harnessText(r.harnesses, false); hl != "" {
+		column := 13 + nameW + versionW + machineCPUW + machineMemW + machineLoadW + 4
+		gap := max(2, column-ansi.StringWidth(line))
+		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) <= w {
+			line += strings.Repeat(" ", gap) + sDim.Render(hl)
 		}
 	}
 	return clip(line, w)
@@ -496,7 +500,7 @@ func (m Model) machineUsage(r machineRow, room int) string {
 	if mu.MemTotal > 0 {
 		memPct = float64(mu.MemUsed) / float64(mu.MemTotal) * 100
 	}
-	mem := "mem " + progressBar(memPct/100, 4, loadStyle(memPct).GetForeground()) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
+	mem := "mem " + progressBar(memPct/100, 4, roleAccent) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
 	load := sDim.Render("load ") + fmt.Sprintf("%.1f", mu.Load[0])
 	if room < unknownW {
 		return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) // no room for the load
@@ -814,7 +818,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	selected := a.SessionID == m.selected
 	marker := "  "
 	if selected {
-		marker = "> "
+		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	uc := m.usageCells(a, cols)
 	var parts []string
@@ -852,7 +856,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		} else {
 			v = cell(v, c.width)
 		}
-		if !selected && a.Online {
+		if a.Online {
 			switch c.name {
 			case "STATUS":
 				v = statusLabel(v)
@@ -871,7 +875,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	line := marker + strings.Join(parts, " ")
 	switch {
 	case selected:
-		return sSel.Render(clip(stripStyles(line), w))
+		return selectedRow(clip(line, w))
 	case !a.Online || m.idleLong(a):
 		return sDim.Render(clip(stripStyles(line), w))
 	}

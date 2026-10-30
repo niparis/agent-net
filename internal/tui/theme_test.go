@@ -2,9 +2,11 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestThemeRolesProduceColor(t *testing.T) {
@@ -61,4 +63,82 @@ func TestPaddedBusyStatusHasBackground(t *testing.T) {
 	if !strings.Contains(statusLabel("busy  "), ";48;") {
 		t.Fatalf("padded busy status has no background: %q", statusLabel("busy  "))
 	}
+}
+
+func TestSelectedSessionKeepsColors(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := newModel(120, 34)
+	v := m.View()
+	if !strings.Contains(v, "▸") {
+		t.Fatal("missing selection marker")
+	}
+	if !strings.Contains(v, "48;2;34;48;58") {
+		t.Fatal("missing subtle selection background")
+	}
+	for _, line := range strings.Split(v, "\n") {
+		if strings.Contains(line, "▸") && strings.Count(line, "48;2;34;48;58") < 3 {
+			t.Fatal("selection background is lost after styled cells")
+		}
+	}
+}
+
+func TestMachineDotColors(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := newModel(120, 34)
+	rows := m.machineRows()
+	for _, r := range rows {
+		line := m.machineLine(r, 120, 12, 8)
+		if r.online && !strings.Contains(line, "38;2;124;207;138m●") {
+			t.Fatalf("online dot: %q", line)
+		}
+	}
+	m.now = func() time.Time { return t0.Add(2 * time.Hour) }
+	for _, r := range m.machineRows() {
+		if _, st := m.nodeUsage(r.nodeID); r.online && st == usageStale && !strings.Contains(m.machineLine(r, 120, 12, 8), sNeeds.Render("●")) {
+			t.Fatalf("stale dot is not amber: %q", m.machineLine(r, 120, 12, 8))
+		}
+	}
+}
+
+func TestMachineLoadColors(t *testing.T) {
+	if loadStyle(warmMachine).GetForeground() != roleWarning {
+		t.Fatal("warm load should use warning")
+	}
+	if loadStyle(hotMachine).GetForeground() != roleError {
+		t.Fatal("hot load should use error")
+	}
+}
+
+func TestCTOTitleAndFocusedBorder(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := newModel(120, 34)
+	m.cto.harness, m.cto.model = "claude", "sonnet"
+	unfocused := m.ctoView(120, 10)[0]
+	if !strings.Contains(ansi.Strip(unfocused), "CTO · claude · sonnet") {
+		t.Fatalf("title: %q", unfocused)
+	}
+	m.focus = focusCTO
+	if m.ctoView(120, 10)[0] == unfocused {
+		t.Fatal("focused border did not change")
+	}
+}
+
+func TestMachineHarnessesAreNamesOnly(t *testing.T) {
+	m := newModel(160, 34)
+	for _, r := range m.machineRows() {
+		if r.nodeID == "n_mac" {
+			line := ansi.Strip(m.machineLine(r, 160, 12, 8))
+			if !strings.Contains(line, "claude  opencode  pi") || strings.Contains(line, "2.1.312") {
+				t.Fatal(line)
+			}
+			return
+		}
+	}
+	t.Fatal("missing machine")
 }

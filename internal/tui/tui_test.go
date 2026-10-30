@@ -615,7 +615,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	m = keys(m, "G")
 	v := m.View()
 	last := m.visible()[len(m.visible())-1]
-	if !strings.Contains(v, "> ") || !strings.Contains(v, last.Profile.Name) {
+	if !strings.Contains(v, "▸ ") || !strings.Contains(v, last.Profile.Name) {
 		t.Fatalf("the selected last session is not on screen:\n%s", v)
 	}
 	if len(lines(v)) > 24 {
@@ -626,7 +626,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	if v := lines(m.View()); !strings.HasPrefix(strings.TrimSpace(v[7]), "build-vm") {
 		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
-	if !strings.Contains(m.View(), "> ") {
+	if !strings.Contains(m.View(), "▸ ") {
 		t.Fatal("the selection scrolled out of the table")
 	}
 	m = keys(m, "g")
