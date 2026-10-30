@@ -719,6 +719,49 @@ func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
 		d.mu.Unlock()
 	}()
 
+	// A delivery may have been dispatched while the worker was still online,
+	// but reach the daemon as its hand-back ends it.
+	for {
+		w := d.workerBySession(m.To)
+		if w == nil {
+			row, ok, _ := d.st.workerBySession(m.To)
+			if ok && row.EndedReason == protocol.StopHandback && (m.From == row.Owner || m.FromHarness == protocol.OwnerHarness) {
+				if err := d.resumeWorkerSession(ctx, m.To, row.Owner); err != nil {
+					d.sendUpdate(ctx, m.ID, protocol.StateFailed, err.Error())
+					return
+				}
+				continue
+			}
+			break
+		}
+		d.wmu.Lock()
+		ending, owner := w.stopping || w.doneStatus != "", w.owner
+		d.wmu.Unlock()
+		if ending {
+			if m.From != owner && m.FromHarness != protocol.OwnerHarness {
+				d.sendUpdate(ctx, m.ID, protocol.StateFailed, "only the worker's owner can start it again")
+				return
+			}
+			if err := d.resumeWorkerSession(ctx, m.To, owner); err != nil {
+				d.sendUpdate(ctx, m.ID, protocol.StateFailed, err.Error())
+				return
+			}
+			continue
+		}
+		queued, retry := d.queueOpenCodeTurn(w, m)
+		if retry {
+			continue
+		}
+		if queued {
+			d.touchWorker(m.To, m.From)
+			if err := d.st.markDelivered(m.ID); err != nil {
+				d.Logf("mark delivered: %v", err)
+			}
+			d.sendUpdate(ctx, m.ID, protocol.StateDelivered, "queued behind the worker's turn")
+			return
+		}
+		break
+	}
 	ls := d.sessionByID(m.To)
 	if ls == nil {
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "no such local session")

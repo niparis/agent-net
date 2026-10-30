@@ -530,6 +530,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 	sc.Buffer(make([]byte, 0, 1<<16), 1<<20)
 	results := map[string]chan string{}
 	var rmu sync.Mutex
+	waitTurn := make(chan struct{})
 	for sc.Scan() {
 		var m struct {
 			ID     json.RawMessage `json:"id"`
@@ -565,6 +566,28 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		send("delivered", map[string]any{"message_id": msg.ID, "ok": true})
 		body := msg.Body
 		if location.Load() <= previous && location.Load() != 1<<60 {
+			continue
+		}
+		if strings.Contains(body, "FAKE:wait-handback") {
+			turn(body)
+			go func() {
+				for {
+					if _, err := os.Stat(filepath.Join(cwd, "fake-opencode-finish")); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				send("worker_handback", map[string]any{"report": "first report"})
+				close(waitTurn)
+			}()
+			continue
+		}
+		if strings.Contains(body, "FAKE:queued-handback") {
+			go func() {
+				<-waitTurn
+				turn(body)
+				send("worker_handback", map[string]any{"report": "second report"})
+			}()
 			continue
 		}
 		turn(body)

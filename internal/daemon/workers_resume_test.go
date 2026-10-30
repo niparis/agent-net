@@ -67,6 +67,30 @@ func TestHandbackEndsTheWorkerAndOwnerFollowUpResumesIt(t *testing.T) {
 	}
 }
 
+func TestOpenCodeWorkerQueuedTurnAfterHandback(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	owner := w.ownerID()
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-handback"}), &sent)
+	eventually(t, "second message delivered", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
+	if err := os.WriteFile(filepath.Join(repo, "fake-opencode-finish"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first := w.replyTo(t, owner, res.Task.ID)
+	if !strings.Contains(first.Body, "first report") {
+		t.Fatalf("first report: %s", first.Body)
+	}
+	second := w.replyTo(t, owner, sent.Message.ID)
+	if !strings.Contains(second.Body, "second report") {
+		t.Fatalf("second report: %s", second.Body)
+	}
+	eventually(t, "worker ends after the second report", func() bool { return w.d.workerCount() == 0 })
+}
+
 // A Pi worker cannot be started again: Pi's rpc mode has no resume, so the
 // owner gets that reason, and no process is started.
 func TestPiWorkerCannotBeResumed(t *testing.T) {

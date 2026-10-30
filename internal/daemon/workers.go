@@ -123,6 +123,9 @@ type worker struct {
 	ownerGoneSince                           time.Time
 	ownerChecked                             time.Time
 	stopping                                 bool
+	turnActive                               bool
+	turnHandbackIdle                         bool
+	turnQueue                                []protocol.Message
 	dir                                      string
 	logPath                                  string
 	// Worktree isolation (W13).
