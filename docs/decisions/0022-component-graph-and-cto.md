@@ -208,17 +208,23 @@ Which model and harness to use for which work, and the quirks of each project, a
    evidence: the worker sessions it saw
    ```
    A subject is a model, a harness, a model on a harness, a project ("cogforge tests need the TEI service up"), an MCP server or a machine. The worker notice's checklist ends with "Did you learn something about this model, harness or project? Report it with agent_learn", and the guidance says so. A finding is a proposal: it changes nothing until it is promoted.
-3. **The playbook, decided by the owner through the CTO.** The CTO reads new findings, groups duplicates, and brings them to the owner in its chat: "4 findings about terra on Pi from 2 agents: lazy after about 10 min, delivers with one layer and a checklist. Make this a playbook note?". The owner answers in plain words, and the CTO writes the note. The owner can also tell the CTO a lesson directly.
+3. **The playbook, built automatically.** The owner wants to know what the network learned, not to decide on each finding. The gateway promotes a pattern to a playbook note on its own when it has enough support: at least 3 findings on the same subject from at least 2 different sessions within 30 days, or a clearly bad track record (at least 4 runs and under half complete). The note is the latest finding's text, its support count and the track record line, with no model call. A note whose support is all older than 60 days goes stale and is no longer shown. The owner (or the CTO on the owner's word) can write, pin or remove a note at any time; the owner never has to.
+
+**Quiet by design.** Knowledge must not become theater that interrupts the team:
+
+- An agent reports a finding only when it would change how someone picks or briefs that model, harness or project next time. Never routine results. At most 3 findings per session per day.
+- Findings are never sent as messages and never appear in Needs you.
+- Playbook notes appear only at the moment of choice: in the `agent_start` result and in `agent_nodes`. Not in every turn's context.
+- The owner sees what was learned when he looks: a "Learned" list in the TUI (key `L`) with each note's support, a quiet count in the header ("learned 2 new") that never pops up, and the CTO answering "what have we learned this week?".
 
 **Storage**, in the gateway, one copy for the network:
 
 - findings: subject, text, evidence (worker and session ids), reporter, time, status (`new`, `promoted`, `dismissed`, `stale`). A finding never promoted goes stale after 90 days.
-- playbook: subject, note, decided by (the owner, through the CTO), time, and the findings and track record behind it. Versioned with history and undo, like charters.
+- playbook: subject, note, how it was made (automatic, or written by the owner or the CTO), time, and the findings and track record behind it. Versioned with history and undo, like charters.
 
 **Delivery:**
 
 - `agent_start` results show the playbook note and the track record line for the chosen model and harness; `agent_nodes` shows them for every model a machine offers.
-- A session gets its project's playbook notes in its per-turn context, beside the charter.
 - The CTO sees all of it when it plans work.
 
 ## The TUI
@@ -253,7 +259,7 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 2. **The CTO.** OpenCode harness, private MCP tools, the TUI chat pane, diffs and undo.
 3. **Edges and modes.** depends-on, governs with advisor/arbiter/owner, deploys (the target's rule applies), request rules (replacing trust), architect roles, written approvals and the owner's inbox.
 4. **Maturity defaults wired to the controls.** Merge authority (new), sandbox, delegation, request judging.
-5. **Quotas and knowledge.** quota-axi reading, model choice and admission by quota; `complete: false` hand-backs and the track record; `agent_learn` findings; the playbook through the CTO.
+5. **Quotas and knowledge.** quota-axi reading, model choice and admission by quota; `complete: false` hand-backs and the track record; `agent_learn` findings; the automatic, quiet playbook.
 6. **The phone** (0006), with the same chat and Needs you.
 
 ## Open questions
