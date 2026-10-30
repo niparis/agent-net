@@ -39,7 +39,65 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	if args == nil {
 		args = map[string]any{}
 	}
+	// These operations reuse the same owner implementations after ctoTool has
+	// checked the calling process tree. This connection is never exposed.
+	lc := &localConn{d: d, client: "cli"}
+	if ctoOwnerMethods[name] {
+		res, _, err := lc.dispatchOwner(ctx, name, raw)
+		return res, err
+	}
+	if ctoLocalMethods[name] {
+		return lc.dispatch(ctx, name, raw)
+	}
 	switch name {
+	case "reply":
+		var p struct {
+			MessageID string `json:"message_id"`
+			Body      string `json:"body"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" || p.Body == "" {
+			return nil, errors.New("reply needs message_id and body")
+		}
+		sid := d.ownerSessionID()
+		if sid == "" {
+			return nil, errNotConnected
+		}
+		data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: p.MessageID})
+		if err != nil {
+			return nil, err
+		}
+		var parent protocol.MessageResult
+		if err := json.Unmarshal(data, &parent); err != nil {
+			return nil, err
+		}
+		if parent.Message.To != sid {
+			return nil, errors.New("message was not sent to the owner")
+		}
+		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From, Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, FromCTO: true})
+	case "worker_stop":
+		var p protocol.WorkerStopRequest
+		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
+			return nil, errors.New("worker_stop needs session")
+		}
+		sid := d.ownerSessionID()
+		if sid == "" {
+			return nil, errNotConnected
+		}
+		_, err := d.call(withCallWait(ctx, 30*time.Second), "worker.stop", protocol.WorkerStopFrame{Session: p.Session, Requester: sid})
+		if err != nil {
+			return nil, tooOldGateway(err)
+		}
+		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, nil
+	case "learn":
+		var p protocol.LearnRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad learn params")
+		}
+		sid := d.ownerSessionID()
+		if sid == "" {
+			return nil, errNotConnected
+		}
+		return d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid})
 	case "graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo":
 		delete(args, "by")
 		if name == "graph_undo" {
@@ -185,4 +243,18 @@ func (d *Daemon) recordCTOAction(text string) error {
 	// insert are one statement so a concurrent first send cannot lose an action.
 	_, err := d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at,harness) VALUES(COALESCE((SELECT CASE active_harness WHEN 'claude' THEN claude_session_id ELSE session_id END FROM cto WHERE id=1),''),?,?,COALESCE((SELECT active_harness FROM cto WHERE id=1),'opencode'))`, text, time.Now().UnixNano())
 	return err
+}
+
+// These allowlists are reachable only from ctoTool's process-tree check.
+var ctoOwnerMethods = map[string]bool{
+	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true,
+	"usage": true, "usage_top": true, "counts": true, "graph_view": true, "session_text": true, "session_enter": true,
+	"session_trust": true, "session_policy": true, "node_rename": true, "integrations_get": true, "integrations_set": true,
+	"held_list": true, "held_answer": true, "node_settings_get": true, "node_settings_set": true,
+	"playbook_get": true, "playbook_set": true, "cto_settings": true,
+}
+var ctoLocalMethods = map[string]bool{
+	"info": true, "nodes": true, "projects": true, "project_add": true, "project_remove": true,
+	"get": true, "messages": true, "message_status": true, "mcp_list": true, "mcp_add": true,
+	"mcp_remove": true, "mcp_test": true, "mcp_enable": true, "mcp_call": true,
 }

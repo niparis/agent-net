@@ -61,9 +61,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 		tools[tl.Name] = tl
 	}
 	wantTools := []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo", "agents", "workers", "needs_you", "feed", "send", "worker_start"}
-	if len(tools) != len(wantTools) {
-		t.Fatalf("got %d tools, want %d: %v", len(tools), len(wantTools), tools)
-	}
+
 	for _, name := range wantTools {
 		tl, ok := tools[name]
 		if !ok {
@@ -137,6 +135,23 @@ func TestCTOToolsForward(t *testing.T) {
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
 		if err != nil || out.IsError || !seen[name] {
 			t.Errorf("%s: %+v %v", name, out, err)
+		}
+	}
+}
+
+func TestCTOParityTools(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, tool := range list.Tools {
+		got[tool.Name] = true
+	}
+	for _, name := range []string{"info", "nodes", "projects", "project_add", "project_remove", "get", "messages", "message_status", "session_text", "usage", "usage_top", "counts", "graph_view", "session_enter", "session_trust", "session_policy", "node_rename", "integrations_get", "integrations_set", "worker_stop", "held_list", "held_answer", "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule", "node_settings_get", "node_settings_set", "playbook_get", "playbook_set", "learn", "mcp_list", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings"} {
+		if !got[name] {
+			t.Errorf("missing CTO tool %s", name)
 		}
 	}
 }

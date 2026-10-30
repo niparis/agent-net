@@ -95,8 +95,12 @@ var ctoTools = map[string]ctoToolDef{
 	"agents": {
 		desc: "List the agent sessions on the network, with their project, task, expertise and whether they wait for the owner.",
 		fields: map[string]ctoField{
-			"text":    {typ: "string", desc: "Only agents whose name, function or task matches this text."},
-			"project": {typ: "string", desc: "Only agents in this project."},
+			"text":           {typ: "string", desc: "Only agents whose name, function or task matches this text."},
+			"harness":        {typ: "string", desc: "Only agents on this harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"capability":     {typ: "string", desc: "Only agents with this announced capability."},
+			"online_only":    {typ: "boolean", desc: "Only online agents when true."},
+			"include_owners": {typ: "boolean", desc: "Include owner sessions."},
+			"project":        {typ: "string", desc: "Only agents in this project."},
 		},
 	},
 	"workers": {
@@ -124,6 +128,8 @@ var ctoTools = map[string]ctoToolDef{
 			"project":   {typ: "string", desc: "Known project name or absolute path. Empty uses the CTO's own project."},
 			"harness":   {typ: "string", desc: "Harness for the worker. Empty uses the default, opencode.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":     {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty uses the harness default."},
+			"base":      {typ: "string", desc: "Existing branch to base the worker worktree on."},
+			"continue":  {typ: "string", desc: "Session or worker ID of an ended worker to continue."},
 			"task":      {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
 			"machine":   {typ: "string", desc: "Machine that holds the project, when more than one does."},
 			"isolation": {typ: "string", desc: "worktree gives the worker its own git worktree (the default in a git repository). none works in the project folder, for read-only tasks.", enum: []string{"worktree", "none"}},
@@ -139,6 +145,9 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			prop := map[string]any{"type": f.typ, "description": f.desc}
+			if f.typ == "array" {
+				prop["items"] = map[string]any{"type": "string"}
+			}
 			if len(f.enum) > 0 {
 				prop["enum"] = f.enum
 			}
