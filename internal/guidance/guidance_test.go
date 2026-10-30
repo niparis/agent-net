@@ -125,3 +125,12 @@ func TestRemove(t *testing.T) {
 		t.Fatalf("round trip: %q", back)
 	}
 }
+
+func TestCTOAuthorityGuidance(t *testing.T) {
+	for _, v := range []string{Claude, Other} {
+		b := Block(v)
+		if !strings.Contains(b, "from the CTO, on Nicolas's instruction") || !strings.Contains(b, "within your charter's limits") {
+			t.Errorf("%s lacks CTO authority rule", v)
+		}
+	}
+}

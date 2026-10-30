@@ -808,6 +808,19 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   stop();
 });
 
+await test("a CTO message carries the CTO authority note", async () => {
+  freshHub();
+  const sessions = new Map([["ses_cto_test", session("ses_cto_test", "/work/o")]]);
+  const prompts = [];
+  const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
+  const stop = await plugin.setup(c.ctx);
+  await until("CTO recipient", () => registered("ses_cto_test"));
+  conns.get("ses_cto_test").write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_c",sender_harness:"owner",sender_cto:true,message_type:"request",body:"hello"}}})+"\n");
+  await until("CTO prompt", () => prompts.length === 1);
+  if (!prompts[0].text.includes("from the CTO, on Nicolas's instruction") || prompts[0].text.includes("from your user in person")) throw new Error(prompts[0].text);
+  stop();
+});
+
 await test("a message from the owner says it is from the user in person", async () => {
   freshHub();
   const sessions = new Map([["ses_o", session("ses_o", "/work/o")]]);

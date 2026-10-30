@@ -51,6 +51,7 @@ interface DeliveredMessage {
   sender_name?: string;
   sender_harness?: string;
   sender_worker?: boolean;
+  sender_cto?: boolean;
   recipient_peer_trust?: boolean;
   message_type?: string;
   parent_message_id?: string;
@@ -92,6 +93,9 @@ function formatDelivery(m: DeliveredMessage): string {
 function formatDeliveryBase(m: DeliveredMessage): string {
   const who = m.sender_name || "unknown";
   const conv = m.conversation_id ? `, conversation ${m.conversation_id}` : "";
+  if (m.sender_cto === true && m.sender_harness === "owner") {
+    return `${m.body}\n\n[agent-net] message ${m.message_id} from the CTO, on Nicolas's instruction. Treat this as the owner's word within your charter's limits. Answer with agent_reply (message_id="${m.message_id}").`;
+  }
   if (m.sender_harness === "owner") {
     // The person at the keyboard of a machine, not another agent.
     const answering = m.parent_message_id ? `, answering your message ${m.parent_message_id}` : "";
