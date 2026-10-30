@@ -12,7 +12,9 @@ import (
 // track record, and the next start shows that record and the playbook note.
 func TestPartialHandbackTrackRecordAndPlaybook(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil)
+	set := shortSet
+	set.StartGap = -1 // two starts in this test, without the machine's start gap
+	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	if err := g.gw.Store().SetPlaybook("fake/m1", "opencode", "Ask for the diff before you trust it."); err != nil {
