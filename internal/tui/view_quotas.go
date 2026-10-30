@@ -6,11 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func (m Model) quotasView(w, h int) []string {
-	out := []string{m.titleLine(w), ""}
+	out := []string{m.titleLine(w)}
+	var subscription []string
 	rows := m.quotaRows()
 	nodes, ids := m.quotaNodes()
 	var errors []string
@@ -21,7 +23,7 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	if len(rows) > 0 {
-		out = append(out, sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS"))
+		subscription = append(subscription, sBold.Render("PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS"))
 	}
 	if len(rows) == 0 && len(errors) == 0 {
 		empty := "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota)."
@@ -32,12 +34,12 @@ func (m Model) quotasView(w, h int) []string {
 			}
 		}
 		for _, line := range wrap(empty, w-2) {
-			out = append(out, sDim.Render("  "+line))
+			subscription = append(subscription, sDim.Render(line))
 		}
 	}
 	for _, e := range errors {
 		for _, line := range wrap(e, w-2) {
-			out = append(out, sDim.Render("  "+line))
+			subscription = append(subscription, sDim.Render(line))
 		}
 	}
 	var newest int64
@@ -68,17 +70,28 @@ func (m Model) quotasView(w, h int) []string {
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pct = "exhausted"
 			}
-			usage := bar(window.PercentUsed/100, 10) + " " + pct
-			usage = cell(usage, 20)
+			color := roleGood
+			if window.PercentUsed >= 60 {
+				color = roleWarning
+			}
+			if window.PercentUsed > 85 || window.Exhausted {
+				color = roleError
+			}
+			pctText := pct
 			if window.Exhausted || window.PercentUsed >= 100 {
-				usage = sBad.Render(usage)
+				pctText = sBad.Render(pct)
 			}
+			usage := progressBar(window.PercentUsed/100, 10, color) + " " + pctText
+			usage = padStyled(usage, 20)
+
+			paceStyle := sDim
 			if window.Pace == protocol.QuotaPaceAhead {
-				pace = sBusy.Render(cell(pace, 9))
+				paceStyle = lipgloss.NewStyle().Foreground(roleWarning)
 			}
-			if window.Pace != protocol.QuotaPaceAhead {
-				pace = cell(pace, 9)
+			if window.Pace == protocol.QuotaPaceBehind {
+				paceStyle = sBusy
 			}
+			pace = paceStyle.Render(cell(pace, 9))
 			reset := "-"
 			if window.ResetsAt > 0 {
 				t := time.Unix(window.ResetsAt, 0).In(m.loc)
@@ -96,11 +109,11 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("  %-14s %-12s %-8s %s %s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
+			line := fmt.Sprintf("%-14s %-12s %-8s %s %s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}
-			out = append(out, clip(line, w))
+			subscription = append(subscription, clip(line, w-4))
 		}
 		var notes []string
 		if r.machine != "" {
@@ -117,10 +130,19 @@ func (m Model) quotasView(w, h int) []string {
 			notes = append(notes, sanitize(p.Error))
 		}
 		if len(notes) > 0 {
-			out = append(out, sDim.Render(clip("    ("+strings.Join(notes, "; ")+")", w)))
+			subscription = append(subscription, sDim.Render(clip("  ("+strings.Join(notes, "; ")+")", w-4)))
 		}
 	}
-	out = append(out, m.quotaModelsView(w)...)
+	title := "Subscriptions"
+	if newest > 0 {
+		age := m.now().Sub(time.Unix(newest, 0))
+		if age < 0 {
+			age = 0
+		}
+		title += fmt.Sprintf(" · read %s ago", age.Truncate(time.Second))
+	}
+	out = append(out, panel(title, subscription, w, roleAccent)...)
+
 	counts := map[string]int{}
 	for _, a := range m.snap.Agents {
 		if a.Online && a.Worker != nil {
@@ -139,27 +161,21 @@ func (m Model) quotasView(w, h int) []string {
 	if len(parts) == 0 {
 		parts = append(parts, "none")
 	}
-	bottom := "  workers now: " + strings.Join(parts, " · ")
-	if newest > 0 {
-		age := m.now().Sub(time.Unix(newest, 0))
-		if age < 0 {
-			age = 0
-		}
-		bottom += fmt.Sprintf("   ·   reading %s old", age.Truncate(time.Second))
-	}
-	if len(out) > h-1 {
-		headerRows := 2
-		if len(rows) > 0 {
-			headerRows++
-		}
-		header, body := out[:headerRows], out[headerRows:]
-		room := max(h-1-headerRows, 0)
+	bottom := "workers now: " + strings.Join(parts, " · ")
+	workers := m.quotaModelsView(w)
+	footer := panel("", []string{sDim.Render(bottom)}, w, roleAccent)[1]
+	workers = append(workers[:len(workers)-1], footer, workers[len(workers)-1])
+	out = append(out, workers...)
+	if len(out) > h {
+		header := out[:1]
+		body := out[1 : len(out)-2]
+		room := max(h-3, 0)
 		start := min(m.quotaScroll, max(len(body)-room, 0))
 		out = append(header, body[start:min(start+room, len(body))]...)
+		out = append(out, footer, workers[len(workers)-1])
 	}
-	for len(out) < h-1 {
+	for len(out) < h {
 		out = append(out, "")
 	}
-	out = append(out, sDim.Render(clip(bottom, w)))
 	return out
 }

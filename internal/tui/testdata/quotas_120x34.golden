@@ -1,25 +1,25 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy                                          updated 14:05:00
-
-  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS
-  claude         max          5h       █████░░░░░  50%      behind    -
-    (read on Mac; stale reading)
-  codex          pro          week     █████████░  92%      ahead     in 2h00
-  cursor         business     month    ██████████ exhausted -         -
-    (read on Mac)
-
-  MODELS
-  3 registered workers · USED 7 DAYS
-  #  NAME               HARNESS   MODEL                            SCORE       T  S  N  H  V  7D LAST
-  1  opus               claude    claude-opus-5-5:high             51.7/high   E* E* E* E* G*  0 -
-  2  sol                codex     gpt-6.1-sol:medium               46.1/medium E  E  E  G  P   0 -
-  3  terra              codex     gpt-6.1-terra:high               42.3/high   E  E  E  G  P   0 -
-  now: trivial -> #1, simple -> #1, normal -> #1, hard -> #1, very_complex -> #1
-  scores: Artificial Analysis (artificialanalysis.ai)
-
+╭─Subscriptions · read 40s ago─────────────────────────────────────────────────────────────────────────────────────────╮
+│ PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS                                           │
+│ claude         max          5h       █████░░░░░  50%      behind    -                                                │
+│   (read on Mac; stale reading)                                                                                       │
+│ codex          pro          week     █████████░  92%      ahead     in 2h00                                          │
+│ cursor         business     month    ██████████ exhausted -         -                                                │
+│   (read on Mac)                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 3 registered · scores: Artificial Analysis─────────────────────────────────────────────────────────────────╮
+│ NAME       HARNESS  MODEL                  SCORE       T S N H V  USED                                               │
+│ opus       claude   claude-opus-5-5:high   51.7/high   E E E E G  12 runs 10 done 2 failed  ◀ T,S,N,H,V              │
+│ sol        codex    gpt-6.1-sol:medium     46.1/medium E E E G P  0 runs 0 done 0 failed                             │
+│ terra      codex    gpt-6.1-terra:high     42.3/high   E E E G P  0 runs 0 done 0 failed                             │
+│ workers now: none                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
 
-  workers now: none   ·   reading 40s old
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

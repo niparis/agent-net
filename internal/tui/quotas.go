@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -107,7 +107,7 @@ func (m Model) quotaWarning() string {
 type quotaModel struct {
 	name, harness, model, defaultEffort           string
 	score                                         protocol.ModelScore
-	used                                          int
+	used, done, failedRuns                        int
 	last                                          int64
 	failed, allowed, scored, succeeded, available bool
 }
@@ -124,6 +124,13 @@ func (m Model) quotaModels() []quotaModel {
 		row := quotaModel{name: p.Name, harness: p.Harness, model: model, failed: true}
 		found := false
 		for _, n := range m.snap.Nodes {
+			for _, track := range n.Tracks {
+				if track.Harness == p.Harness && track.Model == model {
+					row.used += track.Runs
+					row.done += track.Complete
+					row.failedRuns += track.Failed + track.TimedOut
+				}
+			}
 			if !n.Online {
 				continue
 			}
@@ -164,9 +171,7 @@ func (m Model) quotaModels() []quotaModel {
 				if a.LastSeen > row.last {
 					row.last = a.LastSeen
 				}
-				if a.LastSeen >= m.now().Add(-7*24*time.Hour).Unix() {
-					row.used++
-				}
+
 			}
 		}
 		rows = append(rows, row)
@@ -177,17 +182,15 @@ func (m Model) quotaModels() []quotaModel {
 
 func (m Model) quotaModelsView(w int) []string {
 	rows := m.quotaModels()
-	out := []string{"", sBold.Render("  MODELS"), sDim.Render(fmt.Sprintf("  %d registered workers · USED 7 DAYS", len(rows)))}
-	if len(rows) == 0 {
-		return out
-	}
-	nameWidth, harnessWidth, modelWidth := 7, 8, 20
+	title := fmt.Sprintf("Workers · %d registered · scores: Artificial Analysis", len(rows))
+	var out []string
+	nameWidth, harnessWidth, modelWidth := 6, 6, 17
 	if w >= 100 {
-		nameWidth, harnessWidth, modelWidth = 18, 9, 32
+		nameWidth, harnessWidth, modelWidth = 10, 8, 22
 	}
-	heading := fmt.Sprintf("  #  %-*s %-*s %-*s %-11s T  S  N  H  V  7D LAST", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", "SCORE")
-	out = append(out, sBold.Render(clip(heading, w)))
+	out = append(out, sDim.Render(fmt.Sprintf("%-*s %-*s %-*s %-11s T S N H V  USED", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", "SCORE")))
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
+	levelNames := []string{"T", "S", "N", "H", "V"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
 		if r.available && r.allowed && r.scored {
@@ -211,24 +214,33 @@ func (m Model) quotaModelsView(w int) []string {
 	for i, level := range levels {
 		picks[i], _ = protocol.ChooseWorkerModel(candidates, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
 	}
-	attribution := false
-	for rowIndex, r := range rows {
-		attribution = attribution || r.score.Source == "artificialanalysis"
-		var fits []string
+	for _, r := range rows {
+		var fits, chosen []string
 		for i, level := range levels {
 			letter := "-"
+			color := roleFaint
 			if r.scored {
 				fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
-				letter = map[string]string{"excellent": "E", "good": "G", "poor": "P", "denied": "-"}[fit]
+				switch fit {
+				case "excellent":
+					letter = "E"
+					color = roleGood
+				case "good":
+					letter = "G"
+					color = roleGood
+				case "poor":
+					letter = "P"
+					color = roleWarning
+				}
 			}
-			if picks[i].Model == r.model && picks[i].Harness == r.harness {
-				letter += "*"
+			style := lipgloss.NewStyle().Foreground(color)
+			if letter == "G" {
+				style = style.Faint(true)
 			}
-			fits = append(fits, fmt.Sprintf("%-2s", letter))
-		}
-		last := "-"
-		if r.last > 0 {
-			last = time.Unix(r.last, 0).In(m.loc).Format("Jan 02")
+			fits = append(fits, style.Render(letter))
+			if picks[i].Model == r.model && picks[i].Harness == r.harness && picks[i].Model != "" {
+				chosen = append(chosen, levelNames[i])
+			}
 		}
 		score := "-"
 		if r.scored {
@@ -237,37 +249,28 @@ func (m Model) quotaModelsView(w int) []string {
 		if r.score.Effort != "" {
 			score += "/" + r.score.Effort
 		}
-		line := fmt.Sprintf("  %-2d %-*s %-*s %-*s %-11s %s %2d %s", rowIndex+1, nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(r.model), modelWidth), score, strings.Join(fits, " "), r.used, last)
+		usage := fmt.Sprintf("%d runs", r.used)
+		if w >= 100 {
+			usage += " " + sBusy.Render(fmt.Sprintf("%d done", r.done)) + " " + sBad.Render(fmt.Sprintf("%d failed", r.failedRuns))
+		}
+		line := fmt.Sprintf("%-*s %-*s %-*s %-11s %s  %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(r.model), modelWidth), cell(score, 11), strings.Join(fits, " "), usage)
+		if len(chosen) > 0 {
+			line += "  " + lipgloss.NewStyle().Foreground(roleAccent).Render("◀ "+strings.Join(chosen, ","))
+		}
 		if !r.available || !r.allowed {
-			out = append(out, sDim.Render(clip(line, w)))
+			line = sDim.Render(stripStyles(line))
+		}
+		out = append(out, clip(line, w-4))
+		if !r.available || !r.allowed {
 			reason := "not available on an online machine"
 			if r.available {
 				reason = "not a worker provider"
 			}
-			out = append(out, sDim.Render(clip("     ("+reason+")", w)))
-		} else {
-			out = append(out, clip(line, w))
+			out = append(out, sDim.Render("  ("+reason+")"))
 		}
-		if len(r.name) > nameWidth || len(r.model) > modelWidth {
-			detail := "     " + sanitize(r.name) + " · " + sanitize(r.model)
-			out = append(out, sDim.Render(clip(detail, w)))
+		if w >= 100 && (len(r.name) > nameWidth || len(r.model) > modelWidth) {
+			out = append(out, sDim.Render(clip("  "+sanitize(r.name)+" · "+sanitize(r.model), w-4)))
 		}
 	}
-
-	var choices []string
-	for i, level := range levels {
-		name := "-"
-		for j, r := range rows {
-			if picks[i].Model == r.model && picks[i].Harness == r.harness {
-				name = fmt.Sprintf("#%d", j+1)
-				break
-			}
-		}
-		choices = append(choices, level+" -> "+name)
-	}
-	out = append(out, sDim.Render(clip("  now: "+strings.Join(choices, ", "), w)))
-	if attribution {
-		out = append(out, sDim.Render("  scores: Artificial Analysis (artificialanalysis.ai)"))
-	}
-	return out
+	return panel(title, out, w, roleAccent)
 }
