@@ -7,6 +7,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // ctoField is one input field of a CTO tool. A fixed set of values carries an
@@ -24,7 +25,14 @@ type ctoToolDef struct {
 	fields map[string]ctoField
 }
 
-var ctoCharterAttrs = []string{"purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes"}
+var ctoCharterAttrs = func() []string {
+	guide := protocol.CharterGuide()
+	attrs := make([]string, 0, len(guide))
+	for _, attr := range guide {
+		attrs = append(attrs, attr.Name)
+	}
+	return attrs
+}()
 
 var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 
@@ -163,7 +171,12 @@ func NewCTO(call Caller, version string) *mcp.Server {
 	for name, spec := range ctoTools {
 		props := map[string]any{}
 		for k, f := range spec.fields {
-			prop := map[string]any{"type": f.typ, "description": f.desc}
+			description := f.desc
+			if name == "charter_set" && (k == "attr" || k == "value") {
+				description += "\nPer-attribute charter guide:\n" + protocol.CharterGuideText() +
+					"\nKeep each value under about 200 characters. Never include secrets, IPs, tokens or paths; put detail in AGENTS.md."
+			}
+			prop := map[string]any{"type": f.typ, "description": description}
 			if f.properties != nil {
 				prop["properties"] = f.properties
 				prop["additionalProperties"] = false
@@ -176,14 +189,27 @@ func NewCTO(call Caller, version string) *mcp.Server {
 			}
 			props[k] = prop
 		}
-		tool := &mcp.Tool{Name: name, Description: spec.desc, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
+		toolDescription := spec.desc
+		if name == "charter_set" {
+			toolDescription += "\nCharters are short rules for other agents, read on every turn. Keep each value under about 200 characters; never include secrets, IPs, tokens or paths.\nPer-attribute charter guide:\n" + protocol.CharterGuideText()
+		}
+		tool := &mcp.Tool{Name: name, Description: toolDescription, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			raw, err := call(ctx, method, req.Params.Arguments)
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
-			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(raw)}}}, nil
+			text := string(raw)
+			if method == "charter_set" {
+				var set protocol.CharterSetRequest
+				if b, marshalErr := json.Marshal(req.Params.Arguments); marshalErr == nil && json.Unmarshal(b, &set) == nil {
+					if warning := protocol.CharterValueWarning(set.Attr, set.Value); warning != "" {
+						text += "\n" + warning
+					}
+				}
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 		})
 	}
 	return s

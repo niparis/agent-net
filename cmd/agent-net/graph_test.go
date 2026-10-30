@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -38,5 +39,17 @@ func TestGraphCommands(t *testing.T) {
 				t.Fatalf("method %s err %v", f.method, err)
 			}
 		})
+	}
+}
+
+func TestCharterSetWarnsAboutDetailedValueAndStillSucceeds(t *testing.T) {
+	f := &graphFake{}
+	var out bytes.Buffer
+	err := runGraphCommand(context.Background(), f, &out, "charter", []string{"set", "p", "needs", "Read", "/home/project/private/config"})
+	if err != nil {
+		t.Fatalf("charter set failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md") {
+		t.Fatalf("charter set did not print the warning: %q", out.String())
 	}
 }
