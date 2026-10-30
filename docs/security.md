@@ -271,3 +271,5 @@ Graph operator methods use the owner gate, including history and graph reads. Th
 ## Playbook notes
 
 `playbook_set` and `playbook_get` use the same owner gate: your command line or the TUI, never an agent client and never a CLI inside an agent session. The CTO will call them later through the owner gate. A note is at most 1024 bytes after control characters other than newline and tab are removed, and it appears in every `agent_start` result for that model. It is not a secret store: the note reaches any agent that starts a worker with that model, so do not put credentials in it.
+
+`agent_learn` is the other direction: it is open to agent sessions, because they are the ones that notice things, and refused for the command line. A finding is at most 500 bytes, names a subject and may carry up to 20 session or worker IDs. A session may record at most 3 findings in 24 hours; the fourth is refused. Findings are not messages and never appear in Needs you. They are stored in the gateway's `findings` table with the reporting session and a status. Automatic notes built from them are not secrets either, and they reach every agent at the moment of choice.

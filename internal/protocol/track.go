@@ -97,8 +97,12 @@ func (t *TrackRecord) Line() string {
 			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))
 		}
 	}
+	label := model
+	if t.Harness != "" {
+		label += " · " + t.Harness
+	}
 	var b strings.Builder
-	b.WriteString(model + " · " + t.Harness + ": ")
+	b.WriteString(label + ": ")
 	if t.Runs == 0 {
 		b.WriteString("no runs yet")
 	} else {
@@ -137,20 +141,40 @@ func shortDuration(d time.Duration) string {
 // PlaybookNoteMaxBytes is the longest playbook note the owner may write.
 const PlaybookNoteMaxBytes = 1024
 
-// PlaybookNote is the owner's (or later the CTO's) note about a model, with an
-// optional harness. An empty harness means the note applies to every harness.
+// PlaybookAutoMaxBytes bounds a note the gateway builds from findings.
+const PlaybookAutoMaxBytes = 2048
+
+// How a playbook note was made.
+const (
+	PlaybookSourceAuto  = "auto"
+	PlaybookSourceOwner = "owner"
+	PlaybookSourceCTO   = "cto"
+)
+
+// PlaybookNote is one note of the playbook. A model note has SubjectKind model
+// (or model_harness, with Harness); a harness, project, mcp or machine note
+// names its subject directly. An automatic note carries its support count and
+// the track record line behind it.
 type PlaybookNote struct {
-	Model     string `json:"model"`
-	Harness   string `json:"harness,omitempty"`
-	Note      string `json:"note"`
-	UpdatedAt int64  `json:"updated_at,omitempty"`
+	SubjectKind string `json:"subject_kind"`
+	Subject     string `json:"subject"`
+	Harness     string `json:"harness,omitempty"`
+	Note        string `json:"note"`
+	Source      string `json:"source,omitempty"`
+	Support     int    `json:"support,omitempty"`
+	TrackLine   string `json:"track_line,omitempty"`
+	Pinned      bool   `json:"pinned,omitempty"`
+	CreatedAt   int64  `json:"created_at,omitempty"`
+	UpdatedAt   int64  `json:"updated_at,omitempty"`
 }
 
 // PlaybookSetRequest is OpPlaybookSet. An empty note removes the entry.
+// Pin, when set, also pins (or unpins) the note.
 type PlaybookSetRequest struct {
 	Model   string `json:"model"`
 	Harness string `json:"harness,omitempty"`
 	Note    string `json:"note"`
+	Pin     *bool  `json:"pin,omitempty"`
 }
 
 // PlaybookGetRequest is OpPlaybookGet.
@@ -172,14 +196,12 @@ func CleanPlaybook(model, harness, note string) (string, string, string, error) 
 	if model == "" {
 		return "", "", "", fmt.Errorf("a playbook note needs a model")
 	}
-	if len(model) > 200 || len(harness) > 40 {
+	if len(model) > FindingSubjectMaxBytes || len(harness) > 40 {
 		return "", "", "", fmt.Errorf("the model or harness name is too long")
 	}
 	for _, s := range []string{model, harness} {
-		for _, r := range s {
-			if unicode.IsControl(r) {
-				return "", "", "", fmt.Errorf("the model and harness names have no control characters")
-			}
+		if hasControl(s) {
+			return "", "", "", fmt.Errorf("the model and harness names have no control characters")
 		}
 	}
 	note = strings.Map(func(r rune) rune {
@@ -195,10 +217,40 @@ func CleanPlaybook(model, harness, note string) (string, string, string, error) 
 	return model, harness, note, nil
 }
 
-// Line writes the playbook note for a start result.
+// CleanPlaybookText removes control characters other than newlines and tabs,
+// trims the text and cuts it to max bytes.
+func CleanPlaybookText(note string, max int) string {
+	note = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, note)
+	note = strings.TrimSpace(note)
+	if len(note) > max {
+		note = strings.ToValidUTF8(note[:max], "")
+	}
+	return note
+}
+
+// Line writes the playbook note for a start result or a machine list.
 func (p *PlaybookNote) Line() string {
 	if p == nil || strings.TrimSpace(p.Note) == "" {
 		return ""
 	}
-	return "playbook: " + strings.TrimSpace(p.Note)
+	head := "playbook"
+	if p.Subject != "" {
+		head += " [" + p.Subject
+		if p.Harness != "" {
+			head += " · " + p.Harness
+		}
+		head += "]"
+	}
+	if p.Support > 0 {
+		head += fmt.Sprintf(" %d findings", p.Support)
+	}
+	if p.Pinned {
+		head += ", pinned"
+	}
+	return head + ": " + strings.TrimSpace(p.Note)
 }

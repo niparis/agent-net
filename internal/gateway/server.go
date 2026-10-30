@@ -608,6 +608,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "learn.add":
+		p, err := decode[protocol.LearnFrame](raw)
+		if err != nil || p.Reporter == "" {
+			return nil, reject("bad learn.add")
+		}
+		owner, err := st.SessionNode(p.Reporter)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.Reporter)
+		}
+		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
+			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
+
 	case "graph.get":
 		return st.Graph()
 	case "playbook.set":
@@ -619,13 +634,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("%v", err)
 		}
-		if err := st.SetPlaybook(model, harness, note); err != nil {
+		if err := st.SetPlaybookPin(model, harness, note, p.Pin); err != nil {
 			return nil, err
 		}
 		if note == "" {
 			return protocol.PlaybookGetResult{}, nil
 		}
-		return protocol.PlaybookGetResult{Note: &protocol.PlaybookNote{Model: model, Harness: harness, Note: note}}, nil
+		kind := protocol.SubjectModel
+		if harness != "" {
+			kind = protocol.SubjectModelHarness
+		}
+		pinned := p.Pin != nil && *p.Pin
+		return protocol.PlaybookGetResult{Note: &protocol.PlaybookNote{SubjectKind: kind, Subject: model, Harness: harness,
+			Note: note, Source: protocol.PlaybookSourceOwner, Pinned: pinned}}, nil
 	case "playbook.get":
 		p, err := decode[protocol.PlaybookGetRequest](raw)
 		if err != nil {

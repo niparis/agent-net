@@ -533,7 +533,11 @@ export default function (pi: ExtensionAPI) {
 
   function formatPlaybook(p: any): string {
     const note = String(p?.note || "").trim();
-    return note ? `playbook: ${note}` : "";
+    if (!note) return "";
+    const subject = p?.subject ? ` [${p.subject}${p.harness ? " · " + p.harness : ""}]` : "";
+    const support = Number(p?.support) > 0 ? ` ${p.support} findings` : "";
+    const pinned = p?.pinned ? ", pinned" : "";
+    return `playbook${subject}${support}${pinned}: ${note}`;
   }
 
   function formatNodes(r: any): string {
@@ -557,6 +561,7 @@ export default function (pi: ExtensionAPI) {
         const extra = tracks.length ? "\n  " + tracks.map(formatTrack).join("\n  ") : "";
         return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}${extra}`;
       })
+      .concat((r.playbook ?? []).map(formatPlaybook))
       .join("\n");
   }
 
@@ -1071,7 +1076,7 @@ export default function (pi: ExtensionAPI) {
     }),
     "worker_start",
     (r) => {
-      const extra = [r.track ? formatTrack(r.track) : "", formatPlaybook(r.playbook)].filter(Boolean).join("\n");
+      const extra = [r.track ? formatTrack(r.track) : "", ...(r.playbooks ?? []).map(formatPlaybook)].filter(Boolean).join("\n");
       return r.status === "queued"
         ? `${r.queue_reason}\n` +
           `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
@@ -1107,6 +1112,23 @@ export default function (pi: ExtensionAPI) {
     }),
     "worker_handback",
     (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`,
+  );
+
+  defineTool(
+    "agent_learn",
+    "Record a finding",
+    "Record one thing the network should know before it picks or briefs a model, harness, project, MCP server or machine next time. " +
+      "Report only what would change that choice or brief, never a routine result or a status update. " +
+      "A finding is quiet: it is not a message, it does not appear in Needs you, and it changes nothing until the gateway promotes a pattern to the playbook. " +
+      "At most 3 findings per session per day. subject_kind is model, harness, model_harness (subject model@harness), project, mcp or machine.",
+    Type.Object({
+      subject_kind: Type.String({ description: "model, harness, model_harness, project, mcp or machine" }),
+      subject: Type.String({ description: "the model, harness, model@harness, project, MCP server or machine the finding is about" }),
+      finding: Type.String({ description: "what you learned, in one or two sentences: only what would change how someone picks or briefs this model, harness or project next time. Never a routine result. At most 500 characters" }),
+      evidence: Type.Optional(Type.Array(Type.String(), { description: "session or worker IDs that show it (optional, at most 20)" })),
+    }),
+    "agent_learn",
+    (r) => (r.accepted === false ? `Not recorded: ${r.reason}` : `Recorded finding ${r.id} (${r.status}). ${r.remaining} left today.`),
   );
 
   defineTool(

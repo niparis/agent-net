@@ -155,6 +155,9 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 						lines = append(lines, n.Hostname+": "+n.Tracks[i].Line())
 					}
 				}
+				for i := range ni.Playbook {
+					lines = append(lines, ni.Playbook[i].Line())
+				}
 			}
 			text := string(raw)
 			if len(lines) > 0 {
@@ -212,6 +215,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	addRegistryTools(s, run)
 	addProjectTools(s, run)
 	addWorkerTools(s, run)
+	addLearnTool(s, run)
 	return s
 }
 

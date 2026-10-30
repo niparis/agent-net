@@ -70,8 +70,8 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 					if res.Track != nil {
 						text += "\n" + res.Track.Line()
 					}
-					if res.Playbook != nil {
-						text += "\n" + res.Playbook.Line()
+					for i := range res.Playbooks {
+						text += "\n" + res.Playbooks[i].Line()
 					}
 				}
 				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, out, nil

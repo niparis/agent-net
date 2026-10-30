@@ -95,10 +95,10 @@ type WorkerContinued struct {
 	Path    string `json:"path"`
 	Harness string `json:"harness"`
 	Model   string `json:"model,omitempty"`
-	// Track and Playbook are the gateway's record and the owner's note for the
+	// Track and Playbooks are the gateway's record and the fresh notes for the
 	// chosen harness and model (decision 0022).
-	Track    *TrackRecord  `json:"track,omitempty"`
-	Playbook *PlaybookNote `json:"playbook,omitempty"`
+	Track     *TrackRecord   `json:"track,omitempty"`
+	Playbooks []PlaybookNote `json:"playbooks,omitempty"`
 }
 
 // ContinueIntro starts the task of a worker that continues an ended one.
@@ -235,10 +235,10 @@ type (
 		MachineNote string `json:"machine_note,omitempty"`
 		// Permissions is the worker permission level of the project.
 		Permissions string `json:"permissions,omitempty"`
-		// Track and Playbook are the gateway's record for the chosen harness
-		// and model, and the owner's note about it (decision 0022).
-		Track    *TrackRecord  `json:"track,omitempty"`
-		Playbook *PlaybookNote `json:"playbook,omitempty"`
+		// Track and Playbooks are the gateway's record for the chosen harness
+		// and model, and the fresh notes about it (decision 0022).
+		Track     *TrackRecord   `json:"track,omitempty"`
+		Playbooks []PlaybookNote `json:"playbooks,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -556,7 +556,7 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	if strings.TrimSpace(report) != "" {
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")
 	}
-	b.WriteString("\n" + noticeChecklist(n.Worktree))
+	b.WriteString("\n" + noticeChecklist(n.Worktree, strings.TrimSpace(report) != ""))
 	return strings.TrimRight(b.String(), "\n")
 }
 
@@ -564,11 +564,15 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 // notice (W17). It is agent-net's own text, not the worker's.
 const ChecklistMarker = "[agent-net checklist]"
 
-func noticeChecklist(worktree string) string {
+func noticeChecklist(worktree string, learned bool) string {
 	where := "the changes in the project folder"
 	if worktree != "" {
 		where = "the diff in " + worktree
 	}
-	return ChecklistMarker + " Before you tell your user it is done: read " + where +
+	line := ChecklistMarker + " Before you tell your user it is done: read " + where +
 		", run the project's tests there, then report what you checked. Merge only if your user asked."
+	if learned {
+		line += "\nIf you learned something that would change how to pick or brief this model next time, record it with agent_learn."
+	}
+	return line
 }

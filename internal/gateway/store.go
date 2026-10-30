@@ -158,6 +158,23 @@ CREATE INDEX worker_runs_at ON worker_runs (ended_at);
 CREATE TABLE playbook_notes (
   model TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '', note TEXT NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (model, harness));
+`, `
+CREATE TABLE findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject_kind TEXT NOT NULL, subject TEXT NOT NULL, finding TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '[]', reporter TEXT NOT NULL, node_id TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new');
+CREATE INDEX findings_subject ON findings (subject_kind, subject, at);
+CREATE INDEX findings_reporter ON findings (reporter, at);
+CREATE INDEX findings_status ON findings (status, at);
+CREATE TABLE playbook (
+  subject_kind TEXT NOT NULL, subject TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'owner', support INTEGER NOT NULL DEFAULT 0,
+  track_line TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0,
+  stale INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (subject_kind, subject, harness));
+INSERT INTO playbook (subject_kind, subject, harness, note, source, support, track_line, pinned, stale, created_at, updated_at)
+  SELECT 'model', model, harness, note, 'owner', 0, '', 0, 0, updated_at, updated_at FROM playbook_notes;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

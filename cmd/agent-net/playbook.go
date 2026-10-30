@@ -26,21 +26,29 @@ func cmdPlaybook(ctx context.Context, args []string) error {
 		return cmdPlaybookSet(ctx, args[1:])
 	case "get":
 		return cmdPlaybookGet(ctx, args[1:])
+	case "pin", "unpin":
+		return cmdPlaybookPin(ctx, args[0] == "pin", args[1:])
 	}
-	return fmt.Errorf("unknown playbook command %q (use set or get)", args[0])
+	return fmt.Errorf("unknown playbook command %q (use set, get, pin or unpin)", args[0])
 }
 
 func playbookSetRequest(args []string) (protocol.PlaybookSetRequest, error) {
 	fs := flag.NewFlagSet("playbook set", flag.ExitOnError)
 	harness := fs.String("harness", "", "only this harness (empty: every harness)")
+	pin := fs.Bool("pin", false, "pin the note, so automatic learning never changes it")
+	unpin := fs.Bool("unpin", false, "unpin the note")
 	pos, err := parseInterspersed(fs, args)
 	if err != nil {
 		return protocol.PlaybookSetRequest{}, err
 	}
 	if len(pos) == 0 {
-		return protocol.PlaybookSetRequest{}, errors.New("usage: agent-net playbook set <model> [--harness H] <text>")
+		return protocol.PlaybookSetRequest{}, errors.New("usage: agent-net playbook set <model> [--harness H] [--pin|--unpin] <text>")
 	}
-	return protocol.PlaybookSetRequest{Model: pos[0], Harness: *harness, Note: strings.Join(pos[1:], " ")}, nil
+	req := protocol.PlaybookSetRequest{Model: pos[0], Harness: *harness, Note: strings.Join(pos[1:], " ")}
+	if *pin || *unpin {
+		req.Pin = pin
+	}
+	return req, nil
 }
 
 func cmdPlaybookSet(ctx context.Context, args []string) error {
@@ -57,7 +65,7 @@ func cmdPlaybookSet(ctx context.Context, args []string) error {
 		return err
 	}
 	defer cl.Close()
-	raw, err := playbookCall(ctx, cl, protocol.OpPlaybookSet, protocol.PlaybookSetRequest{Model: model, Harness: harness, Note: note})
+	raw, err := playbookCall(ctx, cl, protocol.OpPlaybookSet, protocol.PlaybookSetRequest{Model: model, Harness: harness, Note: note, Pin: req.Pin})
 	if err != nil {
 		return err
 	}
@@ -109,7 +117,54 @@ func printPlaybook(w io.Writer, n *protocol.PlaybookNote) {
 	if n == nil {
 		return
 	}
-	fmt.Fprintf(w, "%s%s\n%s\n", n.Model, harnessSuffix(n.Harness), n.Note)
+	pin := ""
+	if n.Pinned {
+		pin = " (pinned)"
+	}
+	fmt.Fprintf(w, "%s%s%s\n%s\n", n.Subject, harnessSuffix(n.Harness), pin, n.Note)
+}
+
+// cmdPlaybookPin pins or unpins the note that is already stored for a model.
+func cmdPlaybookPin(ctx context.Context, pinned bool, args []string) error {
+	fs := flag.NewFlagSet("playbook pin", flag.ExitOnError)
+	harness := fs.String("harness", "", "only this harness (empty: every harness)")
+	pos, err := parseInterspersed(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(pos) != 1 {
+		return errors.New("usage: agent-net playbook pin|unpin <model> [--harness H]")
+	}
+	cl, err := dialCLI(ctx)
+	if err != nil {
+		return err
+	}
+	defer cl.Close()
+	var got protocol.PlaybookGetResult
+	raw, err := playbookCall(ctx, cl, protocol.OpPlaybookGet, protocol.PlaybookGetRequest{Model: pos[0], Harness: *harness})
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		return err
+	}
+	if got.Note == nil {
+		return fmt.Errorf("no playbook note for %s%s", pos[0], harnessSuffix(*harness))
+	}
+	raw, err = playbookCall(ctx, cl, protocol.OpPlaybookSet, protocol.PlaybookSetRequest{
+		Model: got.Note.Subject, Harness: got.Note.Harness, Note: got.Note.Note, Pin: &pinned})
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		return err
+	}
+	if pinned {
+		fmt.Printf("Pinned the playbook note for %s%s.\n", got.Note.Subject, harnessSuffix(got.Note.Harness))
+	} else {
+		fmt.Printf("Unpinned the playbook note for %s%s.\n", got.Note.Subject, harnessSuffix(got.Note.Harness))
+	}
+	return nil
 }
 
 func harnessSuffix(h string) string {

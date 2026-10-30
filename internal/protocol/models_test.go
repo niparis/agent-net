@@ -129,17 +129,22 @@ func TestNoticeEndsWithTheChecklist(t *testing.T) {
 	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Project: "shop", Host: "h", Worktree: "/wt/w_1", Branch: "agent-net/w_1"}
 	body := FormatWorkerNotice(n, "I did it.")
 	last := body[strings.LastIndex(body, "\n")+1:]
-	if !strings.HasPrefix(last, ChecklistMarker) || !strings.Contains(last, "read the diff in /wt/w_1, run the project's tests there") ||
-		!strings.Contains(last, "Merge only if your user asked.") {
+	if !strings.HasPrefix(last, "If you learned something") || !strings.Contains(last, "agent_learn") {
 		t.Errorf("last line: %q", last)
+	}
+	if !strings.Contains(body, ChecklistMarker+" Before you tell your user it is done: read the diff in /wt/w_1, run the project's tests there") ||
+		!strings.Contains(body, "Merge only if your user asked.") {
+		t.Errorf("checklist: %q", body)
 	}
 	if strings.Index(body, ReportMarker) > strings.Index(body, ChecklistMarker) {
 		t.Error("the checklist is inside the worker's report")
 	}
-	// Without a worktree, and without a report, the line is still there.
+	// Without a worktree, and without a report, the checklist is still there
+	// and there is no learning line to act on.
 	n.Worktree = ""
 	body = FormatWorkerNotice(n, "")
-	if !strings.Contains(body, "read the changes in the project folder") || strings.Contains(body, ReportMarker) {
+	if !strings.Contains(body, "read the changes in the project folder") || strings.Contains(body, ReportMarker) ||
+		strings.Contains(body, "agent_learn") {
 		t.Errorf("no-worktree notice:\n%s", body)
 	}
 }

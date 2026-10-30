@@ -11,6 +11,7 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (…
   I                    integrations for all machines: six checkboxes (a form)
   N                    name the machine of the session (every machine sees it; …
+  L                    what the network learned: playbook notes and their suppo…
   /                    filter (words match name, project, branch, model, ...)
   o, d                 o: show offline and dormant; d: detail takes the feed ro…
   a                    active only: hide sessions idle for over an hour
@@ -20,5 +21,4 @@ Keys ─────────────────────────
  Conversation
   up/down, pgup/pgdn   scroll; at the top, older entries load
   g                    go to the oldest loaded entry
-  G, end, f            back to the end and follow new entries
 esc close help  q quit

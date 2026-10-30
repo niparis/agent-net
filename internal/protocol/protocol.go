@@ -504,6 +504,9 @@ type ProjectView struct {
 type NodesInfo struct {
 	GatewayVersion string     `json:"gateway_version"`
 	Nodes          []NodeView `json:"nodes"`
+	// Playbook is the fresh notes of the network, for agent_nodes and the
+	// owner's "Learned" list (decision 0022).
+	Playbook []PlaybookNote `json:"playbook,omitempty"`
 }
 
 // Upgrade outcomes per node.

@@ -432,6 +432,11 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 			return res, err
 		}
 	}
+	// A finding that was never promoted goes stale after 90 days.
+	if _, err := s.db.Exec(`UPDATE findings SET status = ? WHERE status = ? AND at < ?`,
+		protocol.FindingStale, protocol.FindingNew, now.Add(-protocol.FindingStaleDays*24*time.Hour).Unix()); err != nil {
+		return res, err
+	}
 	if res.Any() {
 		detail := strings.TrimPrefix(pairs("messages", res.Messages, "deliveries", res.Deliveries,
 			"events", res.Events, "sessions", res.Sessions, "worker_runs", res.WorkerRuns), " ")

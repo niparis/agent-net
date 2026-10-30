@@ -101,6 +101,29 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			Body: p.Body, IdempotencyKey: p.IdempotencyKey})
 		return data, true, err
 
+	case protocol.OpLearn:
+		// A finding comes from an agent session, never from the command line.
+		var p protocol.LearnRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad agent_learn params")
+		}
+		if client == "cli" {
+			return nil, true, errors.New("agent_learn is for agent sessions, not the command line")
+		}
+		sid, _, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid}); err != nil {
+			return nil, true, tooOldGateway(err)
+		}
+		var out protocol.LearnResult
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, true, err
+		}
+		return out, true, nil
+
 	case protocol.OpWorkerStart:
 		var p protocol.WorkerStartRequest
 		if json.Unmarshal(raw, &p) != nil {
@@ -221,11 +244,11 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
 			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
 			Model: ans.Model, ModelNote: ans.ModelNote, MachineNote: ans.MachineNote,
-			Permissions: ans.Permissions, Track: ans.Track, Playbook: ans.Playbook}, nil
+			Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}, nil
 	}
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch,
-		Permissions: ans.Permissions, Track: ans.Track, Playbook: ans.Playbook}
+		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}
 	// The task is a normal message from the caller, with the fixed preamble.
 	task := p.Task
 	if ans.Task != "" {

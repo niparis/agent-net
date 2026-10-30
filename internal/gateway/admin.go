@@ -109,7 +109,11 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 		}
 		nodes[i].Tracks = tracks
 	}
-	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, nil
+	notes, err := g.store.PlaybookNotes()
+	if err != nil {
+		return protocol.NodesInfo{}, err
+	}
+	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes, Playbook: notes}, nil
 }
 
 // handleVersion serves the version of the gateway. With ?os=&arch= it serves

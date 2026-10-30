@@ -21,8 +21,8 @@ func TestPartialHandbackTrackRecordAndPlaybook(t *testing.T) {
 
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
 		Task: "FAKE:handback FAKE:partial"})
-	if res.Playbook == nil || res.Playbook.Note != "Ask for the diff before you trust it." {
-		t.Errorf("playbook note in the start result: %+v", res.Playbook)
+	if len(res.Playbooks) != 1 || res.Playbooks[0].Note != "Ask for the diff before you trust it." {
+		t.Errorf("playbook note in the start result: %+v", res.Playbooks)
 	}
 	if res.Track == nil || res.Track.Runs != 0 || !strings.Contains(res.Track.Line(), "no runs yet") {
 		t.Errorf("track record before the first run: %+v", res.Track)
@@ -67,7 +67,7 @@ func TestPartialHandbackTrackRecordAndPlaybook(t *testing.T) {
 	if res2.Track == nil || res2.Track.Runs != 1 || res2.Track.Partial != 1 || !strings.Contains(res2.Track.Line(), "1 partial") {
 		t.Errorf("the next start's track record: %+v", res2.Track)
 	}
-	if res2.Playbook == nil || res2.Playbook.Note == "" {
+	if len(res2.Playbooks) != 1 || res2.Playbooks[0].Note == "" {
 		t.Error("the next start lost the playbook note")
 	}
 }
@@ -93,6 +93,32 @@ func TestPlaybookOwnerGateAndCLI(t *testing.T) {
 	mustJSON(t, cli.mustCall("playbook_get", protocol.PlaybookGetRequest{Model: "terra", Harness: "pi"}), &got)
 	if got.Note == nil || got.Note.Note != "Whole model." {
 		t.Errorf("fallback: %+v", got)
+	}
+}
+
+func TestAgentLearnThroughDaemon(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
+	agent, agentID := helloPi(t, n, "learn-agent", "/w/learn", true)
+	raw, err := agent.call("agent_learn", protocol.LearnRequest{SubjectKind: protocol.SubjectModel, Subject: "terra",
+		Finding: "Hands back partial work.", Evidence: []string{"s_w1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var res protocol.LearnResult
+	mustJSON(t, raw, &res)
+	if !res.Accepted || res.ID == 0 || res.Remaining != 2 {
+		t.Errorf("learn result: %+v", res)
+	}
+	findings, err := g.gw.Store().Findings(protocol.SubjectModel, "terra", 10)
+	if err != nil || len(findings) != 1 || findings[0].Reporter != agentID || findings[0].Finding != "Hands back partial work." {
+		t.Errorf("findings: %+v %v", findings, err)
+	}
+	// The command line is not an agent session.
+	cli := cliClient(t, n)
+	if _, err := cli.call("agent_learn", protocol.LearnRequest{SubjectKind: protocol.SubjectModel, Subject: "x", Finding: "y"}); err == nil ||
+		!strings.Contains(err.Error(), "not available to cli clients") {
+		t.Errorf("cli learn: %v", err)
 	}
 }
 

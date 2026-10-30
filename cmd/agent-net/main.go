@@ -57,7 +57,8 @@ const usage = `usage: agent-net <command>
   stop       stop a worker: agent-net stop <session>
   workers    list the workers on the network with their owners
   send       send a message as yourself: agent-net send <session or name> <message...>
-  playbook   the owner's notes about a model: playbook set <model> [--harness H] <text>, playbook get <model> [--harness H]
+  playbook   the owner's notes about a model: playbook set <model> [--harness H] [--pin] <text>,
+             playbook get <model> [--harness H], playbook pin|unpin <model> [--harness H]
   version    print the version of this binary
 `
 

@@ -70,6 +70,11 @@ const (
 	// result for that model.
 	OpPlaybookGet = "playbook_get" // takes PlaybookGetRequest, answers PlaybookGetResult
 	OpPlaybookSet = "playbook_set" // takes PlaybookSetRequest, answers PlaybookGetResult
+
+	// OpLearn records one finding from an agent session (decision 0022).
+	// Findings are proposals: the gateway promotes a pattern to a playbook
+	// note. Open to agent sessions, not to the command line.
+	OpLearn = "agent_learn" // takes LearnRequest, answers LearnResult
 )
 
 // Graph operator methods are available only to the owner.
@@ -238,8 +243,9 @@ type WorkerStartResult struct {
 	// Track is the gateway's record for the chosen harness and model, with
 	// Runs 0 when nothing has run there yet (decision 0022).
 	Track *TrackRecord `json:"track,omitempty"`
-	// Playbook is the owner's note for the chosen model and harness, if any.
-	Playbook *PlaybookNote `json:"playbook,omitempty"`
+	// Playbooks are the fresh notes for the chosen model and harness, the
+	// project and the machine, if any (decision 0022).
+	Playbooks []PlaybookNote `json:"playbooks,omitempty"`
 }
 
 // WorkerStopRequest is OpWorkerStop.

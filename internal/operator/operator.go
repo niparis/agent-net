@@ -84,6 +84,9 @@ type Snapshot struct {
 	// Projects is the project list (registered, seen or both). Empty when the
 	// gateway cannot list them; a screen then shows no project source.
 	Projects []protocol.ProjectView
+	// Playbook is what the network learned, for the owner's "Learned" list
+	// (decision 0022).
+	Playbook []protocol.PlaybookNote
 }
 
 // Workers lists the workers among the agents, with their owners.

@@ -582,7 +582,11 @@ function formatTrack(t: any): string {
 
 function formatPlaybook(p: any): string {
   const note = String(p?.note || "").trim();
-  return note ? `playbook: ${note}` : "";
+  if (!note) return "";
+  const subject = p?.subject ? ` [${p.subject}${p.harness ? " · " + p.harness : ""}]` : "";
+  const support = Number(p?.support) > 0 ? ` ${p.support} findings` : "";
+  const pinned = p?.pinned ? ", pinned" : "";
+  return `playbook${subject}${support}${pinned}: ${note}`;
 }
 
 function formatNodes(r: any): string {
@@ -603,6 +607,7 @@ function formatNodes(r: any): string {
       const extra = tracks.length ? "\n  " + tracks.map(formatTrack).join("\n  ") : "";
       return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}${extra}`;
     })
+    .concat((r.playbook ?? []).map(formatPlaybook))
     .join("\n");
 }
 
@@ -644,7 +649,7 @@ function formatMessages(r: any): string {
 }
 
 function formatStarted(r: any): string {
-  const extra = [r.track ? formatTrack(r.track) : "", formatPlaybook(r.playbook)].filter(Boolean).join("\n");
+  const extra = [r.track ? formatTrack(r.track) : "", ...(r.playbooks ?? []).map(formatPlaybook)].filter(Boolean).join("\n");
   if (r.status === "queued") {
     return (
       `${r.queue_reason}\n` +
@@ -961,6 +966,23 @@ const TOOLS: ToolDef[] = [
     required: ["report"],
     method: "worker_handback",
     format: (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`,
+  },
+  {
+    name: "agent_learn",
+    description:
+      "Record one thing the network should know before it picks or briefs a model, harness, project, MCP server or machine next time. " +
+      "Report only what would change that choice or brief, never a routine result or a status update. " +
+      "A finding is quiet: it is not a message, it does not appear in Needs you, and it changes nothing until the gateway promotes a pattern to the playbook. " +
+      "At most 3 findings per session per day. subject_kind is model, harness, model_harness (subject model@harness), project, mcp or machine.",
+    properties: {
+      subject_kind: str("model, harness, model_harness, project, mcp or machine"),
+      subject: str("the model, harness, model@harness, project, MCP server or machine the finding is about"),
+      finding: str("what you learned, in one or two sentences: only what would change how someone picks or briefs this model, harness or project next time. Never a routine result. At most 500 characters"),
+      evidence: { type: "array", items: { type: "string" }, description: "session or worker IDs that show it (optional, at most 20)" },
+    },
+    required: ["subject_kind", "subject", "finding"],
+    method: "agent_learn",
+    format: (r) => (r.accepted === false ? `Not recorded: ${r.reason}` : `Recorded finding ${r.id} (${r.status}). ${r.remaining} left today.`),
   },
   {
     name: "agent_stop",

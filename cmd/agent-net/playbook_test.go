@@ -17,4 +17,12 @@ func TestPlaybookSetArguments(t *testing.T) {
 	if _, err := playbookSetRequest([]string{"--harness", "pi"}); err == nil {
 		t.Error("a set with no model was accepted")
 	}
+	req, err = playbookSetRequest([]string{"--pin", "terra", "keep", "this"})
+	if err != nil || req.Pin == nil || !*req.Pin || req.Note != "keep this" {
+		t.Errorf("pin: %+v %v", req, err)
+	}
+	req, err = playbookSetRequest([]string{"terra", "--unpin", "keep"})
+	if err != nil || req.Pin == nil || *req.Pin {
+		t.Errorf("unpin: %+v %v", req, err)
+	}
 }
