@@ -354,12 +354,15 @@ func TestDetectCodexModelsFromAppServer(t *testing.T) {
 	script(t, root, "codex", `while IFS= read -r line; do
 case "$line" in
 *'"initialize"'*) printf '%s\n' '{"id":1,"result":{}}';;
-*'"model/list"'*) printf '%s\n' '{"id":2,"result":{"data":[{"id":"gpt-6-luna","model":"gpt-6-luna"},{"id":"gpt-6.1-luna","model":"gpt-6.1-luna"}],"nextCursor":null}}';;
+*'"model/list"'*) printf '%s\n' '{"id":2,"result":{"data":[{"id":"gpt-6-luna","model":"gpt-6-luna","defaultReasoningEffort":"high"},{"id":"gpt-6.1-luna","model":"gpt-6.1-luna"}],"nextCursor":null}}';;
 esac
 done`)
 	got := Detect(context.Background(), Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
 	if len(got) != 1 {
 		t.Fatalf("got %+v", got)
+	}
+	if got[0].ModelDefaultEfforts["gpt-6-luna"] != "high" {
+		t.Fatalf("default efforts: %v", got[0].ModelDefaultEfforts)
 	}
 	if want := []string{"gpt-6-luna", "gpt-6.1-luna"}; !reflect.DeepEqual(got[0].Models, want) {
 		t.Fatalf("codex models: %v, want %v", got[0].Models, want)

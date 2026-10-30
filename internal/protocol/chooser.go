@@ -10,10 +10,11 @@ import (
 
 // WorkerModelCandidate is one model available on an installed harness.
 type WorkerModelCandidate struct {
-	Harness  string
-	Model    string
-	Provider string
-	Failed   bool
+	Harness       string
+	Model         string
+	Provider      string
+	DefaultEffort string
+	Failed        bool
 }
 
 // WorkerModelChoice explains an automatic worker model selection.
@@ -42,7 +43,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	var eligible []ranked
 	var reasons []string
 	for _, c := range candidates {
-		s, ok := LookupModelScore(c.Model, scores)
+		s, ok := LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
 		if !ok {
 			continue
 		}

@@ -102,10 +102,10 @@ func (m Model) quotaWarning() string {
 }
 
 type quotaModel struct {
-	harness, model string
-	score          protocol.ModelScore
-	used           int
-	last           int64
+	harness, model, defaultEffort string
+	score                         protocol.ModelScore
+	used                          int
+	last                          int64
 }
 
 // quotaModels combines the models advertised by live machines with session use.
@@ -124,12 +124,12 @@ func (m Model) quotaModels() ([]quotaModel, int) {
 					continue
 				}
 				seen[key] = true
-				score, ok := protocol.LookupModelScore(model, m.snap.Scores)
+				score, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], m.snap.Scores)
 				if !ok {
 					unscored++
 					continue
 				}
-				row := quotaModel{harness: h.Name, model: model, score: score}
+				row := quotaModel{harness: h.Name, model: model, defaultEffort: h.ModelDefaultEfforts[model], score: score}
 				for _, a := range m.snap.Agents {
 					if a.Harness == h.Name && a.Model == model {
 						if a.LastSeen > row.last {
@@ -162,7 +162,7 @@ func (m Model) quotaModelsView(w int) []string {
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
-		candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model})
+		candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort})
 	}
 	q := &protocol.Quotas{}
 	for _, r := range m.quotaRows() {

@@ -432,8 +432,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, err
 			}
 			for _, model := range h.Models {
-				candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, Failed: !failures[model].IsZero()})
-				if _, ok := protocol.LookupModelScore(model, scores); ok {
+				candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: !failures[model].IsZero()})
+				if _, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], scores); ok {
 					scored = true
 				}
 			}

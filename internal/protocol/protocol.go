@@ -456,6 +456,8 @@ type HarnessInfo struct {
 	// harness has a provider, plain ids for Codex and Claude's aliases. It is
 	// empty when the harness did not report a list.
 	Models []string `json:"models,omitempty"`
+	// ModelDefaultEfforts contains known harness defaults by model ID.
+	ModelDefaultEfforts map[string]string `json:"model_default_efforts,omitempty"`
 	// ModelProviders is the owner's list of preferred model providers on this
 	// machine (model_providers in node.json), first is best. It breaks ties
 	// when a loose model name matches several models (ResolveModel).

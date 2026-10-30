@@ -44,3 +44,11 @@ func TestChooseWorkerModel(t *testing.T) {
 		t.Fatalf("no eligible: %v", err)
 	}
 }
+
+func TestChooseWorkerModelUsesHarnessDefaultEffort(t *testing.T) {
+	candidates := []WorkerModelCandidate{{Harness: "codex", Model: "gpt-6.1-terra", DefaultEffort: "high"}}
+	choice, err := ChooseWorkerModel(candidates, "hard", nil, nil, nil, nil, 0)
+	if err != nil || choice.Score != 42.3 || choice.Fit != "good" {
+		t.Fatalf("choice: %+v %v", choice, err)
+	}
+}

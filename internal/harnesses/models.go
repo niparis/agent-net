@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,8 +81,9 @@ func ParsePiModels(out string) []string {
 // name Codex takes in thread/start; model is kept as a fallback for an older
 // server.
 type codexModel struct {
-	ID    string `json:"id"`
-	Model string `json:"model"`
+	ID            string `json:"id"`
+	Model         string `json:"model"`
+	DefaultEffort string `json:"defaultReasoningEffort"`
 }
 
 type codexModelList struct {
@@ -100,7 +102,7 @@ type codexRPCResult struct {
 // codexModels asks `codex app-server` (stdio) for its model list. It says
 // initialize, then model/list, and follows nextCursor. Any failure gives no
 // list. The caller's context bounds the whole call.
-func codexModels(ctx context.Context, path, searchPATH string) []string {
+func codexModels(ctx context.Context, path, searchPATH string) ([]string, map[string]string) {
 	cmd := exec.CommandContext(ctx, path, "app-server")
 	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(path)+string(os.PathListSeparator)+searchPATH)
 	cmd.WaitDelay = 500 * time.Millisecond // as in runProgram
@@ -108,14 +110,14 @@ func codexModels(ctx context.Context, path, searchPATH string) []string {
 	cmd.Stderr = &stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	if err := cmd.Start(); err != nil {
-		return nil
+		return nil, nil
 	}
 	defer func() {
 		stdin.Close()
@@ -132,12 +134,13 @@ func codexModels(ctx context.Context, path, searchPATH string) []string {
 		"capabilities": map[string]any{"experimentalApi": true},
 	}})
 	if _, ok := readCodexAnswer(sc, 1); !ok {
-		return nil
+		return nil, nil
 	}
 	enc.Encode(map[string]any{"method": "initialized"})
 
 	seen := map[string]bool{}
 	var models []string
+	efforts := map[string]string{}
 	cursor := ""
 	nextID := 2
 	for page := 0; page < 20 && len(models) < MaxModels; page++ {
@@ -168,6 +171,9 @@ func codexModels(ctx context.Context, path, searchPATH string) []string {
 			}
 			seen[id] = true
 			models = append(models, id)
+			if _, level := protocol.SplitModelLevel("m:" + m.DefaultEffort); level != "" {
+				efforts[id] = level
+			}
 		}
 		cursor = list.NextCursor
 		if cursor == "" {
@@ -179,9 +185,9 @@ func codexModels(ctx context.Context, path, searchPATH string) []string {
 		models = models[:MaxModels]
 	}
 	if len(models) == 0 {
-		return nil
+		return nil, nil
 	}
-	return models
+	return models, efforts
 }
 
 // readCodexAnswer reads lines until the answer with the wanted id. Server

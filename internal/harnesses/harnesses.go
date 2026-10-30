@@ -106,7 +106,13 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		}
 		h := protocol.HarnessInfo{Name: n, Path: installs[0], Primary: primary}
 		h.Version = version(ctx, o, installs[0])
-		h.Models = models(ctx, o, n, installs[0], search)
+		if n == "codex" {
+			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+			h.Models, h.ModelDefaultEfforts = codexModels(mctx, installs[0], strings.Join(search, string(os.PathListSeparator)))
+			cancel()
+		} else {
+			h.Models = models(ctx, o, n, installs[0], search)
+		}
 		for _, p := range installs[1:] {
 			h.Others = append(h.Others, protocol.HarnessInstall{Path: p, Version: version(ctx, o, p)})
 		}
@@ -133,10 +139,7 @@ func models(ctx context.Context, o Options, name, path string, search []string) 
 		}
 	case "claude":
 		return ClaudeModels()
-	case "codex":
-		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
-		defer cancel()
-		return codexModels(mctx, path, strings.Join(search, string(os.PathListSeparator)))
+
 	}
 	return nil
 }
