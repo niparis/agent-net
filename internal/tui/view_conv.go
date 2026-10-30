@@ -256,7 +256,7 @@ func (m Model) helpView(w, h int) []string {
 		{"dim row", "offline, or idle for more than an hour"},
 		{"?", "a figure that is missing or older than 45 seconds"},
 		{"… ✓ ↩ ✗", "message state: pending, delivered, replied, failed"},
-		{"↳", "a reply, under the message it answers"},
+		{"└", "a reply, under the message it answers"},
 		{"\"...\"", "the first line of the body, when this machine is in the conversation"},
 	}
 	out := []string{section("Keys", w)}

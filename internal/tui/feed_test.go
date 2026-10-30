@@ -198,7 +198,7 @@ func TestFeedReplySitsUnderItsParent(t *testing.T) {
 	if reply < 0 {
 		t.Fatalf("no reply line:\n%s", strings.Join(lines, "\n"))
 	}
-	if !strings.Contains(lines[reply], "↳") {
+	if !strings.Contains(lines[reply], "└") {
 		t.Fatalf("the reply is not indented: %q", lines[reply])
 	}
 	if reply == 0 || !strings.Contains(lines[reply-1], "request") {
@@ -213,12 +213,12 @@ func TestFeedReplyIsNotIndentedWhenItsParentIsScrolledOut(t *testing.T) {
 	if !strings.Contains(lines[0], "reply") {
 		t.Fatalf("the window does not start at the reply:\n%s", strings.Join(lines, "\n"))
 	}
-	if strings.Contains(lines[0], "↳") {
+	if strings.Contains(lines[0], "└") {
 		t.Fatalf("a reply is indented with no parent above it: %q", lines[0])
 	}
 	// Five rows show the parent first, so the reply hangs under it.
 	lines = m.feedLines(100, 5)
-	if !strings.Contains(lines[1], "↳") {
+	if !strings.Contains(lines[1], "└") {
 		t.Fatalf("the reply does not hang under its parent:\n%s", strings.Join(lines, "\n"))
 	}
 }
@@ -358,5 +358,12 @@ func TestOlderFeedDetectsCTOSender(t *testing.T) {
 	f.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m_cto", Detail: "type=request by=cto"}}})
 	if f.byMsg["m_cto"] == nil || !f.byMsg["m_cto"].FromCTO {
 		t.Fatal("CTO sender lost from older feed")
+	}
+}
+
+func TestReplyIndentUsesBoxDrawingMarker(t *testing.T) {
+	m, _ := feedModel(fakeEvents(), nil)
+	if !strings.Contains(feedText(m, 100), "└") {
+		t.Fatal("reply indentation marker is missing")
 	}
 }

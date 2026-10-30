@@ -424,7 +424,7 @@ func (m Model) feedLine(i, w int, dup map[string]bool, under bool) string {
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	if under {
-		lead += " ↳ "
+		lead += " └ "
 	}
 	at := cell(m.clock(it.At), 6)
 	var line string
