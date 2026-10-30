@@ -209,16 +209,27 @@ type Profile struct {
 }
 
 // AgentView keeps what the daemon verified apart from what the agent claims.
+// AgentCharter is the public part of a project's charter.
+type AgentCharter struct {
+	Purpose         string `json:"purpose,omitempty"`
+	PurposeFallback bool   `json:"purpose_fallback,omitempty"`
+	Maturity        string `json:"maturity,omitempty"`
+	Accepts         string `json:"accepts,omitempty"`
+	Refuses         string `json:"refuses,omitempty"`
+	FeatureRequests string `json:"feature_requests,omitempty"`
+}
+
 type AgentView struct {
-	SessionID string  `json:"session_id"`
-	NodeID    string  `json:"node_id"`
-	Hostname  string  `json:"hostname"`
-	Harness   string  `json:"harness"`
-	Cwd       string  `json:"cwd"`
-	Status    string  `json:"status"`
-	Online    bool    `json:"online"`
-	LastSeen  int64   `json:"last_seen"`
-	Profile   Profile `json:"profile"`
+	Charter   AgentCharter `json:"charter"`
+	SessionID string       `json:"session_id"`
+	NodeID    string       `json:"node_id"`
+	Hostname  string       `json:"hostname"`
+	Harness   string       `json:"harness"`
+	Cwd       string       `json:"cwd"`
+	Status    string       `json:"status"`
+	Online    bool         `json:"online"`
+	LastSeen  int64        `json:"last_seen"`
+	Profile   Profile      `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
 	// Mode and Model are what the session's daemon reported. Empty from an

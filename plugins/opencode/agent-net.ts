@@ -556,6 +556,10 @@ function formatAgent(a: any): string {
   if (p.function) line += `  - ${p.function}`;
   if (p.task) line += `  [task: ${p.task}]`;
   if (p.expertise) line += `  [expertise: ${p.expertise}]`;
+  const c = a.charter ?? {};
+  for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
+    if (c[key]) line += `  [${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}]`;
+  }
   return line;
 }
 
@@ -601,6 +605,10 @@ function formatAgentGet(r: any): string {
   if (p.task) lines.push(`Task: ${p.task}`);
   if (p.expertise) lines.push(`Expertise: ${p.expertise}`);
   if (p.capabilities?.length) lines.push(`Capabilities: ${p.capabilities.join(", ")}`);
+  const c = a.charter ?? {};
+  for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
+    if (c[key]) lines.push(`${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}`);
+  }
   return lines.join("\n");
 }
 

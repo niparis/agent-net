@@ -29,6 +29,7 @@ const closed = [];
 const calls = []; // [method, params] of every call except hello
 const conns = new Map(); // session ID -> its latest daemon connection
 const textResults = []; // params of every session_text_result
+let charterReply = null;
 let hintReply = {}; // what the fake daemon answers to "hint"
 let policyReply = {}; // what the fake daemon answers to "policy"
 const server = createServer((conn) => {
@@ -51,7 +52,9 @@ const server = createServer((conn) => {
       if (line.method === "session_text_result") textResults.push(line.params);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
-        line.method === "project_add"
+        charterReply && line.method === "list" ? { agents: [charterReply] }
+        : charterReply && line.method === "get" ? { agent: charterReply }
+        : line.method === "project_add"
           ? { machine: "mac", dry_run: !!line.params.dry_run,
               added: [{ name: "alpha", path: "/c/alpha", remote: "https://example.com/alpha.git" }],
               existing: [{ name: "beta", path: "/c/beta" }],
@@ -300,6 +303,22 @@ await test("agent_nodes lists machines with their harnesses", async () => {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   stop();
+});
+
+await test("agent list and get show public charter fields", async () => {
+  freshHub();
+  const sessions = new Map([["ses_charter", session("ses_charter", "/work/c")]]);
+  let tools;
+  const c = makeContext("/work/c", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello", () => registered("ses_charter"));
+  charterReply = { session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } };
+  try {
+    for (const name of ["agent_list", "agent_get"]) {
+      const out = (await tools.find((t) => t.name === name).execute({}, { sessionID: "ses_charter" })).content;
+      for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!out.includes(want)) throw new Error(name + " missing " + want);
+    }
+  } finally { charterReply = null; stop(); }
 });
 
 await test("agent_project_add and agent_project_list reach the daemon and print a short result", async () => {

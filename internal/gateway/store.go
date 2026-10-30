@@ -764,6 +764,9 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	if err := s.applyDelegation(one); err != nil {
 		return a, false, err
 	}
+	if err := s.applyAgentCharters(one, false); err != nil {
+		return a, false, err
+	}
 	return one[0], true, nil
 }
 
@@ -817,6 +820,9 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	}
 	rows.Close() // one connection: free it before the next query
 	if err := s.applyDelegation(out); err != nil {
+		return nil, err
+	}
+	if err := s.applyAgentCharters(out, true); err != nil {
 		return nil, err
 	}
 	return out, nil

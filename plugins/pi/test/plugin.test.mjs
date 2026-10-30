@@ -272,6 +272,22 @@ await test("tool results end with the reminder until the session has announced",
   await p.fire("session_shutdown", {});
 });
 
+await test("agent list and get show public charter fields", async () => {
+  const p = makePi();
+  extension(p.api);
+  replies.list = { agents: [{ session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } }] };
+  replies.get = { agent: replies.list.agents[0] };
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  for (const name of ["agent_list", "agent_get"]) {
+    const text = (await p.tools.get(name).execute("id", {})).content[0].text;
+    for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!text.includes(want)) throw new Error(name + " missing " + want);
+  }
+  delete replies.list; delete replies.get;
+  await p.fire("session_shutdown", {});
+});
+
 // ---- peer trust framing ----
 
 function pushDeliver(message) {
