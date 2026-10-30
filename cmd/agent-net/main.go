@@ -59,6 +59,7 @@ const usage = `usage: agent-net <command>
   start      start a worker session: --project NAME --harness opencode --model M "<task>"
   stop       stop a worker: agent-net stop <session>
   workers    list the workers on the network with their owners
+  cto        show or change CTO harness and model settings
   charter    show, set or list the history of a node's charter
   graph      show the graph or undo a change
   node       add or remove an architect
@@ -135,6 +136,8 @@ func main() {
 		err = cmdStop(ctx, args)
 	case "workers":
 		err = cmdWorkers(ctx, args)
+	case "cto":
+		err = cmdCTO(ctx, args)
 	case "charter", "graph", "node", "edge":
 		err = cmdGraph(ctx, os.Args[1], args)
 	case "send":

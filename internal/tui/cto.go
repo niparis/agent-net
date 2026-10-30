@@ -19,12 +19,15 @@ type ctoSource interface {
 	CTOSend(context.Context, string) error
 	CTONew(context.Context) error
 	CTOSettings(context.Context) (protocol.CTOSettings, error)
+	SetCTOSettings(context.Context, protocol.CTOSettingsRequest) (protocol.CTOSettings, error)
 	CTOEvents(context.Context, int) (protocol.CTOEvents, error)
 	CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error)
 	CTOUndo(context.Context, int64) error
 }
 type ctoState struct {
 	input               textinput.Model
+	settingsForm        *ctoSettingsForm
+	configuredModel     string
 	editing, polling    bool
 	confirming          bool
 	model, harness, err string
@@ -35,13 +38,24 @@ type ctoState struct {
 	lastGraphID         int64
 	generation          int
 }
-type ctoPollMsg struct {
-	events     protocol.CTOEvents
-	history    []protocol.CTOGraphChange
-	model      string
+type ctoSettingsForm struct {
 	harness    string
+	input      textinput.Model
+	modelFocus bool
+}
+type ctoSettingsMsg struct {
+	settings   protocol.CTOSettings
 	err        error
 	generation int
+}
+type ctoPollMsg struct {
+	configuredModel string
+	events          protocol.CTOEvents
+	history         []protocol.CTOGraphChange
+	model           string
+	harness         string
+	err             error
+	generation      int
 }
 type ctoSendMsg struct {
 	err        error
@@ -86,7 +100,7 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		}
 		history, err := src.CTOGraphHistory(ctx, events.GraphAfter)
 		model := settings.Model
-		if events.Model != "" {
+		if model == "" && events.Model != "" {
 			model = events.Model
 		}
 		if model == "" {
@@ -96,7 +110,7 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		if harness == "" {
 			harness = "opencode"
 		}
-		return ctoPollMsg{events: events, history: history, model: model, harness: harness, err: err, generation: generation}
+		return ctoPollMsg{events: events, history: history, model: model, harness: harness, configuredModel: settings.Model, err: err, generation: generation}
 	}
 }
 func ctoMessage(raw json.RawMessage) string {
@@ -122,9 +136,9 @@ func ctoMessage(raw json.RawMessage) string {
 		}
 		if json.Unmarshal(v.Error, &e) == nil {
 			msg := firstNonEmpty(firstNonEmpty(e.Message, e.Data.Message), firstNonEmpty(e.Name, string(v.Error)))
-			return "error: " + msg
+			return "error: " + ctoErrorHint(msg)
 		}
-		return "error: " + string(v.Error)
+		return "error: " + ctoErrorHint(string(v.Error))
 	}
 	if v.Type != "user" && v.Type != "assistant" {
 		return ""
@@ -147,6 +161,9 @@ func ctoMessage(raw json.RawMessage) string {
 }
 func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
+	if c.settingsForm != nil {
+		return m.ctoSettingsKey(k)
+	}
 	if k.Type == tea.KeyEsc {
 		c.editing = false
 		c.input.Blur()
@@ -179,6 +196,17 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		switch k.String() {
+		case "m":
+			ti := textinput.New()
+			ti.Prompt = ""
+			ti.CharLimit = 4000
+			ti.SetValue(c.configuredModel)
+			harness := c.harness
+			if harness == "" {
+				harness = "opencode"
+			}
+			c.settingsForm = &ctoSettingsForm{harness: harness, input: ti}
+			return m, nil
 		case "o":
 			src := m.src.(ctoSource)
 			return m, func() tea.Msg {
@@ -240,6 +268,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		return
 	}
 	c.err = ""
+	c.configuredModel = r.configuredModel
 	c.model = r.model
 	c.harness = r.harness
 	c.history = r.history
@@ -296,4 +325,92 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	for _, v := range lines {
 		c.messages = append(c.messages, v.text)
 	}
+}
+
+func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	c := m.cto
+	f := c.settingsForm
+	switch k.Type {
+	case tea.KeyEsc:
+		c.settingsForm = nil
+		return m, nil
+	case tea.KeyUp, tea.KeyShiftTab:
+		f.modelFocus = false
+		f.input.Blur()
+		return m, nil
+	case tea.KeyDown:
+		f.modelFocus = true
+		return m, f.input.Focus()
+	case tea.KeyTab:
+		if !f.modelFocus {
+			f.modelFocus = true
+			return m, f.input.Focus()
+		}
+		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
+		if len(candidates) == 1 {
+			f.input.SetValue(candidates[0])
+			f.input.CursorEnd()
+		}
+		return m, nil
+	case tea.KeyLeft, tea.KeyRight:
+		if !f.modelFocus {
+			if f.harness == "opencode" {
+				f.harness = "claude"
+			} else {
+				f.harness = "opencode"
+			}
+			return m, nil
+		}
+	case tea.KeyEnter:
+		harness, model := f.harness, strings.TrimSpace(f.input.Value())
+		g := c.generation
+		c.settingsForm = nil
+		src := m.src.(ctoSource)
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			settings, err := src.SetCTOSettings(ctx, protocol.CTOSettingsRequest{Harness: &harness, Model: &model})
+			return ctoSettingsMsg{settings, err, g}
+		}
+	}
+	if f.modelFocus {
+		var cmd tea.Cmd
+		f.input, cmd = f.input.Update(k)
+		return m, cmd
+	}
+	return m, nil
+}
+
+func (m Model) ctoModelCandidates(harness, query string) []string {
+	var models []string
+	if harness == "claude" {
+		models = []string{"opus", "sonnet", "fable"}
+	} else {
+		for _, n := range m.snap.Nodes {
+			if n.NodeID == m.snap.NodeID {
+				for _, h := range n.Harnesses {
+					if h.Name == "opencode" {
+						models = append(models, h.Models...)
+					}
+				}
+			}
+		}
+	}
+	var out []string
+	for _, model := range models {
+		if strings.Contains(strings.ToLower(model), strings.ToLower(query)) {
+			out = append(out, model)
+		}
+	}
+	return out
+}
+
+func ctoErrorHint(msg string) string {
+	lower := strings.ToLower(msg)
+	for _, term := range []string{"credit", "quota", "unknown model", "model not found", "model does not exist"} {
+		if strings.Contains(lower, term) {
+			return msg + " (m to change the model)"
+		}
+	}
+	return msg
 }

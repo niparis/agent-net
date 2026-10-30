@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -13,6 +15,7 @@ import (
 
 type fakeCTOSource struct {
 	*fakeSource
+	saved   protocol.CTOSettingsRequest
 	sent    []string
 	events  protocol.CTOEvents
 	fresh   int
@@ -32,6 +35,10 @@ func (f *fakeCTOSource) CTOEvents(_ context.Context, index int) (protocol.CTOEve
 }
 func (f *fakeCTOSource) CTOSettings(context.Context) (protocol.CTOSettings, error) {
 	return protocol.CTOSettings{Model: "fake/m1"}, nil
+}
+func (f *fakeCTOSource) SetCTOSettings(_ context.Context, req protocol.CTOSettingsRequest) (protocol.CTOSettings, error) {
+	f.saved = req
+	return protocol.CTOSettings{Harness: *req.Harness, Model: *req.Model}, nil
 }
 func (f *fakeCTOSource) CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error) {
 	return f.history, nil
@@ -292,5 +299,65 @@ func TestCTOSendErrorSurvivesPoll(t *testing.T) {
 	m.applyCTOPoll(ctoPollMsg{generation: m.cto.generation})
 	if !strings.Contains(strings.Join(m.cto.messages, "\n"), "error: send failed") {
 		t.Fatalf("error lost: %+v", m.cto.messages)
+	}
+}
+
+func TestCTOModelFormSaveAndCancel(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := keys(New(src), "C", "m")
+	if m.cto.settingsForm == nil {
+		t.Fatal("model form did not open")
+	}
+	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
+	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
+	m.cto.settingsForm.input.SetValue("opus")
+	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("save did not start")
+	}
+	next, _ = m.update(cmd())
+	m = next.(Model)
+	if src.saved.Harness == nil || *src.saved.Harness != "claude" || src.saved.Model == nil || *src.saved.Model != "opus" || !strings.Contains(m.View(), "CTO (claude · opus)") {
+		t.Fatalf("save: %+v view %s", src.saved, m.View())
+	}
+	m = keys(m, "m")
+	m = send(m, tea.KeyMsg{Type: tea.KeyEsc})
+	if m.cto.settingsForm != nil || m.focus != focusCTO {
+		t.Fatal("cancel failed")
+	}
+}
+
+func TestCTOModelFormGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+		m := New(src)
+		m.loc, m.now = time.UTC, func() time.Time { return t0 }
+		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = refresh(m, src.fakeSource)
+		m.src = src
+		m = send(m, m.ctoPollCmd()())
+		m = keys(m, "C", "m")
+		golden(t, fmt.Sprintf("cto_model_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestCTOProviderErrorsSuggestModelChange(t *testing.T) {
+	for _, msg := range []string{"insufficient credits", "quota exceeded", "unknown model"} {
+		got := ctoMessage(json.RawMessage(fmt.Sprintf(`{"type":"idle","error":{"message":%q}}`, msg)))
+		if !strings.HasSuffix(got, " (m to change the model)") {
+			t.Errorf("missing hint: %q", got)
+		}
+	}
+	if got := ctoMessage(json.RawMessage(`{"error":{"message":"network unavailable"}}`)); strings.Contains(got, "m to change") {
+		t.Fatal(got)
+	}
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	model, _ := New(src).startCTO()
+	m := model.(Model)
+	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: m.cto.generation})
+	m = next.(Model)
+	if !strings.HasSuffix(m.cto.messages[0], " (m to change the model)") {
+		t.Fatal(m.cto.messages)
 	}
 }

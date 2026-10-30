@@ -144,7 +144,7 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"tab", "focus", 1}, {"enter", "send", 1}, {"o", "full screen", 2}, {"n", "new", 2}, {"u", "undo", 2}, {"esc", "back", 1}}
+		return []hint{{"tab", "focus", 1}, {"enter", "send", 1}, {"m", "model", 1}, {"o", "full screen", 2}, {"n", "new", 2}, {"u", "undo", 2}, {"esc", "back", 1}}
 	case m.tab == 1:
 		return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"v", "view", 2}, {"l", "events", 2}, {"1", "sessions", 3}, {"?", "help", 3}}
 	case m.tab == 2:
@@ -224,7 +224,7 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"M", "map: charters, maturity, edges and history (read only)"},
-		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes"},
+		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},

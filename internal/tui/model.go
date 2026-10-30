@@ -346,10 +346,28 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.mapCmd()
 		}
 		return m, nil
+	case ctoSettingsMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else {
+				m.cto.err = ""
+				m.cto.harness = msg.settings.Harness
+				m.cto.configuredModel = msg.settings.Model
+				m.cto.model = msg.settings.Model
+				if m.cto.harness == "" {
+					m.cto.harness = "opencode"
+				}
+				if m.cto.model == "" {
+					m.cto.model = "default"
+				}
+			}
+		}
+		return m, nil
 	case ctoSendMsg:
 		if m.cto != nil && m.cto.generation == msg.generation {
 			if msg.err != nil {
-				line := "error: " + sanitize(msg.err.Error())
+				line := "error: " + ctoErrorHint(sanitize(msg.err.Error()))
 				m.cto.local = append(m.cto.local, protocol.CTOAction{Text: line, At: m.now().UnixNano()})
 				m.cto.messages = append(m.cto.messages, line)
 			} else if !m.cto.polling {
