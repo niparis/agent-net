@@ -72,7 +72,12 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	// One session, with the model the caller chose.
 	req := map[string]any{"title": "agent-net worker " + w.id + ": " + w.project}
 	if model != "" {
-		req["model"] = map[string]string{"providerID": provider, "id": model}
+		base, effort := protocol.SplitModelLevel(model)
+		selected := map[string]string{"providerID": provider, "id": base}
+		if effort != "" {
+			selected["variant"] = effort
+		}
+		req["model"] = selected
 	}
 	body, code, err := api("POST", "/api/session", req)
 	if err != nil {

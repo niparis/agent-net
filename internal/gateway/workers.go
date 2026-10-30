@@ -432,37 +432,53 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
 			}
 		}
-		var candidates []protocol.WorkerModelCandidate
-		scored := false
-		for _, h := range node.Harnesses {
-			if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
-				continue
-			}
-			failures, err := g.store.RecentWorkerFailures(pick.NodeID, h.Name)
-			if err != nil {
-				return none, err
-			}
-			successes, err := g.store.SucceededModels(pick.NodeID, h.Name)
-			if err != nil {
-				return none, err
-			}
-			for _, model := range h.Models {
-				if _, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], scores); ok {
-					scored = true
-				}
-				if protocol.WorkerProviderAllowed(h.Name, model, providers.Providers, quotas) {
-					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
-				}
-			}
+		profiles, err := g.store.WorkerProfiles()
+		if err != nil {
+			return none, err
 		}
-		if !scored && p.Model == "" && p.Difficulty == "" {
+		if len(profiles) == 0 {
 			if p.Harness == "" {
 				p.Harness = "opencode"
 			}
-			automaticNote = "no scored models; using the harness default model"
+			p.Model = ""
+			automaticNote = "no registered workers; add one with the CTO or agent_worker_profile_add"
 		} else {
-			if scored && len(candidates) == 0 {
-				return none, reject("no scored models are on an allowed worker provider; see agent-net scores providers")
+			var candidates []protocol.WorkerModelCandidate
+			for _, h := range node.Harnesses {
+				if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
+					continue
+				}
+				failures, err := g.store.RecentWorkerFailures(pick.NodeID, h.Name)
+				if err != nil {
+					return none, err
+				}
+				successes, err := g.store.SucceededModels(pick.NodeID, h.Name)
+				if err != nil {
+					return none, err
+				}
+				for _, profile := range profiles {
+					if profile.Harness != h.Name {
+						continue
+					}
+					installed := false
+					for _, model := range h.Models {
+						if model == profile.Model {
+							installed = true
+							break
+						}
+					}
+					if !installed || !protocol.WorkerProviderAllowed(h.Name, profile.Model, providers.Providers, quotas) {
+						continue
+					}
+					model := profile.Model
+					if profile.Effort != "" {
+						model += ":" + profile.Effort
+					}
+					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[profile.Model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+				}
+			}
+			if len(candidates) == 0 {
+				return none, reject("no registered workers are available on an allowed worker provider on %s", node.Hostname)
 			}
 			g.mu.Lock()
 			rotation := g.modelRotation
