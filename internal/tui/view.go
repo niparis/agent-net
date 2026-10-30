@@ -133,14 +133,20 @@ func statusStyle(s string) lipgloss.Style {
 	return sDim
 }
 
-func stateStyle(s string) lipgloss.Style {
+// stateSymbol is the one mark at the end of a feed line. The help screen lists
+// what each one means.
+func stateSymbol(s string) string {
 	switch s {
-	case protocol.StateDelivered, protocol.StateReplied:
-		return sIdle
+	case protocol.StateStored, protocol.StateDispatched:
+		return "…"
+	case protocol.StateDelivered:
+		return "✓"
+	case protocol.StateReplied:
+		return "↩"
 	case protocol.StateFailed, protocol.StateExpired, "refused":
-		return sBad
+		return "✗"
 	}
-	return sBusy
+	return "?"
 }
 
 // clock formats a time for the screen: the hour and minute today, the day and
@@ -353,34 +359,53 @@ func (m Model) who(id string) string {
 
 func (m Model) feedHeading(w int) string {
 	title := "Messages (live)"
+	note := ""
+	switch m.events {
+	case eventsAll:
+		note = ", all events"
+	case eventsNone:
+		note = ", events hidden"
+	}
 	if m.focus == focusFeed {
-		title = "Messages (live, enter opens one)"
+		title = "Messages (live, enter opens the conversation" + note + ")"
+	} else if note != "" {
+		title = "Messages (live" + note + ")"
 	}
 	return section(title, w)
 }
 
-// feedWindow returns the first item to show: the newest items fill the pane,
-// unless the cursor (feed focus) is further back.
+// feedWindow returns the first drawn line to show: the newest lines fill the
+// pane, unless the cursor (feed focus) is further back.
 func (m Model) feedWindow(rows int) int {
-	n := len(m.feed.items)
+	n := len(m.feedVisible())
 	top := max(n-rows, 0)
-	if m.focus == focusFeed && m.feedCur >= 0 && m.feedCur < top {
-		top = m.feedCur
+	if m.focus == focusFeed {
+		if pos := m.feedPos(); pos >= 0 && pos < top {
+			top = pos
+		}
 	}
 	return top
 }
 
 func (m Model) feedLines(w, n int) []string {
 	var out []string
+	vis := m.feedVisible()
 	switch {
 	case m.feed.unavailable != "":
 		out = append(out, sDim.Render(clip("  "+m.feed.unavailable, w)))
 	case len(m.feed.items) == 0:
 		out = append(out, sDim.Render("  no messages yet"))
+	case len(vis) == 0:
+		out = append(out, sDim.Render("  no messages shown (l shows the session and worker events)"))
 	default:
+		dup := m.duplicateFeedNames()
 		top := m.feedWindow(n)
-		for i := top; i < len(m.feed.items) && len(out) < n; i++ {
-			out = append(out, m.feedLine(i, w))
+		for p := top; p < len(vis) && len(out) < n; p++ {
+			// A reply hangs under its parent only when the parent is the line
+			// drawn just above it, not when the window starts at the reply.
+			under := p > top && vis[p-1] == vis[p]-1 &&
+				m.feed.items[vis[p]].Parent != "" && m.feed.items[vis[p]-1].MsgID == m.feed.items[vis[p]].Parent
+			out = append(out, m.feedLine(vis[p], w, dup, under))
 		}
 	}
 	for len(out) < n {
@@ -389,41 +414,90 @@ func (m Model) feedLines(w, n int) []string {
 	return out
 }
 
-func (m Model) feedLine(i, w int) string {
+// feedLine draws one line: the time, both names, the type, the first line of
+// the body when this machine may read it, and one state mark.
+func (m Model) feedLine(i, w int, dup map[string]bool, under bool) string {
 	it := m.feed.items[i]
-	marker := "  "
+	lead := "  "
 	selected := m.focus == focusFeed && i == m.feedCur
 	if selected {
-		marker = "> "
+		lead = "> "
+	}
+	if under {
+		lead += " ↳ "
 	}
 	at := cell(m.clock(it.At), 6)
 	var line string
 	if it.isMessage() {
-		const typeW, stateW = 12, 10
-		leftW := min(max(w-2-6-1-typeW-1-stateW-1, 10), 64)
-		half := (leftW - 4) / 2
-		from, to := m.who(it.From), m.who(it.To)
-		// Give the longer name the room the shorter one does not use.
-		fw, tw := half, leftW-4-half
-		if lf := ansi.StringWidth(from); lf < fw {
-			fw, tw = lf, leftW-4-lf
-		} else if lt := ansi.StringWidth(to); lt < tw {
-			fw, tw = leftW-4-lt, lt
-		}
-		ends := cell(from, fw) + " -> " + cell(to, tw)
-		state := cell(it.State, stateW)
-		if !selected {
-			state = stateStyle(it.State).Render(state)
-		}
-		line = marker + at + " " + ends + " " + cell(dashIfEmpty(it.Type), typeW) + " " + state
-		line = clip(line, w)
+		line = m.messageLine(it, lead, at, w, dup)
 	} else {
-		line = marker + at + " " + clip(m.infoText(it), max(w-2-6-1, 0))
+		text := clip(m.infoText(it), max(w-ansi.StringWidth(lead)-6-1, 0))
+		line = lead + at + " " + text
+		if m.quietEvent(it) && !selected {
+			line = sDim.Render(line)
+		}
 	}
 	if selected {
 		return sSel.Render(clip(stripStyles(line), w))
 	}
 	return clip(line, w)
+}
+
+// messageLine lays out one message: names first, then the type, the quoted
+// first line of the body and the state mark at the right edge.
+func (m Model) messageLine(it *feedItem, lead, at string, w int, dup map[string]bool) string {
+	const typeW = 12
+	// lead, time, the arrow, the two gaps, the type, the gap before the mark.
+	fixed := ansi.StringWidth(lead) + 6 + 1 + 4 + 2 + typeW + 2 + 2 + 1
+	room := w - fixed
+	if room < 6 {
+		// Too narrow for names and a snippet: keep the ends, cut the rest.
+		return lead + at + " " + cell(m.feedDisplayName(it.From, dup), 8) + " -> " +
+			cell(m.feedDisplayName(it.To, dup), 8) + " " + stateSymbol(it.State)
+	}
+	// Names take at most three fifths of the room, leaving a snippet the rest.
+	budget := room
+	if room > 14 {
+		budget = min(room-8, max(room*3/5, 12))
+	}
+	fw, tw := fitNames(m.feedDisplayName(it.From, dup), m.feedDisplayName(it.To, dup), budget)
+	prefix := lead + at + " " + cell(m.feedDisplayName(it.From, dup), fw) + " -> " +
+		cell(m.feedDisplayName(it.To, dup), tw) + "  " + cell(dashIfEmpty(it.Type), typeW) + "  "
+	room = w - ansi.StringWidth(prefix) - 3
+	if it.Snippet != "" && room >= 4 {
+		prefix += clip(`"`+it.Snippet+`"`, room)
+	}
+	if pad := w - ansi.StringWidth(prefix) - 1; pad > 0 {
+		prefix += strings.Repeat(" ", pad)
+	}
+	return prefix + sDim.Render(stateSymbol(it.State))
+}
+
+// fitNames splits the room for two names, giving the longer one what the
+// shorter one does not use.
+func fitNames(a, b string, budget int) (int, int) {
+	aw, bw := ansi.StringWidth(a), ansi.StringWidth(b)
+	if aw+bw <= budget {
+		return aw, bw
+	}
+	half := budget / 2
+	if aw <= half {
+		return aw, budget - aw
+	}
+	if bw <= half {
+		return budget - bw, bw
+	}
+	return half, budget - half
+}
+
+// quietEvent tells whether an event is drawn dim: session and worker lines are
+// background news, not messages.
+func (m Model) quietEvent(it *feedItem) bool {
+	switch it.Kind {
+	case "session.new", "worker.started", "worker.stopped", "worker.refused":
+		return true
+	}
+	return false
 }
 
 // infoText describes an event that is not a message.
@@ -440,14 +514,14 @@ func (m Model) infoText(it *feedItem) string {
 		d := parseDetail(it.Detail)
 		return fmt.Sprintf("new session %s (%s) on %s", sanitize(dashIfEmpty(d["name"])), sanitize(dashIfEmpty(d["harness"])), sanitize(host))
 	case "msg.refused":
-		return "send refused from " + m.who(it.From) + ": " + sanitize(it.Detail)
+		return "send refused from " + m.feedName(it.From) + ": " + sanitize(it.Detail)
 	case "worker.started":
 		d := parseDetail(it.Detail)
-		return fmt.Sprintf("worker started: %s %s in %s for %s", m.who(it.Session), sanitize(dashIfEmpty(d["harness"])),
-			sanitize(dashIfEmpty(d["project"])), m.who(d["owner"]))
+		return fmt.Sprintf("worker started: %s %s in %s for %s", m.feedName(it.Session), sanitize(dashIfEmpty(d["harness"])),
+			sanitize(dashIfEmpty(d["project"])), m.feedName(d["owner"]))
 	case "worker.stopped":
 		d := parseDetail(it.Detail)
-		return fmt.Sprintf("worker stopped: %s (%s)", m.who(it.Session), sanitize(strings.ReplaceAll(dashIfEmpty(d["reason"]), "_", " ")))
+		return fmt.Sprintf("worker stopped: %s (%s)", m.feedName(it.Session), sanitize(strings.ReplaceAll(dashIfEmpty(d["reason"]), "_", " ")))
 	case "worker.refused":
 		d := parseDetail(it.Detail)
 		return fmt.Sprintf("worker refused in %s: %s", sanitize(dashIfEmpty(d["project"])), sanitize(detailReason(it.Detail)))

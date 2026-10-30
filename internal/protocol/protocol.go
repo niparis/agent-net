@@ -96,6 +96,13 @@ type SessionInfo struct {
 	Model string `json:"model,omitempty"`
 	// Worker is set when agent-net started this session as a worker.
 	Worker *WorkerInfo `json:"worker,omitempty"`
+	// ToolsVersion is the agent-net version of the session's MCP tools (the
+	// `agent-net mcp` process it started), ToolsUnknown when that process sent
+	// no version, and empty for a session with no such process. ToolsOld is
+	// true when those tools are older than the machine's agent-net, so the
+	// owner should reconnect agent-net in the session.
+	ToolsVersion string `json:"tools_version,omitempty"`
+	ToolsOld     bool   `json:"tools_old,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -213,6 +220,9 @@ type AgentView struct {
 	Model string `json:"model,omitempty"`
 	// Worker is set for a session that agent-net started as a worker.
 	Worker *WorkerInfo `json:"worker,omitempty"`
+	// ToolsVersion and ToolsOld: see SessionInfo. Empty from an older daemon.
+	ToolsVersion string `json:"tools_version,omitempty"`
+	ToolsOld     bool   `json:"tools_old,omitempty"`
 	// PID is the process ID of the session on its machine (0 when unknown).
 	PID int `json:"pid,omitempty"`
 	// FirstSeen is when the gateway first stored the session, in Unix

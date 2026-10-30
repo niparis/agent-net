@@ -18,7 +18,7 @@ Selected session ─────────────────────
   model    claude-sonnet-5-5, background  │
   function trading strategies             │
   task     backtest v2                    │
-Messages (live, enter opens one) ───────────────────────────────────────────────
-  14:03  tenebrae (Mac) -> you (on Mac)                  reply        delivered
+Messages (live, enter opens the conversation) ──────────────────────────────────
+  14:03  tenebrae -> you  reply                                                ✓
 > 14:04  worker refused in nope: no project named nope is known
-up/down move  enter open body  m msg  tab sessions  / filter  ? help  q quit
+up/down move  enter conversation  v body  m msg  tab sessions  ? help  q quit

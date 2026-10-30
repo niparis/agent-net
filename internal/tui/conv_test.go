@@ -185,12 +185,12 @@ func TestConversationOpensWithEnterOrC(t *testing.T) {
 			t.Fatalf("%s: esc did not close", k)
 		}
 	}
-	// Enter in the feed opens a message, not a conversation.
+	// Enter in the feed opens the conversation of the end on this machine.
 	m, _ := convModel(100, 30, newTranscript(5))
 	m = pressKey(m, "tab")
 	m = pressKey(m, "enter")
-	if m.conv != nil {
-		t.Fatal("enter in the feed opened a conversation")
+	if m.conv == nil || m.conv.id != "s_0000000000000001" {
+		t.Fatalf("enter in the feed opened %+v", m.conv)
 	}
 }
 

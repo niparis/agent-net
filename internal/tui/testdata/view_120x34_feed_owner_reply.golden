@@ -25,10 +25,10 @@ Selected session ─────────────────────
   messages 13:57  -> tenebrae-53 (Mac)  reply  delivered        │
            13:56  <- tenebrae-53 (Mac)  request  replied        │
                                                                 │
-Messages (live, enter opens one) ───────────────────────────────────────────────────────────────────────────────────────
-  14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
-  14:00  worker started: tenebrae (Mac) opencode in tenebrae for you (on Mac)
-  14:00  you (on Mac) -> tenebrae (Mac)                                   request      replied
-  14:03  tenebrae (Mac) -> you (on Mac)                                   reply        delivered
+Messages (live, enter opens the conversation) ──────────────────────────────────────────────────────────────────────────
+  14:04  tenebrae-53 -> s_00000000  request                                                                            …
+  14:00  worker started: tenebrae opencode in tenebrae for you
+  14:00  you -> tenebrae  request                                                                                      ↩
+   ↳ 14:03  tenebrae -> you  reply                                                                                     ✓
 > 14:04  worker refused in nope: no project named nope is known
-up/down move  enter open body  m msg  tab sessions  / filter  o offline  ? help  q quit
+up/down move  enter conversation  v body  m msg  l events  tab sessions  / filter  o offline  ? help  q quit

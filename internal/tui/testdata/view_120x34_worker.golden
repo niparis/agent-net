@@ -26,9 +26,9 @@ Selected session ─────────────────────
                                                                 │
                                                                 │
 Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
-  14:00  worker started: tenebrae (Mac) opencode in tenebrae for you (on Mac)
-  14:00  you (on Mac) -> tenebrae (Mac)                                   request      replied
-  14:03  tenebrae (Mac) -> you (on Mac)                                   reply        delivered
+  14:04  tenebrae-53 -> s_00000000  request                                                                            …
+  14:00  worker started: tenebrae opencode in tenebrae for you
+  14:00  you -> tenebrae  request                                                                                      ↩
+   ↳ 14:03  tenebrae -> you  reply                                                                                     ✓
   14:04  worker refused in nope: no project named nope is known
 up/down select  enter conversation  e enter it  m msg  s start  x stop  / filter  o offline  tab feed  ? help  q quit

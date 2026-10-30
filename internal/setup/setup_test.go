@@ -26,6 +26,9 @@ func TestSystemdUnit(t *testing.T) {
 			t.Errorf("daemon unit lacks %q:\n%s", want, d)
 		}
 	}
+	if !strings.Contains(d, "KillMode=process") {
+		t.Errorf("daemon unit must not kill the workers when it stops:\n%s", d)
+	}
 	g := SystemdUnit(Service{Name: "gateway", Args: []string{"gateway", "--listen", "0.0.0.0:7420", "--dist", "/a b/dist"}}, "/x/agent-net")
 	if !strings.Contains(g, `ExecStart=/x/agent-net gateway --listen 0.0.0.0:7420 --dist "/a b/dist"`+"\n") || !strings.Contains(g, "Restart=on-failure") {
 		t.Errorf("gateway unit:\n%s", g)
@@ -48,6 +51,7 @@ assert d["ProgramArguments"] == ["/Users/me & co/.local/bin/agent-net", "daemon"
 assert d["KeepAlive"] is True and d["RunAtLoad"] is True
 assert d["StandardErrorPath"] == "/Users/me & co/Library/Logs/agent-net-daemon.log", d
 assert d["StandardOutPath"] == d["StandardErrorPath"]
+assert d["AbandonProcessGroup"] is True, d
 `
 	cmd := exec.Command("python3", "-I", "-c", script)
 	cmd.Stdin = strings.NewReader(plist)
@@ -384,5 +388,50 @@ func TestInviteLine(t *testing.T) {
 	}
 	if isTailscale("192.168.1.2") || !isTailscale("100.64.0.10") || isTailscale("100.128.0.1") {
 		t.Error("tailscale range check")
+	}
+}
+
+func TestEnsureWorkersSurviveUnitFixesAnOldUnit(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agent-net-daemon.service")
+	old := "[Unit]\nDescription=agent-net daemon\n\n[Service]\nExecStart=/x/agent-net daemon\nRestart=always\n\n[Install]\nWantedBy=default.target\n"
+	os.WriteFile(path, []byte(old), 0o644)
+	changed, err := EnsureWorkersSurviveUnit(path)
+	if err != nil || !changed {
+		t.Fatalf("changed=%v err=%v", changed, err)
+	}
+	b, _ := os.ReadFile(path)
+	if !strings.Contains(string(b), "[Service]\nKillMode=process\nExecStart=/x/agent-net daemon\n") {
+		t.Errorf("unit:\n%s", b)
+	}
+	if changed, _ := EnsureWorkersSurviveUnit(path); changed {
+		t.Error("second run changed the file again")
+	}
+	// The unit that setup writes now is already right.
+	os.WriteFile(path, []byte(SystemdUnit(Service{Name: "daemon", Args: []string{"daemon"}}, "/x/agent-net")), 0o644)
+	if changed, _ := EnsureWorkersSurviveUnit(path); changed {
+		t.Error("changed a unit that already has KillMode")
+	}
+	if changed, err := EnsureWorkersSurviveUnit(path + ".none"); changed || err != nil {
+		t.Errorf("missing file: changed=%v err=%v", changed, err)
+	}
+}
+
+func TestUninstallStopsTheWorkersThatKeepRunning(t *testing.T) {
+	f := newFixture(t)
+	state := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	var gotDir string
+	old := stopWorkers
+	stopWorkers = func(dir string, _ time.Duration) (int, error) { gotDir = dir; return 2, nil }
+	t.Cleanup(func() { stopWorkers = old })
+	var out bytes.Buffer
+	if err := Uninstall(Options{Out: &out, Exe: "/x"}); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if gotDir != state {
+		t.Errorf("workers stopped in %q, want %q", gotDir, state)
+	}
+	if !strings.Contains(norm(out.String()), "workers ok (stopped 2)") {
+		t.Errorf("output:\n%s", out.String())
 	}
 }

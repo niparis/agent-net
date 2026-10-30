@@ -28,11 +28,11 @@ Selected session ─────────────────────
                                                                 │
 Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
   13:55  build-vm connected
-  13:56  tenebrae-53 (Mac) -> strategies (Mac)                            request      replied
-  13:57  strategies (Mac) -> tenebrae-53 (Mac)                            reply        delivered
-  14:01  ci-runner (build-vm) -> tenebrae-53 (Mac)                        request      delivered
-  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)                        notification failed
-  14:04  tenebrae-53 (Mac) -> s_00000000                                  request      dispatched
+  13:56  tenebrae-53 -> strategies  request                                                                            ↩
+   ↳ 13:57  strategies -> tenebrae-53  reply                                                                           ✓
+  14:01  ci-runner -> tenebrae-53  request                                                                             ✓
+  14:02  tenebrae-53 -> ci-runner  notification                                                                        ✗
+  14:04  tenebrae-53 -> s_00000000  request                                                                            …
 
 
 

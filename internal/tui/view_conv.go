@@ -142,7 +142,8 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusFeed:
-		return []hint{{"up/down", "move", 1}, {"enter", "open body", 1}, {"m", "msg", 1}, {"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"up/down", "move", 1}, {"enter", "conversation", 1}, {"v", "body", 2}, {"m", "msg", 1}, {"l", "events", 3},
+			{"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
 	}
 	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
@@ -202,10 +203,10 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
-		{"o", "show offline and dormant sessions"},
+		{"o, d", "o: show offline and dormant; d: detail takes the feed room"},
 		{"a", "active only: hide sessions idle for over an hour"},
-		{"d", "give the detail pane the room of the message feed"},
-		{"tab", "message feed and back; enter opens a message body"},
+		{"tab", "message feed and back; enter opens the conversation of the local end"},
+		{"v, l", "v: open the body of the message; l: feed events (worker, all, none)"},
 		{"r", "refresh now"},
 		{"", ""},
 		{"Conversation", ""},
@@ -224,6 +225,9 @@ func (m Model) helpView(w, h int) []string {
 		{"shared", "one process many sessions share; its figures are on the machine line"},
 		{"dim row", "offline, or idle for more than an hour"},
 		{"?", "a figure that is missing or older than 45 seconds"},
+		{"… ✓ ↩ ✗", "message state: pending, delivered, replied, failed"},
+		{"↳", "a reply, under the message it answers"},
+		{"\"...\"", "the first line of the body, when this machine is in the conversation"},
 	}
 	out := []string{section("Keys", w)}
 	for _, r := range rows {

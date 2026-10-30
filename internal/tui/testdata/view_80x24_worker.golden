@@ -19,6 +19,6 @@ Selected session ─────────────────────
   model    anthropic/claude-haiku-4-5, b… │
   function none: add a `# Project: <one … │
 Messages (live) ────────────────────────────────────────────────────────────────
-  14:03  tenebrae (Mac) -> you (on Mac)                  reply        delivered
+  14:03  tenebrae -> you  reply                                                ✓
   14:04  worker refused in nope: no project named nope is known
 up/down select  enter conversation  m msg  s start  x stop  ? help  q quit

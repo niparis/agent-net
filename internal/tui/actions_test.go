@@ -107,7 +107,7 @@ func TestOwnerIsNotARowButIsNamedInTheFeed(t *testing.T) {
 		t.Errorf("who(owner) = %q", got)
 	}
 	v := keys(send(m, tea.WindowSizeMsg{Width: 80, Height: 40}), "tab").View() // the feed needs room
-	if !strings.Contains(v, "you (on Mac) -> tenebrae (Mac)") || !strings.Contains(v, "tenebrae (Mac) -> you (on Mac)") {
+	if !strings.Contains(v, "you -> tenebrae") || !strings.Contains(v, "tenebrae -> you") {
 		t.Errorf("the feed does not show the owner:\n%s", v)
 	}
 	title := lines(m.View())[0]
@@ -121,7 +121,7 @@ func TestWorkerShowsItsOwner(t *testing.T) {
 	m = selectID(m, workerID)
 	v := m.View()
 	for _, want := range []string{"↳ tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae", "s_0000000000000008 w_1",
-		"worker started: tenebrae (Mac) opencode in tenebrae for you (on Mac)", "worker refused in nope: no project named nope is known"} {
+		"worker started: tenebrae opencode in tenebrae for you", "worker refused in nope: no project named nope is known"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
 		}

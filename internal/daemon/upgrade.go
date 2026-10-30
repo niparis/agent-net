@@ -207,3 +207,32 @@ func (d *Daemon) dispatchUpgrade(ctx context.Context, method, client string) (an
 	}
 	return nil, fmt.Errorf("unknown method %q", method)
 }
+
+// mcpHelloResult is the answer to the hello of a session's `agent-net mcp`
+// process. It also records which version the session's tools are. When they
+// are older than this daemon, the answer carries tools_note: one line for the
+// process to add, once, to a tool result, so the agent tells its user to
+// reconnect agent-net. A process that sent no version is too old to show the
+// note; the owner sees it in the TUI instead.
+func (d *Daemon) mcpHelloResult(ls *localSession, harness, toolsVersion string) map[string]any {
+	res := map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}
+	shown, old := toolsVersion, upgrade.IsNewer(d.helloVersion(), toolsVersion)
+	if shown == "" {
+		shown, old = protocol.ToolsUnknown, true
+	}
+	d.mu.Lock()
+	changed := ls.info.ToolsVersion != shown || ls.info.ToolsOld != old
+	ls.info.ToolsVersion, ls.info.ToolsOld = shown, old
+	d.mu.Unlock()
+	if changed {
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			d.pushSession(ls)
+		}()
+	}
+	if old && toolsVersion != "" {
+		res["tools_note"] = protocol.ToolsStaleNote(harness, toolsVersion, d.helloVersion())
+	}
+	return res
+}

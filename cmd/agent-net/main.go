@@ -281,6 +281,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
+	setup.RefreshDaemonUnit()
 	if err := d.Start(ctx); err != nil {
 		return err
 	}

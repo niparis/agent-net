@@ -407,7 +407,11 @@ func (d *Daemon) spawnWorkerStdin(w *worker, bin string, args []string, env []st
 	if w.discardStdout {
 		cmd.Stdout = nil // /dev/null
 	}
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// A session of its own (which is also a group of its own, with the process
+	// ID as the group ID). The worker outlives the daemon, so nothing that
+	// signals the daemon's group or session may reach it: launchd, a terminal
+	// hangup, a service manager's group kill.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("cannot run %s: %w", bin, err)
 	}

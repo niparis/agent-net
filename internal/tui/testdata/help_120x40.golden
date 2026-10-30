@@ -11,10 +11,10 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
-  o                    show offline and dormant sessions
+  o, d                 o: show offline and dormant; d: detail takes the feed room
   a                    active only: hide sessions idle for over an hour
-  d                    give the detail pane the room of the message feed
-  tab                  message feed and back; enter opens a message body
+  tab                  message feed and back; enter opens the conversation of the local end
+  v, l                 v: open the body of the message; l: feed events (worker, all, none)
   r                    refresh now
 
  Conversation
@@ -33,8 +33,8 @@ Keys ─────────────────────────
   shared               one process many sessions share; its figures are on the machine line
   dim row              offline, or idle for more than an hour
   ?                    a figure that is missing or older than 45 seconds
-
-
-
+  … ✓ ↩ ✗              message state: pending, delivered, replied, failed
+  ↳                    a reply, under the message it answers
+  "..."                the first line of the body, when this machine is in the conversation
 
 esc close help  q quit

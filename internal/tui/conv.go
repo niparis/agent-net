@@ -86,7 +86,16 @@ func (m *Model) openConv() tea.Cmd {
 	if !ok {
 		return nil
 	}
-	m.conv = &convState{id: a.SessionID}
+	return m.openConvFor(a.SessionID)
+}
+
+// openConvFor starts the conversation of one session, which the message feed
+// also uses.
+func (m *Model) openConvFor(id string) tea.Cmd {
+	if id == "" {
+		return nil
+	}
+	m.conv = &convState{id: id}
 	return m.convCmd(convFirst)
 }
 

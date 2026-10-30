@@ -79,7 +79,22 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 - `already runs 4 workers`: stop one (`agent-net workers`, `agent-net stop`) or raise `workers.max` in `node.json`.
 - `runs inside an agent session`: `agent-net start`, `send` and `stop` act as you, so they refuse to run from an agent's shell. Run them in your own terminal.
 
+- `is not available from inside an agent session ... If you do not have agent_start`: the agent tried the command in a shell because its own agent-net tools are older than the machine (no `agent_start`). See the next entry.
+
 A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
+
+## An agent has no agent_start, or other tools are missing (old tools)
+
+Each Claude Code or Codex session keeps the `agent-net mcp` process it started with. A session that began before an upgrade can keep the old tool list. Signs: the agent has no `agent_start`, or it tried `agent-net start` in a shell and was refused.
+
+- In the TUI, select the session. The detail pane shows `tools v0.4.5 (old: reconnect agent-net with /mcp)`, or `tools unknown (from before v0.4.7 ...)`.
+- Fix: in Claude Code type `/mcp`, pick `agent-net` and reconnect. For Codex, restart Codex and resume the thread. The new tools appear at once.
+- A session on v0.3.5 or later normally switches by itself within seconds of the daemon restart. If it did not, check `AGENT_NET_NO_AUTO_UPGRADE` in its environment and the daemon log lines `mcp hello: ... runs agent-net ...`. See [upgrade.md](upgrade.md#running-sessions).
+- A newer agent also gets one line at the end of its next agent-net tool result that tells it to ask you for the reconnect. A process from before v0.4.7 cannot show that line.
+
+## Workers ended with "lost while the daemon was not running" after an upgrade
+
+Workers must survive a daemon restart. On Linux that needs `KillMode=process` in `~/.config/systemd/user/agent-net-daemon.service`; without it systemd kills the whole service group on restart. Check with `systemctl --user cat agent-net-daemon.service`. If the line is missing, run `agent-net setup`. The first restart after an automatic upgrade from an old version can still lose workers; after that they survive. On macOS the plist needs `AbandonProcessGroup` (also written by `setup`). `agent-net uninstall` stops the workers on purpose.
 
 ## A Codex thread is not listed, or cannot send
 
