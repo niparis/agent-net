@@ -164,6 +164,16 @@ func (m Model) mapFocusView(w, h int) []string {
 			out = append(out, clip(padStyled(lbox[i], bw)+g1+padStyled(middle, bw)+g2+padStyled(rbox[i], bw), w))
 		}
 	}
+	isolated := true
+	for _, e := range m.mp.edges {
+		if e.From == node.Name || e.To == node.Name {
+			isolated = false
+			break
+		}
+	}
+	if isolated {
+		out = append(out, sDim.Render(clip("no edges yet · ask the CTO to connect it (c)", w)))
+	}
 	last := "-"
 	for _, c := range m.mp.changes {
 		if c.Node == node.Name {

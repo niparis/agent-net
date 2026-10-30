@@ -377,3 +377,14 @@ func TestMapInitialFocusPrefersChangedConnectedNode(t *testing.T) {
 		t.Fatalf("first node: %q", m.mp.selected)
 	}
 }
+
+func TestMapExplainsIsolatedNode(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "a2a-ocs"
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "no edges yet · ask the CTO to connect it (c)") {
+		t.Fatal(v)
+	}
+}
