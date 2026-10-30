@@ -299,7 +299,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		line := fmt.Sprintf("undid graph change #%d", msg.id)
-		m.cto.local = append(m.cto.local, line)
+		m.cto.local = append(m.cto.local, protocol.CTOAction{Text: line, At: m.now().UnixNano()})
 		m.cto.messages = append(m.cto.messages, line)
 		if m.mapOn {
 			m.mp.loading = true
@@ -323,10 +323,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cto.messages = nil
 				m.cto.local = nil
-				if !m.cto.polling {
-					m.cto.polling = true
-					return m, m.ctoPollCmd()
-				}
+				m.cto.history = nil
+				m.cto.historyLoaded = false
+				m.ctoGeneration++
+				m.cto.generation = m.ctoGeneration
+				m.cto.polling = true
+				return m, m.ctoPollCmd()
 			}
 		}
 		return m, nil

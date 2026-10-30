@@ -615,6 +615,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "cto.graph_latest":
+		id, err := st.CTOLastGraphID()
+		return map[string]int64{"id": id}, err
 	case "cto.graph_history":
 		var p struct {
 			After int64 `json:"after"`

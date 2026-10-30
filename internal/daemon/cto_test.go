@@ -51,6 +51,10 @@ func TestCTORuntime(t *testing.T) {
 	if !strings.HasPrefix(rec.Env["XDG_DATA_HOME"], n.cfg.StateDir) || !strings.HasPrefix(rec.Env["XDG_STATE_HOME"], n.cfg.StateDir) {
 		t.Fatalf("not private: %+v", rec.Env)
 	}
+	var current protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &current); err != nil || current.Model != "fake/m1" {
+		t.Fatalf("resolved CTO model: %+v %v", current, err)
+	}
 	var config struct {
 		MCP struct {
 			Servers map[string]struct {
@@ -312,6 +316,18 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	}
 	if len(events.Actions) != 2 || !strings.Contains(events.Actions[0].Text, "sent to") || !strings.Contains(events.Actions[1].Text, "started worker") {
 		t.Fatalf("actions: %+v", events.Actions)
+	}
+	var history []protocol.CTOGraphChange
+	if err := json.Unmarshal(w.cli.mustCall("cto_graph_history", nil), &history); err != nil || len(history) == 0 {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	w.cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: history[len(history)-1].ID, CTOChat: true})
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || len(events.Actions) != 3 || !strings.Contains(events.Actions[2].Text, "undid graph change") {
+		t.Fatalf("undo action: %+v %v", events, err)
+	}
+	w.cli.mustCall("cto_new", nil)
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || events.GraphAfter <= 0 || len(events.Actions) != 0 {
+		t.Fatalf("new conversation baseline: %+v %v", events, err)
 	}
 
 }

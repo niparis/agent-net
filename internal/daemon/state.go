@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS workers (
 			return nil, err
 		}
 	}
+	var hasCTOGraphAfter int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto') WHERE name = 'graph_after'`).Scan(&hasCTOGraphAfter)
+	if hasCTOGraphAfter == 0 {
+		if _, err := db.Exec(`ALTER TABLE cto ADD COLUMN graph_after INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()

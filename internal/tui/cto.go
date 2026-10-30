@@ -3,7 +3,9 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -17,7 +19,7 @@ type ctoSource interface {
 	CTONew(context.Context) error
 	CTOSettings(context.Context) (protocol.CTOSettings, error)
 	CTOEvents(context.Context, int) (protocol.CTOEvents, error)
-	CTOGraphHistory(context.Context) ([]protocol.CTOGraphChange, error)
+	CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error)
 	CTOUndo(context.Context, int64) error
 }
 type ctoState struct {
@@ -26,7 +28,7 @@ type ctoState struct {
 	model, err       string
 	messages         []string
 	history          []protocol.CTOGraphChange
-	local            []string
+	local            []protocol.CTOAction
 	historyLoaded    bool
 	lastGraphID      int64
 	generation       int
@@ -78,8 +80,11 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		if err != nil {
 			return ctoPollMsg{err: err, generation: generation}
 		}
-		history, err := src.CTOGraphHistory(ctx)
+		history, err := src.CTOGraphHistory(ctx, events.GraphAfter)
 		model := settings.Model
+		if events.Model != "" {
+			model = events.Model
+		}
 		if model == "" {
 			model = "default"
 		}
@@ -129,16 +134,19 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			c.editing = true
 			return m, c.input.Focus()
 		case "u":
-			if len(c.history) == 0 {
-				c.err = "No CTO graph change to undo"
-				return m, nil
-			}
-			id := c.history[len(c.history)-1].ID
 			src := m.src.(ctoSource)
 			g := c.generation
 			return m, func() tea.Msg {
 				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 				defer cancel()
+				history, err := src.CTOGraphHistory(ctx, 0)
+				if err != nil {
+					return ctoUndoMsg{err: err, generation: g}
+				}
+				if len(history) == 0 {
+					return ctoUndoMsg{err: errors.New("no CTO graph change to undo"), generation: g}
+				}
+				id := history[len(history)-1].ID
 				return ctoUndoMsg{id: id, err: src.CTOUndo(ctx, id), generation: g}
 			}
 		case "n":
@@ -186,25 +194,58 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 	c.err = ""
 	c.model = r.model
-	c.messages = nil
 	c.history = r.history
+	type line struct {
+		at   int64
+		text string
+	}
+	var lines []line
+	for _, raw := range r.events.Messages {
+		if text := ctoMessage(raw); text != "" {
+			var v struct {
+				Time struct {
+					Created int64 `json:"created"`
+				} `json:"time"`
+			}
+			json.Unmarshal(raw, &v)
+			lines = append(lines, line{v.Time.Created * int64(1000000), text})
+		}
+	}
 	for _, h := range r.history {
+		var text string
 		switch h.Kind {
 		case "charter":
-			c.messages = append(c.messages, fmt.Sprintf("charter %s.%s: %s -> %s", h.Node, h.Attr, h.OldValue, h.NewValue))
+			text = fmt.Sprintf("charter %s.%s: %s -> %s", h.Node, h.Attr, h.OldValue, h.NewValue)
 		case "edge":
-			c.messages = append(c.messages, "edge "+h.OldValue+" -> "+h.NewValue)
+			text = "edge " + h.OldValue + " -> " + h.NewValue
 		case "node":
-			c.messages = append(c.messages, "node "+h.Node+": "+h.OldValue+" -> "+h.NewValue)
+			text = "node " + h.Node + ": " + h.OldValue + " -> " + h.NewValue
+		}
+		if text != "" {
+			lines = append(lines, line{h.At, text})
 		}
 	}
 	for _, a := range r.events.Actions {
-		c.messages = append(c.messages, a.Text)
+		lines = append(lines, line{a.At, a.Text})
 	}
-	c.messages = append(c.messages, c.local...)
-	for _, raw := range r.events.Messages {
-		if text := ctoMessage(raw); text != "" {
-			c.messages = append(c.messages, text)
+	var pending []protocol.CTOAction
+	for _, a := range c.local {
+		found := false
+		for _, saved := range r.events.Actions {
+			if saved.Text == a.Text {
+				found = true
+				break
+			}
 		}
+		if !found {
+			pending = append(pending, a)
+			lines = append(lines, line{a.At, a.Text})
+		}
+	}
+	c.local = pending
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
+	c.messages = nil
+	for _, v := range lines {
+		c.messages = append(c.messages, v.text)
 	}
 }

@@ -11,6 +11,7 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
   M                    map: charters, maturity, edges and history (read only)
+  C                    CTO: chat, new conversation and undo graph changes
   N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
   o, d                 o: show offline and dormant; d: detail takes the feed room
@@ -35,6 +36,5 @@ Keys ─────────────────────────
   … ✓ ↩ ✗              message state: pending, delivered, replied, failed
   ↳                    a reply, under the message it answers
   "..."                the first line of the body, when this machine is in the conversation
-
 
 esc close help  q quit

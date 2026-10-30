@@ -531,3 +531,9 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 	}
 	return out, rows.Err()
 }
+
+func (s *Store) CTOLastGraphID() (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto'`).Scan(&id)
+	return id, err
+}

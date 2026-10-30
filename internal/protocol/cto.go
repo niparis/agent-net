@@ -36,9 +36,11 @@ type CTOAction struct {
 }
 
 type CTOEvents struct {
-	Actions  []CTOAction       `json:"actions"`
-	Messages []json.RawMessage `json:"messages"`
-	Next     int               `json:"next"`
+	Model      string            `json:"model,omitempty"`
+	GraphAfter int64             `json:"graph_after"`
+	Actions    []CTOAction       `json:"actions"`
+	Messages   []json.RawMessage `json:"messages"`
+	Next       int               `json:"next"`
 }
 
 // CTOGraphChange is an attributed graph history entry, oldest first.

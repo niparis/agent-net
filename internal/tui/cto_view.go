@@ -9,7 +9,7 @@ func (m Model) ctoView(w, h int) []string {
 	out := []string{section(title, w)}
 	var lines []string
 	for _, v := range c.messages {
-		lines = append(lines, wrap(v, max(w-2, 8))...)
+		lines = append(lines, wrap(sanitize(v), max(w-2, 8))...)
 	}
 	if c.err != "" {
 		lines = append(lines, "! "+c.err)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -29,7 +30,7 @@ func (f *fakeCTOSource) CTOEvents(_ context.Context, index int) (protocol.CTOEve
 func (f *fakeCTOSource) CTOSettings(context.Context) (protocol.CTOSettings, error) {
 	return protocol.CTOSettings{Model: "fake/m1"}, nil
 }
-func (f *fakeCTOSource) CTOGraphHistory(context.Context) ([]protocol.CTOGraphChange, error) {
+func (f *fakeCTOSource) CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error) {
 	return f.history, nil
 }
 func (f *fakeCTOSource) CTOUndo(_ context.Context, id int64) error {
@@ -167,5 +168,80 @@ func TestCTOGraphChangeRefreshesOpenMap(t *testing.T) {
 	m = updated.(Model)
 	if cmd == nil || !m.mp.loading {
 		t.Fatal("CTO graph change did not refresh map")
+	}
+}
+
+func TestCTOGolden(t *testing.T) {
+	for _, size := range []struct {
+		w, h  int
+		name  string
+		mapOn bool
+	}{{80, 24, "cto_80x24", false}, {120, 40, "cto_map_120x40", true}} {
+		src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot(), graph: fakeGraph()}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"Is cogforge ready?"}`), json.RawMessage(`{"type":"assistant","content":[{"type":"text","text":"It is mature. I updated the charter."}]}`)}, Actions: []protocol.CTOAction{{ID: 1, Text: "sent to tenebrae-53: please review"}}}, history: []protocol.CTOGraphChange{{ID: 4, Kind: "charter", Node: "cogforge", Attr: "maturity", OldValue: "early", NewValue: "mature"}}}
+		m := New(src)
+		m.width = size.w
+		m.height = size.h
+		m.snap = fakeSnapshot()
+		m.haveData = true
+		m.lastOK = t0
+		m.loc = time.UTC
+		if size.mapOn {
+			m.mapOn = true
+			m.mp.nodes = fakeGraph().Nodes
+			m.mp.edges = fakeGraph().Edges
+			m.mp.loaded = true
+			m.mapEnsureSelection()
+		}
+		updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+		m = updated.(Model)
+		updated, _ = m.update(cmd())
+		m = updated.(Model)
+		golden(t, size.name, m.View())
+	}
+}
+
+func TestCTOPaneSanitizesConversation(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"bad\u001b[2Jtext"}`)}, Actions: []protocol.CTOAction{{Text: "sent: \x1b[2J"}}}}
+	m := New(src)
+	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = updated.(Model)
+	updated, _ = m.update(cmd())
+	m = updated.(Model)
+	if strings.Contains(m.View(), "\x1b") {
+		t.Fatal("terminal control escaped the CTO pane")
+	}
+}
+
+func TestCTOActionOrderFollowsConversation(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"change it","time":{"created":1000}}`), json.RawMessage(`{"type":"assistant","content":[{"type":"text","text":"done"}],"time":{"created":3000}}`)}, Actions: []protocol.CTOAction{{Text: "sent to peer: hello", At: 2500000000}}}, history: []protocol.CTOGraphChange{{Kind: "charter", Node: "node", Attr: "purpose", NewValue: "new", At: 2000000000}}}
+	m := New(src)
+	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = updated.(Model)
+	updated, _ = m.update(cmd())
+	m = updated.(Model)
+	joined := strings.Join(m.cto.messages, "|")
+	a, b, c, d := strings.Index(joined, "you:"), strings.Index(joined, "charter"), strings.Index(joined, "sent to"), strings.Index(joined, "cto:")
+	if !(a < b && b < c && c < d) {
+		t.Fatalf("wrong order: %s", joined)
+	}
+}
+
+func TestCTOPanePollingUpdatesStreamingMessage(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"id":"msg_1","type":"assistant","content":[{"type":"text","text":"par"}]}`)}, Next: 1}}
+	m := New(src)
+	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = updated.(Model)
+	updated, _ = m.update(cmd())
+	m = updated.(Model)
+	src.events.Messages[0] = json.RawMessage(`{"id":"msg_1","type":"assistant","content":[{"type":"text","text":"partial reply"}]}`)
+	updated, cmd = m.update(tickMsg{})
+	m = updated.(Model)
+	if cmd == nil || !m.cto.polling {
+		t.Fatal("tick did not poll CTO")
+	}
+	updated, _ = m.update(m.ctoPollCmd()())
+	m = updated.(Model)
+	if len(m.cto.messages) != 1 || !strings.Contains(m.cto.messages[0], "partial reply") {
+		t.Fatalf("stream: %+v", m.cto.messages)
 	}
 }

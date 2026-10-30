@@ -211,6 +211,7 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"M", "map: charters, maturity, edges and history (read only)"},
+		{"C", "CTO: chat, new conversation and undo graph changes"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "o: show offline and dormant; d: detail takes the feed room"},

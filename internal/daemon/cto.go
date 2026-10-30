@@ -265,11 +265,21 @@ func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
 	return map[string]string{"session_id": id}, err
 }
-func (d *Daemon) ctoNew(_ context.Context) (any, error) {
+func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, err := d.st.db.Exec(`DELETE FROM cto WHERE id=1`)
+	data, err := d.call(ctx, "cto.graph_latest", nil)
+	if err != nil {
+		return nil, err
+	}
+	var latest struct {
+		ID int64 `json:"id"`
+	}
+	if err = json.Unmarshal(data, &latest); err != nil {
+		return nil, err
+	}
+	_, err = d.st.db.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID)
 	if err == nil {
 		c.session, c.model = "", ""
 	}
@@ -279,7 +289,13 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := protocol.CTOEvents{Messages: []json.RawMessage{}}
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	if model, err := d.ctoModel(ctx); err == nil {
+		out.Model = model
+	}
+	if err := d.st.db.QueryRow(`SELECT graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return out, err
+	}
 	id, err := d.ctoSession()
 	if err != nil || id == "" {
 		return out, err

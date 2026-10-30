@@ -17,6 +17,7 @@ import (
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/testmcp/tools"
+	"github.com/niparis/agent-net/internal/tui"
 )
 
 const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
@@ -24,6 +25,14 @@ const helperEnv = "AGENT_NET_TEST_MCP_SERVER"
 // TestMain lets the test binary double as a stdio MCP server: a hosted server
 // is started with this binary and the helper variable set.
 func TestMain(m *testing.M) {
+	if len(os.Args) > 1 && os.Args[1] == "fake-tui" {
+		if err := tui.Run(context.Background(), tui.NewDaemonSource(os.Getenv("AGENT_NET_SOCKET"))); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if os.Getenv(helperEnv) != "" {
 		if err := tools.New().Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 			os.Exit(1)

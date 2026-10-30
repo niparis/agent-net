@@ -237,8 +237,8 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		}
 		delete(p, "by")
 		var params any = p
+		var q protocol.GraphUndoRequest
 		if method == protocol.OpGraphUndo {
-			var q protocol.GraphUndoRequest
 			if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
 				return nil, true, errors.New("bad graph_undo params")
 			}
@@ -247,6 +247,9 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		var data json.RawMessage
 		if data, err = d.call(ctx, frame, params); err == nil {
 			res = data
+			if method == protocol.OpGraphUndo && q.CTOChat {
+				err = d.recordCTOAction(fmt.Sprintf("undid graph change #%d", q.ID))
+			}
 		}
 	case protocol.OpSessionPolicy:
 		// The policy is owner text that goes into the model's context every
