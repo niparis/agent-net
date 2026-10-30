@@ -194,6 +194,15 @@ func (m Model) mapRows() []mapRow {
 			rows = append(rows, mapRow{node: a.Name, level: maturityLevel(a.Charter.Maturity), indent: 2})
 		}
 	}
+	if m.uiFilter != "" && m.mapOn {
+		filtered := rows[:0]
+		for _, row := range rows {
+			if row.node != "" && strings.Contains(strings.ToLower(row.node), strings.ToLower(m.uiFilter)) {
+				filtered = append(filtered, row)
+			}
+		}
+		return filtered
+	}
 	return rows
 }
 

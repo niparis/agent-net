@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // Run shows the screen until the person quits or ctx ends. It uses the
@@ -16,6 +17,11 @@ func Run(ctx context.Context, src Source) error {
 	m.tmuxSocket = tmuxSocketOf(os.Getenv("TMUX"))
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
+	if receiver, ok := src.(interface {
+		SetUIPush(func(protocol.UIRequest))
+	}); ok {
+		receiver.SetUIPush(func(q protocol.UIRequest) { p.Send(q) })
+	}
 	_, err := p.Run()
 	if ctx.Err() != nil {
 		return nil

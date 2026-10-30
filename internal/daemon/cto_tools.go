@@ -50,6 +50,30 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "ui_show", "ui_notice":
+		var q protocol.UIRequest
+		if json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad UI request")
+		}
+		q.Tab, q.Select, q.Filter, q.Why, q.Text = cleanLine(q.Tab), cleanLine(q.Select), cleanLine(q.Filter), cleanLine(q.Why), cleanLine(q.Text)
+		if name == "ui_show" {
+			if q.Tab != "sessions" && q.Tab != "messages" && q.Tab != "quotas" && q.Tab != "map" {
+				return nil, errors.New("ui_show tab must be sessions, messages, quotas or map")
+			}
+			q.Text = ""
+			if q.Why == "" {
+				q.Why = "Showing " + q.Tab
+			}
+		} else {
+			if q.Text == "" {
+				return nil, errors.New("ui_notice needs text")
+			}
+			q = protocol.UIRequest{Text: q.Text}
+		}
+		if d.broadcastCTOUI(q) == 0 {
+			return "no TUI open", nil
+		}
+		return "shown", nil
 	case "reply":
 		var p struct {
 			MessageID string `json:"message_id"`
@@ -257,4 +281,28 @@ var ctoLocalMethods = map[string]bool{
 	"info": true, "nodes": true, "projects": true, "project_add": true, "project_remove": true,
 	"get": true, "messages": true, "message_status": true, "mcp_list": true, "mcp_add": true,
 	"mcp_remove": true, "mcp_test": true, "mcp_enable": true, "mcp_call": true,
+}
+
+// broadcastCTOUI sends only to connections that explicitly subscribed as an
+// owner-gated TUI. Closed or failed connections do not count as open.
+func (d *Daemon) broadcastCTOUI(q protocol.UIRequest) int {
+	if d.ln == nil {
+		return 0
+	}
+	d.ln.mu.Lock()
+	conns := make([]*localConn, 0, len(d.ln.conns))
+	for c := range d.ln.conns {
+		conns = append(conns, c)
+	}
+	d.ln.mu.Unlock()
+	count := 0
+	for _, c := range conns {
+		c.mu.Lock()
+		subscribed := c.client == "cli" && c.tui
+		c.mu.Unlock()
+		if subscribed && c.writeJSON(map[string]any{"method": "cto_ui", "params": q}) == nil {
+			count++
+		}
+	}
+	return count
 }

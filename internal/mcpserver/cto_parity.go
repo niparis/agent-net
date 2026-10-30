@@ -14,6 +14,8 @@ func init() {
 	sid := s("Session ID, as returned by agents.")
 	model := s("Model name; an empty model selects the default where supported.")
 	harness := en("Harness name, or omit to use the default.", "opencode", "claude", "pi", "codex")
+	add("ui_show", "Show a tab, selection and filter in every open local TUI, with a short explanation.", map[string]ctoField{"tab": en("Tab to show.", "sessions", "messages", "quotas", "map"), "select": s("Session ID, exact session name or project node to select."), "filter": s("Text to filter the view."), "why": s("Short reason shown to the owner.")})
+	add("ui_notice", "Show a short one-line notice in every open local TUI; returns no TUI open when none is connected.", map[string]ctoField{"text": s("Notice text.")})
 	add("info", "Read this daemon's connection, machine, owner session and local session information.", nil)
 	add("nodes", "List network machines, installed harnesses, worker track records, playbook notes and subscription quotas.", nil)
 	add("projects", "List registered and observed projects across machines, optionally filtered by exact name.", map[string]ctoField{"name": s("Exact project name, or omit for all.")})

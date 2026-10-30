@@ -316,6 +316,12 @@ func (m Model) feedConvID(it *feedItem) string {
 // quiet; worker lines, including a refused worker, show by default, and the l
 // key shows every lifecycle line or hides all of them.
 func (m Model) feedShows(it *feedItem) bool {
+	if m.tab == 1 && m.uiFilter != "" {
+		text := strings.ToLower(strings.Join([]string{it.Kind, it.From, it.To, it.Detail, it.Snippet, it.Host, m.feedName(it.From), m.feedName(it.To)}, " "))
+		if !strings.Contains(text, strings.ToLower(m.uiFilter)) {
+			return false
+		}
+	}
 	switch it.Kind {
 	case "session.new":
 		return m.events == eventsAll

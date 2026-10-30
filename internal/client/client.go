@@ -16,6 +16,7 @@ type response struct {
 	ID     json.RawMessage `json:"id"`
 	Method string          `json:"method"`
 	Result json.RawMessage `json:"result"`
+	Params json.RawMessage `json:"params"`
 	Error  string          `json:"error"`
 }
 
@@ -41,13 +42,22 @@ type Client struct {
 	wait map[string]chan response
 	dead chan struct{}
 	// onPush gets the daemon's pushes (frames without an id).
-	onPush func(method string)
+	onPush func(method string, params json.RawMessage)
 }
 
 func Dial(path string) (*Client, error) { return DialPush(path, nil) }
 
 // DialPush is Dial with a handler for pushes such as "mcp_changed".
 func DialPush(path string, onPush func(method string)) (*Client, error) {
+	return DialPushData(path, func(method string, _ json.RawMessage) {
+		if onPush != nil {
+			onPush(method)
+		}
+	})
+}
+
+// DialPushData also supplies the JSON parameters of a push.
+func DialPushData(path string, onPush func(string, json.RawMessage)) (*Client, error) {
 	c, err := net.DialTimeout("unix", path, 2*time.Second)
 	if err != nil {
 		return nil, err
@@ -80,7 +90,7 @@ func (c *Client) read() {
 		}
 		if len(r.ID) == 0 {
 			if r.Method != "" && c.onPush != nil {
-				c.onPush(r.Method)
+				c.onPush(r.Method, r.Params)
 			}
 			continue
 		}
