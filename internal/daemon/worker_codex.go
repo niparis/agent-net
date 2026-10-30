@@ -46,7 +46,7 @@ import (
 // from its owner and from the person only.
 //
 // The approval policy is "never" and the sandbox is the permission level of the
-// project (worker_codex_sandbox.go, decision 0018, which amends 0002 W6). A
+// project (worker_codex_sandbox.go, decision 0020, which amends 0002 W6). A
 // request for approval that still arrives is declined.
 type codexLauncher struct{}
 
@@ -307,12 +307,15 @@ type codexConn struct {
 	running bool
 	cur     *codexJob
 	queue   []codexJob
-	sb      codexSandbox // the permissions of the worker (decision 0018)
+	sb      codexSandbox // the permissions of the worker (decision 0020)
 	final   string
 	texts   []string
 	blocked []codexBlock
 	tokens  struct{ in, out, reasoning, cacheRead, cacheWrite float64 }
-	closed  bool
+	// contextTokens and contextLimit come from the last turn's usage and the
+	// model context window in thread/tokenUsage/updated.
+	contextTokens, contextLimit int64
+	closed                      bool
 }
 
 type codexAnswer struct {
@@ -541,6 +544,13 @@ func (cc *codexConn) notification(m codexMsg) {
 	case "thread/tokenUsage/updated":
 		var u struct {
 			TokenUsage struct {
+				Last struct {
+					Input      float64 `json:"inputTokens"`
+					Cached     float64 `json:"cachedInputTokens"`
+					CacheWrite float64 `json:"cacheWriteInputTokens"`
+					Output     float64 `json:"outputTokens"`
+					Reasoning  float64 `json:"reasoningOutputTokens"`
+				} `json:"last"`
 				Total struct {
 					Input      float64 `json:"inputTokens"`
 					Cached     float64 `json:"cachedInputTokens"`
@@ -548,14 +558,21 @@ func (cc *codexConn) notification(m codexMsg) {
 					Output     float64 `json:"outputTokens"`
 					Reasoning  float64 `json:"reasoningOutputTokens"`
 				} `json:"total"`
+				ModelContextWindow *float64 `json:"modelContextWindow"`
 			} `json:"tokenUsage"`
 		}
 		if json.Unmarshal(m.Params, &u) != nil {
 			return
 		}
-		t := u.TokenUsage.Total
+		last, t := u.TokenUsage.Last, u.TokenUsage.Total
 		cc.mu.Lock()
-		// Codex counts the cached tokens inside the input tokens.
+		// Codex counts the cached tokens inside the input tokens. The tokens
+		// the model saw on the last step are its input, cached or not, plus the
+		// cache write.
+		cc.contextTokens = int64(last.Input + last.CacheWrite)
+		if u.TokenUsage.ModelContextWindow != nil {
+			cc.contextLimit = int64(*u.TokenUsage.ModelContextWindow)
+		}
 		cc.tokens.in, cc.tokens.out, cc.tokens.reasoning = t.Input-t.Cached, t.Output, t.Reasoning
 		cc.tokens.cacheRead, cc.tokens.cacheWrite = t.Cached, t.CacheWrite
 		cc.mu.Unlock()
@@ -572,7 +589,9 @@ func (cc *codexConn) stats() workerStats {
 	cc.mu.Lock()
 	defer cc.mu.Unlock()
 	t := cc.tokens
-	return workerStats{Tokens: tokenText(t.in, t.out, t.reasoning, t.cacheRead, t.cacheWrite), Model: cc.model}
+	return workerStats{Tokens: tokenText(t.in, t.out, t.reasoning, t.cacheRead, t.cacheWrite), Model: cc.model,
+		ContextTokens: cc.contextTokens, ContextLimit: cc.contextLimit,
+		TotalTokens: int64(t.in + t.out + t.reasoning)}
 }
 
 // submit runs a message as a turn, or queues it behind the running one.

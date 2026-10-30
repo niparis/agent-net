@@ -326,3 +326,25 @@ func TestDetailShowsWorkerPermissions(t *testing.T) {
 		}
 	}
 }
+
+// The form starts from the project's workers level, also when the session has
+// its own policy, so a save at project scope does not reset it.
+func TestPolicyFormLoadsTheProjectWorkersLevel(t *testing.T) {
+	m, src := workerModel(120, 40)
+	for i := range src.snap.Agents {
+		if src.snap.Agents[i].SessionID == "s_0000000000000003" {
+			src.snap.Agents[i].Delegation = &protocol.DelegationView{
+				DelegationPolicy: protocol.DelegationPolicy{Delegate: protocol.DelegateOff},
+				Scope:            protocol.ScopeSession, ProjectWorkers: protocol.WorkersReadOnly}
+		}
+	}
+	m = refresh(m, src)
+	m = selectID(m, "s_0000000000000003")
+	m, _ = press(m, keyP())
+	if got := workersChoices[m.pol.workers]; got != protocol.WorkersReadOnly {
+		t.Errorf("the form starts at %q", got)
+	}
+	if m.pol.policy().Workers != protocol.WorkersReadOnly {
+		t.Errorf("policy %+v", m.pol.policy())
+	}
+}

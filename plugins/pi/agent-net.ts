@@ -15,7 +15,9 @@ const UNREACHABLE =
 // The announce rule. Keep it in step with AnnounceRule in internal/mcpserver.
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
-  "Call it again whenever your task changes. Your project description is taken from the project's AGENTS.md automatically.";
+  "Call it again whenever your task changes. " +
+  "When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+  "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
 const ASK_PEER_RULE =
   "Ask another session early: when an error comes from a service, repo or machine that another session owns or can see " +
@@ -746,6 +748,9 @@ export default function (pi: ExtensionAPI) {
       expertise: Type.Optional(
         Type.String({ description: "What you can answer about, in one short line, for example: billing API and its deployment; live logs of homelab services" }),
       ),
+      waiting: Type.Optional(
+        Type.String({ description: "When you stop to wait for your user's decision or answer, the question in one line; a later announce without it clears it" }),
+      ),
     }),
     "announce",
     (r) => `Announced task: ${r.profile?.task ?? "(none)"}.`,
@@ -1008,22 +1013,32 @@ export default function (pi: ExtensionAPI) {
       "The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). " +
       "The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. " +
       WORKER_NOTE +
-      " A worker cannot start workers." +
+      " A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief." +
+      " If the machine has no room (CPU or memory is busy), the start is queued, not refused: the answer has status queued, a queue_id, the place in the queue and the reason, and a worker notice arrives in your session when the worker starts (or when it cannot). Cancel a queued start with agent_stop and its queue_id." +
       " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
+      "When a worker ends with no hand-back (stopped, failed, timed out, lost, owner gone) and its worktree has uncommitted changes, the machine commits them on the worker's branch and the notice says so. " +
+      "To go on with such a worker, call agent_start with continue set to its session_id: the new worker starts from that branch with the old first task, so nothing is lost. A continued start can be queued like any start. Only the session that started a worker can continue it, and its machine must be online. " +
       "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
     Type.Object({
-      project: Type.Optional(Type.String({ description: "The name of a project from agent_project_list. Leave it empty to use the project you are working in (on the machine that has the harness)" })),
-      task: Type.String({ description: "What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply" }),
-      harness: Type.Optional(Type.String({ description: "opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree." })),
+      project: Type.Optional(Type.String({ description: "The name of a project from agent_project_list, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)" })),
+      task: Type.Optional(Type.String({ description: "What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply. Optional only with continue" })),
+      harness: Type.Optional(Type.String({ description: "opencode (the default; with continue, the old worker's harness), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree." })),
       model: Type.Optional(Type.String({ description: "The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default." })),
       machine: Type.Optional(Type.String({ description: "The machine, only when the project is on more than one" })),
+      base: Type.Optional(Type.String({ description: "Existing local branch to start the worktree from." })),
+      continue: Type.Optional(Type.String({ description: "The session_id or worker ID of an ended worker that you started. The new worker runs on the same machine, in the same project, with the same harness and model unless you give others, in a new worktree on a new branch made from the old worker's branch (a worker that ended with no hand-back has its unfinished changes saved as the last commit there), and gets the old worker's full first task. task is then optional and is added as an extra. project, machine, base and isolation must be empty." })),
       isolation: Type.Optional(
         Type.String({ description: "Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks" }),
       ),
     }),
     "worker_start",
     (r) =>
-      `Started worker ${r.session_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}.\n` +
+      r.status === "queued"
+        ? `${r.queue_reason}\n` +
+          `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
+          `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_stop and the queue_id.` +
+          (r.machine_note ? `\nmachine: ${r.machine_note}` : "")
+        : `Started worker ${r.session_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}.\n` +
       (r.model_note ? `model: ${r.model_note}\n` : "") +
       (r.worktree ? `worktree: ${r.worktree} (branch ${r.branch})\n` : "") +
       (r.queued
@@ -1050,8 +1065,8 @@ export default function (pi: ExtensionAPI) {
   defineTool(
     "agent_stop",
     "Stop a worker",
-    "Stop a worker that you started, by its session_id. Its process ends at once. The person at the command line can stop any worker.",
-    Type.Object({ session: Type.String({ description: "The session_id of a worker you started" }) }),
+    "Stop a worker that you started, by its session_id. Its process ends at once. A start that is still queued (status queued) is cancelled with its queue_id. The person at the command line can stop any worker.",
+    Type.Object({ session: Type.String({ description: "The session_id of a worker you started, or the queue_id of a queued start" }) }),
     "worker_stop",
     (r) => `Stopped worker ${r.session}.`,
   );

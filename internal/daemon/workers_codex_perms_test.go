@@ -230,3 +230,56 @@ func TestWorkersLevelGateAndScope(t *testing.T) {
 		t.Errorf("level after refusals: %q", res.Permissions)
 	}
 }
+
+// A start that waits in the queue keeps the level the project had when it was
+// queued, even if the owner changes the level while it waits.
+func TestQueuedCodexStartKeepsItsLevel(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	t.Setenv(envFakeCodex, "1")
+	t.Setenv("CODEX_HOME", t.TempDir())
+	fl := &fakeLoad{l: cpuBusy()}
+	w := startWorkerNode(t, g, queueSet, func(c *Config) {
+		c.HarnessPaths = map[string]string{"codex": os.Args[0]}
+		c.LoadProbe = fl.get
+	})
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	setWorkersLevel(t, w, repo, protocol.WorkersNoNetwork)
+	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	if r.Status != "queued" || r.Permissions != protocol.WorkersNoNetwork {
+		t.Fatalf("queued start: %+v", r)
+	}
+	setWorkersLevel(t, w, repo, protocol.WorkersReadOnly)
+	fl.set(roomyLoad())
+	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.TurnParams) == 1 })
+	pol, _ := rec.TurnParams[0]["sandboxPolicy"].(map[string]any)
+	if rec.Thread["sandbox"] != "workspace-write" || pol["type"] != "workspaceWrite" || pol["networkAccess"] != false {
+		t.Errorf("the queued worker lost its level: thread %v, turn %v", rec.Thread, pol)
+	}
+}
+
+// A continued worker keeps the level of the worker it continues, not the
+// project's current level.
+func TestContinuedCodexWorkerKeepsTheOldLevel(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	setWorkersLevel(t, w, repo, protocol.WorkersNoNetwork)
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
+	w.waitNotice(t, 1)
+	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
+	setWorkersLevel(t, w, repo, protocol.WorkersReadOnly)
+	res, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID, Task: "and more"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Permissions != protocol.WorkersNoNetwork {
+		t.Errorf("continued worker level %q", res.Permissions)
+	}
+	rec := readCodex(t, res.Worktree, func(r fakeCodexRecord) bool { return len(r.TurnParams) == 1 })
+	if pol, _ := rec.TurnParams[0]["sandboxPolicy"].(map[string]any); pol["type"] != "workspaceWrite" || pol["networkAccess"] != false {
+		t.Errorf("the continued worker's turn: %v", rec.TurnParams[0])
+	}
+}

@@ -1,4 +1,4 @@
-# 0018 - Unattended workers get a sandbox, not approval prompts
+# 0020 - Unattended workers get a sandbox, not approval prompts
 
 **Date:** 2026-10-30
 **Status:** Built for Codex on this branch. The owner approved the design. Amends [0002](0002-workers.md) W6. The other harnesses follow later.

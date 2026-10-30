@@ -9,7 +9,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The permissions of a Codex worker (decision 0018, which amends 0002 W6).
+// The permissions of a Codex worker (decision 0020, which amends 0002 W6).
 //
 // Nobody watches a worker and the daemon declines every approval, so a worker
 // must never need one. Instead of approval prompts it runs in Codex's sandbox.

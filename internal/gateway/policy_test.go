@@ -268,3 +268,18 @@ func TestWorkersLevelMustBeKnown(t *testing.T) {
 		t.Errorf("cleaned %q", c.Workers)
 	}
 }
+
+// The form for a session with its own policy still sees the project's workers
+// level, so saving at project scope cannot reset it.
+func TestViewCarriesTheProjectWorkersLevel(t *testing.T) {
+	s, _, oc1, oc2, _ := policyFixture(t)
+	s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly})
+	s.SetDelegation(oc2, protocol.ScopeSession, protocol.DelegationPolicy{Delegate: protocol.DelegateOff})
+	d := agentOf(t, s, oc2).Delegation
+	if d == nil || d.Scope != protocol.ScopeSession || d.Workers != "" || d.ProjectWorkers != protocol.WorkersReadOnly {
+		t.Errorf("own policy view: %+v", d)
+	}
+	if d := agentOf(t, s, oc1).Delegation; d == nil || d.ProjectWorkers != protocol.WorkersReadOnly {
+		t.Errorf("project view: %+v", d)
+	}
+}

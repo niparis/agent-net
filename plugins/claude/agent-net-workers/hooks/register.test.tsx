@@ -150,6 +150,49 @@ test('a missing or failing agent-net shows nothing', async ($, on) => {
   expect(statuses.at(-1)).toBeUndefined()
 })
 
+test('the band adds the context window after the run time', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  on('process.run', () => ({
+    value: runResult(JSON.stringify({
+      workers: [{
+        session_id: 's_abcdefa1',
+        harness: 'opencode',
+        model: 'deepseek-v4.1-flash',
+        project: 'shop',
+        status: 'busy',
+        online: true,
+        started_at: Math.floor(NOW / 1000) - 120,
+        task: 'write the tests',
+        context_tokens: 84000,
+        context_limit: 1000000,
+        tokens: 345000,
+      }, {
+        session_id: 's_abcdefa2',
+        harness: 'claude',
+        model: 'claude-sonnet-5',
+        project: 'shop',
+        status: 'busy',
+        online: true,
+        started_at: Math.floor(NOW / 1000) - 60,
+        task: 'read the spec',
+        context_tokens: 950000,
+        context_limit: 1000000,
+        tokens: 1200000,
+      }],
+    })),
+  }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'test-session' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+
+  const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /ctx 84k\/1M 8%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ctx 950k\/1M 95%/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('a refused notice is ignored and not tried again', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   let attempts = 0

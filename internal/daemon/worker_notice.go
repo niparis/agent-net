@@ -44,10 +44,24 @@ func isGitRepo(ctx context.Context, dir string) bool {
 // createWorktree makes the worker's own worktree of its project, on a new
 // branch, in a folder the daemon manages (not in the user's checkout). The
 // worker then runs in it.
-func (d *Daemon) createWorktree(ctx context.Context, w *worker) error {
+func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ...string) error {
 	main := w.path
-	base, err := gitOut(ctx, main, "rev-parse", "HEAD")
+	ref := "HEAD"
+	if len(requestedBase) > 0 && requestedBase[0] != "" {
+		name := requestedBase[0]
+		if strings.HasPrefix(name, "-") {
+			return fmt.Errorf("invalid base branch %q", name)
+		}
+		if _, err := gitOut(ctx, main, "check-ref-format", "--branch", name); err != nil {
+			return fmt.Errorf("invalid base branch %q: %w", name, err)
+		}
+		ref = "refs/heads/" + name
+	}
+	base, err := gitOut(ctx, main, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
+		if ref != "HEAD" {
+			return fmt.Errorf("base branch %q does not exist: %w", requestedBase[0], err)
+		}
 		return fmt.Errorf("cannot make a worktree: %s is not a git repository with a commit (%v)", main, err)
 	}
 	dir := filepath.Join(d.cfg.StateDir, "worktrees", w.id)
@@ -55,7 +69,7 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker) error {
 		return err
 	}
 	branch := protocol.WorktreeBranch(w.id)
-	if _, err := gitOut(ctx, main, "worktree", "add", dir, "-b", branch); err != nil {
+	if _, err := gitOut(ctx, main, "worktree", "add", dir, "-b", branch, base); err != nil {
 		return fmt.Errorf("cannot make a worktree: %w", err)
 	}
 	d.wmu.Lock()
@@ -92,6 +106,69 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 	return strings.Join(parts, "\n"), len(parts) > 0
 }
 
+// unfinishedSubject is the subject of the commit that keeps unfinished work.
+func unfinishedSubject(workerID, reason string) string {
+	return "agent-net: unfinished work of worker " + workerID + " (" + reason + ")"
+}
+
+// boundTask cuts a task to the 64 KiB that a worker record keeps.
+func boundTask(s string) string {
+	const max = 64 * 1024
+	if len(s) > max {
+		s = strings.ToValidUTF8(s[:max], "")
+	}
+	return s
+}
+
+func first(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// saveUnfinished commits the uncommitted changes of a worker that ended with no
+// hand-back, on the worker's branch, so that finishWorktree keeps them in a
+// commit and a new worker can continue from them. It uses the repository's
+// author when there is one, and "agent-net" when not. It tells whether a
+// commit was made.
+func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
+	d.wmu.Lock()
+	dir, id := w.worktree, w.id
+	d.wmu.Unlock()
+	if dir == "" {
+		return false
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return false
+	}
+	ctx := context.Background()
+	if st, err := gitOut(ctx, dir, "status", "--porcelain"); err != nil || st == "" {
+		return false
+	}
+	if _, err := gitOut(ctx, dir, "add", "-A"); err != nil {
+		d.Logf("worker %s: keep unfinished work: %v", id, err)
+		return false
+	}
+	args := []string{"-c", "commit.gpgsign=false"}
+	if v, _ := gitOut(ctx, dir, "config", "user.name"); v == "" {
+		args = append(args, "-c", "user.name=agent-net")
+	}
+	if v, _ := gitOut(ctx, dir, "config", "user.email"); v == "" {
+		args = append(args, "-c", "user.email=agent-net@localhost")
+	}
+	args = append(args, "commit", "-q", "--no-verify", "-m", unfinishedSubject(id, reason))
+	if _, err := gitOut(ctx, dir, args...); err != nil {
+		d.Logf("worker %s: keep unfinished work: %v", id, err)
+		return false
+	}
+	d.wmu.Lock()
+	w.unfinished = true
+	d.wmu.Unlock()
+	d.Logf("worker.unfinished_saved worker=%s reason=%s path=%s", id, reason, dir)
+	return true
+}
+
 // finishWorktree keeps the worktree if the worker changed anything and removes
 // it (and its branch) if not.
 func (d *Daemon) finishWorktree(w *worker) {
@@ -121,6 +198,13 @@ type workerStats struct {
 	Tokens string
 	Cost   string
 	Model  string
+	// ContextTokens is the tokens the model saw on its last step, ContextLimit
+	// the model's context window, both 0 when the harness cannot say.
+	ContextTokens int64
+	ContextLimit  int64
+	// TotalTokens is input plus output plus reasoning for the run, no cache
+	// reads. 0 when the harness cannot say.
+	TotalTokens int64
 }
 
 // workerStats asks the launcher, with a short time limit. It is empty when the
@@ -163,8 +247,12 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		model = st.Model
 	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project,
-		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Cost: st.Cost, Worktree: wt, Branch: br}
+		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
+		Cost: st.Cost, Worktree: wt, Branch: br}
 	n.DiffStat, _ = d.worktreeFacts(w)
+	d.wmu.Lock()
+	n.Saved = w.unfinished
+	d.wmu.Unlock()
 	return n
 }
 
@@ -212,6 +300,8 @@ func (d *Daemon) noticeFor(reason string) (status, note string) {
 		return protocol.StatusFailed, "the harness process ended by itself, with no hand-back"
 	case protocol.StopModelFails:
 		return protocol.StatusFailed, "the model call failed" // endWorker adds the error text
+	case protocol.StopRunFailed:
+		return protocol.StatusFailed, "the worker run failed"
 	case protocol.StopRequested:
 		return protocol.StatusStopped, "stopped on request, with no hand-back"
 	case protocol.StopLost:
@@ -285,7 +375,10 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	d.wmu.Lock()
 	w.taskMsg = m.ID
 	var updated *protocol.WorkerInfo
-	if task := protocol.WorkerTaskSummary(m.Body); task != "" {
+	// The task in a list is the title: the first line of the FIRST task. A
+	// later request from the owner must not replace it. Only an older worker
+	// with no title yet takes the line of its first message.
+	if task := protocol.WorkerTaskSummary(m.Body); task != "" && w.taskText == "" {
 		w.taskText = task
 		if w.info != nil {
 			// Replace, never change in place: a response on another goroutine
@@ -337,8 +430,58 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base}
 	status, note := d.noticeFor(protocol.StopLost)
+	// The new daemon committed the unfinished changes when it found the worker
+	// lost (adoptWorkers). The commit subject tells.
+	if w.worktree != "" {
+		if s, err := gitOut(ctx, w.worktree, "log", "-1", "--format=%s"); err == nil && s == unfinishedSubject(w.id, protocol.StopLost) {
+			w.unfinished = true
+		}
+	}
 	if _, err := d.sendNotice(ctx, w, d.notice(w, status, note, workerStats{}), ""); err != nil {
 		d.Logf("worker %s: notice: %v", r.ID, err)
 	}
 	d.finishWorktree(w)
+}
+
+// worktreesDir is the folder where this daemon creates the git worktrees of
+// its workers, as a cleaned absolute path.
+func (d *Daemon) worktreesDir() string {
+	root, err := filepath.Abs(filepath.Join(d.cfg.StateDir, "worktrees"))
+	if err != nil {
+		return ""
+	}
+	return root
+}
+
+// dropWorktreeSessions closes the plugin connections of live sessions that
+// work inside the worktrees folder and are not a worker's own. They are ghosts
+// of workers that a user's own service registered before the hello refused
+// them. Closing the connection takes the session offline.
+func (d *Daemon) dropWorktreeSessions() {
+	var drop []*localConn
+	d.mu.Lock()
+	for _, ls := range d.sessions {
+		if ls.conn != nil && !ls.owned && ls.info.Worker == nil && d.inWorktreesDir(ls.info.Cwd) {
+			drop = append(drop, ls.conn)
+		}
+	}
+	d.mu.Unlock()
+	for _, c := range drop {
+		c.close()
+	}
+}
+
+// inWorktreesDir tells whether cwd is inside the folder where this daemon
+// creates the git worktrees of its workers. It compares cleaned absolute paths
+// and works for a folder that no longer exists.
+func (d *Daemon) inWorktreesDir(cwd string) bool {
+	root := d.worktreesDir()
+	if cwd == "" || root == "" {
+		return false
+	}
+	p, err := filepath.Abs(cwd)
+	if err != nil {
+		return false
+	}
+	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
 }

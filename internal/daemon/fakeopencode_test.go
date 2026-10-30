@@ -43,6 +43,7 @@ import (
 // session then reports a failed run, as OpenCode 2.2 does when the provider
 // refuses (outcome "failed", and an idle entry with the error in the messages).
 var fakeOCFailed atomic.Bool
+var fakeOCLocalFailed atomic.Bool
 
 const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=sk-abcdefghijklmnopqrstuvwxyz123456\nadd funds"
 
@@ -68,7 +69,7 @@ func runFakeOpenCode() {
 	cwd, _ := os.Getwd()
 	rec := fakeOCRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
-	for _, k := range []string{"AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "OPENCODE_SERVER_PASSWORD"} {
+	for _, k := range []string{"AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
 		rec.Env[k] = os.Getenv(k)
 	}
 	child := exec.Command("sleep", "600")
@@ -106,6 +107,13 @@ func runFakeOpenCode() {
 		}
 		fmt.Fprint(w, `{"version":"fake"}`)
 	})
+	mux.HandleFunc("GET /api/model", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		fmt.Fprint(w, `{"data":[{"providerID":"fake","id":"m1","modelID":"m1","limit":{"context":1000000}}]}`)
+	})
 	// OpenCode loads the plugin when a client first uses the project folder.
 	mux.HandleFunc("GET /api/location", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
@@ -141,7 +149,7 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
-		if fakeOCFailed.Load() {
+		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() {
 			fmt.Fprint(w, `{"data":{"outcome":"failed","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
 			return
 		}
@@ -152,10 +160,19 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
-		items := []map[string]any{{"id": "msg_user", "type": "user", "text": "task"}}
-		if fakeOCFailed.Load() {
+		items := []map[string]any{
+			{"id": "msg_assistant", "type": "assistant", "tokens": map[string]any{
+				"input": 80000, "output": 2000, "reasoning": 0, "cache": map[string]any{"read": 3000, "write": 1000},
+			}},
+			{"id": "msg_user", "type": "user", "text": "task"},
+		}
+		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() {
+			typ, message := "provider.upstream", fakeOCError
+			if fakeOCLocalFailed.Load() {
+				typ, message = "effect/sql/SqlError", "Failed to execute statement"
+			}
 			items = append([]map[string]any{{"id": "msg_idle", "type": "idle", "outcome": "failed",
-				"error": map[string]any{"type": "provider.upstream", "message": fakeOCError}}}, items...)
+				"error": map[string]any{"type": typ, "message": message}}}, items...)
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": items})
 	})
@@ -261,6 +278,8 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 		body := msg.Body
 		switch {
 		case strings.Contains(body, "FAKE:ignore"):
+		case strings.Contains(body, "FAKE:localfail"):
+			fakeOCLocalFailed.Store(true)
 		case strings.Contains(body, "FAKE:modelfail"):
 			// The provider refuses at once: no reply, no hand-back.
 			fakeOCFailed.Store(true)

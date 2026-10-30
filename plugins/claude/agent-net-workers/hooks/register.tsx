@@ -22,6 +22,9 @@ type RawWorker = {
   online?: boolean
   started_at?: number
   task?: string
+  context_tokens?: number
+  context_limit?: number
+  tokens?: number
   ended_at?: number
   end_status?: string
   end_note?: string
@@ -38,6 +41,9 @@ function workerOf(raw: RawWorker): AgentNetWorker | null {
     online: raw.online === true,
     startedAt: raw.started_at ?? 0,
     task: raw.task ?? '',
+    contextTokens: raw.context_tokens ?? 0,
+    contextLimit: raw.context_limit ?? 0,
+    tokens: raw.tokens ?? 0,
     endedAt: raw.ended_at ?? 0,
     endStatus: raw.end_status ?? '',
     endNote: raw.end_note ?? '',
@@ -68,6 +74,26 @@ function shortDuration(ms: number): string {
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m`
   return `${Math.floor(minutes / 60)}h${minutes % 60}m`
+}
+
+// compactTokens writes a count the way the daemon's CompactTokens does: 840,
+// 2k, 84k, 345k, 1M, 1.5M.
+function compactTokens(n: number): string {
+  if (!(n > 0)) return ''
+  if (n < 1000) return `${Math.round(n)}`
+  if (n < 1_000_000) return `${Math.round(n / 1000)}k`
+  const millions = Math.round(n / 100_000) / 10
+  return `${millions}M`.replace('.0M', 'M')
+}
+
+// contextOf writes the context window line of a worker, and the color of the
+// percentage: warning at 70 percent and over, error at 90 percent and over.
+// It is undefined when the harness has not reported either figure.
+function contextOf(w: AgentNetWorker): { text: string; color?: 'warning' | 'error' } | undefined {
+  if (!(w.contextTokens > 0) || !(w.contextLimit > 0)) return undefined
+  const percent = Math.round((w.contextTokens / w.contextLimit) * 100)
+  const color = percent >= 90 ? 'error' : percent >= 70 ? 'warning' : undefined
+  return { text: `${compactTokens(w.contextTokens)}/${compactTokens(w.contextLimit)} ${percent}%`, color }
 }
 
 function clip(text: string, columns: number): string {
@@ -208,15 +234,20 @@ export const register: Register = on => {
           const elapsed = (isEnded ? w.endedAt : now) - w.startedAt
           const head = [shortId(w.sessionId), w.harness + (w.model ? ' · ' + modelName(w.model) : ''),
             state, shortDuration(elapsed * 1000)].filter(Boolean).join(' ')
+          const ctx = contextOf(w)
+          const ctxText = ctx ? `ctx ${ctx.text}` : ''
           const text = (isEnded ? (w.endNote || w.task) : w.task).split('\n')[0]
           // Keep each worker on one row: leave room for the mark, the spaces and
           // anything the surface draws at the right edge.
-          const rest = clip(text, Math.max(0, columns - 8 - head.length))
+          const rest = clip(text, Math.max(0, columns - 8 - head.length - (ctx ? ctxText.length + 1 : 0)))
           return (
             <Box key={w.sessionId}>
               <Text wrap="truncate-end">
                 <Text color={color}>{mark} </Text>
-                <Text dimColor>{head} </Text>
+                <Text dimColor>{head}</Text>
+                {ctx ? <Text> </Text> : null}
+                {ctx ? <Text color={ctx.color}>{ctxText}</Text> : null}
+                <Text> </Text>
                 <Text>{rest}</Text>
               </Text>
             </Box>

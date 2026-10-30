@@ -11,7 +11,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,11 +41,9 @@ import (
 //
 // Isolation from the user's service: the worker's state folder
 // (XDG_STATE_HOME) is its own, so it never touches the service's service.json.
-// The data folder (XDG_DATA_HOME) is shared, because OpenCode 2.2 keeps its
-// credentials in the database in that folder. Two OpenCode processes on one
-// data folder is a supported mode (every command has --standalone). The plugin
-// is told it runs in a worker (AGENT_NET_WORKER=1), so it does not register the
-// user's other sessions from the shared database. The daemon also refuses any
+// Its data folder is private too. Credentials are exported and imported at
+// each start; configuration remains shared. The plugin is told it runs in a
+// worker (AGENT_NET_WORKER=1). The daemon also refuses any
 // connection for a worker's session that does not come from the worker's own
 // process group.
 //
@@ -99,7 +99,7 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 }
 
 // resume starts a new private server for the same session: the state folder
-// is the one the worker had, so the plugin opens the same conversation.
+// and data folders are the ones the worker had, so it opens the same conversation.
 func (opencodeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
 	if w.nativeID == "" {
 		return errors.New("the OpenCode session of the worker is not known")
@@ -156,12 +156,17 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	data, state := filepath.Join(dir, "data"), filepath.Join(dir, "state")
+	if err := copyOpenCodeAuth(ctx, bin, data, state); err != nil {
+		return nil, err
+	}
 	env := workerEnv(os.Environ(), map[string]string{
+		"XDG_DATA_HOME":                 data,
 		"OPENCODE_SERVER_PASSWORD":      password,
 		"AGENT_NET_WORKER":              w.id,
 		"AGENT_NET_WORKER_SESSION_FILE": filepath.Join(dir, "session"),
 		"AGENT_NET_SOCKET":              d.cfg.SocketPath,
-		"XDG_STATE_HOME":                filepath.Join(dir, "state"),
+		"XDG_STATE_HOME":                state,
 	})
 	// Never a flag that turns permission checks off (decision 0002, W6).
 	args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}
@@ -213,24 +218,53 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	}
 }
 
+// copyOpenCodeAuth uses OpenCode's supported credential export and import. In
+// 2.2 credentials are in SQLite, not just auth.json. The JSON stays in memory,
+// and the worker's database is private and retained across resumes.
+func copyOpenCodeAuth(ctx context.Context, bin, data, state string) error {
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		return err
+	}
+	export := exec.CommandContext(ctx, bin, "auth", "export", "--standalone")
+	export.Env = workerEnv(os.Environ(), map[string]string{"XDG_STATE_HOME": state})
+	credentials, err := export.Output()
+	if err != nil {
+		return fmt.Errorf("cannot export OpenCode credentials: %w", err)
+	}
+	imp := exec.CommandContext(ctx, bin, "auth", "import", "--standalone")
+	imp.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state})
+	imp.Stdin = bytes.NewReader(credentials)
+	if err := imp.Run(); err != nil {
+		return fmt.Errorf("cannot import OpenCode credentials: %w", err)
+	}
+	// The directory is private, and the database itself must be private too.
+	if err := os.Chmod(filepath.Join(data, "opencode", "opencode.db"), 0o600); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // stats reads the session's tokens, cost and model from the worker's own
 // server. Any failure gives an empty result: the notice then omits them.
+//
+// The context is the tokens of the latest assistant message (input plus cache
+// read and cache write), and the model's limit.context from GET /api/model.
 func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerStats {
 	if w.apiBase == "" || w.nativeID == "" {
 		return workerStats{}
 	}
-	req, err := http.NewRequestWithContext(ctx, "GET", w.apiBase+"/api/session/"+w.nativeID, nil)
-	if err != nil {
-		return workerStats{}
-	}
-	req.SetBasicAuth("opencode", w.apiPass)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return workerStats{}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return workerStats{}
+	get := func(path string, v any) bool {
+		req, err := http.NewRequestWithContext(ctx, "GET", w.apiBase+path, nil)
+		if err != nil {
+			return false
+		}
+		req.SetBasicAuth("opencode", w.apiPass)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
 	}
 	var r struct {
 		Data struct {
@@ -245,16 +279,59 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 			} `json:"model"`
 		} `json:"data"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&r) != nil {
+	if !get("/api/session/"+w.nativeID, &r) {
 		return workerStats{}
 	}
 	t := r.Data.Tokens
-	st := workerStats{Tokens: tokenText(t.Input, t.Output, t.Reasoning, t.Cache.Read, t.Cache.Write)}
+	st := workerStats{Tokens: tokenText(t.Input, t.Output, t.Reasoning, t.Cache.Read, t.Cache.Write),
+		TotalTokens: int64(t.Input + t.Output + t.Reasoning)}
 	if r.Data.Cost != nil && st.Tokens != "" {
 		st.Cost = fmt.Sprintf("%.4f (as OpenCode reports it)", *r.Data.Cost)
 	}
 	if r.Data.Model.ID != "" {
 		st.Model = r.Data.Model.ProviderID + "/" + r.Data.Model.ID
+	}
+	// The newest assistant message is the last step of the run. A session with
+	// no assistant message yet has no context figure.
+	var msgs struct {
+		Data []struct {
+			Type   string `json:"type"`
+			Tokens struct {
+				Input, Output, Reasoning float64
+				Cache                    struct{ Read, Write float64 }
+			} `json:"tokens"`
+		} `json:"data"`
+	}
+	if get("/api/session/"+w.nativeID+"/message", &msgs) {
+		for _, m := range msgs.Data {
+			if m.Type != "assistant" {
+				continue
+			}
+			st.ContextTokens = int64(m.Tokens.Input + m.Tokens.Cache.Read + m.Tokens.Cache.Write)
+			break
+		}
+	}
+	// GET /api/model lists the models with limit.context. The session names
+	// the model it runs, so only that entry matters.
+	if st.ContextTokens > 0 && r.Data.Model.ID != "" {
+		var models struct {
+			Data []struct {
+				ProviderID string `json:"providerID"`
+				ID         string `json:"id"`
+				ModelID    string `json:"modelID"`
+				Limit      struct {
+					Context float64 `json:"context"`
+				} `json:"limit"`
+			} `json:"data"`
+		}
+		if get("/api/model", &models) {
+			for _, m := range models.Data {
+				if m.ProviderID == r.Data.Model.ProviderID && (m.ID == r.Data.Model.ID || m.ModelID == r.Data.Model.ID) {
+					st.ContextLimit = int64(m.Limit.Context)
+					break
+				}
+			}
+		}
 	}
 	return st
 }
@@ -264,9 +341,9 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 // messages then hold an "idle" entry with the error ({type, message}). The
 // same error is in the session.execution.failed event. Any failure to read it
 // gives "" (nothing known).
-func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) string {
+func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) (string, bool) {
 	if w.apiBase == "" || w.nativeID == "" {
-		return ""
+		return "", false
 	}
 	get := func(path string, v any) bool {
 		req, err := http.NewRequestWithContext(ctx, "GET", w.apiBase+path, nil)
@@ -287,7 +364,7 @@ func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) strin
 		} `json:"data"`
 	}
 	if !get("/api/session/"+w.nativeID, &sess) || sess.Data.Outcome != "failed" {
-		return ""
+		return "", false
 	}
 	var msgs struct {
 		Data []struct {
@@ -298,11 +375,11 @@ func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) strin
 			} `json:"error"`
 		} `json:"data"`
 	}
-	text := ""
+	text, typ := "", ""
 	if get("/api/session/"+w.nativeID+"/message", &msgs) { // newest first
 		for _, m := range msgs.Data {
 			if m.Type == "idle" && m.Error != nil {
-				text = m.Error.Message
+				text, typ = m.Error.Message, m.Error.Type
 				if text == "" {
 					text = m.Error.Type
 				}
@@ -310,7 +387,29 @@ func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) strin
 			}
 		}
 	}
-	return cleanFailure(text)
+	return cleanFailure(text), openCodeProviderFailure(typ, text)
+}
+
+var providerStatus = regexp.MustCompile(`\b(401|402|403|429)\b`)
+
+// openCodeProviderFailure is deliberately conservative: unknown failures must
+// not penalize a model. An upstream wrapper alone is not proof of a provider error.
+func openCodeProviderFailure(typ, message string) bool {
+	s := strings.ToLower(typ + " " + message)
+	for _, local := range []string{"sqlerror", "sqlite", "database", "tool.error", "tool error"} {
+		if strings.Contains(s, local) {
+			return false
+		}
+	}
+	if providerStatus.MatchString(s) {
+		return true
+	}
+	for _, marker := range []string{"insufficient", "billing", "funds", "payment required", "unauthorized", "forbidden", "invalid api key", "invalid_api_key", "authentication", "quota", "rate limit", "rate_limit", "too many requests", "no route", "no-route", "model unavailable", "model not available", "model not found", "model_not_found", "provider.auth", "provider.quota", "provider.rate"} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // cleanFailure makes a provider error fit a notice: one line, secrets masked,

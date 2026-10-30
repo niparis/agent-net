@@ -73,6 +73,32 @@ func TestWorkerDetailShowsItsWorkerID(t *testing.T) {
 	}
 }
 
+// A worker's detail pane says how full its context window is and how many
+// tokens it has used. The numbers are not there for a session that is not a
+// worker, or before the harness has reported them.
+func TestWorkerDetailShowsContextAndTokens(t *testing.T) {
+	m := newModel(120, 40)
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == "s_0000000000000002" {
+			m.snap.Agents[i].Worker = &protocol.WorkerInfo{ID: "w_c641d30bf14ec9d6", Owner: "s_0000000000000001",
+				Project: "strategies", ContextTokens: 84000, ContextLimit: 1000000, Tokens: 345000}
+		}
+	}
+	m.selected = "s_0000000000000002"
+	if v := m.View(); !strings.Contains(v, "context  84k / 1M (8%)  tokens 345k") {
+		t.Fatalf("the detail pane lacks the context line:\n%s", v)
+	}
+	// Without a context window only the token total is there.
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == "s_0000000000000002" {
+			m.snap.Agents[i].Worker.ContextTokens, m.snap.Agents[i].Worker.ContextLimit = 0, 0
+		}
+	}
+	if v := m.View(); !strings.Contains(v, "tokens   345k") || strings.Contains(v, "context  ") {
+		t.Fatalf("the detail pane without a context window:\n%s", v)
+	}
+}
+
 func TestTrustIsAlwaysAColumn(t *testing.T) {
 	for _, avail := range []int{46, 60, 80, 120} {
 		if !hasColumn(columns(avail, 12), "TRUST") {

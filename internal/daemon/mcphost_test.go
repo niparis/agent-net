@@ -31,6 +31,12 @@ func TestMain(m *testing.M) {
 	if runFakeHarness() {
 		return
 	}
+	if len(os.Args) > 2 && os.Args[1] == "auth" {
+		if os.Args[2] == "export" {
+			os.Stdout.WriteString("[]")
+		}
+		return
+	}
 	// The test binary is also the fake `opencode serve` of the worker tests.
 	if len(os.Args) > 1 && os.Args[1] == "serve" && os.Getenv("OPENCODE_SERVER_PASSWORD") != "" {
 		runFakeOpenCode()

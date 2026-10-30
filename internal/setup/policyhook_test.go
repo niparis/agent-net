@@ -15,7 +15,7 @@ func TestPolicyHookIsAskedAndAddedOnYes(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	answer(t, "y\n")
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo})
+	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
 	if !strings.Contains(out, "Add the hook? [y/N]") || !strings.Contains(out, "claude policy hook on") {
 		t.Fatalf("output:\n%s", out)
 	}
@@ -35,7 +35,7 @@ func TestPolicyHookIsAskedAndAddedOnYes(t *testing.T) {
 	// A second run changes nothing and does not ask again.
 	before := readSettingsFile(t, f)
 	noTTY(t)
-	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo})
+	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
 	if readSettingsFile(t, f) != before {
 		t.Error("second run changed the settings")
 	}
@@ -46,12 +46,12 @@ func TestPolicyHookDefaultsToOffAndNeverAsksTwice(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	answer(t, "\n")
-	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo})
+	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
 	if readSettingsFile(t, f) != otherKeys {
 		t.Fatalf("settings changed on a no:\n%s", readSettingsFile(t, f))
 	}
 	answer(t, "y\n")
-	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo})
+	runAskingAll(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
 	if readSettingsFile(t, f) != otherKeys {
 		t.Fatal("asked a second time")
 	}
@@ -62,7 +62,7 @@ func TestPolicyHookWithoutTerminalAndFlags(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	noTTY(t)
-	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo})
+	out := runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, NeedsHook: NeedsHookNo})
 	if !strings.Contains(out, "agent-net setup --claude-policy-hook") || readSettingsFile(t, f) != otherKeys {
 		t.Fatalf("no tty:\n%s", out)
 	}
@@ -87,7 +87,7 @@ func TestPolicyAndHintHooksLiveSideBySideAndUninstallRemovesOnlyOurs(t *testing.
   }
 }
 `)
-	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookYes, PolicyHook: PolicyHookYes})
+	runAskingAll(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookYes, PolicyHook: PolicyHookYes, NeedsHook: NeedsHookNo})
 	h := hooksOfFile(t, f)
 	if len(h["UserPromptSubmit"]) != 2 || h["UserPromptSubmit"][0].Hooks[0].Command != "/usr/bin/my-prompt-hook" ||
 		len(h["PostToolUseFailure"]) != 1 {

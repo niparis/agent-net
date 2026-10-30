@@ -65,7 +65,7 @@ func (s *Store) SetDelegation(sessionID, scope string, p protocol.DelegationPoli
 }
 
 // WorkerPermissions is the permission level of workers started in a project
-// on a machine (decision 0018): the owner's setting in the project policy, else
+// on a machine (decision 0020): the owner's setting in the project policy, else
 // the default. Only the project policy counts: a session's own policy has no
 // workers level.
 func (s *Store) WorkerPermissions(nodeID, project string) (string, error) {
@@ -131,6 +131,13 @@ func (s *Store) applyDelegation(as []protocol.AgentView) error {
 		}
 		if a.Delegation == nil {
 			continue
+		}
+		// The project's workers level is on every view, so a form for a
+		// session with its own policy still starts from the project's level.
+		if key := projectKey(*a); key != "" {
+			if p, ok := pp[a.NodeID+"\x00"+key]; ok {
+				a.Delegation.ProjectWorkers = p.Workers
+			}
 		}
 		if nodes == nil {
 			list, err := s.Nodes()

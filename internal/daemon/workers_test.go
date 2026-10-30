@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -250,6 +251,9 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	if !strings.HasPrefix(rec.Env["XDG_STATE_HOME"], filepath.Join(w.cfg.StateDir, "workers")) {
 		t.Errorf("the worker shares the user's OpenCode state folder: %s", rec.Env["XDG_STATE_HOME"])
 	}
+	if rec.Env["XDG_DATA_HOME"] != filepath.Join(w.cfg.StateDir, "workers", rec.Env["AGENT_NET_WORKER"], "data") {
+		t.Errorf("worker data folder: %q", rec.Env["XDG_DATA_HOME"])
+	}
 	if rec.LocationDir != url.QueryEscape(repo) {
 		t.Errorf("the project was not loaded with its folder: %q", rec.LocationDir)
 	}
@@ -368,6 +372,31 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	}
 }
 
+// A running worker carries the context figure of its last step and its token
+// total, refreshed on the tick, in the workers view that a TUI on another
+// machine also reads.
+func TestWorkerUsageReachesTheWorkersView(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "say ok"})
+
+	eventually(t, "the worker's context and tokens", func() bool {
+		ws := w.workers(t)
+		return len(ws) == 1 && ws[0].SessionID == res.SessionID &&
+			ws[0].ContextTokens == 84000 && ws[0].ContextLimit == 1000000 && ws[0].Tokens == 1540
+	})
+	// The same figures are on the agent list, from which the gateway stores
+	// them for a TUI on another machine.
+	for _, a := range w.agents(t, false) {
+		if a.SessionID == res.SessionID {
+			if a.Worker == nil || a.Worker.ContextTokens != 84000 || a.Worker.ContextLimit != 1000000 || a.Worker.Tokens != 1540 {
+				t.Fatalf("agent list worker: %+v", a.Worker)
+			}
+		}
+	}
+}
+
 // A worker that ignores SIGTERM is killed anyway.
 func TestWorkerStopKillsAProcessThatIgnoresTerm(t *testing.T) {
 	t.Setenv("FAKE_OC_IGNORE_TERM", "1")
@@ -470,32 +499,32 @@ func TestWorkerLimitPerMachine(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Max = 2
+	set.QueueTick = 50 * time.Millisecond
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}
 	a := w.mustStart(t, req)
 	w.mustStart(t, req)
-	_, err := w.start(req)
-	if err == nil || !strings.Contains(err.Error(), "already runs 2 workers, which is the limit") {
-		t.Fatalf("third worker: %v", err)
+	// At the hard cap a start is queued, not refused (decision 0018), and
+	// nothing was started.
+	third, err := w.start(req)
+	if err != nil || third.Status != "queued" || !strings.Contains(third.QueueReason, "2 workers, which is its cap") {
+		t.Fatalf("third worker: %+v %v", third, err)
 	}
-	// The refusal is an event and a log line, and nothing was started.
-	refused, _ := g.gw.Store().Events("worker.refused")
-	if len(refused) != 1 || !strings.Contains(refused[0], "project=shop") || !strings.Contains(refused[0], "limit") {
+	if queued, _ := g.gw.Store().Events("worker.queued"); len(queued) != 1 || !strings.Contains(queued[0], "project=shop") {
+		t.Errorf("worker.queued events: %v", queued)
+	}
+	if refused, _ := g.gw.Store().Events("worker.refused"); len(refused) != 0 {
 		t.Errorf("worker.refused events: %v", refused)
 	}
-	if len(g.logs.lines("event=worker.refused", "reason=")) != 1 {
-		t.Errorf("gateway refused lines: %v", g.logs.lines("event=worker.refused"))
+	if w.d.workerCount() != 2 {
+		t.Errorf("workers %d", w.d.workerCount())
 	}
-	if len(w.logs.lines("worker.refused", "project=shop")) != 1 || w.d.workerCount() != 2 {
-		t.Errorf("daemon refused lines: %v, workers %d", w.logs.lines("worker.refused"), w.d.workerCount())
-	}
-	// Stopping one makes room.
+	// Stopping one makes room: the queued start goes.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: a.SessionID})
-	eventually(t, "room for a third", func() bool {
-		_, err := w.start(req)
-		return err == nil
+	eventually(t, "the queued third starts", func() bool {
+		return len(w.logs.lines("worker.dequeued")) == 1
 	})
 }
 
@@ -596,6 +625,59 @@ func TestOnlyTheWorkersProcessCanConnectAsItsSession(t *testing.T) {
 	}
 }
 
+func TestPluginHelloRefusesSessionsInTheWorktreesFolder(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	wt := filepath.Join(w.cfg.StateDir, "worktrees")
+	for _, harness := range []string{"opencode", "pi"} {
+		// A stale worker session (its record and directory are gone) seen by the
+		// user's own service: refused.
+		for i, cwd := range []string{filepath.Join(wt, "w_gone"), wt + "/w_gone/sub/../sub", wt + "/"} {
+			lc := dialLocal(t, w.sock)
+			_, err := lc.call("hello", map[string]any{"client": harness, "harness": harness, "native_id": fmt.Sprintf("ses_old_%s_%d", harness, i), "cwd": cwd})
+			if err == nil || !strings.Contains(err.Error(), "belongs to an agent-net worker") {
+				t.Fatalf("%s: a session in the worktrees folder (%s) was accepted: %v", harness, cwd, err)
+			}
+		}
+		// A sibling folder with the same prefix, and a normal folder, are fine.
+		for i, cwd := range []string{wt + "-other/w_x", "/work/u"} {
+			lc := dialLocal(t, w.sock)
+			if _, err := lc.call("hello", map[string]any{"client": harness, "harness": harness, "native_id": fmt.Sprintf("ses_ok_%s_%d", harness, i), "cwd": cwd}); err != nil {
+				t.Fatalf("%s: a normal session in %s was refused: %v", harness, cwd, err)
+			}
+		}
+	}
+}
+
+func TestDropWorktreeSessionsClosesGhosts(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	lc := dialLocal(t, w.sock)
+	if _, err := lc.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_ghost", "cwd": "/work/u"}); err != nil {
+		t.Fatal(err)
+	}
+	lc2 := dialLocal(t, w.sock)
+	if _, err := lc2.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_user", "cwd": "/work/v"}); err != nil {
+		t.Fatal(err)
+	}
+	// A ghost registered by an older daemon: its cwd is in the worktrees folder.
+	w.d.mu.Lock()
+	w.d.sessions[key("opencode", "ses_ghost")].info.Cwd = filepath.Join(w.cfg.StateDir, "worktrees", "w_old")
+	w.d.mu.Unlock()
+	w.d.dropWorktreeSessions()
+	eventually(t, "the ghost goes offline", func() bool {
+		w.d.mu.Lock()
+		defer w.d.mu.Unlock()
+		return w.d.sessions[key("opencode", "ses_ghost")] == nil
+	})
+	w.d.mu.Lock()
+	user := w.d.sessions[key("opencode", "ses_user")]
+	w.d.mu.Unlock()
+	if user == nil {
+		t.Fatal("a normal session was dropped")
+	}
+}
+
 // ---- start failures ----
 
 func TestWorkerStartFailures(t *testing.T) {
@@ -610,6 +692,8 @@ func TestWorkerStartFailures(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			// The fake auth commands are separate race-instrumented processes.
+			t.Setenv("GORACE", "atexit_sleep_ms=0")
 			t.Setenv(c.env, "1")
 			g := startGateway(t, t.TempDir(), "")
 			set := shortSet

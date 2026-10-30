@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS workers (
 	main_path TEXT NOT NULL DEFAULT '', worktree TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
 	base TEXT NOT NULL DEFAULT '', task_msg TEXT NOT NULL DEFAULT '', done_status TEXT NOT NULL DEFAULT '',
 	task_text TEXT NOT NULL DEFAULT '')`)
+	if err == nil {
+		_, err = db.Exec(queueSchema)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -67,12 +70,25 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"task_text", `task_text TEXT NOT NULL DEFAULT ''`},
 		{"resumable", `resumable INTEGER NOT NULL DEFAULT 0`},
 		{"reported", `reported INTEGER NOT NULL DEFAULT 0`},
+		{"task_full", `task_full TEXT NOT NULL DEFAULT ''`},
 		{"permissions", `permissions TEXT NOT NULL DEFAULT ''`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)
 		if has == 0 {
 			if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN ` + col.spec); err != nil {
+				db.Close()
+				return nil, err
+			}
+		}
+	}
+	// base and record_task keep a continued or based start in the queue. A
+	// queue table from an older version does not have them.
+	for _, col := range []string{"base", "record_task", "permissions"} {
+		var has int
+		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = ?`, col).Scan(&has)
+		if has == 0 {
+			if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
 				db.Close()
 				return nil, err
 			}

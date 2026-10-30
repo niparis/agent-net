@@ -19,7 +19,7 @@ const (
 	DelegateWorkers = "workers" // delegate code changes to a worker started with agent_start
 )
 
-// Permission levels of unattended workers (decision 0018). The owner sets one
+// Permission levels of unattended workers (decision 0020). The owner sets one
 // per project; the default is WorkersSandboxed.
 const (
 	WorkersSandboxed = "sandboxed"  // writes only in the worktree, the temp folder and the main repository's git dir; network on
@@ -74,7 +74,7 @@ type DelegationPolicy struct {
 	CoderModel string `json:"coder_model,omitempty"`
 	MainModel  string `json:"main_model,omitempty"`
 	// Workers is the permission level of unattended workers started in the
-	// project (decision 0018). "" means the default, WorkersSandboxed. It is a
+	// project (decision 0020). "" means the default, WorkersSandboxed. It is a
 	// project setting: the gateway refuses it at session scope.
 	Workers string `json:"workers,omitempty"`
 }
@@ -122,11 +122,15 @@ func (p DelegationPolicy) Empty() bool { return p == DelegationPolicy{} }
 // the model list of the session's machine and harness; an error says why not.
 type DelegationView struct {
 	DelegationPolicy
-	Scope         string `json:"scope"`
-	CoderResolved string `json:"coder_resolved,omitempty"`
-	CoderError    string `json:"coder_error,omitempty"`
-	MainResolved  string `json:"main_resolved,omitempty"`
-	MainError     string `json:"main_error,omitempty"`
+	Scope string `json:"scope"`
+	// ProjectWorkers is the workers level of the session's project policy,
+	// even when the session's own policy is the one in force. The TUI form
+	// starts from it, so saving at project scope never resets the level.
+	ProjectWorkers string `json:"project_workers,omitempty"`
+	CoderResolved  string `json:"coder_resolved,omitempty"`
+	CoderError     string `json:"coder_error,omitempty"`
+	MainResolved   string `json:"main_resolved,omitempty"`
+	MainError      string `json:"main_error,omitempty"`
 	// ModelList is true when the machine reports a model list for the harness,
 	// so a name that resolved was checked. Without one the name passes as typed.
 	ModelList bool `json:"model_list,omitempty"`

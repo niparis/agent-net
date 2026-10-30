@@ -54,3 +54,13 @@ func ClaudeSessionsDir() string {
 	}
 	return filepath.Join(home(), ".claude", "sessions")
 }
+
+// PiSessionsDir is where Pi writes its session files. Pi's own environment
+// variable is used when it is set, so the daemon reads the same folder as the
+// Pi processes it starts.
+func PiSessionsDir() string {
+	if d := os.Getenv("PI_CODING_AGENT_SESSION_DIR"); d != "" {
+		return d
+	}
+	return filepath.Join(home(), ".pi", "agent", "sessions")
+}

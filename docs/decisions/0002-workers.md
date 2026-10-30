@@ -223,3 +223,13 @@ What "resume" means per harness:
 A worker can be started again only while its record is younger than the longest run time (`max_age`, 4 hours by default). Every ended worker keeps its record until then, so the daemon knows that the harness session is a worker's and the plugin of another OpenCode server cannot register it as a normal session; a hand-back record is also what a follow-up starts again. After that, the record is cleaned: on the machine at daemon start and every 10 minutes, and on the gateway through `worker.cleanup`. A gateway record that is offline and past that age is deleted, so an old worker does not stay listed. A worker the machine says it does not run leaves the list at once.
 
 The idle time and the longest run time stay as safety nets for workers that are running. The owner-gone grace is unchanged.
+
+### W20 - Worker base and project rules
+
+A caller may name an existing local branch as the base for a new worktree. The daemon validates the branch and creates the worker branch from its commit. An optional `.agent-net/worker.md` is read from the project main working tree, so uncommitted local rules take effect. At most 8 KiB of cleaned text goes between the fixed brief and the task.
+
+### W21 - Unfinished work is kept, and a worker can be continued
+
+A worker that ends with no hand-back can leave uncommitted changes in its worktree. Before, the worktree was kept as it was. Now the daemon commits the changes on the worker's branch (`git add -A`, message `agent-net: unfinished work of worker <id> (<reason>)`, the repository's author or `agent-net`), then runs the existing cleanup, which removes only a worktree with no changes. The notice says it. A worker lost while the daemon was down gets the commit when the new daemon finds it lost. A commit is better than a kept dirty tree: the work is on a branch that git can show, merge and delete, and a new worker can start from it.
+
+`agent_start` gets `continue`: the session ID or worker ID of an ended worker of the same caller. The gateway knows the node of each worker session, so it sends `worker.continue` to the machine that ran the old worker (an offline machine is a clear error). The daemon checks the owner in its own record, then starts a new worker with the code of `base`: same project, harness and model unless given, a new worktree on a new branch from the old branch, and the old worker's full first task. For this the worker record keeps the first task, up to 64 KiB (`task_full`); the caller's extra `task` is added as `Also: ...`, and it is kept too, so a continued worker can be continued again without nested intro lines. The record exists only until the longest run time, as for a follow-up (W19), so a continue works in that time.

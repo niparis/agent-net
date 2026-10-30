@@ -67,6 +67,8 @@ func runFakeHarness() bool {
 		fakeClaudeCLI()
 	case os.Getenv(envFakePi) != "" && len(os.Args) > 1 && os.Args[1] == "--mode":
 		fakePi()
+	case os.Getenv(envFakePi) != "" && len(os.Args) > 1 && os.Args[1] == "--list-models":
+		fakePiModels()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "app-server":
 		fakeCodex()
 	default:
@@ -481,14 +483,46 @@ func fakePi() {
 	}
 	writeRecord(cwd, "fake-pi.json", rec)
 	session := argValue(os.Args, "--session-id")
+	fakePiSessionFile(session, cwd)
 	go fakeOCPlugin("pi", session, cwd)
-	// RPC mode ends when stdin closes.
-	io := bufio.NewReader(os.Stdin)
+	// RPC mode ends when stdin closes. Its stdout is an event stream that the
+	// daemon discards; the usage comes from the session file.
+	in := bufio.NewReader(os.Stdin)
 	for {
-		if _, err := io.ReadByte(); err != nil {
+		if _, err := in.ReadByte(); err != nil {
 			os.Exit(0)
 		}
 	}
+}
+
+// fakePiSessionFile writes the JSONL session Pi would write: a header and one
+// assistant message with usage, under the folder named by
+// PI_CODING_AGENT_SESSION_DIR.
+func fakePiSessionFile(session, cwd string) {
+	dir := os.Getenv("PI_CODING_AGENT_SESSION_DIR")
+	if dir == "" {
+		return
+	}
+	folder := "--" + strings.NewReplacer("/", "-", "\\", "-", ":", "-").Replace(strings.TrimPrefix(cwd, "/")) + "--"
+	path := filepath.Join(dir, folder)
+	if err := os.MkdirAll(path, 0o700); err != nil {
+		return
+	}
+	lines := []string{
+		`{"type":"session","version":3,"id":"` + session + `","cwd":"` + cwd + `"}`,
+		`{"type":"message","id":"a1","parentId":null,"timestamp":"2026-10-30T10:00:00.000Z","message":{` +
+			`"role":"assistant","provider":"openai","model":"gpt-4.1-nano","usage":{` +
+			`"input":50000,"output":10000,"cacheRead":40000,"cacheWrite":5000,"totalTokens":105000,` +
+			`"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}}}}`,
+	}
+	name := strconv.FormatInt(time.Now().UnixNano(), 10) + "_" + session + ".jsonl"
+	os.WriteFile(filepath.Join(path, name), []byte(strings.Join(lines, "\n")+"\n"), 0o600)
+}
+
+// fakePiModels is `pi --list-models`: the table with the context window.
+func fakePiModels() {
+	fmt.Print("provider  model        context  max-out  thinking  images\n" +
+		"openai    gpt-4.1-nano 200K     32.8K    no        yes\n")
 }
 
 // ---- Codex ----
@@ -642,7 +676,11 @@ func fakeCodex() {
 					write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
 						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": "codex done in " + cwd + " (" + strconv.Itoa(len(text)) + " bytes)"}}})
 					write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{"threadId": thread, "turnId": turn,
-						"tokenUsage": map[string]any{"total": map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0}}}})
+						"tokenUsage": map[string]any{
+							"last":               map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0},
+							"total":              map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0},
+							"modelContextWindow": 200000,
+						}}})
 					write(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread,
 						"turn": map[string]any{"id": turn, "status": status, "error": errObj}}})
 				}()

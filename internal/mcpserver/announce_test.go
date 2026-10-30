@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func lastText(t *testing.T, res *mcp.CallToolResult) string {
@@ -107,6 +109,29 @@ func TestReminderIsPerServer(t *testing.T) {
 	res, err := b.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list"})
 	if err != nil || !hasReminder(res) {
 		t.Fatalf("second server: %v %+v", err, res)
+	}
+}
+
+// The waiting question is an optional announce parameter (decision 0016).
+// The daemon reads the short string form as an input question.
+func TestAnnouncePassesTheWaitingQuestion(t *testing.T) {
+	var got protocol.ProfileAnnounce
+	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "announce" {
+			raw, _ := json.Marshal(params)
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Errorf("params: %v", err)
+			}
+		}
+		return json.RawMessage(`{"ok":true}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_announce", Arguments: map[string]any{
+		"task": "deploy", "waiting": "Merge tenebrae-nexus/truenas-stacks #817?"}})
+	if err != nil || res.IsError {
+		t.Fatalf("announce: %v %+v", err, res)
+	}
+	if got.Waiting == nil || got.Waiting.Kind != protocol.WaitingInput || got.Waiting.Text != "Merge tenebrae-nexus/truenas-stacks #817?" {
+		t.Fatalf("waiting not passed: %+v", got.Waiting)
 	}
 }
 

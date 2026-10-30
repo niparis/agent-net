@@ -36,7 +36,7 @@ var policyLabels = [nPolicyFields]string{"Delegate", "Coder", "Main", "Workers",
 var delegateChoices = []string{"", protocol.DelegateOff, protocol.DelegateNative, protocol.DelegateWorkers}
 
 // workersChoices are the values of the Workers field: the permission level of
-// unattended workers started in the project (decision 0018). "" is the
+// unattended workers started in the project (decision 0020). "" is the
 // default, sandboxed.
 var workersChoices = append([]string{""}, protocol.WorkersLevels...)
 
@@ -130,7 +130,7 @@ func (m Model) startPolicy() (Model, tea.Cmd) {
 			}
 		}
 		for i, c := range workersChoices {
-			if c == d.Workers {
+			if c == d.ProjectWorkers {
 				f.workers = i
 			}
 		}
