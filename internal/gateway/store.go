@@ -29,8 +29,10 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db                *sql.DB
+	graphJunkRemoved  int64
+	graphJunkMigrated bool
+	now               func() time.Time
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
 	logf func(event string, kv ...any)
@@ -219,6 +221,17 @@ INSERT OR IGNORE INTO playbook (subject_kind, subject, harness, note, source, su
 `, `
 ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT '';
 UPDATE sessions SET title = name;
+`, `
+DELETE FROM graph_nodes
+WHERE kind='component'
+  AND NOT EXISTS (SELECT 1 FROM graph_charter c WHERE c.node=graph_nodes.name AND c.value<>'')
+  AND NOT EXISTS (SELECT 1 FROM graph_edges e WHERE e.source=graph_nodes.name OR e.target=graph_nodes.name)
+  AND NOT EXISTS (SELECT 1 FROM graph_history h WHERE h.node=graph_nodes.name)
+  AND ( (name GLOB 'tmp*' AND length(name)>=9 AND substr(name,4) NOT GLOB '*[^a-z0-9_]*')
+        OR (EXISTS (SELECT 1 FROM sessions s WHERE s.repo_project=graph_nodes.name AND s.repo_root='')
+            AND NOT EXISTS (SELECT 1 FROM sessions s WHERE s.repo_project=graph_nodes.name AND s.repo_root<>'')
+            AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.name=graph_nodes.name))
+        OR NOT EXISTS (SELECT 1 FROM sessions s WHERE s.repo_project=graph_nodes.name AND (s.online=1 OR s.last_seen >= (CAST(strftime('%s','now') AS INTEGER)-604800)*1000000000)) );
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -263,7 +276,8 @@ func (s *Store) migrate() error {
 		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(migrations[i]); err != nil {
+		result, err := tx.Exec(migrations[i])
+		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
@@ -273,6 +287,10 @@ func (s *Store) migrate() error {
 		}
 		if err := tx.Commit(); err != nil {
 			return err
+		}
+		if i == len(migrations)-1 {
+			s.graphJunkRemoved, _ = result.RowsAffected()
+			s.graphJunkMigrated = true
 		}
 	}
 	return nil

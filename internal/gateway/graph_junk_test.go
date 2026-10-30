@@ -95,3 +95,30 @@ func TestGraphViewHidesOldEmptyImplicitProjects(t *testing.T) {
 		t.Fatal("all omitted old project")
 	}
 }
+
+func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
+	s, _ := newTestStore(t)
+	_, err := s.db.Exec(`INSERT INTO graph_nodes VALUES ('tmpabc123','component',1),('keep-charter','component',1),('keep-edge','component',1),('keep-history','component',1);
+ INSERT INTO graph_charter VALUES ('keep-charter','purpose','useful',1,'owner');
+ INSERT INTO graph_edges VALUES ('keep-edge','other','depends','','normal');
+ INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES ('node','keep-history','','','component',1,'owner');
+ DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name string
+		want int
+	}{{"tmpabc123", 0}, {"keep-charter", 1}, {"keep-edge", 1}, {"keep-history", 1}} {
+		var count int
+		if err := s.db.QueryRow(`SELECT count(*) FROM graph_nodes WHERE name=?`, tc.name).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != tc.want {
+			t.Errorf("%s count=%d want=%d", tc.name, count, tc.want)
+		}
+	}
+}
