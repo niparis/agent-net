@@ -117,6 +117,24 @@ func TestEnsureInstallsPinnedCopyWhenUserCopyIsTooOld(t *testing.T) {
 	}
 }
 
+func TestEnsurePrivateInstallsAlongsideCompatibleUserCopy(t *testing.T) {
+	home, log := setupPath(t, "22.19.0")
+	user := filepath.Join(home, ".local", "bin", quotaCommand)
+	if err := os.MkdirAll(filepath.Dir(user), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeQuotaVersion(t, user, Version, filepath.Join(t.TempDir(), "version-calls"))
+	if err := EnsurePrivate(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if !usable(Binary()) {
+		t.Fatal("EnsurePrivate did not install the private copy")
+	}
+	if raw, err := os.ReadFile(log); err != nil || !strings.Contains(string(raw), "quota-axi@"+Version) {
+		t.Fatalf("npm was not asked for the pinned copy: %q %v", raw, err)
+	}
+}
+
 func TestInstalledVersionCacheUsesMtime(t *testing.T) {
 	path := filepath.Join(t.TempDir(), quotaCommand)
 	calls := filepath.Join(t.TempDir(), "version-calls")

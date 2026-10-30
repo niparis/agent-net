@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/quotaaxi"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // This file reads the owner's subscription quotas with quota-axi (decision
@@ -45,6 +47,7 @@ var quotaArgs = []string{"--json", "--max-age", "5m", "--no-credential-refresh"}
 // ensureQuotaAXI installs the private copy. Tests replace it so they never
 // run npm.
 var ensureQuotaAXI = quotaaxi.Ensure
+var ensureQuotaAXIPrivate = quotaaxi.EnsurePrivate
 
 type quotaState struct {
 	mu   sync.Mutex
@@ -205,7 +208,7 @@ func (d *Daemon) quotaLoop(ctx context.Context, path string, every time.Duration
 func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas {
 	rctx, cancel := context.WithTimeout(ctx, quotaTimeout)
 	defer cancel()
-	q, err := readQuotaAXI(rctx, path)
+	q, err := readQuotaAXIWith(rctx, path, d.Logf)
 	if err != nil {
 		d.quota.fail(err)
 		d.Logf("quota-axi: %v", err)
@@ -217,19 +220,89 @@ func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas
 
 // readQuotaAXI runs the CLI and parses its JSON.
 func readQuotaAXI(ctx context.Context, path string) (*protocol.Quotas, error) {
+	return readQuotaAXIWith(ctx, path, nil)
+}
+
+func readQuotaAXIWith(ctx context.Context, path string, logf func(format string, args ...any)) (*protocol.Quotas, error) {
+	raw, stderr, runErr := runQuotaAXI(ctx, path)
+	if runErr == nil {
+		return parseQuotaAXI(raw)
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("it did not answer within %s", quotaTimeout)
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) {
+		switch exitErr.ExitCode() {
+		case 1:
+			if q, err := parseQuotaAXI(raw); err == nil {
+				return q, nil
+			}
+		case 2:
+			version, err := quotaaxi.InstalledVersion(path)
+			if err != nil {
+				version = "unknown"
+			}
+			if path == quotaaxi.Binary() {
+				return nil, fmt.Errorf("quota-axi rejected its options (version %s)", version)
+			}
+			notice := fmt.Sprintf("quota-axi rejected its options (version %s); using the pinned copy", version)
+			if logf != nil {
+				logf("%s", notice)
+			}
+			if err := ensureQuotaAXIPrivate(ctx, logf); err != nil {
+				return nil, fmt.Errorf("%s: %w", notice, err)
+			}
+			return readQuotaAXIOnce(ctx, quotaaxi.Binary())
+		}
+	}
+	return nil, quotaAXIFailure(runErr, stderr)
+}
+
+func readQuotaAXIOnce(ctx context.Context, path string) (*protocol.Quotas, error) {
+	raw, stderr, runErr := runQuotaAXI(ctx, path)
+	if runErr == nil {
+		return parseQuotaAXI(raw)
+	}
+	if ctx.Err() != nil {
+		return nil, fmt.Errorf("it did not answer within %s", quotaTimeout)
+	}
+	var exitErr *exec.ExitError
+	if errors.As(runErr, &exitErr) && exitErr.ExitCode() == 1 {
+		if q, err := parseQuotaAXI(raw); err == nil {
+			return q, nil
+		}
+	}
+	return nil, quotaAXIFailure(runErr, stderr)
+}
+
+func runQuotaAXI(ctx context.Context, path string) ([]byte, []byte, error) {
 	cmd := exec.CommandContext(ctx, path, quotaArgs...)
 	cmd.Env = quotaaxi.ExecEnv(path)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	// A shell wrapper can leave a child holding stdout after the context kills
 	// it. Stop waiting for the pipe after a short delay.
 	cmd.WaitDelay = time.Second
 	raw, err := cmd.Output()
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("it did not answer within %s", quotaTimeout)
-		}
-		return nil, fmt.Errorf("it failed: %v", err)
+	return raw, stderr.Bytes(), err
+}
+
+func quotaAXIFailure(err error, stderr []byte) error {
+	message := fmt.Sprintf("it failed: %v", err)
+	line := firstStderrLine(stderr)
+	if line != "" {
+		message += ": " + line
 	}
-	return parseQuotaAXI(raw)
+	return errors.New(message)
+}
+
+func firstStderrLine(stderr []byte) string {
+	if len(stderr) == 0 {
+		return ""
+	}
+	line, _, _ := strings.Cut(string(stderr), "\n")
+	return redact.Secrets(strings.TrimSpace(line))
 }
 
 // quotaAXIReport is the part of quota-axi's JSON model that agent-net reads.

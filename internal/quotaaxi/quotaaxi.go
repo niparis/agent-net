@@ -1,12 +1,13 @@
 // Package quotaaxi finds and installs quota-axi, the CLI that reads the
 // owner's subscription quotas (decision 0025).
 //
-// A quota-axi the owner installed is always used first: the path in node.json,
-// then PATH, then ~/.local/bin, then on macOS the usual Node folders. When
-// none is found and Node 22.19 or newer and npm are available, agent-net
-// installs the pinned version in a private folder under its own data
-// directory. The daemon then runs that copy. The npm registry checks the
-// package integrity; agent-net passes no other install flags.
+// A compatible quota-axi the owner installed is used first: the path in
+// node.json, then PATH, then ~/.local/bin, then on macOS the usual Node
+// folders. Older copies are skipped in favour of the pinned private copy.
+// When no compatible copy is found and Node 22.19 or newer and npm are
+// available, agent-net installs the pin in a private folder under its own
+// data directory. The npm registry checks package integrity; agent-net passes
+// no other install flags.
 package quotaaxi
 
 import (
@@ -132,8 +133,8 @@ func UserPath(configured string) (string, bool) {
 	return "", false
 }
 
-// Path finds the quota-axi to run: a copy the owner installed first, then
-// agent-net's private copy.
+// Path finds the quota-axi to run: a compatible owner copy first, then
+// agent-net's private copy. Older owner copies are logged and skipped.
 func Path(configured string, logf ...func(format string, args ...any)) (string, bool) {
 	if p, ok := UserPath(configured); ok {
 		if version, err := InstalledVersion(p); err == nil && olderThanPinned(version) {
@@ -473,9 +474,9 @@ func nodeVersionOK(node string) bool {
 }
 
 // Ensure installs the pinned quota-axi in the private prefix when the owner
-// has none and none is installed yet. It returns ErrNeedNode when Node or npm
-// is missing. A failed install is tried again the next day at the earliest.
-// logf gets one line per install attempt.
+// has no compatible copy and none is installed yet. It returns ErrNeedNode
+// when Node or npm is missing. A failed install is tried again the next day at
+// the earliest. logf gets one line per install attempt.
 func Ensure(ctx context.Context, logf func(format string, args ...any)) error {
 	ensureMu.Lock()
 	defer ensureMu.Unlock()
@@ -487,6 +488,18 @@ func Ensure(ctx context.Context, logf func(format string, args ...any)) error {
 			logSkipped(user, version, logf)
 		}
 	}
+	return ensurePrivateLocked(ctx, logf)
+}
+
+// EnsurePrivate installs the pinned copy even when a compatible owner copy
+// exists. It is used when an owner copy rejects options supported by the pin.
+func EnsurePrivate(ctx context.Context, logf func(format string, args ...any)) error {
+	ensureMu.Lock()
+	defer ensureMu.Unlock()
+	return ensurePrivateLocked(ctx, logf)
+}
+
+func ensurePrivateLocked(ctx context.Context, logf func(format string, args ...any)) error {
 	if usable(Binary()) {
 		return nil
 	}
