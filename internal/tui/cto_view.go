@@ -79,7 +79,7 @@ func (m Model) ctoView(w, h int) []string {
 	c.scroll = min(c.scroll, max(len(lines)-rows, 0))
 	end := len(lines) - c.scroll
 	start := max(end-rows, 0)
-	if start > 0 && rows > 0 {
+	if start > 0 && rows > 1 {
 		start++
 		lines = append([]string{sDim.Render("↑ more")}, lines[start:end]...)
 	} else {
