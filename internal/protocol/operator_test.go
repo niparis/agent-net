@@ -35,7 +35,8 @@ func TestWorkersOfOrdersAndNamesOwners(t *testing.T) {
 		{SessionID: "s_o", Harness: OwnerHarness, Profile: Profile{Name: "you (on mac)"}, Online: true},
 		{SessionID: "s_plain", Harness: "pi", Online: true},
 		{SessionID: "s_old", Harness: "opencode", Online: false, Worker: &WorkerInfo{Owner: "s_o", Project: "a", StartedAt: 50}},
-		{SessionID: "s_a", Harness: "opencode", Online: true, Worker: &WorkerInfo{Owner: "s_o", Project: "a", StartedAt: 10}},
+		{SessionID: "s_a", Harness: "opencode", Online: true, Worker: &WorkerInfo{Owner: "s_o", Project: "a", StartedAt: 10,
+			Task: "deploy the routes", ContextTokens: 84000, ContextLimit: 1000000, Tokens: 345000}},
 		{SessionID: "s_b", Harness: "opencode", Online: true, Worker: &WorkerInfo{Owner: "s_gone", Project: "b", StartedAt: 20}},
 	}
 	ws := WorkersOf(agents)
@@ -54,6 +55,41 @@ func TestWorkersOfOrdersAndNamesOwners(t *testing.T) {
 	}
 	if ws[1].OwnerName != "you (on mac)" || ws[0].OwnerName != "" {
 		t.Errorf("owner names: %+v", ws)
+	}
+	// The task title and the usage figures travel with the worker record, so a
+	// view on another machine shows them too.
+	if ws[1].Task != "deploy the routes" || ws[1].ContextTokens != 84000 || ws[1].ContextLimit != 1000000 || ws[1].Tokens != 345000 {
+		t.Errorf("worker facts: %+v", ws[1])
+	}
+}
+
+func TestWorkerUsageNumbersFormat(t *testing.T) {
+	for _, c := range []struct {
+		n    int64
+		want string
+	}{
+		{0, ""}, {840, "840"}, {1500, "2k"}, {84200, "84k"}, {345000, "345k"}, {1000000, "1M"},
+		{1500000, "1.5M"}, {210000, "210k"},
+	} {
+		if got := CompactTokens(c.n); got != c.want {
+			t.Errorf("CompactTokens(%d) = %q, want %q", c.n, got, c.want)
+		}
+	}
+	if got := ContextText(84000, 1000000); got != "84k / 1M (8%)" {
+		t.Errorf("ContextText = %q", got)
+	}
+	if got := ContextText(84000, 0); got != "84k" {
+		t.Errorf("ContextText without a limit = %q", got)
+	}
+	if got := ContextText(0, 1000000); got != "" {
+		t.Errorf("ContextText without tokens = %q", got)
+	}
+	// The JSON keys are the ones the band and other clients read.
+	raw, _ := json.Marshal(WorkerView{ContextTokens: 84000, ContextLimit: 1000000, Tokens: 345000})
+	for _, want := range []string{`"context_tokens":84000`, `"context_limit":1000000`, `"tokens":345000`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("JSON lacks %s: %s", want, raw)
+		}
 	}
 }
 
