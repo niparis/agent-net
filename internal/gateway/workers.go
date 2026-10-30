@@ -427,12 +427,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
 				continue
 			}
-			failures, err := g.store.FailedModels(pick.NodeID, h.Name)
+			failures, err := g.store.RecentWorkerFailures(pick.NodeID, h.Name)
 			if err != nil {
 				return none, err
 			}
 			for _, model := range h.Models {
-				candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: !failures[model].IsZero()})
+				candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: failures[model]})
 				if _, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], scores); ok {
 					scored = true
 				}

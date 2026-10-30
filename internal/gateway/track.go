@@ -367,3 +367,22 @@ func (s *Store) PlaybookFor(model, harness string) (*protocol.PlaybookNote, bool
 	}
 	return nil, false, nil
 }
+
+// RecentWorkerFailures returns models with a real failed run in the failure window.
+// A stopped run is neutral and does not count as a model failure.
+func (s *Store) RecentWorkerFailures(nodeID, harness string) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT model FROM worker_runs WHERE node_id = ? AND harness = ? AND outcome = ? AND ended_at >= ?`, nodeID, harness, protocol.OutcomeFailed, s.now().Add(-protocol.ModelFailureHours*time.Hour).Unix())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var model string
+		if err := rows.Scan(&model); err != nil {
+			return nil, err
+		}
+		out[model] = true
+	}
+	return out, rows.Err()
+}
