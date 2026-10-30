@@ -144,7 +144,7 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.tab == 1:
-		return []hint{{"1/2", "tabs", 1}, {"r", "refresh", 2}, {"?", "help", 1}, {"q", "quit", 1}}
+		return []hint{{"1/2", "tabs", 1}, {"up/down", "scroll", 1}, {"r", "refresh", 2}, {"?", "help", 1}, {"q", "quit", 1}}
 	case m.focus == focusFeed:
 		return []hint{{"up/down", "move", 1}, {"enter", "conversation", 1}, {"v", "body", 2}, {"m", "msg", 1}, {"l", "events", 3},
 			{"1/2", "tabs", 1}, {"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}

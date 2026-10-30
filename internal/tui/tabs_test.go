@@ -82,3 +82,22 @@ func TestQuotaViewKeepsFooterWithManyRows(t *testing.T) {
 		t.Fatal("footer lost")
 	}
 }
+
+func TestQuotaViewScrolls(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 1
+	q := &protocol.Quotas{}
+	for i := 0; i < 30; i++ {
+		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("p%02d", i), Windows: []protocol.QuotaWindow{{ID: "week"}}})
+	}
+	m.usage.raw.Local.Quotas = q
+	if strings.Contains(ansi.Strip(m.View()), "p29") {
+		t.Fatal("last row visible before scroll")
+	}
+	for i := 0; i < 80; i++ {
+		m = keys(m, "down")
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "p29") {
+		t.Fatal("last row not reachable")
+	}
+}

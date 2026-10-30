@@ -57,6 +57,7 @@ type Model struct {
 
 	width, height int
 	tab           int
+	quotaScroll   int
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap     Snapshot
@@ -611,6 +612,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
+		case "down", "j":
+			m.quotaScroll++
+		case "up", "k":
+			m.quotaScroll = max(0, m.quotaScroll-1)
 		case "?":
 			m.help = true
 		case "r":
