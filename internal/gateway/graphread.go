@@ -104,6 +104,9 @@ func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
 	}
 	source, target := projectOfSession(from), projectOfSession(to)
 	if target == "" {
+		if to.PeerTrust {
+			return "auto", nil
+		}
 		return "normal", nil
 	}
 	var rule string

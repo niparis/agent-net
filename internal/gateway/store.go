@@ -152,6 +152,11 @@ CREATE INDEX graph_history_node ON graph_history(node, id);
 ALTER TABLE messages ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0;
 `, `
 ALTER TABLE messages ADD COLUMN owner_approved INTEGER NOT NULL DEFAULT 0;
+`, `
+INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule)
+SELECT DISTINCT '*',COALESCE(NULLIF(s.repo_project,''),p.project,''),'depends','','auto'
+FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+WHERE s.peer_trust=1 AND COALESCE(NULLIF(s.repo_project,''),p.project,'')<>'';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -528,16 +533,22 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 // owner pseudo-session cannot be trusted: it is a person, not an agent. It
 // returns false when the session does not exist.
 func (s *Store) SetPeerTrust(sessionID string, on bool) (bool, error) {
-	v := 0
-	if on {
-		v = 1
-	}
-	res, err := s.db.Exec(`UPDATE sessions SET peer_trust = ? WHERE id = ? AND harness != ?`, v, sessionID, protocol.OwnerHarness)
-	if err != nil {
+	a, ok, err := s.Agent(sessionID)
+	if err != nil || !ok || a.Harness == protocol.OwnerHarness {
 		return false, err
 	}
-	n, _ := res.RowsAffected()
-	return n == 1, nil
+	project := projectOfSession(a)
+	if project != "" {
+		rule := "normal"
+		if on {
+			rule = "auto"
+		}
+		if err := s.SetEdge(protocol.Edge{From: "*", To: project, Kind: "depends", Rule: rule}, "owner"); err != nil {
+			return false, err
+		}
+	}
+	_, err = s.db.Exec(`UPDATE sessions SET peer_trust=? WHERE id=?`, boolInt(on), sessionID)
+	return err == nil, err
 }
 
 func (s *Store) SessionNode(sessionID string) (string, error) {
