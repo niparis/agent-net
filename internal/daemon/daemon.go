@@ -416,7 +416,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		privateDir := filepath.Join(d.cfg.StateDir, "cto", "claude")
 		kept := infos[:0]
 		for _, in := range infos {
-			if filepath.Clean(in.Cwd) != filepath.Clean(privateDir) {
+			if !sameCTODir(in.Cwd, privateDir) {
 				kept = append(kept, in)
 			}
 		}

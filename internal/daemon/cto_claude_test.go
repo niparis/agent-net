@@ -8,6 +8,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -226,4 +227,40 @@ func TestClaudeCTOStopIgnored(t *testing.T) {
 	n.d.stopClaudeCTOLocked()
 	n.d.cto.mu.Unlock()
 	eventually(t, "stopped Claude process", func() bool { _, alive := procToken(rec.Pid); return !alive })
+}
+
+func TestClaudeCTORequiresItsOwnSessionFile(t *testing.T) {
+	dir := t.TempDir()
+	private := filepath.Join(t.TempDir(), "cto", "claude")
+	pid := os.Getpid()
+	file := filepath.Join(dir, strconv.Itoa(pid)+".json")
+	write := func(cwd, name string) {
+		t.Helper()
+		raw, _ := json.Marshal(map[string]any{"pid": pid, "sessionId": "native", "jobId": "job", "kind": "bg", "cwd": cwd, "name": name})
+		if err := os.WriteFile(file, raw, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t.TempDir(), "agent-net-cto")
+	if _, ok := findClaudeCTOBg(dir, private, "job"); ok {
+		t.Fatal("accepted another working directory")
+	}
+	write(private, "worker")
+	if _, ok := findClaudeCTOBg(dir, private, "job"); ok {
+		t.Fatal("accepted another session name")
+	}
+	write(private, "agent-net-cto")
+	if _, ok := findClaudeCTOBg(dir, private, "job"); !ok {
+		t.Fatal("rejected CTO session")
+	}
+	if err := os.MkdirAll(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(private, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := findClaudeCTOBg(dir, link, "job"); !ok {
+		t.Fatal("rejected symlinked state directory")
+	}
 }

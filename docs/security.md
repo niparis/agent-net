@@ -21,8 +21,8 @@ The private MCP server can read and change the graph, read agents, workers,
 Needs you and the feed, send messages, and start workers as the owner. The
 daemon accepts its channel only from the active CTO runtime's process tree and
 checks the peer on every call. For Claude, it identifies the background session
-from Claude's session file and checks the root process start token as well as
-its ancestry. It exposes no other owner methods on that channel. The owner
+from Claude's session file, including its job, name, private working directory
+and PID file name. It checks the root process start token as well as its ancestry. It exposes no other owner methods on that channel. The owner
 gate also checks the CTO process tree, so a command it runs cannot use the
 owner CLI. Switching harnesses stops the old runtime and revokes its channel.
 

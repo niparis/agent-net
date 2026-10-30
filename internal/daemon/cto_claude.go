@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -57,10 +58,51 @@ func (d *Daemon) stopClaudeCTOLocked() {
 	c.ref, c.session, c.model, c.token = "", "", "", ""
 }
 
+func sameCTODir(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if real, err := filepath.EvalSymlinks(a); err == nil {
+		a = real
+	}
+	if real, err := filepath.EvalSymlinks(b); err == nil {
+		b = real
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+// findClaudeCTOBg binds only the background job launched in the private CTO
+// working directory. The PID file name must match the session's PID.
+func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
+	entries, err := os.ReadDir(sessions)
+	if err != nil {
+		return claudeSessionFile{}, false
+	}
+	for _, entry := range entries {
+		raw, err := os.ReadFile(filepath.Join(sessions, entry.Name()))
+		if err != nil {
+			continue
+		}
+		var sf struct {
+			claudeSessionFile
+			Cwd  string `json:"cwd"`
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(raw, &sf) != nil || sf.PID <= 1 || entry.Name() != strconv.Itoa(sf.PID)+".json" || sf.SessionID == "" || sf.Kind != "bg" || sf.JobID != ref || sf.Name != "agent-net-cto" || !sameCTODir(sf.Cwd, dir) {
+			continue
+		}
+		if _, alive := procToken(sf.PID); alive {
+			return sf.claudeSessionFile, true
+		}
+	}
+	return claudeSessionFile{}, false
+}
+
 func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) error {
 	c := &d.claudeCTO
+	dir := filepath.Join(d.cfg.StateDir, "cto", "claude")
 	if c.ref != "" {
-		sf, ok := findClaudeBg(d.cfg.ClaudeSessionsDir, c.ref)
+		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, c.ref)
 		root := c.root.Load()
 		tok, alive := "", false
 		if root != nil {
@@ -75,7 +117,6 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if err != nil {
 		return err
 	}
-	dir := filepath.Join(d.cfg.StateDir, "cto", "claude")
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -105,7 +146,7 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	for {
-		sf, ok := findClaudeBg(d.cfg.ClaudeSessionsDir, ref)
+		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref)
 		if ok {
 			token, alive := procToken(sf.PID)
 			if alive && (id == "" || sf.SessionID == id) {
