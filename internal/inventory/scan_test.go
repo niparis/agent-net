@@ -453,3 +453,33 @@ func TestPiSettingsSingleSkillDirectory(t *testing.T) {
 	}
 	t.Fatal("missing configured skill directory")
 }
+
+func TestClaudePluginSourceReportedManual(t *testing.T) {
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, ".claude/plugins"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range Scan(Options{Home: home}).Items {
+		if item.Harness == "claude" && item.Source == protocol.InventoryPlugin && len(item.Unsupported) > 0 {
+			return
+		}
+	}
+	t.Fatal("missing plugin warning")
+}
+
+func TestPiPackageSourceReportedManual(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".pi/agent/settings.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"packages":["npm:some-package"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range Scan(Options{Home: home}).Items {
+		if item.Harness == "pi" && item.Source == protocol.InventoryPackage && len(item.Unsupported) > 0 {
+			return
+		}
+	}
+	t.Fatal("missing package warning")
+}

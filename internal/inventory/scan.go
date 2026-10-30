@@ -254,11 +254,19 @@ func Scan(o Options) protocol.InventoryReport {
 			return
 		}
 		var doc struct {
-			Skills []string `json:"skills"`
+			Skills   []string          `json:"skills"`
+			Packages []json.RawMessage `json:"packages"`
 		}
 		if json.Unmarshal(data, &doc) != nil {
 			add("pi", protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "malformed settings")
 			return
+		}
+		if len(doc.Packages) > 0 {
+			before := len(report.Items)
+			add("pi", protocol.InventorySkill, scope, project, root, path, "packages", "", protocol.InventoryOK, "", "package sources require manual inspection")
+			if len(report.Items) > before {
+				report.Items[len(report.Items)-1].Source = protocol.InventoryPackage
+			}
 		}
 		for _, source := range doc.Skills {
 			if !filepath.IsAbs(source) {
@@ -328,6 +336,16 @@ func Scan(o Options) protocol.InventoryReport {
 	config("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "config.toml"), "mcp_servers", true)
 	for _, f := range []string{"opencode.json", "opencode.jsonc"} {
 		config("opencode", protocol.InventoryUser, "", "", home, filepath.Join(home, ".config/opencode", f), "mcp", false)
+	}
+	plugins := filepath.Join(home, ".claude/plugins")
+	if safe(home, plugins) {
+		if _, err := os.Lstat(plugins); err == nil {
+			before := len(report.Items)
+			add("claude", protocol.InventorySkill, protocol.InventoryUser, "", "", plugins, "plugins", "", protocol.InventoryOK, "", "plugin sources require manual inspection")
+			if len(report.Items) > before {
+				report.Items[len(report.Items)-1].Source = protocol.InventoryPlugin
+			}
+		}
 	}
 	extensions := filepath.Join(home, ".pi/agent/extensions")
 	if _, err := os.Lstat(extensions); err == nil {
