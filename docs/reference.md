@@ -1,5 +1,10 @@
 # Reference
 
+The owner-only `cto_settings` operator method reads the network-wide CTO model
+preference. Pass `{"model":"provider/model"}` to save a preference, or an empty
+model to clear it. The gateway stores it with the other owner settings. This
+setting alone does not start a CTO runtime.
+
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
 ## Commands
