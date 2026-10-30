@@ -70,6 +70,7 @@ type feedItem struct {
 	// Snippet is the first line of the body, when this machine has a session
 	// in the conversation. Snip says whether it was fetched.
 	Snippet string
+	Body    string
 	Snip    snippetState
 }
 
@@ -276,6 +277,7 @@ func (m *Model) applySnippet(r snippetMsg) {
 		it.ConversationID = r.msg.ConversationID
 	}
 	it.FromCTO = it.FromCTO || r.msg.FromCTO
+	it.Body = sanitizeBody(r.msg.Body)
 	it.Snippet = firstLine(r.msg.Body)
 	it.Snip = snipDone
 }

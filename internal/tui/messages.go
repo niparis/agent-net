@@ -1,0 +1,124 @@
+package tui
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+type messageConversation struct {
+	id    string
+	items []int
+	at    time.Time
+	cto   bool
+	event bool
+}
+
+func (m Model) messageConversations() []messageConversation {
+	groups := map[string]*messageConversation{}
+	parentIDs := map[string]string{}
+	for i, it := range m.feed.items {
+		if !it.isMessage() {
+			continue
+		}
+		id := it.ConversationID
+		if id == "" {
+			id = parentIDs[it.Parent]
+		}
+		if id == "" {
+			id = it.MsgID
+		}
+		parentIDs[it.MsgID] = id
+		g := groups[id]
+		if g == nil {
+			g = &messageConversation{id: id}
+			groups[id] = g
+		}
+		g.items = append(g.items, i)
+		if it.At.After(g.at) {
+			g.at = it.At
+		}
+		g.cto = g.cto || it.FromCTO
+	}
+	out := make([]messageConversation, 0, len(groups))
+	for _, g := range groups {
+		if firstNonEmpty(m.uiFilter, m.filter) != "" {
+			var b strings.Builder
+			for _, i := range g.items {
+				it := m.feed.items[i]
+				fmt.Fprintf(&b, "%s %s %s %s %s ", m.feedName(it.From), m.feedName(it.To), it.Snippet, it.Type, it.Body)
+			}
+			if !strings.Contains(strings.ToLower(b.String()), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
+				continue
+			}
+		}
+		out = append(out, *g)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].at.Equal(out[j].at) {
+			return out[i].items[len(out[i].items)-1] > out[j].items[len(out[j].items)-1]
+		}
+		return out[i].at.After(out[j].at)
+	})
+	return out
+}
+
+func (m Model) conversationIndex(rows []messageConversation) int {
+	for n, r := range rows {
+		for _, i := range r.items {
+			if i == m.feedCur {
+				return n
+			}
+		}
+	}
+	return 0
+}
+func (m Model) messageConversationLine(c messageConversation, w int, selected bool) string {
+	first := m.feed.items[c.items[0]]
+	last := m.feed.items[c.items[len(c.items)-1]]
+	from := m.feedName(first.From)
+	if first.FromCTO {
+		from = "CTO"
+	}
+	to := m.feedName(first.To)
+	names := from + " ↔ " + to
+	topic := first.Snippet
+	if topic == "" {
+		topic = "…"
+	}
+	age := m.now().Sub(c.at)
+	if age < 0 {
+		age = 0
+	}
+	age = age.Truncate(time.Minute)
+	ageText := age.String()
+	if age < time.Minute {
+		ageText = "now"
+	} else {
+		ageText += " ago"
+	}
+	lead := "  "
+	if selected {
+		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
+	}
+	content := names + " · " + topic
+	style := lipgloss.NewStyle().Foreground(roleText)
+	if c.cto {
+		style = lipgloss.NewStyle().Foreground(roleCTO)
+	} else if last.State == protocol.StateFailed || last.State == protocol.StateExpired {
+		style = lipgloss.NewStyle().Foreground(roleError)
+	} else if last.Type == protocol.TypeRequest && last.State != protocol.StateReplied {
+		style = lipgloss.NewStyle().Foreground(roleWarning)
+	}
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(ageText)-1, 0)
+	line := lead + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(ageText)
+	if selected {
+		line = selectedRow(line)
+	}
+	return clip(line, w)
+}

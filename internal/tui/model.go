@@ -870,6 +870,15 @@ func (m Model) convKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // move changes the selection by delta, in the list that has the focus.
 func (m *Model) move(delta int) {
 	if m.focus == focusFeed {
+		if m.tab == 1 {
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				pos := m.conversationIndex(rows)
+				pos = min(max(pos+delta, 0), len(rows)-1)
+				m.feedCur = rows[pos].items[len(rows[pos].items)-1]
+			}
+			return
+		}
 		m.moveFeed(delta)
 		return
 	}

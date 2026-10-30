@@ -1035,5 +1035,20 @@ func (m Model) messagesView(w, h int) []string {
 	case eventsNone:
 		filter = "no session/worker events"
 	}
-	return append(out, panel("Messages · "+filter, m.feedLines(max(w-4, 1), max(h-3, 0)), w, roleAccent)...)
+	rows := m.messageConversations()
+	selected := m.conversationIndex(rows)
+	body := []string{}
+	for i, r := range rows {
+		body = append(body, m.messageConversationLine(r, max(w-4, 1), i == selected && m.focus == focusFeed))
+	}
+	if len(body) == 0 {
+		body = append(body, sDim.Render("No conversations"))
+	}
+	for len(body) < max(h-3, 0) {
+		body = append(body, "")
+	}
+	if len(body) > max(h-3, 0) {
+		body = body[:max(h-3, 0)]
+	}
+	return append(out, panel("Messages · "+filter, body, w, roleAccent)...)
 }
