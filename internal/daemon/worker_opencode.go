@@ -114,6 +114,27 @@ func (opencodeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error 
 	return d.loadOpenCodeProject(ctx, w, api)
 }
 
+// adopt reconnects to the private server and loads its project so the plugin
+// can resume its event watch and session delivery after the daemon restart.
+func (opencodeLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
+	password, err := os.ReadFile(filepath.Join(w.dir, "opencode-password"))
+	if err != nil || len(password) == 0 || w.ref == "" || w.nativeID == "" {
+		return errors.New("the connection details of the OpenCode worker are gone")
+	}
+	base, pass := "http://"+w.ref, string(password)
+	api := openCodeWorkerAPI(ctx, base, pass)
+	if _, code, err := api("GET", "/api/info", nil); err != nil || code != http.StatusOK {
+		return fmt.Errorf("cannot reconnect to the OpenCode worker (HTTP %d): %v", code, err)
+	}
+	d.wmu.Lock()
+	w.apiBase, w.apiPass = base, pass
+	d.wmu.Unlock()
+	if err := writeWorkerSessionFile(w, w.nativeID); err != nil {
+		return err
+	}
+	return d.loadOpenCodeProject(ctx, w, api)
+}
+
 // loadOpenCodeProject asks for the project folder, which is how OpenCode
 // loads its plugins. The plugin registers the session named in the worker's
 // session file, and the daemon waits until it has.
@@ -156,6 +177,9 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	if err := os.WriteFile(filepath.Join(dir, "opencode-password"), []byte(password), 0o600); err != nil {
+		return nil, err
+	}
 	data, state := filepath.Join(dir, "data"), filepath.Join(dir, "state")
 	if err := copyOpenCodeAuth(ctx, bin, data, state); err != nil {
 		return nil, err
@@ -176,9 +200,28 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	base := "http://127.0.0.1:" + strconv.Itoa(port)
 	d.wmu.Lock()
 	w.apiBase, w.apiPass = base, password
+	w.ref = "127.0.0.1:" + strconv.Itoa(port)
+	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
+	api := openCodeWorkerAPI(ctx, base, password)
+	for {
+		if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
+			return api, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("opencode serve did not start in time")
+		case <-time.After(100 * time.Millisecond):
+		}
+		if d.gone(w) {
+			return nil, errors.New("opencode serve exited at start")
+		}
+	}
+}
+
+func openCodeWorkerAPI(ctx context.Context, base, password string) opencodeAPI {
 	hc := &http.Client{Timeout: 10 * time.Second}
-	api := func(method, path string, body any, headers ...string) ([]byte, int, error) {
+	return func(method, path string, body any, headers ...string) ([]byte, int, error) {
 		var rd io.Reader
 		if body != nil {
 			b, _ := json.Marshal(body)
@@ -202,19 +245,6 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return b, resp.StatusCode, nil
-	}
-	for {
-		if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
-			return api, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("opencode serve did not start in time")
-		case <-time.After(100 * time.Millisecond):
-		}
-		if d.gone(w) {
-			return nil, errors.New("opencode serve exited at start")
-		}
 	}
 }
 

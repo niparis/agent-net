@@ -782,10 +782,10 @@ func TestCodexWorkerSurvivesADaemonRestart(t *testing.T) {
 		return a != nil && a.Online && a.Worker != nil && a.Worker.Owner == owner
 	})
 	readCodex(t, repo, func(r fakeCodexRecord) bool { return r.Resumed == 1 })
-	var sent protocol.MessageSent
-	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "still there?"}), &sent)
-	w.replyTo(t, owner, sent.Message.ID)
-
+	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish"), []byte("finish"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w.waitNotice(t, 1)
 	eventually(t, "the adopted app server ends after the hand-back", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
 }
 

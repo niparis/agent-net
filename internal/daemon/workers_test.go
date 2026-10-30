@@ -270,6 +270,14 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	if pw, _ := os.ReadFile(filepath.Join(w.cfg.StateDir, "daemon.db")); strings.Contains(string(pw), rec.Env["OPENCODE_SERVER_PASSWORD"]) {
 		t.Error("the server password is stored in daemon.db")
 	}
+	passwordFile := filepath.Join(w.cfg.StateDir, "workers", rec.Env["AGENT_NET_WORKER"], "opencode-password")
+	password, err := os.ReadFile(passwordFile)
+	if err != nil || string(password) != rec.Env["OPENCODE_SERVER_PASSWORD"] {
+		t.Fatalf("private password file: %v", err)
+	}
+	if info, err := os.Stat(passwordFile); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("private password file permissions: %v %v", info, err)
+	}
 
 	// The task is a normal message from the owner with the fixed preamble.
 	if res.Task.From != owner || res.Task.To != res.SessionID || res.Task.Type != protocol.TypeRequest {

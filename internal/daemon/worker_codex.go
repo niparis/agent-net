@@ -283,6 +283,14 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	cc.thread = w.nativeID
+	// The in-flight turn belongs to the last recorded request. Restore it
+	// before subscribing: completion can arrive as soon as resume starts.
+	if w.taskMsg == "" || w.owner == "" {
+		cc.close()
+		return errors.New("the request for the Codex turn is gone")
+	}
+	cc.running = true
+	cc.cur = &codexJob{from: w.owner, msgID: w.taskMsg}
 	name, effort := splitCodexModel(w.model)
 	cc.effort, cc.model = effort, codexModelLabel(name, effort)
 	cc.sb = d.codexSandboxFor(ctx, w)
