@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	osexec "os/exec"
@@ -42,9 +43,14 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
-	cto           *ctoState
-	ctoGeneration int
-	src           Source
+	inboxItems                         []protocol.InboxItem
+	inboxOn, inboxDetail, inboxEditing bool
+	inboxIndex                         int
+	inboxError                         string
+	inboxInput                         textinput.Model
+	cto                                *ctoState
+	ctoGeneration                      int
+	src                                Source
 	// loc and now are replaced in tests.
 	loc *time.Location
 	now func() time.Time
@@ -134,11 +140,13 @@ func New(src Source) Model {
 type tickMsg struct{}
 
 type fetchedMsg struct {
-	snap      Snapshot
-	err       error
-	events    []protocol.FeedEvent
-	eventsErr error
-	at        time.Time
+	inboxItems []protocol.InboxItem
+	inboxOK    bool
+	snap       Snapshot
+	err        error
+	events     []protocol.FeedEvent
+	eventsErr  error
+	at         time.Time
 	// usage and counts are set when this refresh asked for them.
 	askedUsage bool
 	usage      Usage
@@ -199,6 +207,15 @@ func (m Model) fetchCmd() tea.Cmd {
 				res.counts, res.countsErr = src.Counts(ctx)
 			} else {
 				res.countsErr = ErrUsageUnavailable
+			}
+		}
+		if c, ok := src.(inboxCaller); ok {
+			var data struct {
+				Items []protocol.InboxItem `json:"items"`
+			}
+			raw, err := c.Call(ctx, "inbox_list", nil)
+			if err == nil && json.Unmarshal(raw, &data) == nil {
+				res.inboxItems, res.inboxOK = data.Items, true
 			}
 		}
 		if skipFeed {
@@ -352,7 +369,23 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case inboxAnswerMsg:
+		if msg.err != nil {
+			m.inboxError = sanitize(msg.err.Error())
+		} else {
+			m.inboxDetail = false
+			m.inboxError = ""
+			for i := range m.inboxItems {
+				if m.inboxItems[i].ID == msg.id {
+					m.inboxItems[i].Status = "answered"
+				}
+			}
+		}
+		return m, nil
 	case fetchedMsg:
+		if msg.inboxOK {
+			m.inboxItems = msg.inboxItems
+		}
 		m.fetching = false
 		m.applyFetch(msg)
 		return m, nil
@@ -492,6 +525,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case modeIntegrations:
 		return m.integrationsKey(k)
 	}
+	if m.inboxOn {
+		return m.inboxKey(k)
+	}
 	if m.help {
 		switch k.String() {
 		case "q":
@@ -515,7 +551,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.cto != nil {
 		return m.ctoKey(k)
 	}
-	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil {
+	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil && !m.outcomeSelected() {
 		return m.startCTO()
 	}
 	if m.mapOn {
@@ -591,9 +627,16 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "i":
+		m.inboxOn = true
+		m.inboxIndex = 0
+		return m, nil
 	case "m":
 		return m.startCompose()
 	case "s":
+		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
+			return m, cmd
+		}
 		return m.startForm()
 	case "e":
 		return m.startEnter()
@@ -618,6 +661,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 	case "c":
 		return m, m.openConv()
+	case "C":
+		for _, e := range m.snap.Outcomes {
+			if m.selected == "outcome:"+e.ReplyID {
+				return m, m.openConvFor(e.Sender)
+			}
+		}
 	case "/":
 		m.filtering = true
 		m.input.SetValue(m.filter)
@@ -631,6 +680,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fixScroll()
 		}
 	case "o":
+		if cmd := m.resolveOutcome("overrule"); cmd != nil {
+			return m, cmd
+		}
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
 		m.fixScroll()

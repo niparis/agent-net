@@ -53,8 +53,10 @@ interface DeliveredMessage {
   sender_worker?: boolean;
   sender_cto?: boolean;
   recipient_peer_trust?: boolean;
+  overruled?: boolean;
   owner_approved?: boolean;
   recipient_relation?: string;
+  approval_note?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -88,7 +90,9 @@ function authorityNote(m: DeliveredMessage): string {
 }
 
 function formatDelivery(m: DeliveredMessage): string {
-  const text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  if (m.overruled === true) text += `\n[agent-net] Nicolas overrules: do it.`;
+  if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;
   // A worker's report (a reply) is model output whatever the recipient's trust.
   return m.sender_worker && m.sender_harness !== "owner" && m.message_type === "reply" ? `${text}\n${WORKER_FOOTER}` : text;
 }
@@ -848,6 +852,17 @@ export default function (pi: ExtensionAPI) {
   );
 
   defineTool(
+    "agent_request_approval", "Request approval", "Ask the owner to approve one exact action with your recommendation.",
+    Type.Object({ action: Type.String({ description: "Exact action" }), recommendation: Type.String({ description: "Your recommendation" }) }),
+    "request_approval", () => "Approval request sent to the owner's inbox.",
+  );
+  defineTool(
+    "agent_propose_idea", "Propose idea", "Send a feature idea and your recommendation to the owner's inbox.",
+    Type.Object({ text: Type.String({ description: "Feature idea" }), recommendation: Type.String({ description: "Your recommendation" }) }),
+    "propose_idea", () => "Idea sent to the owner's inbox.",
+  );
+
+  defineTool(
     "agent_send",
     "Send to agent",
     "Send a message to another agent session. 'to' is a session ID, or an exact agent name if it is unique. " +
@@ -872,6 +887,10 @@ export default function (pi: ExtensionAPI) {
     Type.Object({
       message_id: Type.String({ description: "The message_id you are answering" }),
       body: Type.String({ description: "Reply text" }),
+      outcome: Type.Optional(Type.String({ description: "accept, reject, redirect or escalate" })),
+      reason: Type.Optional(Type.String({ description: "Required for reject, redirect and escalate" })),
+      redirect_to: Type.Optional(Type.String({ description: "Node to redirect to" })),
+      recommendation: Type.Optional(Type.String({ description: "Required for escalate" })),
     }),
     "reply",
     formatSent,

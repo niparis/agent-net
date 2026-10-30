@@ -754,6 +754,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad graph.undo")
 		}
 		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
+	case "node.settings.get":
+		p, err := decode[protocol.NodeSettingsGetRequest](raw)
+		if err != nil || p.Node == "" {
+			return nil, reject("bad node.settings.get")
+		}
+		return st.NodeSettings(p.Node)
+	case "node.settings.set":
+		p, err := decode[protocol.NodeSettingsSetRequest](raw)
+		if err != nil || p.Node == "" || p.Setting == "" {
+			return nil, reject("bad node.settings.set")
+		}
+		if err := st.SetNodeSetting(p.Node, p.Setting, p.Value, graphActor(raw)); err != nil {
+			return nil, err
+		}
+		return st.NodeSettings(p.Node)
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)
@@ -833,6 +848,56 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"profile": prof}, nil
 
+	case "inbox.create":
+		var p struct {
+			SessionID      string `json:"session_id"`
+			Kind           string `json:"kind"`
+			Text           string `json:"text"`
+			Recommendation string `json:"recommendation"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.create")
+		}
+		if p.Kind != "approval" && p.Kind != "feature_idea" {
+			return nil, reject("invalid inbox kind")
+		}
+		agent, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
+			return nil, reject("session does not belong to this node")
+		}
+		var item protocol.InboxItem
+		if p.Kind == "approval" {
+			item, err = st.RequestWrittenApproval(agent.SessionID, agent.Repo.Project, protocol.ApprovalRequest{Action: p.Text, Recommendation: p.Recommendation})
+		} else {
+			item, err = st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation})
+		}
+		return map[string]any{"item": item}, err
+
+	case "inbox.list":
+		items, err := st.ListInbox()
+		return map[string]any{"items": items}, err
+
+	case "inbox.answer":
+		var p struct {
+			ID     string `json:"id"`
+			Answer string `json:"answer"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.answer")
+		}
+		item, err := st.AnswerInbox(p.ID, p.Answer)
+		if err != nil {
+			return nil, err
+		}
+		node, err := st.SessionNode(item.SessionID)
+		if err == nil {
+			g.dispatchPending(ctx, node, false)
+		}
+		return map[string]any{"item": item}, nil
+
 	case "msg.send":
 		p, err := decode[protocol.MsgSend](raw)
 		if err != nil {
@@ -897,6 +962,31 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("message %q is not addressed to this node", p.MessageID)
 		}
 		return nil, st.ApplyDelivery(p.MessageID, p.State, p.Detail)
+
+	case "outcome.resolve":
+		p, err := decode[protocol.OutcomeResolution](raw)
+		if err != nil {
+			return nil, reject("bad resolution")
+		}
+		node, err := st.SessionNode(p.Owner)
+		if err != nil || node != nc.id {
+			return nil, reject("owner session not on this node")
+		}
+		m, err := st.ResolveOutcome(p.ReplyID, p.Owner, p.Action)
+		if err != nil {
+			return nil, err
+		}
+		if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+		return map[string]any{"message": m}, nil
+
+	case "query.outcome_inbox":
+		entries, err := st.OutcomeInbox()
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"entries": entries}, nil
 
 	case "query.agents":
 		p, err := decode[protocol.QueryAgents](raw)

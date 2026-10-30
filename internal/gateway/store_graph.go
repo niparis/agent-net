@@ -122,6 +122,33 @@ func (s *Store) RemoveArchitect(name, actor string) error {
 	if _, err = tx.Exec(`DELETE FROM graph_charter WHERE node=?`, name); err != nil {
 		return err
 	}
+	// Node settings go with the node too.
+	rows, err = tx.Query(`SELECT setting,value FROM graph_node_settings WHERE node=?`, name)
+	if err != nil {
+		return err
+	}
+	var settings [][2]string
+	for rows.Next() {
+		var setting, value string
+		if err = rows.Scan(&setting, &value); err != nil {
+			rows.Close()
+			return err
+		}
+		settings = append(settings, [2]string{setting, value})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, a := range settings {
+		if err = graphRecord(tx, "setting", name, a[0], a[1], "", actor, s.now().UnixNano()); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=?`, name); err != nil {
+		return err
+	}
 	if _, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, name); err != nil {
 		return err
 	}
@@ -170,6 +197,73 @@ func (s *Store) SetCharter(node, attr, value, actor string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// SetNodeSetting sets or clears one node override of the maturity defaults
+// (decision 0022). The value is checked against its setting. An empty value
+// clears the override.
+func (s *Store) SetNodeSetting(node, setting, value, actor string) error {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if err := protocol.ValidateNodeSetting(setting, value); err != nil {
+		return reject("%v", err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = graphKind(tx, node); err != nil {
+		return err
+	}
+	var old string
+	err = tx.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`, node, setting).Scan(&old)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if old == value {
+		return nil
+	}
+	now := s.now().UnixNano()
+	if value == "" {
+		_, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=? AND setting=?`, node, setting)
+	} else {
+		_, err = tx.Exec(`INSERT INTO graph_node_settings VALUES(?,?,?,?,?) ON CONFLICT(node,setting) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, setting, value, now, actor)
+	}
+	if err != nil {
+		return err
+	}
+	if err = graphRecord(tx, "setting", node, setting, old, value, actor, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// NodeSettings returns a node's overrides, its maturity defaults and the
+// effective defaults after the overrides. The node must exist in the graph.
+func (s *Store) NodeSettings(node string) (protocol.NodeSettingsResult, error) {
+	out := protocol.NodeSettingsResult{Node: node, Overrides: map[string]string{}}
+	g, err := s.Graph()
+	if err != nil {
+		return out, err
+	}
+	n := protocol.Node{}
+	found := false
+	for _, candidate := range g.Nodes {
+		if candidate.Name == node {
+			n, found = candidate, true
+			break
+		}
+	}
+	if !found {
+		return out, reject("unknown node %q", node)
+	}
+	if n.Settings != nil {
+		out.Overrides = n.Settings
+	}
+	out.Maturity = n.Charter.Maturity
+	out.Defaults = protocol.DefaultsForMaturity(n.Charter.Maturity)
+	out.Effective = protocol.NodeDefaults(n.Charter.Maturity, n.Settings)
+	return out, nil
 }
 
 // CharterHistory lists changes newest first, bounded to 1000 entries.
@@ -278,6 +372,23 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 		} else {
 			_, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, old, now, actor)
 		}
+	case "setting":
+		var current string
+		err = tx.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`, node, attr).Scan(&current)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if current != value {
+			return reject("value changed since that history entry")
+		}
+		if _, err = graphKind(tx, node); err != nil {
+			return err
+		}
+		if old == "" {
+			_, err = tx.Exec(`DELETE FROM graph_node_settings WHERE node=? AND setting=?`, node, attr)
+		} else {
+			_, err = tx.Exec(`INSERT INTO graph_node_settings VALUES(?,?,?,?,?) ON CONFLICT(node,setting) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, old, now, actor)
+		}
 	case "edge":
 		var e protocol.Edge
 		data := value
@@ -327,7 +438,7 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 		}
 		if old == "" {
 			var n int
-			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?)`, node, node, node).Scan(&n); err != nil {
+			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?) + (SELECT COUNT(*) FROM graph_node_settings WHERE node=?)`, node, node, node, node).Scan(&n); err != nil {
 				return err
 			}
 			if n != 0 {
@@ -365,11 +476,11 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" && e.Rule != "never" {
 		return reject("invalid edge rule")
 	}
-	if e.Kind != "depends" && e.Kind != "governs" {
+	if e.Kind != "depends" && e.Kind != "governs" && e.Kind != "deploys" {
 		return reject("invalid edge kind")
 	}
-	if e.Kind == "depends" && e.Mode != "" {
-		return reject("dependency has no mode")
+	if (e.Kind == "depends" || e.Kind == "deploys") && e.Mode != "" {
+		return reject("this edge kind has no mode")
 	}
 	if e.Kind == "governs" && e.Mode != "advisor" && e.Mode != "arbiter" && e.Mode != "owner" {
 		return reject("invalid mode")
@@ -499,6 +610,28 @@ func (s *Store) Graph() (protocol.Graph, error) {
 			n.Charter.Needs = value
 		case "notes":
 			n.Charter.Notes = value
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return g, err
+	}
+	rows, err = s.db.Query(`SELECT node,setting,value FROM graph_node_settings`)
+	if err != nil {
+		return g, err
+	}
+	for rows.Next() {
+		var name, setting, value string
+		if err = rows.Scan(&name, &setting, &value); err != nil {
+			rows.Close()
+			return g, err
+		}
+		if n := byName[name]; n != nil {
+			if n.Settings == nil {
+				n.Settings = map[string]string{}
+			}
+			n.Settings[setting] = value
 		}
 	}
 	err = rows.Err()

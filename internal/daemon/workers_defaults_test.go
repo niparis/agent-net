@@ -40,6 +40,24 @@ func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
 	}
 }
 
+func TestWorkerSandboxFollowsTheNodesMaturity(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	st := g.gw.Store()
+	if err := st.SetCharter("shop", "maturity", "critical - money", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersReadOnly, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	if res.Permissions != protocol.WorkersReadOnly {
+		t.Fatalf("the worker got %q, want the node's override %q", res.Permissions, protocol.WorkersReadOnly)
+	}
+}
+
 func TestWorkerIsolationNoneWorksInTheProjectFolder(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)

@@ -408,16 +408,16 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 		if err := del(&res.Deliveries, `DELETE FROM deliveries WHERE at < ? OR message_id IN (SELECT id FROM messages WHERE created_at < ?)`, cut, cut); err != nil {
 			return res, err
 		}
-		if err := del(&res.Messages, `DELETE FROM messages WHERE created_at < ?`, cut); err != nil {
+		if err := del(&res.Messages, `DELETE FROM messages WHERE created_at < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (messages.id=o.message_id OR messages.id=o.reply_id))`, cut); err != nil {
 			return res, err
 		}
 	}
 	if r.Sessions > 0 {
 		cut := now.Add(-r.Sessions).UnixNano()
-		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE online = 0 AND last_seen < ?)`, cut); err != nil {
+		if err := del(new(int), `DELETE FROM profiles WHERE session_id IN (SELECT id FROM sessions WHERE online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient)))`, cut); err != nil {
 			return res, err
 		}
-		if err := del(&res.Sessions, `DELETE FROM sessions WHERE online = 0 AND last_seen < ?`, cut); err != nil {
+		if err := del(&res.Sessions, `DELETE FROM sessions WHERE online = 0 AND last_seen < ? AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, cut); err != nil {
 			return res, err
 		}
 	}

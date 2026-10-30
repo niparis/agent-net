@@ -50,6 +50,7 @@ const (
 )
 
 type Message struct {
+	Overruled      bool      `json:"overruled,omitempty"`
 	ID             string    `json:"message_id"`
 	ConversationID string    `json:"conversation_id"`
 	ParentID       string    `json:"parent_message_id,omitempty"`
@@ -68,9 +69,10 @@ type Message struct {
 	FromHarness string `json:"sender_harness,omitempty"`
 	// FromWorker is true when the sender is a worker (a session that agent-net
 	// started). A receiving adapter frames its text as model output.
-	FromWorker    bool `json:"sender_worker,omitempty"`
-	FromCTO       bool `json:"sender_cto,omitempty"`
-	OwnerApproved bool `json:"owner_approved,omitempty"`
+	FromWorker    bool   `json:"sender_worker,omitempty"`
+	FromCTO       bool   `json:"sender_cto,omitempty"`
+	OwnerApproved bool   `json:"owner_approved,omitempty"`
+	ApprovalNote  string `json:"approval_note,omitempty"`
 	// RecipientTrust is filled by the gateway when it hands the message to
 	// the recipient's daemon: true when the owner turned peer trust on for the
 	// recipient session (decision 0012). A sender cannot set it: it is not a
@@ -345,6 +347,7 @@ type (
 		On        bool   `json:"on"`
 	}
 	MsgSend struct {
+		ReplyOutcome
 		FromCTO        bool   `json:"sender_cto,omitempty"`
 		Sender         string `json:"sender_session_id"`
 		Recipient      string `json:"recipient_session_id"`

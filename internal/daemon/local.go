@@ -665,6 +665,25 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		d.pushSession(ls)
 		return nil, nil
 
+	case "request_approval", "propose_idea":
+		sid, err := lc.boundID()
+		if err != nil {
+			return nil, err
+		}
+		var p struct {
+			Action         string `json:"action"`
+			Text           string `json:"text"`
+			Recommendation string `json:"recommendation"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad inbox request")
+		}
+		kind, text := "approval", p.Action
+		if method == "propose_idea" {
+			kind, text = "feature_idea", p.Text
+		}
+		return d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": text, "recommendation": p.Recommendation})
+
 	case "announce":
 		sid, err := lc.boundID()
 		if err != nil {
@@ -743,12 +762,17 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		var p struct {
+			protocol.ReplyOutcome
 			MessageID      string `json:"message_id"`
 			Body           string `json:"body"`
 			IdempotencyKey string `json:"idempotency_key"`
 		}
 		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
 			return nil, errors.New("reply needs message_id and body")
+		}
+		p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
+		if err != nil {
+			return nil, err
 		}
 		data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: p.MessageID})
 		if err != nil {
@@ -761,7 +785,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From,
-			Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey})
+			Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome})
 
 	case "messages":
 		var p protocol.QueryMessages

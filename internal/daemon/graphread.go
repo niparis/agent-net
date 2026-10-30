@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"time"
 
@@ -91,10 +92,12 @@ func (d *Daemon) charterBrief(ctx context.Context, project string) string {
 	if !ok {
 		return ""
 	}
+	var charter string
 	for _, n := range g.Nodes {
 		if n.Name == project {
-			return protocol.CharterBrief(n)
+			charter = protocol.CharterBrief(n)
+			break
 		}
 	}
-	return ""
+	return strings.TrimSpace(charter + "\n" + protocol.WorkerDeployApprovalRules(g, project))
 }

@@ -3,9 +3,9 @@ package gateway
 import (
 	"path/filepath"
 	"strings"
-	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"testing"
 )
 
 func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
@@ -19,19 +19,19 @@ func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The request-rule migration is no longer the last one, so rewind to the
-	// migration before it and let OpenStore apply it (and the later ones)
-	// again. The later migrations are idempotent for this.
-	ruleMigration := 0
-	for i, m := range migrations {
+	// The trust migration is no longer the last one: request outcomes follow
+	// it, and their tables cannot be replayed. Run the trust migration itself
+	// again, as a gateway that never applied it would.
+	trust := ""
+	for _, m := range migrations {
 		if strings.Contains(m, "INSERT OR IGNORE INTO graph_edges") {
-			ruleMigration = i + 1
+			trust = m
 		}
 	}
-	if ruleMigration == 0 {
-		t.Fatal("the request-rule migration is gone")
+	if trust == "" {
+		t.Fatal("no trust migration")
 	}
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, ruleMigration); err != nil {
+	if _, err = s.db.Exec(trust); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

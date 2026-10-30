@@ -30,6 +30,20 @@ func tailCell(s string, w int) string {
 }
 
 func (m Model) detailLines(w, n int) []string {
+	for _, e := range m.snap.Outcomes {
+		if m.selected == "outcome:"+e.ReplyID {
+			lines := []string{"  Request: " + sanitize(e.Request), "  Outcome: " + sanitize(e.Outcome), "  Reason: " + sanitize(e.Reason), "  Recommendation: " + sanitize(e.Recommendation), "  c: recipient conversation  C: requester conversation", "  s: let it stand  o: overrule"}
+			var wrapped []string
+			for _, line := range lines {
+				wrapped = append(wrapped, wrap(line, w)...)
+			}
+			lines = wrapped
+			for len(lines) < n {
+				lines = append(lines, "")
+			}
+			return lines[:min(n, len(lines))]
+		}
+	}
 	a, ok := m.selectedAgent()
 	if !ok {
 		out := []string{sDim.Render("  nothing selected")}

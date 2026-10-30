@@ -362,6 +362,9 @@ func codexFrame(m protocol.Message) string {
 			foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
 		}
 	}
+	if m.Overruled {
+		foot += "\n[agent-net] " + protocol.OverruleNote
+	}
 	if m.Type == protocol.TypeReply && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		foot += "\n" + protocol.NoAuthorityNote
 	}
@@ -372,6 +375,9 @@ func codexFrame(m protocol.Message) string {
 	// node (decision 0022). It is agent-net's own text, after the body.
 	if m.Type == protocol.TypeRequest && m.RecipientRelation != "" {
 		foot += " " + m.RecipientRelation
+	}
+	if m.ApprovalNote != "" {
+		foot += "\n[agent-net] " + m.ApprovalNote
 	}
 	return strings.TrimRight(protocol.NeutralizeMarkers(m.Body), "\n") + "\n\n" + foot
 }

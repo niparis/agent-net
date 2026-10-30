@@ -32,12 +32,13 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
+	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
 }
 
@@ -173,6 +174,29 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 	}
 	d := lc.d
 	switch method {
+	case "inbox_list":
+		res, err = d.call(ctx, "inbox.list", struct{}{})
+	case "inbox_answer":
+		var p struct {
+			ID     string `json:"id"`
+			Answer string `json:"answer"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.ID == "" || p.Answer == "" {
+			return nil, true, errors.New("inbox_answer needs id and answer")
+		}
+		res, err = d.call(ctx, "inbox.answer", p)
+	case "outcome_overrule":
+		var p protocol.OutcomeResolution
+		if json.Unmarshal(raw, &p) != nil || p.ReplyID == "" {
+			return nil, true, errors.New("outcome_overrule needs reply_id")
+		}
+		p.Owner = d.ownerSessionID()
+		if p.Owner == "" {
+			return nil, true, errors.New("owner session not registered")
+		}
+		res, err = d.call(ctx, "outcome.resolve", p)
+	case "outcome_inbox":
+		res, err = d.call(ctx, "query.outcome_inbox", struct{}{})
 	case protocol.OpHeldList:
 		res, err = d.call(ctx, "held.list", struct{}{})
 	case protocol.OpHeldAnswer:
@@ -234,7 +258,7 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				d.Logf("node.rename node=%s name=%q", q.NodeID, out.DisplayName)
 			}
 		}
-	case protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpGraphUndo:
+	case protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpGraphUndo, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
 		frame := strings.ReplaceAll(method, "_", ".")

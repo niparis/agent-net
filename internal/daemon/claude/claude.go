@@ -254,6 +254,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 			details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
 		}
 	}
+	if m.Overruled {
+		details += " [agent-net] " + protocol.OverruleNote
+	}
 	if m.Type == "reply" && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		details += " " + protocol.NoAuthorityNote
 	}
@@ -264,6 +267,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 	// node (decision 0022). It is agent-net's own text, after the body.
 	if m.Type == "request" && m.RecipientRelation != "" {
 		details += " " + m.RecipientRelation
+	}
+	if m.ApprovalNote != "" {
+		details += "\n[agent-net] " + m.ApprovalNote
 	}
 	var attrs []string
 	if from != "" {

@@ -81,6 +81,7 @@ type sendIn struct {
 }
 
 type replyIn struct {
+	protocol.ReplyOutcome
 	MessageID string `json:"message_id" jsonschema:"the message_id you are replying to"`
 	Body      string `json:"body" jsonschema:"the reply text"`
 }
@@ -178,6 +179,22 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			"Do not pass name unless you mean to rename this session; function is ignored."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in announceIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "announce", in)
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_request_approval", "Ask the owner to approve one exact action, with your recommendation."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Action         string `json:"action" jsonschema:"the exact action"`
+			Recommendation string `json:"recommendation" jsonschema:"your recommendation"`
+		}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, "request_approval", in)
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_propose_idea", "Send a feature idea and your recommendation to the owner's inbox."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Text           string `json:"text" jsonschema:"the idea"`
+			Recommendation string `json:"recommendation" jsonschema:"your recommendation"`
+		}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, "propose_idea", in)
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_send",

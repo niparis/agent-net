@@ -75,19 +75,21 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 
 ## Graph operator methods (foundation)
 
-The gateway stores explicit nodes, charter attributes, edges and their history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
+The gateway stores explicit nodes, charter attributes, node settings, edges and their history in `graph_nodes`, `graph_charter`, `graph_node_settings`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
 
-The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`.
+The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `node settings <name> [setting value...]`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`. Edge kinds are `depends` (consumer to provider), `governs` (architect to component, with mode `advisor`, `arbiter` or `owner`) and `deploys` (deployer to each app it deploys).
 
 Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`.
 
 - `graph_get {}` returns `nodes` and `edges`.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
-- `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges.
+- `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges, and clears the node's settings with it.
 - `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
-- `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter or edges.
+- `node_settings_get {node}` returns the node's maturity, its overrides, the defaults its maturity gives and the effective values.
+- `node_settings_set {node, setting, value}` sets or clears one override. Settings are `tests_before_merge` (`optional`, `suite`, `suite-new-tests`, `suite-new-tests-review`), `merge_authority` (`full`, `delegated`, `ask`), `worker_sandbox` (`sandboxed`, `no-network`, `read-only`), `judge_consumers` (`free`, `charter`, `strict`, `escalate`) and `deploy_rule` (`brief`, `ask`, `owner`). An empty value clears the override. The method is behind the owner gate and refuses agent sessions.
+- `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter, settings or edges.
 
-History limits default to 1000 and are capped at 1000. Edge history has `old` and `new` edge objects, omitted when absent. Gateway frames use the same names with dots instead of underscores; `graph.undo` uses `history_id` because `id` identifies the frame itself.
+History limits default to 1000 and are capped at 1000. Edge history has `old` and `new` edge objects, omitted when absent. Gateway frames use the same names with dots instead of underscores; `graph.undo` uses `history_id` because `id` identifies the frame itself; `node_settings_get` and `node_settings_set` use `node.settings.get` and `node.settings.set`.
 
 ## Playbook operator methods
 
@@ -399,7 +401,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 - **Who starts one:** you (`agent-net start`, the TUI) or an agent (`agent_start`). A worker cannot start workers. The harness is `opencode` (the default), `claude`, `pi` or `codex`. A caller can say "implement this with a Claude, Pi or Codex subagent".
 - **Where:** the project is looked up in `agent-net projects` (registered or seen). With no project, the caller's own folder is used: it is found by its repository root path on the caller's machine, not by name; a caller outside a known project falls back to its folder name. `project` may also be an absolute path: it matches the main tree or a listed worktree of a known project (use it when two folders share a name). A name matches a registered folder before seen-only folders of the same name on the same machine; it is ambiguous only between two registered folders, or between seen-only folders with none registered, and the refusal lists the paths. If it is on two machines, name one with `--machine`. The machine must be online, accept workers (not set up with `--no-launch`), and have the harness (`agent-net nodes --wide`). Only OpenCode reports a model list, and the gateway checks the model against it. For the other harnesses any model string is passed on, and a model the harness does not know fails at start with the harness's own message. The gateway says which check failed.
-- **Permissions of a worker** ([decision 0020](decisions/0020-worker-sandbox.md)). Nobody watches a worker, so it must never need an approval. Instead it runs in a sandbox, at a level that the owner sets per project (TUI key `p`, line Workers; the operator method is `session_policy` with `{"policy": {"workers": "read-only"}, "scope": "project"}`, owner only, refused at session scope). The level is stored in the project policy and sent with each start; `worker_start` answers it as `permissions`, and `list --json` shows it in the worker part of the session. Unset means `sandboxed`.
+- **Permissions of a worker** ([decision 0020](decisions/0020-worker-sandbox.md)). Nobody watches a worker, so it must never need an approval. Instead it runs in a sandbox, at a level that the owner sets per project (TUI key `p`, line Workers; the operator method is `session_policy` with `{"policy": {"workers": "read-only"}, "scope": "project"}`, owner only, refused at session scope). The level is stored in the project policy and sent with each start; `worker_start` answers it as `permissions`, and `list --json` shows it in the worker part of the session. When the project policy sets no level, the node's maturity default applies ([maturity and its defaults](#charters-and-component-relationships)); a node with no maturity keeps `sandboxed`.
 
   | Level | Writes | Network |
   |---|---|---|
@@ -603,19 +605,37 @@ With both, the policy text comes first and the charter second, separated by a bl
 
 ## Charters and component relationships
 
-Decision: [0022](decisions/0022-component-graph-and-cto.md). The graph includes owner-managed edges and request rules.
+Decision: [0022](decisions/0022-component-graph-and-cto.md). The graph includes owner-managed edges and request rules. This section also covers the maturity defaults and merge authority (step 4).
 
-The gateway keeps a graph of components and architects: a node per project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`). A session speaks for the node of its project, as the PROJECT column resolves it. The graph is visible to every enrolled machine.
+The gateway keeps a graph of components and architects: a node per project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`; `deploys`: deployer to each app it deploys). A session speaks for the node of its project, as the PROJECT column resolves it. The graph is visible to every enrolled machine.
 
 **Reading it.** The daemon frame `graph.read` takes `{"project": "cogforge"}` and answers `{"graph": {"nodes": [...], "edges": [...]}}`. A project name returns that node, its charter, the nodes its edges name, and the edges that touch it; an empty name returns the whole graph. A node with no stored charter is still a node (an implicit project), with empty charter attributes. No session or peer identity is needed: this is a read, not a change.
 
-**Every turn.** The daemon reads the node of the session's project and puts a short charter text into the same places as the delegation policy: the Claude Code `UserPromptSubmit` hook (`additionalContext`), the OpenCode `context` hook, and the Pi `before_agent_start` system prompt. Codex has no turn context today: the policy is not applied there either, but a Codex worker gets the charter in its brief. The text holds `maturity`, `accepts`, `refuses`, `escalate`, the edges that matter to the node (who governs it and in which mode, what it depends on, what depends on it, and for an architect what it governs), and the decide rule. It starts with `[agent-net]`. A node with no charter adds nothing. The daemon caches the graph per node for 2 seconds, and keeps the last answer for 10 minutes when the gateway is gone.
+**Maturity and its defaults.** A node's `maturity` level sets five controls. A node may override any one of them in a node setting; the owner sets it with `node_settings_set`, and the override is stored beside the charter.
+
+| | `early` | `growing` | `mature` | `critical` |
+|---|---|---|---|---|
+| Tests before merge (`tests_before_merge`) | `optional` | `suite` | `suite-new-tests` | `suite-new-tests-review` |
+| Merge authority (`merge_authority`) | `full` | `full` | `delegated` | `ask` |
+| Worker sandbox (`worker_sandbox`, decision 0020) | `sandboxed` | `sandboxed` | `sandboxed` | `no-network` |
+| Requests from consumers (`judge_consumers`) | `free` | `charter` | `strict` | `escalate` |
+| Deploy rule (`deploy_rule`) | `brief` | `brief` | `ask` | `owner` |
+
+An empty or missing maturity uses the `growing` controls, but no maturity rules are written into the node's text. The text the session and its workers get is plain words, for example `maturity mature: run the suite and add tests for new behavior; merge needs your owner's or a delegate's approval; ask before deploying`, followed by the consumer rule. A node with no maturity gets no rules text.
+
+The worker sandbox level from decision 0020 follows the node: the owner's project policy wins when it sets a level, else the node's `worker_sandbox` default applies. A node with no maturity and no override keeps `sandboxed`.
+
+**Merge authority.** `full` lets the agent merge and push to the default branch. `delegated` needs an approval from the owner or a delegate: an architect with mode `owner` or `arbiter` over the node. `ask` needs the owner's written approval. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text. The owner's inbox that records written approvals is step 3b and is not in this build: `RequestWrittenApproval` is a stub that says so. Only an approval note that agent-net itself writes counts, and it covers one action.
+
+**Deploys.** On a `deploys` edge the deployer applies the target's deploy rule, not its own. The deployer's per-turn context names each target and its rule, for example `You deploy shop; its maturity critical: ...; ask the owner before deploying`.
+
+**Every turn.** The daemon reads the node of the session's project and puts a short charter text into the same places as the delegation policy: the Claude Code `UserPromptSubmit` hook (`additionalContext`), the OpenCode `context` hook, and the Pi `before_agent_start` system prompt. Codex has no turn context today: the policy is not applied there either, but a Codex worker gets the charter in its brief. The text holds `maturity`, `accepts`, `refuses`, `escalate`, the maturity rules and consumer rule, the edges that matter to the node (who governs it and in which mode, what it depends on, what depends on it, for an architect what it governs, and for a deployer each target's deploy rule), and the decide rule. It starts with `[agent-net]`. A node with no charter adds nothing. The daemon caches the graph per node for 2 seconds, and keeps the last answer for 10 minutes when the gateway is gone.
 
 The decide rule is also in the [guidance block](#what-setup-changes-on-your-machine): judge a peer's request against the node's charter and decide (accept, reject with a reason, or redirect); escalate only when the charter says so or does not cover it; every escalation carries a recommendation.
 
 **The relation line on a delivered request.** The gateway computes it from the graph, not from anything the sender wrote. It looks at the sender's node and the recipient's node: when the sender depends on the recipient, the line says the sender is a consumer of the recipient's node; when the sender governs the recipient's node, it says so with the mode (`advisor`, `arbiter` or `owner`); otherwise, for two known and different nodes, it says there is no graph relation. The gateway puts the line in `recipient_relation` on the message it delivers, like `recipient_peer_trust`, and the Claude Code adapter, the Codex adapter, the Pi extension and the OpenCode plugin write it after the body and after agent-net's authority note. Only a request gets a line: a reply is information and a notification is not a request. Two sessions of the same node, or a message from the owner, get none. The line starts with `[agent-net]`, so the marker rule of [0013](decisions/0013-peer-trust-and-hints.md) applies.
 
-**Worker briefs.** A worker's task body carries the whole charter of its project's node after the project rules for workers and before the task: `purpose`, `maturity`, `accepts`, `refuses`, `consumers`, `escalate`, `needs` and `notes` (only the attributes that are set). A node with no charter adds no section. The owner's machine reads the graph when it sends the task, so a queued start and a continued worker get the same section.
+**Worker briefs.** A worker's task body carries the whole charter of its project's node after the project rules for workers and before the task: `purpose`, `maturity`, `accepts`, `refuses`, `consumers`, `escalate`, `needs` and `notes` (only the attributes that are set), then the maturity rules and consumer rule, and the `permissions:` line of the level in force. A node with no charter adds no section. The owner's machine reads the graph when it sends the task, so a queued start and a continued worker get the same section.
 
 ## What setup changes on your machine
 
@@ -646,3 +666,18 @@ The Pi extension, the OpenCode plugin, the Claude workers plugin folder and the 
 Setup does not use `sudo`. On Linux it may print a hint to run `sudo loginctl enable-linger <user>`, which keeps the user services running when you are logged out. You run that yourself.
 
 Setup does not change any other Claude Code or Pi setting (the one exception is the peer-message setting above, and only with your yes), and it does not touch other MCP servers.
+
+## Owner inbox and written approvals
+
+Agents use `agent_request_approval(action, recommendation)` for one exact action, or `agent_propose_idea(text, recommendation)` for an idea. The daemon binds each request to the calling session; the gateway derives its project from that session. Codex workers put the exact action and their recommendation in their report when they need approval.
+
+Press `i` in the TUI to open the inbox. Items are grouped by kind and ordered oldest first within each kind. Select an item and press enter to see its context. Press `a` to approve, `r` to refuse, or `t` to enter a one-line answer. The header counts open items, and open approvals appear under Needs you. Answers are stored together with a message queued for the requesting session. An approval covers only the exact action named in the item.
+
+The owner-only local methods are `inbox_list` and `inbox_answer` with `id` and `answer` (`approve`, `refuse`, or text). The daemon applies the same operator gate as other owner-only methods. Rejections and escalations of agent requests are also recorded in this inbox, with the request, reason, recommendation and conversation. Answering an item or resolving it from Needs you closes it in both views. Existing outcomes are added to the inbox when the gateway upgrades.
+
+For a node with `ask` merge authority, request approval for the exact merge using `agent_request_approval`. A deployer follows the target node's deploy rule: for a critical target, request written approval for the exact deploy using the same tool. Codex workers include the action and recommendation in their report.
+### Request outcomes
+
+`agent_reply` accepts optional `outcome`: `accept`, `reject`, `redirect` or `escalate`. Reject, redirect and escalate need `reason`; redirect also needs `redirect_to` (a node name), and escalate needs `recommendation`. Each text field is limited to 2048 bytes, and the node name to the project name limit. Control characters are removed. Outcomes apply to replies to requests. The gateway records the request's source and target project names, request and reply IDs, outcome, reason, redirect, recommendation and time. Projects unknown to the sessions appear as empty names.
+
+A rejection or escalation of another agent's request appears as a separate Needs you entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Select it and press `c` for the receiving session's conversation or `C` for the requesting session's conversation. Press `s` to let the decision stand or `o` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `Nicolas overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
