@@ -248,7 +248,7 @@ func TestRestartIsForTheCLIOnly(t *testing.T) {
 	cli.mustCall("restart", nil)
 	select {
 	case <-restarted:
-	case <-time.After(3 * time.Second):
+	case <-time.After(scaled(3 * time.Second)):
 		t.Fatal("restart was not called")
 	}
 }

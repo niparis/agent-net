@@ -78,6 +78,25 @@ func TestResolveModel(t *testing.T) {
 
 // A model that failed a worker recently ranks after every other match, whatever
 // its usage, so a retry of the same short request picks the other provider.
+// A reasoning or thinking level after the last colon is not part of the model
+// id: the name before it is resolved and the suffix is kept.
+func TestResolveModelKeepsEffortSuffix(t *testing.T) {
+	for _, c := range []struct{ query, want string }{
+		{"gpt 6.1 mini:low", "openai/gpt-6.1-mini:low"},
+		{"opencode/deepseek-v4.1-flash:xhigh", "opencode/deepseek-v4.1-flash:xhigh"},
+		{"deepseek v4 pro:high", "opencode-go/deepseek-v4-pro:high"},
+	} {
+		got, err := ResolveModel(c.query, testModels, nil, nil)
+		if err != nil || got != c.want {
+			t.Errorf("ResolveModel(%q) = %q, %v, want %q", c.query, got, err, c.want)
+		}
+	}
+	// A colon that is not a level is part of the id, as the dated suffix is.
+	if got, err := ResolveModel("deepseek 4.1 flash:1017", testModels, nil, nil); err != nil || !strings.HasSuffix(got, ":1017") {
+		t.Errorf("a numbered suffix: %q, %v", got, err)
+	}
+}
+
 func TestResolveModelDemotesRecentFailures(t *testing.T) {
 	usage := map[string]int{"opencode/deepseek-v4.1-flash": 3}
 	r, err := ResolveModelFailed("deepseek 4.1", testModels, usage, nil, nil)

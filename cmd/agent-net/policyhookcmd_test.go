@@ -83,3 +83,25 @@ func TestPolicyHookStopsAfterItsBudget(t *testing.T) {
 		t.Fatalf("out %q after %v", out.String(), time.Since(start))
 	}
 }
+
+func TestPolicyHookCarriesTheCharterEvenWithoutAPolicy(t *testing.T) {
+	in := `{"session_id":"abc","hook_event_name":"UserPromptSubmit"}`
+	charter := "[agent-net] Your node's charter for cogforge, from agent-net:\nmaturity: early - speed over safety.\nDecide, do not defer."
+	out, _ := runPolicyWith(t, in, protocol.PolicyResult{Charter: charter}, nil)
+	if out == "" {
+		t.Fatal("a charter alone printed nothing")
+	}
+	var got struct {
+		H map[string]string `json:"hookSpecificOutput"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatalf("not JSON: %q", out)
+	}
+	if !strings.Contains(got.H["additionalContext"], charter) {
+		t.Fatalf("charter missing: %q", got.H["additionalContext"])
+	}
+	both, _ := runPolicyWith(t, in, protocol.PolicyResult{Text: onePolicy.Text, Charter: charter}, nil)
+	if !strings.Contains(both, onePolicy.Text) || !strings.Contains(both, "Decide, do not defer") {
+		t.Fatalf("policy and charter not both there: %q", both)
+	}
+}

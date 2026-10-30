@@ -149,31 +149,40 @@ CREATE TABLE graph_edges (source TEXT NOT NULL, target TEXT NOT NULL, kind TEXT 
 CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, node TEXT NOT NULL, attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
 CREATE INDEX graph_history_node ON graph_history(node, id);
 `, `
-CREATE TABLE worker_runs (
+ALTER TABLE messages ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0;
+`, `
+ALTER TABLE messages ADD COLUMN owner_approved INTEGER NOT NULL DEFAULT 0;
+`, `
+INSERT OR IGNORE INTO graph_edges(source,target,kind,mode,rule)
+SELECT DISTINCT '*',COALESCE(NULLIF(s.repo_project,''),p.project,''),'depends','','auto'
+FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+WHERE s.peer_trust=1 AND COALESCE(NULLIF(s.repo_project,''),p.project,'')<>'';
+`, `
+CREATE TABLE IF NOT EXISTS worker_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
   harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL,
   started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0);
-CREATE INDEX worker_runs_node ON worker_runs (node_id, harness, model, ended_at);
-CREATE INDEX worker_runs_at ON worker_runs (ended_at);
-CREATE TABLE playbook_notes (
+CREATE INDEX IF NOT EXISTS worker_runs_node ON worker_runs (node_id, harness, model, ended_at);
+CREATE INDEX IF NOT EXISTS worker_runs_at ON worker_runs (ended_at);
+CREATE TABLE IF NOT EXISTS playbook_notes (
   model TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '', note TEXT NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (model, harness));
 `, `
-CREATE TABLE findings (
+CREATE TABLE IF NOT EXISTS findings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   subject_kind TEXT NOT NULL, subject TEXT NOT NULL, finding TEXT NOT NULL,
   evidence TEXT NOT NULL DEFAULT '[]', reporter TEXT NOT NULL, node_id TEXT NOT NULL DEFAULT '',
   at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new');
-CREATE INDEX findings_subject ON findings (subject_kind, subject, at);
-CREATE INDEX findings_reporter ON findings (reporter, at);
-CREATE INDEX findings_status ON findings (status, at);
-CREATE TABLE playbook (
+CREATE INDEX IF NOT EXISTS findings_subject ON findings (subject_kind, subject, at);
+CREATE INDEX IF NOT EXISTS findings_reporter ON findings (reporter, at);
+CREATE INDEX IF NOT EXISTS findings_status ON findings (status, at);
+CREATE TABLE IF NOT EXISTS playbook (
   subject_kind TEXT NOT NULL, subject TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'owner', support INTEGER NOT NULL DEFAULT 0,
   track_line TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0,
   stale INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   PRIMARY KEY (subject_kind, subject, harness));
-INSERT INTO playbook (subject_kind, subject, harness, note, source, support, track_line, pinned, stale, created_at, updated_at)
+INSERT OR IGNORE INTO playbook (subject_kind, subject, harness, note, source, support, track_line, pinned, stale, created_at, updated_at)
   SELECT 'model', model, harness, note, 'owner', 0, '', 0, 0, updated_at, updated_at FROM playbook_notes;
 `}
 
@@ -551,16 +560,22 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 // owner pseudo-session cannot be trusted: it is a person, not an agent. It
 // returns false when the session does not exist.
 func (s *Store) SetPeerTrust(sessionID string, on bool) (bool, error) {
-	v := 0
-	if on {
-		v = 1
-	}
-	res, err := s.db.Exec(`UPDATE sessions SET peer_trust = ? WHERE id = ? AND harness != ?`, v, sessionID, protocol.OwnerHarness)
-	if err != nil {
+	a, ok, err := s.Agent(sessionID)
+	if err != nil || !ok || a.Harness == protocol.OwnerHarness {
 		return false, err
 	}
-	n, _ := res.RowsAffected()
-	return n == 1, nil
+	project := projectOfSession(a)
+	if project != "" {
+		rule := "normal"
+		if on {
+			rule = "auto"
+		}
+		if err := s.SetEdge(protocol.Edge{From: "*", To: project, Kind: "depends", Rule: rule}, "owner"); err != nil {
+			return false, err
+		}
+	}
+	_, err = s.db.Exec(`UPDATE sessions SET peer_trust=? WHERE id=?`, boolInt(on), sessionID)
+	return err == nil, err
 }
 
 func (s *Store) SessionNode(sessionID string) (string, error) {
@@ -791,6 +806,9 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	if err := s.applyDelegation(one); err != nil {
 		return a, false, err
 	}
+	if err := s.applyAgentCharters(one, false); err != nil {
+		return a, false, err
+	}
 	return one[0], true, nil
 }
 
@@ -846,6 +864,9 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 	if err := s.applyDelegation(out); err != nil {
 		return nil, err
 	}
+	if err := s.applyAgentCharters(out, true); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -853,14 +874,17 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != ''
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved)
+	if m.FromCTO {
+		m.FromHarness = "cto"
+	}
 	m.CreatedAt = time.Unix(0, created).UTC()
 	m.ExpiresAt = time.Unix(0, expires).UTC()
 	return m, err
@@ -933,6 +957,12 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Sender).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown sender session %q", p.Sender)
 	}
+	if p.FromCTO {
+		var harness string
+		if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id = ?`, p.Sender).Scan(&harness); err != nil || harness != protocol.OwnerHarness {
+			return msg, false, reject("CTO sender requires an owner session")
+		}
+	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
 	}
@@ -944,7 +974,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	m := protocol.Message{
 		ID: protocol.NewID("m"), From: p.Sender, To: p.Recipient, Type: p.Type, Body: p.Body,
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
-		State: protocol.StateStored,
+		State: protocol.StateStored, FromCTO: p.FromCTO,
 	}
 	if p.ParentID != "" {
 		parent, ok, err := s.message(tx, "m.id = ?", p.ParentID)
@@ -974,6 +1004,23 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	default:
 		return msg, false, reject("unknown message_type %q", m.Type)
 	}
+	if m.Type == protocol.TypeRequest && !m.FromCTO {
+		var rule string
+		err := tx.QueryRow(`SELECT e.rule FROM graph_edges e
+			JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
+			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
+			WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
+			AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
+			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To).Scan(&rule)
+		if err != nil && err != sql.ErrNoRows {
+			return msg, false, err
+		}
+		if rule == "ask" {
+			m.State = protocol.StateHeld
+		} else if rule == "never" {
+			return msg, false, reject("refused by your user's rule")
+		}
+	}
 	if m.Hop > protocol.MaxHop {
 		return msg, false, reject("hop limit exceeded (%d)", protocol.MaxHop)
 	}
@@ -984,9 +1031,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("conversation budget exceeded (%d messages)", protocol.MaxConvMessages)
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO)
 	if err != nil {
 		return msg, false, err
 	}
@@ -996,7 +1043,11 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			return msg, false, err
 		}
 	}
-	s.event(tx, "msg.stored", "", m.From, m.ID, strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " "))
+	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
+	if m.FromCTO {
+		detail += " by=cto"
+	}
+	s.event(tx, "msg.stored", "", m.From, m.ID, detail)
 	if err := tx.Commit(); err != nil {
 		return msg, false, err
 	}
@@ -1110,7 +1161,7 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 // Expire marks overdue undelivered messages expired and returns how many.
 func (s *Store) Expire() (int, error) {
 	now := s.now().UnixNano()
-	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched') AND expires_at <= ?`, now)
+	rows, err := s.db.Query(`SELECT id FROM messages WHERE state IN ('stored','dispatched','held') AND expires_at <= ?`, now)
 	if err != nil {
 		return 0, err
 	}
@@ -1129,16 +1180,17 @@ func (s *Store) Expire() (int, error) {
 	}
 	n := 0
 	for _, id := range ids {
-		res, err := s.db.Exec(`UPDATE messages SET state = 'expired' WHERE id = ? AND state IN ('stored','dispatched')`, id)
+		expired, err := s.expireMessage(id, now)
 		if err != nil {
 			return n, err
 		}
-		if c, _ := res.RowsAffected(); c == 1 {
+		if expired {
 			n++
 			s.Event("msg.expired", "", s.recipientOf(id), id, "")
 			s.logStep("msg.expired", id)
 		}
 	}
+
 	return n, nil
 }
 
@@ -1200,4 +1252,33 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+func (s *Store) expireMessage(id string, now int64) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	m, ok, err := s.message(tx, "m.id=?", id)
+	if err != nil || !ok {
+		return false, err
+	}
+	res, err := tx.Exec(`UPDATE messages SET state='expired' WHERE id=? AND state IN ('stored','dispatched','held') AND expires_at<=?`, id, now)
+	if err != nil {
+		return false, err
+	}
+	count, err := res.RowsAffected()
+	if err != nil || count == 0 {
+		return false, err
+	}
+	if m.State == protocol.StateHeld {
+		if err = s.heldReply(tx, m, "your request expired while awaiting your user", "expired"); err != nil {
+			return false, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }

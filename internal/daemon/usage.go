@@ -42,15 +42,22 @@ func (u *usageState) disable(l *link) {
 	u.mu.Unlock()
 }
 
-// startUsage runs the sampler and the reporter when a sampler was configured.
+// startUsage runs the sampler and the reporter when a sampler was configured,
+// and the quota reader when quota-axi is installed (decision 0022).
 func (d *Daemon) startUsage(ctx context.Context) {
 	s := d.cfg.UsageSampler
-	if s == nil {
-		return
+	if s != nil {
+		s.Watch = d.watchedPIDs
+		d.wg.Add(1)
+		go func() { defer d.wg.Done(); s.Run(ctx) }()
 	}
-	s.Watch = d.watchedPIDs
-	d.wg.Add(2)
-	go func() { defer d.wg.Done(); s.Run(ctx) }()
+	d.startQuota(ctx)
+	if s == nil {
+		if _, ok := FindQuotaAXI(d.cfg.QuotaAXIPath); !ok {
+			return
+		}
+	}
+	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.usageLoop(ctx) }()
 }
 
@@ -115,15 +122,18 @@ func (d *Daemon) usageLoop(ctx context.Context) {
 
 // usageReport builds the summary for the gateway. ok is false before the first sample.
 func (d *Daemon) usageReport() (protocol.UsageReport, bool) {
+	rep := protocol.UsageReport{Trees: []protocol.TreeUsage{}, Workers: d.workerLoad(), Quotas: d.quota.snapshot()}
 	s := d.cfg.UsageSampler
-	if s == nil {
+	if s != nil {
+		m, ok := s.Machine()
+		if ok {
+			rep.Machine = machineUsage(m)
+		} else if rep.Quotas == nil {
+			return protocol.UsageReport{}, false
+		}
+	} else if rep.Quotas == nil {
 		return protocol.UsageReport{}, false
 	}
-	m, ok := s.Machine()
-	if !ok {
-		return protocol.UsageReport{}, false
-	}
-	rep := protocol.UsageReport{Machine: machineUsage(m), Trees: []protocol.TreeUsage{}, Workers: d.workerLoad()}
 	// Group the sessions by process: OpenCode runs many in one.
 	type group struct {
 		harness string
@@ -148,7 +158,10 @@ func (d *Daemon) usageReport() (protocol.UsageReport, bool) {
 		}
 	}
 	d.mu.Unlock()
-	trees := s.Trees()
+	trees := map[int]usage.TreeStat{}
+	if s != nil {
+		trees = s.Trees()
+	}
 	for pid, g := range groups {
 		ts, ok := trees[pid]
 		if !ok || !ts.Alive || len(g.ids) == 0 {

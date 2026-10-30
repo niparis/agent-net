@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -17,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -69,7 +71,7 @@ func runFakeOpenCode() {
 	cwd, _ := os.Getwd()
 	rec := fakeOCRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
-	for _, k := range []string{"AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
+	for _, k := range []string{"AGENT_NET_CTO", "AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
 		rec.Env[k] = os.Getenv(k)
 	}
 	child := exec.Command("sleep", "600")
@@ -135,7 +137,7 @@ func runFakeOpenCode() {
 			}
 		}
 		write()
-		if id != "" && os.Getenv("FAKE_OC_NOPLUGIN") == "" {
+		if id != "" && os.Getenv("FAKE_OC_NOPLUGIN") == "" && os.Getenv("AGENT_NET_CTO") != "1" {
 			hello := id
 			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
 				hello = "ses_other"
@@ -158,6 +160,40 @@ func runFakeOpenCode() {
 	mux.HandleFunc("GET /api/session/{id}/message", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		if os.Getenv("AGENT_NET_CTO") == "1" {
+			mu.Lock()
+			defer mu.Unlock()
+			data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json"))
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			var items []map[string]any
+			if json.Unmarshal(data, &items) != nil {
+				http.Error(w, "bad session", 500)
+				return
+			}
+			if r.URL.Query().Get("order") == "asc" || r.URL.Query().Get("cursor") != "" {
+				for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+					items[i], items[j] = items[j], items[i]
+				}
+			}
+			start, _ := strconv.Atoi(r.URL.Query().Get("cursor"))
+			if start > len(items) {
+				http.Error(w, "invalid cursor", 400)
+				return
+			}
+			end := start + 2
+			if end > len(items) {
+				end = len(items)
+			}
+			next := ""
+			if end < len(items) {
+				next = strconv.Itoa(end)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": items[start:end], "cursor": map[string]any{"next": next}})
 			return
 		}
 		items := []map[string]any{
@@ -184,11 +220,161 @@ func runFakeOpenCode() {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		id := "ses_fake_" + strconv.Itoa(os.Getpid())
+		if os.Getenv("AGENT_NET_CTO") == "1" {
+			id = "ses_" + protocol.NewToken()
+			if err := os.MkdirAll(os.Getenv("XDG_DATA_HOME"), 0o700); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if err := os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+id+".json"), []byte("[]"), 0o600); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+		}
 		mu.Lock()
 		rec.SessionID, rec.SessionBody = id, body
 		mu.Unlock()
 		write()
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
+	})
+	mux.HandleFunc("POST /api/session/{id}/agent", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var p struct {
+			Agent string `json:"agent"`
+		}
+		if json.NewDecoder(r.Body).Decode(&p) != nil || p.Agent != "cto" {
+			http.Error(w, "bad agent", 400)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		if rec.SessionBody == nil {
+			rec.SessionBody = map[string]any{}
+		}
+		rec.SessionBody["agent"] = p.Agent
+		rec.SessionID = r.PathValue("id")
+		mu.Unlock()
+		write()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/session/{id}/model", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var body struct {
+			Model map[string]any `json:"model"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.Model["providerID"] == nil || body.Model["id"] == nil {
+			http.Error(w, "invalid model", 400)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		if rec.SessionBody == nil {
+			rec.SessionBody = map[string]any{}
+		}
+		rec.SessionBody["model"] = body.Model
+		rec.SessionID = r.PathValue("id")
+		mu.Unlock()
+		write()
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("POST /api/session/{id}/prompt", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var prompt struct {
+			Text     string `json:"text"`
+			Delivery string `json:"delivery"`
+		}
+		if json.NewDecoder(r.Body).Decode(&prompt) != nil || prompt.Text == "" {
+			http.Error(w, "invalid prompt", 400)
+			return
+		}
+		mu.Lock()
+		rec.SessionID = r.PathValue("id")
+		mu.Unlock()
+		write()
+		mu.Lock()
+		defer mu.Unlock()
+		path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		var items []map[string]any
+		if json.Unmarshal(raw, &items) != nil {
+			http.Error(w, "bad session", 500)
+			return
+		}
+		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text}
+		items = append([]map[string]any{item}, items...)
+		raw, _ = json.Marshal(items)
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": item})
+	})
+	mux.HandleFunc("POST /fake/cto-tool", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var q struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		if json.NewDecoder(r.Body).Decode(&q) != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		var config struct {
+			MCP struct {
+				Servers map[string]struct {
+					Command     []string          `json:"command"`
+					Environment map[string]string `json:"environment"`
+				} `json:"servers"`
+			} `json:"mcp"`
+		}
+		data, err := os.ReadFile(filepath.Join(cwd, "opencode.json"))
+		if err != nil || json.Unmarshal(data, &config) != nil {
+			http.Error(w, "bad config", 500)
+			return
+		}
+		entry := config.MCP.Servers["agent-net-cto"]
+		if len(entry.Command) == 0 {
+			http.Error(w, "no MCP server", 500)
+			return
+		}
+		cmd := exec.Command(entry.Command[0], entry.Command[1:]...)
+		cmd.Env = workerEnv(os.Environ(), entry.Environment)
+		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+		defer cancel()
+		sess, err := mcp.NewClient(&mcp.Implementation{Name: "fake-opencode", Version: "test"}, nil).Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		defer sess.Close()
+		out, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: q.Name, Arguments: q.Arguments})
+		if err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(out)
 	})
 	if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
 		fmt.Fprintln(os.Stderr, "fake opencode:", err)
@@ -299,7 +485,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 				select {
 				case text := <-ch:
 					send("reply", map[string]any{"message_id": msg.ID, "body": "start result: " + text})
-				case <-time.After(5 * time.Second):
+				case <-time.After(scaled(5 * time.Second)):
 					send("reply", map[string]any{"message_id": msg.ID, "body": "start result: timeout"})
 				}
 			}()

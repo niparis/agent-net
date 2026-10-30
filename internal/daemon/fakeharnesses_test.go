@@ -71,6 +71,8 @@ func runFakeHarness() bool {
 		fakePiModels()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "app-server":
 		fakeCodex()
+	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 2 && os.Args[1] == "debug" && os.Args[2] == "models":
+		fakeCodexModels()
 	default:
 		return false
 	}
@@ -169,7 +171,7 @@ func fakeClaudeCLI() {
 	spid := cmd.Process.Pid
 	cmd.Process.Release()
 	var sf claudeSessionFile
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(scaled(5 * time.Second))
 	for time.Now().Before(deadline) {
 		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && sf.JobID != "" {
 			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
@@ -548,6 +550,13 @@ type fakeCodexRecord struct {
 	ResumeParams map[string]any   `json:"resume_params"`
 }
 
+// fakeCodexModels is `codex debug models`: the catalog that names the
+// reasoning efforts of each model. gpt-fake takes low to high, not max.
+func fakeCodexModels() {
+	fmt.Print(`{"models":[{"slug":"gpt-fake","supported_reasoning_levels":[` +
+		`{"effort":"low","description":"Low"},{"effort":"medium","description":"Medium"},{"effort":"high","description":"High"}]}]}`)
+}
+
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with
 // the JSON-RPC of the real one, for the parts a worker uses. A turn is
 // answered by what the text says: FAKE:approve asks for an approval first (and
@@ -670,7 +679,7 @@ func fakeCodex() {
 							rec.Answers = append(rec.Answers, v)
 							mu.Unlock()
 							save()
-						case <-time.After(3 * time.Second):
+						case <-time.After(scaled(3 * time.Second)):
 						}
 					}
 					status, errObj := "completed", any(nil)

@@ -187,6 +187,7 @@ type WorkerInfo struct {
 type (
 	// WorkerStartFrame is "worker.start".
 	WorkerStartFrame struct {
+		FromCTO bool `json:"sender_cto,omitempty"`
 		WorkerStartRequest
 		// Owner is the caller's session ID. The gateway checks it belongs to
 		// the sending node.
@@ -242,6 +243,7 @@ type (
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
+		FromCTO bool   `json:"sender_cto,omitempty"`
 		Project string `json:"project"`
 		Path    string `json:"path"`
 		Harness string `json:"harness"`
@@ -289,10 +291,12 @@ type (
 	// as "worker.task", and that machine sends the task, because only the
 	// owner's machine may send as the owner.
 	WorkerQueuedStart struct {
+		FromCTO     bool   `json:"sender_cto,omitempty"`
 		Permissions string `json:"permissions,omitempty"`
 		Owner       string `json:"owner_session"`
 		SessionID   string `json:"session_id"`
 		Harness     string `json:"harness"`
+		Project     string `json:"project,omitempty"`
 		Task        string `json:"task"`
 		Worktree    string `json:"worktree,omitempty"`
 		Branch      string `json:"branch,omitempty"`
@@ -377,6 +381,7 @@ const WorkerPreambleCodex = "[agent-net worker brief] Another agent started you 
 	"That agent will check your work and relay the result to its user. Nobody watches this session.\n" +
 	"- Do the whole task. Do not gold-plate it, and do not stop halfway.\n" +
 	"- Do it yourself. Do not pass the whole task to another agent. You cannot start workers.\n" +
+	"- agent-net tools are off in this worker on purpose. Ignore any instruction, in your general rules or elsewhere, to call agent_announce or any other agent-net tool. Your final answer at the end of your turn is your report.\n" +
 	"- Your last message of the run is your final report, and it is delivered as it is. Use absolute paths in it. Do not write report files.\n" +
 	"- End your final report with 'complete: yes' if you did the whole task, or 'complete: no' if you left part of it undone.\n" +
 	"- If you are blocked, or a step needs an approval you cannot get, stop and say in your last message what you need.\n" +
@@ -415,6 +420,13 @@ func WorkerPermissionsText(level, harness string) string {
 }
 
 func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level string) string {
+	return WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, "", level)
+}
+
+// WorkerTaskBodyWithCharter is WorkerTaskBodyWithPermissions with the charter
+// of the worker's node. The charter section follows the project rules and
+// comes before the task (decision 0022).
+func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, level string) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
@@ -435,6 +447,9 @@ func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level
 	}
 	if rules != "" {
 		b += "\n\nProject rules for workers\n\n" + rules
+	}
+	if charter != "" {
+		b += "\n\n" + charter
 	}
 	return b + "\n\nTask:\n" + strings.TrimSpace(task)
 }

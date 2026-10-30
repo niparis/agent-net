@@ -138,6 +138,9 @@ type worker struct {
 	// unfinished is true when the daemon committed the unfinished changes of
 	// the worktree on the worker's branch.
 	unfinished bool
+	// leftAsIs is true when the worktree had a merge, rebase, cherry-pick or
+	// revert in progress, so the daemon did not commit it.
+	leftAsIs bool
 	// permissions is the level the worker was started with (decision 0020).
 	permissions string
 	// apiBase and apiPass reach the harness's own server, for its statistics.

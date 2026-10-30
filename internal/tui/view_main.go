@@ -20,13 +20,14 @@ import (
 
 type layout struct {
 	banner       bool
-	notice       int // rows of the result under the title (0 to 2)
-	needs        int // rows of the "Needs you" section
-	machines     int // machine rows shown
-	moreMachines int // machines not shown
-	sessions     int // rows of the table
-	detail       int // rows of the detail pane
-	feed         int // rows of the feed
+	quota        bool // one line of subscription quotas
+	notice       int  // rows of the result under the title (0 to 2)
+	needs        int  // rows of the "Needs you" section
+	machines     int  // machine rows shown
+	moreMachines int  // machines not shown
+	sessions     int  // rows of the table
+	detail       int  // rows of the detail pane
+	feed         int  // rows of the feed
 }
 
 const maxMachineRows = 5
@@ -38,6 +39,7 @@ func (m Model) layout() layout {
 	var l layout
 	h := max(m.height, 10)
 	l.banner = m.problem != ProblemNone
+	l.quota = m.quotaText() != ""
 	l.notice = len(m.noticeLines(max(m.width, 40)))
 	l.needs = m.needsHeight()
 	n := len(m.machineRows())
@@ -49,6 +51,9 @@ func (m Model) layout() layout {
 	// title, machines, column heads, detail heading, feed heading, key line
 	fixed := 1 + l.machines + 1 + 1 + 1 + 1 + l.needs
 	if l.banner {
+		fixed++
+	}
+	if l.quota {
 		fixed++
 	}
 	fixed += l.notice
@@ -122,6 +127,14 @@ func (m Model) View() string {
 		for _, s := range m.convView(w, h-1) {
 			add(s)
 		}
+	case m.cto != nil:
+		for _, s := range m.ctoLayout(w, h-1) {
+			add(s)
+		}
+	case m.mapOn:
+		for _, s := range m.mapView(w, h-1) {
+			add(s)
+		}
 	default:
 		for _, s := range m.mainView(w, h-1) {
 			add(s)
@@ -146,6 +159,9 @@ func (m Model) mainView(w, h int) []string {
 	add(m.titleLine(w))
 	if l.banner {
 		add(m.bannerLine(w))
+	}
+	if l.quota {
+		add(m.quotaLine(w))
 	}
 	for _, s := range m.noticeLines(w) {
 		add(s)
@@ -200,6 +216,25 @@ func (m Model) mainView(w, h int) []string {
 		add(s)
 	}
 	return out
+}
+
+// quotaText is the one line of subscription quotas of this machine, from the
+// last local usage report (decision 0022).
+func (m Model) quotaText() string {
+	if m.usage.raw.Local == nil {
+		return ""
+	}
+	return protocol.QuotaSummary(m.usage.raw.Local.Quotas)
+}
+
+// quotaLine writes the quota text under the title. It is one compact line:
+// "quotas: claude 59%w · codex 90%w · cursor exhausted".
+func (m Model) quotaLine(w int) string {
+	s := m.quotaText()
+	if s == "" {
+		return ""
+	}
+	return clip(sDim.Render("  quotas: "+s), w)
 }
 
 func (m Model) titleLine(w int) string {
@@ -539,6 +574,23 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 	}
 	cols := m.needsColumns(columnsFor(w-2, nameWant, policy)) // two columns for the selection marker
+	wanted := 5
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			wanted = max(wanted, utf8.RuneCountInString(m.requestRuleBadge(a)))
+		}
+	}
+	for i := range cols {
+		if cols[i].name == "TRUST" && wanted > cols[i].width {
+			for j := range cols {
+				if cols[j].name == "TASK" {
+					delta := min(wanted-cols[i].width, max(0, cols[j].width-cols[j].min))
+					cols[i].width += delta
+					cols[j].width -= delta
+				}
+			}
+		}
+	}
 	head := "  "
 	for i, c := range cols {
 		if i > 0 {
@@ -691,9 +743,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		case "STATUS":
 			v = m.statusCell(a)
 		case "TRUST":
-			if a.PeerTrust {
-				v = "peer"
-			}
+			v = m.requestRuleBadge(a)
 		case "POLICY":
 			v = policyBadge(a.Delegation)
 		case "TASK":
@@ -714,7 +764,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 			case "AGENT", "POLICY", "TASK":
 				v = sDim.Render(v)
 			case "TRUST":
-				if a.PeerTrust {
+				if m.wildcardRule(firstNonEmpty(a.Repo.Project, a.Profile.Project)) != "normal" {
 					v = sBusy.Render(v)
 				} else {
 					v = sDim.Render(v)
@@ -804,4 +854,30 @@ func functionText(a protocol.AgentView) string {
 		return noAgentsMD
 	}
 	return ""
+}
+
+func (m Model) wildcardRule(project string) string {
+	for _, e := range m.snap.Edges {
+		if e.From == "*" && e.To == project {
+			return e.Rule
+		}
+	}
+	return "normal"
+}
+func (m Model) requestRuleBadge(a protocol.AgentView) string {
+	project := firstNonEmpty(a.Repo.Project, a.Profile.Project)
+	rule := m.wildcardRule(project)
+	if rule == "normal" {
+		rule = "-"
+	}
+	n := 0
+	for _, e := range m.snap.Edges {
+		if e.To == project && e.From != "*" {
+			n++
+		}
+	}
+	if n > 0 {
+		return fmt.Sprintf("%s +%d", rule, n)
+	}
+	return rule
 }

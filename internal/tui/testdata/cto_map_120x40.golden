@@ -1,0 +1,40 @@
+Map (read only)  6 nodes, 4 edges              updated -   │ CTO (fake/m1) ─────────────────────────────────────────────
+> trading-architect    mature │ trading-architect · archi… │ you: Is cogforge ready?
+    cogforge    [owner] early │ Charter ────────────────── │ cto: It is mature. I updated the charter.
+  wbg-architect       growing │   purpose   Looks after    │ charter cogforge.maturity: early -> mature
+    tenebr… [advisor] growing │             the trading    │ sent to tenebrae-53: please review
+Components with no architect  │             system.        │
+    shop               mature │   maturity  mature -       │
+Architects without nodes ──── │             stable         │
+    api-architect       early │   accepts   -              │
+                              │   refuses   -              │
+                              │   consumers -              │
+                              │   escalate  -              │
+                              │   needs     -              │
+                              │   notes     -              │
+                              │ Edges ──────────────────── │
+                              │   out  trading-architect … │
+                              │        governs, owner, ru… │
+                              │ Last changes ───────────── │
+                              │   no changes yet           │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │
+                              │                            │ > press Enter to write
+enter write  n new conversation  u undo  esc close

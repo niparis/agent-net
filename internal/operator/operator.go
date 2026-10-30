@@ -44,6 +44,9 @@ type Operator interface {
 	Usage(ctx context.Context) (protocol.UsageResult, error)
 	// UsageTop is the heaviest processes of one session. Owner only.
 	UsageTop(ctx context.Context, session string) (protocol.UsageTop, error)
+	// GraphView reads the component graph: nodes with charters, edges and the
+	// newest charter changes. Owner only. It changes nothing.
+	GraphView(ctx context.Context, q protocol.QueryGraph) (protocol.GraphView, error)
 	// SessionText is a page of what happens inside a session. Owner only.
 	SessionText(ctx context.Context, q protocol.TextQuery) (protocol.TextPage, error)
 	// SessionEnter says how to take over the terminal for a session. Owner only.
@@ -81,6 +84,8 @@ type Snapshot struct {
 	Nodes  []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.
 	Agents []protocol.AgentView
+	Held   []protocol.Message
+	Edges  []protocol.Edge
 	// Projects is the project list (registered, seen or both). Empty when the
 	// gateway cannot list them; a screen then shows no project source.
 	Projects []protocol.ProjectView

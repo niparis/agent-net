@@ -179,12 +179,15 @@ func TestWorkerUnknownToItsMachineLeavesTheList(t *testing.T) {
 func TestLeftoverWorkerRecordIsCleanedAtStart(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
-	id := addLeftoverWorker(t, g, w, "claude", "ses_leftover", 6*time.Hour)
+	// The record is added while the daemon is stopped: a running daemon cleans
+	// at its first connect, which can come before the check on a slow machine.
+	owner := w.ownerID()
+	w.d.Stop()
+	id := addLeftoverWorkerOf(t, g, w, owner, "claude", "ses_leftover", 6*time.Hour)
 	if _, ok, _ := g.gw.Store().Agent(id); !ok {
 		t.Fatal("the leftover record is not there")
 	}
 
-	w.d.Stop()
 	w.node.restart()
 	w.cli = cliClient(t, w.node)
 	eventually(t, "the leftover worker record is cleaned at start", func() bool {
@@ -214,9 +217,14 @@ func TestLeftoverWorkerRecordIsCleanedPeriodically(t *testing.T) {
 // an older agent-net left it: offline, and started age ago.
 func addLeftoverWorker(t *testing.T, g *testGateway, w *workerNode, harness, native string, age time.Duration) string {
 	t.Helper()
+	return addLeftoverWorkerOf(t, g, w, w.ownerID(), harness, native, age)
+}
+
+func addLeftoverWorkerOf(t *testing.T, g *testGateway, w *workerNode, owner, harness, native string, age time.Duration) string {
+	t.Helper()
 	info := protocol.SessionInfo{Harness: harness, NativeID: native, Cwd: "/work/old", Name: "old worker",
 		Status: "idle", Delivery: "native-" + harness, Mode: protocol.ModeBackground,
-		Worker: &protocol.WorkerInfo{ID: "w_old", Owner: w.ownerID(), Project: "shop",
+		Worker: &protocol.WorkerInfo{ID: "w_old", Owner: owner, Project: "shop",
 			StartedAt: time.Now().Add(-age).Unix()}}
 	id, err := g.gw.Store().UpsertSession(w.d.NodeID(), info)
 	if err != nil {

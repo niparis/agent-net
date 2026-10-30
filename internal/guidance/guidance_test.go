@@ -125,3 +125,30 @@ func TestRemove(t *testing.T) {
 		t.Fatalf("round trip: %q", back)
 	}
 }
+
+func TestCTOAuthorityGuidance(t *testing.T) {
+	for _, v := range []string{Claude, Other} {
+		b := Block(v)
+		if !strings.Contains(b, "from the CTO, on Nicolas's instruction") || !strings.Contains(b, "within your charter's limits") {
+			t.Errorf("%s lacks CTO authority rule", v)
+		}
+	}
+}
+
+// Decision 0022: a request from a peer is judged against the node's charter,
+// and a session decides instead of deferring.
+func TestDecideDoNotDeferRule(t *testing.T) {
+	for _, v := range []string{Claude, Other} {
+		b := Block(v)
+		for _, want := range []string{
+			"Decide, do not defer.",
+			"judge it against your node's charter",
+			"Escalate only when the charter says so, or when it does not cover the request",
+			"Every escalation carries a recommendation",
+		} {
+			if !strings.Contains(b, want) {
+				t.Errorf("%s block lacks %q", v, want)
+			}
+		}
+	}
+}

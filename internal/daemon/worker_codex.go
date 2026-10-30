@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -51,13 +52,17 @@ import (
 type codexLauncher struct{}
 
 func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
+	name, effort := splitCodexModel(w.model)
+	if err := d.checkCodexEffort(ctx, name, effort); err != nil {
+		return err
+	}
 	cc, err := d.startCodex(ctx, w)
 	if err != nil {
 		return err
 	}
 	params := map[string]any{"cwd": w.path}
-	if w.model != "" {
-		params["model"] = w.model
+	if name != "" {
+		params["model"] = name
 	}
 	cc.sb = d.codexSandboxFor(ctx, w)
 	cc.sb.threadParams(params)
@@ -78,7 +83,13 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		return fmt.Errorf("codex answered without a thread ID: %s", truncate(string(raw), 200))
 	}
 	cc.thread = started.Thread.ID
-	cc.model = firstNonEmpty(started.Model, started.Thread.Model, w.model)
+	cc.effort = effort
+	if effort != "" {
+		// The worker shows the model it was started with, and its effort.
+		cc.model = codexModelLabel(name, effort)
+	} else {
+		cc.model = firstNonEmpty(started.Model, started.Thread.Model, name)
+	}
 	d.wmu.Lock()
 	w.codex = cc
 	d.wmu.Unlock()
@@ -87,6 +98,103 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	return d.registerCodexSession(ctx, w, true)
+}
+
+// codexEfforts are the reasoning efforts a Codex worker model may name after a
+// colon. Codex lists the levels of each model in `codex debug models`
+// (supported_reasoning_levels), and takes one on turn/start as "effort".
+var codexEfforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// splitCodexModel splits "model:effort". A colon followed by anything else is
+// part of the model name, as in a dated suffix.
+func splitCodexModel(model string) (name, effort string) {
+	i := strings.LastIndexByte(model, ':')
+	if i <= 0 || i == len(model)-1 {
+		return model, ""
+	}
+	effort = strings.ToLower(model[i+1:])
+	for _, e := range codexEfforts {
+		if e == effort {
+			return model[:i], effort
+		}
+	}
+	return model, ""
+}
+
+// codexModelLabel is what the worker shows: the model with its effort.
+func codexModelLabel(model, effort string) string {
+	if effort == "" {
+		return model
+	}
+	return model + ":" + effort
+}
+
+// checkCodexEffort refuses an effort that the model does not list, and names
+// the levels it does list. When the catalog cannot be read (an older Codex, or
+// a model it does not know), the effort passes through and Codex decides.
+func (d *Daemon) checkCodexEffort(ctx context.Context, model, effort string) error {
+	if effort == "" {
+		return nil
+	}
+	bin, err := d.harnessBinary("codex")
+	if err != nil {
+		return nil
+	}
+	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(cctx, bin, "debug", "models").Output()
+	if err != nil {
+		return nil
+	}
+	levels, known := codexSupportedEfforts(out, model)
+	if !known {
+		return nil
+	}
+	for _, l := range levels {
+		if l == effort {
+			return nil
+		}
+	}
+	supported := strings.Join(levels, ", ")
+	if supported == "" {
+		supported = "none"
+	}
+	return fmt.Errorf("codex model %q does not support reasoning effort %q; it supports: %s", model, effort, supported)
+}
+
+// codexSupportedEfforts reads the output of `codex debug models`: one entry per
+// model with its supported_reasoning_levels. known is false when the model is
+// not in the catalog, or the output is not a catalog.
+func codexSupportedEfforts(out []byte, model string) (levels []string, known bool) {
+	var catalog struct {
+		Models []struct {
+			Slug   string `json:"slug"`
+			Model  string `json:"model"`
+			ID     string `json:"id"`
+			Levels []struct {
+				Effort string `json:"effort"`
+			} `json:"supported_reasoning_levels"`
+		} `json:"models"`
+	}
+	if json.Unmarshal(out, &catalog) != nil {
+		return nil, false
+	}
+	for _, m := range catalog.Models {
+		if m.Slug != model && m.Model != model && m.ID != model &&
+			!strings.EqualFold(m.Slug, model) && !strings.EqualFold(m.Model, model) && !strings.EqualFold(m.ID, model) {
+			continue
+		}
+		if m.Levels == nil {
+			return nil, false
+		}
+		for _, l := range m.Levels {
+			if l.Effort != "" {
+				levels = append(levels, l.Effort)
+			}
+		}
+		return levels, true
+	}
+	return nil, false
 }
 
 // resume starts a new private app server and reopens the worker's thread with
@@ -114,8 +222,11 @@ func (codexLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
 			Model string `json:"model"`
 		} `json:"thread"`
 	}
-	if json.Unmarshal(raw, &resumed) == nil {
-		cc.model = firstNonEmpty(resumed.Thread.Model, w.model)
+	name, effort := splitCodexModel(w.model)
+	cc.effort = effort
+	cc.model = codexModelLabel(name, effort)
+	if json.Unmarshal(raw, &resumed) == nil && effort == "" {
+		cc.model = firstNonEmpty(resumed.Thread.Model, name)
 	}
 	cc.thread = w.nativeID
 	d.wmu.Lock()
@@ -172,6 +283,8 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	cc.thread = w.nativeID
+	name, effort := splitCodexModel(w.model)
+	cc.effort, cc.model = effort, codexModelLabel(name, effort)
 	cc.sb = d.codexSandboxFor(ctx, w)
 	rparams := map[string]any{"threadId": w.nativeID}
 	cc.sb.threadParams(rparams)
@@ -304,6 +417,7 @@ type codexConn struct {
 	pending       map[int]chan codexAnswer
 	thread        string
 	model         string
+	effort        string // reasoning effort on every turn, from "model:effort"
 	running       bool
 	cur           *codexJob
 	queue         []codexJob
@@ -627,12 +741,16 @@ func (cc *codexConn) startTurn(j codexJob) {
 	cc.final, cc.texts, cc.blocked = "", nil, nil
 	cc.sandboxDenied = false
 	thread, sb := cc.thread, cc.sb
+	effort := cc.effort
 	cc.mu.Unlock()
 	cc.d.setCodexStatus(cc.w, "busy")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	tparams := map[string]any{"threadId": thread, "approvalPolicy": "never",
 		"input": []map[string]any{{"type": "text", "text": j.text}}}
+	if effort != "" {
+		tparams["effort"] = effort
+	}
 	if sb.policy != nil {
 		tparams["sandboxPolicy"] = sb.policy
 	}

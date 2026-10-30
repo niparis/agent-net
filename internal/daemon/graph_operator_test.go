@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -14,7 +15,7 @@ func TestGraphOwnerRelay(t *testing.T) {
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "graph-agent", "/w/graph", true)
 	cli := cliClient(t, n)
-	for _, method := range []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "edge_history"} {
+	for _, method := range []string{"held_list", "held_answer", "graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "edge_history"} {
 		if _, err := agent.call(method, map[string]any{}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
 			t.Fatalf("%s gate: %v", method, err)
 		}
@@ -54,4 +55,38 @@ func TestGraphOwnerRelay(t *testing.T) {
 	cli.mustCall("edge_remove", edge)
 	cli.mustCall("node_remove", map[string]any{"name": "other"})
 	cli.mustCall("node_remove", map[string]any{"name": "architect"})
+}
+
+func TestGraphCTOActor(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]any{"name": "architect"})
+	if _, err := n.d.call(context.Background(), "charter.set", map[string]any{"node": "architect", "attr": "purpose", "value": "design", "by": "cto"}); err != nil {
+		t.Fatal(err)
+	}
+	var history []protocol.CharterChange
+	if err := json.Unmarshal(cli.mustCall("charter_history", map[string]string{"node": "architect"}), &history); err != nil || len(history) != 1 || history[0].By != "cto" {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "purpose", "value": "owner", "by": "cto"})
+	json.Unmarshal(cli.mustCall("charter_history", map[string]string{"node": "architect"}), &history)
+	if history[0].By != "owner" {
+		t.Fatalf("owner spoofed actor: %+v", history)
+	}
+}
+
+func TestCTOGatewayCapability(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	raw, err := n.d.call(context.Background(), "cto.capabilities", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var caps struct {
+		Attribution bool `json:"attribution"`
+	}
+	if json.Unmarshal(raw, &caps) != nil || !caps.Attribution {
+		t.Fatalf("CTO capability: %s", raw)
+	}
 }

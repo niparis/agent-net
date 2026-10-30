@@ -178,6 +178,14 @@ type fakeSource struct {
 	enters    []protocol.EnterRequest
 	enterPlan protocol.EnterPlan
 	enterErr  error
+
+	// The graph the map reads, and the error it answers with.
+	graph    protocol.GraphView
+	graphErr error
+}
+
+func (f *fakeSource) GraphView(_ context.Context, _ protocol.QueryGraph) (protocol.GraphView, error) {
+	return f.graph, f.graphErr
 }
 
 func (f *fakeSource) Usage(context.Context) (Usage, error) {

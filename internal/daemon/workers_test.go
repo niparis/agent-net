@@ -213,7 +213,7 @@ func (w *workerNode) workerStopped(t *testing.T, g *testGateway, reason string) 
 	})
 }
 
-var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: 8 * time.Second, MCPSettle: -1}
+var shortSet = WorkerSettings{Tick: 25 * time.Millisecond, StartTimeout: scaled(8 * time.Second), MCPSettle: -1}
 
 // ---- the lifecycle ----
 
@@ -697,7 +697,7 @@ func TestWorkerStartFailures(t *testing.T) {
 			t.Setenv(c.env, "1")
 			g := startGateway(t, t.TempDir(), "")
 			set := shortSet
-			set.StartTimeout = 1500 * time.Millisecond
+			set.StartTimeout = scaled(1500 * time.Millisecond)
 			w := startWorkerNode(t, g, set, nil)
 			repo := newRepo(t, "shop")
 			w.register(t, repo)

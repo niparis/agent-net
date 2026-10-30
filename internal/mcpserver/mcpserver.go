@@ -140,7 +140,8 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 		"List the machines on the network with their agent-net version, whether they are online, and the agent harnesses installed on each "+
 			"(claude, opencode, pi, codex) with path and version. For opencode it also lists the models it can use. "+
 			"Each machine also shows its worker track record per harness and model, and the playbook notes for a model. "+
-			"A machine with harnesses null runs an older agent-net that does not report them."),
+			"A machine with harnesses null runs an older agent-net that does not report them. "+
+			"Each machine may also show its subscription quotas (percent used per provider window, or exhausted) when quota-axi is installed."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "nodes", nil)
 			if err != nil {

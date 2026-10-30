@@ -66,7 +66,7 @@ const (
 
 const integrationsStepName = "integrations:"
 
-// chooseIntegrations decides the six integrations for this machine. The
+// chooseIntegrations decides the seven integrations for this machine. The
 // network answers win and are applied without a question. A machine without
 // network answers asks one short question and stores the answer for every
 // machine. A per-item flag is a local answer for this machine and wins over the
@@ -138,6 +138,12 @@ const (
 	itemNo  = "no"
 )
 
+// Values of Options.QuotaAXI.
+const (
+	QuotaAXIYes = "yes" // --quota-axi
+	QuotaAXINo  = "no"  // --no-quota-axi
+)
+
 // currentIntegrations reads what this machine has now. It lets a setup run
 // without a terminal and without network answers keep the integrations that an
 // older setup installed, instead of turning them off.
@@ -161,6 +167,9 @@ func (r *runner) currentIntegrations() protocol.Integrations {
 			}
 		}
 	}
+	if _, ok := daemon.FindQuotaAXI(""); ok {
+		in.QuotaAXI = true
+	}
 	return in
 }
 
@@ -180,6 +189,8 @@ func (r *runner) itemFlag(id string) string {
 		yes, no = r.NeedsHook == NeedsHookYes, r.NeedsHook == NeedsHookNo
 	case integrations.WorkersMod:
 		yes, no = r.WorkersMod == WorkersModYes, r.WorkersMod == WorkersModNo
+	case integrations.QuotaAXI:
+		yes, no = r.QuotaAXI == QuotaAXIYes, r.QuotaAXI == QuotaAXINo
 	}
 	switch {
 	case yes:

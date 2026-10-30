@@ -30,7 +30,7 @@ func TestIntegrationsOwnerGateAndNetworkApply(t *testing.T) {
 		if got != (protocol.Integrations{HintHook: true, NeedsHook: true}) {
 			t.Fatalf("applied %+v", got)
 		}
-	case <-time.After(5 * time.Second):
+	case <-time.After(scaled(5 * time.Second)):
 		t.Fatal("the daemon did not apply the network answers")
 	}
 
@@ -52,7 +52,7 @@ func TestIntegrationsOwnerGateAndNetworkApply(t *testing.T) {
 	cli.mustCall(protocol.OpIntegrationsSet, want)
 
 	// The save wakes the daemon here, and other machines see it at their tick.
-	deadline := time.After(5 * time.Second)
+	deadline := time.After(scaled(5 * time.Second))
 	for {
 		select {
 		case got := <-applied:

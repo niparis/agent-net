@@ -108,6 +108,7 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 			return protocol.NodesInfo{}, err
 		}
 		nodes[i].Tracks = tracks
+		nodes[i].Quotas = g.nodeQuotas(nodes[i].NodeID)
 	}
 	notes, err := g.store.PlaybookNotes()
 	if err != nil {

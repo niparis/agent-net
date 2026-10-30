@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	osexec "os/exec"
 	"sort"
 	"strings"
@@ -41,7 +42,9 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
-	src Source
+	cto           *ctoState
+	ctoGeneration int
+	src           Source
 	// loc and now are replaced in tests.
 	loc *time.Location
 	now func() time.Time
@@ -105,6 +108,10 @@ type Model struct {
 	top map[string]*topEntry
 	// conv is the open conversation, or nil (conv.go).
 	conv *convState
+	// mapOn shows the read-only graph map instead of the session list, and mp
+	// is its data (map.go).
+	mapOn bool
+	mp    mapState
 	// help shows the key overlay; learned shows the playbook notes; expand
 	// gives the detail pane the room of the message feed.
 	help    bool
@@ -234,11 +241,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	nm := next.(Model)
 	// After any change, fetch the top processes the detail pane wants.
 	cmds := []tea.Cmd{cmd}
-	if c := nm.wantTop(); c != nil {
-		cmds = append(cmds, c)
-	}
-	if c := nm.wantSnippets(); c != nil {
-		cmds = append(cmds, c)
+	if !nm.mapOn {
+		if c := nm.wantTop(); c != nil {
+			cmds = append(cmds, c)
+		}
+		if c := nm.wantSnippets(); c != nil {
+			cmds = append(cmds, c)
+		}
 	}
 	return nm, tea.Batch(cmds...)
 }
@@ -252,6 +261,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tick()}
+		if m.mapOn && !m.mp.loading {
+			m.mp.loading = true
+			cmds = append(cmds, m.mapCmd())
+		}
+		if m.cto != nil && !m.cto.polling {
+			m.cto.polling = true
+			cmds = append(cmds, m.ctoPollCmd())
+		}
 		if m.conv != nil && m.conv.loaded {
 			cmds = append(cmds, m.convCmd(convNewer)) // follow, even while a refresh runs
 		}
@@ -261,6 +278,65 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case ctoPollMsg:
+		if m.cto == nil || m.cto.generation != msg.generation {
+			return m, nil
+		}
+		oldID, loaded := m.cto.lastGraphID, m.cto.historyLoaded
+		m.applyCTOPoll(msg)
+		if msg.err == nil {
+			m.cto.historyLoaded = true
+			if len(msg.history) > 0 {
+				m.cto.lastGraphID = msg.history[len(msg.history)-1].ID
+			}
+			if loaded && m.mapOn && !m.mp.loading && oldID != m.cto.lastGraphID {
+				m.mp.loading = true
+				return m, m.mapCmd()
+			}
+		}
+		return m, nil
+	case ctoUndoMsg:
+		if m.cto == nil || m.cto.generation != msg.generation {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.cto.err = sanitize(msg.err.Error())
+			return m, nil
+		}
+		line := fmt.Sprintf("undid graph change #%d", msg.id)
+		m.cto.local = append(m.cto.local, protocol.CTOAction{Text: line, At: m.now().UnixNano()})
+		m.cto.messages = append(m.cto.messages, line)
+		if m.mapOn {
+			m.mp.loading = true
+			return m, m.mapCmd()
+		}
+		return m, nil
+	case ctoSendMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else if !m.cto.polling {
+				m.cto.polling = true
+				return m, m.ctoPollCmd()
+			}
+		}
+		return m, nil
+	case ctoNewMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else {
+				m.cto.messages = nil
+				m.cto.local = nil
+				m.cto.history = nil
+				m.cto.historyLoaded = false
+				m.ctoGeneration++
+				m.cto.generation = m.ctoGeneration
+				m.cto.polling = true
+				return m, m.ctoPollCmd()
+			}
+		}
+		return m, nil
 	case convMsg:
 		m.applyConv(msg)
 		return m, nil
@@ -279,6 +355,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchedMsg:
 		m.fetching = false
 		m.applyFetch(msg)
+		return m, nil
+
+	case mapMsg:
+		m.applyMap(msg)
 		return m, nil
 
 	case enterMsg:
@@ -432,6 +512,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.cto != nil {
+		return m.ctoKey(k)
+	}
+	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil {
+		return m.startCTO()
+	}
+	if m.mapOn {
+		return m.mapKey(k)
+	}
 	if m.conv != nil {
 		return m.convKey(k)
 	}
@@ -475,6 +564,29 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.notice = notice{} // the result of the last action goes with the next key
+	if m.focus == focusSessions {
+		for _, held := range m.snap.Held {
+			if held.ID == m.selected && (k.String() == "a" || k.String() == "A" || k.String() == "r" || k.String() == "R") {
+				answerer, ok := m.src.(interface {
+					AnswerHeld(context.Context, protocol.HeldAnswer) error
+				})
+				if !ok {
+					m.fail("Held request actions unavailable.")
+					return m, nil
+				}
+				answer := protocol.HeldAnswer{MessageID: held.ID, Action: k.String()}
+				return m, func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+					defer cancel()
+					err := answerer.AnswerHeld(ctx, answer)
+					if err != nil {
+						return actionMsg{err: err}
+					}
+					return actionMsg{text: "Request answered."}
+				}
+			}
+		}
+	}
 	switch k.String() {
 	case "q":
 		m.quitting = true
@@ -497,6 +609,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startRename()
 	case "L":
 		m.learned = true
+	case "M":
+		return m.startMap()
 	case "?":
 		m.help = true
 	case "d":

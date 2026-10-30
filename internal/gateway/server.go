@@ -229,8 +229,18 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			return
 		case <-t.C:
 			// Expire writes one log line per message.
-			if _, err := g.store.Expire(); err != nil {
+			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)
+			} else if n > 0 {
+				g.mu.Lock()
+				nodes := make([]string, 0, len(g.conns))
+				for id := range g.conns {
+					nodes = append(nodes, id)
+				}
+				g.mu.Unlock()
+				for _, id := range nodes {
+					g.dispatchPending(ctx, id, false)
+				}
 			}
 		}
 	}
@@ -264,6 +274,8 @@ func (g *Gateway) Handler() http.Handler {
 	})
 	mux.HandleFunc("POST /v1/enroll", g.handleEnroll)
 	mux.HandleFunc("GET /v1/node", g.handleNode)
+	mux.HandleFunc("GET /v1/cto-settings", g.handleCTOSettingsGet)
+	mux.HandleFunc("PUT /v1/cto-settings", g.handleCTOSettingsSet)
 	mux.HandleFunc("GET /v1/integrations", g.handleIntegrationsGet)
 	mux.HandleFunc("PUT /v1/integrations", g.handleIntegrationsSet)
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
@@ -548,6 +560,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "query.nodes":
 		return g.NodesInfo()
 
+	case "query.graph":
+		return g.handleGraphView(raw)
+	case "graph.read":
+		return g.handleGraphRead(raw)
+
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {
@@ -623,6 +640,40 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
 			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
 
+	case "cto.graph_latest":
+		id, err := st.CTOLastGraphID()
+		return map[string]int64{"id": id}, err
+	case "cto.graph_history":
+		var p struct {
+			After int64 `json:"after"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.After < 0 {
+			return nil, reject("bad CTO history")
+		}
+		return st.CTOGraphHistory(p.After)
+	case "held.list":
+		messages, err := st.HeldRequests()
+		return map[string]any{"messages": messages}, err
+	case "held.answer":
+		p, err := decode[protocol.HeldAnswer](raw)
+		if err != nil {
+			return nil, reject("bad held.answer")
+		}
+		m, err := st.AnswerHeld(p.MessageID, p.Action)
+		if err != nil {
+			return nil, err
+		}
+		if m.OwnerApproved {
+			g.dispatch(ctx, m)
+		} else {
+			if a, ok, err := st.Agent(m.From); err == nil && ok && a.Online {
+				g.dispatchPending(ctx, a.NodeID, false)
+			}
+		}
+		return map[string]any{"message": m}, nil
+
+	case "cto.capabilities":
+		return map[string]bool{"attribution": true}, nil
 	case "graph.get":
 		return st.Graph()
 	case "playbook.set":
@@ -662,7 +713,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad charter.set")
 		}
-		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, "owner")
+		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw))
 	case "charter.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
 		if err != nil || p.Node == "" {
@@ -675,9 +726,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad node request")
 		}
 		if typ == "node.add" {
-			err = st.AddArchitect(p.Name, "owner")
+			err = st.AddArchitect(p.Name, graphActor(raw))
 		} else {
-			err = st.RemoveArchitect(p.Name, "owner")
+			err = st.RemoveArchitect(p.Name, graphActor(raw))
 		}
 		return map[string]bool{"ok": true}, err
 	case "edge.set", "edge.remove":
@@ -686,9 +737,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad edge request")
 		}
 		if typ == "edge.set" {
-			err = st.SetEdge(p, "owner")
+			err = st.SetEdge(p, graphActor(raw))
 		} else {
-			err = st.RemoveEdge(p, "owner")
+			err = st.RemoveEdge(p, graphActor(raw))
 		}
 		return map[string]bool{"ok": true}, err
 	case "edge.history":
@@ -702,7 +753,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.HistoryID < 0 {
 			return nil, reject("bad graph.undo")
 		}
-		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, "owner")
+		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)
@@ -769,7 +820,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || a.NodeID != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation}, nil
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a)}, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)
@@ -818,7 +869,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 			return nil, err
 		}
-		if created {
+		if created && m.State != protocol.StateHeld {
 			g.dispatch(ctx, m)
 		}
 		if cur, ok, _ := st.Message(m.ID); ok {
@@ -928,9 +979,25 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	}
 	// The gateway, and only the gateway, says whether the recipient is trusted.
 	m.RecipientTrust = false
-	if a, ok, err := g.store.Agent(m.To); err == nil && ok {
+	if m.Type == protocol.TypeRequest {
+		rule, err := g.store.RequestRule(m.From, m.To)
+		if err != nil {
+			g.logLine("error", "where", "request rule", "err", err)
+			return
+		}
+		if rule == "ask" && !m.OwnerApproved {
+			if _, err := g.store.db.Exec(`UPDATE messages SET state='held' WHERE id=? AND state IN ('stored','dispatched')`, m.ID); err != nil {
+				g.logLine("error", "where", "hold message", "err", err)
+			}
+			return
+		}
+		m.RecipientTrust = rule == "auto"
+	} else if a, ok, err := g.store.Agent(m.To); err == nil && ok {
 		m.RecipientTrust = a.PeerTrust
 	}
+	// The relation from the sender's node to the recipient's node is graph
+	// data, computed here and never set by a sender (decision 0022).
+	m.RecipientRelation = g.relationForDelivery(m)
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {
 		return
@@ -955,4 +1022,15 @@ func (g *Gateway) dispatchPending(ctx context.Context, nodeID string, includeDis
 	for _, m := range msgs {
 		g.sendDeliver(ctx, nodeID, m)
 	}
+}
+
+// The authenticated daemon supplies the actor after its local owner checks.
+func graphActor(raw json.RawMessage) string {
+	var p struct {
+		By string `json:"by"`
+	}
+	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
+		return "cto"
+	}
+	return "owner"
 }

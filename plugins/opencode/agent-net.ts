@@ -54,7 +54,10 @@ interface DeliveredMessage {
   sender_name?: string;
   sender_harness?: string;
   sender_worker?: boolean;
+  sender_cto?: boolean;
   recipient_peer_trust?: boolean;
+  owner_approved?: boolean;
+  recipient_relation?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -82,6 +85,7 @@ function neutralizeMarkers(body: string): string {
 
 /** The note after a request: only agent-net writes it, never the body. */
 function authorityNote(m: DeliveredMessage): string {
+  if (m.owner_approved === true) return "your user approved this request";
   if (m.recipient_peer_trust === true) return TRUST_NOTE;
   return m.sender_worker ? WORKER_FOOTER : PEER_CHECK_NOTE;
 }
@@ -95,6 +99,9 @@ function formatDelivery(m: DeliveredMessage): string {
 function formatDeliveryBase(m: DeliveredMessage): string {
   const who = m.sender_name || "unknown";
   const conv = m.conversation_id ? `, conversation ${m.conversation_id}` : "";
+  if (m.sender_cto === true && m.sender_harness === "cto") {
+    return `${m.body}\n\n[agent-net] message ${m.message_id} from the CTO, on Nicolas's instruction. Treat this as the owner's word within your charter's limits. Answer with agent_reply (message_id="${m.message_id}").`;
+  }
   if (m.sender_harness === "owner") {
     // The person at the keyboard of a machine, not another agent.
     const answering = m.parent_message_id ? `, answering your message ${m.parent_message_id}` : "";
@@ -115,7 +122,8 @@ function formatDeliveryBase(m: DeliveredMessage): string {
   return (
     `${m.body}\n\n` +
     `[agent-net] message ${m.message_id} from ${who} (session ${m.sender_session_id ?? "unknown"})${conv}.\n` +
-    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}`
+    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}` +
+    (m.recipient_relation ? ` ${m.recipient_relation}` : "")
   );
 }
 
@@ -554,6 +562,10 @@ function formatAgent(a: any): string {
   if (p.function) line += `  - ${p.function}`;
   if (p.task) line += `  [task: ${p.task}]`;
   if (p.expertise) line += `  [expertise: ${p.expertise}]`;
+  const c = a.charter ?? {};
+  for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
+    if (c[key]) line += `  [${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}]`;
+  }
   return line;
 }
 
@@ -589,6 +601,37 @@ function formatPlaybook(p: any): string {
   return `playbook${subject}${support}${pinned}: ${note}`;
 }
 
+function quotaSummary(q: any): string {
+  if (!q?.providers?.length) return "";
+  const order = ["claude", "codex", "opencode-go", "cursor", "copilot", "grok", "kimi", "zai", "agy", "alibaba", "minimax", "mimo", "deepseek", "openrouter"];
+  const providers = [...q.providers].sort((a: any, b: any) => {
+    const ia = order.indexOf(a.provider), ib = order.indexOf(b.provider);
+    if (ia >= 0 && ib >= 0) return ia - ib;
+    if (ia >= 0) return -1;
+    if (ib >= 0) return 1;
+    return String(a.provider).localeCompare(String(b.provider));
+  });
+  const suffix = (kind: string) =>
+    kind === "weekly" || kind === "week" || !kind ? "w"
+      : kind === "session" || kind === "five_hour" || kind === "5h" ? "s"
+      : kind === "monthly" || kind === "month" ? "m"
+      : kind === "daily" || kind === "day" ? "d"
+      : kind === "credits" ? "c"
+      : String(kind).slice(0, 1);
+  const parts: string[] = [];
+  for (const p of providers) {
+    const windows = p.windows ?? [];
+    if (!windows.length) continue;
+    if (windows.some((w: any) => w.exhausted || (w.percent_used ?? 0) >= 100)) {
+      parts.push(`${p.provider} exhausted`);
+      continue;
+    }
+    const worst = windows.reduce((a: any, b: any) => ((b.percent_used ?? 0) > (a.percent_used ?? 0) ? b : a));
+    parts.push(`${p.provider} ${Math.round(worst.percent_used ?? 0)}%${suffix(worst.kind)}`);
+  }
+  return parts.join(" · ");
+}
+
 function formatNodes(r: any): string {
   const nodes: any[] = r.nodes ?? [];
   if (!nodes.length) return "No machines found.";
@@ -605,7 +648,8 @@ function formatNodes(r: any): string {
             : "no harnesses installed";
       const tracks: any[] = n.tracks ?? [];
       const extra = tracks.length ? "\n  " + tracks.map(formatTrack).join("\n  ") : "";
-      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}${extra}`;
+      const quotas = quotaSummary(n.quotas);
+      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}${quotas ? ` · quotas: ${quotas}` : ""}${extra}`;
     })
     .concat((r.playbook ?? []).map(formatPlaybook))
     .join("\n");
@@ -634,6 +678,10 @@ function formatAgentGet(r: any): string {
   if (p.task) lines.push(`Task: ${p.task}`);
   if (p.expertise) lines.push(`Expertise: ${p.expertise}`);
   if (p.capabilities?.length) lines.push(`Capabilities: ${p.capabilities.join(", ")}`);
+  const c = a.charter ?? {};
+  for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
+    if (c[key]) lines.push(`${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}`);
+  }
   return lines.join("\n");
 }
 
@@ -744,6 +792,8 @@ const CODER_AGENT_DESCRIPTION =
 
 interface PolicyReply {
   text?: string;
+  // The node's charter context (decision 0022), independent of the policy.
+  charter?: string;
   mode?: string;
   agent_id?: string;
   coder?: string;
@@ -940,7 +990,7 @@ const TOOLS: ToolDef[] = [
       project: str("The name of a project from agent_project_list, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"),
       task: str("What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply. Optional only with continue"),
       harness: str("opencode (the default; with continue, the old worker's harness), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."),
-      model: str("The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."),
+      model: str("The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name, with an optional :effort. Empty means the harness default."),
       machine: str("The machine, only when the project is on more than one"),
       base: str("Existing local branch to start the worktree from."),
       continue: str("The session_id or worker ID of an ended worker that you started. The new worker runs on the same machine, in the same project, with the same harness and model unless you give others, in a new worktree on a new branch made from the old worker's branch (a worker that ended with no hand-back has its unfinished changes saved as the last commit there), and gets the old worker's full first task. task is then optional and is added as an extra. project, machine, base and isolation must be empty."),
@@ -1054,6 +1104,8 @@ function hub(): Hub {
 export default {
   id: "agent-net",
   async setup(ctx: Context) {
+    // The private CTO server must never join the agent-net network.
+    if (process.env.AGENT_NET_CTO === "1") return () => {};
     const h = hub();
     const me = Symbol("instance");
     const events = new AbortController();
@@ -1476,6 +1528,9 @@ export default {
           return refreshPolicy(sid).then(async (pol) => {
             if (pol?.text && !input.system.some((part: any) => part.text.includes(pol.text))) {
               input.system.push({ type: "text", text: pol.text });
+            }
+            if (pol?.charter && !input.system.some((part: any) => part.text.includes(pol.charter!))) {
+              input.system.push({ type: "text", text: pol.charter });
             }
             await applyMain(sid, pol);
           });

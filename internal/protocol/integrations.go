@@ -12,6 +12,7 @@ const (
 	IntegrationPolicyHook   = "claude_policy_hook"
 	IntegrationNeedsHook    = "claude_needs_hook"
 	IntegrationWorkersMod   = "claude_workers_mod"
+	IntegrationQuotaAXI     = "quota_axi"
 )
 
 // IntegrationSpec is one line of the setup question and one checkbox of the
@@ -31,6 +32,7 @@ func IntegrationSpecs() []IntegrationSpec {
 		{IntegrationPolicyHook, "Claude: apply the delegation policy you set in the TUI"},
 		{IntegrationNeedsHook, `Claude: show "Needs you" in the TUI`},
 		{IntegrationWorkersMod, "Claude: show your workers above the prompt"},
+		{IntegrationQuotaAXI, "Quota: read your subscription quotas with quota-axi"},
 	}
 }
 
@@ -43,6 +45,7 @@ type Integrations struct {
 	PolicyHook   bool `json:"policy_hook"`
 	NeedsHook    bool `json:"needs_hook"`
 	WorkersMod   bool `json:"workers_mod"`
+	QuotaAXI     bool `json:"quota_axi"`
 }
 
 // Get returns one answer by item ID.
@@ -60,6 +63,8 @@ func (i Integrations) Get(id string) bool {
 		return i.NeedsHook
 	case IntegrationWorkersMod:
 		return i.WorkersMod
+	case IntegrationQuotaAXI:
+		return i.QuotaAXI
 	}
 	return false
 }
@@ -79,6 +84,8 @@ func (i *Integrations) Set(id string, on bool) {
 		i.NeedsHook = on
 	case IntegrationWorkersMod:
 		i.WorkersMod = on
+	case IntegrationQuotaAXI:
+		i.QuotaAXI = on
 	}
 }
 
