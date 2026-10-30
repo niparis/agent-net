@@ -229,6 +229,8 @@ Which model and harness to use for which work, and the quirks of each project, a
 
 ## The TUI
 
+2026-10-30: The Sessions tab keeps the CTO chat below the session list; Messages and Quotas have separate tabs.
+
 - **Map view** (key to be chosen, for example `M`): architects with the nodes they govern and the mode in brackets; the selected node's charter; its edges in and out with their request rules; its latest decisions (accepted, rejected, overruled). Read only.
 - **CTO pane** (for example `C`): the chat, beside the map. Changes appear in the map as the owner talks. Undo is one key on the last change and a sentence for older ones.
 - **Needs you:** rejections and escalations that reach the owner, and requests held by an `ask` rule, with "let it stand", "overrule", "approve" and "reject" by key or by telling the CTO.

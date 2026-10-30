@@ -164,11 +164,14 @@ func (m Model) helpLine(w int) string {
 		}
 		return sDim.Render(clip("up/down select  enter details  a approve  r refuse  t answer  esc back", w))
 	}
-	if m.cto != nil {
-		if m.cto.editing {
-			return sDim.Render(clip("enter sends  esc closes", w))
-		}
-		return sDim.Render(clip("enter write  o open full  n new conversation  u undo  esc close", w))
+	if m.focus == focusCTO {
+		return sDim.Render(clip("tab focus  enter send  o full screen  n new  u undo  esc back", w))
+	}
+	if m.tab == 1 {
+		return sDim.Render(clip("up/down select  enter conversation  v view  l events  1 sessions  ? help", w))
+	}
+	if m.tab == 2 {
+		return sDim.Render(clip("1 sessions  2 messages  ? help  q quit", w))
 	}
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
@@ -229,9 +232,10 @@ func (m Model) helpView(w, h int) []string {
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
-		{"o, d", "o: show offline and dormant; d: detail takes the feed room"},
+		{"o", "show offline and dormant sessions"},
 		{"a", "active only: hide sessions idle for over an hour"},
-		{"tab", "message feed and back; enter opens the conversation of the local end"},
+		{"1/2/3", "sessions, messages and quotas"},
+		{"tab, C", "focus the CTO box; tab or esc returns to sessions"},
 		{"v, l", "v: open the body of the message; l: feed events (worker, all, none)"},
 		{"r", "refresh now"},
 		{"", ""},

@@ -69,7 +69,7 @@ system brief treats information it reads as data and asks it to show actions,
 show graph changes as short diffs, offer undo and keep secrets out of charters.
 
 
-In the TUI, `C` opens the CTO pane, beside the map when the map is open.
+In the TUI, `C` focuses the CTO box on the Sessions tab.
 Its title shows the selected harness and model.
 Press Enter to write and Enter again to send. Outside the input, `n` starts a
 new conversation, `u` undoes the latest graph change attributed to the CTO,
@@ -504,6 +504,8 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 **The operator interface.** The daemon's local socket serves these methods to the command line and the TUI, and the phone app will use the same ones: `info`, `nodes`, `list`, `projects`, `events`, `message_status`, `workers` (reads) and `owner_send`, `worker_start`, `worker_stop` (actions). The owner-only methods include `playbook_get` and `playbook_set` (see [the playbook](#the-playbook-and-the-track-record)). The types are in `internal/protocol/operator.go`; `worker_handback` is the worker's own call. Agent connections may use `worker_start`, `worker_stop`, `worker_handback`, `agent_learn` and `workers`. `owner_send` is for the command line only; `agent_learn` is for agent sessions only.
 
 ## The TUI screen
+
+`agent-net tui` has three tabs: `1` Sessions, `2` Messages and `3` Quotas. On Sessions, `tab` moves focus between the session list and CTO chat. In the CTO box, enter sends, esc returns to the list, `o` opens the full interface, `n` starts a new conversation after confirmation, and `u` undoes the last graph change. Messages shows the feed with its existing navigation, view and event filter keys.
 
 `agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top`, `session_text` and `session_enter` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
