@@ -100,3 +100,37 @@ func gitWorktrees(t *testing.T, repo string) []string {
 	}
 	return out
 }
+
+func TestWorkerStopsBeforeRepoCleanup(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	t.Setenv(envFakeCodex, "1")
+	t.Setenv("CODEX_HOME", t.TempDir())
+	w := startWorkerNode(t, g, shortSet, func(c *Config) {
+		c.HarnessPaths = map[string]string{"codex": os.Args[0]}
+	})
+	repo := newRepo(t, "shop")
+	var exited <-chan struct{}
+	t.Cleanup(func() {
+		if exited == nil {
+			return
+		}
+		select {
+		case <-exited:
+		default:
+			t.Error("worker was not reaped before repository cleanup")
+		}
+	})
+	w.register(t, repo)
+	_, err := w.startDefault(protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.d.wmu.Lock()
+	for _, worker := range w.d.workers {
+		exited = worker.exited
+	}
+	w.d.wmu.Unlock()
+	if exited == nil {
+		t.Fatal("worker has no exit channel")
+	}
+}
