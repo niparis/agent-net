@@ -66,8 +66,7 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 	return items, rows.Err()
 }
 
-// AnswerInbox records one owner answer. Delivery must be made durable in the
-// same transaction before exposing this operation through an operator RPC.
+// AnswerInbox records an answer and queues its delivery in one transaction.
 func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -98,6 +97,19 @@ func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
 	item.Answer = answer
 	item.AnsweredAt = s.now().UTC()
 	if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
+		return item, err
+	}
+	var sender string
+	err = tx.QueryRow(`SELECT o.id FROM sessions o JOIN sessions r ON r.node_id=o.node_id WHERE r.id=? AND o.harness=? LIMIT 1`, item.SessionID, protocol.OwnerHarness).Scan(&sender)
+	if err == sql.ErrNoRows {
+		return item, reject("recipient or owner session not found")
+	}
+	if err != nil {
+		return item, err
+	}
+	_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		protocol.NewID("m"), protocol.NewID("c"), "", sender, item.SessionID, protocol.TypeNotification, answer, 0, protocol.NewID("k"), item.AnsweredAt.UnixNano(), item.AnsweredAt.Add(protocol.DefaultTTL).UnixNano(), protocol.StateStored)
+	if err != nil {
 		return item, err
 	}
 	if err = tx.Commit(); err != nil {

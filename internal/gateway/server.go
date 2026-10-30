@@ -755,6 +755,28 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"profile": prof}, nil
 
+	case "inbox.list":
+		items, err := st.ListInbox()
+		return map[string]any{"items": items}, err
+
+	case "inbox.answer":
+		var p struct {
+			ID     string `json:"id"`
+			Answer string `json:"answer"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.answer")
+		}
+		item, err := st.AnswerInbox(p.ID, p.Answer)
+		if err != nil {
+			return nil, err
+		}
+		node, err := st.SessionNode(item.SessionID)
+		if err == nil {
+			g.dispatchPending(ctx, node, false)
+		}
+		return map[string]any{"item": item}, nil
+
 	case "msg.send":
 		p, err := decode[protocol.MsgSend](raw)
 		if err != nil {
