@@ -30,7 +30,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net send SESSION TEXT...` | Send a message as yourself (the owner of this machine). `SESSION` is a session ID or a unique agent name. |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net hint` | Not for you to run: the Claude Code hook that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin and prints hook JSON only when it has a suggestion. See [peer trust and hints](#peer-trust-and-hints). |
-| `agent-net policy-hook` | Not for you to run: the Claude Code `UserPromptSubmit` hook that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin and prints hook JSON only when you set a delegation policy for the session. See [delegation policy](#delegation-policy). |
+| `agent-net policy-hook` | Not for you to run: the Claude Code `UserPromptSubmit` hook that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin and prints hook JSON only when the session has a delegation policy or its node has a charter. See [delegation policy](#delegation-policy) and [charters](#charters-and-component-relationships). |
 | `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse` and `UserPromptSubmit` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you, and clears that when you type a prompt or a tool runs after an approval. See [Needs you](#needs-you). |
 | `agent-net version` | Print the version. |
 
@@ -443,7 +443,7 @@ A per-session or per-project setting that says who does the coding. Set it with 
 
 The gateway stores the policy in `sessions.delegation` and the project defaults in `project_policies` (migration 10), and logs a `session.policy` event and line when one is saved.
 
-**What the session gets.** The local method `policy` (every turn; a session asks for its own, the command line asks by `harness` and `native_id`) answers `{"text", "mode", "agent_id", "coder", "main"}` or an empty object. The daemon asks the gateway (`policy.get`) and caches the answer for 2 seconds. `text` is one line that starts with `[agent-net]`:
+**What the session gets.** The local method `policy` (every turn; a session asks for its own, the command line asks by `harness` and `native_id`) answers `{"text", "mode", "agent_id", "coder", "main", "charter"}` or an empty object. The daemon asks the gateway (`policy.get`) and caches the answer for 2 seconds. `charter` is the node's charter context of [charters and component relationships](#charters-and-component-relationships); it is there even when the session has no delegation policy. `text` is one line that starts with `[agent-net]`:
 
 - `native`: `[agent-net] Your user's standing policy for this session, set in agent-net: delegate all code changes to the `agent-net-coder-<model>` subagent (model <model>). You plan, write the brief, review its diff and run the tests. Do not edit code yourself unless the subagent fails twice.`
 - `workers`: the same, but to start a worker with `agent_start` with the coder model.
@@ -456,11 +456,29 @@ The gateway stores the policy in `sessions.delegation` and the project defaults 
 | Pi | The system prompt, each turn (`before_agent_start`). | Pi has no subagents: the `workers` text is used. | `setModel`, once per value, for an exact `provider/id`. |
 | Codex | Not applied. | | |
 
-The Claude Code hook output (one line of JSON on stdout, exit 0), only when the session has a policy with text:
+The Claude Code hook output (one line of JSON on stdout, exit 0), only when the session has a policy with text or its node has a charter:
 
 ```
 {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"[agent-net] Your user's standing policy ..."}}
 ```
+
+With both, the policy text comes first and the charter second, separated by a blank line. The hook still prints nothing and exits 0 on any problem.
+
+## Charters and component relationships
+
+Decision: [0022](decisions/0022-component-graph-and-cto.md). This section covers step 1 of the build: reading the graph. The owner-only operator methods that change charters and edges are separate, and the CTO is not built yet.
+
+The gateway keeps a graph of components and architects: a node per project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`). A session speaks for the node of its project, as the PROJECT column resolves it. The graph is visible to every enrolled machine.
+
+**Reading it.** The daemon frame `graph.read` takes `{"project": "cogforge"}` and answers `{"graph": {"nodes": [...], "edges": [...]}}`. A project name returns that node, its charter, the nodes its edges name, and the edges that touch it; an empty name returns the whole graph. A node with no stored charter is still a node (an implicit project), with empty charter attributes. No session or peer identity is needed: this is a read, not a change.
+
+**Every turn.** The daemon reads the node of the session's project and puts a short charter text into the same places as the delegation policy: the Claude Code `UserPromptSubmit` hook (`additionalContext`), the OpenCode `context` hook, and the Pi `before_agent_start` system prompt. Codex has no turn context today: the policy is not applied there either, but a Codex worker gets the charter in its brief. The text holds `maturity`, `accepts`, `refuses`, `escalate`, the edges that matter to the node (who governs it and in which mode, what it depends on, what depends on it, and for an architect what it governs), and the decide rule. It starts with `[agent-net]`. A node with no charter adds nothing. The daemon caches the graph per node for 2 seconds, and keeps the last answer for 10 minutes when the gateway is gone.
+
+The decide rule is also in the [guidance block](#what-setup-changes-on-your-machine): judge a peer's request against the node's charter and decide (accept, reject with a reason, or redirect); escalate only when the charter says so or does not cover it; every escalation carries a recommendation.
+
+**The relation line on a delivered request.** The gateway computes it from the graph, not from anything the sender wrote. It looks at the sender's node and the recipient's node: when the sender depends on the recipient, the line says the sender is a consumer of the recipient's node; when the sender governs the recipient's node, it says so with the mode (`advisor`, `arbiter` or `owner`); otherwise, for two known and different nodes, it says there is no graph relation. The gateway puts the line in `recipient_relation` on the message it delivers, like `recipient_peer_trust`, and the Claude Code adapter, the Codex adapter, the Pi extension and the OpenCode plugin write it after the body and after agent-net's authority note. Only a request gets a line: a reply is information and a notification is not a request. Two sessions of the same node, or a message from the owner, get none. The line starts with `[agent-net]`, so the marker rule of [0013](decisions/0013-peer-trust-and-hints.md) applies.
+
+**Worker briefs.** A worker's task body carries the whole charter of its project's node after the project rules for workers and before the task: `purpose`, `maturity`, `accepts`, `refuses`, `consumers`, `escalate`, `needs` and `notes` (only the attributes that are set). A node with no charter adds no section. The owner's machine reads the graph when it sends the task, so a queued start and a continued worker get the same section.
 
 ## What setup changes on your machine
 
