@@ -241,10 +241,6 @@ func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) 
 	if err != nil {
 		return nil, err
 	}
-	port, err := freePort()
-	if err != nil {
-		return nil, err
-	}
 	dir := d.setWorkerDir(w)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -254,21 +250,30 @@ func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) 
 	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
 		return nil, err
 	}
-	addr := "127.0.0.1:" + strconv.Itoa(port)
-	args := []string{"app-server", "--listen", "ws://" + addr, "--ws-auth", "capability-token", "--ws-token-file", tokenPath}
-	if codexConfigDefinesAgentNet() {
-		// A worker has no use for the agent-net tools (its report is the end
-		// of its turn), and Codex would ask approval to call them.
-		args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
+	for attempt := 0; attempt < 3; attempt++ {
+		port, err := d.workerFreePort()
+		if err != nil {
+			return nil, err
+		}
+		addr := "127.0.0.1:" + strconv.Itoa(port)
+		args := []string{"app-server", "--listen", "ws://" + addr, "--ws-auth", "capability-token", "--ws-token-file", tokenPath}
+		if codexConfigDefinesAgentNet() {
+			args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
+		}
+		if err := d.spawnWorker(w, bin, args, os.Environ()); err != nil {
+			return nil, err
+		}
+		d.wmu.Lock()
+		w.ref = addr
+		d.saveWorkerLocked(w)
+		d.wmu.Unlock()
+		cc, err := dialCodex(ctx, d, w, addr, token)
+		if err == nil || !errors.Is(err, errCodexExited) {
+			return cc, err
+		}
+		d.killGroup(w)
 	}
-	if err := d.spawnWorker(w, bin, args, os.Environ()); err != nil {
-		return nil, err
-	}
-	d.wmu.Lock()
-	w.ref = addr
-	d.saveWorkerLocked(w)
-	d.wmu.Unlock()
-	return dialCodex(ctx, d, w, addr, token)
+	return nil, errCodexExited
 }
 
 // adopt connects again to the app server of a worker that survived a restart
@@ -562,6 +567,8 @@ type codexMsg struct {
 
 // dialCodex connects to the app server (it may still be starting) and says
 // initialize.
+var errCodexExited = errors.New("codex app-server exited at start")
+
 func dialCodex(ctx context.Context, d *Daemon, w *worker, addr, token string) (*codexConn, error) {
 	var c *websocket.Conn
 	for {
@@ -579,7 +586,7 @@ func dialCodex(ctx context.Context, d *Daemon, w *worker, addr, token string) (*
 		case <-time.After(100 * time.Millisecond):
 		}
 		if d.gone(w) {
-			return nil, errors.New("codex app-server exited at start")
+			return nil, errCodexExited
 		}
 	}
 	c.SetReadLimit(32 << 20)

@@ -53,7 +53,8 @@ type Host interface {
 }
 
 type Config struct {
-	InventoryHome string // Empty disables tools inventory (used by tests).
+	testFreePort  func() (int, error) // deterministic collision tests
+	InventoryHome string              // Empty disables tools inventory (used by tests).
 	GatewayURL    string
 	NodeID        string
 	Token         string
