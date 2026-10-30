@@ -314,3 +314,14 @@ func TestOverviewRoutesEachDependencyInItsOwnLane(t *testing.T) {
 		}
 	}
 }
+
+func TestMapDetailShowsProjectContext(t *testing.T) {
+	node := protocol.Node{Name: "p", Kind: "component", Locations: []protocol.GraphLocation{{Machine: "box", Path: "/src/p"}}, Sessions: []protocol.GraphSession{{ID: "s1", Name: "builder", Machine: "box", Status: "busy"}}, SessionCount: 6}
+	m := mapModel(120, 40, protocol.GraphView{})
+	got := strings.Join(m.mapDetailLines(node, true, 100, 40), "\n")
+	for _, want := range []string{"/src/p", "builder", "s1", "busy", "5 more"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
+	}
+}
