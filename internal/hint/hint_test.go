@@ -104,6 +104,52 @@ func TestSuggestIgnoresLoginAndHomeNameInPaths(t *testing.T) {
 	}
 }
 
+func TestSuggestNeverMatchesLoginOrHomeName(t *testing.T) {
+	// The daemon can run with no HOME, so masking the home path in the text is
+	// best effort. The login name and the home folder name must never be a
+	// name that suggests a session, whatever the text looks like.
+	t.Setenv("USER", "nicolas")
+	t.Setenv("HOME", "")
+	self := Self{SessionID: "s_me", Project: "client-app", Hostname: "laptop-b"}
+	peers := []Candidate{
+		// A peer that runs in the home folder itself.
+		{SessionID: "s_home", Name: "nicolas", Online: true, Project: "research", Folder: "nicolas"},
+		// A project named after the login.
+		{SessionID: "s_proj", Name: "other", Online: true, Project: "nicolas", Folder: "code"},
+		// A repository named after the login.
+		{SessionID: "s_repo", Name: "other2", Online: true, Project: "x", Folder: "code",
+			Remote: "git@example.com:acme/nicolas.git"},
+	}
+	got := Suggest("cannot read /home/nicolas/code/x: permission denied", self, peers)
+	if len(got) != 0 {
+		t.Fatalf("a path under the home folder matched a login or home name: %+v", got)
+	}
+	for _, peer := range peers {
+		if got := Suggest("cannot read /home/nicolas/code/x: permission denied", self, []Candidate{peer}); len(got) != 0 {
+			t.Errorf("%s: matched %+v", peer.SessionID, got)
+		}
+	}
+
+	// A folder under the home folder still matches by its own name.
+	cog := []Candidate{{SessionID: "s_cog", Name: "cogforge", Online: true, Project: "cogforge",
+		Folder: "cogforge", Remote: "git@example.com:acme/cogforge.git"}}
+	got = Suggest("cannot read /home/nicolas/code/cogforge/config: permission denied", self, cog)
+	if len(got) != 1 || got[0].Candidate.SessionID != "s_cog" {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestSuggestNeverMatchesHomeFolderName(t *testing.T) {
+	// The home folder name is skipped even when it is not the login name.
+	t.Setenv("USER", "alice")
+	t.Setenv("HOME", "/home/nicolas")
+	peer := Candidate{SessionID: "s_home", Name: "nicolas", Online: true, Project: "research", Folder: "nicolas"}
+	got := Suggest("cannot reach nicolas: connection refused", Self{SessionID: "s_me", Project: "client-app"}, []Candidate{peer})
+	if len(got) != 0 {
+		t.Fatalf("the home folder name matched a folder: %+v", got)
+	}
+}
+
 func TestSuggestAtMostTwo(t *testing.T) {
 	var c []Candidate
 	for _, n := range []string{"alpha", "bravo", "charlie"} {

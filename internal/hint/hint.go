@@ -155,7 +155,9 @@ func useful(w string) bool {
 // identifiers returns the names that identify a session's place: project,
 // repository name, folder name and host name, as whole names and as parts
 // ("cog-forge" gives "cogforge" and, as parts, "cog" and "forge" are too short
-// to count; "billing-api" gives "billing-api" and "billing").
+// to count; "billing-api" gives "billing-api" and "billing"). A name that is
+// the login name or the home folder name is left out: it is in most paths on
+// the machine, so it does not say who owns a service.
 func identifiers(c Candidate, sameHost bool, skip map[string]bool) map[string]string {
 	out := map[string]string{}
 	add := func(kind, name string) {
@@ -164,11 +166,11 @@ func identifiers(c Candidate, sameHost bool, skip map[string]bool) map[string]st
 			return
 		}
 		joined := strings.Join(words(name), "")
-		if useful(joined) {
+		if useful(joined) && !skip[joined] {
 			out[joined] = kind
 		}
 		for _, w := range words(name) {
-			if useful(w) {
+			if useful(w) && !skip[w] {
 				if _, ok := out[w]; !ok {
 					out[w] = kind
 				}
@@ -177,6 +179,8 @@ func identifiers(c Candidate, sameHost bool, skip map[string]bool) map[string]st
 	}
 	add("project", c.Project)
 	add("repository", repoName(c.Remote))
+	// A session that works in the home folder itself has only the home folder
+	// name to offer, which add drops. Its folder says nothing either way.
 	add("folder", c.Folder)
 	// The host name matters, but the machine of a laptop is not a service:
 	// only its first label, and only when it is not generic.
