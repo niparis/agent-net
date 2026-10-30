@@ -15,10 +15,10 @@ Start a worker ─────────────────────�
   Harness   opencode
 > Model     anthropic/
   Task
+  permissions: sandboxed (writes only in its worktree, network on) (enforced fo…
 
   anthropic/claude-haiku-4-5
   anthropic/claude-sonnet-5
-
 
 
 tab completes  up/down or enter: field  enter on the task starts  esc cancels

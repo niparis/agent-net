@@ -299,19 +299,20 @@ type codexConn struct {
 
 	wmu sync.Mutex // writes
 
-	mu      sync.Mutex
-	next    int
-	pending map[int]chan codexAnswer
-	thread  string
-	model   string
-	running bool
-	cur     *codexJob
-	queue   []codexJob
-	sb      codexSandbox // the permissions of the worker (decision 0020)
-	final   string
-	texts   []string
-	blocked []codexBlock
-	tokens  struct{ in, out, reasoning, cacheRead, cacheWrite float64 }
+	mu            sync.Mutex
+	next          int
+	pending       map[int]chan codexAnswer
+	thread        string
+	model         string
+	running       bool
+	cur           *codexJob
+	queue         []codexJob
+	sb            codexSandbox // the permissions of the worker (decision 0020)
+	final         string
+	texts         []string
+	blocked       []codexBlock
+	sandboxDenied bool
+	tokens        struct{ in, out, reasoning, cacheRead, cacheWrite float64 }
 	// contextTokens and contextLimit come from the last turn's usage and the
 	// model context window in thread/tokenUsage/updated.
 	contextTokens, contextLimit int64
@@ -510,14 +511,17 @@ func (cc *codexConn) notification(m codexMsg) {
 	var p struct {
 		ThreadID string `json:"threadId"`
 		Item     struct {
-			Type  string `json:"type"`
-			Text  string `json:"text"`
-			Phase string `json:"phase"`
+			Type             string `json:"type"`
+			Text             string `json:"text"`
+			Phase            string `json:"phase"`
+			Status           string `json:"status"`
+			AggregatedOutput string `json:"aggregatedOutput"`
 		} `json:"item"`
 		Turn struct {
 			Status string `json:"status"`
 			Error  *struct {
-				Message string `json:"message"`
+				Message        string          `json:"message"`
+				CodexErrorInfo json.RawMessage `json:"codexErrorInfo"`
 			} `json:"error"`
 		} `json:"turn"`
 	}
@@ -532,6 +536,11 @@ func (cc *codexConn) notification(m codexMsg) {
 	}
 	switch m.Method {
 	case "item/completed":
+		if p.Item.Type == "commandExecution" && p.Item.Status == "failed" && sandboxDenial(p.Item.AggregatedOutput) {
+			cc.mu.Lock()
+			cc.sandboxDenied = true
+			cc.mu.Unlock()
+		}
 		if p.Item.Type != "agentMessage" || p.Item.Text == "" {
 			return
 		}
@@ -580,6 +589,11 @@ func (cc *codexConn) notification(m codexMsg) {
 		errMsg := ""
 		if p.Turn.Error != nil {
 			errMsg = p.Turn.Error.Message
+			if string(p.Turn.Error.CodexErrorInfo) == `"sandboxError"` {
+				cc.mu.Lock()
+				cc.sandboxDenied = true
+				cc.mu.Unlock()
+			}
 		}
 		cc.finishTurn(p.Turn.Status, errMsg)
 	}
@@ -611,6 +625,7 @@ func (cc *codexConn) startTurn(j codexJob) {
 	cc.mu.Lock()
 	cc.cur = &j
 	cc.final, cc.texts, cc.blocked = "", nil, nil
+	cc.sandboxDenied = false
 	thread, sb := cc.thread, cc.sb
 	cc.mu.Unlock()
 	cc.d.setCodexStatus(cc.w, "busy")
@@ -637,7 +652,7 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		return
 	}
 	cc.cur = nil
-	final, texts, blocked := cc.final, cc.texts, cc.blocked
+	final, texts, blocked, denied := cc.final, cc.texts, cc.blocked, cc.sandboxDenied || sandboxDenial(errMsg)
 	cc.final, cc.texts, cc.blocked = "", nil, nil
 	cc.mu.Unlock()
 	if final == "" && len(texts) > 0 {
@@ -657,7 +672,11 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		report = "(Codex ended the turn with no message.)"
 	}
 	go func() {
-		_, err := cc.d.handbackTo(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status}, j.from, j.msgID)
+		note := ""
+		if denied && (status == protocol.StatusBlocked || status == protocol.StatusFailed) {
+			note = "blocked by the sandbox (" + protocol.WorkerPermissionsOrDefault(cc.w.permissions) + ")"
+		}
+		_, err := cc.d.handbackToNote(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status}, j.from, j.msgID, note)
 		if err != nil {
 			cc.d.Logf("worker %s: hand-back: %v", cc.w.id, err)
 		}
@@ -677,6 +696,12 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		}
 		cc.d.setCodexStatus(cc.w, "idle")
 	}()
+}
+
+// sandboxDenial requires explicit sandbox wording, not a generic permission error.
+func sandboxDenial(s string) bool {
+	s = strings.ToLower(s)
+	return strings.Contains(s, "sandbox") && (strings.Contains(s, "denied") || strings.Contains(s, "not permitted") || strings.Contains(s, "violation"))
 }
 
 // blockedReport is the W15 report: what was tried, why it stopped, and where

@@ -281,12 +281,13 @@ type (
 	// as "worker.task", and that machine sends the task, because only the
 	// owner's machine may send as the owner.
 	WorkerQueuedStart struct {
-		Owner     string `json:"owner_session"`
-		SessionID string `json:"session_id"`
-		Harness   string `json:"harness"`
-		Task      string `json:"task"`
-		Worktree  string `json:"worktree,omitempty"`
-		Branch    string `json:"branch,omitempty"`
+		Permissions string `json:"permissions,omitempty"`
+		Owner       string `json:"owner_session"`
+		SessionID   string `json:"session_id"`
+		Harness     string `json:"harness"`
+		Task        string `json:"task"`
+		Worktree    string `json:"worktree,omitempty"`
+		Branch      string `json:"branch,omitempty"`
 		// ProjectRules is the project's .agent-net/worker.md text, for the brief.
 		ProjectRules string `json:"project_rules,omitempty"`
 	}
@@ -374,12 +375,40 @@ func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
 }
 
 func WorkerTaskBodyWithRules(harness, task, worktree, branch, rules string) string {
+	return WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, "")
+}
+
+// WorkerPermissionsText describes the effective project level.
+func WorkerPermissionsText(level, harness string) string {
+	level = WorkerPermissionsOrDefault(level)
+	detail := "writes only in its worktree, network on"
+	switch level {
+	case WorkersNoNetwork:
+		detail = "writes only in its worktree, network off"
+	case WorkersReadOnly:
+		detail = "no writes"
+	}
+	text := "permissions: " + level + " (" + detail + ")"
+	if harness != "codex" {
+		text += " (enforced for Codex only for now)"
+	}
+	return text
+}
+
+func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level string) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
 		b = WorkerPreambleCodex
 	case "claude":
 		b += WorkerClaudeNote
+	}
+	b += "\n- " + WorkerPermissionsText(level, harness)
+	switch WorkerPermissionsOrDefault(level) {
+	case WorkersReadOnly:
+		b += ": you cannot write files; report findings only"
+	case WorkersNoNetwork:
+		b += ": no network: git fetch, package installs and web calls will fail"
 	}
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
@@ -444,14 +473,15 @@ func ValidHandbackStatus(s string) bool {
 // WorkerNotice holds the facts of the completion notice (W11). The daemon
 // measures them; the worker does not write them.
 type WorkerNotice struct {
-	Status  string
-	Session string
-	Harness string
-	Model   string
-	Project string
-	Host    string
-	RunTime time.Duration
-	Tokens  string // "1200 in, 340 out", empty when the harness does not say
+	Permissions string
+	Status      string
+	Session     string
+	Harness     string
+	Model       string
+	Project     string
+	Host        string
+	RunTime     time.Duration
+	Tokens      string // "1200 in, 340 out", empty when the harness does not say
 	// Context is the context at the end of the run, as ContextText writes it
 	// ("210k / 1M"), empty when the harness does not say.
 	Context  string
@@ -482,6 +512,7 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 		b.WriteString(", " + n.Model)
 	}
 	b.WriteString("), project " + n.Project + " on " + n.Host + "\n")
+	b.WriteString(WorkerPermissionsText(n.Permissions, n.Harness) + "\n")
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
 	if n.Tokens != "" {
 		b.WriteString("tokens: " + n.Tokens + "\n")

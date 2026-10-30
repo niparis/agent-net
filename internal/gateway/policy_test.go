@@ -241,6 +241,15 @@ func TestWorkerPermissionsAreAProjectSetting(t *testing.T) {
 	if got, _ := s.WorkerPermissions("n_elsewhere", "cogforge"); got != protocol.WorkersSandboxed {
 		t.Errorf("another machine got %q", got)
 	}
+	ps, err := s.Projects("cogforge")
+	if err != nil || len(ps) == 0 {
+		t.Fatalf("projects: %v %v", ps, err)
+	}
+	for _, p := range ps {
+		if p.NodeID == node && p.Permissions != protocol.WorkersReadOnly {
+			t.Errorf("project level: %+v", p)
+		}
+	}
 	// The level is on the view of the project's sessions, next to the delegation.
 	s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{Delegate: protocol.DelegateOff, Workers: protocol.WorkersNoNetwork})
 	if d := agentOf(t, s, oc2).Delegation; d == nil || d.Workers != protocol.WorkersNoNetwork || d.Delegate != protocol.DelegateOff {

@@ -58,12 +58,12 @@ const server = createServer((conn) => {
               skipped: [{ path: "/c/notes", reason: "not a git working tree" }], overflow: 2 }
         : line.method === "projects"
           ? { projects: [
-              { name: "alpha", hostname: "mac", path: "/c/alpha", source: "both", remote: "https://example.com/alpha.git", harnesses: ["claude"] },
+              { name: "alpha", hostname: "mac", path: "/c/alpha", source: "both", remote: "https://example.com/alpha.git", harnesses: ["claude"], permissions: "read-only" },
               { name: "beta", hostname: "mac", path: "/c/beta", source: "registered", harnesses: [] },
               { name: "old", hostname: "box", path: "/c/old", harnesses: ["pi"] },
             ] }
         : line.method === "worker_start"
-          ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac" }
+          ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac", permissions: "no-network" }
         : line.method === "hint"
           ? hintReply
         : line.method === "policy"
@@ -333,6 +333,7 @@ await test("agent_project_add and agent_project_list reach the daemon and print 
   const real = (await add.execute({ paths: ["~/code/alpha"] }, { sessionID: "ses_p" })).content;
   if (!real.startsWith("Added 1 on mac") || !real.includes("workers may start sessions")) throw new Error("real run: " + real);
   const listed = (await list.execute({ name: "alpha" }, { sessionID: "ses_p" })).content;
+  if (!listed.includes("permissions: read-only")) throw new Error("project permissions missing: " + listed);
   const lastCall = calls[calls.length - 1];
   if (lastCall[0] !== "projects" || lastCall[1].name !== "alpha") throw new Error("list call: " + JSON.stringify(lastCall));
   for (const want of ["alpha on mac: /c/alpha  [both]  https://example.com/alpha.git  harnesses: claude",
@@ -782,7 +783,7 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
-  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop"]) {
+  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   const gone = (await stopTool.execute({ session: "s_worker" }, { sessionID: "ses_w" })).content;

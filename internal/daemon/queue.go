@@ -146,7 +146,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, out.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
-		Harness: e.Harness, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules})
+		Harness: e.Harness, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: e.Permissions})
 	cancel()
 	if err != nil {
 		if w := d.workerBySession(out.SessionID); w != nil {
@@ -156,7 +156,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 		return
 	}
 	if w := d.workerBySession(out.SessionID); w != nil {
-		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited)
+		body := protocol.WorkerStartedText(out.SessionID, e.Harness, e.Model, e.Project, d.hostName(), waited) + protocol.WorkerPermissionsText(e.Permissions, e.Harness) + "\n"
 		if _, err := d.send(ctx, protocol.MsgSend{Sender: out.SessionID, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 			d.Logf("worker %s: started notice: %v", w.id, err)
 		}
@@ -176,7 +176,7 @@ func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
 	if from == "" || from == e.Owner {
 		return
 	}
-	body := protocol.WorkerNotStartedText(e.Project, e.Harness, why)
+	body := protocol.WorkerNotStartedText(e.Project, e.Harness, why) + protocol.WorkerPermissionsText(e.Permissions, e.Harness) + "\n"
 	if _, err := d.send(ctx, protocol.MsgSend{Sender: from, Recipient: e.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
 		d.Logf("queue %s: not-started notice: %v", e.ID, err)
 	}
@@ -190,7 +190,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 		return errors.New("the owner of this queued start is not a session of this machine")
 	}
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithRules(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules)})
+		Body: protocol.WorkerTaskBodyWithPermissions(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, p.Permissions)})
 	return err
 }
 

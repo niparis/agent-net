@@ -241,12 +241,12 @@ func tokenText(in, out, reasoning, cacheRead, cacheWrite float64) string {
 // notice builds the facts of a completion notice.
 func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol.WorkerNotice {
 	d.wmu.Lock()
-	sid, harness, model, project, wt, br, started := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt
+	sid, harness, model, project, wt, br, started, permissions := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt, w.permissions
 	d.wmu.Unlock()
 	if model == "" {
 		model = st.Model
 	}
-	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project,
+	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Permissions: permissions,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
 		Cost: st.Cost, Worktree: wt, Branch: br}
 	n.DiffStat, _ = d.worktreeFacts(w)
@@ -324,6 +324,10 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 
 // handbackTo is handback to another session than the owner (see sendNoticeTo).
 func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
+	return d.handbackToNote(ctx, w, req, to, replyTo, "")
+}
+
+func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string) (*protocol.WorkerHandbackResult, error) {
 	d.wmu.Lock()
 	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
@@ -343,6 +347,9 @@ func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerH
 	note := "the worker ended after its hand-back; a message from you starts it again"
 	if _, canResume := d.launchers[w.harness].(resumer); !canResume {
 		note = "the worker ended after its hand-back; this harness cannot be started again (" + cannotResumeReason(w.harness) + ")"
+	}
+	if sandboxNote != "" {
+		note = sandboxNote + "; " + note
 	}
 	n := d.notice(w, req.Status, note, st)
 	raw, err := d.sendNoticeTo(ctx, w, n, req.Report, to, replyTo)

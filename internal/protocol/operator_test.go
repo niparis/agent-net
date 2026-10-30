@@ -106,7 +106,7 @@ func TestWorkerNoticeContext(t *testing.T) {
 
 func TestWorkerTaskBody(t *testing.T) {
 	b := WorkerTaskBody("  do it \n", "", "")
-	if !strings.HasPrefix(b, WorkerPreamble) || !strings.HasSuffix(b, "\n\nTask:\ndo it") || strings.Contains(b, "worktree") {
+	if !strings.HasPrefix(b, WorkerPreamble) || !strings.HasSuffix(b, "\n\nTask:\ndo it") || strings.Contains(b, "You work in a git worktree") {
 		t.Errorf("plain: %q", b)
 	}
 	for _, want := range []string{"Do the whole task", "Do it yourself", "agent_handback", "absolute paths", "Do not write report files",
@@ -144,7 +144,7 @@ func TestFormatWorkerNotice(t *testing.T) {
 		RunTime: 3*time.Minute + 12*time.Second + 400*time.Millisecond, Tokens: "10 in, 5 out", Cost: "0.0100",
 		Worktree: "/w", Branch: "agent-net/w_1", DiffStat: " x.go | 2 ++\n 1 file changed, 2 insertions(+)"}
 	out := FormatWorkerNotice(n, "  the report  ")
-	want := "[agent-net worker notice]\nstatus: done\nworker: s_1 (opencode, a/b), project shop on mac\nrun time: 3m12s\n" +
+	want := "[agent-net worker notice]\nstatus: done\nworker: s_1 (opencode, a/b), project shop on mac\npermissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)\nrun time: 3m12s\n" +
 		"tokens: 10 in, 5 out\ncost: 0.0100\nworktree: /w (branch agent-net/w_1)\nchanges (git diff --stat):\n x.go | 2 ++\n 1 file changed, 2 insertions(+)\n\n" +
 		ReportMarker + "\nthe report\n\n" + ChecklistMarker + " Before you tell your user it is done: read the diff in /w, run the project's tests there, then report what you checked. Merge only if your user asked."
 	if out != want {
@@ -152,7 +152,7 @@ func TestFormatWorkerNotice(t *testing.T) {
 	}
 	n = WorkerNotice{Status: StatusTimedOut, Note: "no message for 1h0m0s", Session: "s_1", Harness: "opencode", Project: "p", Host: "h", RunTime: time.Hour}
 	out = FormatWorkerNotice(n, "")
-	if strings.Contains(out, ReportMarker) || strings.Contains(out, "tokens") || strings.Contains(out, "worktree") ||
+	if strings.Contains(out, ReportMarker) || strings.Contains(out, "tokens") || strings.Contains(out, "worktree: ") ||
 		!strings.Contains(out, "status: timed out\nnote: no message for 1h0m0s\n") {
 		t.Errorf("a notice with no extras:\n%s", out)
 	}

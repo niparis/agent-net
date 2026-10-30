@@ -475,10 +475,11 @@ type FeedEvent struct {
 
 // ProjectView is one project folder on one machine, built from stored sessions.
 type ProjectView struct {
-	Name     string `json:"name"`
-	NodeID   string `json:"node_id"`
-	Hostname string `json:"hostname"`
-	Path     string `json:"path"` // the main working tree of the repository, or the folder when there is none
+	Permissions string `json:"permissions"`
+	Name        string `json:"name"`
+	NodeID      string `json:"node_id"`
+	Hostname    string `json:"hostname"`
+	Path        string `json:"path"` // the main working tree of the repository, or the folder when there is none
 	// Worktrees lists the linked git worktrees of the project where sessions ran.
 	Worktrees []string `json:"worktrees"`
 	Remote    string   `json:"remote"`
