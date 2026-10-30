@@ -725,7 +725,7 @@ export default function (pi: ExtensionAPI) {
   defineTool(
     "agent_nodes",
     "List machines",
-    "List the machines on the network, with the agent harnesses installed on each (claude, opencode, pi, codex): path, version and, for opencode, its models.",
+    "List the machines on the network, with the agent harnesses installed on each (claude, opencode, pi, codex): path, version and model list.",
     Type.Object({}),
     "nodes",
     formatNodes,
@@ -1017,7 +1017,7 @@ export default function (pi: ExtensionAPI) {
     "agent_start",
     "Start a worker",
     "Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. " +
-      "The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). " +
+      "The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in that harness's model list (agent_nodes; an exact id is used as given). " +
       "The owner sets a worker level per project, and the result shows it. " +
       "The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. " +
       WORKER_NOTE +
@@ -1031,7 +1031,7 @@ export default function (pi: ExtensionAPI) {
       project: Type.Optional(Type.String({ description: "The name of a project from agent_project_list, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)" })),
       task: Type.Optional(Type.String({ description: "What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply. Optional only with continue" })),
       harness: Type.Optional(Type.String({ description: "opencode (the default; with continue, the old worker's harness), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree." })),
-      model: Type.Optional(Type.String({ description: "The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default." })),
+      model: Type.Optional(Type.String({ description: "The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_nodes). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty means the harness default." })),
       machine: Type.Optional(Type.String({ description: "The machine, only when the project is on more than one" })),
       base: Type.Optional(Type.String({ description: "Existing local branch to start the worktree from." })),
       continue: Type.Optional(Type.String({ description: "The session_id or worker ID of an ended worker that you started. The new worker runs on the same machine, in the same project, with the same harness and model unless you give others, in a new worktree on a new branch made from the old worker's branch (a worker that ended with no hand-back has its unfinished changes saved as the last commit there), and gets the old worker's full first task. task is then optional and is added as an extra. project, machine, base and isolation must be empty." })),

@@ -314,8 +314,12 @@ type (
 		Reason    string `json:"reason"`
 		// Model is the model the worker ran, as the gateway resolved it. The
 		// gateway uses it with Reason model_failed to rank the model last for a
-		// while (ModelFailureDays).
+		// while (ModelFailureDays), and with Status done to rank it first
+		// (ModelSuccessDays).
 		Model string `json:"model,omitempty"`
+		// Status is the status of the worker's hand-back (done, blocked,
+		// failed), empty when it ended without one.
+		Status string `json:"status,omitempty"`
 	}
 )
 

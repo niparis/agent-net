@@ -73,6 +73,11 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
+		if p.Status == protocol.StatusDone && p.Model != "" {
+			if err := g.store.RecordModelSuccess(nc.id, p.Harness, p.Model); err != nil {
+				return nil, err
+			}
+		}
 		// The worker has ended: it leaves the worker list, and its record stays
 		// (offline) only for a follow-up that starts it again.
 		if err := g.store.SetSessionOffline(nc.id, p.SessionID); err != nil {
@@ -377,8 +382,20 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
-		res, err := protocol.ResolveModelFailed(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt))
+		succeededAt, err := g.store.SucceededModels(pick.NodeID, p.Harness)
 		if err != nil {
+			return none, err
+		}
+		res, err := protocol.ResolveModelRanked(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), failedSet(succeededAt))
+		if err != nil {
+			var nm *protocol.NoModelMatchError
+			if errors.As(err, &nm) {
+				msg := fmt.Sprintf("no %s model matches %q on %s", p.Harness, asked, node.Hostname)
+				if len(nm.Closest) > 0 {
+					msg += "; closest: " + strings.Join(nm.Closest, ", ")
+				}
+				return none, reject("%s", msg)
+			}
 			return none, reject("model on %s: %v", node.Hostname, err)
 		}
 		resolved := res.Model

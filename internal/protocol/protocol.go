@@ -423,8 +423,9 @@ type HarnessInfo struct {
 	Name    string `json:"name"` // claude | opencode | pi | codex
 	Path    string `json:"path"`
 	Version string `json:"version"`
-	// Models lists the models the harness can use, as "provider/model". It is
-	// only filled for harnesses that have a command to list them (opencode).
+	// Models lists the models the harness can use: "provider/model" where the
+	// harness has a provider, plain ids for Codex and Claude's aliases. It is
+	// empty when the harness did not report a list.
 	Models []string `json:"models,omitempty"`
 	// ModelProviders is the owner's list of preferred model providers on this
 	// machine (model_providers in node.json), first is best. It breaks ties

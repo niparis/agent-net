@@ -453,7 +453,11 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		}
 		return *q, nil
 	}
-	return d.runWorkerStartChecked(ctx, l, set)
+	out, err = d.runWorkerStartChecked(ctx, l, set)
+	if err != nil {
+		d.clearStartReservation()
+	}
+	return out, err
 }
 
 // runWorkerStart starts a worker that admission has let through. The checks
@@ -697,6 +701,9 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		st.stop(d, w)
 	}
 	d.killGroup(w)
+	if time.Since(started) < workerGapHoldMinAge {
+		d.clearGapAfterShortWorker(w)
+	}
 	if en, ok := d.launchers[w.harness].(ender); ok {
 		en.end(d, w)
 	}
@@ -766,7 +773,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 		}
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
-			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model})
+			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model, Status: r.DoneStatus})
 		cancel()
 		var re RemoteError
 		switch {

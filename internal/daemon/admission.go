@@ -35,6 +35,11 @@ type MachineLoad struct {
 // before it trusts its averages.
 const minLoadSamples = 2
 
+// workerGapHoldMinAge is how long a worker must have run for its start to hold
+// the start gap. A start that failed, or a worker that ended sooner, did not
+// add load the averages could see, so the next start need not wait.
+const workerGapHoldMinAge = 30 * time.Second
+
 // loadFromSampler reads the averages of a sampler. The sampler reports memory
 // in use: on Linux that is MemTotal minus MemAvailable. On macOS it is app +
 // wired + compressed memory (the way Activity Monitor counts it), so the file
@@ -177,6 +182,37 @@ func (d *Daemon) lastWorkerStart() time.Time {
 		}
 	}
 	return last
+}
+
+// clearStartReservation drops the start time an admission just set, because
+// the start failed before a worker ran. A worker that started since (under a
+// disabled gap) keeps its own start time.
+func (d *Daemon) clearStartReservation() {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	d.wmu.Lock()
+	later := false
+	for _, w := range d.workers {
+		if !w.startedAt.Before(d.lastStart) {
+			later = true
+			break
+		}
+	}
+	d.wmu.Unlock()
+	if !later {
+		d.lastStart = time.Time{}
+	}
+}
+
+// clearGapAfterShortWorker drops the start time of a worker that ended too soon
+// to hold the gap. A start that came after it (which the gap keeps at least a
+// minute away) is left alone.
+func (d *Daemon) clearGapAfterShortWorker(w *worker) {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	if !d.lastStart.IsZero() && w.startedAt.Sub(d.lastStart) < 5*time.Second && w.startedAt.Sub(d.lastStart) > -5*time.Second {
+		d.lastStart = time.Time{}
+	}
 }
 
 // admission decides whether a worker of this harness and model may start

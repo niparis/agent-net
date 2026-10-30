@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -114,6 +115,80 @@ func TestResolveModelDemotesRecentFailures(t *testing.T) {
 }
 
 // An ambiguity error lists at most five candidates.
+// A model that recently finished a worker successfully ranks before the other
+// matches, and before usage. A recent failure still ranks last.
+func TestResolveModelRanksRecentSuccessFirst(t *testing.T) {
+	models := []string{"openai/gpt-6-luna", "openai/gpt-6.1-luna", "openai/gpt-6.1"}
+	usage := map[string]int{"openai/gpt-6-luna": 9}
+	r, err := ResolveModelRanked("luna 6", models, usage, nil, nil, nil)
+	if err != nil || r.Model != "openai/gpt-6-luna" {
+		t.Fatalf("without a success: %+v, %v", r, err)
+	}
+	ok := map[string]bool{"openai/gpt-6.1-luna": true}
+	r, err = ResolveModelRanked("luna 6", models, usage, nil, nil, ok)
+	if err != nil || r.Model != "openai/gpt-6.1-luna" {
+		t.Fatalf("recent success should win: %+v, %v", r, err)
+	}
+	// A failure wins over a success: the model failed recently is still last.
+	failed := map[string]bool{"openai/gpt-6.1-luna": true}
+	r, err = ResolveModelRanked("luna 6", models, usage, nil, failed, ok)
+	if err != nil || r.Model != "openai/gpt-6-luna" {
+		t.Fatalf("failure should still rank last: %+v, %v", r, err)
+	}
+	// An exact id still wins.
+	r, err = ResolveModelRanked("openai/gpt-6.1-luna", models, usage, nil, failed, ok)
+	if err != nil || r.Model != "openai/gpt-6.1-luna" || len(r.Demoted) != 0 {
+		t.Fatalf("exact: %+v, %v", r, err)
+	}
+}
+
+// A :thinking suffix the caller gives is kept, and the base id is resolved.
+func TestResolveModelKeepsThinkingSuffix(t *testing.T) {
+	models := []string{"openai/gpt-5", "openai/gpt-5-mini"}
+	for _, c := range []struct{ query, want string }{
+		{"gpt 5:high", "openai/gpt-5:high"},
+		{"openai/gpt-5:low", "openai/gpt-5:low"},
+		{"gpt 5 mini:medium", "openai/gpt-5-mini:medium"},
+	} {
+		got, err := ResolveModel(c.query, models, nil, nil)
+		if err != nil || got != c.want {
+			t.Errorf("%q: got %q, %v; want %q", c.query, got, err, c.want)
+		}
+	}
+	// A numeric suffix is a dated snapshot, not a thinking level.
+	if got, _ := ResolveModel("gpt 5:0813", []string{"a/gpt-5:0813"}, nil, nil); got != "a/gpt-5:0813" {
+		t.Errorf("dated snapshot: %q", got)
+	}
+}
+
+// A name that matches nothing names the closest models, at most five.
+func TestResolveModelNoMatchListsClosest(t *testing.T) {
+	models := []string{"openai/gpt-6-luna", "openai/gpt-6.1-luna", "openai/gpt-6.1", "openai/gpt-7-sol", "openai/gpt-6.1-mini"}
+	_, err := ResolveModel("luna 6.2", models, nil, nil)
+	if err == nil {
+		t.Fatal("want an error")
+	}
+	var nm *NoModelMatchError
+	if !errors.As(err, &nm) {
+		t.Fatalf("error type: %T %v", err, err)
+	}
+	if len(nm.Closest) == 0 || len(nm.Closest) > 5 || nm.Closest[0] != "openai/gpt-6-luna" {
+		t.Fatalf("closest: %v", nm.Closest)
+	}
+	if !strings.Contains(err.Error(), "no model in the list matches") || !strings.Contains(err.Error(), "closest:") {
+		t.Errorf("error: %v", err)
+	}
+	// Unrelated names give no closest list.
+	_, err = ResolveModel("zzz 99", models, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "no model in the list matches") {
+		t.Fatalf("error: %v", err)
+	}
+	var nm2 *NoModelMatchError
+	if !errors.As(err, &nm2) || len(nm2.Closest) != 0 {
+		t.Errorf("closest for zzz: %+v", nm2)
+	}
+}
+
 func TestResolveModelListsFiveAtMost(t *testing.T) {
 	var models []string
 	for _, p := range []string{"a", "b", "c", "d", "e", "f", "g"} {

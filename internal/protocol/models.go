@@ -15,11 +15,19 @@ const ModelUsageDays = 30
 // or auth error) is ranked last by ResolveModelFailed.
 const ModelFailureHours = 24
 
+// ModelSuccessDays is how far back a worker that finished with a hand-back
+// status done makes its model rank first (see ResolveModelRanked).
+const ModelSuccessDays = 7
+
 // maxModelCandidates is how many candidates an ambiguity error lists.
 const maxModelCandidates = 5
 
 // datedSuffix matches a snapshot suffix such as ":0813" or "-20250929".
 var datedSuffix = regexp.MustCompile(`(:\d{3,}|-\d{8})$`)
+
+// thinkingSuffix matches the Pi thinking level after a model id, such as
+// ":high". A numeric suffix is a dated snapshot instead.
+var thinkingSuffix = regexp.MustCompile(`:[a-zA-Z]+$`)
 
 // modelTokens splits a loose model name into lower case words. A dot between
 // digits stays in the word ("4.1"), and a "v" before a digit is dropped, so
@@ -83,26 +91,48 @@ func providerOf(id string) string {
 	return ""
 }
 
+// NoModelMatchError says that a loose name matched no model. Closest holds up
+// to maxModelCandidates models that look like it, best first; it is empty when
+// nothing is close.
+type NoModelMatchError struct {
+	Query   string
+	Count   int
+	Closest []string
+}
+
+func (e *NoModelMatchError) Error() string {
+	s := fmt.Sprintf("no model in the list matches %q", e.Query)
+	if len(e.Closest) > 0 {
+		s += "; closest: " + strings.Join(e.Closest, ", ")
+	}
+	return s + fmt.Sprintf(" (%d models; see `agent-net nodes --wide`)", e.Count)
+}
+
 // ResolveModel turns a loose model name into one id of the machine's list
 // (decision 0002, W17). The rules, in order:
 //
 //  1. An exact match wins.
 //  2. Otherwise the query is split into words (case does not matter, "4.1"
 //     matches "v4.1"), and the candidates are the ids that contain all words.
-//  3. The candidates are ranked by: no recent worker failure (ResolveModelFailed), how many sessions on the machine used the
-//     model in the last ModelUsageDays days (usage), how many used any model
-//     of the same provider in that time (provider usage), the position of its
-//     provider in the owner's providers list, no "-free" variant, no dated
-//     snapshot (":0813"), and the shortest model name (without provider).
+//  3. The candidates are ranked by: a recent successful worker
+//     (ResolveModelRanked), no recent worker failure (ResolveModelFailed), how
+//     many sessions on the machine used the model in the last ModelUsageDays
+//     days (usage), how many used any model of the same provider in that time
+//     (provider usage), the position of its provider in the owner's providers
+//     list, no "-free" variant, no dated snapshot (":0813"), and the shortest
+//     model name (without provider).
 //  4. If one candidate is strictly best, it is the answer. If the best ones
 //     are equal on every rule, or none matches, the error says so and lists
 //     up to five.
+//
+// A ":thinking" suffix (Pi) is kept: the base id is resolved and the suffix is
+// added back.
 func ResolveModel(query string, models []string, usage map[string]int, providers []string) (string, error) {
-	r, err := ResolveModelFailed(query, models, usage, providers, nil)
+	r, err := ResolveModelRanked(query, models, usage, providers, nil, nil)
 	return r.Model, err
 }
 
-// ModelResolution is the answer of ResolveModelFailed.
+// ModelResolution is the answer of ResolveModelRanked.
 type ModelResolution struct {
 	Model string
 	// Demoted lists the matching models that were ranked last because they
@@ -111,15 +141,34 @@ type ModelResolution struct {
 	Demoted []string
 }
 
-// ResolveModelFailed is ResolveModel with the models that failed a worker
-// recently (failed, by full id). They rank after every model that did not
-// fail, whatever their usage. The other models of the same provider rank
-// between the two. An exact match still wins: the caller named it.
+// ResolveModelFailed is ResolveModelRanked without the recent successes.
 func ResolveModelFailed(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
+	return ResolveModelRanked(query, models, usage, providers, failed, nil)
+}
+
+// ResolveModelRanked is ResolveModel with the models that failed a worker
+// recently (failed, by full id) and those that finished one successfully
+// (succeeded, by full id).
+//
+// A model that failed a worker ranks after every other model, whatever its
+// usage; the other models of the same provider rank between the two. A model
+// that recently finished a worker with a hand-back status done ranks before
+// models without such a success. An exact match still wins: the caller named
+// it.
+func ResolveModelRanked(query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool) (ModelResolution, error) {
 	query = strings.TrimSpace(query)
 	for _, m := range models {
 		if m == query {
 			return ModelResolution{Model: m}, nil
+		}
+	}
+	// Pi names the base id with a thinking level after it. Resolve the base
+	// and keep the level.
+	if loc := thinkingSuffix.FindStringIndex(query); loc != nil && loc[0] > 0 {
+		base, suffix := query[:loc[0]], query[loc[0]:]
+		if r, err := ResolveModelRanked(base, models, usage, providers, failed, succeeded); err == nil {
+			r.Model += suffix
+			return r, nil
 		}
 	}
 	toks := modelTokens(query)
@@ -138,7 +187,7 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 		}
 	}
 	if len(cands) == 0 {
-		return ModelResolution{}, fmt.Errorf("no model in the list matches %q (%d models; see `agent-net nodes --wide`)", query, len(models))
+		return ModelResolution{}, &NoModelMatchError{Query: query, Count: len(models), Closest: closestModels(toks, models)}
 	}
 	// Sessions per provider: a provider the owner uses for other models wins
 	// over one the owner never used.
@@ -156,11 +205,14 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 		}
 	}
 	rank := func(m string) [7]int {
-		r := [7]int{0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
-		if failed[m] {
+		r := [7]int{1, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
+		switch {
+		case failed[m]:
+			r[0] = 3
+		case succeeded[m]:
+			r[0] = 0
+		case failedProv[providerOf(m)]:
 			r[0] = 2
-		} else if failedProv[providerOf(m)] {
-			r[0] = 1
 		}
 		for i, p := range providers {
 			if providerOf(m) == p {
@@ -213,4 +265,76 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 		list = list[:maxModelCandidates]
 	}
 	return ModelResolution{}, fmt.Errorf("%q matches %d models equally well: %s. Name one of them in full", query, len(tied), strings.Join(list, ", "))
+}
+
+// closestModels ranks the models that share a word with the query, by how many
+// query words they contain, then by how many extra words they have and how
+// short the model name is. It returns at most maxModelCandidates.
+func closestModels(qtoks []string, models []string) []string {
+	type scored struct {
+		id    string
+		score int
+		extra int
+		size  int
+	}
+	var all []scored
+	for _, m := range models {
+		part := modelPart(m)
+		low := strings.ToLower(part)
+		mtoks := modelTokens(part)
+		matched := 0
+		for _, q := range qtoks {
+			hit := false
+			for _, mt := range mtoks {
+				if mt == q {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				hit = hasToken(low, q)
+			}
+			if hit {
+				matched++
+			}
+		}
+		if matched == 0 {
+			continue
+		}
+		extra := 0
+		for _, mt := range mtoks {
+			used := false
+			for _, q := range qtoks {
+				if mt == q || hasToken(mt, q) {
+					used = true
+					break
+				}
+			}
+			if !used {
+				extra++
+			}
+		}
+		all = append(all, scored{id: m, score: matched, extra: extra, size: len(part)})
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		a, b := all[i], all[j]
+		if a.score != b.score {
+			return a.score > b.score
+		}
+		if a.extra != b.extra {
+			return a.extra < b.extra
+		}
+		if a.size != b.size {
+			return a.size < b.size
+		}
+		return a.id < b.id
+	})
+	var out []string
+	for _, s := range all {
+		if len(out) == maxModelCandidates {
+			break
+		}
+		out = append(out, s.id)
+	}
+	return out
 }

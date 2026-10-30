@@ -169,7 +169,8 @@ func (s *Store) applyDelegation(as []protocol.AgentView) error {
 				usage[ukey] = u
 			}
 			fa, _ := s.FailedModels(a.NodeID, a.Harness)
-			r, err := protocol.ResolveModelFailed(asked, hi.Models, u, hi.ModelProviders, failedSet(fa))
+			sa, _ := s.SucceededModels(a.NodeID, a.Harness)
+			r, err := protocol.ResolveModelRanked(asked, hi.Models, u, hi.ModelProviders, failedSet(fa), failedSet(sa))
 			if err != nil {
 				return "", err.Error(), true
 			}

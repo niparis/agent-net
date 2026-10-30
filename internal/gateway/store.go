@@ -142,6 +142,10 @@ ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
 `, `
 CREATE TABLE owner_settings (
 	key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+`, `
+CREATE TABLE model_successes (
+	node_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL,
+	PRIMARY KEY (node_id, harness, model));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
