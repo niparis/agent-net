@@ -29,3 +29,7 @@ A session reports its own hostname, which can differ from the name the gateway h
 ## D5 - Colour means one thing
 
 Green is idle or healthy, amber is busy or a loaded machine, blue is a shell, red is trouble or a heavy tree (over 20 processes, 200% CPU of one core, or 4G), dim is offline, unknown or secondary. Every figure also reads without colour.
+
+## D6 - Workers hang under their caller
+
+A worker row sits right under the session that started it, with `├─` or `└─` before the name, sorted by start time. The tree is built in `groups()`, so the display order, the selection and the scroll all use it. A worker on another machine stays under its caller and shows `@host` after its name. If the caller is not on screen (the owner, or a session hidden by the filter or the offline switch), the worker keeps its own machine group and `↳` marks it as a worker. The "[w]" prefix is gone. The detail pane still says who started it.

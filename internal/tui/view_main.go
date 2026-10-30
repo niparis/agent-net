@@ -422,7 +422,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	nameWant := 0
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
-			nameWant = max(nameWant, utf8.RuneCountInString(a.Profile.Name))
+			nameWant = max(nameWant, utf8.RuneCountInString(nameText(a, g.marks[a.SessionID], 1<<20)))
 		}
 	}
 	cols := columns(w-2, nameWant) // two columns for the selection marker
@@ -472,7 +472,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		case r.shared != nil:
 			out = append(out, m.sharedLine(*r.shared, r.g, cols, w))
 		default:
-			out = append(out, m.sessionLine(r.agent, cols, w))
+			out = append(out, m.sessionLine(r.agent, r.mark, cols, w))
 		}
 	}
 	// A table with fewer rows than room keeps its height.
@@ -544,7 +544,7 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 	return cells
 }
 
-func (m Model) sessionLine(a protocol.AgentView, cols []column, w int) string {
+func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w int) string {
 	selected := a.SessionID == m.selected
 	marker := "  "
 	if selected {
@@ -562,10 +562,7 @@ func (m Model) sessionLine(a protocol.AgentView, cols []column, w int) string {
 		var v string
 		switch c.name {
 		case "NAME":
-			v = a.Profile.Name
-			if a.Worker != nil {
-				v = "[w] " + v
-			}
+			v = nameText(a, mk, c.width)
 		case "AGENT":
 			v = a.Harness
 		case "PROJECT":
@@ -618,6 +615,23 @@ func (m Model) sessionLine(a protocol.AgentView, cols []column, w int) string {
 		return sDim.Render(clip(stripStyles(line), w))
 	}
 	return clip(line, w)
+}
+
+// nameText is the NAME cell of a session in w columns. A worker has its tree
+// glyphs before the name, and "@host" after it when it runs on another machine
+// than its caller. The name gives way first: it is cut with an ellipsis so the
+// glyphs and the host stay.
+func nameText(a protocol.AgentView, mk treeMark, w int) string {
+	name := sanitize(a.Profile.Name)
+	suffix := ""
+	if mk.host != "" {
+		suffix = " @" + sanitize(mk.host)
+	}
+	room := w - utf8.RuneCountInString(mk.prefix) - utf8.RuneCountInString(suffix)
+	if room >= 4 && utf8.RuneCountInString(name) > room {
+		name = ansi.Truncate(name, room, "…")
+	}
+	return mk.prefix + name + suffix
 }
 
 // sharedLine is the process tree that several sessions share, listed once

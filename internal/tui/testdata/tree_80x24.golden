@@ -1,0 +1,24 @@
+agent-net tui  10 sessions, 9 online, 4 workers               updated 14:05:00
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
+ ○ old-box    v0.3.2 offline
+  NAME                AGENT    PROJECT   MODEL      MODE STATUS   CPU   RAM PROC
+ Mac (here) 7 sessions ─────────────────────────────────────────────────────────
+  strategies          claude   strategi… sonnet-5-5 bg   idle       ?     ?    ?
+  ├─ backtest-a       opencode -         haiku-4-5  bg   idle       ?     ?    ?
+> ├─ backtest-b       opencode -         haiku-4-5  bg   idle       ?     ?    ?
+  └─ backt… @build-vm opencode -         haiku-4-5  bg   idle       ?     ?    ?
+  ↳ tenebrae          opencode tenebrae  haiku-4-5  bg   busy       ?     ?    ?
+  tenebrae-53         claude   tenebrae  opus-5-5   fg   busy       ?     ?    ?
+Selected session ───────────────────────────────────────────────────────────────
+  backtest-b  opencode  idle    CPU and memory need a newer daemon and gateway
+  worker   started by strategies (Mac), … │
+  id       s_00000000000000a2             │
+  folder   -                              │
+  branch   -                              │
+  model    anthropic/claude-haiku-4-5, b… │
+  function no AGENTS.md                   │
+Messages (live) ────────────────────────────────────────────────────────────────
+  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)       notification failed
+  14:04  tenebrae-53 (Mac) -> s_00000000                 request      dispatched
+up/down select  enter conversation  m msg  s start  x stop  ? help  q quit

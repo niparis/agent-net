@@ -5,7 +5,7 @@ agent-net tui  7 sessions, 6 online, 1 worker                 updated 14:05:00
   NAME               AGENT    PROJECT    MODEL      MODE STATUS   CPU   RAM PROC
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
   strategies         claude   strategies sonnet-5-5 bg   idle       ?     ?    ?
-  [w] tenebrae       opencode tenebrae   haiku-4-5  bg   busy       ?     ?    ?
+  ↳ tenebrae         opencode tenebrae   haiku-4-5  bg   busy       ?     ?    ?
   tenebrae-53        claude   tenebrae   opus-5-5   fg   busy       ?     ?    ?
   web                opencode shop       sonnet-5   ?    idle       ?     ?    ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────

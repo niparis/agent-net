@@ -5,7 +5,7 @@ agent-net tui  7 sessions, 6 online, 1 worker                                   
   NAME               AGENT    PROJECT          BRANCH       MODEL              MODE STATUS   CPU   RAM PROC FUNCTION
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
 > strategies         claude   strategies       feature/ris… sonnet-5-5         bg   idle       ?     ?    ? trading str…
-  [w] tenebrae       opencode tenebrae         main         haiku-4-5          bg   busy       ?     ?    ? no AGENTS.md
+  ↳ tenebrae         opencode tenebrae         main         haiku-4-5          bg   busy       ?     ?    ? no AGENTS.md
   tenebrae-53        claude   tenebrae         main         opus-5-5           fg   busy       ?     ?    ? research
   web                opencode shop             main         sonnet-5           ?    idle       ?     ?    ? no AGENTS.md
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────

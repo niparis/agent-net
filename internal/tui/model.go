@@ -557,6 +557,15 @@ type group struct {
 	nodeID string
 	host   string
 	agents []protocol.AgentView
+	// marks says how a worker row is drawn, by session ID. A session with no
+	// mark is a plain row.
+	marks map[string]treeMark
+}
+
+// treeMark is how a worker row hangs under the session that started it.
+type treeMark struct {
+	prefix string // the tree glyphs before the name: "├─ ", "│  └─ ", or "↳ " for a lone worker
+	host   string // the worker's machine, when it differs from the group's
 }
 
 // matches tells whether an agent passes the filter: every word must appear in
@@ -583,6 +592,7 @@ func matches(a protocol.AgentView, filter string) bool {
 func (m Model) groups() []group {
 	by := map[string]*group{}
 	var order []*group
+	workers := false // any worker on screen
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
 			continue // the owner is a sender, not a row
@@ -601,6 +611,9 @@ func (m Model) groups() []group {
 			order = append(order, g)
 		}
 		g.agents = append(g.agents, a)
+		if a.Worker != nil {
+			workers = true
+		}
 	}
 	sort.Slice(order, func(i, j int) bool {
 		if hi, hj := order[i].nodeID == m.snap.NodeID, order[j].nodeID == m.snap.NodeID; hi != hj {
@@ -626,6 +639,92 @@ func (m Model) groups() []group {
 			return a.SessionID < b.SessionID
 		})
 		out = append(out, *g)
+	}
+	return m.nestWorkers(out, workers)
+}
+
+// nestWorkers moves each worker under the session that started it, in that
+// session's machine group, sorted by start time. A worker whose caller is not
+// on screen (the owner, or a session hidden by the filter or the offline
+// switch) stays in its own group and gets a lone marker. A worker is a root
+// too when its chain of callers loops.
+func (m Model) nestWorkers(groups []group, workers bool) []group {
+	if !workers {
+		return groups
+	}
+	shown := map[string]protocol.AgentView{}
+	for _, g := range groups {
+		for _, a := range g.agents {
+			shown[a.SessionID] = a
+		}
+	}
+	parentOf := func(a protocol.AgentView) string {
+		if a.Worker == nil {
+			return ""
+		}
+		if _, ok := shown[a.Worker.Owner]; !ok || a.Worker.Owner == a.SessionID {
+			return ""
+		}
+		// Walk up: a loop of callers has no root, so none of it is nested.
+		id := a.Worker.Owner
+		for range shown {
+			p, ok := shown[id]
+			if !ok || p.Worker == nil {
+				return a.Worker.Owner
+			}
+			if p.Worker.Owner == a.SessionID {
+				return ""
+			}
+			id = p.Worker.Owner
+		}
+		return ""
+	}
+	children := map[string][]protocol.AgentView{}
+	for _, a := range shown {
+		if p := parentOf(a); p != "" {
+			children[p] = append(children[p], a)
+		}
+	}
+	for _, c := range children {
+		sort.Slice(c, func(i, j int) bool {
+			if c[i].Worker.StartedAt != c[j].Worker.StartedAt {
+				return c[i].Worker.StartedAt < c[j].Worker.StartedAt
+			}
+			return c[i].SessionID < c[j].SessionID
+		})
+	}
+	out := make([]group, 0, len(groups))
+	for _, g := range groups {
+		ng := group{nodeID: g.nodeID, host: g.host, marks: map[string]treeMark{}}
+		var walk func(a protocol.AgentView, lead string)
+		walk = func(a protocol.AgentView, lead string) {
+			ng.agents = append(ng.agents, a)
+			cs := children[a.SessionID]
+			for i, c := range cs {
+				glyph, next := "├─ ", lead+"│  "
+				if i == len(cs)-1 {
+					glyph, next = "└─ ", lead+"   "
+				}
+				mk := treeMark{prefix: lead + glyph}
+				if c.NodeID != g.nodeID {
+					mk.host = m.nodeName(c.NodeID, c.Hostname)
+				}
+				ng.marks[c.SessionID] = mk
+				walk(c, next)
+			}
+		}
+		for _, a := range g.agents {
+			if parentOf(a) != "" {
+				continue
+			}
+			if a.Worker != nil {
+				ng.marks[a.SessionID] = treeMark{prefix: "↳ "}
+			}
+			walk(a, "")
+		}
+		if len(ng.agents) > 0 { // a machine whose sessions all hang under others has no group
+			out = append(out, ng)
+		}
 	}
 	return out
 }
@@ -703,6 +802,7 @@ type tableRow struct {
 	header bool
 	g      group
 	agent  protocol.AgentView
+	mark   treeMark // how a worker hangs under its caller
 	// shared is a process tree several sessions use (the OpenCode service). It
 	// is listed once, after the sessions of its machine, and cannot be selected.
 	shared *protocol.TreeUsage
@@ -714,7 +814,7 @@ func (m Model) tableRows() []tableRow {
 		rows = append(rows, tableRow{header: true, g: g})
 		ids := map[string]bool{}
 		for _, a := range g.agents {
-			rows = append(rows, tableRow{agent: a})
+			rows = append(rows, tableRow{agent: a, mark: g.marks[a.SessionID]})
 			ids[a.SessionID] = true
 		}
 		for _, t := range m.sharedTreesOf(g.nodeID, ids) {

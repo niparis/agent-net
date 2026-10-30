@@ -119,7 +119,7 @@ func TestWorkerShowsItsOwner(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m = selectID(m, workerID)
 	v := m.View()
-	for _, want := range []string{"[w] tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae",
+	for _, want := range []string{"↳ tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae",
 		"worker started: tenebrae (Mac) opencode in tenebrae for you (on Mac)", "worker refused in nope: no project named nope is known"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
