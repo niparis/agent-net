@@ -218,6 +218,9 @@ type AgentView struct {
 	// PeerTrust is true when the owner allowed this session to act on
 	// requests from other agents without asking (decision 0012).
 	PeerTrust bool `json:"peer_trust,omitempty"`
+	// Delegation is the effective delegation policy of the session (decision
+	// 0014), nil when it has none. Only the owner sets it.
+	Delegation *DelegationView `json:"delegation,omitempty"`
 }
 
 // Header is shared by every gateway <-> daemon frame.
@@ -389,6 +392,9 @@ type HarnessInfo struct {
 	// user's login shell. When it is false, the daemon could not tell which copy
 	// the user runs. Absent in v0.3.5 and older.
 	Primary bool `json:"primary,omitempty"`
+	// PolicyReady is true for claude when the hook that applies the delegation
+	// policy is installed on the machine (decision 0014).
+	PolicyReady bool `json:"policy_ready,omitempty"`
 	// Others are further copies of the same harness (a different real file),
 	// each with its own path and version. Absent in v0.3.5 and older.
 	Others []HarnessInstall `json:"others,omitempty"`

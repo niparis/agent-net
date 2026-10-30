@@ -558,6 +558,70 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "session.policy":
+		p, err := decode[protocol.SessionPolicy](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad session.policy")
+		}
+		clean, err := p.Policy.Clean()
+		if err != nil {
+			return nil, reject("%v", err)
+		}
+		if p.Scope == "" {
+			p.Scope = protocol.ScopeSession
+		}
+		if p.Scope != protocol.ScopeSession && p.Scope != protocol.ScopeProject {
+			return nil, reject("scope must be %s or %s", protocol.ScopeSession, protocol.ScopeProject)
+		}
+		view, ok, err := st.PolicyDryRun(p.SessionID, p.Scope, clean)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, reject("unknown or unsuitable session %q", p.SessionID)
+		}
+		// A model name that does not resolve is refused, so the owner learns
+		// at once and not on the next turn of the session.
+		if view != nil && !p.DryRun {
+			if view.CoderError != "" {
+				return nil, reject("coder model: %s", view.CoderError)
+			}
+			if view.MainError != "" {
+				return nil, reject("main model: %s", view.MainError)
+			}
+		}
+		res := protocol.SessionPolicyResult{SessionID: p.SessionID, Effective: view}
+		if !p.DryRun {
+			ok, err := st.SetDelegation(p.SessionID, p.Scope, clean)
+			if err != nil {
+				return nil, reject("%v", err)
+			}
+			if !ok {
+				return nil, reject("unknown or unsuitable session %q", p.SessionID)
+			}
+			res.Saved = true
+			detail := "scope=" + p.Scope + " delegate=" + clean.Delegate + " coder=" + clean.CoderModel + " main=" + clean.MainModel
+			st.Event("session.policy", nc.id, p.SessionID, "", detail)
+			g.logLine("session.policy", "node", nc.id, "session", p.SessionID, "scope", p.Scope,
+				"delegate", clean.Delegate, "coder", clean.CoderModel, "main", clean.MainModel)
+		}
+		return res, nil
+
+	case "policy.get":
+		p, err := decode[protocol.PolicyGet](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad policy.get")
+		}
+		a, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		// A daemon asks only for sessions of its own machine.
+		if !ok || a.NodeID != nc.id {
+			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation}, nil
+
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)
 		if err != nil {

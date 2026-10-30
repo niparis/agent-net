@@ -34,6 +34,9 @@ const (
 	// It changes what a session may do on a peer's request, so it is owner
 	// only and no agent tool calls it.
 	OpSessionTrust = "session_trust" // takes SessionTrustRequest, answers SessionTrustResult
+	// OpSessionPolicy sets the delegation policy of a session or its project
+	// (decision 0014). Owner only, no agent tool.
+	OpSessionPolicy = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
 
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
@@ -49,7 +52,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSend, OpWorkerStart, OpWorkerStop}
+	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.

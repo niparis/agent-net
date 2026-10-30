@@ -116,6 +116,11 @@ ALTER TABLE sessions ADD COLUMN repo_description TEXT NOT NULL DEFAULT '';
 `, `
 ALTER TABLE sessions ADD COLUMN peer_trust INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE profiles ADD COLUMN expertise TEXT NOT NULL DEFAULT '';
+`, `
+ALTER TABLE sessions ADD COLUMN delegation TEXT NOT NULL DEFAULT '';
+CREATE TABLE project_policies (
+	node_id TEXT NOT NULL, project TEXT NOT NULL, policy TEXT NOT NULL, updated_at INTEGER NOT NULL,
+	PRIMARY KEY (node_id, project));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -525,7 +530,7 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,'')
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -534,12 +539,19 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var lastSeen int64
 	var caps, worker string
 	var trust int
+	var deleg string
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise)
+		&trust, &a.Profile.Expertise, &deleg)
 	if err != nil {
 		return a, err
+	}
+	if deleg != "" {
+		var p protocol.DelegationPolicy
+		if json.Unmarshal([]byte(deleg), &p) == nil && !p.Empty() {
+			a.Delegation = &protocol.DelegationView{DelegationPolicy: p, Scope: protocol.ScopeSession}
+		}
 	}
 	a.PeerTrust = trust != 0
 	if worker != "" {
@@ -561,7 +573,14 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return a, false, nil
 	}
-	return a, err == nil, err
+	if err != nil {
+		return a, false, err
+	}
+	one := []protocol.AgentView{a}
+	if err := s.applyDelegation(one); err != nil {
+		return a, false, err
+	}
+	return one[0], true, nil
 }
 
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
@@ -609,7 +628,14 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		}
 		out = append(out, a)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close() // one connection: free it before the next query
+	if err := s.applyDelegation(out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ---- messages ----
