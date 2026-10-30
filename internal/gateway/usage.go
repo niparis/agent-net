@@ -106,6 +106,15 @@ func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 		if len(cp.Reason) > 300 {
 			cp.Reason = cp.Reason[:300]
 		}
+		if len(cp.Queue) > 50 {
+			cp.Queue = cp.Queue[:50]
+		}
+		cp.Queue = append([]protocol.QueuedWorker(nil), cp.Queue...)
+		for i := range cp.Queue {
+			q := &cp.Queue[i]
+			q.QueueID, q.Harness, q.Model, q.Owner, q.Project, q.Hostname, q.Reason =
+				clip(q.QueueID, 40), clip(q.Harness, 20), clip(q.Model, 100), clip(q.Owner, 60), clip(q.Project, 100), clip(q.Hostname, 100), clip(q.Reason, 300)
+		}
 		r.Workers = &cp
 	}
 	return r
@@ -232,4 +241,12 @@ func (g *Gateway) relay(ctx context.Context, typ string, raw []byte) (json.RawMe
 		return nil, reject("%s", err.Error())
 	}
 	return data, nil
+}
+
+// clip cuts s to at most n bytes.
+func clip(s string, n int) string {
+	if len(s) > n {
+		return s[:n]
+	}
+	return s
 }

@@ -280,6 +280,8 @@ type WorkerView struct {
 // WorkersResult answers OpWorkers.
 type WorkersResult struct {
 	Workers []WorkerView `json:"workers"`
+	// Queued lists the starts that wait for room, on every machine.
+	Queued []QueuedWorker `json:"queued,omitempty"`
 }
 
 // CompactTokens writes a token count short enough for a band: 840, 2k, 84k,
