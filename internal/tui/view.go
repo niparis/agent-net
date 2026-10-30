@@ -534,6 +534,8 @@ func (m Model) infoText(it *feedItem) string {
 		return sanitize(host) + " disconnected"
 	case "node.enrolled":
 		return "machine " + sanitize(it.Detail) + " joined"
+	case "session.connected", "session.disconnected":
+		return m.conversationName(it.Session) + " " + strings.TrimPrefix(it.Kind, "session.")
 	case "session.new":
 		d := parseDetail(it.Detail)
 		return fmt.Sprintf("new session %s (%s) on %s", sanitize(dashIfEmpty(d["name"])), sanitize(dashIfEmpty(d["harness"])), sanitize(host))

@@ -157,3 +157,16 @@ func TestConversationScreens(t *testing.T) {
 		golden(t, fmt.Sprintf("messages_events_%dx%d", size[0], size[1]), m.View())
 	}
 }
+
+func TestConversationFeedIncludesSessionDisconnect(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "session.disconnected", SessionID: "s_0000000000000001", Time: t0}}})
+	m = keys(m, "e")
+	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
+	if !strings.Contains(v, "tenebrae-53 disconnected") {
+		t.Fatal(v)
+	}
+}

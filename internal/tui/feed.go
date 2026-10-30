@@ -106,7 +106,7 @@ func (f *feed) apply(evs []protocol.FeedEvent) {
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Host: e.Hostname, Detail: e.Detail})
 		case strings.HasPrefix(e.Kind, "worker."):
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Session: e.SessionID, Host: e.Hostname, Detail: e.Detail})
-		case e.Kind == "session.new":
+		case strings.HasPrefix(e.Kind, "session."):
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Session: e.SessionID, Host: e.Hostname, Detail: e.Detail})
 		}
 	}
