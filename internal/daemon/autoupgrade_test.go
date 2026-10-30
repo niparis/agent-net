@@ -129,6 +129,12 @@ func TestAutoUpgradeFailureIsRemembered(t *testing.T) {
 	n.daemon().Stop()
 	n.start()
 	eventually(t, "second version tried", func() bool { return calls.Load() == 2 })
+	// The install count rises before the failure is saved. Wait for the save,
+	// or it can land after the edit below and overwrite it.
+	eventually(t, "second failure recorded", func() bool {
+		f := upgrade.LoadAuto(n.cfg.StateDir).Failed
+		return f != nil && f.Version == "v0.3.0"
+	})
 
 	// After an hour the first version would be tried again.
 	st := upgrade.LoadAuto(n.cfg.StateDir)

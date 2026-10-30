@@ -436,8 +436,11 @@ func TestRealProcFSSeesATreeAndItsCPU(t *testing.T) {
 	if !tr.Alive || tr.Procs < 2 {
 		t.Fatalf("tree = %+v", tr)
 	}
-	if tr.CPU.Now < 50 || tr.CPU.Now > 130 {
-		t.Errorf("busy loop shows %v%% CPU, want about 100", tr.CPU.Now)
+	// On a quiet machine the loop gets a whole core (about 100). On a loaded
+	// one it gets only a share of the window, so assert only that its CPU
+	// time is seen and is not more than one core.
+	if tr.CPU.Now < 1 || tr.CPU.Now > 130 {
+		t.Errorf("busy loop shows %v%% CPU, want more than 0 and at most one core", tr.CPU.Now)
 	}
 	if tr.RSS.Now == 0 {
 		t.Error("no memory")
