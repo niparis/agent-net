@@ -421,15 +421,18 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 	}
 }
 
-// msgSendMayResume tells whether a msg.send is addressed to an ended worker.
-// Only then can the gateway ask the machine to start the worker again.
+// msgSendMayResume tells whether a msg.send is addressed to a worker session.
+// The worker may end between this check and the handler, which then asks the
+// machine to start it again; that ask waits for this same node's answer, so
+// the handler must not run in the read loop. Any worker session qualifies:
+// online or not, the handler decides whether a resume is needed.
 func (g *Gateway) msgSendMayResume(raw []byte) bool {
 	var p protocol.MsgSend
 	if json.Unmarshal(raw, &p) != nil || p.Recipient == "" {
 		return false
 	}
 	a, ok, err := g.store.Agent(p.Recipient)
-	return err == nil && ok && a.Worker != nil && !a.Online
+	return err == nil && ok && a.Worker != nil
 }
 
 // answer handles one frame and writes its result. A link error ends the loop.

@@ -106,20 +106,39 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		}
 		h := protocol.HarnessInfo{Name: n, Path: installs[0], Primary: primary}
 		h.Version = version(ctx, o, installs[0])
-		if n == "opencode" {
-			// `opencode models` prints one provider/model per line.
-			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
-			if m, err := o.Run(mctx, installs[0], "models"); err == nil {
-				h.Models = ParseModels(m)
-			}
-			cancel()
-		}
+		h.Models = models(ctx, o, n, installs[0], search)
 		for _, p := range installs[1:] {
 			h.Others = append(h.Others, protocol.HarnessInstall{Path: p, Version: version(ctx, o, p)})
 		}
 		out = append(out, h)
 	}
 	return out
+}
+
+// models returns the model list of a harness, or nil when it cannot be read.
+// The whole read is bounded by ModelsTimeout.
+func models(ctx context.Context, o Options, name, path string, search []string) []string {
+	switch name {
+	case "opencode":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		if m, err := o.Run(mctx, path, "models"); err == nil {
+			return ParseModels(m)
+		}
+	case "pi":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		if m, err := o.Run(mctx, path, "--list-models"); err == nil {
+			return ParsePiModels(m)
+		}
+	case "claude":
+		return ClaudeModels()
+	case "codex":
+		mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
+		defer cancel()
+		return codexModels(mctx, path, strings.Join(search, string(os.PathListSeparator)))
+	}
+	return nil
 }
 
 func version(ctx context.Context, o Options, path string) string {

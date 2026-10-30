@@ -138,6 +138,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 		Task: e.Task, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions}
 	out, err := d.runWorkerStart(ctx, l)
 	if err != nil {
+		d.clearStartReservation()
 		d.Logf("worker.not_started queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, err.Error())
 		d.notStarted(ctx, e, "the machine had room, but the start failed: "+err.Error())
 		return

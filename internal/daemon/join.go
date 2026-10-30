@@ -59,10 +59,13 @@ type NodeWorkers struct {
 	// CPUTarget is the 5-minute CPU busy percent above which no worker starts
 	// (default 75). MemReserve is the memory that stays free, such as "2GB"
 	// (default: the larger of 1.5GB and 10 percent of RAM). QueueTimeout is how
-	// long a start may wait in the queue (default 2h).
+	// long a start may wait in the queue (default 2h). StartGap is the least
+	// time between two worker starts (default 6s; "0s" or a negative duration
+	// turns it off).
 	CPUTarget    float64 `json:"cpu_target,omitempty"`
 	MemReserve   string  `json:"mem_reserve,omitempty"`
 	QueueTimeout string  `json:"queue_timeout,omitempty"`
+	StartGap     string  `json:"start_gap,omitempty"`
 }
 
 // parseSize reads a size such as "2GB", "1536MB" or "1.5GiB" into bytes.
@@ -119,6 +122,19 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 			return s, fmt.Errorf("node.json: workers.%s must be a duration like 60m, not %q", f.name, f.in)
 		}
 		*f.out = d
+	}
+	// StartGap may be zero: unlike the timeouts above, zero means "no gap".
+	// Filled reads zero as the default, so zero is stored as a negative
+	// duration, which filled keeps as "no gap".
+	if nc.Workers.StartGap != "" {
+		d, err := time.ParseDuration(nc.Workers.StartGap)
+		if err != nil {
+			return s, fmt.Errorf("node.json: workers.start_gap must be a duration like 6s, not %q", nc.Workers.StartGap)
+		}
+		if d == 0 {
+			d = -1
+		}
+		s.StartGap = d
 	}
 	if s.Max < 0 {
 		return s, errors.New("node.json: workers.max must not be negative")

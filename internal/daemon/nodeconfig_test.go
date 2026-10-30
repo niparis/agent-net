@@ -20,13 +20,21 @@ func TestNodeWorkerSettings(t *testing.T) {
 	if err != nil || s.Max != 2 || s.Idle != 5*time.Minute || s.MaxAge != 90*time.Minute || s.OwnerGrace != time.Minute {
 		t.Fatalf("settings: %+v %v", s, err)
 	}
-	nc.Workers = &NodeWorkers{CPUTarget: 60, MemReserve: "2GB", QueueTimeout: "30m"}
+	nc.Workers = &NodeWorkers{CPUTarget: 60, MemReserve: "2GB", QueueTimeout: "30m", StartGap: "10s"}
 	s, err = nc.WorkerSettings()
-	if err != nil || s.CPUTarget != 60 || s.MemReserve != 2<<30 || s.QueueTimeout != 30*time.Minute {
+	if err != nil || s.CPUTarget != 60 || s.MemReserve != 2<<30 || s.QueueTimeout != 30*time.Minute || s.StartGap != 10*time.Second {
 		t.Fatalf("load settings: %+v %v", s, err)
 	}
+	// "0s" turns the start gap off, like a negative duration.
+	nc.Workers = &NodeWorkers{StartGap: "0s"}
+	if s, err = nc.WorkerSettings(); err != nil || s.StartGap >= 0 {
+		t.Fatalf("start gap off: %+v %v", s, err)
+	}
+	if f := s.filled(); f.StartGap >= 0 {
+		t.Fatalf("filled brought the gap back: %+v", f)
+	}
 	for _, w := range []NodeWorkers{{Idle: "soon"}, {MaxAge: "-1h"}, {OwnerGrace: "0s"}, {Max: -1}, {CPUTarget: 150}, {CPUTarget: -1},
-		{MemReserve: "lots"}, {MemReserve: "-2GB"}, {QueueTimeout: "never"}} {
+		{MemReserve: "lots"}, {MemReserve: "-2GB"}, {QueueTimeout: "never"}, {StartGap: "later"}} {
 		w := w
 		nc.Workers = &w
 		if _, err := nc.WorkerSettings(); err == nil || !strings.Contains(err.Error(), "node.json") {

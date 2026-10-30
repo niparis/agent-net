@@ -496,6 +496,41 @@ func (s *Store) FailedModels(nodeID, harness string) (map[string]time.Time, erro
 	return out, rows.Err()
 }
 
+// RecordModelSuccess notes that a worker on a node finished successfully
+// (a hand-back with status done) on a model. ResolveModelRanked ranks that
+// model first for protocol.ModelSuccessDays.
+func (s *Store) RecordModelSuccess(nodeID, harness, model string) error {
+	if model == "" {
+		return nil
+	}
+	_, err := s.db.Exec(`INSERT INTO model_successes (node_id, harness, model, at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (node_id, harness, model) DO UPDATE SET at = excluded.at`,
+		nodeID, harness, model, s.now().UnixNano())
+	return err
+}
+
+// SucceededModels returns the models of a harness on a node that finished a
+// worker successfully within protocol.ModelSuccessDays, and when each last
+// did.
+func (s *Store) SucceededModels(nodeID, harness string) (map[string]time.Time, error) {
+	rows, err := s.db.Query(`SELECT model, at FROM model_successes WHERE node_id = ? AND harness = ? AND at >= ?`,
+		nodeID, harness, s.now().Add(-protocol.ModelSuccessDays*24*time.Hour).UnixNano())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var m string
+		var at int64
+		if err := rows.Scan(&m, &at); err != nil {
+			return nil, err
+		}
+		out[m] = time.Unix(0, at)
+	}
+	return out, rows.Err()
+}
+
 // failedSet is the model IDs of a FailedModels result, as ResolveModelFailed
 // takes them.
 func failedSet(m map[string]time.Time) map[string]bool {

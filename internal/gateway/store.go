@@ -183,6 +183,10 @@ SELECT 'i_' || o.reply_id, CASE o.outcome WHEN 'reject' THEN 'rejection' ELSE 'e
 FROM graph_outcomes o JOIN messages request ON request.id=o.message_id
 JOIN sessions sender ON sender.id=request.sender
 WHERE o.outcome IN ('reject','escalate') AND sender.harness<>'owner';
+`, `
+CREATE TABLE model_successes (
+	node_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL,
+	PRIMARY KEY (node_id, harness, model));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

@@ -15,6 +15,10 @@ const ModelUsageDays = 30
 // or auth error) is ranked last by ResolveModelFailed.
 const ModelFailureHours = 24
 
+// ModelSuccessDays is how far back a worker that finished with a hand-back
+// status done makes its model rank first (see ResolveModelRanked).
+const ModelSuccessDays = 7
+
 // maxModelCandidates is how many candidates an ambiguity error lists.
 const maxModelCandidates = 5
 
@@ -123,26 +127,48 @@ func providerOf(id string) string {
 	return ""
 }
 
+// NoModelMatchError says that a loose name matched no model. Closest holds up
+// to maxModelCandidates models that look like it, best first; it is empty when
+// nothing is close.
+type NoModelMatchError struct {
+	Query   string
+	Count   int
+	Closest []string
+}
+
+func (e *NoModelMatchError) Error() string {
+	s := fmt.Sprintf("no model in the list matches %q", e.Query)
+	if len(e.Closest) > 0 {
+		s += "; closest: " + strings.Join(e.Closest, ", ")
+	}
+	return s + fmt.Sprintf(" (%d models; see `agent-net nodes --wide`)", e.Count)
+}
+
 // ResolveModel turns a loose model name into one id of the machine's list
 // (decision 0002, W17). The rules, in order:
 //
 //  1. An exact match wins.
 //  2. Otherwise the query is split into words (case does not matter, "4.1"
 //     matches "v4.1"), and the candidates are the ids that contain all words.
-//  3. The candidates are ranked by: no recent worker failure (ResolveModelFailed), how many sessions on the machine used the
-//     model in the last ModelUsageDays days (usage), how many used any model
-//     of the same provider in that time (provider usage), the position of its
-//     provider in the owner's providers list, no "-free" variant, no dated
-//     snapshot (":0813"), and the shortest model name (without provider).
+//  3. The candidates are ranked by: a recent successful worker
+//     (ResolveModelRanked), no recent worker failure (ResolveModelFailed), how
+//     many sessions on the machine used the model in the last ModelUsageDays
+//     days (usage), how many used any model of the same provider in that time
+//     (provider usage), the position of its provider in the owner's providers
+//     list, no "-free" variant, no dated snapshot (":0813"), and the shortest
+//     model name (without provider).
 //  4. If one candidate is strictly best, it is the answer. If the best ones
 //     are equal on every rule, or none matches, the error says so and lists
 //     up to five.
+//
+// A trailing reasoning or thinking level (Codex :high, Pi :thinking) is kept:
+// the base id is resolved and the level is added back.
 func ResolveModel(query string, models []string, usage map[string]int, providers []string) (string, error) {
-	r, err := ResolveModelFailed(query, models, usage, providers, nil)
+	r, err := ResolveModelRanked(query, models, usage, providers, nil, nil)
 	return r.Model, err
 }
 
-// ModelResolution is the answer of ResolveModelFailed.
+// ModelResolution is the answer of ResolveModelRanked.
 type ModelResolution struct {
 	Model string
 	// Exact is true when the query was the full model id.
@@ -156,20 +182,33 @@ type ModelResolution struct {
 	QuotaNote string
 }
 
-// ResolveModelFailed is ResolveModel with the models that failed a worker
-// recently (failed, by full id). They rank after every model that did not
-// fail, whatever their usage. The other models of the same provider rank
-// between the two. An exact match still wins: the caller named it.
+// ResolveModelFailed is ResolveModelRanked without the recent successes.
 func ResolveModelFailed(query string, models []string, usage map[string]int, providers []string, failed map[string]bool) (ModelResolution, error) {
-	return ResolveModelQuota(query, models, usage, providers, failed, nil)
+	return ResolveModelRanked(query, models, usage, providers, failed, nil)
 }
 
-// ResolveModelQuota is ResolveModelFailed with the machine's quotas (decision
-// 0022). A loose model name skips a provider that is exhausted or above
-// QuotaHighPercent; a provider ahead of its reset clock ranks below providers
-// on pace. An exact model id still wins, with QuotaNote when its provider is
-// exhausted or nearly so.
+// ResolveModelQuota is ResolveModelRankedQuota without the recent successes.
 func ResolveModelQuota(query string, models []string, usage map[string]int, providers []string, failed map[string]bool, quotas *Quotas) (ModelResolution, error) {
+	return ResolveModelRankedQuota(query, models, usage, providers, failed, nil, quotas)
+}
+
+// ResolveModelRanked is ResolveModelRankedQuota without quotas.
+func ResolveModelRanked(query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool) (ModelResolution, error) {
+	return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded, nil)
+}
+
+// ResolveModelRankedQuota is ResolveModel with the models that failed a worker
+// recently (failed, by full id), those that finished one successfully
+// (succeeded, by full id), and the machine's quotas (decision 0022).
+//
+// A model that failed a worker ranks after every other model, whatever its
+// usage; the other models of the same provider rank between the two. A model
+// that recently finished a worker with a hand-back status done ranks before
+// models without such a success. A loose name skips a provider that is
+// exhausted or above QuotaHighPercent, and a provider ahead of its reset clock
+// ranks below providers on pace. An exact match still wins, with QuotaNote
+// when its provider is exhausted or nearly so.
+func ResolveModelRankedQuota(query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool, quotas *Quotas) (ModelResolution, error) {
 	query = strings.TrimSpace(query)
 	for _, m := range models {
 		if m == query {
@@ -203,7 +242,7 @@ func ResolveModelQuota(query string, models []string, usage map[string]int, prov
 		}
 	}
 	if len(cands) == 0 {
-		return ModelResolution{}, fmt.Errorf("no model in the list matches %q (%d models; see `agent-net nodes --wide`)", query, len(models))
+		return ModelResolution{}, &NoModelMatchError{Query: query, Count: len(models), Closest: closestModels(toks, models)}
 	}
 	// A provider that is exhausted, or above QuotaHighPercent of any window,
 	// is skipped for a loose name. An exact id was handled above.
@@ -251,12 +290,18 @@ func ResolveModelQuota(query string, models []string, usage map[string]int, prov
 			failedProv[providerOf(m)] = true
 		}
 	}
+	// r[0] ranks a recent success first (0), then a model with no recent
+	// history (1), then a model whose provider failed (2), then the model that
+	// failed (3). r[1] is the quota pace, then usage and the older rules.
 	rank := func(m string) [8]int {
-		r := [8]int{0, 0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
-		if failed[m] {
+		r := [8]int{1, 0, -usage[m], -byProvider[providerOf(m)], len(providers), 0, 0, len(modelPart(m))}
+		switch {
+		case failed[m]:
+			r[0] = 3
+		case succeeded[m]:
+			r[0] = 0
+		case failedProv[providerOf(m)]:
 			r[0] = 2
-		} else if failedProv[providerOf(m)] {
-			r[0] = 1
 		}
 		if quotas != nil && quotas.Ahead(QuotaProviderForModel(m)) {
 			r[1] = 1
@@ -312,4 +357,76 @@ func ResolveModelQuota(query string, models []string, usage map[string]int, prov
 		list = list[:maxModelCandidates]
 	}
 	return ModelResolution{}, fmt.Errorf("%q matches %d models equally well: %s. Name one of them in full", query, len(tied), strings.Join(list, ", "))
+}
+
+// closestModels ranks the models that share a word with the query, by how many
+// query words they contain, then by how many extra words they have and how
+// short the model name is. It returns at most maxModelCandidates.
+func closestModels(qtoks []string, models []string) []string {
+	type scored struct {
+		id    string
+		score int
+		extra int
+		size  int
+	}
+	var all []scored
+	for _, m := range models {
+		part := modelPart(m)
+		low := strings.ToLower(part)
+		mtoks := modelTokens(part)
+		matched := 0
+		for _, q := range qtoks {
+			hit := false
+			for _, mt := range mtoks {
+				if mt == q {
+					hit = true
+					break
+				}
+			}
+			if !hit {
+				hit = hasToken(low, q)
+			}
+			if hit {
+				matched++
+			}
+		}
+		if matched == 0 {
+			continue
+		}
+		extra := 0
+		for _, mt := range mtoks {
+			used := false
+			for _, q := range qtoks {
+				if mt == q || hasToken(mt, q) {
+					used = true
+					break
+				}
+			}
+			if !used {
+				extra++
+			}
+		}
+		all = append(all, scored{id: m, score: matched, extra: extra, size: len(part)})
+	}
+	sort.SliceStable(all, func(i, j int) bool {
+		a, b := all[i], all[j]
+		if a.score != b.score {
+			return a.score > b.score
+		}
+		if a.extra != b.extra {
+			return a.extra < b.extra
+		}
+		if a.size != b.size {
+			return a.size < b.size
+		}
+		return a.id < b.id
+	})
+	var out []string
+	for _, s := range all {
+		if len(out) == maxModelCandidates {
+			break
+		}
+		out = append(out, s.id)
+	}
+	return out
 }

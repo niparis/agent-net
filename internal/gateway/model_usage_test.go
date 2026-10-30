@@ -35,6 +35,38 @@ func TestModelUsageCountsRecentSessionsOfTheNode(t *testing.T) {
 	}
 }
 
+// A model that finished a worker successfully is remembered per node and
+// harness for protocol.ModelSuccessDays.
+func TestModelSuccessesAreRememberedPerNodeAndHarness(t *testing.T) {
+	s, clock := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	other, _, _ := s.CreateNode("o", "linux")
+	if err := s.RecordModelSuccess(node, "codex", "gpt-6-luna"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordModelSuccess(node, "codex", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.SucceededModels(node, "codex")
+	if err != nil || len(got) != 1 || got["gpt-6-luna"].IsZero() {
+		t.Fatalf("succeeded models: %v, %v", got, err)
+	}
+	if g, _ := s.SucceededModels(other, "codex"); len(g) != 0 {
+		t.Errorf("another machine sees it: %v", g)
+	}
+	if g, _ := s.SucceededModels(node, "opencode"); len(g) != 0 {
+		t.Errorf("another harness sees it: %v", g)
+	}
+	clock.t = clock.t.Add(time.Duration(protocol.ModelSuccessDays-1) * 24 * time.Hour)
+	if g, _ := s.SucceededModels(node, "codex"); len(g) != 1 {
+		t.Errorf("before the window ends: %v", g)
+	}
+	clock.t = clock.t.Add(25 * time.Hour)
+	if g, _ := s.SucceededModels(node, "codex"); len(g) != 0 {
+		t.Errorf("after the window: %v", g)
+	}
+}
+
 // A model that failed a worker is remembered per node and harness for 24
 // hours, and a new failure restarts the time.
 func TestModelFailuresAreRemembered24Hours(t *testing.T) {

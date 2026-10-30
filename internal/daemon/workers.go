@@ -41,8 +41,8 @@ type WorkerSettings struct {
 	QueueTimeout time.Duration
 	// QueueTick is how often the queue is looked at. Default 15 s.
 	QueueTick time.Duration
-	// StartGap is the least time between two worker starts. Default 60 s;
-	// negative means none.
+	// StartGap is the least time between two worker starts. Default 6 s;
+	// zero or negative means none.
 	StartGap time.Duration
 	// Idle ends a worker with no message to or from it for this long.
 	Idle time.Duration
@@ -226,13 +226,15 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 
 // noteWorkerUsage records the figures the harness reported and pushes the
 // worker's session when one of them changed, so a TUI on another machine sees
-// them too.
-func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) {
+// them too. It reports whether the run's token count grew, which means the
+// worker is still working (checkWorkers uses it for the idle limit).
+func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	d.wmu.Lock()
 	if w.contextTokens == st.ContextTokens && w.contextLimit == st.ContextLimit && w.totalTokens == st.TotalTokens {
 		d.wmu.Unlock()
-		return
+		return false
 	}
+	grew = st.TotalTokens > w.totalTokens
 	w.contextTokens, w.contextLimit, w.totalTokens = st.ContextTokens, st.ContextLimit, st.TotalTokens
 	if w.info == nil {
 		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
@@ -245,6 +247,30 @@ func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) {
 	if ls := d.setSessionWorker(sessionID, &cp); ls != nil {
 		go d.pushSession(ls)
 	}
+	return grew
+}
+
+// keepWorkerActive restarts the idle clock of a worker that is working, and
+// saves the row as touchWorker does, so an adopted worker does not look idle.
+func (d *Daemon) keepWorkerActive(w *worker, now time.Time) {
+	d.wmu.Lock()
+	w.lastActive = now
+	if now.Sub(w.savedAt) > 15*time.Second {
+		d.saveWorkerLocked(w)
+	}
+	d.wmu.Unlock()
+}
+
+// sessionBusy reports whether the harness says the worker's session is busy.
+// A busy session is working, whatever its last message or token figure says.
+func (d *Daemon) sessionBusy(harness, native string) bool {
+	if native == "" {
+		return false
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	ls := d.sessions[key(harness, native)]
+	return ls != nil && ls.info.Status == "busy"
 }
 
 // workerByNative returns the worker that has this harness session, or nil.
@@ -456,7 +482,11 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		}
 		return *q, nil
 	}
-	return d.runWorkerStartChecked(ctx, l, set)
+	out, err = d.runWorkerStartChecked(ctx, l, set)
+	if err != nil {
+		d.clearStartReservation()
+	}
+	return out, err
 }
 
 // runWorkerStart starts a worker that admission has let through. The checks
@@ -700,6 +730,9 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		st.stop(d, w)
 	}
 	d.killGroup(w)
+	if time.Since(started) < workerGapHoldMinAge {
+		d.clearGapAfterShortWorker(w)
+	}
 	if en, ok := d.launchers[w.harness].(ender); ok {
 		en.end(d, w)
 	}
@@ -769,7 +802,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 		}
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
-			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model})
+			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model, Status: r.DoneStatus})
 		cancel()
 		var re RemoteError
 		switch {
@@ -1015,6 +1048,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		d.wmu.Lock()
 		age, idle, owner := now.Sub(w.startedAt), now.Sub(w.lastActive), w.owner
+		harness, native := w.harness, w.nativeID
 		// A worker that is still starting is not idle. Until its first request
 		// is noted, it also gets the start timeout on top of the idle limit, so
 		// the task can arrive and a notice always has a request to answer.
@@ -1039,7 +1073,14 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		// Refresh the context and token figures while the worker runs. A
 		// harness that cannot say returns an empty result.
-		d.noteWorkerUsage(w, d.workerStats(w))
+		grew := d.noteWorkerUsage(w, d.workerStats(w))
+		// A session that is busy, or a run whose token count grew, is working:
+		// it is not idle even when no message has come for a while. This keeps
+		// a worker busy on a long task past the idle limit.
+		if grew || d.sessionBusy(harness, native) {
+			d.keepWorkerActive(w, now)
+			idle = 0
+		}
 		switch {
 		case d.gone(w):
 			d.endWorker(w, protocol.StopExited)

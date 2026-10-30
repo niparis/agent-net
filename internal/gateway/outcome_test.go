@@ -273,10 +273,30 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`DROP TABLE inbox_items`, `ALTER TABLE messages DROP COLUMN approval_note`, `DELETE FROM schema_version WHERE version > (SELECT MAX(version)-3 FROM schema_version)`} {
-		if _, err = s.db.Exec(q); err != nil {
-			t.Fatal(err)
+	// Simulate a database from before the inbox migration: drop what it
+	// created, and forget that migration and every later one (model_successes
+	// follows it), so they run again.
+	inboxVersion := 0
+	for i, m := range migrations {
+		if strings.Contains(m, "CREATE TABLE inbox_items") {
+			inboxVersion = i + 1
+			break
 		}
+	}
+	if inboxVersion == 0 {
+		t.Fatal("missing inbox migration")
+	}
+	if _, err = s.db.Exec(`DROP TABLE inbox_items`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`ALTER TABLE messages DROP COLUMN approval_note`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`DROP TABLE IF EXISTS model_successes`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, inboxVersion); err != nil {
+		t.Fatal(err)
 	}
 	s.Close()
 	s, err = OpenStore(path)

@@ -74,9 +74,9 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 - `no project named X is known`: register it with `agent-net projects add <path>` on the machine that has it.
 - `X is on several machines`: add `--machine HOST`.
 - `does not accept workers`: that machine was set up with `--no-launch`; run `agent-net setup --launch` there.
-- `model ... is not in the opencode model list`: see `agent-net nodes --wide`.
+- `no HARNESS model matches "NAME" on MACHINE; closest: ...`: the loose model name is not on that machine's list for that harness. Name one of the closest models, or an exact id from `agent-net nodes --wide`.
 - `the agent-net plugin did not register the worker session`: the OpenCode plugin is not installed on that machine. Run `agent-net setup` there. The daemon log has the worker's output.
-- `queued #N on HOST: ...`: the machine has no room (CPU, memory, the 60 second gap between starts, or the cap of 12 workers). The start waits and a notice comes when it begins. `agent-net workers` shows the room of each machine (`room: cpu|mem|cap|gap|measuring`). Cancel with `agent-net stop <queue id>`. To allow more, raise `workers.cpu_target`, lower `workers.mem_reserve` or raise `workers.max` in `node.json`.
+- `queued #N on HOST: ...`: the machine has no room (CPU, memory, the `start_gap` between starts, or the cap of 12 workers). The start waits and a notice comes when it begins. `agent-net workers` shows the room of each machine (`room: cpu|mem|cap|gap|measuring`). Cancel with `agent-net stop <queue id>`. To allow more, raise `workers.cpu_target`, lower `workers.mem_reserve`, raise `workers.max` or lower `workers.start_gap` in `node.json`.
 - `runs inside an agent session`: `agent-net start`, `send` and `stop` act as you, so they refuse to run from an agent's shell. Run them in your own terminal.
 
 - `is not available from inside an agent session ... If you do not have agent_start`: the agent tried the command in a shell because its own agent-net tools are older than the machine (no `agent_start`). See the next entry.

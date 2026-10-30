@@ -222,7 +222,8 @@ type Daemon struct {
 	// qmu guards worker admission: the queue, lastStart and qGone (queue.go).
 	// It is taken before wmu, never after.
 	qmu sync.Mutex
-	// lastStart is when a worker start was last let through.
+	// lastStart is when a worker start that ran was last let through. A start
+	// that fails, or a worker that ends within 30 seconds, clears it.
 	lastStart time.Time
 	// qGone is when the owner of a queued start was first seen offline.
 	qGone map[string]time.Time

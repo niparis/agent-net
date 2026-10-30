@@ -35,7 +35,7 @@ func TestDetectFindsToolsInPathAndKnownDirs(t *testing.T) {
 	if len(got) != 2 || got[0].Name != "claude" || got[1].Name != "opencode" {
 		t.Fatalf("got %+v", got)
 	}
-	if got[0].Path != claude || got[0].Version != "2.1.0 (Claude Code)" || got[0].Models != nil {
+	if got[0].Path != claude || got[0].Version != "2.1.0 (Claude Code)" || len(got[0].Models) == 0 {
 		t.Fatalf("claude: %+v", got[0])
 	}
 	if got[1].Path != oc || got[1].Version != "v9.9.9" || !reflect.DeepEqual(got[1].Models, []string{"a/one", "b/two"}) {
@@ -316,6 +316,83 @@ func TestVersionLess(t *testing.T) {
 	if !versionLess("v22.9.0", "v22.23.3") || versionLess("v22.23.3", "v22.9.0") || versionLess("v1.0.0", "v1.0.0") {
 		t.Fatal("wrong order")
 	}
+}
+
+// ---- model lists for every harness ----
+
+func TestDetectPiModels(t *testing.T) {
+	root := t.TempDir()
+	pi := script(t, root, "pi", `case "$1" in
+--version) echo 1.4.0;;
+--list-models) printf 'provider  model        context  max-out  thinking  images\nopenai    gpt-5        400K     128K     yes       yes\nlocal     llama-9      8K       4K       no        no\n';;
+esac`)
+	got := Detect(context.Background(), Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 1 || got[0].Path != pi {
+		t.Fatalf("got %+v", got)
+	}
+	if want := []string{"local/llama-9", "openai/gpt-5"}; !reflect.DeepEqual(got[0].Models, want) {
+		t.Fatalf("pi models: %v, want %v", got[0].Models, want)
+	}
+}
+
+func TestDetectClaudeModels(t *testing.T) {
+	root := t.TempDir()
+	script(t, root, "claude", `echo "2.1.0 (Claude Code)"`)
+	got := Detect(context.Background(), Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 1 || len(got[0].Models) == 0 {
+		t.Fatalf("got %+v", got)
+	}
+	for _, want := range []string{"haiku", "sonnet", "opus", "fable", "claude-sonnet-5"} {
+		if !contains(got[0].Models, want) {
+			t.Errorf("claude models lack %q: %v", want, got[0].Models)
+		}
+	}
+}
+
+func TestDetectCodexModelsFromAppServer(t *testing.T) {
+	root := t.TempDir()
+	script(t, root, "codex", `while IFS= read -r line; do
+case "$line" in
+*'"initialize"'*) printf '%s\n' '{"id":1,"result":{}}';;
+*'"model/list"'*) printf '%s\n' '{"id":2,"result":{"data":[{"id":"gpt-6-luna","model":"gpt-6-luna"},{"id":"gpt-6.1-luna","model":"gpt-6.1-luna"}],"nextCursor":null}}';;
+esac
+done`)
+	got := Detect(context.Background(), Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if want := []string{"gpt-6-luna", "gpt-6.1-luna"}; !reflect.DeepEqual(got[0].Models, want) {
+		t.Fatalf("codex models: %v, want %v", got[0].Models, want)
+	}
+}
+
+func TestDetectCodexModelListFailureGivesNoList(t *testing.T) {
+	root := t.TempDir()
+	script(t, root, "codex", `exit 3`)
+	got := Detect(context.Background(), Options{PATH: root, Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
+	if len(got) != 1 || got[0].Models != nil {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestParsePiModelsIgnoresTheHeaderAndJunk(t *testing.T) {
+	table := "provider  model        context  max-out  thinking  images\n" +
+		"openai    gpt-5        400K     128K     yes       yes\n" +
+		"bad line\n" +
+		"local\n"
+	want := []string{"openai/gpt-5"}
+	if got := ParsePiModels(table); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
 
 var realDetect = flag.Bool("real", false, "run detection against this machine (read-only) and print paths and versions")

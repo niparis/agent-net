@@ -20,7 +20,7 @@ type startIn struct {
 	Project   string `json:"project,omitempty" jsonschema:"The name of a project from agent_project_list, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"`
 	Task      string `json:"task,omitempty" jsonschema:"what the worker should do, with everything it needs to know; it cannot ask you questions except by agent_reply. Optional only with continue"`
 	Harness   string `json:"harness,omitempty" jsonschema:"opencode (the default; with continue, the old worker's harness), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."`
-	Model     string `json:"model,omitempty" jsonschema:"The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name, with an optional :effort. Empty means the harness default."`
+	Model     string `json:"model,omitempty" jsonschema:"The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_nodes). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty means the harness default."`
 	Machine   string `json:"machine,omitempty" jsonschema:"the machine, only when the project is on more than one"`
 	Isolation string `json:"isolation,omitempty" jsonschema:"Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks"`
 	Base      string `json:"base,omitempty" jsonschema:"Existing local branch to start the worktree from."`
@@ -41,7 +41,7 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 
 	mcp.AddTool(s, tool("agent_start",
 		"Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. "+
-			"The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). "+
+			"The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in that harness's model list (agent_nodes; an exact id is used as given). "+
 			"The owner sets a worker level per project, and the result shows it. "+
 			"The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. "+
 			workerNote+" A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief."+

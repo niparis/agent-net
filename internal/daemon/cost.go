@@ -28,11 +28,17 @@ const maxCostShare = 0.25
 // expectedCost is the cost to plan for a new worker of this harness and
 // model. Empty harness means every harness (the machine's general cost).
 func (d *Daemon) expectedCost(harness, model string) WorkerCost {
+	return d.expectedCostWith(harness, model, d.load().Total)
+}
+
+// expectedCostWith is expectedCost when the caller already read the machine's
+// total RAM, so a start with several pending workers reads the load once.
+func (d *Daemon) expectedCostWith(harness, model string, total uint64) WorkerCost {
 	cs, err := d.st.costs(harness, model)
 	if err != nil {
 		return defaultWorkerCost()
 	}
-	return learnedCost(cs, d.load().Total)
+	return learnedCost(cs, total)
 }
 
 // learnedCost is the median of the average RSS and of the average CPU of the
