@@ -10,7 +10,7 @@ import (
 )
 
 func (m Model) quotasView(w, h int) []string {
-	out := []string{m.titleLine(w), "", sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE             PACE      RESETS")}
+	out := []string{m.titleLine(w), "", sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS")}
 	rows := m.quotaRows()
 	if len(rows) == 0 {
 		out = append(out, sDim.Render(clip("  quota-axi is not set up; install quota-axi and enable it in integrations (I).", w)))
@@ -44,11 +44,15 @@ func (m Model) quotasView(w, h int) []string {
 				pct = "exhausted"
 			}
 			usage := bar(window.PercentUsed/100, 10) + " " + pct
+			usage = cell(usage, 20)
 			if window.Exhausted || window.PercentUsed >= 100 {
 				usage = sBad.Render(usage)
 			}
 			if window.Pace == protocol.QuotaPaceAhead {
-				pace = sBusy.Render(pace)
+				pace = sBusy.Render(cell(pace, 9))
+			}
+			if window.Pace != protocol.QuotaPaceAhead {
+				pace = cell(pace, 9)
 			}
 			reset := "-"
 			if window.ResetsAt > 0 {
@@ -67,7 +71,7 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("  %-14s %-12s %-8s %-17s %-9s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
+			line := fmt.Sprintf("  %-14s %-12s %-8s %s %s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}

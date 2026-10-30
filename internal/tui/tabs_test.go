@@ -63,6 +63,19 @@ func TestQuotaViewGoldens(t *testing.T) {
 				t.Fatalf("wide line: %q", line)
 			}
 		}
+		for _, line := range lines(ansi.Strip(view)) {
+			for _, value := range []string{"behind", "ahead", "exhausted"} {
+				if i := strings.Index(line, value); i >= 0 {
+					col := ansi.StringWidth(line[:i])
+					if value == "exhausted" {
+						col = ansi.StringWidth(line[:i+len(value)]) + 1
+					}
+					if col != 60 {
+						t.Errorf("pace starts at column %d in %q", col, line)
+					}
+				}
+			}
+		}
 		if !strings.Contains(ansi.Strip(view), "exhausted") {
 			t.Fatal(view)
 		}
