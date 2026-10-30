@@ -67,7 +67,7 @@ func needsText(in needsHookInput) (kind, text string) {
 		if text == "" {
 			text = strings.TrimSpace(in.Title)
 		}
-	case in.NotificationType == "idle_prompt", in.NotificationType == "agent_needs_input", in.NotificationType == "elicitation_url_dialog":
+	case in.NotificationType == "agent_needs_input", in.NotificationType == "elicitation_url_dialog":
 		kind = protocol.WaitingInput
 	case in.NotificationType == "elicitation_dialog":
 		kind = protocol.WaitingQuestion
