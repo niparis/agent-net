@@ -77,19 +77,33 @@ func TestSendDeliverReply(t *testing.T) {
 	}
 }
 
-func TestNameResolutionAmbiguous(t *testing.T) {
+// Two live sessions with the same folder get numbered names, so an exact name
+// finds exactly one of them (decision 0024).
+func TestDuplicateNamesAreNumberedAndResolvable(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	fa := &fakeAdapter{harness: "fake"}
-	startNode(t, g, nodeOpts{adapter: fa})
+	n := startNode(t, g, nodeOpts{adapter: fa})
 	b := startNode(t, g, nodeOpts{cmdline: "pi"})
 	fa.setSessions(fakeSession("n1", "twin"), fakeSession("n2", "twin"))
 	eventually(t, "both sessions known", func() bool {
 		return fa.host.SessionID("fake", "n1") != "" && fa.host.SessionID("fake", "n2") != ""
 	})
+	cli := cliClient(t, n)
+	names := map[string]bool{}
+	for _, a := range onlineAgents(t, cli) {
+		if a.Profile.Name == "twin" || a.Profile.Name == "twin 2" {
+			names[a.Profile.Name] = true
+		}
+	}
+	if !names["twin"] || !names["twin 2"] {
+		t.Fatalf("names %v, want twin and twin 2", names)
+	}
 	pi, _ := helloPi(t, b, "nb", "/work/bob", true)
-	_, err := pi.call("send", map[string]any{"to": "twin", "body": "x"})
-	if err == nil || !strings.Contains(err.Error(), "2 online agents") || !strings.Contains(err.Error(), "s_") {
-		t.Fatalf("want an error listing both matches, got %v", err)
+	if _, err := pi.call("send", map[string]any{"to": "twin", "body": "x"}); err != nil {
+		t.Fatalf("send to the first twin: %v", err)
+	}
+	if _, err := pi.call("send", map[string]any{"to": "twin 2", "body": "x"}); err != nil {
+		t.Fatalf("send to the second twin: %v", err)
 	}
 	if _, err := pi.call("send", map[string]any{"to": "nobody", "body": "x"}); err == nil {
 		t.Fatal("unknown name accepted")

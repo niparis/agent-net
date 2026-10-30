@@ -111,6 +111,7 @@ type sessionFile struct {
 	PID                 int    `json:"pid"`
 	SessionID           string `json:"sessionId"`
 	Name                string `json:"name"`
+	NameSource          string `json:"nameSource"`
 	Cwd                 string `json:"cwd"`
 	Status              string `json:"status"`
 	Kind                string `json:"kind"`
@@ -154,8 +155,15 @@ func (a *Adapter) poll() {
 		default:
 			status = "unknown"
 		}
+		// The Claude name is a title for the TASK column, not the session's
+		// network name (decision 0024). A name Claude derived from the folder
+		// ("a2a-ocs-4f") says nothing the name does, so it is dropped.
+		title := sf.Name
+		if sf.NameSource == "derived" {
+			title = ""
+		}
 		info := protocol.SessionInfo{Harness: "claude", NativeID: sf.SessionID, PID: sf.PID, Cwd: sf.Cwd,
-			Name: sf.Name, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
+			Name: title, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
 			Model: a.models.Model(sf.SessionID, sf.Cwd)}
 		seenModels[sf.SessionID] = true
 		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info, kind: sf.Kind, job: sf.JobID}

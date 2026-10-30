@@ -281,7 +281,9 @@ type helloParams struct {
 	// session open (foreground, background or unknown) and which model it runs.
 	Mode  string `json:"mode"`
 	Model string `json:"model"`
-	// Name is optional. Without it the session is named after its folder.
+	// Name is optional. It is the name (title) the harness gives the session,
+	// shown in the TASK column until the agent announces a task; it is not the
+	// session's network name, which the gateway takes from the project.
 	Name string `json:"name"`
 	// Protocol is the local protocol version of the client; Version is its
 	// agent-net version (for the error message). Old clients send neither.
@@ -428,8 +430,12 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			// reserved for a machine on an older agent-net.
 			p.Mode = protocol.ModeUnknown
 		}
+		title := d.pluginTitle(p.Name, p.Cwd)
+		if winfo != nil {
+			title = "" // a worker's task is its title; the harness name adds nothing
+		}
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
-			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: d.pluginName(p.Name, p.Cwd),
+			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: title,
 			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
 		k := key(p.Client, p.NativeID)
@@ -539,29 +545,29 @@ func (d *Daemon) checkPluginPeer(client string, pid int) error {
 
 func validStatus(s string) bool { return protocol.ValidStatus(s) }
 
-// pluginName is the name a plugin gave its session, cleaned (control characters
-// removed, at most protocol.MaxModelLen bytes), or the project name. The
-// project is the main repository, so a session in a linked worktree is not
-// named after the worktree folder. Plugins name a session "<folder>" or
-// "<folder>: <title>"; the folder part is swapped for the project.
-func (d *Daemon) pluginName(name, cwd string) string {
+// pluginTitle is the title a plugin gave its session, cleaned (control
+// characters removed, at most protocol.MaxModelLen bytes), or "" when the
+// plugin only said the folder. The title is not the name: the gateway names
+// the session after its project (decision 0024) and shows this title in the
+// TASK column until the agent announces a task. Plugins may send "<folder>",
+// "<folder>: <title>" or the title alone.
+func (d *Daemon) pluginTitle(name, cwd string) string {
+	name = protocol.CleanModel(name)
+	if name == "" {
+		return ""
+	}
 	project := d.repo.Lookup(cwd).Project
 	if project == "" {
 		project = filepath.Base(cwd)
 	}
-	name = protocol.CleanModel(name)
-	if name == "" {
-		return project
-	}
 	folder := filepath.Base(cwd)
-	if folder == project {
-		return name
+	if name == folder || name == project {
+		return ""
 	}
-	if name == folder {
-		return project
-	}
-	if rest, ok := strings.CutPrefix(name, folder+": "); ok {
-		return project + ": " + rest
+	for _, prefix := range []string{folder + ": ", project + ": "} {
+		if rest, ok := strings.CutPrefix(name, prefix); ok {
+			return protocol.CleanModel(rest)
+		}
 	}
 	return name
 }
@@ -664,8 +670,8 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if p.Model != nil {
 			ls.info.Model = protocol.CleanModel(*p.Model)
 		}
-		if p.Name != nil {
-			ls.info.Name = d.pluginName(*p.Name, ls.info.Cwd)
+		if p.Name != nil && ls.info.Worker == nil {
+			ls.info.Name = d.pluginTitle(*p.Name, ls.info.Cwd)
 		}
 		cwd := ls.info.Cwd
 		d.mu.Unlock()

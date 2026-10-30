@@ -8,7 +8,7 @@
 import type { Plugin } from "@opencode/plugin";
 import { readFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 type Context = Plugin.Context;
 
@@ -301,17 +301,17 @@ function openCodeTextEntries(messages: any[]): TextEntry[] {
 // viewer stays attached and quiet. See docs/opencode.md.
 
 /**
- * The name shown on the network: "<folder>: <title>". The title is
- * Session.Info.title (optional, @opencode/schema session.d.ts) and changes with
- * the session.renamed event (data: { sessionID, title }). Without a title the
- * name is the folder alone, which is also what the daemon uses by default.
+ * The title shown on the network: the OpenCode session title alone. The daemon
+ * names the session after its project (decision 0024); this title is shown in
+ * the TASK column until the agent announces a task. Without a title it sends
+ * nothing, because the folder says nothing new. The title is
+ * Session.Info.title (optional, @opencode/schema session.d.ts) and changes
+ * with the session.renamed event (data: { sessionID, title }).
  */
-function sessionName(cwd: string, title: unknown): string {
-  const folder = basename(cwd.replace(/[\\/]+$/, "")) || cwd;
+function sessionName(_cwd: string, title: unknown): string {
   const t = typeof title === "string" ? title.replace(/\s+/g, " ").trim() : "";
-  if (!t) return folder;
-  const full = `${folder}: ${t}`;
-  return full.length <= NAME_MAX ? full : full.slice(0, NAME_MAX - 3).trimEnd() + "...";
+  if (!t) return "";
+  return t.length <= NAME_MAX ? t : t.slice(0, NAME_MAX - 3).trimEnd() + "...";
 }
 
 /** One daemon connection, bound to one OpenCode session. */
@@ -369,9 +369,12 @@ class SessionLink {
   }
 
   setName(next: string) {
-    if (!next || this.name === next) return;
-    this.name = next;
-    if (this.connected) this.request("status", { name: next }).catch(() => {});
+    // An empty title clears what the daemon has, so send it instead of
+    // keeping the old one.
+    const name = next ?? "";
+    if ((this.name ?? "") === name) return;
+    this.name = name;
+    if (this.connected) this.request("status", { name }).catch(() => {});
   }
 
   // "Needs you" (decision 0016): what this session waits to hear from its

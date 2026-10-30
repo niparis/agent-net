@@ -239,10 +239,9 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 		}
 		th := codexThread{ID: id, Cwd: t.Cwd, Status: "idle", Mode: protocol.ModeUnknown}
 		if t.Name != nil {
+			// The thread name is a title for the TASK column, not the
+			// session's network name (decision 0024).
 			th.Name = protocol.CleanModel(*t.Name)
-		}
-		if th.Name == "" {
-			th.Name = a.d.repo.Lookup(t.Cwd).Project
 		}
 		if t.Model != nil {
 			th.Model = protocol.CleanModel(*t.Model)

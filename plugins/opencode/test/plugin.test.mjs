@@ -605,7 +605,7 @@ await test("a deleted session is not brought back by a reload", async () => {
   });
 });
 
-await test("the session title becomes the name, and a rename is followed", async () => {
+await test("the session title becomes the title, and a rename is followed", async () => {
   freshHub();
   const sessions = new Map([
     ["ses_t", session("ses_t", "/Users/n/code/strategies", 0, { title: "Fix the risk model" })],
@@ -616,20 +616,20 @@ await test("the session title becomes the name, and a rename is followed", async
   const stop = await plugin.setup(t.ctx);
   await until("hellos", () => registered("ses_t") && registered("ses_nt") && registered("ses_long"));
   const nameOf = (id) => hellos.find((h) => h.id === id).name;
-  if (nameOf("ses_t") !== "strategies: Fix the risk model") throw new Error("name: " + nameOf("ses_t"));
-  if (nameOf("ses_nt") !== "strategies") throw new Error("no title: " + nameOf("ses_nt"));
+  if (nameOf("ses_t") !== "Fix the risk model") throw new Error("title: " + nameOf("ses_t"));
+  if (nameOf("ses_nt") !== undefined) throw new Error("no title must send no name: " + nameOf("ses_nt"));
   const long = nameOf("ses_long");
-  if (long.length > 60 || !long.startsWith("strategies: xxx") || !long.endsWith("...")) throw new Error("long name: " + long);
+  if (long.length > 60 || !long.startsWith("xxx") || !long.endsWith("...")) throw new Error("long title: " + long);
 
   t.emit({ type: "session.renamed", data: { sessionID: "ses_nt", title: "  Add\nbacktest   v2 " } });
-  await until("name from rename", () => statuses.some((s) => s.id === "ses_nt" && s.params.name === "strategies: Add backtest v2"));
+  await until("title from rename", () => statuses.some((s) => s.id === "ses_nt" && s.params.name === "Add backtest v2"));
   // The same title again is not sent twice.
   const n = statuses.length;
   t.emit({ type: "session.renamed", data: { sessionID: "ses_nt", title: "Add backtest v2" } });
   await settle();
-  if (statuses.length !== n) throw new Error("an unchanged name was sent again");
+  if (statuses.length !== n) throw new Error("an unchanged title was sent again");
   t.emit({ type: "session.renamed", data: { sessionID: "ses_nt", title: "" } });
-  await until("name back to the folder", () => statuses.some((s) => s.id === "ses_nt" && s.params.name === "strategies"));
+  await until("title cleared", () => statuses.some((s) => s.id === "ses_nt" && s.params.name === ""));
   stop();
 });
 

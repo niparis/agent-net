@@ -877,30 +877,36 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	return clip(line, w)
 }
 
-// rowName is the name of a session in the table. A worker shows the first line
-// of its task, after the tree marker. When its machine did not tell us the task
-// (an older gateway), it shows "worker <harness> <short id>" instead, with the
-// worker's own ID. A name the plugin reports never replaces a worker's task.
+// rowName is the name of a session in the table: the automatic name the
+// gateway gave it, which is the project, or "<project> worker <n>" for a
+// worker (decision 0024). A name the agent set with agent_announce wins. A row
+// with no name at all falls back to the worker ID or the session ID.
 func rowName(a protocol.AgentView) string {
+	if name := sanitize(a.Profile.Name); name != "" {
+		return name
+	}
 	if a.Worker != nil {
-		if t := strings.TrimSpace(a.Worker.Task); t != "" {
-			return sanitize(t)
-		}
 		id := a.Worker.ID
 		if id == "" {
 			id = a.SessionID
 		}
 		return "worker " + sanitize(a.Harness) + " " + shortID(id)
 	}
-	return sanitize(a.Profile.Name)
+	return shortID(a.SessionID)
 }
 
-// taskText is the TASK cell: the task the session announced. A session that
-// never announced one falls back to its harness title when that says something
-// the NAME does not. It is blank, not a dash, when there is nothing to say.
+// taskText is the TASK cell: the task the session announced. A worker without
+// an announcement shows the first line of the task its owner gave it. Any
+// other session falls back to its harness title when that says something the
+// NAME does not. It is blank, not a dash, when there is nothing to say.
 func taskText(a protocol.AgentView) string {
 	if t := strings.TrimSpace(a.Profile.Task); t != "" {
 		return sanitize(t)
+	}
+	if a.Worker != nil {
+		if t := strings.TrimSpace(a.Worker.Task); t != "" && t != strings.TrimSpace(rowName(a)) {
+			return sanitize(t)
+		}
 	}
 	title := strings.TrimSpace(a.Title)
 	if title == "" || title == strings.TrimSpace(rowName(a)) {

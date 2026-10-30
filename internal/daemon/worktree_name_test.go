@@ -10,10 +10,11 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// A plugin session in a linked worktree is named after the main repository,
-// not after the worktree folder. This covers a worktree under .claude/worktrees,
-// under .worktrees and a sibling folder, and a plain folder keeps its name.
-func TestPluginNameUsesMainRepoInWorktree(t *testing.T) {
+// A session's name is the project name: the folder of the main working tree,
+// so a linked worktree uses the main repository's name. A title the harness
+// reports is kept for the TASK column instead (decision 0024). A folder that
+// is not a repository uses its own name.
+func TestPluginSessionNameIsTheProjectName(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}
@@ -36,7 +37,10 @@ func TestPluginNameUsesMainRepoInWorktree(t *testing.T) {
 
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
-	nameOf := func(id, cwd, name string) string {
+	cli := cliClient(t, n)
+	// Each session goes offline after its check, so the next one gets the
+	// plain project name and not a number.
+	sessionOf := func(id, cwd, name string) protocol.AgentView {
 		lc := dialLocal(t, n.sock)
 		params := map[string]any{"client": "pi", "harness": "pi", "native_id": id, "cwd": cwd, "status": "idle"}
 		if name != "" {
@@ -50,28 +54,37 @@ func TestPluginNameUsesMainRepoInWorktree(t *testing.T) {
 			Agent protocol.AgentView `json:"agent"`
 		}
 		json.Unmarshal(lc.mustCall("get", map[string]any{"session_id": r.SessionID}), &v)
-		return v.Agent.Profile.Name
+		lc.c.Close()
+		eventually(t, "the session goes offline", func() bool {
+			for _, a := range onlineAgents(t, cli) {
+				if a.SessionID == r.SessionID {
+					return false
+				}
+			}
+			return true
+		})
+		return v.Agent
 	}
 	for i, wt := range wts {
 		id := string(rune('a' + i))
-		if got := nameOf("n"+id, wt, ""); got != "cogforge" {
-			t.Errorf("%s: default name %q", wt, got)
+		if a := sessionOf("n"+id, wt, ""); a.Profile.Name != "cogforge" || a.Title != "" {
+			t.Errorf("%s: default name %q title %q", wt, a.Profile.Name, a.Title)
 		}
-		if got := nameOf("t"+id, wt, filepath.Base(wt)+": Fix the budget"); got != "cogforge: Fix the budget" {
-			t.Errorf("%s: titled name %q", wt, got)
+		if a := sessionOf("t"+id, wt, filepath.Base(wt)+": Fix the budget"); a.Profile.Name != "cogforge" || a.Title != "Fix the budget" {
+			t.Errorf("%s: titled name %q title %q", wt, a.Profile.Name, a.Title)
 		}
-		if got := nameOf("f"+id, wt, filepath.Base(wt)); got != "cogforge" {
-			t.Errorf("%s: folder-only name %q", wt, got)
+		if a := sessionOf("f"+id, wt, filepath.Base(wt)); a.Profile.Name != "cogforge" || a.Title != "" {
+			t.Errorf("%s: folder-only name %q title %q", wt, a.Profile.Name, a.Title)
 		}
 	}
-	// A name the user chose is kept.
-	if got := nameOf("custom", wts[0], "reviewer"); got != "reviewer" {
-		t.Errorf("custom name %q", got)
+	// A title the plugin reports is not a name set by hand: it goes to TASK.
+	if a := sessionOf("custom", wts[0], "reviewer"); a.Profile.Name != "cogforge" || a.Title != "reviewer" {
+		t.Errorf("custom name %q title %q", a.Profile.Name, a.Title)
 	}
-	if got := nameOf("plain", plain, ""); got != "plain-folder" {
-		t.Errorf("plain: %q", got)
+	if a := sessionOf("plain", plain, ""); a.Profile.Name != "plain-folder" {
+		t.Errorf("plain: %q", a.Profile.Name)
 	}
-	if got := nameOf("plain2", plain, "plain-folder: Hello"); got != "plain-folder: Hello" {
-		t.Errorf("plain titled: %q", got)
+	if a := sessionOf("plain2", plain, "plain-folder: Hello"); a.Profile.Name != "plain-folder" || a.Title != "Hello" {
+		t.Errorf("plain titled: name %q title %q", a.Profile.Name, a.Title)
 	}
 }

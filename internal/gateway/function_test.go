@@ -93,7 +93,7 @@ func TestAnnounceRenamesOnlyWithAName(t *testing.T) {
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "first task"}); err != nil {
 		t.Fatal(err)
 	}
-	if a := agentOf(t, s, id); a.Profile.Name != "harness-name" {
+	if a := agentOf(t, s, id); a.Profile.Name != "p" {
 		t.Fatalf("announce without a name renamed the session to %q", a.Profile.Name)
 	}
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Name: "builder", Project: "p9", Capabilities: []string{"go"}, Task: "second"}); err != nil {
