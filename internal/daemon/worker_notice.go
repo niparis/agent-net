@@ -235,8 +235,11 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 // handbackTo is handback to another session than the owner (see sendNoticeTo).
 func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
 	d.wmu.Lock()
-	sessionID := w.sessionID
+	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
+	if stopping {
+		return nil, errors.New("the worker is ending")
+	}
 	if req.Status == "" {
 		req.Status = protocol.StatusDone
 	}
@@ -247,7 +250,11 @@ func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerH
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
 	st := d.workerStats(w)
-	n := d.notice(w, req.Status, "", st)
+	note := "the worker ended after its hand-back; a message from you starts it again"
+	if _, canResume := d.launchers[w.harness].(resumer); !canResume {
+		note = "the worker ended after its hand-back; this harness cannot be started again (" + cannotResumeReason(w.harness) + ")"
+	}
+	n := d.notice(w, req.Status, note, st)
 	raw, err := d.sendNoticeTo(ctx, w, n, req.Report, to, replyTo)
 	if err != nil {
 		return nil, err
@@ -257,6 +264,9 @@ func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerH
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
 	d.Logf("worker.handback worker=%s session=%s status=%s", w.id, sessionID, req.Status)
+	// Like a Claude Code subagent, a worker ends when it hands back (W10). Its
+	// harness session is kept, so the owner's next message starts it again.
+	go d.endWorker(w, protocol.StopHandback)
 	out := &protocol.WorkerHandbackResult{Status: req.Status}
 	var sent protocol.MessageSent
 	if json.Unmarshal(raw, &sent) == nil {

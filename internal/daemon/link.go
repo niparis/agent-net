@@ -117,7 +117,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onOperatorFrame(ctx, l, h.Type, h.ID, raw)
 			}()
-		case "worker.launch", "worker.kill":
+		case "worker.launch", "worker.kill", "worker.resume":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()
@@ -255,6 +255,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	d.flushOutbox(rctx)
 	d.reportWorkerEnds(rctx)
+	d.cleanupWorkers(rctx)
 	go d.autoUpgrade(rctx) // not tracked: it may stop the daemon itself to restart
 
 	select {

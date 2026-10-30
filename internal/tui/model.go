@@ -686,6 +686,11 @@ func (m Model) groups() []group {
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue
 		}
+		// A worker that ended is not a row, even when offline sessions are
+		// shown: it is offline until its owner's next message starts it again.
+		if a.Worker != nil && !a.Online {
+			continue
+		}
 		if !matches(a, m.filter) {
 			continue
 		}

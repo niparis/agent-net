@@ -35,6 +35,13 @@ import (
 // Pi has no permission prompts: its tools run without asking. A Pi worker
 // therefore has the full reach of Pi's tools in the project folder. Use
 // isolation worktree for tasks that change code (docs/security.md).
+//
+// Pi has no resume: the daemon picks a new session ID for every start, and
+// `pi --mode rpc --session-id` starts a session with that ID rather than
+// opening a stored one. So piLauncher has no resume method, and a follow-up to
+// a Pi worker that handed back is refused with that reason
+// (cannotResumeReason). Read its old session with `agent-net show`, or open its
+// session file in Pi.
 type piLauncher struct{}
 
 func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {

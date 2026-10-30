@@ -256,8 +256,9 @@ type WorkersResult struct {
 }
 
 // WorkersOf picks the workers out of a list of sessions, with the name of
-// each owner when the list has the owner's session. Online workers come
-// first, then the newest.
+// each owner when the list has the owner's session. A worker that ended is not
+// listed: its record stays for a follow-up that starts it again, but it is
+// offline (W7). The newest comes first.
 func WorkersOf(agents []AgentView) []WorkerView {
 	names := map[string]string{}
 	for _, a := range agents {
@@ -265,7 +266,7 @@ func WorkersOf(agents []AgentView) []WorkerView {
 	}
 	out := []WorkerView{}
 	for _, a := range agents {
-		if a.Worker == nil {
+		if a.Worker == nil || !a.Online {
 			continue
 		}
 		out = append(out, WorkerView{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname,
@@ -273,9 +274,6 @@ func WorkersOf(agents []AgentView) []WorkerView {
 			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Online != out[j].Online {
-			return out[i].Online
-		}
 		return out[i].StartedAt > out[j].StartedAt
 	})
 	return out

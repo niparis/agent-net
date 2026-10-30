@@ -130,6 +130,8 @@ ALTER TABLE nodes ADD COLUMN reported_hostname TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
 UPDATE nodes SET reported_hostname = hostname;
 `, `
+ALTER TABLE sessions ADD COLUMN worker_started INTEGER NOT NULL DEFAULT 0;
+`, `
 ALTER TABLE sessions ADD COLUMN tools_version TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN tools_old INTEGER NOT NULL DEFAULT 0;
 `, `
@@ -352,27 +354,31 @@ func (s *Store) upsertSession(q interface {
 		in.Worker = nil
 	}
 	worker := ""
+	var workerStarted int64
 	if in.Worker != nil {
 		raw, err := json.Marshal(in.Worker)
 		if err != nil {
 			return "", false, err
 		}
 		worker = string(raw)
+		workerStarted = in.Worker.StartedAt * int64(time.Second)
 	}
 	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
-		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, tools_version, tools_old, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)
+		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
+		tools_version, tools_old, created_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
-		repo_description=excluded.repo_description, tools_version=excluded.tools_version, tools_old=excluded.tools_old`,
+		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
+		tools_version=excluded.tools_version, tools_old=excluded.tools_old`,
 		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
-		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, in.Repo.Description,
-		protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now)
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now)
 	if err != nil {
 		return "", false, err
 	}
@@ -497,6 +503,55 @@ func (s *Store) SessionNode(sessionID string) (string, error) {
 func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
 	return err
+}
+
+// CleanWorkers deletes the worker records of a node that are offline and
+// whose worker started longer ago than age. A record with no start time was
+// kept by a gateway from before the column existed, so it counts as old and
+// goes at the first cleanup. It returns how many records it deleted.
+func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
+	if age <= 0 {
+		return 0, nil
+	}
+	cut := s.now().Add(-age).UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker != ''
+		AND (worker_started = 0 OR worker_started < ?)`, nodeID, cut)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	if len(ids) > 0 {
+		s.logf("worker.cleaned", "node", nodeID, "workers", len(ids))
+	}
+	return len(ids), nil
 }
 
 func (s *Store) SetNodeOffline(nodeID string) error {
