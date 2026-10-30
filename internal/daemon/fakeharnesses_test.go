@@ -709,6 +709,18 @@ func fakeCodex() {
 							time.Sleep(10 * time.Millisecond)
 						}
 					}
+					if strings.Contains(text, "FAKE:wait") {
+						for {
+							if _, err := os.Stat(filepath.Join(cwd, "fake-codex-finish")); err == nil {
+								break
+							}
+							select {
+							case <-r.Context().Done():
+								return
+							case <-time.After(10 * time.Millisecond):
+							}
+						}
+					}
 					if strings.Contains(text, "FAKE:slow") {
 						<-r.Context().Done()
 						return
