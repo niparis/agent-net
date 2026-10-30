@@ -94,6 +94,32 @@ func TestWaitingFromCLIIsSilentForUnknownSessions(t *testing.T) {
 	cli.mustCall("waiting", map[string]any{"harness": "claude", "native_id": "gone", "kind": "input", "text": "x"})
 }
 
+// A stale wait left by an old idle_prompt notification carries only the
+// generic text. It must not stay in "Needs you": a later request with that
+// text clears it, and a discovery refresh drops it as well.
+func TestIdlePromptWaitingClearsTheStaleWait(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	pi, id := helloPi(t, n, "nb", "/work/bob", false)
+
+	pi.mustCall("waiting", map[string]any{"kind": "input", "text": "next step?"})
+	eventually(t, "waiting stored", func() bool { return waitingOf(t, n, id) != nil })
+
+	pi.mustCall("waiting", map[string]any{"kind": "input", "text": idlePromptText})
+	eventually(t, "the generic idle text clears waiting", func() bool { return waitingOf(t, n, id) == nil })
+}
+
+func TestKeepWaitingDropsTheGenericIdleText(t *testing.T) {
+	old := protocol.SessionInfo{Status: "idle", Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: idlePromptText}}
+	if w := keepWaiting(old, protocol.SessionInfo{Status: "idle"}); w != nil {
+		t.Fatalf("a stale idle_prompt wait was kept: %+v", w)
+	}
+	old.Waiting.Text = "next step?"
+	if w := keepWaiting(old, protocol.SessionInfo{Status: "idle"}); w == nil || w.Text != "next step?" {
+		t.Fatalf("a real wait was dropped: %+v", w)
+	}
+}
+
 // A plugin reload says hello again for the same session. The wait belongs to
 // the daemon, so it must survive; a session that is really working again sends
 // status busy.

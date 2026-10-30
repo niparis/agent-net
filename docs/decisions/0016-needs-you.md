@@ -39,11 +39,11 @@ So `agent-net needs-hook` handles both, and setup adds four hooks, with the same
 | Event | Matcher | Meaning |
 |---|---|---|
 | `PermissionRequest` | all tools | `permission`, text `<tool>(<command, path, url or pattern>)` |
-| `Notification` | `idle_prompt\|agent_needs_input\|elicitation_dialog\|elicitation_url_dialog` | `input` or `question`, with the notification message |
+| `Notification` | `agent_needs_input\|elicitation_dialog\|elicitation_url_dialog` | `input` or `question`, with the notification message |
 | `PreToolUse` | all tools | clear: an approved tool ran, so the session moved on |
 | `UserPromptSubmit` | none | clear |
 
-A `Notification` with `permission_prompt` is still understood, for an owner who added it by hand, but setup does not add it: it would overwrite the precise text six seconds later with a vaguer one.
+A `Notification` with `permission_prompt` is still understood, for an owner who added it by hand, but setup does not add it: it would overwrite the precise text six seconds later with a vaguer one. `idle_prompt` is not a wait: Claude Code sends it about 60 seconds after any turn ends, so it only means the session finished. `needs-hook` ignores it, and the daemon clears a stale `input` wait whose text is exactly `Claude is waiting for your input`. An install that still has the old matcher with `idle_prompt` needs no setup rerun.
 
 The hook reads the JSON on stdin, talks to the local daemon through `waiting`, gives up after 300 ms and prints nothing on any error. It is installed only with a yes, by `--claude-needs-hook`, and removed by `agent-net uninstall`. The record is `~/.config/agent-net/claude-needs-hook.json`.
 

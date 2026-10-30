@@ -35,10 +35,13 @@ const needsTimeoutSeconds = 2
 // show the session moved on. PermissionRequest fires as soon as a tool needs
 // approval and names it, where permission_prompt waits about six seconds and
 // says less. PreToolUse clears the wait when an approved tool runs, even when
-// the session was busy all along.
+// the session was busy all along. Claude Code's idle_prompt is not here: it
+// fires about 60 seconds after any turn ends and means the session finished,
+// not that the owner is needed. An older install that still matches it is
+// harmless, because `agent-net needs-hook` ignores that notification type.
 var needsEvents = []struct{ event, matcher string }{
 	{"PermissionRequest", ""},
-	{"Notification", "idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog"},
+	{"Notification", "agent_needs_input|elicitation_dialog|elicitation_url_dialog"},
 	{"PreToolUse", ""},
 	{"UserPromptSubmit", ""},
 }

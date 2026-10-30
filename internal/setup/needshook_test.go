@@ -21,7 +21,7 @@ func TestNeedsHookIsAddedWithTheOneQuestion(t *testing.T) {
 	h := hooksOfFile(t, f)
 	want := []struct{ event, matcher string }{
 		{"PermissionRequest", ""},
-		{"Notification", "idle_prompt|agent_needs_input|elicitation_dialog|elicitation_url_dialog"},
+		{"Notification", "agent_needs_input|elicitation_dialog|elicitation_url_dialog"},
 		{"PreToolUse", ""},
 		{"UserPromptSubmit", ""},
 	}

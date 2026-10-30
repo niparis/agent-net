@@ -60,11 +60,10 @@ func TestNeedsHookReportsAPermissionNotification(t *testing.T) {
 	}
 }
 
-func TestNeedsHookReportsIdleAndQuestion(t *testing.T) {
+func TestNeedsHookReportsInputAndQuestion(t *testing.T) {
 	for _, c := range []struct {
 		typ, msg, kind string
 	}{
-		{"idle_prompt", "Claude is waiting for your input", protocol.WaitingInput},
 		{"agent_needs_input", "A background session needs input", protocol.WaitingInput},
 		{"elicitation_dialog", "An MCP server asks a question", protocol.WaitingQuestion},
 	} {
@@ -72,6 +71,17 @@ func TestNeedsHookReportsIdleAndQuestion(t *testing.T) {
 		if !called || got.Kind != c.kind || got.Text != c.msg {
 			t.Errorf("%s: called=%v request=%+v", c.typ, called, got)
 		}
+	}
+}
+
+// Claude Code sends idle_prompt about 60 seconds after any turn ends. It means
+// the session finished, not that the owner is needed, so the hook reports
+// nothing and the session stays out of "Needs you".
+func TestNeedsHookIgnoresIdlePrompt(t *testing.T) {
+	_, called := notification(t, `{"session_id":"abc","hook_event_name":"Notification",
+		"notification_type":"idle_prompt","message":"Claude is waiting for your input"}`)
+	if called {
+		t.Fatal("idle_prompt was reported as a wait")
 	}
 }
 
