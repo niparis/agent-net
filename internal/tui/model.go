@@ -41,7 +41,9 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
-	src Source
+	cto           *ctoState
+	ctoGeneration int
+	src           Source
 	// loc and now are replaced in tests.
 	loc *time.Location
 	now func() time.Time
@@ -257,6 +259,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tick()}
+		if m.cto != nil && !m.cto.polling {
+			m.cto.polling = true
+			cmds = append(cmds, m.ctoPollCmd())
+		}
 		if m.conv != nil && m.conv.loaded {
 			cmds = append(cmds, m.convCmd(convNewer)) // follow, even while a refresh runs
 		}
@@ -266,6 +272,32 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Batch(cmds...)
 
+	case ctoPollMsg:
+		m.applyCTOPoll(msg)
+		return m, nil
+	case ctoSendMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else if !m.cto.polling {
+				m.cto.polling = true
+				return m, m.ctoPollCmd()
+			}
+		}
+		return m, nil
+	case ctoNewMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else {
+				m.cto.messages = nil
+				if !m.cto.polling {
+					m.cto.polling = true
+					return m, m.ctoPollCmd()
+				}
+			}
+		}
+		return m, nil
 	case convMsg:
 		m.applyConv(msg)
 		return m, nil
@@ -430,6 +462,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.help = false
 		}
 		return m, nil
+	}
+	if m.cto != nil {
+		return m.ctoKey(k)
+	}
+	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil {
+		return m.startCTO()
 	}
 	if m.mapOn {
 		return m.mapKey(k)

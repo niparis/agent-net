@@ -118,6 +118,10 @@ func (m Model) View() string {
 		for _, s := range m.convView(w, h-1) {
 			add(s)
 		}
+	case m.cto != nil:
+		for _, s := range m.ctoLayout(w, h-1) {
+			add(s)
+		}
 	case m.mapOn:
 		for _, s := range m.mapView(w, h-1) {
 			add(s)
