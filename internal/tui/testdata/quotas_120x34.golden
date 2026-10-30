@@ -8,11 +8,11 @@
     (read on Mac)
 
   MODELS
-  #  MODEL                 HARNESS SCORE       T  S  N  H  V  USED 7 DAYS LAST
-  1  claude-opus-5-5:high  claude  51.7/high   E* E* E* E* G*           0 -
-  2  gpt-6.1-sol:medium    codex   46.1/medium E  E  E  G  P            0 -
-  3  gpt-6.1-terra:high    codex   42.3/high   E  E  E  G  P            0 -
-  1 unscored models
+  3 registered workers · USED 7 DAYS
+  #  NAME               HARNESS   MODEL                            SCORE       T  S  N  H  V  7D LAST
+  1  opus               claude    claude-opus-5-5:high             51.7/high   E* E* E* E* G*  0 -
+  2  sol                codex     gpt-6.1-sol:medium               46.1/medium E  E  E  G  P   0 -
+  3  terra              codex     gpt-6.1-terra:high               42.3/high   E  E  E  G  P   0 -
   now: trivial -> #1, simple -> #1, normal -> #1, hard -> #1, very_complex -> #1
   scores: Artificial Analysis (artificialanalysis.ai)
 
@@ -30,5 +30,5 @@
 
 
 
-  workers now: none   ·   s show excluded   ·   reading 40s old
+  workers now: none   ·   reading 40s old
 1 sessions  2 messages  ? help  q quit

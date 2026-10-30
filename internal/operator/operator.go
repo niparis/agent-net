@@ -81,6 +81,7 @@ type Snapshot struct {
 	OwnerSession string
 	// Launch is false when this machine refuses workers.
 	Launch             bool
+	WorkerProfiles     []protocol.WorkerProfile
 	WorkerProviders    []string
 	Scores             []protocol.ModelScore
 	DifficultyMinimums map[string]float64

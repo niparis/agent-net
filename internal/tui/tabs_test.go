@@ -53,7 +53,8 @@ func TestQuotaViewGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := newModel(size[0], size[1])
 		m.tab = 2
-		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra:high", "gpt-6.1-sol:medium", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5:high"}}}
+		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5"}}}
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"}, {Name: "sol", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}, {Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
 			{Provider: "codex", Plan: "pro", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92, Pace: protocol.QuotaPaceAhead, ResetsAt: t0.Add(2 * time.Hour).Unix()}}},
 			{Provider: "cursor", Plan: "business", Windows: []protocol.QuotaWindow{{ID: "month", PercentUsed: 100, Exhausted: true}}},
@@ -84,7 +85,8 @@ func TestQuotaViewGoldens(t *testing.T) {
 		}
 		golden(t, fmt.Sprintf("quotas_%dx%d", size[0], size[1]), view)
 		m.snap.Nodes[0].Harnesses = append(m.snap.Nodes[0].Harnesses, protocol.HarnessInfo{Name: "opencode", Models: []string{"openrouter/anthropic/claude-opus-5.5:high"}})
-		m = keys(m, "s")
+		m.snap.WorkerProfiles = append(m.snap.WorkerProfiles, protocol.WorkerProfile{Name: "router", Harness: "opencode", Model: "openrouter/anthropic/claude-opus-5.5", Effort: "high"})
+		m.snap.Nodes[0].Harnesses[len(m.snap.Nodes[0].Harnesses)-1].Models = []string{"openrouter/anthropic/claude-opus-5.5"}
 		golden(t, fmt.Sprintf("quotas_excluded_%dx%d", size[0], size[1]), m.View())
 	}
 }
@@ -299,7 +301,8 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 func TestQuotaModelsSection(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra:high", "unknown-model"}}}
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "unknown-model"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}, {Name: "unscored", Harness: "codex", Model: "unknown-model"}}
 	v := ansi.Strip(m.View())
 	for _, want := range []string{"MODELS", "gpt-6.1-terra:high", "42.3/high", "USED 7 DAYS", "LAST", "scores: Artificial Analysis (artificialanalysis.ai)", "unscored"} {
 		if !strings.Contains(v, want) {
@@ -312,6 +315,7 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelFailures = map[string]map[string]bool{"codex": {"fake/a": true}}
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
@@ -321,22 +325,14 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	}
 }
 
-func TestQuotaExcludedWorkerProvidersToggle(t *testing.T) {
+func TestQuotaShowsExcludedRegisteredWorker(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
-	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openai/gpt-6.1-terra:high", "openrouter/anthropic/claude-opus-5.5:high"}}}
-	before := ansi.Strip(m.View())
-	if strings.Contains(before, "openrouter") || strings.Contains(before, "not a worker provider") {
-		t.Fatalf("excluded visible: %s", before)
-	}
-	m = keys(m, "s")
-	shown := ansi.Strip(m.View())
-	if !strings.Contains(shown, "openrouter") || !strings.Contains(shown, "not a worker provider") {
-		t.Fatalf("excluded missing: %s", shown)
-	}
-	m = keys(m, "s")
-	if strings.Contains(ansi.Strip(m.View()), "not a worker provider") {
-		t.Fatal("toggle did not hide")
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openrouter/anthropic/claude-opus-5.5"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "router", Harness: "opencode", Model: "openrouter/anthropic/claude-opus-5.5", Effort: "high"}}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "router") || !strings.Contains(v, "not a worker provider") {
+		t.Fatalf("profile missing: %s", v)
 	}
 }
 
@@ -344,9 +340,26 @@ func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "normal -> #2") {
 		t.Fatalf("choice ignored success:\n%s", v)
+	}
+}
+
+func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "my worker", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
+	v := ansi.Strip(m.View())
+	for _, want := range []string{"my worker", "gpt-6.1-terra:high", "1 registered workers"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q: %s", want, v)
+		}
+	}
+	if strings.Contains(v, "gpt-6.1-sol") {
+		t.Fatalf("unregistered model listed: %s", v)
 	}
 }

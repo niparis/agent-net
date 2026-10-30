@@ -112,6 +112,9 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	} else if errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
 		return snap, err
 	}
+	if raw, err := s.Call(ctx, protocol.OpWorkerProfiles, nil); err == nil {
+		_ = json.Unmarshal(raw, &snap.WorkerProfiles)
+	}
 	if raw, err := s.Call(ctx, protocol.OpWorkerProvidersGet, nil); err == nil {
 		var providers protocol.WorkerProviders
 		if json.Unmarshal(raw, &providers) == nil {

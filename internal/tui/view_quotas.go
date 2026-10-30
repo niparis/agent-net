@@ -133,11 +133,6 @@ func (m Model) quotasView(w, h int) []string {
 		parts = append(parts, "none")
 	}
 	bottom := "  workers now: " + strings.Join(parts, " · ")
-	if m.quotaShowExcluded {
-		bottom += "   ·   s hide excluded"
-	} else {
-		bottom += "   ·   s show excluded"
-	}
 	if newest > 0 {
 		age := m.now().Sub(time.Unix(newest, 0))
 		if age < 0 {
