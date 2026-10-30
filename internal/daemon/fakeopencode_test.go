@@ -149,10 +149,16 @@ func runFakeOpenCode() {
 			location.Add(1)
 			pluginOnce.Do(func() {
 				go fakeOCPluginTracked("opencode", hello, cwd, &location, func(text string) {
-					mu.Lock()
-					rec.Turns = append(rec.Turns, text)
-					mu.Unlock()
-					write()
+					body, _ := json.Marshal(map[string]string{"text": text, "delivery": "queue"})
+					req, err := http.NewRequest("POST", "http://"+net.JoinHostPort(host, port)+"/api/session/"+id+"/prompt", strings.NewReader(string(body)))
+					if err != nil {
+						return
+					}
+					req.SetBasicAuth("opencode", os.Getenv("OPENCODE_SERVER_PASSWORD"))
+					resp, err := http.DefaultClient.Do(req)
+					if err == nil {
+						resp.Body.Close()
+					}
 				})
 			})
 		}
@@ -388,6 +394,7 @@ func runFakeOpenCode() {
 		}
 		mu.Lock()
 		rec.SessionID = r.PathValue("id")
+		rec.Turns = append(rec.Turns, prompt.Text)
 		mu.Unlock()
 		write()
 		mu.Lock()
