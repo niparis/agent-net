@@ -157,6 +157,8 @@ Ask an agent things like:
 
 The guidance text tells agents to answer peers without waiting for your approval. They still ask you first before risky or out-of-scope work, unless you turned on peer trust for that session (key `t` in the TUI): then it acts on requests from your other agents without asking, and still asks before deleting data, force-pushing, spending money or sharing secrets. See [security.md](docs/security.md#peer-trust).
 
+You can also set, per session or per project, who does the coding: key `p` in the TUI. A session can do it itself, hand it to a native subagent on a cheaper model, or hand it to a worker. agent-net applies the policy on every turn, so you do not write instructions into each session. See [delegation policy](docs/reference.md#delegation-policy).
+
 Share an MCP server with every machine. Ask your agent ("add the MCP server at http://10.0.0.5:8000/mcp as homelab, token in ~/.secrets/homelab") or use the CLI:
 
 ```

@@ -77,6 +77,23 @@ Add the hook? [y/N]
 - It adds entries under `hooks` in `~/.claude/settings.json` and keeps everything else. `agent-net uninstall` removes only those entries. See [peer trust and hints](reference.md#peer-trust-and-hints).
 - The Pi extension and the OpenCode plugin do this without a setting; they come with the extension and the plugin.
 
+### The Claude Code policy hook
+
+A second hook, for the [delegation policy](reference.md#delegation-policy) you set in the TUI (key `p`). Setup asks once:
+
+```
+agent-net can add a second Claude Code hook to ~/.claude/settings.json. On each
+prompt it asks agent-net for the delegation policy that you set for the session
+in the TUI (for example: hand code changes to a subagent or a worker), and adds
+it as context. When you set a policy that names a subagent, agent-net also writes
+a marked file in ~/.claude/agents/. Uninstall removes both. No model is called.
+Add the hook? [y/N]
+```
+
+- The default is No. With no terminal nothing changes. `--claude-policy-hook` adds it without a question, `--no-claude-policy-hook` skips it without a question.
+- It adds one `UserPromptSubmit` entry under `hooks` and keeps everything else. `agent-net uninstall` removes only that entry and the `agent-net-coder-*.md` files it wrote.
+- Without the hook, a policy for a Claude Code session is stored but not applied; the TUI says so. The OpenCode plugin and the Pi extension apply it with no setting.
+
 ### The Claude Code question
 
 Claude Code holds a message from another session for your review when the sender's permission mode class differs from the receiver's. agent-net messages go through that path, so a message to a session in a different mode waits until you approve it. Setup asks once:
