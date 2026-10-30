@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -110,4 +111,18 @@ func TestMachineCPUAt100Fits(t *testing.T) {
 			t.Fatalf("%d columns: the CPU cell lacks 100%%: %q", w, line)
 		}
 	}
+}
+
+func TestOnlineMachinesShowAllHarnessNames(t *testing.T) {
+	m := newModel(80, 24)
+	for _, r := range m.machineRows() {
+		if r.nodeID == "n_mac" {
+			line := m.machineLine(r, 78, machineNameWidth(m.machineRows(), m.snap.NodeID), machineVersionWidth(m.machineRows()))
+			if !strings.Contains(ansi.Strip(line), "claude  opencode  pi") {
+				t.Fatalf("missing harness names: %s", line)
+			}
+			return
+		}
+	}
+	t.Fatal("machine missing")
 }

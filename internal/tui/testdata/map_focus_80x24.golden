@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy  updated 14:05:00
+Map (read only)  7 nodes, 4 edges                                updated 14:05
+                              ╭─────────────────╮
+                              │trading-architect│
+                              │mature ○ 0       │
+                              ╰─────────────────╯
+                              ▼ governs owner normal
+╭────────────────╮depends ask ╔════════════════╗depends auto╭────────────────╮
+│tenebrae        │            ║cogforge        ║            │shop            │
+│growing ● 1 busy│┄┄┄┄┄┄┄┄┄┄┄▶║early ○ 0       ║━━━━━━━━━━━▶│mature ○ 0      │
+╰────────────────╯            ╚════════════════╝            ╰────────────────╯
+purpose: Document and evidence API.
+accepts: Generic endpoints and bug fixes.
+refuses: Client-specific endpoints.
+last change: maturity: early - prototype
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, ask about the network          │
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+left/right follow  up/down choose  z overview  enter sessions  c CTO  q quit

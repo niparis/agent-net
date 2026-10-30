@@ -34,6 +34,8 @@ type mapState struct {
 	loading  bool
 	err      string
 	selected string
+	choice   int
+	overview bool
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a
@@ -51,7 +53,7 @@ type mapRow struct {
 // startMap opens the map and reads the graph. The last data stays on screen
 // while the read runs.
 func (m Model) startMap() (tea.Model, tea.Cmd) {
-	m.mapOn = true
+	m.mapOn, m.tab = true, 3
 	m.notice = notice{}
 	if m.mp.loading {
 		return m, nil
@@ -91,13 +93,41 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "M", "esc":
-		m.mapOn = false
+		m.mapOn, m.tab = false, 0
 	case "?":
 		m.help = true
+	case "left":
+		m.mapFollow("in")
+	case "right":
+		m.mapFollow("out")
 	case "up", "k":
-		m.mapMove(-1)
+		if m.mp.choice > 0 {
+			m.mp.choice--
+		} else if len(m.mapLinks("above")) > 0 {
+			m.mapFollow("above")
+		}
 	case "down", "j":
-		m.mapMove(1)
+		if len(m.mapLinks("below")) > 0 {
+			m.mapFollow("below")
+		} else {
+			m.mp.choice++
+		}
+	case "z":
+		m.mp.overview = !m.mp.overview
+	case "enter":
+		m.mapOn, m.tab, m.focus = false, 0, focusSessions
+		m.filter = m.mp.selected
+		m.input.SetValue(m.filter)
+		m.ensureSelection()
+		m.fixScroll()
+	case "c":
+		if m.cto != nil {
+			m.focus = focusCTO
+			m.cto.editing = true
+			m.cto.input.SetValue("about " + m.mp.selected + ": ")
+			m.cto.input.CursorEnd()
+			return m, m.cto.input.Focus()
+		}
 	case "pgup":
 		m.mapMove(-m.mapBodyRows())
 	case "pgdown":
@@ -236,6 +266,12 @@ func (m *Model) mapEnsureSelection() {
 	}
 	for _, name := range list {
 		if name == m.mp.selected {
+			return
+		}
+	}
+	for _, name := range list {
+		if n, ok := m.mapNode(name); ok && n.Kind != "architect" {
+			m.mp.selected = name
 			return
 		}
 	}

@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas
+1 Sessions  2 Messages  3 Quotas  4 Map
 ! Worker not started: machine build-vm does not accept workers (it was set up
   with --no-launch)
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
@@ -21,4 +21,4 @@
 │write to the CTO: set charters, start workers, ask about the network          │
 │> write to the CTO...                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
+1/2/3/4 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

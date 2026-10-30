@@ -139,8 +139,8 @@ func (m Model) hints() []hint {
 		return []hint{{"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.conv != nil:
 		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
-	case m.mapOn:
-		return []hint{{"up/down", "select", 1}, {"M/esc", "sessions", 1}, {"r", "refresh", 3}, {"?", "help", 2}, {"q", "quit", 1}}
+	case m.mapOn && m.focus != focusCTO:
+		return []hint{{"left/right", "follow", 1}, {"up/down", "choose", 1}, {"z", "overview", 1}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -155,7 +155,7 @@ func (m Model) hints() []hint {
 			return []hint{{"c", "recipient", 1}, {"R", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"1/2/3", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+	return []hint{{"1/2/3/4", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
@@ -216,7 +216,7 @@ func (m Model) helpLine(w int) string {
 func (m Model) helpView(w, h int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
-		{"1/2/3", "switch between Sessions, Messages and Quotas"},
+		{"1/2/3/4", "switch between Sessions, Messages, Quotas and Map"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
 		{"enter or c", "open the conversation of the session"},
@@ -227,7 +227,8 @@ func (m Model) helpView(w, h int) []string {
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
-		{"M", "map: charters, maturity, edges and history (read only)"},
+		{"4/M", "map: charters and edges (read only); z switches overview"},
+		{"map arrows", "left/right follow edges; up/down choose; enter sessions; c CTO"},
 		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
