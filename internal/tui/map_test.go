@@ -275,3 +275,12 @@ func TestFocusShowsMultipleNeighborsWhenThereIsRoom(t *testing.T) {
 		t.Fatal("focus omits a neighbor")
 	}
 }
+
+func TestMapReadFailureKeepsLastGraphVisible(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	m.mp.selected = "cogforge"
+	m.applyMap(mapMsg{err: errors.New("temporary failure")})
+	if v := m.View(); !strings.Contains(v, "cogforge") || !strings.Contains(v, "temporary failure") {
+		t.Fatalf("last graph or error missing:\n%s", v)
+	}
+}

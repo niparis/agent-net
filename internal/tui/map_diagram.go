@@ -94,7 +94,10 @@ func linkArrow(links []mapLink, choice, width int) string {
 func (m Model) mapFocusView(w, h int) []string {
 	out := []string{m.mapTitle(w)}
 	if m.mp.err != "" {
-		return append(out, sBad.Render(clip("could not read the graph: "+m.mp.err, w)))
+		if m.mp.selected == "" {
+			return append(out, sBad.Render(clip("could not read the graph: "+m.mp.err, w)))
+		}
+		out[0] = sBad.Render(clip("could not read the graph: "+m.mp.err, w))
 	}
 	if m.mp.selected == "" {
 		return append(out, sDim.Render("  no nodes yet"), sDim.Render("  no node selected"))
