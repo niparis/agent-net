@@ -38,6 +38,12 @@ func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Head
 
 func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	switch typ {
+	case "worker.profile.list", "worker.profile.add", "worker.profile.remove":
+		p, err := decode[protocol.WorkerProfileFrame](raw)
+		if err != nil {
+			return nil, reject("bad worker profile request")
+		}
+		return g.workerProfileAction(nc.id, typ, p)
 	case "worker.start":
 		p, err := decode[protocol.WorkerStartFrame](raw)
 		if err != nil {
@@ -239,10 +245,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	p.Project, p.Harness = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness)
 	p.Model, p.Machine = protocol.CleanModel(p.Model), strings.TrimSpace(p.Machine)
 	p.Continue = strings.TrimSpace(p.Continue)
+	if p.Difficulty != "" {
+		if _, err := protocol.DifficultyFit(0, p.Difficulty, nil); err != nil {
+			return none, reject("%v", err)
+		}
+	}
 	if p.Continue == "" && p.Project == "" {
 		return none, reject("a worker needs a project")
 	}
-	if !protocol.WorkerHarnessSupported(p.Harness) && !(p.Continue != "" && p.Harness == "") {
+	if p.Harness != "" && !protocol.WorkerHarnessSupported(p.Harness) {
 		return none, reject("workers can run these harnesses: %s (not %q)", strings.Join(protocol.WorkerHarnesses, ", "), p.Harness)
 	}
 	if p.Continue == "" && strings.TrimSpace(p.Task) == "" {
@@ -391,6 +402,102 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	case node.Harnesses == nil:
 		return none, reject("machine %s has not reported its harnesses yet", node.Hostname)
 	}
+	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
+	var automaticNote string
+	if automatic {
+		difficulty := p.Difficulty
+		if difficulty == "" {
+			difficulty = "normal"
+		}
+		providers, err := g.store.workerProviders()
+		if err != nil {
+			return none, err
+		}
+		quotas := g.nodeQuotas(pick.NodeID)
+		scores, err := g.store.scores()
+		if err != nil {
+			return none, err
+		}
+		minimums, err := g.store.difficultyMinimums()
+		if err != nil {
+			return none, err
+		}
+		agents, err := g.store.Agents(protocol.QueryAgents{OnlineOnly: true})
+		if err != nil {
+			return none, err
+		}
+		running := map[string]int{}
+		for _, a := range agents {
+			if a.NodeID == pick.NodeID && a.Worker != nil {
+				running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
+			}
+		}
+		profiles, err := g.store.WorkerProfiles()
+		if err != nil {
+			return none, err
+		}
+		if len(profiles) == 0 {
+			if p.Harness == "" {
+				p.Harness = "opencode"
+			}
+			p.Model = ""
+			automaticNote = "no registered workers; add one with the CTO or agent_worker_profile_add"
+		} else {
+			var candidates []protocol.WorkerModelCandidate
+			for _, h := range node.Harnesses {
+				if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
+					continue
+				}
+				failures, err := g.store.RecentWorkerFailures(pick.NodeID, h.Name)
+				if err != nil {
+					return none, err
+				}
+				successes, err := g.store.SucceededModels(pick.NodeID, h.Name)
+				if err != nil {
+					return none, err
+				}
+				for _, profile := range profiles {
+					if profile.Harness != h.Name {
+						continue
+					}
+					installed := false
+					for _, model := range h.Models {
+						if model == profile.Model {
+							installed = true
+							break
+						}
+					}
+					if !installed || !protocol.WorkerProviderAllowed(h.Name, profile.Model, providers.Providers, quotas) {
+						continue
+					}
+					model := profile.Model
+					if profile.Effort != "" {
+						model += ":" + profile.Effort
+					}
+					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[profile.Model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+				}
+			}
+			if len(candidates) == 0 {
+				return none, reject("no registered workers are available on an allowed worker provider on %s", node.Hostname)
+			}
+			g.mu.Lock()
+			rotation := g.modelRotation
+			g.modelRotation++
+			g.mu.Unlock()
+			choice, err := protocol.ChooseWorkerModel(candidates, difficulty, scores, minimums, quotas, running, rotation)
+			if err != nil {
+				return none, reject("%v", err)
+			}
+			p.Harness, p.Model = choice.Harness, choice.Model
+			automaticNote = fmt.Sprintf("%s -> %s %s (score %g, %s", difficulty, p.Harness, p.Model, choice.Score, choice.Fit)
+			if choice.QuotaNote != "" {
+				automaticNote += "; " + choice.QuotaNote
+			}
+			automaticNote += ")"
+		}
+	} else if p.Harness == "" {
+		p.Harness = "opencode"
+	}
 	var hi *protocol.HarnessInfo
 	for i := range node.Harnesses {
 		if node.Harnesses[i].Name == p.Harness {
@@ -402,9 +509,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	// A loose model name is resolved against the machine's own list (W17).
 	// Without a list (claude, or a harness that cannot list), it passes through.
-	var modelNote string
+	modelNote := automaticNote
 	quotas := g.nodeQuotas(pick.NodeID)
-	if p.Model != "" && len(hi.Models) > 0 {
+	if !automatic && p.Model != "" && len(hi.Models) > 0 {
 		usage, err := g.store.ModelUsage(pick.NodeID, p.Harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
 		if err != nil {
 			return none, err

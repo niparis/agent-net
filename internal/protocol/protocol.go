@@ -447,6 +447,10 @@ type NodeView struct {
 	// Tracks is the worker track record of this machine, one entry per
 	// harness and model (decision 0022).
 	Tracks []TrackRecord `json:"tracks,omitempty"`
+	// RecentModelFailures reports real failed runs per harness in the failure window.
+	RecentModelFailures map[string]map[string]bool `json:"recent_model_failures,omitempty"`
+	// RecentModelSuccesses reports recently completed workers by harness and model.
+	RecentModelSuccesses map[string]map[string]bool `json:"recent_model_successes,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.
@@ -458,6 +462,8 @@ type HarnessInfo struct {
 	// harness has a provider, plain ids for Codex and Claude's aliases. It is
 	// empty when the harness did not report a list.
 	Models []string `json:"models,omitempty"`
+	// ModelDefaultEfforts contains known harness defaults by model ID.
+	ModelDefaultEfforts map[string]string `json:"model_default_efforts,omitempty"`
 	// ModelProviders is the owner's list of preferred model providers on this
 	// machine (model_providers in node.json), first is best. It breaks ties
 	// when a loose model name matches several models (ResolveModel).

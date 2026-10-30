@@ -650,6 +650,10 @@ func TestWorkerCannotStartWorkers(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "a worker cannot start workers") {
 		t.Fatalf("the gateway let a worker start a worker: %v", err)
 	}
+	_, err = w.d.call(context.Background(), "worker.profile.list", protocol.WorkerProfileFrame{Requester: wk})
+	if err == nil || !strings.Contains(err.Error(), "non-worker session") {
+		t.Fatalf("worker could read profiles: %v", err)
+	}
 }
 
 func (w *workerNode) workerSession(t *testing.T, id string) string {

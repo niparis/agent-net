@@ -275,7 +275,7 @@ func TestStartFormCompletesAndStarts(t *testing.T) {
 	m, src := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000004") // a session with no project on a known list
 	m = openForm(t, m)
-	if m.form.cur != fProject || m.form.value(fHarness) != "opencode" {
+	if m.form.cur != fProject || m.form.value(fHarness) != "" {
 		t.Fatalf("form start: cur %v harness %q", m.form.cur, m.form.value(fHarness))
 	}
 	// Project: "te" matches tenebrae only; tab completes it.
@@ -295,6 +295,7 @@ func TestStartFormCompletesAndStarts(t *testing.T) {
 	if m.form.cur != fHarness {
 		t.Fatalf("cur %v", m.form.cur)
 	}
+	m.form.in[fHarness].SetValue("opencode")
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.form.cur != fModel {
 		t.Fatalf("cur %v", m.form.cur)
@@ -311,6 +312,8 @@ func TestStartFormCompletesAndStarts(t *testing.T) {
 	if m.form.value(fModel) != "anthropic/claude-haiku-4-5" {
 		t.Fatalf("model: %q", m.form.value(fModel))
 	}
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	// Difficulty is optional. Move to task.
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	// Task. Enter with an empty task is refused with a line in the form.
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
@@ -371,7 +374,7 @@ func TestStartFormMachineAndErrors(t *testing.T) {
 		t.Fatalf("common prefix: %q", m.form.value(fProject))
 	}
 	m = typeText(m, "build-vm")
-	for i := 0; i < 3; i++ {
+	for i := 0; i < 4; i++ {
 		m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	}
 	m = typeText(m, "write tests")
@@ -483,5 +486,28 @@ func TestActionScreensFitEverySize(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestWorkerDifficultyField(t *testing.T) {
+	m := newModel(120, 34)
+	m, _ = m.startForm()
+	m.form.in[fDifficulty].SetValue("hard")
+	if !strings.Contains(m.View(), "Difficulty") {
+		t.Fatal("difficulty missing from form")
+	}
+}
+
+func TestWorkerFormAllowsAutomaticHarness(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m, _ = m.startForm()
+	m.form.in[fProject].SetValue("tenebrae")
+	m.form.in[fHarness].SetValue("")
+	m.form.in[fTask].SetValue("test")
+	m.form.cur = fTask
+	next, cmd := m.submitForm()
+	m = finish(t, next.(Model), cmd)
+	if src.started == nil || src.started.Harness != "" {
+		t.Fatalf("automatic harness: %+v", src.started)
 	}
 }

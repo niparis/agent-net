@@ -817,6 +817,10 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_w", () => registered("ses_w"));
+  for (const [name, method, args] of [["agent_worker_profiles", "worker_profiles", {}], ["agent_worker_profile_add", "worker_profile_add", { harness: "opencode", model: "fake/m1" }], ["agent_worker_profile_remove", "worker_profile_remove", { name: "demo" }]]) {
+    const tool = tools.find((t) => t.name === name); if (!tool) throw new Error("missing " + name);
+    await tool.execute(args, { sessionID: "ses_w" }); if (calls.at(-1)[0] !== method) throw new Error("wrong method " + name);
+  }
   const start = tools.find((t) => t.name === "agent_start");
   const stopTool = tools.find((t) => t.name === "agent_stop");
   if (!start || !stopTool) throw new Error("worker tools are not registered");
@@ -824,10 +828,11 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   for (const bad of ["owner", "from", "sender", "session_id"]) {
     if (bad in start.input.properties) throw new Error("agent_start exposes " + bad);
   }
+  if (!start.input.properties.difficulty) throw new Error("missing difficulty schema");
   const before = calls.length;
-  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x" }, { sessionID: "ses_w" })).content;
+  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x", difficulty: "hard" }, { sessionID: "ses_w" })).content;
   const [method, params] = calls[before];
-  if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x") {
+  if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x" || params.difficulty !== "hard") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
   for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now",

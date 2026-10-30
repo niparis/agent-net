@@ -120,6 +120,7 @@ func (m Model) quotasView(w, h int) []string {
 			out = append(out, sDim.Render(clip("    ("+strings.Join(notes, "; ")+")", w)))
 		}
 	}
+	out = append(out, m.quotaModelsView(w)...)
 	counts := map[string]int{}
 	for _, a := range m.snap.Agents {
 		if a.Online && a.Worker != nil {

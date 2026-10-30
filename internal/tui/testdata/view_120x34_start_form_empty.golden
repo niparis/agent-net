@@ -6,14 +6,14 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 > Project
-  Harness   opencode
-  Model        harness default
+  Harness       automatic choice
+  Model         automatic choice
+  Difficulty
   Task
 
   shop                                         seen on Mac
   strategies                                   registered on Mac
   tenebrae                                     both on Mac
-
 
 
 

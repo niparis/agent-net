@@ -5,15 +5,15 @@
 │ ○ old-box    v0.3.2 offline                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 Start a worker ─────────────────────────────────────────────────────────────────
-  Project   tenebrae   on Mac
-  Harness   opencode
-> Model     anthropic/
+  Project    tenebrae   on Mac
+  Harness       automatic choice
+> Model      anthropic/
+  Difficulty
   Task
   permissions: sandboxed (writes only in its worktree, network on) (enforced fo…
 
   anthropic/claude-haiku-4-5
   anthropic/claude-sonnet-5
-
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

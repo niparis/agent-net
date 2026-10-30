@@ -300,3 +300,7 @@ All docs are indexed in [docs/README.md](docs/README.md): setup, reference, secu
 ## License
 
 [Apache-2.0](LICENSE). Copyright 2026 Nicolas Paris.
+
+## Credits
+
+Model capability scores are from [Artificial Analysis](https://artificialanalysis.ai/).

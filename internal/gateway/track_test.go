@@ -144,3 +144,21 @@ func TestPlaybookNotes(t *testing.T) {
 		t.Error("an oversized note was accepted")
 	}
 }
+
+func TestRecentWorkerFailuresExcludeStopsAndOldRuns(t *testing.T) {
+	s, _ := newTestStore(t)
+	now := s.now()
+	for _, r := range []protocol.WorkerRun{
+		{NodeID: "n1", Harness: "pi", Model: "failed", Outcome: protocol.OutcomeFailed, EndedAt: now.Unix()},
+		{NodeID: "n1", Harness: "pi", Model: "stopped", Outcome: protocol.OutcomeStopped, EndedAt: now.Unix()},
+		{NodeID: "n1", Harness: "pi", Model: "old", Outcome: protocol.OutcomeFailed, EndedAt: now.Add(-48 * time.Hour).Unix()},
+	} {
+		if err := s.RecordWorkerRun(r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.RecentWorkerFailures("n1", "pi")
+	if err != nil || !got["failed"] || got["stopped"] || got["old"] {
+		t.Fatalf("got %v, %v", got, err)
+	}
+}

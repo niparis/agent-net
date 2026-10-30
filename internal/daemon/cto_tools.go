@@ -90,6 +90,29 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			return nil, err
 		}
 		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
+	case "worker_profile_list", "worker_profile_add", "worker_profile_remove":
+		var p protocol.WorkerProfileRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad worker profile request")
+		}
+		sid := d.ownerSessionID()
+		if sid == "" {
+			return nil, errNotConnected
+		}
+		action := map[string]string{"worker_profile_list": "worker.profile.list", "worker_profile_add": "worker.profile.add", "worker_profile_remove": "worker.profile.remove"}[name]
+		return d.call(ctx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
+	case "worker_providers_set":
+		var p protocol.WorkerProviders
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad worker providers")
+		}
+		return d.workerProviders(ctx, &p)
+	case "score_set":
+		var p protocol.ScoreSetRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad score request")
+		}
+		return d.scores(ctx, &p)
 	case "worker_start":
 		var p protocol.WorkerStartRequest
 		if json.Unmarshal(raw, &p) != nil {

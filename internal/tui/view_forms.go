@@ -39,7 +39,7 @@ func (m Model) noticeLines(w int) []string {
 func (m Model) formView(w, rows int) []string {
 	f := m.form
 	out := []string{section("Start a worker", w)}
-	const lw = 9
+	const lw = 10
 	for i := formField(0); i < nFields; i++ {
 		marker := "  "
 		if i == f.cur {
@@ -113,9 +113,13 @@ func (m Model) fieldNote(i formField) string {
 			return "no such project"
 		}
 		return "on " + machine
+	case fHarness:
+		if m.form.value(fHarness) == "" {
+			return "automatic choice"
+		}
 	case fModel:
 		if m.form.value(fModel) == "" {
-			return "harness default"
+			return "automatic choice"
 		}
 	}
 	return ""
@@ -134,7 +138,7 @@ func (m Model) noCandidates() string {
 		if _, _, node := m.resolveProject(m.form.value(fProject)); node == nil {
 			return "Pick the project first: its machine lists the models. Free text works too."
 		}
-		return "No model matches. Leave it empty for the harness default."
+		return "No model matches. Leave it empty for automatic choice."
 	}
 	return ""
 }

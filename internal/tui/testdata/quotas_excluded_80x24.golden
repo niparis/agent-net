@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy  updated 14:05:00
+
+  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS
+  claude         max          5h       █████░░░░░  50%      behind    -
+    (read on Mac; stale reading)
+  codex          pro          week     █████████░  92%      ahead     in 2h00
+  cursor         business     month    ██████████ exhausted -         -
+    (read on Mac)
+
+  MODELS
+  4 registered workers · USED 7 DAYS
+  #  NAME    HARNESS  MODEL                SCORE       T  S  N  H  V  7D LAST
+  1  opus    claude   claude-opus-5-5:high 51.7/high   E* E* E* E* G*  0 -
+  2  router  opencode openrouter/anthropi… 51.7/high   E  E  E  E  G   0 -
+     (not a worker provider)
+  workers now: none   ·   reading 40s old
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, ask about the network          │
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+1 sessions  2 messages  ? help  q quit

@@ -233,6 +233,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	addRegistryTools(s, run)
 	addProjectTools(s, run)
 	addWorkerTools(s, run)
+	addWorkerProfileTools(s, run)
 	addLearnTool(s, run)
 	return s
 }

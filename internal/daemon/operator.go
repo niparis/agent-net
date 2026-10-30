@@ -101,6 +101,29 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 			Body: p.Body, IdempotencyKey: p.IdempotencyKey})
 		return data, true, err
 
+	case protocol.OpWorkerProfiles, protocol.OpWorkerProfileAdd, protocol.OpWorkerProfileRemove:
+		var p protocol.WorkerProfileRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad worker profile request")
+		}
+		sid, ls, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
+		}
+		if ls != nil {
+			d.mu.Lock()
+			worker := ls.info.Worker != nil
+			d.mu.Unlock()
+			if worker {
+				return nil, true, errors.New("workers cannot manage worker profiles")
+			}
+		}
+		action := map[string]string{protocol.OpWorkerProfiles: "worker.profile.list", protocol.OpWorkerProfileAdd: "worker.profile.add", protocol.OpWorkerProfileRemove: "worker.profile.remove"}[method]
+		data, err := d.call(ctx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
+		if err != nil {
+			return nil, true, tooOldGateway(err)
+		}
+		return data, true, nil
 	case protocol.OpLearn:
 		// A finding comes from an agent session, never from the command line.
 		var p protocol.LearnRequest
@@ -221,7 +244,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 			return nil, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
 		}
-	} else if p.Project == "" || p.Harness == "" || p.Task == "" {
+	} else if p.Project == "" || p.Task == "" {
 		return nil, errors.New("worker_start needs project, harness and task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {

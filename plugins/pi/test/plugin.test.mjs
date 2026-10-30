@@ -19,7 +19,7 @@ mkdirSync(join(dir, "node_modules", "typebox"), { recursive: true });
 writeFileSync(join(dir, "node_modules", "typebox", "package.json"), JSON.stringify({ name: "typebox", type: "module", main: "index.js" }));
 writeFileSync(
   join(dir, "node_modules", "typebox", "index.js"),
-  "const f = () => ({});\nexport const Type = new Proxy({}, { get: () => f });\n",
+  "const f = () => ({});\nexport const Type = new Proxy({}, { get: (_, key) => key === 'Object' ? (properties) => ({ properties }) : f });\n",
 );
 
 const js = ts.transpileModule(readFileSync(pluginPath, "utf8"), {
@@ -249,6 +249,16 @@ await test("the announce rule goes into the system prompt once per turn", async 
   if (again !== undefined) throw new Error("added twice");
 });
 
+await test("worker profile tools reach the daemon", async () => {
+  const p = makePi(); extension(p.api);
+  const n = hellos.length; await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  for (const [name, method, args] of [["agent_worker_profiles", "worker_profiles", {}], ["agent_worker_profile_add", "worker_profile_add", { harness: "opencode", model: "fake/m1" }], ["agent_worker_profile_remove", "worker_profile_remove", { name: "demo" }]]) {
+    const tool = p.tools.get(name); if (!tool) throw new Error("missing " + name);
+    await tool.execute("id", args); if (requests.at(-1).method !== method) throw new Error("wrong method " + name);
+  }
+});
+
 await test("agent_nodes and agent_start show the track record and playbook", async () => {
   const p = makePi();
   extension(p.api);
@@ -265,7 +275,9 @@ await test("agent_nodes and agent_start show the track record and playbook", asy
   replies.worker_start = { status: "started", session_id: "s_w", harness: "opencode", model: "a/x", project: "p", hostname: "mac",
     permissions: "sandboxed", track: { harness: "opencode", model: "a/x", runs: 4, complete: 3, stopped: 1, median_run_seconds: 60, resumable: true },
     playbooks: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff" }] };
-  const started = (await p.tools.get("agent_start").execute("id", { project: "p", task: "t" })).content[0].text;
+  const started = (await p.tools.get("agent_start").execute("id", { project: "p", task: "t", difficulty: "hard" })).content[0].text;
+  if (!p.tools.get("agent_start").parameters.properties.difficulty) throw new Error("missing difficulty schema");
+  if (requests.filter((r) => r.method === "worker_start").pop().params.difficulty !== "hard") throw new Error("difficulty not forwarded");
   for (const want of ["a/x · opencode: 4 runs: 3 complete, 1 stopped (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
     if (!started.includes(want)) throw new Error("start misses " + JSON.stringify(want) + ": " + JSON.stringify(started));
   }

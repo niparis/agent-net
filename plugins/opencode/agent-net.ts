@@ -1016,8 +1016,9 @@ const TOOLS: ToolDef[] = [
     properties: {
       project: str("The name of a project from agent_project_list, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"),
       task: str("What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply. Optional only with continue"),
-      harness: str("opencode (the default; with continue, the old worker's harness), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."),
-      model: str("The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_nodes). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty means the harness default."),
+      harness: str("claude, opencode, pi or codex; empty lets automatic selection choose a harness (with continue, the old worker's harness). agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."),
+      model: str("The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_nodes). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty or auto selects a registered worker profile by task difficulty and quota; an empty roster uses the harness default."),
+      difficulty: { type: "string", enum: ["trivial", "simple", "normal", "hard", "very_complex"], description: "Task difficulty for automatic model choice (default normal)." },
       machine: str("The machine, only when the project is on more than one"),
       base: str("Existing local branch to start the worktree from."),
       continue: str("The session_id or worker ID of an ended worker that you started. The new worker runs on the same machine, in the same project, with the same harness and model unless you give others, in a new worktree on a new branch made from the old worker's branch (a worker that ended with no hand-back has its unfinished changes saved as the last commit there), and gets the old worker's full first task. task is then optional and is added as an extra. project, machine, base and isolation must be empty."),
@@ -1027,6 +1028,9 @@ const TOOLS: ToolDef[] = [
     method: "worker_start",
     format: formatStarted,
   },
+  { name: "agent_worker_profiles", description: "List registered worker profiles. Workers cannot use this tool.", properties: {}, required: [], method: "worker_profiles", format: (r) => JSON.stringify(r) },
+  { name: "agent_worker_profile_add", description: "Register a worker profile when the owner asks. The model must be available on an installed harness.", properties: { name: str("Optional profile name."), harness: str("Installed worker harness."), model: str("Model ID or loose name."), effort: str("Optional reasoning effort.") }, required: ["harness", "model"], method: "worker_profile_add", format: (r) => JSON.stringify(r) },
+  { name: "agent_worker_profile_remove", description: "Remove a registered worker profile when the owner asks.", properties: { name: str("Registered profile name.") }, required: ["name"], method: "worker_profile_remove", format: (r) => JSON.stringify(r) },
   {
     name: "agent_handback",
     description:

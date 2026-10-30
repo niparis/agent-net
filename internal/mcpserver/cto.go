@@ -119,15 +119,32 @@ var ctoTools = map[string]ctoToolDef{
 			"body": {typ: "string", desc: "Message text, sent as a request from the owner's CTO."},
 		},
 	},
+	"worker_profile_list": {desc: "List all registered worker profiles, with their harness, model, effort, creator and time."},
+	"worker_profile_add": {desc: "Register a worker profile only when the owner asks; model names resolve against installed harness model lists.", fields: map[string]ctoField{
+		"name": {typ: "string", desc: "Optional profile name; defaults to the harness and resolved model."}, "harness": {typ: "string", desc: "Installed worker harness.", enum: []string{"opencode", "claude", "pi", "codex"}}, "model": {typ: "string", desc: "Model ID or loose model name."}, "effort": {typ: "string", desc: "Optional reasoning or thinking effort."},
+	}},
+	"worker_profile_remove": {desc: "Remove a registered worker profile by name only when the owner asks for that removal.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name of the registered profile to remove."}}},
+	"worker_providers_set": {
+		desc:   "Set the network worker provider allowlist only when the owner asks. Pass provider IDs as an array; omit providers to restore the defaults.",
+		fields: map[string]ctoField{"providers": {typ: "array", desc: "Provider IDs to allow. Omit this field to restore the subscription defaults."}},
+	},
+	"score_set": {
+		desc: "Set or clear an owner model capability score when the owner asks. Scores range from 0 to 100 and override the bundled table.",
+		fields: map[string]ctoField{
+			"model": {typ: "string", desc: "Model ID or loose model pattern to score."},
+			"score": {typ: "number", desc: "Capability score from 0 to 100. Omit to clear the owner override."},
+		},
+	},
 	"worker_start": {
 		desc: "Start a worker in a project on one of the owner's machines. The worker gets its own git worktree by default, and its report comes back as a message. Only do this when the owner asks.",
 		fields: map[string]ctoField{
-			"project":   {typ: "string", desc: "Known project name or absolute path. Empty uses the CTO's own project."},
-			"harness":   {typ: "string", desc: "Harness for the worker. Empty uses the default, opencode.", enum: []string{"opencode", "claude", "pi", "codex"}},
-			"model":     {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty uses the harness default."},
-			"task":      {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
-			"machine":   {typ: "string", desc: "Machine that holds the project, when more than one does."},
-			"isolation": {typ: "string", desc: "worktree gives the worker its own git worktree (the default in a git repository). none works in the project folder, for read-only tasks.", enum: []string{"worktree", "none"}},
+			"project":    {typ: "string", desc: "Known project name or absolute path. Empty uses the CTO's own project."},
+			"harness":    {typ: "string", desc: "Harness for the worker. Empty lets automatic model selection choose one.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"model":      {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty or auto selects by difficulty and quota."},
+			"difficulty": {typ: "string", desc: "Task difficulty for automatic model selection; defaults to normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
+			"task":       {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
+			"machine":    {typ: "string", desc: "Machine that holds the project, when more than one does."},
+			"isolation":  {typ: "string", desc: "worktree gives the worker its own git worktree (the default in a git repository). none works in the project folder, for read-only tasks.", enum: []string{"worktree", "none"}},
 		},
 	},
 }
@@ -140,6 +157,9 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			prop := map[string]any{"type": f.typ, "description": f.desc}
+			if f.typ == "array" {
+				prop["items"] = map[string]any{"type": "string"}
+			}
 			if len(f.enum) > 0 {
 				prop["enum"] = f.enum
 			}
