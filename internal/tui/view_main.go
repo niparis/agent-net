@@ -58,11 +58,12 @@ func (m Model) layout() layout {
 		l.sessions, l.detail, l.feed = table, detail, feed
 		return l
 	}
-	// Smallest sizes: the table seven rows (two machine headings and five
-	// sessions), the detail pane seven (enough for the top five processes),
-	// the feed two. On a small screen they shrink, the feed first. On a big
-	// one the table gets the rows its sessions need, then the detail pane and
-	// the feed grow, and whatever is left stays blank in the table.
+	// Smallest sizes: the table as many rows as its sessions need (three at
+	// least, seven at most at first), the detail pane seven (enough for the
+	// top five processes), the feed two. On a small screen they shrink, the
+	// feed first. On a big one the detail pane and the feed grow, and what is
+	// still left goes to the detail pane: the list never leaves a blank gap
+	// before it.
 	table, detail, feed := min(7, max(len(m.tableRows()), 3)), 7, 2
 	if avail < table+detail+feed {
 		table = max(avail-detail-feed, 3)
@@ -89,7 +90,7 @@ func (m Model) layout() layout {
 		grow(&table, len(m.tableRows()))
 		grow(&detail, 13)
 		grow(&feed, 14)
-		table += extra
+		detail += extra
 	}
 	l.sessions, l.detail, l.feed = table, detail, feed
 	return l
@@ -211,11 +212,18 @@ func (m Model) titleLine(w int) string {
 	if workers > 0 {
 		mid += ", " + plural(workers, "worker")
 	}
+	var filters []string
+	if m.activeOnly {
+		filters = append(filters, "active")
+	}
 	if m.showOffline {
-		mid += "  +offline"
+		filters = append(filters, "offline")
 	}
 	if m.filter != "" {
-		mid += "  filter: " + sanitize(m.filter)
+		filters = append(filters, "/"+sanitize(m.filter))
+	}
+	if len(filters) > 0 {
+		mid += "  filter: " + strings.Join(filters, ", ")
 	}
 	right := "no data yet"
 	if m.haveData {
@@ -282,16 +290,26 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	}
 	line := " " + style.Render(dot) + " " + cell(name, nameW) + " " + cell(version, versionW) + " " + style.Render(cell(state, 7))
 	line += " " + m.machineUsage(r, w-ansi.StringWidth(line)-1)
-	if rest := w - ansi.StringWidth(line) - 2; rest >= 8 && r.harnesses != nil && r.online {
+	if !r.online {
+		return clip(sDim.Render(ansi.Strip(line)), w)
+	}
+	rest := w - ansi.StringWidth(line) - 2
+	// The shared OpenCode service belongs to the machine, not to any one
+	// session: a short note here, its process list in a session's detail.
+	if t, st := m.sharedService(r.nodeID); st == usageOK {
+		note := fmt.Sprintf("%s service %s %s", sanitize(t.Harness), fmtMem(t.RSS), plural(t.Procs, "proc"))
+		if ansi.StringWidth(note) <= rest {
+			line += "  " + sDim.Render(note)
+			rest -= ansi.StringWidth(note) + 2
+		}
+	}
+	if rest >= 8 && r.harnesses != nil {
 		for _, withVersions := range []bool{true, false} {
 			if hl := harnessText(r.harnesses, withVersions); ansi.StringWidth(hl) <= rest {
 				line += "  " + sDim.Render(hl)
 				break
 			}
 		}
-	}
-	if !r.online {
-		return clip(sDim.Render(ansi.Strip(line)), w)
 	}
 	return clip(line, w)
 }
@@ -362,10 +380,10 @@ type column struct {
 }
 
 // columns picks the columns that fit in avail columns and gives each a width.
-// NAME grows past 18 columns, up to 32, only as far as the longest name needs
-// (nameWant), so short names leave the room to the other columns. The usage
-// columns have a fixed width. When the terminal is narrow the least useful
-// columns go first: FUNCTION, TRUST (shown as [t] before the name), BRANCH, MODE, MODEL, PROJECT.
+// The columns are, in order: NAME, AGENT, PROJECT, MODEL, STATUS, TRUST,
+// POLICY, CPU, RAM, TASK. TRUST is always there. TASK takes whatever is left
+// after the others. When the terminal is narrow the columns that give way are
+// TASK, MODEL, PROJECT, then POLICY (decision 0017).
 func columns(avail, nameWant int) []column { return columnsFor(avail, nameWant, false) }
 
 // columnsFor is columns, with the POLICY column when some session has a
@@ -376,15 +394,12 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
 		{name: "AGENT", min: 8, max: 8},
 		{name: "PROJECT", min: 9, max: 16},
-		{name: "BRANCH", min: 8, max: 16},
 		{name: "MODEL", min: 10, max: 18},
-		{name: "MODE", min: 4, max: 4},
 		{name: "STATUS", min: 6, max: 6},
 		{name: "TRUST", min: 5, max: 5},
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
-		{name: "PROC", min: 4, max: 4, right: true},
-		{name: "FUNCTION", min: 12, max: 80},
+		{name: "TASK", min: 10, max: 4000},
 	}
 	if policy {
 		// After TRUST.
@@ -395,7 +410,7 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 			}
 		}
 	}
-	for _, drop := range []string{"FUNCTION", "POLICY", "TRUST", "BRANCH", "MODE", "MODEL", "PROJECT"} {
+	for _, drop := range []string{"TASK", "MODEL", "PROJECT", "POLICY"} {
 		if sumMin(cols) <= avail {
 			break
 		}
@@ -409,8 +424,25 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 	for i := range cols {
 		cols[i].width = cols[i].min
 	}
+	if hasColumn(cols, "TASK") {
+		// Grow NAME to what it needs, then give every other column to TASK.
+		extra := avail - sumMin(cols)
+		for i := range cols {
+			switch cols[i].name {
+			case "NAME":
+				add := min(extra, cols[i].max-cols[i].min)
+				cols[i].width += add
+				extra -= add
+			case "TASK":
+				cols[i].width += extra
+				extra = 0
+			}
+		}
+		return cols
+	}
+	// Without TASK the room goes to the name and the project columns.
 	extra := avail - sumMin(cols)
-	for _, name := range []string{"NAME", "PROJECT", "MODEL", "BRANCH", "FUNCTION"} {
+	for _, name := range []string{"NAME", "PROJECT", "MODEL"} {
 		for i := range cols {
 			if cols[i].name == name && extra > 0 {
 				add := min(extra, cols[i].max-cols[i].min)
@@ -437,6 +469,26 @@ func sumMin(cols []column) int {
 		n += c.min
 	}
 	return n
+}
+
+// cellDots fits s into w columns and marks a cut with three dots, as the TASK
+// column does.
+func cellDots(s string, w int) string {
+	if w <= 0 {
+		return ""
+	}
+	s = sanitize(s)
+	if ansi.StringWidth(s) > w {
+		if w <= 3 {
+			s = ansi.Truncate(s, w, "")
+		} else {
+			s = ansi.Truncate(s, w-3, "") + "..."
+		}
+	}
+	if pad := w - ansi.StringWidth(s); pad > 0 {
+		s += strings.Repeat(" ", pad)
+	}
+	return s
 }
 
 // cellR fits s into w columns, right aligned.
@@ -478,9 +530,12 @@ func (m Model) sessionsTable(w, n int) []string {
 		out = append(out, sDim.Render(msg))
 	} else if len(rows) == 0 {
 		msg := "  no sessions"
-		if m.filter != "" {
+		switch {
+		case m.filter != "":
 			msg = "  no session matches the filter"
-		} else if !m.showOffline {
+		case m.activeOnly:
+			msg = "  no active sessions (a shows the quiet ones)"
+		case !m.showOffline:
 			msg = "  no online sessions (o shows the offline and dormant ones)"
 		}
 		out = append(out, sDim.Render(msg))
@@ -497,12 +552,9 @@ func (m Model) sessionsTable(w, n int) []string {
 	}
 	for i := top; i < len(rows) && len(out) < n+1; i++ {
 		r := rows[i]
-		switch {
-		case r.header:
+		if r.header {
 			out = append(out, m.groupLine(r.g, w))
-		case r.shared != nil:
-			out = append(out, m.sharedLine(*r.shared, r.g, cols, w))
-		default:
+		} else {
 			out = append(out, m.sessionLine(r.agent, r.mark, cols, w))
 		}
 	}
@@ -513,25 +565,34 @@ func (m Model) sessionsTable(w, n int) []string {
 	return out
 }
 
-// groupLine is the heading of one machine: its name, bold, and a light rule.
+// groupLine is the heading of one machine: its name, bold, a light rule, the
+// session count and how many the active filter hides.
 func (m Model) groupLine(g group, w int) string {
 	name := g.host
 	if g.nodeID == m.snap.NodeID && g.nodeID != "" {
 		name += " (here)"
 	}
-	count := fmt.Sprintf("%d", len(g.agents))
-	if len(g.agents) == 1 {
-		count += " session"
-	} else {
-		count += " sessions"
+	var notes []string
+	if len(g.agents) > 0 {
+		notes = append(notes, plural(len(g.agents), "session"))
 	}
-	head := " " + sBold.Render(sanitize(name)) + " " + sDim.Render(count+" ")
+	if g.hidden > 0 {
+		notes = append(notes, fmt.Sprintf("%d hidden", g.hidden))
+	}
+	head := " " + sBold.Render(sanitize(name))
+	if len(notes) > 0 {
+		head += " " + sDim.Render(strings.Join(notes, " · ")+" ")
+	} else {
+		head += " "
+	}
 	rule := strings.Repeat("─", max(w-ansi.StringWidth(head), 0))
 	return clip(head+sDim.Render(rule), w)
 }
 
-// usageCells writes the CPU, RAM and PROC cells of a session. They merge into
-// one note for a shared tree, and read "?" when the figure is missing or old.
+// usageCells writes the CPU and RAM cells of a session. They merge into one
+// note for a tree that several sessions share, and read "?" when the figure is
+// missing or old. A worker's private OpenCode server is its own tree, so its
+// figures stay on the worker's row.
 func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string {
 	cells := map[string]string{}
 	width := func(name string) int {
@@ -547,15 +608,15 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 	case !a.Online:
 		return cells
 	case st != usageOK:
-		for _, k := range []string{"CPU", "RAM", "PROC"} {
+		for _, k := range []string{"CPU", "RAM"} {
 			cells[k] = sDim.Render(cellR("?", width(k)))
 		}
-	case t.Shared:
-		all := width("CPU") + width("RAM") + width("PROC") + 2
+	case sharedTree(t):
+		all := width("CPU") + width("RAM") + 1
 		cells["CPU"] = sDim.Render(cell("shared", all))
-		cells["RAM"], cells["PROC"] = "\x00", "\x00" // swallowed by the CPU cell
+		cells["RAM"] = "\x00" // swallowed by the CPU cell
 	default:
-		cpu, ram, procs := cellR(fmtPct(t.CPU), width("CPU")), cellR(fmtMem(t.RSS), width("RAM")), cellR(fmt.Sprint(t.Procs), width("PROC"))
+		cpu, ram := cellR(fmtPct(t.CPU), width("CPU")), cellR(fmtMem(t.RSS), width("RAM"))
 		if t.Samples == 0 {
 			cpu = sDim.Render(cellR("...", width("CPU")))
 		}
@@ -566,11 +627,8 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 			if t.RSS >= HeavyRSS {
 				ram = sBad.Render(ram)
 			}
-			if t.Procs > HeavyProcs {
-				procs = sBad.Render(procs)
-			}
 		}
-		cells["CPU"], cells["RAM"], cells["PROC"] = cpu, ram, procs
+		cells["CPU"], cells["RAM"] = cpu, ram
 	}
 	return cells
 }
@@ -593,28 +651,13 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		var v string
 		switch c.name {
 		case "NAME":
-			if a.PeerTrust && !hasColumn(cols, "TRUST") {
-				mk.prefix = "[t] " + mk.prefix // a narrow screen has no TRUST column
-			}
 			v = nameText(a, mk, c.width)
 		case "AGENT":
 			v = a.Harness
 		case "PROJECT":
 			v = firstNonEmpty(a.Repo.Project, a.Profile.Project)
-		case "BRANCH":
-			v = a.Repo.Branch
 		case "MODEL":
 			v = shortModel(a.Model)
-		case "MODE":
-			// Unknown reads as a dim "?", and an older daemon's blank as nothing.
-			switch a.Mode {
-			case protocol.ModeForeground:
-				v = "fg"
-			case protocol.ModeBackground:
-				v = "bg"
-			case protocol.ModeUnknown:
-				v = "?"
-			}
 		case "STATUS":
 			v = statusShort(a.Status)
 			if !a.Online {
@@ -626,27 +669,27 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 			}
 		case "POLICY":
 			v = policyBadge(a.Delegation)
-		case "FUNCTION":
-			v = functionText(a)
+		case "TASK":
+			v = taskText(a)
 		}
-		if c.name != "MODE" && !(c.name == "FUNCTION" && v == noAgentsMD) {
+		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
-		v = cell(v, c.width)
+		if c.name == "TASK" {
+			v = cellDots(v, c.width)
+		} else {
+			v = cell(v, c.width)
+		}
 		if !selected && a.Online {
 			switch c.name {
 			case "STATUS":
 				v = statusStyle(a.Status).Render(v)
-			case "MODE", "BRANCH", "AGENT", "POLICY":
+			case "AGENT", "POLICY", "TASK":
 				v = sDim.Render(v)
 			case "TRUST":
 				if a.PeerTrust {
 					v = sBusy.Render(v)
 				} else {
-					v = sDim.Render(v)
-				}
-			case "FUNCTION":
-				if v == "" || strings.HasPrefix(v, noAgentsMD) {
 					v = sDim.Render(v)
 				}
 			}
@@ -657,10 +700,42 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	switch {
 	case selected:
 		return sSel.Render(clip(stripStyles(line), w))
-	case !a.Online:
+	case !a.Online || m.idleLong(a):
 		return sDim.Render(clip(stripStyles(line), w))
 	}
 	return clip(line, w)
+}
+
+// rowName is the name of a session in the table. A worker shows the first line
+// of its task, after the tree marker. When its machine did not tell us the task
+// (an older gateway), it shows "worker <harness> <short id>" instead, with the
+// worker's own ID. A name the plugin reports never replaces a worker's task.
+func rowName(a protocol.AgentView) string {
+	if a.Worker != nil {
+		if t := strings.TrimSpace(a.Worker.Task); t != "" {
+			return sanitize(t)
+		}
+		id := a.Worker.ID
+		if id == "" {
+			id = a.SessionID
+		}
+		return "worker " + sanitize(a.Harness) + " " + shortID(id)
+	}
+	return sanitize(a.Profile.Name)
+}
+
+// taskText is the TASK cell: the task the session announced. A session that
+// never announced one falls back to its harness title when that says something
+// the NAME does not. It is blank, not a dash, when there is nothing to say.
+func taskText(a protocol.AgentView) string {
+	if t := strings.TrimSpace(a.Profile.Task); t != "" {
+		return sanitize(t)
+	}
+	title := strings.TrimSpace(a.Title)
+	if title == "" || title == strings.TrimSpace(rowName(a)) {
+		return ""
+	}
+	return sanitize(title)
 }
 
 // nameText is the NAME cell of a session in w columns. A worker has its tree
@@ -668,7 +743,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 // than its caller. The name gives way first: it is cut with an ellipsis so the
 // glyphs and the host stay.
 func nameText(a protocol.AgentView, mk treeMark, w int) string {
-	name := sanitize(a.Profile.Name)
+	name := rowName(a)
 	suffix := ""
 	if mk.host != "" {
 		suffix = " @" + sanitize(mk.host)
@@ -678,36 +753,6 @@ func nameText(a protocol.AgentView, mk treeMark, w int) string {
 		name = ansi.Truncate(name, room, "…")
 	}
 	return mk.prefix + name + suffix
-}
-
-// sharedLine is the process tree that several sessions share, listed once
-// under the sessions of its machine. It is never split between them.
-func (m Model) sharedLine(t protocol.TreeUsage, g group, cols []column, w int) string {
-	width := func(name string) int {
-		for _, c := range cols {
-			if c.name == name {
-				return c.width
-			}
-		}
-		return 0
-	}
-	// The label spans every column before CPU.
-	lead := 0
-	for _, c := range cols {
-		if c.name == "CPU" {
-			break
-		}
-		lead += c.width + 1
-	}
-	label := fmt.Sprintf("  %s service, shared by %s (not split)", sanitize(t.Harness), plural(len(t.Sessions), "session"))
-	cpu, ram, procs := cellR(fmtPct(t.CPU), width("CPU")), cellR(fmtMem(t.RSS), width("RAM")), cellR(fmt.Sprint(t.Procs), width("PROC"))
-	if t.Samples == 0 {
-		cpu = cellR("...", width("CPU"))
-	}
-	if t.Procs > HeavyProcs {
-		procs = sBad.Render(procs)
-	}
-	return clip(sDim.Render(cell(label, lead+1))+" "+cpu+" "+ram+" "+procs, w)
 }
 
 // plural writes a count and a noun: "1 session", "3 sessions".

@@ -1,28 +1,27 @@
 agent-net tui  12 online · 5 offline today                                                            updated 14:05:00
- ● Mac (here) v0.4.0 online  cpu █░░░ 12% (8%)  mem ██░░ 9.1/16G   load 1.2  claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● Mac (here) v0.4.0 online  cpu █░░░ 12% (8%)  mem ██░░ 9.1/16G   load 1.2  opencode service 2.1G 9 procs
  ● build-vm   v0.4.0 online  cpu ███░ 71% (40%) mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
  ○ old-box    v0.3.2 offline
-  NAME               AGENT    PROJECT          BRANCH   MODEL            MODE STATUS TRUST   CPU   RAM PROC FUNCTION
+  NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 5 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  api                opencode -                -        -                ?    busy   -     shared           no AGENTS.md
-  docs               opencode -                -        -                ?    idle   -     shared           no AGENTS.md
-  strategies         claude   strategies       feature… sonnet-5-5       bg   idle   -      240%  4.6G   34 trading str…
-  tenebrae-53        claude   tenebrae         main     opus-5-5         fg   busy   -       38%  1.2G   14 research
-> web                opencode shop             main     sonnet-5         ?    idle   -     shared           no AGENTS.md
-  opencode service, shared by 3 sessions (not split)                                         22%  2.1G    9
+  docs               opencode -         -          idle   -     shared
+  api                opencode -         -          busy   -     shared
+  strategies         claude   strategi… sonnet-5-5 idle   -      240%  4.6G backtest v2
+  tenebrae-53        claude   tenebrae  opus-5-5   busy   -       38%  1.2G
+> web                opencode shop      sonnet-5   idle   -     shared
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net        main     gpt-6            bg   idle   -        5%  300M    3 runs the te…
-  scratch            pi       -                -        -                fg   shell  -       <1%   80M    2 no AGENTS.md
+  ci-runner          pi       agent-net gpt-6      idle   -        5%  300M
+  scratch            pi       -         -          shell  -       <1%   80M
 Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
   web  opencode  idle    CPU 22% (5m 15%)  RAM 2.1G (2.1G)  9 procs
   id       s_0000000000000003                                   │ shared by 3 opencode sessions, not split
   folder   /Users/n/code/shop/web                               │ processes: too old for this action
   branch   main                                                 │
   model    anthropic/claude-sonnet-5                            │
-  function no AGENTS.md                                         │
+  function none: add a `# Project: <one line>` line to AGENTS.… │
   remote   -                                                    │
   worktree /Users/n/code/shop                                   │
-  project  seen                                                 │
+  project source: seen in a session                             │
   messages none seen yet                                        │
                                                                 │
                                                                 │
@@ -34,6 +33,7 @@ Messages (live) ─────────────────────�
   14:01  ci-runner -> tenebrae-53  request                                                                             ✓
   14:02  tenebrae-53 -> ci-runner  notification                                                                        ✗
   14:04  tenebrae-53 -> s_00000000  request                                                                            …
+
 
 
 

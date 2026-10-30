@@ -29,9 +29,10 @@ func workerFixture() (Snapshot, []protocol.FeedEvent) {
 		agent(ownerID, "n_mac", "Mac", "owner", "you (on Mac)", func(a *protocol.AgentView) { a.Mode = protocol.ModeForeground }),
 		agent(workerID, "n_mac", "Mac", "opencode", "tenebrae", func(a *protocol.AgentView) {
 			a.Status, a.Mode, a.Model = "busy", protocol.ModeBackground, "anthropic/claude-haiku-4-5"
+			a.FirstSeen = t0.Add(-55 * time.Minute).Unix()
 			a.Cwd = "/Users/n/code/tenebrae"
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/tenebrae", Worktree: "/Users/n/code/tenebrae", Project: "tenebrae", Branch: "main"}
-			a.Worker = &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, Project: "tenebrae", StartedAt: t0.Add(-5 * time.Minute).Unix()}
+			a.Worker = &protocol.WorkerInfo{ID: "w_1", Owner: ownerID, Project: "tenebrae", StartedAt: t0.Add(-5 * time.Minute).Unix(), Task: "tenebrae"}
 		}))
 	evs := fakeEvents()
 	evs = append(evs,
@@ -119,7 +120,7 @@ func TestWorkerShowsItsOwner(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m = selectID(m, workerID)
 	v := m.View()
-	for _, want := range []string{"↳ tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae",
+	for _, want := range []string{"↳ tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae", "s_0000000000000008 w_1",
 		"worker started: tenebrae opencode in tenebrae for you", "worker refused in nope: no project named nope is known"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)

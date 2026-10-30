@@ -54,6 +54,7 @@ func fakeAgents() []protocol.AgentView {
 	return []protocol.AgentView{
 		agent("s_0000000000000001", "n_mac", "Mac", "claude", "tenebrae-53", func(a *protocol.AgentView) {
 			a.Status, a.Mode, a.Model, a.PID = "busy", protocol.ModeForeground, "claude-opus-5-5", 4242
+			a.FirstSeen, a.LastSeen = t0.Add(-50*time.Minute).Unix(), t0.Add(-2*time.Minute).Unix()
 			a.Cwd = "/Users/n/code/tenebrae"
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/tenebrae", Worktree: "/Users/n/code/tenebrae", Project: "tenebrae",
 				Remote: "https://git.example.com/team/tenebrae.git", Branch: "main"}
@@ -61,6 +62,7 @@ func fakeAgents() []protocol.AgentView {
 		}),
 		agent("s_0000000000000002", "n_mac", "Mac", "claude", "strategies", func(a *protocol.AgentView) {
 			a.Mode, a.Model, a.PID = protocol.ModeBackground, "claude-sonnet-5-5", 4300
+			a.FirstSeen, a.LastSeen = t0.Add(-60*time.Minute).Unix(), t0.Add(-1*time.Minute).Unix()
 			a.Cwd = "/Users/n/code/strategies/.claude/worktrees/agent-a7"
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/strategies", Worktree: a.Cwd, Project: "strategies",
 				Remote: "git@git.example.com:team/strategies.git", Branch: "feature/risk-model"}
@@ -69,22 +71,25 @@ func fakeAgents() []protocol.AgentView {
 		}),
 		agent("s_0000000000000003", "n_mac", "Mac", "opencode", "web", func(a *protocol.AgentView) {
 			a.Mode, a.Model = protocol.ModeUnknown, "anthropic/claude-sonnet-5"
+			a.FirstSeen, a.LastSeen = t0.Add(-40*time.Minute).Unix(), t0.Add(-3*time.Minute).Unix()
 			a.Cwd = "/Users/n/code/shop/web"
 			a.Repo = protocol.RepoInfo{Root: "/Users/n/code/shop", Worktree: "/Users/n/code/shop", Project: "shop", Branch: "main"}
 		}),
 		agent("s_0000000000000004", "n_vm", "build-vm", "pi", "ci-runner", func(a *protocol.AgentView) {
 			a.Mode, a.Model, a.PID = protocol.ModeBackground, "openai/gpt-6", 981
+			a.FirstSeen, a.LastSeen = t0.Add(-30*time.Minute).Unix(), t0.Add(-4*time.Minute).Unix()
 			a.Cwd = "/srv/agent-net"
 			a.Repo = protocol.RepoInfo{Root: "/srv/agent-net", Worktree: "/srv/agent-net", Project: "agent-net", Branch: "main"}
 			a.Profile.Function = "runs the test suite"
 		}),
 		agent("s_0000000000000005", "n_vm", "build-vm", "pi", "scratch", func(a *protocol.AgentView) {
 			a.Status, a.Mode = "shell", protocol.ModeForeground
+			a.FirstSeen, a.LastSeen = t0.Add(-20*time.Minute).Unix(), t0.Add(-5*time.Minute).Unix()
 			a.Cwd = "/home/ci"
 		}),
 		agent("s_0000000000000006", "n_old", "old-box", "claude", "old-session", func(a *protocol.AgentView) {
 			a.Online, a.Status = false, "unknown"
-			a.LastSeen = t0.Add(-26 * time.Hour).Unix()
+			a.FirstSeen, a.LastSeen = t0.Add(-26*time.Hour).Unix(), t0.Add(-26*time.Hour).Unix()
 			a.Cwd = "/home/n/old"
 			a.Repo = protocol.RepoInfo{Project: "old", Branch: "main"}
 		}),
@@ -414,8 +419,8 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	out := keys(newModel(80, 24), "down").View() // tenebrae-53
 	for _, want := range []string{
 		"Mac (here)", "v0.4.0", "online", "old-box", "offline", "12 online",
-		"AGENT", "NAME", "PROJECT", "MODEL", "MODE", "STATUS", "CPU", "RAM", "PROC",
-		"tenebrae-53", "opus-5-5", "fg", "bg", "busy", "shell", "claude-opus-5-5",
+		"AGENT", "NAME", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK",
+		"tenebrae-53", "opus-5-5", "busy", "shell", "claude-opus-5-5",
 		"Selected session", "pid 4242", "/Users/n/code/tenebrae",
 		"Messages (live)", "tenebrae-53 -> ci-runner", "request", "✗",
 		"up/down select", "q quit",
@@ -449,7 +454,7 @@ func TestOfflineToggle(t *testing.T) {
 		t.Fatalf("with offline: %s", got)
 	}
 	m = keys(m, "G") // the offline session is last
-	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "+offline") {
+	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "filter: offline") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.View())
 	}
 	if !strings.Contains(m.View(), "offline, last seen 13 Oct") && !strings.Contains(m.View(), "offline, last seen 28 Oct") {
@@ -488,7 +493,7 @@ func TestFilter(t *testing.T) {
 	if m.filtering || m.filter != "gpt" {
 		t.Fatalf("enter must keep the filter: %v %q", m.filtering, m.filter)
 	}
-	if v := m.View(); !strings.Contains(v, "filter: gpt") || strings.Contains(v, "tenebrae-53 ") && strings.Contains(v, "claude-opus-5-5") {
+	if v := m.View(); !strings.Contains(v, "filter: /gpt") || strings.Contains(v, "tenebrae-53 ") && strings.Contains(v, "claude-opus-5-5") {
 		t.Fatalf("the active filter is not shown or not applied:\n%s", v)
 	}
 	if m.selected != "s_0000000000000004" {
@@ -1011,9 +1016,9 @@ func TestColourOutputIsWellFormed(t *testing.T) {
 func TestDetailShowsTheProjectSource(t *testing.T) {
 	m := newModel(100, 30)
 	want := map[string]string{
-		"s_0000000000000002": "project  registered",
-		"s_0000000000000001": "project  both",
-		"s_0000000000000003": "project  seen", // an older gateway sends no source
+		"s_0000000000000002": "project source: registered",
+		"s_0000000000000001": "project source: seen in a session and registered",
+		"s_0000000000000003": "project source: seen in a session", // an older gateway sends no source
 	}
 	for id, text := range want {
 		m.selected = id
@@ -1023,7 +1028,7 @@ func TestDetailShowsTheProjectSource(t *testing.T) {
 	}
 	// A session in a folder with no project entry shows no source.
 	m.selected = "s_0000000000000004"
-	if v := m.View(); strings.Contains(v, "project  ") {
+	if v := m.View(); strings.Contains(v, "project source: ") {
 		t.Errorf("a source for an unknown project:\n%s", v)
 	}
 }

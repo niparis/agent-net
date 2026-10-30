@@ -2,14 +2,14 @@ agent-net tui  12 online · 5 offline today                                     
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  (stale)                   claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?  (stale)                   pi 1.4.0
  ○ old-box    v0.3.2 offline
-  NAME               AGENT    PROJECT          BRANCH   MODEL            MODE STATUS TRUST   CPU   RAM PROC FUNCTION
+  NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-> strategies         claude   strategies       feature… sonnet-5-5       bg   idle   -         ?     ?    ? trading str…
-  tenebrae-53        claude   tenebrae         main     opus-5-5         fg   busy   -         ?     ?    ? research
-  web                opencode shop             main     sonnet-5         ?    idle   -         ?     ?    ? no AGENTS.md
+> strategies         claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
+  tenebrae-53        claude   tenebrae  opus-5-5   busy   -         ?     ?
+  web                opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net        main     gpt-6            bg   idle   -         ?     ?    ? runs the te…
-  scratch            pi       -                -        -                fg   shell  -         ?     ?    ? no AGENTS.md
+  ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
+  scratch            pi       -         -          shell  -         ?     ?
 Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
   strategies  claude  idle    cpu ? ram ? (figures are old)
   id       s_0000000000000002 pid 4300                          │
@@ -20,7 +20,7 @@ Selected session ─────────────────────
   task     backtest v2                                          │
   remote   git@git.example.com:team/strategies.git              │
   worktree /Users/n/code/strategies/.claude/worktrees/agent-a7… │
-  project  registered                                           │
+  project source: registered                                    │
   messages 13:57  -> tenebrae-53 (Mac)  reply  delivered        │
            13:56  <- tenebrae-53 (Mac)  request  replied        │
                                                                 │

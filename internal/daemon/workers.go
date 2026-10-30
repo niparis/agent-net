@@ -167,9 +167,13 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix()}
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
 	}
-	return w.info
+	// A copy: the agent list and the session info may outlive this call, and
+	// noteAsk replaces the task under wmu. No one changes a value that a
+	// response may still be writing (a data race the race detector sees).
+	cp := *w.info
+	return &cp
 }
 
 // workerByNative returns the worker that has this harness session, or nil.
@@ -346,7 +350,7 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		return refuse("a worker needs an owner")
 	}
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
-		startedAt: time.Now(), ready: make(chan struct{})}
+		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(l.Task)}
 	w.lastActive = w.startedAt
 	d.wmu.Lock()
 	if len(d.workers) >= set.Max {

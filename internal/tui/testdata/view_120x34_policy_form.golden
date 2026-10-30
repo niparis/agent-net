@@ -2,15 +2,15 @@ agent-net tui  7 sessions, 6 online, 1 worker                                   
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                            claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                            pi 1.4.0
  ○ old-box    v0.3.2 offline
-  NAME               AGENT    PROJECT          BRANCH   MODEL            MODE STATUS TRUST   CPU   RAM PROC FUNCTION
+  NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  strategies         claude   strategies       feature… sonnet-5-5       bg   idle   -         ?     ?    ? trading str…
-  ↳ tenebrae         opencode tenebrae         main     haiku-4-5        bg   busy   -         ?     ?    ? no AGENTS.md
-  tenebrae-53        claude   tenebrae         main     opus-5-5         fg   busy   -         ?     ?    ? research
-> web                opencode shop             main     sonnet-5         ?    idle   -         ?     ?    ? no AGENTS.md
+  strategies         claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
+  ↳ tenebrae         opencode tenebrae  haiku-4-5  busy   -         ?     ?
+  tenebrae-53        claude   tenebrae  opus-5-5   busy   -         ?     ?
+> web                opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net        main     gpt-6            bg   idle   -         ?     ?    ? runs the te…
-  scratch            pi       -                -        -                fg   shell  -         ?     ?    ? no AGENTS.md
+  ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
+  scratch            pi       -         -          shell  -         ?     ?
 Delegation policy: web (Mac), opencode ─────────────────────────────────────────────────────────────────────────────────
   Delegate  native
   Coder     deepseek 4.1
