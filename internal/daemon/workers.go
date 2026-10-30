@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -92,8 +93,8 @@ type worker struct {
 	// Worktree isolation (W13).
 	mainPath, worktree, branch, base string
 	// taskMsg is the last request from the owner; doneStatus the status of the
-	// last hand-back ("" if none).
-	taskMsg, doneStatus string
+	// last hand-back ("" if none); taskText is the short line of that request.
+	taskMsg, doneStatus, taskText string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
@@ -294,7 +295,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, DoneStatus: w.doneStatus, Ref: w.ref}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref}
 }
 
 // ---- starting ----
@@ -535,6 +536,8 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	delete(d.workers, w.id)
 	row := d.rowLocked(w, reason)
 	d.wmu.Unlock()
+	endStatus, endNote := d.endFacts(w, reason)
+	d.rememberEnded(w, endStatus, endNote, time.Now())
 	if sendNotice {
 		if _, err := d.sendNotice(context.Background(), w, d.notice(w, status, note, stats), ""); err != nil {
 			d.Logf("worker %s: notice: %v", id, err)
@@ -722,6 +725,90 @@ func (d *Daemon) ownerOffline(ctx context.Context, owner string) bool {
 	return !r.Agent.Online
 }
 
+// recentWindow is how long an ended worker stays visible to `workers -recent`.
+const recentWindow = 2 * time.Minute
+
+// recentWorker is a worker that ended, kept for a short while so a status view
+// can show the end it reached.
+type recentWorker struct {
+	view protocol.WorkerView
+	at   time.Time
+}
+
+// rememberEnded keeps the facts of a worker that just ended. A worker that
+// never became a session is not kept.
+func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
+	d.wmu.Lock()
+	sid, owner, harness, model, project, task := w.sessionID, w.owner, w.harness, w.model, w.project, w.taskText
+	started := w.startedAt
+	d.wmu.Unlock()
+	if sid == "" {
+		return
+	}
+	view := protocol.WorkerView{SessionID: sid, NodeID: d.cfg.NodeID, Hostname: d.cfg.Hostname, Harness: harness,
+		Model: model, Project: project, Owner: owner, StartedAt: started.Unix(), Task: task, EndedAt: at.Unix(),
+		EndStatus: status, EndNote: note, Status: status}
+	d.rmu.Lock()
+	if d.recent == nil {
+		d.recent = map[string]recentWorker{}
+	}
+	d.recent[sid] = recentWorker{view: view, at: at}
+	d.rmu.Unlock()
+}
+
+// recentWorkers returns the workers that ended in the last two minutes, the
+// newest first, and forgets the older ones.
+func (d *Daemon) recentWorkers(now time.Time) []protocol.WorkerView {
+	d.rmu.Lock()
+	defer d.rmu.Unlock()
+	out := []protocol.WorkerView{}
+	for sid, r := range d.recent {
+		if now.Sub(r.at) > recentWindow {
+			delete(d.recent, sid)
+			continue
+		}
+		out = append(out, r.view)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].EndedAt > out[j].EndedAt })
+	return out
+}
+
+// workerTask is the short task line of the worker with this session, "" when
+// this daemon did not start it.
+func (d *Daemon) workerTask(sessionID string) string {
+	if sessionID == "" {
+		return ""
+	}
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	for _, w := range d.workers {
+		if w.sessionID == sessionID {
+			return w.taskText
+		}
+	}
+	return ""
+}
+
+// endFacts is the status and note a status view shows for an ended worker.
+// It follows the notice: a hand-back gives its own status, and a worker that
+// ended on its own gets the reason the notice uses.
+func (d *Daemon) endFacts(w *worker, reason string) (status, note string) {
+	d.wmu.Lock()
+	done := w.doneStatus
+	d.wmu.Unlock()
+	if done != "" {
+		return done, ""
+	}
+	status, note = d.noticeFor(reason)
+	if status == "" {
+		status = protocol.StatusStopped
+		if reason == protocol.StopOwnerGone {
+			note = "its owner ended or stayed offline"
+		}
+	}
+	return status, note
+}
+
 // ---- after a restart ----
 
 // adoptWorkers takes back the workers that were running when the daemon last
@@ -749,7 +836,7 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, doneStatus: r.DoneStatus, ref: r.Ref}
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()

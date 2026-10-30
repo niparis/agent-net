@@ -71,6 +71,21 @@ func TestWorkerTaskBody(t *testing.T) {
 	}
 }
 
+func TestWorkerTaskSummary(t *testing.T) {
+	body := WorkerTaskBody("write the tests\nthen commit", "", "")
+	if got := WorkerTaskSummary(body); got != "write the tests" {
+		t.Errorf("summary %q", got)
+	}
+	if got := WorkerTaskSummary("  one line only  "); got != "one line only" {
+		t.Errorf("plain summary %q", got)
+	}
+	long := strings.Repeat("x", WorkerTaskSummaryMax+20)
+	got := WorkerTaskSummary(long)
+	if len([]rune(got)) != WorkerTaskSummaryMax || !strings.HasSuffix(got, "...") {
+		t.Errorf("cut summary %q (%d runes)", got, len([]rune(got)))
+	}
+}
+
 func TestFormatWorkerNotice(t *testing.T) {
 	n := WorkerNotice{Status: StatusDone, Session: "s_1", Harness: "opencode", Model: "a/b", Project: "shop", Host: "mac",
 		RunTime: 3*time.Minute + 12*time.Second + 400*time.Millisecond, Tokens: "10 in, 5 out", Cost: "0.0100",

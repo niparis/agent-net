@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS workers (
 	start_token TEXT NOT NULL, started_at INTEGER NOT NULL, last_active INTEGER NOT NULL,
 	ended_reason TEXT NOT NULL DEFAULT '',
 	main_path TEXT NOT NULL DEFAULT '', worktree TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
-	base TEXT NOT NULL DEFAULT '', task_msg TEXT NOT NULL DEFAULT '', done_status TEXT NOT NULL DEFAULT '')`)
+	base TEXT NOT NULL DEFAULT '', task_msg TEXT NOT NULL DEFAULT '', done_status TEXT NOT NULL DEFAULT '',
+	task_text TEXT NOT NULL DEFAULT '')`)
 	if err != nil {
 		db.Close()
 		return nil, err
@@ -53,6 +54,16 @@ CREATE TABLE IF NOT EXISTS workers (
 	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'harness_ref'`).Scan(&hasRef)
 	if hasRef == 0 {
 		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN harness_ref TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	// task_text is the short task line shown for a worker. A table from an
+	// older version does not have it.
+	var hasTaskText int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'task_text'`).Scan(&hasTaskText)
+	if hasTaskText == 0 {
+		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN task_text TEXT NOT NULL DEFAULT ''`); err != nil {
 			db.Close()
 			return nil, err
 		}

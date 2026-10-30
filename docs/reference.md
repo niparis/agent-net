@@ -25,7 +25,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net tui` | A live terminal view of every session on the network, with three actions: message a session as yourself, start a worker, stop a worker. It talks to the local daemon through the operator interface, so it runs on any machine. See [the screen](#the-tui-screen). |
 | `agent-net start --project NAME [--harness opencode|claude|pi|codex] [--model M] [--machine HOST] [--isolation worktree|none] "TASK"` | Start a worker: a new agent session in a known project, on the machine that holds it. It prints the worker's session ID. The task is sent to it as a message from you; its report comes back to you (see the TUI, or `agent-net messages`). In a git repository the worker gets its own git worktree on the branch `agent-net/<worker-id>` by default; `--isolation none` works in the project folder. `--model` takes a loose name such as `"deepseek 4.1"`. See [workers](#workers). |
 | `agent-net stop SESSION` | Stop a worker. The process group is killed. |
-| `agent-net workers` | The workers on the network, with machine, project, harness, model, owner, state and start time. `--json`. |
+| `agent-net workers` | The workers on the network, with machine, project, harness, model, owner, state and start time. `--json` also has the task's first line. `--owner-claude UUID` keeps only the workers owned by this machine's Claude Code session with that native id (the transcript file's name). `--recent` also lists workers that ended in the last two minutes, with `ended_at`, `end_status` and `end_note`; without it the list and the table are unchanged. |
 | `agent-net send SESSION TEXT...` | Send a message as yourself (the owner of this machine). `SESSION` is a session ID or a unique agent name. |
 | `agent-net messages` | Recent messages and their states. `--session ID`, `--limit N` (default 20), `--json`. |
 | `agent-net hint` | Not for you to run: the Claude Code hook that [setup can add](#what-setup-changes-on-your-machine). It reads the hook input on stdin and prints hook JSON only when it has a suggestion. See [peer trust and hints](#peer-trust-and-hints). |
@@ -46,7 +46,7 @@ The daemon and the agents talk over Unix sockets, not network ports.
 |---|---|---|
 | Node credentials | `~/.config/agent-net/node.json` | Gateway URL, node ID, token, CA fingerprint. Mode 0600. Optional `"hostname"` pins the machine name (see below). |
 | Pinned CA | `~/.config/agent-net/ca.pem` | The gateway's CA, trusted after the fingerprint check. |
-| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree) that lets the daemon take its workers back after a restart. Mode 0600, like its `-wal` and `-shm` files. |
+| Daemon state | `~/.local/state/agent-net/daemon/daemon.db` | SQLite. Delivered message IDs (for duplicates), the outbox for sends made while the gateway is away, and the `workers` table (process ID, start time, owner, worktree, task line) that lets the daemon take its workers back after a restart. Mode 0600, like its `-wal` and `-shm` files. |
 | Worker folders | `~/.local/state/agent-net/daemon/workers/<worker id>/` | The worker's private files: for OpenCode its state folder and session file, for Pi the named pipe used as its standard input, for Codex the capability token of its app server (mode 0600). Also the output log of the harness. Deleted when the worker ends. |
 | Worker worktrees | `~/.local/state/agent-net/daemon/worktrees/<worker id>/` | The default in a git repository (not with `--isolation none`). Kept when the worker changed something, removed when not. The branch is `agent-net/<worker id>` in the project. |
 | Daemon socket | `$XDG_RUNTIME_DIR/agent-net/daemon.sock`, else `/tmp/agent-net-<uid>/daemon.sock` | Directory 0700, socket 0600. macOS has no `XDG_RUNTIME_DIR`, so it uses the `/tmp` path. |
@@ -135,6 +135,9 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | | `--port P`, `--data DIR` | `7420`, gateway data |
 | `enroll` | `--host H`, `--port P`, `--data DIR` | this host's name, `7420`, gateway data |
 | `join` | `--config-dir DIR` | `~/.config/agent-net` |
+| `workers` | `--json` | off. The task line and, with `--recent`, the end facts are in the JSON. |
+| | `--owner-claude UUID` | none. Only workers owned by this machine's Claude Code session with that native id. |
+| | `--recent` | off. Also list workers that ended in the last two minutes. |
 | `uninstall` | `--purge` | off. Also remove credentials and daemon state. |
 | | `--no-service` | off |
 

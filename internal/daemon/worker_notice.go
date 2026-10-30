@@ -274,6 +274,9 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	}
 	d.wmu.Lock()
 	w.taskMsg = m.ID
+	if task := protocol.WorkerTaskSummary(m.Body); task != "" {
+		w.taskText = task
+	}
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
 }

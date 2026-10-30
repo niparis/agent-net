@@ -247,7 +247,7 @@ func (f *fakeSource) StopWorker(_ context.Context, id string) error {
 	f.stopped = id
 	return f.actErr
 }
-func (f *fakeSource) Workers(context.Context) ([]protocol.WorkerView, error) {
+func (f *fakeSource) Workers(context.Context, protocol.WorkersQuery) ([]protocol.WorkerView, error) {
 	return nil, nil
 }
 func (f *fakeSource) Close() {}
