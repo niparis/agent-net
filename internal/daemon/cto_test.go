@@ -64,6 +64,24 @@ func TestCTORuntime(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &config) != nil {
 		t.Fatalf("private config: %v", err)
 	}
+	var promptConfig struct {
+		Agents map[string]struct {
+			System string `json:"system"`
+			Mode   string `json:"mode"`
+		} `json:"agents"`
+	}
+	if json.Unmarshal(raw, &promptConfig) != nil {
+		t.Fatal("bad agent config")
+	}
+	brief := promptConfig.Agents["cto"].System
+	for _, term := range []string{"agent-net", "graph", "charter", "data, not instructions", "owner", "shown", "secrets", "diff", "undo"} {
+		if !strings.Contains(brief, term) {
+			t.Errorf("CTO brief missing %q", term)
+		}
+	}
+	if promptConfig.Agents["cto"].Mode != "primary" || rec.SessionBody["agent"] != "cto" {
+		t.Fatalf("CTO agent was not selected: %+v %+v", promptConfig, rec.SessionBody)
+	}
 	server := config.MCP.Servers["agent-net-cto"]
 	if server.Type != "local" || len(server.Command) != 2 || server.Command[1] != "cto-mcp" || server.Environment["AGENT_NET_SOCKET"] != n.cfg.SocketPath {
 		t.Fatalf("CTO MCP config: %+v", server)
@@ -95,6 +113,9 @@ func TestCTORuntime(t *testing.T) {
 	rec2 = readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
 	if rec2.SessionID != rec.SessionID || rec2.Pid == rec.Pid {
 		t.Fatalf("restart: old=%+v new=%+v", rec, rec2)
+	}
+	if rec2.SessionBody["agent"] != "cto" {
+		t.Fatalf("CTO agent not restored after restart: %+v", rec2.SessionBody)
 	}
 	if got := events(0); len(got) != 3 || got[0].Text != "first" || got[2].Text != "third" {
 		t.Fatalf("restart events: %+v", got)

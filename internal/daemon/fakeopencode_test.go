@@ -237,6 +237,32 @@ func runFakeOpenCode() {
 		write()
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
 	})
+	mux.HandleFunc("POST /api/session/{id}/agent", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var p struct {
+			Agent string `json:"agent"`
+		}
+		if json.NewDecoder(r.Body).Decode(&p) != nil || p.Agent != "cto" {
+			http.Error(w, "bad agent", 400)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		if rec.SessionBody == nil {
+			rec.SessionBody = map[string]any{}
+		}
+		rec.SessionBody["agent"] = p.Agent
+		rec.SessionID = r.PathValue("id")
+		mu.Unlock()
+		write()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/session/{id}/model", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, "unauthorized", 401)
