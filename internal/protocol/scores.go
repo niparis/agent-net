@@ -11,6 +11,7 @@ import (
 // ModelScore is a capability score for a model or a loose model name.
 type ModelScore struct {
 	Match  string  `json:"match"`
+	Effort string  `json:"effort,omitempty"`
 	Score  float64 `json:"score"`
 	Source string  `json:"source"`
 }
@@ -80,6 +81,11 @@ func looseScoreMatch(pattern, model string) bool {
 
 // LookupModelScore prefers owner overrides and preserves exact effort matches.
 func LookupModelScore(model string, overrides []ModelScore) (ModelScore, bool) {
+	return LookupModelScoreWithDefaultEffort(model, "", overrides)
+}
+
+// LookupModelScoreWithDefaultEffort uses the harness default when no effort is named.
+func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []ModelScore) (ModelScore, bool) {
 	lookup := func(scores []ModelScore) (ModelScore, bool) {
 		best := -1
 		var result ModelScore
@@ -89,6 +95,23 @@ func LookupModelScore(model string, overrides []ModelScore) (ModelScore, bool) {
 			part = part[i+1:]
 		}
 		for _, s := range scores {
+			requested := strings.ToLower(level)
+			if requested == "" {
+				requested = strings.ToLower(defaultEffort)
+			}
+			if requested == "" {
+				requested = "medium"
+			}
+			effortRank := 0
+			if s.Effort != "" {
+				if strings.EqualFold(s.Effort, requested) {
+					effortRank = 2
+				} else if s.Effort == "default" {
+					effortRank = 1
+				} else {
+					continue
+				}
+			}
 			match := strings.TrimSpace(s.Match)
 			rank := -1
 			switch {
@@ -104,10 +127,13 @@ func LookupModelScore(model string, overrides []ModelScore) (ModelScore, bool) {
 					continue
 				}
 				if scoreName(match) == scoreName(model) && scoreName(model) != "" {
-					rank = 0
+					rank = 1
 				} else if looseScoreMatch(scoreName(match), scoreName(model)) {
 					rank = 0
 				}
+			}
+			if rank >= 0 {
+				rank = rank*3 + effortRank
 			}
 			if rank > best {
 				result, best = s, rank

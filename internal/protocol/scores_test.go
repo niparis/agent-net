@@ -10,8 +10,8 @@ func TestModelScore(t *testing.T) {
 		source    string
 		ok        bool
 	}{
-		{"deepseek/deepseek-v4.1-flash", nil, 32, "owner", true},
-		{"deepseek/deepseek-v4.1-flash:high", nil, 32, "owner", true},
+		{"deepseek/deepseek-v4.1-flash:max", nil, 32.5, "artificialanalysis", true},
+		{"deepseek/deepseek-v4.1-flash:high", nil, 0, "", false},
 		{"unknown", nil, 0, "", false},
 		{"deepseek/deepseek-v4.1-flash:high", []ModelScore{{Match: "deepseek-v4.1-flash", Score: 45, Source: "owner"}}, 45, "owner", true},
 		{"p/model:high", []ModelScore{{Match: "model", Score: 20, Source: "owner"}, {Match: "p/model:high", Score: 50, Source: "owner"}}, 50, "owner", true},
@@ -48,8 +48,8 @@ func TestScoreNames(t *testing.T) {
 		score float64
 		ok    bool
 	}{
-		{"openrouter/anthropic/claude-opus-5.5", 58, true}, {"claude-opus-5-5-free", 58, true}, {"claude-opus-5-5:free", 58, true}, {"claude-opus-5-5-0902", 58, true}, {"claude-opus-5-5:1017", 58, true},
-		{"opus", 58, true}, {"sonnet", 54, true}, {"haiku", 36, true},
+		{"openrouter/anthropic/claude-opus-5.5", 48.1, true}, {"claude-opus-5-5-free", 48.1, true}, {"claude-opus-5-5:free", 48.1, true}, {"claude-opus-5-5-0902", 48.1, true}, {"claude-opus-5-5:1017", 48.1, true},
+		{"opus", 48.1, true}, {"sonnet", 30.3, true}, {"haiku", 24.6, true},
 		{"gpt-6.1-sol-fast", 0, false}, {"gpt-6.1-sol-pro", 0, false}, {"gpt-6.1-sol-ultrafast", 0, false}, {"gpt-6.1-sol-flash", 0, false}, {"gpt-6.1-sol-lite", 0, false},
 	} {
 		t.Run(tt.model, func(t *testing.T) {
@@ -76,6 +76,39 @@ func TestLooseScorePatternAndVariants(t *testing.T) {
 			if got.Score == 42 {
 				t.Errorf("%s matched override", tt.model)
 			}
+		}
+	}
+}
+
+func TestScoreEffort(t *testing.T) {
+	for _, tt := range []struct {
+		model string
+		score float64
+		ok    bool
+	}{
+		{"gpt-6.1-terra:high", 42.3, true}, {"gpt-6.1-terra:low", 29.2, true}, {"gpt-6.1-terra", 38.1, true}, {"gpt-6.1-terra:ultra", 0, false}, {"kimi-k3.1-pro", 46, true},
+	} {
+		t.Run(tt.model, func(t *testing.T) {
+			got, ok := LookupModelScore(tt.model, nil)
+			if ok != tt.ok || ok && got.Score != tt.score {
+				t.Fatalf("got %+v, %v", got, ok)
+			}
+		})
+	}
+	if n := len(EmbeddedModelScores()); n != 85 {
+		t.Fatalf("got %d scores", n)
+	}
+}
+
+func TestScoreHarnessDefaultEffort(t *testing.T) {
+	for _, tt := range []struct {
+		effort string
+		score  float64
+		ok     bool
+	}{{"high", 42.3, true}, {"", 38.1, true}, {"max", 51, true}, {"ultra", 0, false}} {
+		got, ok := LookupModelScoreWithDefaultEffort("gpt-6.1-terra", tt.effort, nil)
+		if ok != tt.ok || ok && got.Score != tt.score {
+			t.Errorf("%s: %+v %v", tt.effort, got, ok)
 		}
 	}
 }
