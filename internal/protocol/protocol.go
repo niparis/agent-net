@@ -326,6 +326,7 @@ type (
 		On        bool   `json:"on"`
 	}
 	MsgSend struct {
+		ReplyOutcome
 		Sender         string `json:"sender_session_id"`
 		Recipient      string `json:"recipient_session_id"`
 		Type           string `json:"message_type"`

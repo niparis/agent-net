@@ -788,6 +788,10 @@ export default function (pi: ExtensionAPI) {
     Type.Object({
       message_id: Type.String({ description: "The message_id you are answering" }),
       body: Type.String({ description: "Reply text" }),
+      outcome: Type.Optional(Type.String({ description: "accept, reject, redirect or escalate" })),
+      reason: Type.Optional(Type.String({ description: "Required for reject, redirect and escalate" })),
+      redirect_to: Type.Optional(Type.String({ description: "Node to redirect to" })),
+      recommendation: Type.Optional(Type.String({ description: "Required for escalate" })),
     }),
     "reply",
     formatSent,

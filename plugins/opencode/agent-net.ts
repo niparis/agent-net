@@ -834,6 +834,10 @@ const TOOLS: ToolDef[] = [
     properties: {
       message_id: str("The message_id you are answering"),
       body: str("Reply text"),
+      outcome: str("accept, reject, redirect or escalate"),
+      reason: str("Required for reject, redirect and escalate"),
+      redirect_to: str("Node to redirect to"),
+      recommendation: str("Required for escalate"),
     },
     required: ["message_id", "body"],
     method: "reply",

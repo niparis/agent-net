@@ -873,6 +873,13 @@ func (s *Store) allow(sender string) bool {
 // StoreMessage applies every rule and commits the message. created is false
 // when the idempotency key was seen before and the first message is returned.
 func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created bool, err error) {
+	p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
+	if err != nil {
+		return msg, false, reject("%v", err)
+	}
+	if p.Outcome != "" && (p.ParentID == "" || (p.Type != "" && p.Type != protocol.TypeReply)) {
+		return msg, false, reject("outcome requires a reply")
+	}
 	if len(p.Body) > protocol.MaxBodyBytes {
 		return msg, false, reject("body is %d bytes, the limit is %d", len(p.Body), protocol.MaxBodyBytes)
 	}
