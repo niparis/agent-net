@@ -428,7 +428,12 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 		version, versionW = "", 0
 	}
 	line := " " + style.Render(dot) + " " + cell(name, nameW) + " " + cell(version, versionW) + " " + style.Render(cell(state, 7))
-	line += " " + m.machineUsage(r, w-ansi.StringWidth(line)-1)
+	room := w - ansi.StringWidth(line) - 1
+	hl := harnessText(r.harnesses, false)
+	if r.online && hl != "" && w >= 70 {
+		room -= ansi.StringWidth(hl) + 2
+	}
+	line += " " + m.machineUsage(r, room)
 	if !r.online {
 		return clip(sDim.Render(ansi.Strip(line)), w)
 	}
@@ -456,9 +461,12 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 		}
 	}
 
-	if hl := harnessText(r.harnesses, false); hl != "" {
+	if hl != "" {
 		column := 13 + nameW + versionW + machineCPUW + machineMemW + machineLoadW + 4
 		gap := max(2, column-ansi.StringWidth(line))
+		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) > w {
+			gap = 2
+		}
 		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) <= w {
 			line += strings.Repeat(" ", gap) + sDim.Render(hl)
 		}
@@ -502,6 +510,9 @@ func (m Model) machineUsage(r machineRow, room int) string {
 	}
 	mem := "mem " + progressBar(memPct/100, 4, roleAccent) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
 	load := sDim.Render("load ") + fmt.Sprintf("%.1f", mu.Load[0])
+	if room < machineCPUW+1+machineMemW {
+		return padStyled(cpu, machineCPUW)
+	}
 	if room < unknownW {
 		return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) // no room for the load
 	}
