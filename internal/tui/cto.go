@@ -26,6 +26,7 @@ type ctoSource interface {
 type ctoState struct {
 	input               textinput.Model
 	editing, polling    bool
+	confirming          bool
 	model, harness, err string
 	messages            []string
 	history             []protocol.CTOGraphChange
@@ -146,10 +147,32 @@ func ctoMessage(raw json.RawMessage) string {
 func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	c := m.cto
 	if k.Type == tea.KeyEsc {
-		m.cto = nil
+		c.editing = false
+		c.input.Blur()
+		c.confirming = false
+		m.focus = focusSessions
 		return m, nil
 	}
-	if !c.editing {
+	if k.String() == "tab" {
+		c.editing = false
+		c.input.Blur()
+		m.focus = focusSessions
+		return m, nil
+	}
+	if c.confirming {
+		c.confirming = false
+		if k.String() != "y" {
+			return m, nil
+		}
+		src := m.src.(ctoSource)
+		g := c.generation
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			return ctoNewMsg{err: src.CTONew(ctx), generation: g}
+		}
+	}
+	if c.input.Value() == "" {
 		switch k.String() {
 		case "o":
 			src := m.src.(ctoSource)
@@ -179,26 +202,16 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return ctoUndoMsg{id: id, err: src.CTOUndo(ctx, id), generation: g}
 			}
 		case "n":
-			src := m.src.(ctoSource)
-			g := c.generation
-			return m, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-				defer cancel()
-				return ctoNewMsg{err: src.CTONew(ctx), generation: g}
-			}
+			c.confirming = true
+			return m, nil
 		}
-		return m, nil
 	}
 	if k.Type == tea.KeyEnter {
 		text := strings.TrimSpace(c.input.Value())
 		if text == "" {
-			c.editing = false
-			c.input.Blur()
 			return m, nil
 		}
 		c.input.SetValue("")
-		c.editing = false
-		c.input.Blur()
 		src := m.src.(ctoSource)
 		g := c.generation
 		return m, func() tea.Msg {

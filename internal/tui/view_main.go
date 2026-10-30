@@ -131,10 +131,6 @@ func (m Model) View() string {
 		for _, s := range m.convView(w, h-1) {
 			add(s)
 		}
-	case m.cto != nil:
-		for _, s := range m.ctoLayout(w, h-1) {
-			add(s)
-		}
 	case m.tab == 1:
 		for _, s := range m.messagesView(w, h-1) {
 			add(s)
@@ -219,9 +215,18 @@ func (m Model) mainView(w, h int) []string {
 		}
 		return out
 	}
-	add(section("Selected session", w))
-	for _, s := range m.detailLines(w, l.detail) {
-		add(s)
+	if m.cto != nil {
+		box := max(h/3, 6)
+		if len(out) > h-box {
+			out = out[:max(h-box, 0)]
+		}
+		for len(out) < h-box {
+			add("")
+		}
+		out = append(out, m.ctoView(w, box)...)
+	} else {
+		add(section("Selected session", w))
+		out = append(out, m.detailLines(w, l.detail)...)
 	}
 
 	return out
