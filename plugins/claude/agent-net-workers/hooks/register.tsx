@@ -195,8 +195,11 @@ export const register: Register = on => {
     const columns = e.props.bodyColumns
     const { Box, Text } = $.ui.resolve(e)
 
+    const label = ' agent-net workers '
+    const rule = '─'.repeat(2) + label + '─'.repeat(Math.max(0, columns - 2 - label.length))
     return (
       <Box flexDirection="column">
+        <Text dimColor wrap="truncate-end">{rule}</Text>
         {workers.map(w => {
           const isEnded = w.endStatus !== ''
           const mark = isEnded ? (ENDED_MARK[w.endStatus] ?? '✗') : '○'
@@ -205,12 +208,17 @@ export const register: Register = on => {
           const elapsed = (isEnded ? w.endedAt : now) - w.startedAt
           const head = [shortId(w.sessionId), w.harness + (w.model ? ' · ' + modelName(w.model) : ''),
             state, shortDuration(elapsed * 1000)].filter(Boolean).join(' ')
-          const rest = clip(isEnded ? (w.endNote || w.task) : w.task, Math.max(0, columns - 2 - head.length))
+          const text = (isEnded ? (w.endNote || w.task) : w.task).split('\n')[0]
+          // Keep each worker on one row: leave room for the mark, the spaces and
+          // anything the surface draws at the right edge.
+          const rest = clip(text, Math.max(0, columns - 8 - head.length))
           return (
             <Box key={w.sessionId}>
-              <Text color={color}>{mark} </Text>
-              <Text dimColor>{head} </Text>
-              <Text>{rest}</Text>
+              <Text wrap="truncate-end">
+                <Text color={color}>{mark} </Text>
+                <Text dimColor>{head} </Text>
+                <Text>{rest}</Text>
+              </Text>
             </Box>
           )
         })}
