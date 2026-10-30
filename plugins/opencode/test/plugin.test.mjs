@@ -450,6 +450,40 @@ await test("a busy session never goes dormant, and goes dormant after its turn",
   });
 });
 
+await test("a permission request and a form show as waiting until they are settled", async () => {
+  freshHub();
+  const sessions = new Map([["ses_wait", session("ses_wait", "/work/n")]]);
+  const w = makeContext("/work/n", sessions);
+  const stop = await plugin.setup(w.ctx);
+  await until("hello for ses_wait", () => registered("ses_wait"));
+  const waits = () => calls.filter(([m]) => m === "waiting").map(([, p]) => p);
+
+  w.emit({ type: "permission.asked", data: { id: "per_1", sessionID: "ses_wait", action: "bash", resources: ["git push origin main"] } });
+  await until("permission waiting", () => waits().some((p) => p.kind === "permission" && p.text === "bash(git push origin main)"));
+  w.emit({ type: "permission.replied", data: { sessionID: "ses_wait", requestID: "per_1", reply: "once" } });
+  await until("permission cleared", () => waits().some((p) => p.clear === true));
+
+  w.emit({ type: "form.created", data: { form: { id: "frm_1", sessionID: "ses_wait", title: "Which branch?" } } });
+  await until("question waiting", () => waits().some((p) => p.kind === "question" && p.text === "Which branch?"));
+  w.emit({ type: "form.cancelled", data: { id: "frm_1", sessionID: "ses_wait" } });
+  await until("question cleared", () => waits().filter((p) => p.clear === true).length === 2);
+  stop();
+});
+
+await test("a session that starts working again no longer waits", async () => {
+  freshHub();
+  const sessions = new Map([["ses_go", session("ses_go", "/work/n")]]);
+  const g = makeContext("/work/n", sessions);
+  const stop = await plugin.setup(g.ctx);
+  await until("hello for ses_go", () => registered("ses_go"));
+  const waits = () => calls.filter(([m]) => m === "waiting").map(([, p]) => p);
+  g.emit({ type: "permission.asked", data: { id: "per_2", sessionID: "ses_go", action: "edit", resources: ["main.go"] } });
+  await until("waiting", () => waits().some((p) => p.kind === "permission"));
+  g.emit({ type: "session.execution.started", data: { sessionID: "ses_go" } });
+  await until("cleared when busy", () => waits().some((p) => p.clear === true));
+  stop();
+});
+
 await test("a message to a dormant session is delivered and wakes it", async () => {
   await withDormantAfter(300, async () => {
     freshHub();

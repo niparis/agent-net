@@ -118,6 +118,9 @@ type Config struct {
 	HarnessInterval time.Duration
 	// UsageSampler measures CPU and memory (see usage.go). Nil turns that off.
 	UsageSampler *usage.Sampler
+	// LoadProbe replaces the machine load that worker admission reads from
+	// the sampler. Tests set it.
+	LoadProbe func() MachineLoad
 	// UsageReportInterval is how often the summary goes to the gateway.
 	// Default: 10 seconds.
 	UsageReportInterval time.Duration
@@ -193,6 +196,13 @@ type Daemon struct {
 	hints hintState
 	// policy caches the delegation policy per session (policy.go).
 	policy policyState
+	// qmu guards worker admission: the queue, lastStart and qGone (queue.go).
+	// It is taken before wmu, never after.
+	qmu sync.Mutex
+	// lastStart is when a worker start was last let through.
+	lastStart time.Time
+	// qGone is when the owner of a queued start was first seen offline.
+	qGone map[string]time.Time
 	// wmu guards the workers started by this daemon (workers.go).
 	wmu       sync.Mutex
 	workers   map[string]*worker
@@ -272,7 +282,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, adopted: make(chan struct{}),
-		mcpHello: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
+		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
@@ -331,6 +341,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.workerLoop(ctx) }()
 	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
+	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
@@ -375,8 +387,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
 		old.ToolsVersion, old.ToolsOld = "", false // set by the MCP hello, not by discovery
+		old.Waiting = nil                          // set by the local hello, not by discovery
 		probe := infos[i]
-		probe.Repo, probe.SessionID = protocol.RepoInfo{}, ""
+		probe.Repo, probe.SessionID, probe.Waiting = protocol.RepoInfo{}, "", nil
 		if known && old != probe {
 			infos[i].Repo = d.repo.Refresh(infos[i].Cwd)
 		} else {
@@ -401,11 +414,14 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			ls = &localSession{info: in}
 			d.sessions[k] = ls
 			changed = append(changed, ls)
-		} else if !ls.plugin() && ls.info != in {
-			sid := ls.info.SessionID
-			ls.info = in
-			ls.info.SessionID = sid
-			changed = append(changed, ls)
+		} else if !ls.plugin() {
+			in.Waiting = keepWaiting(before[k], in)
+			if ls.info != in {
+				sid := ls.info.SessionID
+				ls.info = in
+				ls.info.SessionID = sid
+				changed = append(changed, ls)
+			}
 		}
 	}
 	for k, ls := range d.sessions {

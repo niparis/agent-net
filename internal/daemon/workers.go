@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -26,8 +28,22 @@ import (
 // WorkerSettings are the limits and timeouts. Zero fields take the defaults
 // of decision 0002.
 type WorkerSettings struct {
-	// Max is how many workers may run on this machine at once.
+	// Max is the hard cap of workers on this machine, a safety net behind the
+	// load check (decision 0018). Default 12.
 	Max int
+	// CPUTarget is the 5-minute whole-machine CPU busy percent above which no
+	// worker starts. Default 75.
+	CPUTarget float64
+	// MemReserve is the memory in bytes that stays free. Default: the larger
+	// of 1.5 GB and 10 percent of RAM.
+	MemReserve uint64
+	// QueueTimeout is how long a start may wait in the queue. Default 2 h.
+	QueueTimeout time.Duration
+	// QueueTick is how often the queue is looked at. Default 15 s.
+	QueueTick time.Duration
+	// StartGap is the least time between two worker starts. Default 60 s;
+	// negative means none.
+	StartGap time.Duration
 	// Idle ends a worker with no message to or from it for this long.
 	Idle time.Duration
 	// MaxAge ends a worker this long after it started.
@@ -56,6 +72,18 @@ type WorkerSettings struct {
 func (s WorkerSettings) filled() WorkerSettings {
 	if s.Max <= 0 {
 		s.Max = protocol.DefaultWorkerMax
+	}
+	if s.CPUTarget <= 0 {
+		s.CPUTarget = protocol.DefaultWorkerCPUTarget
+	}
+	if s.QueueTimeout <= 0 {
+		s.QueueTimeout = protocol.DefaultWorkerQueueTimeout
+	}
+	if s.QueueTick <= 0 {
+		s.QueueTick = protocol.WorkerQueueTick
+	}
+	if s.StartGap == 0 {
+		s.StartGap = protocol.WorkerStartGap
 	}
 	if s.Idle <= 0 {
 		s.Idle = protocol.DefaultWorkerIdle
@@ -102,6 +130,12 @@ type worker struct {
 	// taskMsg is the last request from the owner; doneStatus the status of the
 	// last hand-back ("" if none); taskText is the short line of that request.
 	taskMsg, doneStatus, taskText string
+	// taskFull is the full first task (at most 64 KiB), kept in the record so
+	// that a new worker can continue it.
+	taskFull string
+	// unfinished is true when the daemon committed the unfinished changes of
+	// the worktree on the worker's branch.
+	unfinished bool
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
@@ -154,7 +188,7 @@ type adopter interface {
 // (a provider, billing or auth error), so the worker can end with a notice
 // instead of waiting for the idle limit. It returns the error text, or "".
 type failer interface {
-	failure(ctx context.Context, d *Daemon, w *worker) string
+	failure(ctx context.Context, d *Daemon, w *worker) (string, bool)
 }
 
 // ender is a launcher that has more to clean up when a worker ends.
@@ -344,10 +378,35 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref, TaskFull: w.taskFull}
 }
 
 // ---- starting ----
+
+// projectWorkerRules reads the main working tree copy, so local project rules
+// apply even before they are committed. Limit the read and remove control bytes.
+func projectWorkerRules(path string) string {
+	name := filepath.Join(path, ".agent-net", "worker.md")
+	fi, err := os.Stat(name)
+	if err != nil || !fi.Mode().IsRegular() {
+		return ""
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, 8192))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+		return -1
+	}, strings.ToValidUTF8(string(b), "")))
+}
 
 // startWorker handles "worker.launch" from the gateway.
 func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out protocol.WorkerLaunched, err error) {
@@ -374,14 +433,56 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
 	}
+	if l.Base != "" && l.Isolation != protocol.IsolationWorktree {
+		return refuse("a base branch needs worktree isolation")
+	}
 	if l.Harness == "pi" && l.Isolation != protocol.IsolationWorktree {
 		return refuse("a Pi worker needs isolation %q: Pi has no permission prompts, so it must not work in your own checkout", protocol.IsolationWorktree)
 	}
 	if l.Owner == "" {
 		return refuse("a worker needs an owner")
 	}
+	// No room now: the start waits in the queue (decision 0018).
+	if q := d.admitOrQueue(l); q != nil {
+		if !q.Queued {
+			return refuse("%s", q.Reason)
+		}
+		return *q, nil
+	}
+	return d.runWorkerStartChecked(ctx, l, set)
+}
+
+// runWorkerStart starts a worker that admission has let through. The checks
+// of startWorker are done; l has its isolation filled in.
+func (d *Daemon) runWorkerStart(ctx context.Context, l protocol.WorkerLaunch) (protocol.WorkerLaunched, error) {
+	set := d.cfg.Workers.filled()
+	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
+		l.Isolation = protocol.IsolationWorktree
+	}
+	return d.runWorkerStartChecked(ctx, l, set)
+}
+
+func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings) (out protocol.WorkerLaunched, err error) {
+	refuse := func(format string, a ...any) (protocol.WorkerLaunched, error) {
+		err := fmt.Errorf(format, a...)
+		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
+		return protocol.WorkerLaunched{}, err
+	}
+	ln := d.launchers[l.Harness]
+	if ln == nil {
+		return refuse("this daemon cannot start %q workers", l.Harness)
+	}
+	rules := projectWorkerRules(l.Path)
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
-		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(l.Task)}
+		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
+		taskFull: boundTask(first(l.RecordTask, l.Task))}
+	worktree, branch := "", ""
+	if l.Isolation == protocol.IsolationWorktree {
+		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
+	}
+	if len(protocol.WorkerTaskBodyWithRules(l.Harness, l.Task, worktree, branch, rules)) > protocol.MaxBodyBytes {
+		return refuse("the task and project rules exceed the message limit")
+	}
 	w.lastActive = w.startedAt
 	d.wmu.Lock()
 	if len(d.workers) >= set.Max {
@@ -396,7 +497,7 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	defer cancel()
 	var err2 error
 	if l.Isolation == protocol.IsolationWorktree {
-		err2 = d.createWorktree(cctx, w)
+		err2 = d.createWorktree(cctx, w, l.Base)
 	}
 	if err2 == nil {
 		err2 = ln.start(cctx, d, w)
@@ -415,7 +516,7 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	d.wmu.Unlock()
 	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s",
 		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br)
-	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br}, nil
+	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules}, nil
 }
 
 // spawnWorker starts the process for w in its own process group, in the project
@@ -573,9 +674,9 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	// A worker that ends with no hand-back still tells its owner (W11). The
 	// harness statistics need the process, so they are read before the kill.
 	status, note := d.noticeFor(reason)
-	if reason == protocol.StopModelFails {
+	if reason == protocol.StopModelFails || reason == protocol.StopRunFailed {
 		d.wmu.Lock()
-		note = "the model call failed: " + w.failure
+		note += ": " + w.failure
 		d.wmu.Unlock()
 	}
 	sendNotice := !done && status != "" && sid != ""
@@ -583,12 +684,19 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	if sendNotice {
 		stats = d.workerStats(w)
 	}
+	// What the worker cost is read before the process goes (decision 0018).
+	if life, ok := d.treeLife(w.pid); ok {
+		d.recordWorkerCost(w.harness, w.model, life, time.Since(started))
+	}
 	if st, ok := d.launchers[w.harness].(stopper); ok && w.pid != 0 {
 		st.stop(d, w)
 	}
 	d.killGroup(w)
 	if en, ok := d.launchers[w.harness].(ender); ok {
 		en.end(d, w)
+	}
+	if !done && reason != protocol.StopHandback && reason != protocol.StopStartFails {
+		d.saveUnfinished(w, reason)
 	}
 	d.wmu.Lock()
 	row := d.rowLocked(w, reason)
@@ -666,8 +774,13 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 	}
 }
 
-// stopWorkerSession handles "worker.kill" from the gateway.
-func (d *Daemon) stopWorkerSession(sessionID string) error {
+// stopWorkerSession handles "worker.kill" from the gateway. A queued start
+// (a q_ ID) is cancelled instead.
+func (d *Daemon) stopWorkerSession(k protocol.WorkerKill) error {
+	sessionID := k.Session
+	if protocol.IsQueueID(sessionID) {
+		return d.cancelQueued(sessionID, k.Requester, k.AsOwner)
+	}
 	w := d.workerBySession(sessionID)
 	if w == nil {
 		return fmt.Errorf("no worker with session %s runs on this machine", sessionID)
@@ -816,6 +929,7 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	// Retry reports that failed while the gateway was away, then drop the
 	// records that are past the longest run time.
 	d.reportWorkerEnds(ctx)
+	d.dropWorktreeSessions()
 	rows, err := d.st.workers()
 	if err != nil {
 		return
@@ -834,7 +948,14 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second)}); err != nil &&
+	// Wait for the workers of the last run to be taken back: the gateway keeps
+	// the records of the workers listed here.
+	select {
+	case <-d.adopted:
+	case <-ctx.Done():
+		return
+	}
+	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), Running: d.runningSessionIDs(), WorktreesDir: d.worktreesDir()}); err != nil &&
 		!strings.Contains(err.Error(), "unknown frame type") { // an older gateway has no such frame
 		d.Logf("worker.cleanup: %v", err)
 	}
@@ -897,11 +1018,15 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		due := now.Sub(w.ownerChecked) >= set.Tick*4
 		d.wmu.Unlock()
-		if msg := d.modelFailure(ctx, w); msg != "" {
+		if msg, provider := d.modelFailure(ctx, w); msg != "" {
 			d.wmu.Lock()
 			w.failure = msg
 			d.wmu.Unlock()
-			d.endWorker(w, protocol.StopModelFails)
+			reason := protocol.StopRunFailed
+			if provider {
+				reason = protocol.StopModelFails
+			}
+			d.endWorker(w, reason)
 			continue
 		}
 		// Refresh the context and token figures while the worker runs. A
@@ -934,16 +1059,16 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 
 // modelFailure asks the harness whether the worker's model call failed. A
 // worker that already handed back is left alone: its owner has its answer.
-func (d *Daemon) modelFailure(ctx context.Context, w *worker) string {
+func (d *Daemon) modelFailure(ctx context.Context, w *worker) (string, bool) {
 	f, ok := d.launchers[w.harness].(failer)
 	if !ok {
-		return ""
+		return "", false
 	}
 	d.wmu.Lock()
 	skip := w.doneStatus != "" || w.stopping || w.sessionID == ""
 	d.wmu.Unlock()
 	if skip {
-		return ""
+		return "", false
 	}
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -1074,6 +1199,9 @@ func (d *Daemon) adoptWorkers() {
 			r.EndedReason = protocol.StopLost
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+			if r.DoneStatus == "" {
+				d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree}, protocol.StopLost)
+			}
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}
@@ -1081,7 +1209,8 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref}
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref,
+			taskFull: r.TaskFull}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()
@@ -1100,6 +1229,21 @@ func (d *Daemon) adoptWorkers() {
 		}
 		d.Logf("worker.adopted worker=%s session=%s project=%s pid=%d", w.id, w.sessionID, w.project, w.pid)
 	}
+}
+
+// runningSessionIDs lists the gateway session IDs of the workers this daemon
+// runs or has adopted.
+func (d *Daemon) runningSessionIDs() []string {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	var ids []string
+	for _, w := range d.workers {
+		if w.sessionID != "" {
+			ids = append(ids, w.sessionID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // workerCount is how many workers run on this machine.

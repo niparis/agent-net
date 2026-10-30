@@ -708,38 +708,51 @@ func TestCodexWorkerFailedTurnAndWorktree(t *testing.T) {
 	}
 }
 
-// Only the session that started a Codex worker, and the person, can send to it.
+// Only the session that started a Codex worker, and the person, can send to
+// it. A Codex worker ends after the hand-back of its turn, so there are two
+// states to check, each on its own worker: running (the daemon refuses the
+// message at delivery) and ended (the gateway refuses it at send).
 func TestCodexWorkerRefusesOtherAgents(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	// Keep the turn open so the worker is still running when another agent
-	// sends to it. A hand-back would end it, and then the test would check the
-	// resume rule instead.
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow keep the turn open"})
-	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	stranger := dialLocal(t, w.sock)
 	stranger.mustCall("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_stranger", "cwd": "/w/x"})
 	stranger.AutoAck = true
-	raw, err := stranger.call("send", map[string]any{"to": res.SessionID, "body": "hello"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sent protocol.MessageSent
-	mustJSON(t, raw, &sent)
-	if sent.Message == nil {
-		t.Fatalf("send gave %s", raw)
-	}
-	eventually(t, "the message failed", func() bool {
-		var st protocol.MessageResult
-		json.Unmarshal(w.cli.mustCall("message_status", protocol.QueryMessage{MessageID: sent.Message.ID}), &st)
-		return st.Message.State == protocol.StateFailed
+
+	t.Run("ended", func(t *testing.T) {
+		res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "x"})
+		w.waitNotice(t, 1)
+		eventually(t, "the worker ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
+		_, err := stranger.call("send", map[string]any{"to": res.SessionID, "body": "hello"})
+		if err == nil || !strings.Contains(err.Error(), "only the session that started it") {
+			t.Fatalf("a stranger was not refused: %v", err)
+		}
 	})
-	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) >= 1 })
-	if len(rec.Turns) != 1 {
-		t.Errorf("a message from another agent started a turn: %d turns", len(rec.Turns))
-	}
+
+	t.Run("running", func(t *testing.T) {
+		res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+		readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+		raw, err := stranger.call("send", map[string]any{"to": res.SessionID, "body": "hello"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var sent protocol.MessageSent
+		mustJSON(t, raw, &sent)
+		if sent.Message == nil {
+			t.Fatalf("send gave %s", raw)
+		}
+		eventually(t, "the message failed", func() bool {
+			var st protocol.MessageResult
+			json.Unmarshal(w.cli.mustCall("message_status", protocol.QueryMessage{MessageID: sent.Message.ID}), &st)
+			return st.Message.State == protocol.StateFailed
+		})
+		rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) >= 1 })
+		if len(rec.Turns) != 1 {
+			t.Errorf("a message from another agent started a turn: %d turns", len(rec.Turns))
+		}
+	})
 }
 
 // A Codex worker survives a restart of the daemon: the app server keeps

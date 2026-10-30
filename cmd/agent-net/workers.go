@@ -56,7 +56,20 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 		fmt.Fprintln(out, string(b))
 		return nil
 	}
+	if res.Status == "queued" {
+		fmt.Fprintf(out, "%s\n", res.QueueReason)
+		fmt.Fprintf(out, "start %s (%s%s, project %s on %s) waits for room. A notice comes to you when it starts.\n",
+			res.QueueID, res.Harness, modelSuffix(res.Model), res.Project, res.Hostname)
+		if res.MachineNote != "" {
+			fmt.Fprintf(out, "machine: %s\n", res.MachineNote)
+		}
+		fmt.Fprintf(out, "cancel it with: agent-net stop %s\n", res.QueueID)
+		return nil
+	}
 	fmt.Fprintf(out, "started worker %s (%s%s, project %s on %s)\n", res.SessionID, res.Harness, modelSuffix(res.Model), res.Project, res.Hostname)
+	if res.MachineNote != "" {
+		fmt.Fprintf(out, "machine: %s\n", res.MachineNote)
+	}
 	if res.ModelNote != "" {
 		fmt.Fprintf(out, "model: %s\n", res.ModelNote)
 	}
@@ -122,6 +135,7 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 		fmt.Fprintln(out, string(b))
 		return nil
 	}
+	machineLoadLines(cctx, op, out)
 	if len(ws) == 0 {
 		fmt.Fprintln(out, "no workers")
 		return nil
@@ -141,6 +155,28 @@ func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args [
 			owner, state, time.Unix(w.StartedAt, 0).Local().Format("Jan 02 15:04"))
 	}
 	return tw.Flush()
+}
+
+// machineLoadLines prints one line per machine that reports its worker load:
+// "mac: workers 2 running, 1 queued · room: ok". It prints nothing when the
+// usage report is not available.
+func machineLoadLines(ctx context.Context, op operator.Operator, out io.Writer) {
+	u, err := op.Usage(ctx)
+	if err != nil {
+		return
+	}
+	seen := map[string]bool{}
+	if u.Local != nil && u.Local.Workers != nil {
+		fmt.Fprintf(out, "%s: %s\n", u.Hostname, u.Local.Workers.RoomText())
+		seen[u.NodeID] = true
+	}
+	if u.Gateway != nil {
+		for _, n := range u.Gateway.Nodes {
+			if !seen[n.NodeID] && n.Usage.Workers != nil {
+				fmt.Fprintf(out, "%s: %s\n", n.Hostname, n.Usage.Workers.RoomText())
+			}
+		}
+	}
 }
 
 // cmdSend: agent-net send <session or name> <text...>. It sends as the owner.

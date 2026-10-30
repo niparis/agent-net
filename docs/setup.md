@@ -43,6 +43,7 @@ join                  ok (node n_...)
 daemon service        ok (restarted)
 claude code           ok
 claude peer messages  held for review (default)
+claude workers mod    on (plugin agent-net-workers@agent-net, user scope)
 pi extension          ok
 claude guidance       updated
 agent guidance        ok
@@ -55,6 +56,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
 - when `claude` is found and Claude Code's `crossSessionInbound` setting is not set, asks once whether Claude Code should accept agent-net messages without holding them (see below),
+- when `claude` is found, asks once whether to install the `agent-net-workers` Claude Code plugin (see below),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink is left alone; see [opencode.md](opencode.md)),
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found, after asking once whether Codex may call its tools without asking (see [codex.md](codex.md)),
@@ -93,6 +95,40 @@ Add the hook? [y/N]
 - The default is No. With no terminal nothing changes. `--claude-policy-hook` adds it without a question, `--no-claude-policy-hook` skips it without a question.
 - It adds one `UserPromptSubmit` entry under `hooks` and keeps everything else. `agent-net uninstall` removes only that entry and the `agent-net-coder-*.md` files it wrote.
 - Without the hook, a policy for a Claude Code session is stored but not applied; the TUI says so. The OpenCode plugin and the Pi extension apply it with no setting.
+
+### The Claude Code needs hooks
+
+A third set of hooks, for the "Needs you" section of the TUI. They tell agent-net when a Claude Code session waits for you, and clear it when you type a prompt. Setup asks once:
+
+```
+agent-net can add Claude Code hooks to ~/.claude/settings.json. They tell
+the agent-net TUI when Claude waits for your permission or input, so the
+session appears under "Needs you" with what it asks. A prompt clears that.
+Only the local daemon is called. No model is called.
+Add the hooks? [y/N]
+```
+
+- The default is No. With no terminal nothing changes. `--claude-needs-hook` adds them without a question, `--no-claude-needs-hook` skips them without a question.
+- They add `PermissionRequest`, `Notification` (idle and elicitation waits), `PreToolUse` and `UserPromptSubmit` entries under `hooks` and keep everything else. `agent-net uninstall` removes only those entries.
+- The Pi extension and the OpenCode plugin do this without a setting; other harnesses use `agent_announce` with `waiting`. See [Needs you](reference.md#needs-you).
+
+### The Claude Code workers plugin
+
+Claude Code can show the agent-net workers that a session started: a band above the prompt with one row per worker, a status line entry, and a line when a worker ends. Setup installs the `agent-net-workers` plugin from a local marketplace. It asks once:
+
+```
+agent-net can install a Claude Code plugin, agent-net workers. In every
+Claude Code session on this machine it shows the workers that session started
+in a band above the prompt and on the status line, and a line when a worker
+ends. Setup registers a local marketplace at ~/.local/share/agent-net/claude-plugins.
+Install the plugin? [y/N]
+```
+
+- The default is No. With no terminal nothing changes, and setup prints the flag to use later. `--claude-workers-mod` installs it without a question, `--no-claude-workers-mod` skips it without a question.
+- On yes, setup writes `~/.local/share/agent-net/claude-plugins/.claude-plugin/marketplace.json` and the plugin folder `agent-net-workers/` beside it, from files inside the binary. It then runs `claude plugin marketplace add ~/.local/share/agent-net/claude-plugins` and `claude plugin install agent-net-workers@agent-net -s user`. The answer is kept in `~/.config/agent-net/claude-workers-mod.json`, so setup does not ask again.
+- Claude Code reads the plugin from that folder, not from a copy. A later setup run, the daemon at start, and an upgrade rewrite the folder when the files differ from the binary, so the plugin always matches the installed agent-net. Setup also runs `claude plugin marketplace update agent-net` and `claude plugin update agent-net-workers@agent-net -s user` when it changed the files. After an upgrade, sessions that were already open need `/reload-plugins`.
+- If the `claude` command is missing or fails, the step says `failed (...)` or `files written, not registered (...)`, and setup continues. Run `agent-net setup --claude-workers-mod` to try again.
+- `agent-net uninstall` runs `claude plugin uninstall agent-net-workers@agent-net -s user` and `claude plugin marketplace remove agent-net`, then deletes the folder.
 
 ### The Claude Code question
 

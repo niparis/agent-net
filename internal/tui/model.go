@@ -819,11 +819,22 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	return out
 }
 
-// visible is the sessions in the order they are drawn.
+// visible is the sessions in the order the keys move through: the "Needs you"
+// rows first, then the table. A waiting session is reached from the section,
+// so it is not selectable a second time in the table.
 func (m Model) visible() []protocol.AgentView {
-	var out []protocol.AgentView
+	needs := m.needsRows()
+	out := append([]protocol.AgentView(nil), needs...)
+	seen := map[string]bool{}
+	for _, a := range needs {
+		seen[a.SessionID] = true
+	}
 	for _, g := range m.groups() {
-		out = append(out, g.agents...)
+		for _, a := range g.agents {
+			if !seen[a.SessionID] {
+				out = append(out, a)
+			}
+		}
 	}
 	return out
 }

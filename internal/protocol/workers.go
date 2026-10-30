@@ -10,11 +10,46 @@ import (
 // Worker limits and timeouts. They are the start values: a machine changes
 // them in the "workers" part of node.json.
 const (
-	DefaultWorkerMax        = 4
+	DefaultWorkerMax        = 12 // the hard cap, a safety net behind the load check (decision 0018)
 	DefaultWorkerIdle       = 60 * time.Minute
 	DefaultWorkerMaxAge     = 4 * time.Hour
 	DefaultWorkerOwnerGrace = 10 * time.Minute
 )
+
+// Admission by machine load (decision 0018). A worker starts only when the
+// machine has room for it; otherwise the start waits in a queue.
+const (
+	// DefaultWorkerCPUTarget is the 5-minute whole-machine CPU busy percent
+	// above which no worker starts.
+	DefaultWorkerCPUTarget = 75.0
+	// WorkerCPUHot is the 1-minute CPU busy percent above which no worker
+	// starts, whatever the target is.
+	WorkerCPUHot = 95.0
+	// DefaultWorkerRAM and DefaultWorkerCores are the expected cost of a worker
+	// of a harness and model this machine has no history for.
+	DefaultWorkerRAM   = 600 << 20
+	DefaultWorkerCores = 1.0
+	// DefaultMemReserveBytes and DefaultMemReserveShare make the memory
+	// reserve: the larger of the two (10 percent of RAM).
+	DefaultMemReserveBytes = 1536 << 20
+	DefaultMemReserveShare = 0.10
+	// WorkerStartGap is the least time between two worker starts on a
+	// machine: the averages lag, so a new worker must show in them first.
+	WorkerStartGap = 60 * time.Second
+	// WorkerQueueTick is how often a daemon looks at its queue.
+	WorkerQueueTick = 15 * time.Second
+	// DefaultWorkerQueueTimeout is how long a start may wait in the queue.
+	DefaultWorkerQueueTimeout = 2 * time.Hour
+	// WorkerCostKeep is how many ended workers per harness and model the
+	// daemon keeps to learn the cost of the next one.
+	WorkerCostKeep = 20
+	// QueueIDPrefix starts the ID of a queued start. agent_stop takes it like
+	// a worker session ID.
+	QueueIDPrefix = "q_"
+)
+
+// IsQueueID tells whether id names a queued start and not a session.
+func IsQueueID(id string) bool { return strings.HasPrefix(id, QueueIDPrefix) }
 
 // Why a worker ended. They are the "reason" of worker.stopped.
 const (
@@ -25,6 +60,7 @@ const (
 	StopExited     = "process_exited" // the harness process ended by itself
 	StopLost       = "lost"           // gone while the daemon was not running
 	StopStartFails = "start_failed"   // it never became a session
+	StopRunFailed  = "run_failed"     // a local or unclassified run failure
 	StopModelFails = "model_failed"   // the model call failed (provider, billing or auth error)
 	// StopHandback means the worker handed back its report and the daemon
 	// ended it, like a Claude Code subagent. The harness session is kept, so
@@ -39,11 +75,75 @@ type WorkerResume struct {
 	Requester string `json:"requester_session"`
 }
 
+// WorkerContinue is "worker.continue", gateway to the machine: start a new
+// worker from an ended one. Only the owner of the old worker may ask.
+type WorkerContinue struct {
+	// Session is the old worker's session ID.
+	Session   string `json:"session"`
+	Requester string `json:"requester_session"`
+	// Harness and Model are empty to keep the old worker's.
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
+	// Task is the extra text of the caller, added after the old first task.
+	Task string `json:"task,omitempty"`
+}
+
+// WorkerContinued answers "worker.continue".
+type WorkerContinued struct {
+	WorkerLaunched
+	Project string `json:"project"`
+	Path    string `json:"path"`
+	Harness string `json:"harness"`
+	Model   string `json:"model,omitempty"`
+}
+
+// ContinueIntro starts the task of a worker that continues an ended one.
+// where says what the earlier worker left: "branch" (its unfinished changes
+// are the last commit in the new worktree), "folder" (it worked in the project
+// folder) or "" (nothing).
+func ContinueIntro(reason, where string) string {
+	head := "You continue the work of an earlier worker that ended (" + reason + "). "
+	switch where {
+	case "branch":
+		return head + "Its unfinished changes are already in your worktree as the last commit. Review them critically, then finish the task."
+	case "folder":
+		return head + "It worked in the project folder, so its changes, if any, are there. Review them critically, then finish the task."
+	}
+	return head + "It left no changes. Start from its task below."
+}
+
 // WorkerCleanup is "worker.cleanup", machine to gateway: drop the worker
 // records of this machine that are offline and started longer ago than
-// MaxAge. The daemon sends it at start and periodically (W7).
+// MaxAge. The daemon sends it at start and periodically (W7). Running lists
+// the session IDs of the workers the machine runs or has adopted: the gateway
+// never drops those records, whatever their age or state.
+// WorkerNotStartedText is the text of the notice for a queued start that did not
+// become a worker.
+func WorkerNotStartedText(project, harness, why string) string {
+	return "[agent-net worker notice]\nstatus: not started\nnote: " + why + "\nworker: none (" + harness + "), project " + project + "\n"
+}
+
+// WorkerStartedText is the notice for a queued start that has become a worker.
+func WorkerStartedText(session, harness, model, project, host string, waited time.Duration) string {
+	b := "[agent-net worker notice]\nstatus: started\nnote: the queued start has begun; the task is being sent to the worker\nworker: " +
+		session + " (" + harness
+	if model != "" {
+		b += ", " + model
+	}
+	b += "), project " + project + " on " + host + "\nqueue wait: " + waited.Round(time.Second).String() + "\n"
+	return b
+}
+
 type WorkerCleanup struct {
 	MaxAgeSeconds int64 `json:"max_age_seconds"`
+	// WorktreesDir is the folder of this machine where its workers' git
+	// worktrees live. The gateway also deletes this machine's offline sessions
+	// that are not worker records and work inside it (ghosts of workers that
+	// a user's own service registered). An older daemon sends none.
+	WorktreesDir string `json:"worktrees_dir,omitempty"`
+	// Running lists the session IDs of the workers the machine runs or has
+	// adopted; the gateway never drops those records.
+	Running []string `json:"running,omitempty"`
 }
 
 // WorkerInfo is the worker part of a session. The daemon that started the
@@ -89,6 +189,10 @@ type (
 		// machines, the gateway then prefers the caller's machine, or the one
 		// machine that has the harness.
 		CallerProject bool `json:"caller_project,omitempty"`
+		// CallerPath is the main working tree of the caller's own folder,
+		// set with CallerProject. The gateway matches it exactly on the
+		// caller's machine before it falls back to the name.
+		CallerPath string `json:"caller_path,omitempty"`
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
@@ -106,6 +210,22 @@ type (
 		// Worktree and Branch are set when the worker got its own worktree.
 		Worktree string `json:"worktree,omitempty"`
 		Branch   string `json:"branch,omitempty"`
+		// ProjectRules is the text of the project's .agent-net/worker.md.
+		ProjectRules string `json:"project_rules,omitempty"`
+		// Task is the task text to send, set for a continued worker (it holds
+		// the old worker's first task). Empty means the caller's own task.
+		Task string `json:"task,omitempty"`
+		// Queued is true when the machine has no room now: the start waits
+		// in its queue, SessionID is empty, and QueueID names the start. A
+		// notice follows when it starts.
+		Queued   bool   `json:"queued,omitempty"`
+		QueueID  string `json:"queue_id,omitempty"`
+		Position int    `json:"position,omitempty"`
+		// Reason says why there is no room, or what happened in the queue.
+		Reason string `json:"reason,omitempty"`
+		// MachineNote says why the gateway picked this machine when the
+		// project is on several.
+		MachineNote string `json:"machine_note,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -120,13 +240,48 @@ type (
 		// Isolation is "" (a worktree if the folder is a repository),
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
+		Base      string `json:"base,omitempty"`
+		// RecordTask is what the machine keeps as the worker's first task.
+		// Empty means Task.
+		RecordTask string `json:"record_task,omitempty"`
 	}
-	// WorkerLaunched answers "worker.launch".
+	// WorkerLaunched answers "worker.launch". When the machine queued the
+	// start, Queued is true and SessionID is empty.
 	WorkerLaunched struct {
 		SessionID string `json:"session_id"`
 		WorkerID  string `json:"worker_id"`
 		Worktree  string `json:"worktree,omitempty"`
 		Branch    string `json:"branch,omitempty"`
+		// ProjectRules is the text of the project's .agent-net/worker.md.
+		ProjectRules string `json:"project_rules,omitempty"`
+		// Task is the task text to send, for a continued worker.
+		Task     string `json:"task,omitempty"`
+		Queued   bool   `json:"queued,omitempty"`
+		QueueID  string `json:"queue_id,omitempty"`
+		Position int    `json:"position,omitempty"`
+		Reason   string `json:"reason,omitempty"`
+	}
+	// WorkerNotStarted is "worker.not_started", machine to gateway: a queued
+	// start ended without a worker. The gateway records an event for the feed.
+	WorkerNotStarted struct {
+		Owner   string `json:"owner_session"`
+		Project string `json:"project"`
+		Harness string `json:"harness"`
+		Reason  string `json:"reason"`
+	}
+	// WorkerQueuedStart is "worker.queued_start", machine to gateway: a queued
+	// start has become a worker. The gateway passes it to the owner's machine
+	// as "worker.task", and that machine sends the task, because only the
+	// owner's machine may send as the owner.
+	WorkerQueuedStart struct {
+		Owner     string `json:"owner_session"`
+		SessionID string `json:"session_id"`
+		Harness   string `json:"harness"`
+		Task      string `json:"task"`
+		Worktree  string `json:"worktree,omitempty"`
+		Branch    string `json:"branch,omitempty"`
+		// ProjectRules is the project's .agent-net/worker.md text, for the brief.
+		ProjectRules string `json:"project_rules,omitempty"`
 	}
 	// WorkerStopFrame is "worker.stop".
 	WorkerStopFrame struct {
@@ -136,6 +291,11 @@ type (
 	// WorkerKill is "worker.kill", gateway to the machine.
 	WorkerKill struct {
 		Session string `json:"session"`
+		// Requester is the session that asked; AsOwner is true when it is the
+		// person at a command line. Both only matter for a queued start,
+		// which only its owner or the person may cancel.
+		Requester string `json:"requester_session,omitempty"`
+		AsOwner   bool   `json:"as_owner,omitempty"`
 	}
 	// WorkerStopped is "worker.stopped", machine to gateway.
 	WorkerStopped struct {
@@ -203,6 +363,10 @@ func WorkerTaskBody(task, worktree, branch string) string {
 // WorkerTaskBodyFor builds the body of the task message: the brief of the
 // harness, a line about the worktree if there is one, then the task.
 func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
+	return WorkerTaskBodyWithRules(harness, task, worktree, branch, "")
+}
+
+func WorkerTaskBodyWithRules(harness, task, worktree, branch, rules string) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
@@ -213,6 +377,9 @@ func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
 	if worktree != "" {
 		b += "\n\nYou work in a git worktree of the project at " + worktree + " on the branch " + branch +
 			", not in the user's own checkout. Commit your work there if the task asks for it."
+	}
+	if rules != "" {
+		b += "\n\nProject rules for workers\n\n" + rules
 	}
 	return b + "\n\nTask:\n" + strings.TrimSpace(task)
 }
@@ -286,6 +453,9 @@ type WorkerNotice struct {
 	Branch   string
 	DiffStat string // git diff --stat of the worktree, empty when none
 	Note     string // why it ended, for a worker that did not hand back
+	// Saved is true when the daemon committed the worker's unfinished changes
+	// on its branch.
+	Saved bool
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -317,6 +487,9 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	}
 	if n.Worktree != "" {
 		b.WriteString("worktree: " + n.Worktree + " (branch " + n.Branch + ")\n")
+		if n.Saved {
+			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")
+		}
 		if n.DiffStat == "" {
 			b.WriteString("changes: none\n")
 		} else {
