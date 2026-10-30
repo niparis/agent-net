@@ -51,16 +51,16 @@ Why not `opencode run`: tested with OpenCode 2.2.0. Without `--standalone` it ta
 Findings, from the 2.2.0 binary and a throwaway `HOME` and `XDG_*`:
 
 - OpenCode 2.2.0 keeps its data (sessions, and the credentials in a `credential` table) in one SQLite file, `$XDG_DATA_HOME/opencode/opencode.db`. `auth.json` in that folder is only imported once from older versions.
-- Every command has `--standalone`, so a second OpenCode process on the same database is a supported mode. A plain `serve` does not write `service.json`.
-- A separate data folder would hide the user's credentials. Copying them to a worker's folder would copy secrets, and a refreshed OAuth token in the copy could invalidate the user's own login.
+- Concurrent servers on one database have caused SQLite errors and exposed worker sessions to the user's service.
+- `opencode auth export --standalone` and `auth import --standalone` transfer credentials. JSON stays in memory, and the private database is mode 0600. A refreshed OAuth token in a copy could invalidate the user's own login.
 
-So the worker shares the data folder (it needs the credentials and the user's sessions are theirs to keep) and isolates what could clash:
+The worker uses a private data folder and isolates what could clash:
 
 1. **State folder.** `XDG_STATE_HOME` is a private folder in the daemon's state (`workers/<id>/state`), deleted when the worker ends. The worker never reads or writes the service's `service.json`.
 2. **Port and password.** It listens on `127.0.0.1` only, with its own random password. It does not use the service's port.
 3. **Plugin discovery.** The OpenCode plugin registers the user's newest sessions at load. In a worker that would register sessions that the user's own service also registers. The daemon sets `AGENT_NET_WORKER`, and the plugin then skips discovery. It registers only the session named in `AGENT_NET_WORKER_SESSION_FILE`, which the daemon writes after it created the session. (A session title cannot carry the worker ID: `POST /api/session` ignores `title`.)
-4. **Who may be the worker's session.** The daemon binds a worker's session to the worker's process group. A connection for that session from any other process (the user's service sees the worker's session in the shared database) is refused with "belongs to a worker". A worker has one session; a second one is refused.
-5. **The worker's sessions stay in the user's database,** (OpenCode names them from their first prompt). They show in the user's OpenCode session list after the worker ends. This is a visible side effect, and it is useful for reading what a worker did.
+4. **Who may be the worker's session.** The daemon binds a worker's session to the worker's process group. A connection for that session from any other process is refused with "belongs to a worker". A worker has one session; a second one is refused.
+5. **Data folder.** `XDG_DATA_HOME` is `workers/<id>/data`. Credentials are exported and imported at each start. The folder is reused on resume and kept after hand-back, but removed on other ends. Configuration remains shared. The user's database does not contain worker sessions.
 
 What is not isolated: the two processes write one SQLite file (WAL, with a busy timeout, like any two OpenCode commands), and a worker started by a newer OpenCode binary than the service runs may migrate the database. That is the same as running `opencode` by hand.
 

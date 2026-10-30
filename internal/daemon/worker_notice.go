@@ -212,6 +212,8 @@ func (d *Daemon) noticeFor(reason string) (status, note string) {
 		return protocol.StatusFailed, "the harness process ended by itself, with no hand-back"
 	case protocol.StopModelFails:
 		return protocol.StatusFailed, "the model call failed" // endWorker adds the error text
+	case protocol.StopRunFailed:
+		return protocol.StatusFailed, "the worker run failed"
 	case protocol.StopRequested:
 		return protocol.StatusStopped, "stopped on request, with no hand-back"
 	case protocol.StopLost:

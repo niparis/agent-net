@@ -174,7 +174,7 @@ type adopter interface {
 // (a provider, billing or auth error), so the worker can end with a notice
 // instead of waiting for the idle limit. It returns the error text, or "".
 type failer interface {
-	failure(ctx context.Context, d *Daemon, w *worker) string
+	failure(ctx context.Context, d *Daemon, w *worker) (string, bool)
 }
 
 // ender is a launcher that has more to clean up when a worker ends.
@@ -598,9 +598,9 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	// A worker that ends with no hand-back still tells its owner (W11). The
 	// harness statistics need the process, so they are read before the kill.
 	status, note := d.noticeFor(reason)
-	if reason == protocol.StopModelFails {
+	if reason == protocol.StopModelFails || reason == protocol.StopRunFailed {
 		d.wmu.Lock()
-		note = "the model call failed: " + w.failure
+		note += ": " + w.failure
 		d.wmu.Unlock()
 	}
 	sendNotice := !done && status != "" && sid != ""
@@ -939,11 +939,15 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		due := now.Sub(w.ownerChecked) >= set.Tick*4
 		d.wmu.Unlock()
-		if msg := d.modelFailure(ctx, w); msg != "" {
+		if msg, provider := d.modelFailure(ctx, w); msg != "" {
 			d.wmu.Lock()
 			w.failure = msg
 			d.wmu.Unlock()
-			d.endWorker(w, protocol.StopModelFails)
+			reason := protocol.StopRunFailed
+			if provider {
+				reason = protocol.StopModelFails
+			}
+			d.endWorker(w, reason)
 			continue
 		}
 		switch {
@@ -973,16 +977,16 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 
 // modelFailure asks the harness whether the worker's model call failed. A
 // worker that already handed back is left alone: its owner has its answer.
-func (d *Daemon) modelFailure(ctx context.Context, w *worker) string {
+func (d *Daemon) modelFailure(ctx context.Context, w *worker) (string, bool) {
 	f, ok := d.launchers[w.harness].(failer)
 	if !ok {
-		return ""
+		return "", false
 	}
 	d.wmu.Lock()
 	skip := w.doneStatus != "" || w.stopping || w.sessionID == ""
 	d.wmu.Unlock()
 	if skip {
-		return ""
+		return "", false
 	}
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
