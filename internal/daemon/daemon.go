@@ -53,13 +53,14 @@ type Host interface {
 }
 
 type Config struct {
-	GatewayURL string
-	NodeID     string
-	Token      string
-	CAPEM      []byte // pinned CA; nil means the system roots (plain http in tests)
-	Hostname   string
-	StateDir   string
-	SocketPath string
+	InventoryHome string // Empty disables tools inventory (used by tests).
+	GatewayURL    string
+	NodeID        string
+	Token         string
+	CAPEM         []byte // pinned CA; nil means the system roots (plain http in tests)
+	Hostname      string
+	StateDir      string
+	SocketPath    string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
 	// PiSessionsDir is where Pi writes its session files. The daemon reads a
@@ -170,6 +171,9 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	toolsMu       sync.Mutex
+	toolsReport   protocol.InventoryReport
+	toolsWake     chan struct{}
 	ctoDispatchMu sync.Mutex
 	cto           ctoRuntime
 	claudeCTO     claudeCTOState
@@ -315,7 +319,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, adopted: make(chan struct{}),
-		intgWake: make(chan struct{}, 1),
+		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
@@ -385,6 +389,10 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.harnessLoop(ctx) }()
+	if d.cfg.InventoryHome != "" {
+		d.wg.Add(1)
+		go func() { defer d.wg.Done(); d.toolsLoop(ctx) }()
+	}
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.linkLoop(ctx) }()
 	return nil

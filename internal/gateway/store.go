@@ -235,6 +235,8 @@ WHERE kind='component'
 `, `
 ALTER TABLE sessions ADD COLUMN graph_excluded INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE projects ADD COLUMN graph_excluded INTEGER NOT NULL DEFAULT 0;
+`, `
+CREATE TABLE inventory_reports (node_id TEXT PRIMARY KEY, report TEXT NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

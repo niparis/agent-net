@@ -518,6 +518,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, nil
 
+	case "node.inventory":
+		p, err := decode[protocol.InventoryReport](raw)
+		if err != nil || (p.State != protocol.InventoryOK && p.State != protocol.InventoryError) || len(p.Items) > 10000 {
+			return nil, reject("bad node.inventory")
+		}
+		return nil, st.SetInventory(nc.id, p)
+
+	case "query.inventory":
+		return st.Inventories()
+
 	case "node.harnesses":
 		p, err := decode[protocol.NodeHarnesses](raw)
 		if err != nil || p.Harnesses == nil {

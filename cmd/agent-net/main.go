@@ -304,8 +304,13 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	}
 	host := daemon.Hostname(nc.Hostname)
 	logger := log.New(os.Stderr, "daemon: ", log.LstdFlags)
+	inventoryHome, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
 	d, err := daemon.New(daemon.Config{
-		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
+		InventoryHome: inventoryHome,
+		GatewayURL:    nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		Adapters: []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		CodexHome:         agentfiles.CodexHome(),
 		RefreshAgentFiles: agentfiles.SyncAndLog,
