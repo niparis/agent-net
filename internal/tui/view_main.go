@@ -1037,18 +1037,57 @@ func (m Model) messagesView(w, h int) []string {
 	}
 	rows := m.messageConversations()
 	selected := m.conversationIndex(rows)
-	body := []string{}
+	list := []string{}
+	listW := w - 4
+	chatW := w - 4
+	if w >= 100 {
+		listW = max(w*2/5-4, 1)
+		chatW = max(w-(listW+4)-4, 1)
+	}
 	for i, r := range rows {
-		body = append(body, m.messageConversationLine(r, max(w-4, 1), i == selected && m.focus == focusFeed))
+		list = append(list, m.messageConversationLine(r, listW, i == selected && m.focus == focusFeed))
 	}
-	if len(body) == 0 {
-		body = append(body, sDim.Render("No conversations"))
+	if len(list) == 0 {
+		list = append(list, sDim.Render("No conversations"))
 	}
-	for len(body) < max(h-3, 0) {
-		body = append(body, "")
+	var chat []string
+	if len(rows) > 0 {
+		chat = m.conversationChat(rows[selected], chatW)
+	} else {
+		chat = []string{sDim.Render("Select a conversation")}
 	}
-	if len(body) > max(h-3, 0) {
-		body = body[:max(h-3, 0)]
+	if w >= 100 {
+		height := max(h-3, 0)
+		list = messageFit(list, height, selected)
+		chat = messageFit(chat, height, 0)
+		left := panel("Messages · "+filter, list, listW+4, roleAccent)
+		right := panel("Conversation", chat, chatW+4, roleAccent)
+		for i := range left {
+			out = append(out, left[i]+right[i])
+		}
+		return out
 	}
-	return append(out, panel("Messages · "+filter, body, w, roleAccent)...)
+	available := max(h-5, 0)
+	listHeight := min(max(available/2, 1), len(list))
+	chatHeight := max(available-listHeight, 0)
+	list = messageFit(list, listHeight, selected)
+	chat = messageFit(chat, chatHeight, 0)
+	out = append(out, panel("Messages · "+filter, list, w, roleAccent)...)
+	out = append(out, panel("Conversation", chat, w, roleAccent)...)
+	return out
+}
+
+func messageFit(lines []string, height, selected int) []string {
+	height = max(height, 0)
+	start := 0
+	if selected >= height {
+		start = selected - height + 1
+	}
+	start = min(start, max(len(lines)-height, 0))
+	end := min(start+height, len(lines))
+	lines = append([]string(nil), lines[start:end]...)
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines
 }

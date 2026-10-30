@@ -96,7 +96,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		age = 0
 	}
 	age = age.Truncate(time.Minute)
-	ageText := age.String()
+	ageText := strings.TrimSuffix(age.String(), "0s")
 	if age < time.Minute {
 		ageText = "now"
 	} else {
@@ -121,4 +121,73 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		line = selectedRow(line)
 	}
 	return clip(line, w)
+}
+
+func workerNoticeLine(body string) (string, bool) {
+	if !strings.HasPrefix(strings.TrimSpace(body), "[agent-net worker notice]") {
+		return "", false
+	}
+	status, run, files := "", "", ""
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "status: ") {
+			status = strings.TrimPrefix(line, "status: ")
+		}
+		if strings.HasPrefix(line, "run time: ") {
+			run = strings.TrimPrefix(line, "run time: ")
+		}
+		if strings.Contains(line, " files changed") || strings.Contains(line, " file changed") {
+			files = strings.Fields(line)[0] + " files"
+		}
+	}
+	if status == "" {
+		status = "stopped"
+	}
+	mark := "✓"
+	if status != "done" {
+		mark = "✗"
+	}
+	out := mark + " " + status
+	if run != "" {
+		out += " · " + run
+	}
+	if files != "" {
+		out += " · " + files
+	}
+	return out, true
+}
+func (m Model) conversationChat(c messageConversation, w int) []string {
+	var out []string
+	for _, i := range c.items {
+		it := m.feed.items[i]
+		sender := m.feedName(it.From)
+		if it.FromCTO {
+			sender = "CTO"
+		}
+		out = append(out, sDim.Render(m.clock(it.At)+" "+sender))
+		if text, ok := workerNoticeLine(it.Body); ok {
+			if strings.Contains(text, "✓ done") {
+				out = append(out, sBusy.Render(clip(text, w)))
+			} else {
+				out = append(out, sBad.Render(clip(text, w)))
+			}
+			continue
+		}
+		if it.Body == "" {
+			text := "…"
+			if it.Snip == snipFailed {
+				text = "body unavailable"
+			}
+			out = append(out, sDim.Render(text))
+			continue
+		}
+		lines := strings.Split(it.Body, "\n")
+		for j := 0; j < len(lines) && j < 3; j++ {
+			out = append(out, clip(lines[j], w))
+		}
+		if len(lines) > 3 {
+			out = append(out, sDim.Render("…"))
+		}
+	}
+	return out
 }
