@@ -129,16 +129,20 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 		}
 	}
 	remaining := max(h-len(out)-len(isolated)-1, 0)
-	off := 0
+	var eligible []protocol.Edge
 	for _, e := range m.mp.edges {
-		if !visible[e.From] || !visible[e.To] || remaining == 0 {
-			off++
-			continue
+		if visible[e.From] && visible[e.To] {
+			eligible = append(eligible, e)
 		}
+	}
+	edgeStart := min(max(m.mp.overviewEdgeScroll, 0), max(len(eligible)-1, 0))
+	edgeEnd := min(edgeStart+remaining, len(eligible))
+	for _, e := range eligible[edgeStart:edgeEnd] {
 		line := sanitize(e.From) + " " + linkArrow([]mapLink{{edge: e}}, 0, 4) + " " + sanitize(e.To) + sDim.Render(" · "+sanitize(e.Kind)+" "+sanitize(e.Rule))
 		out = append(out, clip(line, w))
-		remaining--
 	}
+	off := len(m.mp.edges) - (edgeEnd - edgeStart)
+
 	out = append(out, isolated...)
 	if off > 0 {
 		out = append(out, sDim.Render(clip(fmt.Sprintf("+%d edges off screen", off), w)))
@@ -219,6 +223,7 @@ func (m *Model) overviewMove(direction string) {
 			}
 			room := overviewNodeRoom(m.overviewHeight())
 			m.mp.overviewScroll = min(max(m.mp.overviewScroll+step, 0), max(len(rows)-room, 0))
+			m.mp.overviewEdgeScroll = 0
 			return
 		}
 		if bestRow >= 0 {
@@ -239,10 +244,39 @@ func (m *Model) overviewMove(direction string) {
 	}
 	m.mp.selected = positions[target].name
 	m.mp.choice = 0
+	oldScroll := m.mp.overviewScroll
 	m.overviewRevealSelection()
+	if oldScroll != m.mp.overviewScroll {
+		m.mp.overviewEdgeScroll = 0
+	}
 }
 func (m *Model) overviewPage(delta int) {
-	room := overviewNodeRoom(m.overviewHeight())
-	total := len(m.overviewLines(max(m.width, 40)))
-	m.mp.overviewScroll = min(max(m.mp.overviewScroll+delta*room, 0), max(total-room, 0))
+	h := m.overviewHeight()
+	room := overviewNodeRoom(h)
+	lines := m.overviewLines(max(m.width, 40))
+	start := min(max(m.mp.overviewScroll, 0), max(len(lines)-room, 0))
+	end := min(start+room, len(lines))
+	visible := map[string]bool{}
+	for _, row := range lines[start:end] {
+		for _, name := range row.nodes {
+			visible[name] = true
+		}
+	}
+	eligible := 0
+	for _, e := range m.mp.edges {
+		if visible[e.From] && visible[e.To] {
+			eligible++
+		}
+	}
+	capacity := max(h-2-(end-start), 0)
+	if delta > 0 && capacity > 0 && m.mp.overviewEdgeScroll+capacity < eligible {
+		m.mp.overviewEdgeScroll += capacity
+		return
+	}
+	if delta < 0 && m.mp.overviewEdgeScroll > 0 {
+		m.mp.overviewEdgeScroll = max(m.mp.overviewEdgeScroll-max(capacity, 1), 0)
+		return
+	}
+	m.mp.overviewScroll = min(max(start+delta*room, 0), max(len(lines)-room, 0))
+	m.mp.overviewEdgeScroll = 0
 }

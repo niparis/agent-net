@@ -26,19 +26,20 @@ type mapMsg struct {
 
 // mapState is the map's part of the model.
 type mapState struct {
-	nodes          []protocol.Node
-	edges          []protocol.Edge
-	changes        []protocol.CharterChange
-	at             time.Time
-	loaded         bool
-	loading        bool
-	err            string
-	selected       string
-	choice         int
-	overview       bool
-	overviewScroll int
-	finding        bool
-	findQuery      string
+	nodes              []protocol.Node
+	edges              []protocol.Edge
+	changes            []protocol.CharterChange
+	at                 time.Time
+	loaded             bool
+	loading            bool
+	err                string
+	selected           string
+	choice             int
+	overview           bool
+	overviewScroll     int
+	overviewEdgeScroll int
+	finding            bool
+	findQuery          string
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a

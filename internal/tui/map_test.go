@@ -452,7 +452,7 @@ func TestOverviewScrollKeepsEdgesWithinVisibleBoxes(t *testing.T) {
 	}
 	m = keys(m, "pgdown")
 	after := ansi.Strip(m.View())
-	if m.mp.overviewScroll == 0 || before == after {
+	if (m.mp.overviewScroll == 0 && m.mp.overviewEdgeScroll == 0) || before == after {
 		t.Fatal("page did not scroll")
 	}
 }
@@ -545,7 +545,7 @@ func TestGoldenLargeOverview(t *testing.T) {
 			t.Fatal(v)
 		}
 		golden(t, fmt.Sprintf("map_large_overview_%dx%d", size[0], size[1]), v)
-		m = keys(m, "pgdown")
+		m = keys(m, "pgdown", "pgdown", "pgdown", "pgdown")
 		golden(t, fmt.Sprintf("map_large_overview_scrolled_%dx%d", size[0], size[1]), m.View())
 	}
 }
@@ -565,5 +565,19 @@ func TestOverviewIsolatedProjectsFollowEdges(t *testing.T) {
 	v := ansi.Strip(m.View())
 	if strings.Index(v, "Isolated:") < strings.Index(v, "governs auto") {
 		t.Fatal(v)
+	}
+}
+
+func TestOverviewCanPageThroughVisibleEdges(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, largeOverviewGraph()))
+	m = keys(m, "z")
+	before := ansi.Strip(m.View())
+	if !strings.Contains(before, "architect-1 ━━━▶ project-01") || strings.Contains(before, "architect-1 ━━━▶ project-04") {
+		t.Fatal(before)
+	}
+	m = keys(m, "pgdown")
+	after := ansi.Strip(m.View())
+	if !strings.Contains(after, "architect-1 ━━━▶ project-04") {
+		t.Fatalf("next visible edges cannot be reached:\n%s", after)
 	}
 }
