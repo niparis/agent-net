@@ -83,6 +83,9 @@ func TestQuotaViewGoldens(t *testing.T) {
 			t.Fatal(view)
 		}
 		golden(t, fmt.Sprintf("quotas_%dx%d", size[0], size[1]), view)
+		m.snap.Nodes[0].Harnesses = append(m.snap.Nodes[0].Harnesses, protocol.HarnessInfo{Name: "opencode", Models: []string{"openrouter/anthropic/claude-opus-5.5:high"}})
+		m = keys(m, "s")
+		golden(t, fmt.Sprintf("quotas_excluded_%dx%d", size[0], size[1]), m.View())
 	}
 }
 
@@ -310,9 +313,40 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
 	m.snap.Nodes[0].RecentModelFailures = map[string]map[string]bool{"codex": {"fake/a": true}}
+	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
 	v := ansi.Strip(m.View())
 	if !strings.Contains(v, "normal -> #2") {
 		t.Fatalf("choice ignored failed run:\n%s", v)
+	}
+}
+
+func TestQuotaExcludedWorkerProvidersToggle(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "opencode", Models: []string{"openai/gpt-6.1-terra:high", "openrouter/anthropic/claude-opus-5.5:high"}}}
+	before := ansi.Strip(m.View())
+	if strings.Contains(before, "openrouter") || strings.Contains(before, "not a worker provider") {
+		t.Fatalf("excluded visible: %s", before)
+	}
+	m = keys(m, "s")
+	shown := ansi.Strip(m.View())
+	if !strings.Contains(shown, "openrouter") || !strings.Contains(shown, "not a worker provider") {
+		t.Fatalf("excluded missing: %s", shown)
+	}
+	m = keys(m, "s")
+	if strings.Contains(ansi.Strip(m.View()), "not a worker provider") {
+		t.Fatal("toggle did not hide")
+	}
+}
+
+func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
+	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
+	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "normal -> #2") {
+		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }

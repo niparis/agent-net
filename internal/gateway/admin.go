@@ -109,6 +109,16 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 		}
 		nodes[i].Tracks = tracks
 		for _, h := range nodes[i].Harnesses {
+			successes, err := g.store.SucceededModels(nodes[i].NodeID, h.Name)
+			if err != nil {
+				return protocol.NodesInfo{}, err
+			}
+			if len(successes) > 0 {
+				if nodes[i].RecentModelSuccesses == nil {
+					nodes[i].RecentModelSuccesses = map[string]map[string]bool{}
+				}
+				nodes[i].RecentModelSuccesses[h.Name] = failedSet(successes)
+			}
 			failures, err := g.store.RecentWorkerFailures(nodes[i].NodeID, h.Name)
 			if err != nil {
 				return protocol.NodesInfo{}, err

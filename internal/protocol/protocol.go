@@ -447,6 +447,8 @@ type NodeView struct {
 	Tracks []TrackRecord `json:"tracks,omitempty"`
 	// RecentModelFailures reports real failed runs per harness in the failure window.
 	RecentModelFailures map[string]map[string]bool `json:"recent_model_failures,omitempty"`
+	// RecentModelSuccesses reports recently completed workers by harness and model.
+	RecentModelSuccesses map[string]map[string]bool `json:"recent_model_successes,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.

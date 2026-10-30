@@ -107,6 +107,7 @@ type quotaModel struct {
 	used                          int
 	last                          int64
 	failed                        bool
+	allowed, scored, succeeded    bool
 }
 
 // quotaModels combines the models advertised by live machines with session use.
@@ -114,6 +115,7 @@ func (m Model) quotaModels() ([]quotaModel, int) {
 	seen := map[string]int{}
 	var rows []quotaModel
 	unscored := 0
+	quotaNodes, _ := m.quotaNodes()
 	for _, n := range m.snap.Nodes {
 		if !n.Online {
 			continue
@@ -121,19 +123,29 @@ func (m Model) quotaModels() ([]quotaModel, int) {
 		for _, h := range n.Harnesses {
 			for _, model := range h.Models {
 				key := h.Name + "\x00" + model
+				quota := n.Quotas
+				if usage, ok := quotaNodes[n.NodeID]; ok && usage.Usage.Quotas != nil {
+					quota = usage.Usage.Quotas
+				}
+				allowed := protocol.WorkerProviderAllowed(h.Name, model, m.snap.WorkerProviders, quota)
+				if !allowed && !m.quotaShowExcluded {
+					continue
+				}
 				if index, ok := seen[key]; ok {
 					if index >= 0 {
 						rows[index].failed = rows[index].failed && n.RecentModelFailures[h.Name][model]
+						rows[index].allowed = rows[index].allowed || allowed
+						rows[index].succeeded = rows[index].succeeded || n.RecentModelSuccesses[h.Name][model]
 					}
 					continue
 				}
 				seen[key] = -1
 				score, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], m.snap.Scores)
-				if !ok {
+				if !ok && allowed {
 					unscored++
 					continue
 				}
-				row := quotaModel{harness: h.Name, model: model, defaultEffort: h.ModelDefaultEfforts[model], score: score, failed: n.RecentModelFailures[h.Name][model]}
+				row := quotaModel{harness: h.Name, model: model, defaultEffort: h.ModelDefaultEfforts[model], score: score, scored: ok, allowed: allowed, failed: n.RecentModelFailures[h.Name][model], succeeded: n.RecentModelSuccesses[h.Name][model]}
 				for _, a := range m.snap.Agents {
 					if a.Harness == h.Name && a.Model == model {
 						if a.LastSeen > row.last {
@@ -167,7 +179,9 @@ func (m Model) quotaModelsView(w int) []string {
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
-		candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed})
+		if r.allowed && r.scored {
+			candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded})
+		}
 	}
 	q := &protocol.Quotas{}
 	for _, r := range m.quotaRows() {
@@ -191,8 +205,11 @@ func (m Model) quotaModelsView(w int) []string {
 		attribution = attribution || r.score.Source == "artificialanalysis"
 		var fits []string
 		for i, level := range levels {
-			fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
-			letter := map[string]string{"excellent": "E", "good": "G", "poor": "P", "denied": "-"}[fit]
+			letter := "-"
+			if r.scored {
+				fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
+				letter = map[string]string{"excellent": "E", "good": "G", "poor": "P", "denied": "-"}[fit]
+			}
 			if picks[i].Model == r.model && picks[i].Harness == r.harness {
 				letter += "*"
 			}
@@ -202,12 +219,20 @@ func (m Model) quotaModelsView(w int) []string {
 		if r.last > 0 {
 			last = time.Unix(r.last, 0).In(m.loc).Format("Jan 02")
 		}
-		score := fmt.Sprintf("%g", r.score.Score)
+		score := "-"
+		if r.scored {
+			score = fmt.Sprintf("%g", r.score.Score)
+		}
 		if r.score.Effort != "" {
 			score += "/" + r.score.Effort
 		}
 		line := fmt.Sprintf("  %-2d %-21s %-7s %-11s %s %11d %s", rowIndex+1, cell(r.model, 21), cell(r.harness, 7), score, strings.Join(fits, " "), r.used, last)
-		out = append(out, clip(line, w))
+		if !r.allowed {
+			out = append(out, sDim.Render(clip(line, w)))
+			out = append(out, sDim.Render(clip("     (not a worker provider)", w)))
+		} else {
+			out = append(out, clip(line, w))
+		}
 	}
 	if unscored > 0 {
 		out = append(out, sDim.Render(fmt.Sprintf("  %d unscored models", unscored)))

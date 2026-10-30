@@ -156,7 +156,7 @@ func TestDaemonSourceReads(t *testing.T) {
 	}
 	// Read-only: these are the only methods the screen ever calls, and it says
 	// it is a CLI client (which the daemon limits to read-only calls).
-	allowed := map[string]bool{"scores_get": true, "difficulty_get": true, "hello": true, "info": true, "nodes": true, "list": true, "projects": true, "outcome_inbox": true, "events": true, "message_status": true, "held_list": true, "graph_get": true}
+	allowed := map[string]bool{"worker_providers_get": true, "scores_get": true, "difficulty_get": true, "hello": true, "info": true, "nodes": true, "list": true, "projects": true, "outcome_inbox": true, "events": true, "message_status": true, "held_list": true, "graph_get": true}
 	for _, m := range d.called() {
 		if !allowed[m] {
 			t.Errorf("the screen called %q", m)

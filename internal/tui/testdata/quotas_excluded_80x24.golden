@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy         updated 14:05:00
+
+  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS
+  claude         max          5h       █████░░░░░  50%      behind    -
+    (read on Mac; stale reading)
+  codex          pro          week     █████████░  92%      ahead     in 2h00
+  cursor         business     month    ██████████ exhausted -         -
+    (read on Mac)
+
+  MODELS
+  #  MODEL                 HARNESS SCORE       T  S  N  H  V  USED 7 DAYS LAST
+  1  claude-opus-5-5:high  claude  51.7/high   E* E* E* E* G*           0 -
+  2  gpt-6.1-sol:medium    codex   46.1/medium E  E  E  G  P            0 -
+  3  gpt-6.1-terra:high    codex   42.3/high   E  E  E  G  P            0 -
+  4  openrouter/anthropic… openco… 51.7/high   E  E  E  E  G            0 -
+     (not a worker provider)
+  1 unscored models
+  now: trivial -> #1, simple -> #1, normal -> #1, hard -> #1, very_complex -> #1
+  scores: Artificial Analysis (artificialanalysis.ai)
+
+
+
+  workers now: none   ·   s hide excluded   ·   reading 40s old
+1 sessions  2 messages  ? help  q quit
