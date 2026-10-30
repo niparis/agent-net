@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 5 nodes, 3 edges                                               updated 14:05
+  architect           0│                                    ╭──────────────────────╮
+  a2a-ocs             0│                                    │architect             │
+▸ cogforge            0│                                    │- ○ 0                 │
+  shop                1│                                    ╰──────────────────────╯
+  tenebrae            1│                                    ▼ governs owner normal
+                       │╭──────────────────────╮depends ask ╔══════════════════════╗depends auto╭──────────────────────╮
+                       ││tenebrae              │            ║cogforge              ║            │shop                  │
+                       ││early ● 1 busy        │┄┄┄┄┄┄┄┄┄┄┄▶║growing ○ 0           ║━━━━━━━━━━━▶│mature ○ 0            │
+                       │╰──────────────────────╯            ╚══════════════════════╝            ╰──────────────────────╯
+                       │purpose: Document and evidence API.
+                       │accepts: Generic endpoints.
+                       │refuses: Client-specific work.
+                       │last change: purpose: Document and evidence API.
+                       │
+                       │
+                       │
+                       │
+                       │
+                       │
+                       │
+                       │
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down projects  left/right follow  / find  z overview  enter sessions  c CTO  ? help  q quit

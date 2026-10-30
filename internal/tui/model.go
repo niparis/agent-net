@@ -599,6 +599,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == focusCTO && m.cto != nil {
 		return m.ctoKey(k)
 	}
+	if m.mapOn && m.mp.finding {
+		return m.mapKey(k)
+	}
 	if k.String() == "C" && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
 		m.open, m.conv = nil, nil

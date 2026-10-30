@@ -63,6 +63,12 @@ func (m Model) mapBox(name string, width int, selected bool) []string {
 	if busy > 0 {
 		status = sBusy.Render(fmt.Sprintf("● %d busy", busy))
 	}
+	if width < 18 {
+		status = sDim.Render("○0")
+		if busy > 0 {
+			status = sBusy.Render(fmt.Sprintf("●%d", busy))
+		}
+	}
 	level := maturityLevel(node.Charter.Maturity)
 	info := mapLevelStyle(level).Render(level) + " " + status
 	return []string{border.Render(tl + strings.Repeat(hor, width-2) + tr), border.Render(vert) + padStyled(clip(sanitize(name), width-2), width-2) + border.Render(vert), border.Render(vert) + padStyled(clip(info, width-2), width-2) + border.Render(vert), border.Render(bl + strings.Repeat(hor, width-2) + br)}
@@ -163,6 +169,16 @@ func (m Model) mapFocusView(w, h int) []string {
 			}
 			out = append(out, clip(padStyled(lbox[i], bw)+g1+padStyled(middle, bw)+g2+padStyled(rbox[i], bw), w))
 		}
+	}
+	isolated := true
+	for _, e := range m.mp.edges {
+		if e.From == node.Name || e.To == node.Name {
+			isolated = false
+			break
+		}
+	}
+	if isolated {
+		out = append(out, sDim.Render(clip("no edges yet · ask the CTO to connect it (c)", w)))
 	}
 	last := "-"
 	for _, c := range m.mp.changes {

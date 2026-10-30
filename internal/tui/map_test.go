@@ -137,11 +137,11 @@ func TestMapKeysAreReadOnlyAndMoveTheSelection(t *testing.T) {
 		t.Fatal("left did not move the map selection")
 	}
 	m = keys(m, "g")
-	if m.mapSelectedName() != "trading-architect" {
+	if m.mapSelectedName() != "api-architect" {
 		t.Fatalf("g selected %q", m.mapSelectedName())
 	}
 	m = keys(m, "G")
-	if m.mapSelectedName() != "api-architect" {
+	if m.mapSelectedName() != "tenebrae" {
 		t.Fatalf("G selected %q", m.mapSelectedName())
 	}
 	// Keys that act on sessions do nothing on the map.
@@ -312,5 +312,100 @@ func TestOverviewRoutesEachDependencyInItsOwnLane(t *testing.T) {
 		if strings.Contains(line, "┄┄") && strings.Contains(line, "━━") {
 			t.Fatalf("edges share a lane: %q", line)
 		}
+	}
+}
+
+func TestMapListMovesFromIsolatedNode(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "a2a-ocs"
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "▸ a2a-ocs") || !strings.Contains(v, "cogforge") {
+		t.Fatal(v)
+	}
+	m = keys(m, "down")
+	if m.mp.selected != "cogforge" {
+		t.Fatalf("down from isolated selected %q", m.mp.selected)
+	}
+}
+
+func TestMapFindFiltersAndConfirmsOrCancels(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "a2a-ocs"
+	m = keys(m, "/", "c", "o", "g")
+	if m.mp.selected != "a2a-ocs" || len(m.mapSelectable()) != 1 || m.mapSelectable()[0] != "cogforge" {
+		t.Fatalf("find: %s %v", m.mp.selected, m.mapSelectable())
+	}
+	if !strings.Contains(ansi.Strip(m.View()), "find: cog") {
+		t.Fatal("find prompt missing")
+	}
+	m = keys(m, "enter")
+	if m.mp.selected != "cogforge" || len(m.mapSelectable()) < 2 {
+		t.Fatal("find did not focus and restore list")
+	}
+	m = keys(m, "/", "s", "h", "esc")
+	if m.mp.selected != "cogforge" || len(m.mapSelectable()) < 2 {
+		t.Fatal("cancel changed selection")
+	}
+}
+
+func TestMapInitialFocusPrefersChangedConnectedNode(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	g.Changes = append(g.Changes, protocol.CharterChange{Node: "a2a-ocs", Attr: "purpose", At: t0.UnixNano()})
+	m := openMap(t, mapModel(120, 34, g))
+	if m.mp.selected != "cogforge" {
+		t.Fatalf("initial selected %q", m.mp.selected)
+	}
+	m.mp.selected = "shop"
+	m = keys(m, "1")
+	m = openMap(t, m)
+	if m.mp.selected != "shop" {
+		t.Fatalf("selection lost: %q", m.mp.selected)
+	}
+	g.Changes = nil
+	m = openMap(t, mapModel(120, 34, g))
+	if m.mp.selected != "cogforge" {
+		t.Fatalf("most connected: %q", m.mp.selected)
+	}
+	g.Edges = nil
+	m = openMap(t, mapModel(120, 34, g))
+	if m.mp.selected != "api-architect" {
+		t.Fatalf("first node: %q", m.mp.selected)
+	}
+}
+
+func TestMapExplainsIsolatedNode(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "a2a-ocs"
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "no edges yet · ask the CTO to connect it (c)") {
+		t.Fatal(v)
+	}
+}
+
+func TestMapCompactBoxesKeepMaturityAndSessionCount(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, fakeGraph()))
+	m.mp.selected = "cogforge"
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "growing ●1") || !strings.Contains(v, "mature ○0") {
+		t.Fatal(v)
+	}
+}
+
+func TestGoldenMapNavigation(t *testing.T) {
+	graph := protocol.GraphView{Nodes: []protocol.Node{{Name: "architect", Kind: "architect", Charter: protocol.Charter{Purpose: "Coordinate projects."}}, {Name: "a2a-ocs", Kind: "component"}, {Name: "cogforge", Kind: "component", Charter: protocol.Charter{Purpose: "Document and evidence API.", Maturity: "growing", Accepts: "Generic endpoints.", Refuses: "Client-specific work."}}, {Name: "tenebrae", Kind: "component", Charter: protocol.Charter{Maturity: "early"}}, {Name: "shop", Kind: "component", Charter: protocol.Charter{Maturity: "mature"}}}, Edges: []protocol.Edge{{From: "architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"}, {From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "ask"}, {From: "cogforge", To: "shop", Kind: "depends", Rule: "auto"}}, Changes: []protocol.CharterChange{{Node: "cogforge", Attr: "purpose", NewValue: "Document and evidence API.", At: t0.UnixNano()}}}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := openMap(t, mapModel(size[0], size[1], graph))
+		golden(t, fmt.Sprintf("map_navigation_%dx%d", size[0], size[1]), m.View())
+		m.mp.selected = "a2a-ocs"
+		golden(t, fmt.Sprintf("map_isolated_%dx%d", size[0], size[1]), m.View())
+		m = keys(m, "/", "c", "o", "g")
+		golden(t, fmt.Sprintf("map_find_%dx%d", size[0], size[1]), m.View())
 	}
 }

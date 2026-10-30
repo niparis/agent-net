@@ -26,16 +26,18 @@ type mapMsg struct {
 
 // mapState is the map's part of the model.
 type mapState struct {
-	nodes    []protocol.Node
-	edges    []protocol.Edge
-	changes  []protocol.CharterChange
-	at       time.Time
-	loaded   bool
-	loading  bool
-	err      string
-	selected string
-	choice   int
-	overview bool
+	nodes     []protocol.Node
+	edges     []protocol.Edge
+	changes   []protocol.CharterChange
+	at        time.Time
+	loaded    bool
+	loading   bool
+	err       string
+	selected  string
+	choice    int
+	overview  bool
+	finding   bool
+	findQuery string
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a
@@ -88,7 +90,32 @@ func (m *Model) applyMap(r mapMsg) {
 
 // mapKey handles the keys of the map. M and esc return to the session list.
 func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mp.finding {
+		switch k.Type {
+		case tea.KeyEsc:
+			m.mp.finding = false
+			m.mp.findQuery = ""
+		case tea.KeyEnter:
+			if nodes := m.mapProjectNodes(); len(nodes) > 0 {
+				m.mp.selected = nodes[0].Name
+				m.mp.choice = 0
+			}
+			m.mp.finding = false
+			m.mp.findQuery = ""
+		case tea.KeyBackspace, tea.KeyCtrlH:
+			r := []rune(m.mp.findQuery)
+			if len(r) > 0 {
+				m.mp.findQuery = string(r[:len(r)-1])
+			}
+		case tea.KeyRunes:
+			m.mp.findQuery += string(k.Runes)
+		}
+		return m, nil
+	}
 	switch k.String() {
+	case "/":
+		m.mp.finding = true
+		m.mp.findQuery = ""
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
@@ -102,17 +129,9 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		m.mapFollow("out")
 	case "up", "k":
-		if m.mp.choice > 0 {
-			m.mp.choice--
-		} else if len(m.mapLinks("above")) > 0 {
-			m.mapFollow("above")
-		}
+		m.mapMove(-1)
 	case "down", "j":
-		if len(m.mapLinks("below")) > 0 {
-			m.mapFollow("below")
-		} else {
-			m.mp.choice++
-		}
+		m.mapMove(1)
 	case "z":
 		m.mp.overview = !m.mp.overview
 	case "enter":
@@ -239,14 +258,28 @@ func (m Model) mapRows() []mapRow {
 
 // mapSelectable is the order the selection keys move through. A component that
 // two architects govern appears under both but is selected once.
+func (m Model) mapProjectNodes() []protocol.Node {
+	nodes := append([]protocol.Node(nil), m.mp.nodes...)
+	sort.SliceStable(nodes, func(i, j int) bool {
+		ai := nodes[i].Kind == "architect"
+		aj := nodes[j].Kind == "architect"
+		if ai != aj {
+			return ai
+		}
+		return strings.ToLower(nodes[i].Name) < strings.ToLower(nodes[j].Name)
+	})
+	var out []protocol.Node
+	for _, n := range nodes {
+		if (m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter))) && (!m.mp.finding || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.mp.findQuery))) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
 func (m Model) mapSelectable() []string {
 	var out []string
-	seen := map[string]bool{}
-	for _, r := range m.mapRows() {
-		if r.node != "" && !seen[r.node] {
-			seen[r.node] = true
-			out = append(out, r.node)
-		}
+	for _, n := range m.mapProjectNodes() {
+		out = append(out, n.Name)
 	}
 	return out
 }
@@ -269,23 +302,58 @@ func (m *Model) mapMove(delta int) {
 }
 
 func (m *Model) mapEnsureSelection() {
+	if _, ok := m.mapNode(m.mp.selected); ok {
+		return
+	}
 	list := m.mapSelectable()
 	if len(list) == 0 {
 		m.mp.selected = ""
 		return
 	}
-	for _, name := range list {
-		if name == m.mp.selected {
-			return
+	degree := map[string]int{}
+	for _, e := range m.mp.edges {
+		if _, ok := m.mapNode(e.From); ok {
+			if _, ok := m.mapNode(e.To); ok {
+				degree[e.From]++
+				degree[e.To]++
+			}
 		}
 	}
+	connected := false
 	for _, name := range list {
-		if n, ok := m.mapNode(name); ok && n.Kind != "architect" {
-			m.mp.selected = name
-			return
+		if degree[name] > 0 {
+			connected = true
+			break
 		}
 	}
-	m.mp.selected = list[0]
+	allowed := map[string]bool{}
+	for _, name := range list {
+		if !connected || degree[name] > 0 {
+			allowed[name] = true
+		}
+	}
+	var newest int64
+	choice := ""
+	found := false
+	for _, c := range m.mp.changes {
+		if allowed[c.Node] && (!found || c.At > newest) {
+			newest = c.At
+			choice = c.Node
+			found = true
+		}
+	}
+	if found {
+		m.mp.selected = choice
+		return
+	}
+	best := -1
+	for _, name := range list {
+		if allowed[name] && degree[name] > best {
+			best = degree[name]
+			choice = name
+		}
+	}
+	m.mp.selected = choice
 }
 
 func (m Model) mapSelectedName() string { return m.mp.selected }
