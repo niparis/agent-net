@@ -122,16 +122,17 @@ func (d *Daemon) usageLoop(ctx context.Context) {
 
 // usageReport builds the summary for the gateway. ok is false before the first sample.
 func (d *Daemon) usageReport() (protocol.UsageReport, bool) {
-	rep := protocol.UsageReport{Trees: []protocol.TreeUsage{}, Workers: d.workerLoad(), Quotas: d.quota.snapshot()}
+	quotas, quotaError := d.quota.report()
+	rep := protocol.UsageReport{Trees: []protocol.TreeUsage{}, Workers: d.workerLoad(), Quotas: quotas, QuotaError: quotaError}
 	s := d.cfg.UsageSampler
 	if s != nil {
 		m, ok := s.Machine()
 		if ok {
 			rep.Machine = machineUsage(m)
-		} else if rep.Quotas == nil {
+		} else if rep.Quotas == nil && rep.QuotaError == "" {
 			return protocol.UsageReport{}, false
 		}
-	} else if rep.Quotas == nil {
+	} else if rep.Quotas == nil && rep.QuotaError == "" {
 		return protocol.UsageReport{}, false
 	}
 	// Group the sessions by process: OpenCode runs many in one.

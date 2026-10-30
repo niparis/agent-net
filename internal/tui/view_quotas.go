@@ -10,10 +10,28 @@ import (
 )
 
 func (m Model) quotasView(w, h int) []string {
-	out := []string{m.titleLine(w), "", sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS")}
+	out := []string{m.titleLine(w), ""}
 	rows := m.quotaRows()
-	if len(rows) == 0 {
-		out = append(out, sDim.Render(clip("  quota-axi is not set up; install quota-axi and enable it in integrations (I).", w)))
+	nodes, ids := m.quotaNodes()
+	var errors []string
+	for _, id := range ids {
+		n := nodes[id]
+		if n.Usage.QuotaError != "" {
+			errors = append(errors, sanitize(firstNonEmpty(n.Hostname, id))+": "+sanitize(n.Usage.QuotaError))
+		}
+	}
+	if len(rows) > 0 {
+		out = append(out, sBold.Render("  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS"))
+	}
+	if len(rows) == 0 && len(errors) == 0 {
+		for _, line := range wrap("No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota).", w-2) {
+			out = append(out, sDim.Render("  "+line))
+		}
+	}
+	for _, e := range errors {
+		for _, line := range wrap(e, w-2) {
+			out = append(out, sDim.Render("  "+line))
+		}
 	}
 	var newest int64
 	for _, r := range rows {
@@ -122,8 +140,12 @@ func (m Model) quotasView(w, h int) []string {
 		bottom += fmt.Sprintf("   ·   reading %s old", age.Truncate(time.Second))
 	}
 	if len(out) > h-1 {
-		header, body := out[:3], out[3:]
-		room := max(h-4, 0)
+		headerRows := 2
+		if len(rows) > 0 {
+			headerRows++
+		}
+		header, body := out[:headerRows], out[headerRows:]
+		room := max(h-1-headerRows, 0)
 		start := min(m.quotaScroll, max(len(body)-room, 0))
 		out = append(header, body[start:min(start+room, len(body))]...)
 	}

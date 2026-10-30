@@ -21,20 +21,7 @@ func (m Model) quotaRows() []quotaRow {
 	if !m.usage.have {
 		return nil
 	}
-	nodes := map[string]protocol.UsageNode{}
-	if g := m.usage.raw.Gateway; g != nil {
-		for _, n := range g.Nodes {
-			nodes[n.NodeID] = n
-		}
-	}
-	if l := m.usage.raw.Local; l != nil {
-		nodes[m.usage.raw.NodeID] = protocol.UsageNode{NodeID: m.usage.raw.NodeID, Hostname: m.usage.raw.Hostname, Usage: *l}
-	}
-	ids := make([]string, 0, len(nodes))
-	for id := range nodes {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
+	nodes, ids := m.quotaNodes()
 	rows := map[string]quotaRow{}
 	for _, id := range ids {
 		n := nodes[id]
@@ -72,6 +59,28 @@ func (m Model) quotaRows() []quotaRow {
 		return out[i].provider.Plan < out[j].provider.Plan
 	})
 	return out
+}
+
+// quotaNodes selects the live local usage over the gateway copy.
+func (m Model) quotaNodes() (map[string]protocol.UsageNode, []string) {
+	nodes := map[string]protocol.UsageNode{}
+	if !m.usage.have {
+		return nodes, nil
+	}
+	if g := m.usage.raw.Gateway; g != nil {
+		for _, n := range g.Nodes {
+			nodes[n.NodeID] = n
+		}
+	}
+	if l := m.usage.raw.Local; l != nil {
+		nodes[m.usage.raw.NodeID] = protocol.UsageNode{NodeID: m.usage.raw.NodeID, Hostname: m.usage.raw.Hostname, Usage: *l}
+	}
+	ids := make([]string, 0, len(nodes))
+	for id := range nodes {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return nodes, ids
 }
 
 func (m Model) quotaWarning() string {

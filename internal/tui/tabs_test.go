@@ -114,3 +114,17 @@ func TestQuotaViewScrolls(t *testing.T) {
 		t.Fatal("last row not reachable")
 	}
 }
+
+func TestQuotaEmptyAndMachineErrors(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota).") || strings.Contains(v, "PROVIDER") {
+		t.Fatal(v)
+	}
+	m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "error-node", Hostname: "build", Usage: protocol.UsageReport{QuotaError: "it failed: exit status 1"}})
+	v = ansi.Strip(m.View())
+	if !strings.Contains(v, "build: it failed: exit status 1") || strings.Contains(v, "not installed on any machine") || strings.Contains(v, "PROVIDER") {
+		t.Fatal(v)
+	}
+}
