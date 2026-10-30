@@ -28,6 +28,7 @@ A charter has fixed attribute names, so the TUI can lay it out and agents can re
 | `consumers` | Who depends on it (also an edge; this is the human note) | tenebrae, wbg-housing |
 | `escalate` | When to ask the owner or its architect | Breaking API changes: ask Nicolas. |
 | `needs` | Skills and MCP servers a session needs to be effective here | MCP: tenebrae-library; skill: api-design |
+| `feature_requests` | What to do with a good idea that is not in scope yet | Small generic additions: just do them. New endpoints: propose to Nicolas with a recommendation. Client-specific: reject. |
 | `notes` | Anything else the owner wants every session of the node to know | Deploys go through homelab, never by hand. |
 
 An architect's charter uses the same attributes: its `purpose` is the domain it looks after, and its `accepts`/`refuses` say what it decides and what it leaves to the components.
@@ -57,6 +58,7 @@ The free text goes to the agents as written, so they know the intent ("speed ove
 | | | | `advisor`: its opinion goes with the request; the component decides. |
 | | | | `arbiter`: it settles a dispute between nodes it governs (a contested refusal). |
 | | | | `owner`: its decision stands; the component follows it. |
+| deploys | deployer (for example homelab) | each app it deploys | The deployer applies the **target's** deploy rule, not its own: it deploys an `early` app freely and stops for a `critical` one until it holds the owner's written approval (see "Written approval"). |
 | owns | session | its workers | Exists today (0002). Not stored in the graph. |
 
 An edge may also carry a **request rule**, which replaces the per-session trust toggle (0013) with a per-pair setting:
@@ -80,6 +82,48 @@ The owner is above all edges. No edge mode overrides the owner.
 - **Given to the node's sessions on every turn**, through the same paths as the delegation policy: the Claude Code prompt hook, the OpenCode context hook, the Pi `before_agent_start` hook, and for Codex the turn context. The text is short: maturity, accepts, refuses, escalate, and the edges that matter to this node.
 - **Shown to others before they ask:** `agent_list` and `agent_get` show a node's `purpose`, `maturity`, `accepts` and `refuses`, so a consumer writes a request that fits, or does not send it.
 - **Workers:** the charter section is added to the worker brief, after the project rules for workers.
+
+## Every message says who it comes from, in the receiver's terms
+
+The receiver must know, at the moment a request arrives, whether the sender is its boss, its consumer or a stranger. agent-net adds a line only it can write (the marker rule of 0013) to every delivered request, from the graph:
+
+```
+from tenebrae, a consumer of yours: judge its request by your charter
+from trading-architect, your owner: follow its decision
+from wbg-architect, your advisor: weigh its opinion, you decide
+from finance, no relation to you: your charter and normal rules apply
+from the CTO, on Nicolas's instruction
+```
+
+## Decide, do not defer
+
+Agents fail in two ways: they do whatever is asked without thinking, or they bounce everything to the owner. The brief of every node's sessions says:
+
+- Judge each request against your charter and decide yourself: accept, reject with a reason, or redirect.
+- Escalate only when your charter says so (`escalate`, maturity, `feature_requests`) or truly does not cover the case.
+- Every escalation carries your recommendation: "I would reject this because ...; agree?", never a bare question. The owner then answers with one word.
+
+The map view later shows escalations and rejections per node, so the owner can see when a charter is too timid or too loose.
+
+## Written approval
+
+Some actions need the owner's written approval: a deploy of a `critical` app, a merge under `ask` merge authority, anything a charter's `escalate` names. A chat line saying "Nicolas approved" proves nothing, since any agent can write it. So:
+
+1. The agent asks through agent-net with the exact action: "deploy cogforge abc123 to prod", and its recommendation.
+2. The request appears in the owner's inbox and Needs you, and on the phone later.
+3. The owner approves or refuses, by key or by telling the CTO.
+4. The agent receives an approval note only agent-net can write, tied to that action: "Nicolas approved: deploy cogforge abc123 to prod, 14:02". An approval is for one action; a different commit needs a new one.
+
+## The owner's inbox
+
+Needs you shows what waits right now. The inbox is the lasting list of things for the owner, the place tickets used to be:
+
+- **Approvals:** actions waiting for written approval (deploys, merges).
+- **Feature ideas:** ideas agents proposed under `feature_requests` and did not act on.
+- **Questions:** things an agent was not comfortable deciding, each with its recommendation.
+- **Rejections and escalations** that reached the owner.
+
+Each item keeps its context (the request, the conversations, the recommendation) and stays until the owner answers it, at any time; the answer goes back to the agent. The TUI shows the inbox, the CTO can read it and answer for the owner on instruction, and the phone later sends a push for approvals.
 
 ## How a request flows
 
@@ -165,9 +209,9 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 
 ## Build order
 
-1. **Charters and maturity, read only.** Gateway tables, the charter in session context and in `agent_list`, the map view. The owner edits charters with a CLI command until the CTO exists. Request outcomes (`accept`, `reject`, `redirect`, `escalate`) and Needs you for rejections.
+1. **Charters and maturity, read only.** Gateway tables, the charter in session context and in `agent_list`, the map view. The owner edits charters with a CLI command until the CTO exists. Request outcomes (`accept`, `reject`, `redirect`, `escalate`) with a recommendation, the "decide, do not defer" brief, the relationship line on every request, and Needs you for rejections.
 2. **The CTO.** OpenCode harness, private MCP tools, the TUI chat pane, diffs and undo.
-3. **Edges and modes.** depends-on, governs with advisor/arbiter/owner, request rules (replacing trust), architect roles.
+3. **Edges and modes.** depends-on, governs with advisor/arbiter/owner, deploys (the target's rule applies), request rules (replacing trust), architect roles, written approvals and the owner's inbox.
 4. **Maturity defaults wired to the controls.** Merge authority (new), sandbox, delegation, request judging.
 5. **The phone** (0006), with the same chat and Needs you.
 
