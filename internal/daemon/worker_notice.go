@@ -274,11 +274,46 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	}
 	d.wmu.Lock()
 	w.taskMsg = m.ID
+	var updated *protocol.WorkerInfo
 	if task := protocol.WorkerTaskSummary(m.Body); task != "" {
 		w.taskText = task
+		if w.info != nil {
+			// Replace, never change in place: a response on another goroutine
+			// may still be writing the old value.
+			cp := *w.info
+			cp.Task = task
+			w.info = &cp
+			updated = w.info
+		}
 	}
 	d.saveWorkerLocked(w)
+	sessionID := w.sessionID
 	d.wmu.Unlock()
+	if updated != nil {
+		if ls := d.setSessionWorker(sessionID, updated); ls != nil {
+			// Tell the gateway now: the row name follows the task, and the
+			// session may not report again soon.
+			go d.pushSession(ls)
+		}
+	}
+}
+
+// setSessionWorker gives the worker's local session a new worker value and
+// returns it, or nil. The value is never changed in place, so a reader may
+// keep the old one.
+func (d *Daemon) setSessionWorker(sessionID string, info *protocol.WorkerInfo) *localSession {
+	if sessionID == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, ls := range d.sessions {
+		if ls.sessionID == sessionID && ls.info.Worker != nil {
+			ls.info.Worker = info
+			return ls
+		}
+	}
+	return nil
 }
 
 // ---- a worker that was lost while the daemon was down ----

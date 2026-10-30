@@ -215,6 +215,13 @@ type AgentView struct {
 	Worker *WorkerInfo `json:"worker,omitempty"`
 	// PID is the process ID of the session on its machine (0 when unknown).
 	PID int `json:"pid,omitempty"`
+	// FirstSeen is when the gateway first stored the session, in Unix
+	// seconds. It does not change while the session lives, so a status view
+	// can keep a stable order. 0 from an older gateway.
+	FirstSeen int64 `json:"first_seen,omitempty"`
+	// Title is the name the harness gives the session, before the agent
+	// announced a name of its own. Empty when it has none.
+	Title string `json:"title,omitempty"`
 	// PeerTrust is true when the owner allowed this session to act on
 	// requests from other agents without asking (decision 0012).
 	PeerTrust bool `json:"peer_trust,omitempty"`

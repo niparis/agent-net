@@ -40,6 +40,9 @@ type WorkerInfo struct {
 	// Project is the project name it was started in.
 	Project   string `json:"project,omitempty"`
 	StartedAt int64  `json:"started_at"`
+	// Task is the first line of the task its owner gave it, cut to about 120
+	// characters. Empty when the machine that started it did not say.
+	Task string `json:"task,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -83,6 +86,9 @@ type (
 		Harness string `json:"harness"`
 		Model   string `json:"model,omitempty"`
 		Owner   string `json:"owner_session"`
+		// Task is what the worker should do. The machine that starts it uses
+		// the first line as the worker's name in a status view.
+		Task string `json:"task,omitempty"`
 		// Isolation is "" (a worktree if the folder is a repository),
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`

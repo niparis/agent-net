@@ -124,7 +124,19 @@ func TestMigrationBackfillsReportedHostname(t *testing.T) {
 		t.Fatal(err)
 	}
 	db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`)
-	for i := 0; i < len(migrations)-1; i++ {
+	// Build the database at the schema just before this migration, whatever
+	// comes after it in the list.
+	before := -1
+	for i, m := range migrations {
+		if strings.Contains(m, "reported_hostname") {
+			before = i
+			break
+		}
+	}
+	if before < 0 {
+		t.Fatal("the migration for reported_hostname is gone")
+	}
+	for i := 0; i < before; i++ {
 		if _, err := db.Exec(migrations[i]); err != nil {
 			t.Fatal(err)
 		}
