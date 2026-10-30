@@ -70,12 +70,15 @@ func hintCommand(exe string) string {
 
 // isHintCommand tells whether a hook command is agent-net's own hint hook,
 // whatever the path of the binary was when it was added.
-func isHintCommand(cmd string) bool {
+func isHintCommand(cmd string) bool { return isOurCommand(cmd, "hint") }
+
+// isOurCommand tells whether a hook command is "<agent-net binary> <sub>".
+func isOurCommand(cmd, sub string) bool {
 	cmd = strings.TrimSpace(cmd)
-	if !strings.HasSuffix(cmd, " hint") {
+	if !strings.HasSuffix(cmd, " "+sub) {
 		return false
 	}
-	exe := strings.Trim(strings.TrimSpace(strings.TrimSuffix(cmd, " hint")), `"'`)
+	exe := strings.Trim(strings.TrimSpace(strings.TrimSuffix(cmd, " "+sub)), `"'`)
 	return strings.HasPrefix(filepath.Base(exe), "agent-net")
 }
 
@@ -103,6 +106,10 @@ func groupsOf(raw json.RawMessage) ([]json.RawMessage, error) {
 // groupIsOurs reports whether every hook in the group is ours, and whether
 // any is. A group with no hooks is nobody's.
 func groupHasHint(g json.RawMessage) (all, some bool, hooks []json.RawMessage) {
+	return groupHas(g, isHintCommand)
+}
+
+func groupHas(g json.RawMessage, ours func(string) bool) (all, some bool, hooks []json.RawMessage) {
 	var m hookGroup
 	if json.Unmarshal(g, &m) != nil {
 		return false, false, nil
@@ -115,7 +122,7 @@ func groupHasHint(g json.RawMessage) (all, some bool, hooks []json.RawMessage) {
 		var c struct {
 			Command string `json:"command"`
 		}
-		if json.Unmarshal(h, &c) == nil && isHintCommand(c.Command) {
+		if json.Unmarshal(h, &c) == nil && ours(c.Command) {
 			some = true
 		} else {
 			all = false
@@ -159,6 +166,11 @@ func encodeObject(d *settingsDoc) json.RawMessage {
 // withoutHint removes our hooks from the settings document. changed says
 // whether anything was removed.
 func withoutHint(doc *settingsDoc) (changed bool, err error) {
+	return withoutHooks(doc, isHintCommand)
+}
+
+// withoutHooks removes the hooks whose command ours accepts.
+func withoutHooks(doc *settingsDoc, ours func(string) bool) (changed bool, err error) {
 	hooks, err := hooksOf(doc)
 	if err != nil {
 		return false, err
@@ -172,7 +184,7 @@ func withoutHint(doc *settingsDoc) (changed bool, err error) {
 		var keep []json.RawMessage
 		touched := false
 		for _, g := range gs {
-			all, some, hs := groupHasHint(g)
+			all, some, hs := groupHas(g, ours)
 			switch {
 			case all:
 				touched = true
@@ -185,7 +197,7 @@ func withoutHint(doc *settingsDoc) (changed bool, err error) {
 					var c struct {
 						Command string `json:"command"`
 					}
-					if json.Unmarshal(h, &c) == nil && isHintCommand(c.Command) {
+					if json.Unmarshal(h, &c) == nil && ours(c.Command) {
 						continue
 					}
 					rest = append(rest, h)
@@ -223,16 +235,21 @@ func withoutHint(doc *settingsDoc) (changed bool, err error) {
 // withHint adds our hooks (after removing an older copy of them, so a moved
 // binary is updated). changed says whether the document differs.
 func withHint(doc *settingsDoc, cmd string) (changed bool, err error) {
+	return withHooks(doc, cmd, isHintCommand, hintEvents, hintTimeoutSeconds)
+}
+
+// withHooks adds cmd on each event (after removing older hooks of ours).
+func withHooks(doc *settingsDoc, cmd string, ours func(string) bool, events []struct{ event, matcher string }, timeout int) (changed bool, err error) {
 	before := string(doc.encode())
-	if _, err := withoutHint(doc); err != nil {
+	if _, err := withoutHooks(doc, ours); err != nil {
 		return false, err
 	}
 	hooks, err := hooksOf(doc)
 	if err != nil {
 		return false, err
 	}
-	for _, ev := range hintEvents {
-		entry := map[string]any{"type": "command", "command": cmd, "timeout": hintTimeoutSeconds}
+	for _, ev := range events {
+		entry := map[string]any{"type": "command", "command": cmd, "timeout": timeout}
 		group := map[string]any{"hooks": []any{entry}}
 		if ev.matcher != "" {
 			group = map[string]any{"matcher": ev.matcher, "hooks": []any{entry}}

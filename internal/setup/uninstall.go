@@ -28,6 +28,7 @@ func Uninstall(o Options) error {
 	r.removePeerMessages()
 	r.removeCodexMCP()
 	r.removeHintHook()
+	r.removePolicyHook()
 	r.removePiExtension()
 	r.removeOpenCodePlugin()
 	r.removeGuidance()

@@ -41,6 +41,7 @@ type Options struct {
 	PeerMessages string // "" ask; PeerMessagesAccept or PeerMessagesNo choose without a prompt
 	CodexTools   string // "" ask; CodexToolsApprove or CodexToolsNo choose without a prompt
 	HintHook     string // "" ask; HintHookYes or HintHookNo choose without a prompt
+	PolicyHook   string // "" ask; PolicyHookYes or PolicyHookNo choose without a prompt
 	Out          io.Writer
 }
 
@@ -116,6 +117,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.claudePeerMessages()
 	r.codexMCP()
 	r.claudeHintHook()
+	r.claudePolicyHook()
 	r.piExtension()
 	r.opencodePlugin()
 	r.guidance()

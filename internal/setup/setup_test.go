@@ -123,11 +123,24 @@ func run(t *testing.T, o Options) string {
 	if o.HintHook == "" {
 		o.HintHook = HintHookNo
 	}
+	if o.PolicyHook == "" {
+		o.PolicyHook = PolicyHookNo
+	}
 	return runAsking(t, o)
 }
 
-// runAsking is run without that default: the hint hook question is asked.
+// runAsking is run without that default: the hint hook question is asked. The
+// policy hook has its own tests (policyhook_test.go) and is not asked here.
 func runAsking(t *testing.T, o Options) string {
+	t.Helper()
+	if o.PolicyHook == "" {
+		o.PolicyHook = PolicyHookNo
+	}
+	return runAskingAll(t, o)
+}
+
+// runAskingAll asks every question that is not answered by an option.
+func runAskingAll(t *testing.T, o Options) string {
 	t.Helper()
 	var out bytes.Buffer
 	o.Out = &out

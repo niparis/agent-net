@@ -251,12 +251,32 @@ func trustMark(a protocol.AgentView) string {
 	return "-"
 }
 
+// policyMark is the delegation policy of a session in a few words, or "-".
+func policyMark(a protocol.AgentView) string {
+	d := a.Delegation
+	if d == nil || (d.Delegate == "" && d.Main() == "") {
+		return "-"
+	}
+	var parts []string
+	if d.Delegate != "" {
+		s := d.Delegate
+		if d.Delegate != protocol.DelegateOff && d.Coder() != "" {
+			s += ":" + d.Coder()
+		}
+		parts = append(parts, s)
+	}
+	if d.Main() != "" {
+		parts = append(parts, "main:"+d.Main())
+	}
+	return strings.Join(parts, ",") + "(" + d.Scope + ")"
+}
+
 func printAgents(w io.Writer, agents []protocol.AgentView, wide bool) error {
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
 	if wide {
-		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tBRANCH\tSTATUS\tMODE\tMODEL\tONLINE\tTRUST\tFUNCTION\tEXPERTISE\tTASK\tREMOTE\tFOLDER\tNODE\tWORKTREE")
+		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tBRANCH\tSTATUS\tMODE\tMODEL\tONLINE\tTRUST\tPOLICY\tFUNCTION\tEXPERTISE\tTASK\tREMOTE\tFOLDER\tNODE\tWORKTREE")
 	} else {
-		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tSTATUS\tMODE\tMODEL\tONLINE\tTRUST\tFUNCTION")
+		fmt.Fprintln(tw, "SESSION\tNAME\tHARNESS\tHOST\tPROJECT\tSTATUS\tMODE\tMODEL\tONLINE\tTRUST\tPOLICY\tFUNCTION")
 	}
 	for _, a := range agents {
 		project := a.Repo.Project
@@ -264,13 +284,13 @@ func printAgents(w io.Writer, agents []protocol.AgentView, wide bool) error {
 			project = a.Profile.Project
 		}
 		if wide {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness,
-				a.Hostname, dash(project), dash(a.Repo.Branch), a.Status, dash(a.Mode), dash(a.Model), a.Online, trustMark(a), dash(a.Profile.Function),
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness,
+				a.Hostname, dash(project), dash(a.Repo.Branch), a.Status, dash(a.Mode), dash(a.Model), a.Online, trustMark(a), policyMark(a), dash(a.Profile.Function),
 				dash(a.Profile.Expertise), dash(a.Profile.Task), dash(a.Repo.Remote), dash(a.Cwd), a.NodeID, dash(a.Repo.Worktree))
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness, a.Hostname,
-			dash(project), a.Status, dash(a.Mode), dash(a.Model), a.Online, trustMark(a), dash(a.Profile.Function))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%v\t%s\t%s\t%s\n", a.SessionID, a.Profile.Name, a.Harness, a.Hostname,
+			dash(project), a.Status, dash(a.Mode), dash(a.Model), a.Online, trustMark(a), policyMark(a), dash(a.Profile.Function))
 	}
 	return tw.Flush()
 }
