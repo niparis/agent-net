@@ -152,12 +152,18 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		c.input.Blur()
 		c.confirming = false
 		m.focus = focusSessions
+		if m.tab == 1 && !m.mapOn {
+			m.focus = focusFeed
+		}
 		return m, nil
 	}
 	if k.String() == "tab" {
 		c.editing = false
 		c.input.Blur()
 		m.focus = focusSessions
+		if m.tab == 1 && !m.mapOn {
+			m.focus = focusFeed
+		}
 		return m, nil
 	}
 	if c.confirming {

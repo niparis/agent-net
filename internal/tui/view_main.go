@@ -135,22 +135,30 @@ func (m Model) View() string {
 		for _, s := range m.convView(w, h-1) {
 			add(s)
 		}
-	case m.tab == 1:
-		for _, s := range m.messagesView(w, h-1) {
-			add(s)
-		}
-	case m.tab == 2:
-		for _, s := range m.quotasView(w, h-1) {
-			add(s)
-		}
-	case m.mapOn:
-		for _, s := range m.mapView(w, h-1) {
-			add(s)
-		}
 	default:
-		for _, s := range m.mainView(w, h-1) {
-			add(s)
+		box := min(max((h-1)/3, 6), max(h-4, 1))
+		contentHeight := h - 1 - box
+		switch {
+		case m.mapOn:
+			out = append(out, m.titleLine(w))
+			out = append(out, m.mapView(w, contentHeight-1)...)
+		case m.tab == 1:
+			out = append(out, m.messagesView(w, contentHeight)...)
+		case m.tab == 2:
+			out = append(out, m.quotasView(w, contentHeight)...)
+		default:
+			out = append(out, m.mainView(w, contentHeight)...)
 		}
+		if len(out) > contentHeight {
+			out = out[:contentHeight]
+		}
+		for len(out) < contentHeight {
+			out = append(out, "")
+		}
+		if m.cto != nil {
+			out = append(out, m.ctoView(w, box)...)
+		}
+
 	}
 	// The key line sits on the last row; blank rows fill the gap.
 	for len(out) < h-1 {
@@ -190,18 +198,14 @@ func (m Model) mainView(w, h int) []string {
 		add(sDim.Render("  no machines yet"))
 	}
 	if m.expand && m.mode == modeNormal {
-		box := min(max(h/3, 6), max(h-3, 1))
 		add(section("Selected session", w))
-		for _, line := range m.detailLines(w, max(h-box-len(out), 0)) {
-			add(line)
-		}
-		for len(out) < h-box {
-			add("")
-		}
-		return append(out, m.ctoView(w, box)...)
+		return append(out, m.detailLines(w, max(h-len(out), 0))...)
 	}
-	for _, s := range m.sessionsTable(w, l.sessions) {
-		add(s)
+
+	if m.mode == modeNormal {
+		for _, s := range m.sessionsTable(w, l.sessions) {
+			add(s)
+		}
 	}
 	if m.mode == modeForm {
 		for _, s := range m.formView(w, l.detail+l.feed+2) {
@@ -226,19 +230,6 @@ func (m Model) mainView(w, h int) []string {
 			add(s)
 		}
 		return out
-	}
-	if m.cto != nil {
-		box := min(max(h/3, 6), max(h-3, 1))
-		if len(out) > h-box {
-			out = out[:max(h-box, 0)]
-		}
-		for len(out) < h-box {
-			add("")
-		}
-		out = append(out, m.ctoView(w, box)...)
-	} else {
-		add(section("Selected session", w))
-		out = append(out, m.detailLines(w, l.detail)...)
 	}
 
 	return out
