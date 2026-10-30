@@ -151,7 +151,8 @@ type Config struct {
 	// Default: the path from the inventory. Tests use it.
 	HarnessPaths map[string]string
 	// EnterSSH lets the TUI enter a session on another machine through `ssh -t`
-	// (enter_ssh in node.json). EnterSSHHosts maps a host name to its ssh target.
+	// (enter_ssh in node.json, on unless false). EnterSSHHosts maps a host name
+	// to its ssh target.
 	EnterSSH      bool
 	EnterSSHHosts map[string]string
 }

@@ -32,9 +32,10 @@ type NodeConfig struct {
 	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
 	NoLaunch bool `json:"no_launch,omitempty"`
 	// EnterSSH turns on entering a session on another machine through ssh from
-	// the TUI (decision 0002, W16). EnterSSHHosts maps a host name to the ssh
-	// target to use for it (an alias or user@host). Both are edited by hand.
-	EnterSSH      bool              `json:"enter_ssh,omitempty"`
+	// the TUI (decision 0002, W16). It is on when absent; false turns it off.
+	// EnterSSHHosts maps a host name to the ssh target to use for it (an alias
+	// or user@host). Both are edited by hand.
+	EnterSSH      *bool             `json:"enter_ssh,omitempty"`
 	EnterSSHHosts map[string]string `json:"enter_ssh_hosts,omitempty"`
 	// ModelProviders lists the model providers to prefer, first is best, when
 	// a loose model name matches models of several providers (W17). For
@@ -47,6 +48,10 @@ type NodeConfig struct {
 	// defaults of decision 0002.
 	Workers *NodeWorkers `json:"workers,omitempty"`
 }
+
+// EnterSSHEnabled says whether the TUI may enter a session on another machine
+// through ssh. An unset enter_ssh means on; only an explicit false turns it off.
+func (nc NodeConfig) EnterSSHEnabled() bool { return nc.EnterSSH == nil || *nc.EnterSSH }
 
 // NodeWorkers is the "workers" part of node.json. Durations are Go durations
 // such as "60m" or "4h".
@@ -266,6 +271,7 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 	}
 	nc := NodeConfig{GatewayURL: url, NodeID: out.NodeID, Token: out.Token, CASHA256: fp}
 	nc.NoLaunch, nc.Workers, nc.Hostname = old.NoLaunch, old.Workers, old.Hostname
+	nc.EnterSSH, nc.EnterSSHHosts = old.EnterSSH, old.EnterSSHHosts
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nc, err
 	}

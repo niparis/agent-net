@@ -2,9 +2,12 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	osexec "os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,8 +31,10 @@ type enterMsg struct {
 
 // enterDoneMsg is the end of the entered command.
 type enterDoneMsg struct {
-	name string
-	err  error
+	name     string
+	err      error
+	fallback string // the manual way, when the plan uses ssh
+	target   string // the ssh target of the plan, or ""
 }
 
 // startEnter asks how to enter the selected session.
@@ -75,26 +80,65 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 		run = tea.Exec
 	}
 	name := r.name
+	fallback, target := r.plan.Fallback, sshTarget(r.plan.Argv)
 	proxy := ptyproxy.New(cmd)
 	proxy.Name = name
 	proxy.Title = name + " - ctrl+] to come back"
-	return m, run(proxy, func(err error) tea.Msg { return enterDoneMsg{name: name, err: err} })
+	return m, run(proxy, func(err error) tea.Msg {
+		return enterDoneMsg{name: name, err: err, fallback: fallback, target: target}
+	})
 }
 
 // onEnterDone is the return from the session.
 func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
-	if r.err != nil {
+	switch {
+	case r.err == nil:
+		m.say("Back from " + r.name + ".")
+	case r.fallback != "" && exitCodeOf(r.err) == 255:
+		// ssh could not connect or log in. The command to run on the other
+		// machine is more useful than the exit status.
+		target := firstNonEmpty(sanitize(r.target), "the other machine")
+		m.fail("Could not ssh to " + target + ". Set enter_ssh_hosts in node.json, or " + lowerFirst(sanitize(r.fallback)))
+	default:
 		// The note holds the way back and the usual cause (herdr: an attach is
 		// already open), which the screen of the entered command hid.
 		m.fail("Left " + r.name + ": " + explain(r.err) + noteSuffix(m.enterNote))
-	} else {
-		m.say("Back from " + r.name + ".")
 	}
 	if !m.fetching {
 		m.fetching = true
 		return m, m.fetchCmd()
 	}
 	return m, nil
+}
+
+// sshTarget is the target of an ssh plan, or "" for another plan.
+func sshTarget(argv []string) string {
+	if len(argv) == 0 || filepath.Base(argv[0]) != "ssh" {
+		return ""
+	}
+	for i, a := range argv {
+		if a == "--" && i+1 < len(argv) {
+			return argv[i+1]
+		}
+	}
+	return ""
+}
+
+// exitCodeOf is the exit status of a finished command, or -1.
+func exitCodeOf(err error) int {
+	var e interface{ ExitCode() int }
+	if errors.As(err, &e) {
+		return e.ExitCode()
+	}
+	return -1
+}
+
+// lowerFirst makes the daemon's "On <host> run: ..." fit after "or ".
+func lowerFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToLower(s[:1]) + s[1:]
 }
 
 func noteSuffix(n string) string {

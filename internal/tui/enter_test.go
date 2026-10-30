@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"github.com/niparis/agent-net/internal/ptyproxy"
 	"reflect"
 	"strings"
@@ -98,6 +99,45 @@ func TestEnterWithNoCommandShowsTheNote(t *testing.T) {
 	}
 	if v := m.View(); !strings.Contains(v, "open its window on Mac") {
 		t.Errorf("the note is not on screen:\n%s", v)
+	}
+}
+
+// exitStatus is the error an exited command gives, with its code.
+type exitStatus int
+
+func (e exitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
+func (e exitStatus) ExitCode() int { return int(e) }
+
+func TestEnterSSHFailureShowsTheFallback(t *testing.T) {
+	m, src := workerModel(140, 30)
+	m = selectID(m, workerID)
+	src.enterPlan = protocol.EnterPlan{
+		Argv:     []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", "research", "cd /work && exec claude attach x"},
+		Note:     "Through ssh to research.",
+		Fallback: "On research run: cd /work && exec claude attach x",
+	}
+	got, _, _, done := capture(&m)
+	m, cmd := pressE(m)
+	m, cmd = press2(m, cmd())
+	if cmd == nil {
+		t.Fatal("the ssh plan did not lead to a command")
+	}
+	if want := src.enterPlan.Argv; !reflect.DeepEqual(*got, want) {
+		t.Fatalf("ran %v, want %v", *got, want)
+	}
+
+	// ssh could not connect or log in: the manual way is more useful than the
+	// exit status.
+	m, _ = press2(m, (*done)(exitStatus(255)))
+	want := "Could not ssh to research. Set enter_ssh_hosts in node.json, or on research run: cd /work && exec claude attach x"
+	if v := m.View(); !strings.Contains(v, want) {
+		t.Errorf("after ssh exit 255:\n%s", v)
+	}
+
+	// Any other exit status is the session ending, as before.
+	m, _ = press2(m, (*done)(exitStatus(1)))
+	if v := m.View(); !strings.Contains(v, "Left tenebrae (Mac): exit status 1") {
+		t.Errorf("after exit 1:\n%s", v)
 	}
 }
 
