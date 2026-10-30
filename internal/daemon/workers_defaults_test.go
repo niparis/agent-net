@@ -31,9 +31,12 @@ func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
 	}
 	n := w.waitNotice(t, 1)[0]
 	last := n.Body[strings.LastIndex(n.Body, "\n")+1:]
-	if !strings.HasPrefix(last, protocol.ChecklistMarker) || !strings.Contains(last, "read the diff in "+res.Worktree) ||
-		!strings.Contains(last, "run the project's tests there") {
-		t.Errorf("the notice does not end with the checklist:\n%s", n.Body)
+	if !strings.HasPrefix(last, "If you learned something") || !strings.Contains(last, "agent_learn") {
+		t.Errorf("the notice does not end with the learning line:\n%s", n.Body)
+	}
+	if !strings.Contains(n.Body, protocol.ChecklistMarker) || !strings.Contains(n.Body, "read the diff in "+res.Worktree) ||
+		!strings.Contains(n.Body, "run the project's tests there") {
+		t.Errorf("the notice has no checklist:\n%s", n.Body)
 	}
 }
 

@@ -187,6 +187,33 @@ WHERE o.outcome IN ('reject','escalate') AND sender.harness<>'owner';
 CREATE TABLE model_successes (
 	node_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL,
 	PRIMARY KEY (node_id, harness, model));
+`, `
+CREATE TABLE IF NOT EXISTS worker_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL,
+  started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS worker_runs_node ON worker_runs (node_id, harness, model, ended_at);
+CREATE INDEX IF NOT EXISTS worker_runs_at ON worker_runs (ended_at);
+CREATE TABLE IF NOT EXISTS playbook_notes (
+  model TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '', note TEXT NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY (model, harness));
+`, `
+CREATE TABLE IF NOT EXISTS findings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  subject_kind TEXT NOT NULL, subject TEXT NOT NULL, finding TEXT NOT NULL,
+  evidence TEXT NOT NULL DEFAULT '[]', reporter TEXT NOT NULL, node_id TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'new');
+CREATE INDEX IF NOT EXISTS findings_subject ON findings (subject_kind, subject, at);
+CREATE INDEX IF NOT EXISTS findings_reporter ON findings (reporter, at);
+CREATE INDEX IF NOT EXISTS findings_status ON findings (status, at);
+CREATE TABLE IF NOT EXISTS playbook (
+  subject_kind TEXT NOT NULL, subject TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'owner', support INTEGER NOT NULL DEFAULT 0,
+  track_line TEXT NOT NULL DEFAULT '', pinned INTEGER NOT NULL DEFAULT 0,
+  stale INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (subject_kind, subject, harness));
+INSERT OR IGNORE INTO playbook (subject_kind, subject, harness, note, source, support, track_line, pinned, stale, created_at, updated_at)
+  SELECT 'model', model, harness, note, 'owner', 0, '', 0, 0, updated_at, updated_at FROM playbook_notes;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

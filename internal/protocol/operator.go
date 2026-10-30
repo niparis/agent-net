@@ -65,6 +65,17 @@ const (
 	// OpWorkerHandback is for a worker's own session: its final report. It is
 	// not an operator action and not open to the command line.
 	OpWorkerHandback = "worker_handback" // takes WorkerHandbackRequest, answers WorkerHandbackResult
+
+	// OpPlaybookGet and OpPlaybookSet read and write the owner's notes about
+	// models (decision 0022). Owner only: the note goes into every start
+	// result for that model.
+	OpPlaybookGet = "playbook_get" // takes PlaybookGetRequest, answers PlaybookGetResult
+	OpPlaybookSet = "playbook_set" // takes PlaybookSetRequest, answers PlaybookGetResult
+
+	// OpLearn records one finding from an agent session (decision 0022).
+	// Findings are proposals: the gateway promotes a pattern to a playbook
+	// note. Open to agent sessions, not to the command line.
+	OpLearn = "agent_learn" // takes LearnRequest, answers LearnResult
 )
 
 // Graph operator methods are available only to the owner.
@@ -92,7 +103,7 @@ var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, 
 	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
+	OpIntegrationsGet, OpIntegrationsSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.
@@ -238,6 +249,12 @@ type WorkerStartResult struct {
 	// MachineNote says why this machine was picked when the project is on
 	// several. Empty otherwise.
 	MachineNote string `json:"machine_note,omitempty"`
+	// Track is the gateway's record for the chosen harness and model, with
+	// Runs 0 when nothing has run there yet (decision 0022).
+	Track *TrackRecord `json:"track,omitempty"`
+	// Playbooks are the fresh notes for the chosen model and harness, the
+	// project and the machine, if any (decision 0022).
+	Playbooks []PlaybookNote `json:"playbooks,omitempty"`
 }
 
 // WorkerStopRequest is OpWorkerStop.
@@ -258,13 +275,20 @@ type WorkerHandbackRequest struct {
 	Report string `json:"report"`
 	// Status is done (default), blocked or failed.
 	Status string `json:"status,omitempty"`
+	// Complete is false when the worker hands back partial work. It is absent
+	// in a request from an older worker or tool and then means true.
+	Complete *bool `json:"complete,omitempty"`
 }
+
+// IsComplete tells whether the hand-back reports the whole task done.
+func (r WorkerHandbackRequest) IsComplete() bool { return r.Complete == nil || *r.Complete }
 
 // WorkerHandbackResult answers OpWorkerHandback.
 type WorkerHandbackResult struct {
-	Status string   `json:"status"`
-	Sent   *Message `json:"sent,omitempty"`
-	Queued bool     `json:"queued,omitempty"`
+	Status   string   `json:"status"`
+	Complete bool     `json:"complete"`
+	Sent     *Message `json:"sent,omitempty"`
+	Queued   bool     `json:"queued,omitempty"`
 }
 
 // WorkersQuery is the optional request of OpWorkers. An empty query lists the

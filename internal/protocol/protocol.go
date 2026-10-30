@@ -442,6 +442,9 @@ type NodeView struct {
 	// host name the daemon reported in its hello.
 	DisplayName string `json:"display_name,omitempty"`
 	Reported    string `json:"reported_hostname,omitempty"`
+	// Tracks is the worker track record of this machine, one entry per
+	// harness and model (decision 0022).
+	Tracks []TrackRecord `json:"tracks,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.
@@ -528,6 +531,9 @@ type ProjectView struct {
 type NodesInfo struct {
 	GatewayVersion string     `json:"gateway_version"`
 	Nodes          []NodeView `json:"nodes"`
+	// Playbook is the fresh notes of the network, for agent_nodes and the
+	// owner's "Learned" list (decision 0022).
+	Playbook []PlaybookNote `json:"playbook,omitempty"`
 }
 
 // Upgrade outcomes per node.

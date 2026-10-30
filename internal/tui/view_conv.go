@@ -152,7 +152,7 @@ func (m Model) hints() []hint {
 			return []hint{{"c", "recipient", 1}, {"C", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6},
+	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
 }
 
@@ -172,6 +172,9 @@ func (m Model) helpLine(w int) string {
 	}
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
+	}
+	if m.learned {
+		return sDim.Render(clip("L or esc: back to the sessions", w))
 	}
 	switch m.mode {
 	case modeCompose:
@@ -224,6 +227,7 @@ func (m Model) helpView(w, h int) []string {
 		{"M", "map: charters, maturity, edges and history (read only)"},
 		{"C", "CTO: chat, new conversation and undo graph changes"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
+		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "o: show offline and dormant; d: detail takes the feed room"},
 		{"a", "active only: hide sessions idle for over an hour"},

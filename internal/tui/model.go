@@ -118,10 +118,11 @@ type Model struct {
 	// is its data (map.go).
 	mapOn bool
 	mp    mapState
-	// help shows the key overlay; expand gives the detail pane the room of the
-	// message feed.
-	help   bool
-	expand bool
+	// help shows the key overlay; learned shows the playbook notes; expand
+	// gives the detail pane the room of the message feed.
+	help    bool
+	learned bool
+	expand  bool
 }
 
 // New returns a model that reads from src.
@@ -537,6 +538,16 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.learned {
+		switch k.String() {
+		case "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "esc", "L", "enter", "backspace":
+			m.learned = false
+		}
+		return m, nil
+	}
 	if m.cto != nil {
 		return m.ctoKey(k)
 	}
@@ -639,6 +650,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startIntegrations()
 	case "N":
 		return m.startRename()
+	case "L":
+		m.learned = true
 	case "M":
 		return m.startMap()
 	case "?":

@@ -61,6 +61,8 @@ const usage = `usage: agent-net <command>
   node       add or remove an architect
   edge       set or remove an edge
   send       send a message as yourself: agent-net send <session or name> <message...>
+  playbook   the owner's notes about a model: playbook set <model> [--harness H] [--pin] <text>,
+             playbook get <model> [--harness H], playbook pin|unpin <model> [--harness H]
   version    print the version of this binary
 `
 
@@ -132,6 +134,8 @@ func main() {
 		err = cmdGraph(ctx, os.Args[1], args)
 	case "send":
 		err = cmdSend(ctx, args)
+	case "playbook":
+		err = cmdPlaybook(ctx, args)
 	case "hint": // hidden: the Claude Code hook (decision 0013)
 		err = cmdHint(ctx, args)
 	case "policy-hook": // hidden: the Claude Code delegation policy hook (decision 0014)
@@ -170,8 +174,9 @@ func cmdGateway(ctx context.Context, args []string) error {
 	fs.DurationVar(&keep.Messages, "keep-messages", keep.Messages, "delete message bodies and delivery records older than this (0 keeps them for ever)")
 	fs.DurationVar(&keep.Events, "keep-events", keep.Events, "delete events older than this (0 keeps them for ever)")
 	fs.DurationVar(&keep.Sessions, "keep-sessions", keep.Sessions, "delete offline sessions not seen for this long (0 keeps them for ever)")
+	fs.DurationVar(&keep.WorkerRuns, "keep-worker-runs", keep.WorkerRuns, "delete worker runs behind the model track record older than this (0 keeps them for ever)")
 	fs.Parse(args)
-	if keep.Messages < 0 || keep.Events < 0 || keep.Sessions < 0 {
+	if keep.Messages < 0 || keep.Events < 0 || keep.Sessions < 0 || keep.WorkerRuns < 0 {
 		return errors.New("the --keep-* periods must not be negative")
 	}
 	var extra []string

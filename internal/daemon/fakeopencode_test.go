@@ -499,7 +499,11 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 			if strings.Contains(body, "FAKE:blocked") {
 				status = "blocked"
 			}
-			send("worker_handback", map[string]any{"report": "finished the task in " + cwd, "status": status})
+			call := map[string]any{"report": "finished the task in " + cwd, "status": status}
+			if strings.Contains(body, "FAKE:partial") {
+				call["complete"] = false
+			}
+			send("worker_handback", call)
 		case strings.Contains(body, "FAKE:edit"):
 			fakeEdit(cwd)
 			send("reply", map[string]any{"message_id": msg.ID, "body": "edited"})

@@ -123,6 +123,10 @@ func (m Model) View() string {
 		for _, s := range m.helpView(w, h-1) {
 			add(s)
 		}
+	case m.learned:
+		for _, s := range m.learnedView(w, h-1) {
+			add(s)
+		}
 	case m.conv != nil:
 		for _, s := range m.convView(w, h-1) {
 			add(s)
@@ -264,6 +268,9 @@ func (m Model) titleLine(w int) string {
 	}
 	if workers > 0 {
 		mid += ", " + plural(workers, "worker")
+	}
+	if n := m.learnedNew(); n > 0 {
+		mid += fmt.Sprintf(", learned %d new", n)
 	}
 	var filters []string
 	if m.activeOnly {

@@ -334,7 +334,11 @@ func fakeAgentAct(send func(string, any), body, cwd string) {
 	if strings.Contains(body, "FAKE:blocked") {
 		status = "blocked"
 	}
-	send("worker_handback", map[string]any{"report": "finished the task in " + cwd + " (task was " + strconv.Itoa(len(body)) + " bytes)", "status": status})
+	call := map[string]any{"report": "finished the task in " + cwd + " (task was " + strconv.Itoa(len(body)) + " bytes)", "status": status}
+	if strings.Contains(body, "FAKE:partial") {
+		call["complete"] = false
+	}
+	send("worker_handback", call)
 }
 
 // fsClaudeAdapter is the Claude adapter of the tests: it reads the session

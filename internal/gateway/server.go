@@ -628,6 +628,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "learn.add":
+		p, err := decode[protocol.LearnFrame](raw)
+		if err != nil || p.Reporter == "" {
+			return nil, reject("bad learn.add")
+		}
+		owner, err := st.SessionNode(p.Reporter)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.Reporter)
+		}
+		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
+			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
+
 	case "cto.graph_latest":
 		id, err := st.CTOLastGraphID()
 		return map[string]int64{"id": id}, err
@@ -664,6 +679,38 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]bool{"attribution": true}, nil
 	case "graph.get":
 		return st.Graph()
+	case "playbook.set":
+		p, err := decode[protocol.PlaybookSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad playbook.set")
+		}
+		model, harness, note, err := protocol.CleanPlaybook(p.Model, p.Harness, p.Note)
+		if err != nil {
+			return nil, reject("%v", err)
+		}
+		if err := st.SetPlaybookPin(model, harness, note, p.Pin); err != nil {
+			return nil, err
+		}
+		if note == "" {
+			return protocol.PlaybookGetResult{}, nil
+		}
+		kind := protocol.SubjectModel
+		if harness != "" {
+			kind = protocol.SubjectModelHarness
+		}
+		pinned := p.Pin != nil && *p.Pin
+		return protocol.PlaybookGetResult{Note: &protocol.PlaybookNote{SubjectKind: kind, Subject: model, Harness: harness,
+			Note: note, Source: protocol.PlaybookSourceOwner, Pinned: pinned}}, nil
+	case "playbook.get":
+		p, err := decode[protocol.PlaybookGetRequest](raw)
+		if err != nil {
+			return nil, reject("bad playbook.get")
+		}
+		note, _, err := st.PlaybookFor(p.Model, p.Harness)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.PlaybookGetResult{Note: note}, nil
 	case "charter.set":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {

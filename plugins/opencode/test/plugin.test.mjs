@@ -66,26 +66,32 @@ const server = createServer((conn) => {
               { name: "old", hostname: "box", path: "/c/old", harnesses: ["pi"] },
             ] }
         : line.method === "worker_start"
-          ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac", permissions: "no-network" }
+          ? { session_id: "s_worker", harness: line.params.harness ?? "opencode", model: line.params.model, project: line.params.project, hostname: "mac", permissions: "no-network",
+              track: { harness: line.params.harness ?? "opencode", model: line.params.model, runs: 3, complete: 1, partial: 2, median_run_seconds: 60, resumable: true },
+              playbooks: [{ subject_kind: "model", subject: line.params.model, note: "ask for the diff" }] }
         : line.method === "hint"
           ? hintReply
         : line.method === "policy"
           ? policyReply
         : line.method === "worker_handback"
-          ? { status: line.params.status || "done" }
+          ? { status: line.params.status || "done", complete: line.params.complete !== false }
         : line.method === "worker_stop"
           ? { session: line.params.session, stopped: true }
         : line.method === "nodes"
           ? { gateway_version: "v1", nodes: [
               { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
                 harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }],
+                tracks: [{ harness: "opencode", model: "a/x", runs: 14, complete: 13, median_run_seconds: 1560, resumable: true }],
                 quotas: { providers: [
                   { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
                   { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
                   { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
                 ] } },
               { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
-            ] }
+            ],
+            playbook: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff", support: 3, source: "auto" }] }
+          : line.method === "agent_learn"
+            ? { accepted: true, id: 7, status: "new", remaining: 2 }
           : {};
       conn.write(JSON.stringify({ id: line.id, result }) + "\n");
     }
@@ -319,7 +325,9 @@ await test("agent_nodes lists machines with their harnesses", async () => {
   const out = (await tool.execute({}, { sessionID: "ses_n" })).content;
   for (const want of ["mac (n_1, online, agent-net v0.4.0): opencode v2 (2 models) at /u/opencode",
                       "quotas: claude 59%w · codex 90%w · cursor exhausted",
-                      "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)"]) {
+                      "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)",
+                      "a/x · opencode: 14 runs: 13 complete (median 26 min) · resumes",
+                      "playbook [a/x] 3 findings: ask for the diff"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   stop();
@@ -822,7 +830,8 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
-  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now"]) {
+  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now",
+                      "a/x · opencode: 3 runs: 1 complete, 2 partial (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   const gone = (await stopTool.execute({ session: "s_worker" }, { sessionID: "ses_w" })).content;
@@ -918,15 +927,42 @@ await test("agent_handback reaches the daemon; agent_start can ask for a worktre
     if (bad in hb.input.properties) throw new Error("agent_handback lets the worker pick a recipient: " + bad);
   }
   const before = calls.length;
-  const out = (await hb.execute({ report: "all done", status: "blocked" }, { sessionID: "ses_h" })).content;
+  if (!("complete" in hb.input.properties)) throw new Error("agent_handback has no complete");
+  const out = (await hb.execute({ report: "all done", status: "blocked", complete: false }, { sessionID: "ses_h" })).content;
   const [method, params] = calls[before];
-  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || !out.includes("Handed back (blocked)")) {
+  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || params.complete !== false || !out.includes("Handed back (blocked, partial)")) {
     throw new Error("handback: " + JSON.stringify(calls[before]) + " " + out);
   }
   const start = tools.find((t) => t.name === "agent_start");
   if (!("isolation" in start.input.properties)) throw new Error("agent_start has no isolation");
   await start.execute({ project: "alpha", task: "t", isolation: "worktree" }, { sessionID: "ses_h" });
   if (calls[calls.length - 1][1].isolation !== "worktree") throw new Error("isolation was not passed");
+  stop();
+});
+
+await test("agent_learn records a finding and shows the daily limit", async () => {
+  freshHub();
+  const sessions = new Map([["ses_l", session("ses_l", "/work/l")]]);
+  let tools;
+  const c = makeContext("/work/l", sessions, {
+    onTransform(fn) {
+      tools = [];
+      fn({ add: (t) => tools.push(t) });
+    },
+  });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_l", () => registered("ses_l"));
+  const tool = tools.find((t) => t.name === "agent_learn");
+  if (!tool) throw new Error("agent_learn is not registered");
+  const before = calls.length;
+  const out = (await tool.execute({ subject_kind: "model", subject: "terra", finding: "Hands back partial work.", evidence: ["s_w1"] },
+    { sessionID: "ses_l" })).content;
+  const [method, params] = calls[before];
+  if (method !== "agent_learn" || params.subject_kind !== "model" || params.subject !== "terra" ||
+      params.finding !== "Hands back partial work." || params.evidence[0] !== "s_w1") {
+    throw new Error("wrong call: " + JSON.stringify(calls[before]));
+  }
+  if (!out.includes("Recorded finding 7")) throw new Error("learn output: " + out);
   stop();
 });
 

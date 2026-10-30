@@ -103,9 +103,18 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 	}
 	g.mu.Unlock()
 	for i := range nodes {
+		tracks, err := g.store.TrackRecords(nodes[i].NodeID, protocol.TrackRecordDays*24*time.Hour)
+		if err != nil {
+			return protocol.NodesInfo{}, err
+		}
+		nodes[i].Tracks = tracks
 		nodes[i].Quotas = g.nodeQuotas(nodes[i].NodeID)
 	}
-	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, nil
+	notes, err := g.store.PlaybookNotes()
+	if err != nil {
+		return protocol.NodesInfo{}, err
+	}
+	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes, Playbook: notes}, nil
 }
 
 // handleVersion serves the version of the gateway. With ?os=&arch= it serves

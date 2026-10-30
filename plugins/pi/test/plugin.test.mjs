@@ -35,7 +35,7 @@ const statuses = [];
 const textResults = [];
 const requests = []; // every request except hello
 const replies = {}; // method -> result the fake daemon answers with (default {})
-replies.nodes = { gateway_version: "v1", nodes: [
+const defaultNodes = { gateway_version: "v1", nodes: [
   { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
     harnesses: [{ name: "pi", path: "/u/pi", version: "1.4.0" }],
     quotas: { providers: [
@@ -45,6 +45,7 @@ replies.nodes = { gateway_version: "v1", nodes: [
     ] } },
   { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
 ] };
+replies.nodes = defaultNodes;
 let conn;
 const server = createServer((c) => {
   conn = c;
@@ -246,6 +247,57 @@ await test("the announce rule goes into the system prompt once per turn", async 
   // A handler that sees its own change does not add it again.
   const again = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: out.systemPrompt });
   if (again !== undefined) throw new Error("added twice");
+});
+
+await test("agent_nodes and agent_start show the track record and playbook", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  replies.nodes = { nodes: [{ node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
+    harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x"] }],
+    tracks: [{ harness: "opencode", model: "a/x", runs: 4, complete: 1, partial: 3, median_run_seconds: 540, resumable: false }] }],
+    playbook: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff", support: 3, source: "auto" }] };
+  const nodes = (await p.tools.get("agent_nodes").execute("id", {})).content[0].text;
+  const track = "a/x · opencode: 4 runs: 1 complete, 3 partial (median 9 min) · cannot resume";
+  if (!nodes.includes(track) || !nodes.includes("playbook [a/x] 3 findings: ask for the diff")) throw new Error("nodes: " + JSON.stringify(nodes));
+  replies.worker_start = { status: "started", session_id: "s_w", harness: "opencode", model: "a/x", project: "p", hostname: "mac",
+    permissions: "sandboxed", track: { harness: "opencode", model: "a/x", runs: 3, complete: 3, median_run_seconds: 60, resumable: true },
+    playbooks: [{ subject_kind: "model", subject: "a/x", note: "ask for the diff" }] };
+  const started = (await p.tools.get("agent_start").execute("id", { project: "p", task: "t" })).content[0].text;
+  for (const want of ["a/x · opencode: 3 runs: 3 complete (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
+    if (!started.includes(want)) throw new Error("start misses " + JSON.stringify(want) + ": " + JSON.stringify(started));
+  }
+  const hb = p.tools.get("agent_handback");
+  replies.worker_handback = { status: "done", complete: false };
+  const out = (await hb.execute("id", { report: "part", complete: false })).content[0].text;
+  const sent = requests.filter((r) => r.method === "worker_handback").pop();
+  if (sent.params.complete !== false || !out.includes("Handed back (done, partial)")) {
+    throw new Error("handback: " + JSON.stringify(sent) + " " + out);
+  }
+  replies.nodes = defaultNodes;
+  delete replies.worker_start;
+  delete replies.worker_handback;
+  await p.fire("session_shutdown", {});
+});
+
+await test("agent_learn records a finding", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  replies.agent_learn = { accepted: true, id: 7, status: "new", remaining: 2 };
+  const tool = p.tools.get("agent_learn");
+  if (!tool) throw new Error("agent_learn is not registered");
+  const out = (await tool.execute("id", { subject_kind: "model", subject: "terra", finding: "Hands back partial work.", evidence: ["s_w1"] })).content[0].text;
+  const sent = requests.filter((r) => r.method === "agent_learn").pop();
+  if (sent.params.subject !== "terra" || sent.params.evidence[0] !== "s_w1" || !out.includes("Recorded finding 7")) {
+    throw new Error("learn: " + JSON.stringify(sent) + " " + out);
+  }
+  delete replies.agent_learn;
+  await p.fire("session_shutdown", {});
 });
 
 await test("agent_announce asks for a task and says so; no name or function is required", async () => {
