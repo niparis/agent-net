@@ -80,3 +80,17 @@ func TestTitleRestored(t *testing.T) {
 		})
 	}
 }
+
+func TestEntryNoticeBeforeChildStarts(t *testing.T) {
+	var out bytes.Buffer
+	p := New(exec.Command("/no-such-agent-net-command"))
+	p.Name = "session"
+	p.SetStdin(strings.NewReader(""))
+	p.SetStdout(&out)
+	if err := p.Run(); err == nil {
+		t.Fatal("expected start error")
+	}
+	if !strings.Contains(out.String(), "agent-net: entering session. Press ctrl+] to come back here.\r\n") {
+		t.Fatalf("output %q", out.String())
+	}
+}

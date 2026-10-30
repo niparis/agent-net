@@ -76,6 +76,7 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	}
 	name := r.name
 	proxy := ptyproxy.New(cmd)
+	proxy.Name = name
 	proxy.Title = name + " - ctrl+] to come back"
 	return m, run(proxy, func(err error) tea.Msg { return enterDoneMsg{name: name, err: err} })
 }
