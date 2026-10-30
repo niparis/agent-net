@@ -46,8 +46,8 @@ func gitOutT(t *testing.T, dir string, args ...string) string {
 }
 
 // A worker with its own worktree edits, hands back, and the caller gets the
-// report with the facts and the diff stat. The worker stays up for follow-ups,
-// and its worktree is kept because it has changes.
+// report with the facts and the diff stat. The worker ends; a follow-up starts
+// the same session again, and its worktree is kept because it has changes.
 func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
@@ -107,9 +107,13 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 		t.Errorf("the user's checkout is dirty: %s", st)
 	}
 
-	// A done worker stays up for follow-ups.
-	if w.d.workerCount() != 1 {
-		t.Fatal("a worker that handed back ended")
+	// A done worker ends, like a subagent. A follow-up from its owner starts
+	// the same session again, in the same worktree.
+	eventually(t, "a worker that handed back ends", func() bool {
+		return w.d.workerCount() == 0 && !alive(rec.Pid) && len(w.workers(t)) == 0
+	})
+	if rows, _ := w.d.st.workers(); len(rows) != 1 || !rows[0].Resumable || rows[0].SessionID != res.SessionID {
+		t.Fatalf("the ended worker record: %+v", rows)
 	}
 	var sent protocol.MessageSent
 	raw := w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "one more thing"})
@@ -120,14 +124,23 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 	if r := w.replyTo(t, owner, sent.Message.ID); !strings.HasPrefix(r.Body, "ok from worker") {
 		t.Errorf("follow-up: %+v", r)
 	}
+	rec2 := readFake(t, res.Worktree)
+	if rec2.SessionID != rec.SessionID || rec2.Pid == rec.Pid || rec2.Cwd != res.Worktree {
+		t.Errorf("the resumed worker: %+v (first run %+v)", rec2, rec)
+	}
+	if len(w.logs.lines("worker.resumed", res.SessionID)) != 1 {
+		t.Errorf("no worker.resumed line: %v", w.logs.lines("worker.resumed"))
+	}
 
-	// Stopping a done worker sends no second notice. It has changes, so the
-	// worktree and its branch stay.
+	// Stopping the resumed worker (it replied but did not hand back) sends one
+	// notice with status stopped. It has changes, so the worktree and its
+	// branch stay.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	eventually(t, "process gone", func() bool { return !alive(rec.Pid) })
-	if len(w.notices(t)) != 1 {
-		t.Errorf("a done worker sent a second notice: %d", len(w.notices(t)))
+	notices := w.waitNotice(t, 2)
+	if len(notices) != 2 || !strings.Contains(notices[1].Body, "status: stopped") {
+		t.Errorf("the notices of the two runs: %+v", notices)
 	}
 	if _, err := os.Stat(filepath.Join(res.Worktree, "work.txt")); err != nil {
 		t.Errorf("the worktree with changes was removed: %v", err)
@@ -135,8 +148,8 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 	if gitOutT(t, repo, "branch", "--list", res.Branch) == "" {
 		t.Error("the branch with changes was removed")
 	}
-	if len(w.logs.lines("worker.worktree kept", res.Branch)) != 1 {
-		t.Errorf("no 'kept' line: %v", w.logs.lines("worker.worktree"))
+	if len(w.logs.lines("worker.worktree kept", res.Branch)) != 2 {
+		t.Errorf("no 'kept' line for each end: %v", w.logs.lines("worker.worktree"))
 	}
 	if len(w.logs.lines("worker.handback", "status=done")) != 1 {
 		t.Errorf("no handback line")

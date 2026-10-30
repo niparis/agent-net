@@ -59,6 +59,24 @@ type claudeSessionFile struct {
 }
 
 func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
+	return d.startClaude(ctx, w, "")
+}
+
+// resume starts a background session on the session the worker had before:
+// `claude --bg --resume <session-id>`, with the same settings, model and
+// MCP server. Claude keeps the transcript, so the conversation continues.
+func (claudeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
+	if w.nativeID == "" {
+		return errors.New("the Claude session of the worker is not known")
+	}
+	// The old MCP server is gone with the old process. Wait for the new one.
+	d.mu.Lock()
+	delete(d.mcpHello, w.nativeID)
+	d.mu.Unlock()
+	return d.startClaude(ctx, w, w.nativeID)
+}
+
+func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) error {
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
 		return err
@@ -79,6 +97,9 @@ func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	// No flag that turns permission checks off (decision 0002, W6). The first
 	// prompt is not an argument: the task arrives as a normal message.
 	args := []string{"--bg", "--name", claudeWorkerName(w), "--settings", string(settings)}
+	if resume != "" {
+		args = append(args, "--resume", resume)
+	}
 	// The agent-net MCP server of the worker is this daemon's own binary, so the
 	// tools it offers (agent_handback) are those of this version. --mcp-config
 	// takes the place of the server of the same name in the user's config, for
@@ -94,7 +115,11 @@ func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = w.path
 	out, err := cmd.CombinedOutput()
-	os.WriteFile(filepath.Join(dir, "worker.log"), out, 0o600)
+	logf, lerr := os.OpenFile(filepath.Join(dir, "worker.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if lerr == nil {
+		logf.Write(out)
+		logf.Close()
+	}
 	if err != nil {
 		return fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
 	}
@@ -107,10 +132,17 @@ func (claudeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	w.ref = id
 	d.wmu.Unlock()
 
-	// The session file gives the process and the session ID.
+	// The session file gives the process and the session ID. On a resume the
+	// job has a new id but the session keeps its own, so it is found by that.
 	var sf claudeSessionFile
+	find := func() (claudeSessionFile, bool) {
+		if resume != "" {
+			return findClaudeSession(d.cfg.ClaudeSessionsDir, resume)
+		}
+		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
+	}
 	for {
-		if f, ok := findClaudeBg(d.cfg.ClaudeSessionsDir, id); ok {
+		if f, ok := find(); ok {
 			sf = f
 			break
 		}
@@ -184,6 +216,21 @@ var nameClean = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
 // findClaudeBg finds the live background session with this id.
 func findClaudeBg(dir, id string) (claudeSessionFile, bool) {
+	return findClaudeSessionFile(dir, func(sf claudeSessionFile) bool {
+		if sf.JobID != id && !(sf.JobID == "" && strings.HasPrefix(sf.SessionID, id)) {
+			return false
+		}
+		return true
+	})
+}
+
+// findClaudeSession finds the live session with this session ID. A resumed
+// background job has a new job id but the same session id.
+func findClaudeSession(dir, sessionID string) (claudeSessionFile, bool) {
+	return findClaudeSessionFile(dir, func(sf claudeSessionFile) bool { return sf.SessionID == sessionID })
+}
+
+func findClaudeSessionFile(dir string, match func(claudeSessionFile) bool) (claudeSessionFile, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return claudeSessionFile{}, false
@@ -200,7 +247,7 @@ func findClaudeBg(dir, id string) (claudeSessionFile, bool) {
 		if json.Unmarshal(raw, &sf) != nil || sf.PID <= 1 || sf.SessionID == "" {
 			continue
 		}
-		if sf.JobID != id && !(sf.JobID == "" && strings.HasPrefix(sf.SessionID, id)) {
+		if !match(sf) {
 			continue
 		}
 		if _, alive := procToken(sf.PID); !alive {

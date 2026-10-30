@@ -395,7 +395,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			}
 			winfo = d.workerInfo(wk)
 			p.Mode = protocol.ModeBackground // nobody watches a worker
-		} else if d.workerOwnsNative(p.Client, p.NativeID) {
+		} else if d.workerOwnsNative(p.Client, p.NativeID) || d.st.workerNativeKnown(p.Client, p.NativeID) {
 			return nil, errors.New("that session belongs to a worker started by this daemon; only the worker's own process can connect as it")
 		}
 		if p.Mode == "" {
