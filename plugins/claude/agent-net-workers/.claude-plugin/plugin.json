@@ -1,0 +1,6 @@
+{
+  "name": "agent-net-workers",
+  "version": "0.1.0",
+  "description": "Shows the agent-net workers this Claude Code session started, in a band above the prompt and on the status line.",
+  "types": "./types/index.d.ts"
+}
