@@ -1,9 +1,9 @@
-1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy · 2 needs you               updated 14:05:00
+1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy · 2 needs you        updated 14:05:00
 Needs you (2) ──────────────────────────────────────────────────────────────────────────────────────
 ▍▸ strategies claude          question: "Merge tenebrae-nexus/truenas-stacks #817?"              12m
 ▍  ci-runner  pi     build-vm permission: Bash(git push origin main)                              3m
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────╮
-│ ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2                     │
+│ ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G    claude  opencode  pi        │
 │ ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi                 │
 │ ○ old-box    v0.3.2 offline                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -27,4 +27,4 @@ Needs you (2) ──────────────────────
 │write to the CTO: it can set charters, start workers, answer what the network is doing            │
 │> write to the CTO...                                                                             │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  tab CTO  ? help  q quit
+1/2/3/4 tabs  up/down select  enter conversation  m msg  s start  x stop  tab CTO  ? help  q quit

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ func fakeGraph() protocol.GraphView {
 				Needs:     "MCP: tenebrae-library",
 				Notes:     "Deploy through homelab.",
 			}},
+			{Name: "homelab", Kind: "component", Charter: protocol.Charter{Purpose: "Infrastructure.", Maturity: "growing"}},
 			{Name: "shop", Kind: "component", Charter: protocol.Charter{Purpose: "Storefront.", Maturity: "mature"}},
 			{Name: "tenebrae", Kind: "component", Charter: protocol.Charter{Purpose: "Consumer of cogforge.", Maturity: "growing"}},
 			{Name: "trading-architect", Kind: "architect", Charter: protocol.Charter{Purpose: "Looks after the trading system.", Maturity: "mature - stable"}},
@@ -72,49 +74,20 @@ func openMap(t *testing.T, m Model) Model {
 
 func TestMapGroupsNodesByArchitect(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
-	v := m.View()
-	for _, want := range []string{
-		"Map (read only)",
-		"trading-architect", "cogforge", "[owner]",
-		"wbg-architect", "tenebrae", "[advisor]",
-		"Components with no architect", "shop",
-		"Architects without nodes", "api-architect",
-		"early", "growing", "mature",
-	} {
-		if !strings.Contains(v, want) {
-			t.Errorf("the map lacks %q:\n%s", want, v)
+	m = keys(m, "z")
+	for _, want := range []string{"Overview", "trading-architect", "cogforge", "wbg-architect", "tenebrae", "shop", "homelab", "governs", "depends", "No architect"} {
+		if !strings.Contains(m.View(), want) {
+			t.Errorf("overview missing %q", want)
 		}
-	}
-	// The three groups come in this order.
-	at := func(s string) int { return strings.Index(v, s) }
-	if !(at("trading-architect") < at("Components with no architect") &&
-		at("Components with no architect") < at("Architects without nodes")) {
-		t.Errorf("the groups are not in the order architect, ungoverned, empty architect:\n%s", v)
 	}
 }
 
 func TestMapShowsTheSelectedNodesCharterEdgesAndHistory(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
-	m = keys(m, "down") // trading-architect -> cogforge
-	if m.mapSelectedName() != "cogforge" {
-		t.Fatalf("selected %q, want cogforge", m.mapSelectedName())
-	}
-	v := m.View()
-	for _, want := range []string{
-		"Charter", "purpose", "Document and evidence API.",
-		"maturity", "early - prototype",
-		"accepts", "Generic endpoints and bug fixes.",
-		"refuses", "Client-specific endpoints.",
-		"consumers", "tenebrae, shop",
-		"escalate", "Breaking API changes.",
-		"needs", "MCP: tenebrae-library",
-		"notes", "Deploy through homelab.",
-		"Edges", "trading-architect -> cogforge", "governs", "owner",
-		"tenebrae -> cogforge", "ask", "cogforge -> shop", "auto",
-		"Last changes", "you (on Mac)", "maturity", "purpose",
-	} {
-		if !strings.Contains(v, want) {
-			t.Errorf("the detail lacks %q:\n%s", want, v)
+	m.mp.selected = "cogforge"
+	for _, want := range []string{"cogforge", "trading-architect", "tenebrae", "shop", "purpose", "Document and evidence API.", "accepts", "refuses", "governs", "owner", "depends", "ask", "auto", "last change"} {
+		if !strings.Contains(m.View(), want) {
+			t.Errorf("focus missing %q", want)
 		}
 	}
 }
@@ -158,9 +131,9 @@ func TestMapExplainsAnEmptyGraphAndAReadFailure(t *testing.T) {
 func TestMapKeysAreReadOnlyAndMoveTheSelection(t *testing.T) {
 	m := openMap(t, mapModel(100, 30, fakeGraph()))
 	before := m.mapSelectedName()
-	m = keys(m, "down", "down")
+	m = keys(m, "left")
 	if m.mapSelectedName() == before {
-		t.Fatal("down did not move the map selection")
+		t.Fatal("left did not move the map selection")
 	}
 	m = keys(m, "g")
 	if m.mapSelectedName() != "trading-architect" {
@@ -186,13 +159,13 @@ func TestHelpListsTheMapKey(t *testing.T) {
 }
 
 func TestGoldenMap(t *testing.T) {
-	m := openMap(t, mapModel(80, 24, fakeGraph()))
-	m = keys(m, "down")
-	golden(t, "map_80x24", m.View())
-
-	m = openMap(t, mapModel(120, 40, fakeGraph()))
-	m = keys(m, "down")
-	golden(t, "map_120x40", m.View())
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := openMap(t, mapModel(size[0], size[1], fakeGraph()))
+		m.mp.selected = "cogforge"
+		golden(t, fmt.Sprintf("map_focus_%dx%d", size[0], size[1]), m.View())
+		m = keys(m, "z")
+		golden(t, fmt.Sprintf("map_overview_%dx%d", size[0], size[1]), m.View())
+	}
 }
 
 func TestMapIsFourthTab(t *testing.T) {
@@ -251,5 +224,44 @@ func TestMapOverviewAndFallback(t *testing.T) {
 	m.width = 50
 	if !strings.Contains(m.View(), "overview does not fit") {
 		t.Fatal("fallback missing")
+	}
+}
+
+func TestMapDefaultsToProject(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	n, ok := m.mapNode(m.mp.selected)
+	if !ok || n.Kind == "architect" {
+		t.Fatalf("default focus is not a project: %q", m.mp.selected)
+	}
+}
+
+func TestMapHelpAndHints(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	line := m.helpLine(120)
+	for _, want := range []string{"left/right", "z", "enter", "c"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("map hints missing %q", want)
+		}
+	}
+	if !strings.Contains(keys(m, "?").View(), "overview") {
+		t.Fatal("map help omits overview")
+	}
+}
+
+func TestMapFocusKeepsArchitectNameAt80(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, fakeGraph()))
+	m.mp.selected = "cogforge"
+	if !strings.Contains(m.View(), "trading-architect") {
+		t.Fatal("architect name was cut")
+	}
+}
+
+func TestOverviewConnectsNodes(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	m.mp.selected = "cogforge"
+	m = keys(m, "z")
+	v := m.View()
+	if !strings.Contains(v, "▼") || !strings.Contains(v, "└") {
+		t.Fatalf("missing connected edge routes:\n%s", v)
 	}
 }

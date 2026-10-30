@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -108,14 +109,17 @@ func (m Model) mapFocusView(w, h int) []string {
 	}
 	gap := 12
 	bw := max((w-2*gap)/3, 8)
-	lb, cb, rb, ab := m.mapBox(pick(left), bw, false), m.mapBox(node.Name, bw, true), m.mapBox(pick(right), bw, false), m.mapBox(pick(above), bw, false)
+	lb, cb, rb := m.mapBox(pick(left), bw, false), m.mapBox(node.Name, bw, true), m.mapBox(pick(right), bw, false)
+	aboveWidth := min(max(bw, ansi.StringWidth(pick(above))+2), w-(bw+gap))
+	ab := m.mapBox(pick(above), aboveWidth, false)
 	indent := strings.Repeat(" ", bw+gap)
 	for _, l := range ab {
 		out = append(out, indent+l)
 	}
 	connector := ""
 	if len(above) > 0 {
-		connector = sDim.Render("│ governs " + above[m.mp.choice%len(above)].edge.Mode)
+		e := above[m.mp.choice%len(above)].edge
+		connector = sDim.Render("▼ governs " + e.Mode + " " + e.Rule)
 	}
 	out = append(out, indent+connector)
 	for i := 0; i < 4; i++ {
@@ -149,45 +153,177 @@ func (m Model) mapFocusView(w, h int) []string {
 // mapOverviewView uses separate routing rows so edges stay legible when they
 // share endpoints. If the graph cannot fit, the caller shows the focus view.
 func (m Model) mapOverviewView(w, h int) ([]string, bool) {
+	const boxWidth, gap = 20, 3
 	var architects, components []protocol.Node
 	governed := map[string]bool{}
-	for _, e := range m.mp.edges {
-		if e.Kind == "governs" {
-			governed[e.To] = true
-		}
-	}
+	nodes := map[string]protocol.Node{}
 	for _, n := range m.mp.nodes {
+		nodes[n.Name] = n
 		if n.Kind == "architect" {
 			architects = append(architects, n)
 		} else {
 			components = append(components, n)
 		}
 	}
+	for _, e := range m.mp.edges {
+		if e.Kind == "governs" {
+			governed[e.To] = true
+		}
+	}
 	sort.Slice(architects, func(i, j int) bool { return architects[i].Name < architects[j].Name })
 	sort.Slice(components, func(i, j int) bool { return components[i].Name < components[j].Name })
-	boxWidth := 20
-	gap := 3
-	widest := max(len(architects), len(components))
-	if widest*(boxWidth+gap)-gap > w || 9+len(m.mp.edges) > h {
+	// Keep the focused project between its immediate incoming and outgoing
+	// neighbors, so their routes can meet without crossing.
+	var ordered []protocol.Node
+	used := map[string]bool{}
+	add := func(name string) {
+		if n, ok := nodes[name]; ok && n.Kind != "architect" && !used[name] {
+			ordered = append(ordered, n)
+			used[name] = true
+		}
+	}
+	if n, ok := nodes[m.mp.selected]; ok && n.Kind != "architect" {
+		for _, l := range m.mapLinks("in") {
+			add(l.name)
+		}
+		add(m.mp.selected)
+		for _, l := range m.mapLinks("out") {
+			add(l.name)
+		}
+	}
+	for _, n := range components {
+		add(n.Name)
+	}
+	components = ordered
+	slots := max(len(architects), len(components))
+	if slots*(boxWidth+gap)-gap > w || 14+len(m.mp.edges) > h {
 		return nil, false
 	}
+	componentSlot := map[string]int{}
+	for i, n := range components {
+		componentSlot[n.Name] = i
+	}
+	archSlots := make([]string, slots)
+	for _, e := range m.mp.edges {
+		if e.Kind != "governs" {
+			continue
+		}
+		idx, ok := componentSlot[e.To]
+		if !ok || nodes[e.From].Kind != "architect" {
+			return nil, false
+		}
+		if archSlots[idx] != "" && archSlots[idx] != e.From {
+			return nil, false
+		}
+		for j, name := range archSlots {
+			if j != idx && name == e.From {
+				return nil, false
+			}
+		}
+		archSlots[idx] = e.From
+	}
+	for _, n := range architects {
+		found := false
+		for _, name := range archSlots {
+			if name == n.Name {
+				found = true
+			}
+		}
+		if found {
+			continue
+		}
+		for i := range archSlots {
+			if archSlots[i] == "" {
+				archSlots[i] = n.Name
+				break
+			}
+		}
+	}
 	out := []string{sTitle.Render("Overview") + sDim.Render("  z focus")}
-	row := func(nodes []protocol.Node) {
+	row := func(names []string) {
 		for i := 0; i < 4; i++ {
 			var cells []string
-			for _, n := range nodes {
-				cells = append(cells, m.mapBox(n.Name, boxWidth, n.Name == m.mp.selected)[i])
+			for _, name := range names {
+				cells = append(cells, padStyled(m.mapBox(name, boxWidth, name == m.mp.selected)[i], boxWidth))
 			}
 			out = append(out, strings.Join(cells, strings.Repeat(" ", gap)))
 		}
 	}
-	row(architects)
-	row(components)
+	row(archSlots)
+	blank := func() []string {
+		cells := make([]string, w)
+		for i := range cells {
+			cells[i] = " "
+		}
+		return cells
+	}
+	gov1, gov2 := blank(), blank()
 	for _, e := range m.mp.edges {
-		name := sanitize(e.From) + " "
+		if e.Kind == "governs" {
+			x := componentSlot[e.To]*(boxWidth+gap) + boxWidth/2
+			gov1[x] = sDim.Render("│")
+			gov2[x] = sDim.Render("▼")
+		}
+	}
+	out = append(out, strings.Join(gov1, ""), strings.Join(gov2, ""))
+	compNames := make([]string, slots)
+	for i, n := range components {
+		compNames[i] = n.Name
+	}
+	row(compNames)
+	// Reject overlapping intervals. The focus view remains available for a graph
+	// whose edges need more lanes than fit in this compact overview.
+	type interval struct{ lo, hi int }
+	var spans []interval
+	dep1, dep2 := blank(), blank()
+	for _, e := range m.mp.edges {
+		if e.Kind == "governs" {
+			continue
+		}
+		a, okA := componentSlot[e.From]
+		b, okB := componentSlot[e.To]
+		if !okA || !okB || a == b {
+			return nil, false
+		}
+		x1, x2 := a*(boxWidth+gap)+boxWidth/2, b*(boxWidth+gap)+boxWidth/2
+		lo, hi := min(x1, x2), max(x1, x2)
+		for _, prev := range spans {
+			if lo < prev.hi && hi > prev.lo {
+				return nil, false
+			}
+		}
+		spans = append(spans, interval{lo, hi})
+		style, fill := sDim, "─"
+		switch e.Rule {
+		case "auto":
+			style, fill = sBusy, "━"
+		case "ask":
+			style, fill = sNeeds, "┄"
+		case "never":
+			style = sBad
+		}
+		if dep1[x1] == " " {
+			dep1[x1] = style.Render("│")
+		}
+		dep1[x2] = style.Render("▲")
+		for x := lo + 1; x < hi; x++ {
+			dep2[x] = style.Render(fill)
+		}
+		if dep2[lo] == " " {
+			dep2[lo] = style.Render("└")
+		} else {
+			dep2[lo] = style.Render("┴")
+		}
+		if dep2[hi] == " " {
+			dep2[hi] = style.Render("┘")
+		} else {
+			dep2[hi] = style.Render("┴")
+		}
+	}
+	out = append(out, strings.Join(dep1, ""), strings.Join(dep2, ""))
+	for _, e := range m.mp.edges {
 		arrow := linkArrow([]mapLink{{edge: e}}, 0, 4)
-		label := sDim.Render(" " + e.Kind + " " + e.Rule + " ")
-		out = append(out, clip(name+arrow+" "+sanitize(e.To)+label, w))
+		out = append(out, clip(sanitize(e.From)+" "+arrow+" "+sanitize(e.To)+sDim.Render(" "+e.Kind+" "+e.Rule), w))
 	}
 	var loose []string
 	for _, n := range components {

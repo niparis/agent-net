@@ -316,6 +316,9 @@ func (m Model) titleLine(w int) string {
 		right = "connecting..."
 	}
 	used := ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	if used > w && !m.haveData && ansi.StringWidth(left)+3+ansi.StringWidth(right) <= w {
+		return clip(left+" │ "+sDim.Render(right), w)
+	}
 	if used > w {
 		right = ""
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)

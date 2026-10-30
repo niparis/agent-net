@@ -101,10 +101,10 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		m.mapFollow("out")
 	case "up", "k":
-		if len(m.mapLinks("above")) > 0 {
+		if m.mp.choice > 0 {
+			m.mp.choice--
+		} else if len(m.mapLinks("above")) > 0 {
 			m.mapFollow("above")
-		} else {
-			m.mp.choice = max(m.mp.choice-1, 0)
 		}
 	case "down", "j":
 		if len(m.mapLinks("below")) > 0 {
@@ -266,6 +266,12 @@ func (m *Model) mapEnsureSelection() {
 	}
 	for _, name := range list {
 		if name == m.mp.selected {
+			return
+		}
+	}
+	for _, name := range list {
+		if n, ok := m.mapNode(name); ok && n.Kind != "architect" {
+			m.mp.selected = name
 			return
 		}
 	}
