@@ -56,6 +56,7 @@ type Model struct {
 	now func() time.Time
 
 	width, height int
+	tab           int
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap     Snapshot
@@ -598,6 +599,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.open.scroll += 10
 		}
 		return m, nil
+	}
+	for i := range tabNames {
+		if k.String() == fmt.Sprint(i+1) {
+			m.tab = i
+			return m, nil
+		}
 	}
 	m.notice = notice{} // the result of the last action goes with the next key
 	if m.focus == focusSessions {

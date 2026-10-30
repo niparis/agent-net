@@ -241,8 +241,19 @@ func (m Model) quotaLine(w int) string {
 	return clip(sDim.Render("  quotas: "+s), w)
 }
 
+var tabNames = []string{"Sessions", "Quotas"}
+
 func (m Model) titleLine(w int) string {
-	left := sTitle.Render("agent-net") + " " + sDim.Render("tui")
+	var tabs []string
+	for i, name := range tabNames {
+		label := fmt.Sprintf("%d %s", i+1, name)
+		if i == m.tab {
+			tabs = append(tabs, sBold.Render(label))
+		} else {
+			tabs = append(tabs, sDim.Render(label))
+		}
+	}
+	left := strings.Join(tabs, "   ")
 	online, total, workers, busy := 0, 0, 0, 0
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
@@ -299,7 +310,7 @@ func (m Model) titleLine(w int) string {
 	if !m.haveData && m.problem == ProblemNone {
 		right = "connecting..."
 	}
-	used := ansi.StringWidth("agent-net tui") + 2 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	used := ansi.StringWidth(left) + 2 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	gap := max(w-used, 2)
 	return clip(left+"  "+mid+strings.Repeat(" ", gap)+sDim.Render(right), w)
 }
