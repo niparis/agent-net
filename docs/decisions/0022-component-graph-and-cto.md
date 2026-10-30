@@ -1,7 +1,7 @@
 # 0022 - A graph of components with charters, and a CTO in the TUI
 
 **Date:** 2026-10-30
-**Status:** Draft. Not built. For the owner to correct before work starts.
+**Status:** Accepted, being built (steps 1 to 5). Step 6, the phone, belongs to decision 0006 and is not part of this decision's build.
 **Context:** Today every session is an island with a few separate switches: peer trust (0013), the delegation policy (0014), the worker sandbox level (0020), and merge authority (discussed, not built). Nothing says what a repository is for, what it should refuse, how careful its agents must be, or which other repositories and agents have a say over it. The owner wants agents to react to requests from other agents the way a team would: a generic API should be able to refuse a client-specific feature and give the reason; some services matter more than others; a session that owns no code can manage the architecture of a few repositories. The owner wants to set all of this by talking, not by clicking, and to see it.
 
 Base: [0008](0008-operator-interface-and-worker-build.md) (the owner gate and operator interface), [0013](0013-peer-trust-and-hints.md), [0014](0014-delegation-policy.md), [0016](0016-needs-you.md), [0019](0019-opencode-worker-logins.md), [0020](0020-worker-sandbox.md).
