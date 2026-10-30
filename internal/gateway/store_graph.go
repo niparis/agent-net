@@ -1,8 +1,9 @@
 package gateway
 
 import (
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // Outcomes lists recorded decisions for an edge, newest first. Empty node

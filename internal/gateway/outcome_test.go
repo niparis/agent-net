@@ -1,8 +1,9 @@
 package gateway
 
 import (
-	"github.com/niparis/agent-net/internal/protocol"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestRecordOutcome(t *testing.T) {
