@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -50,6 +51,10 @@ func TestCTORuntime(t *testing.T) {
 	}
 	if !strings.HasPrefix(rec.Env["XDG_DATA_HOME"], n.cfg.StateDir) || !strings.HasPrefix(rec.Env["XDG_STATE_HOME"], n.cfg.StateDir) {
 		t.Fatalf("not private: %+v", rec.Env)
+	}
+	var current protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &current); err != nil || current.Model != "fake/m1" {
+		t.Fatalf("resolved CTO model: %+v %v", current, err)
 	}
 	var config struct {
 		MCP struct {
@@ -306,6 +311,38 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	if !foundTask {
 		t.Fatalf("worker task did not carry CTO attribution: %+v", messages)
 	}
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil {
+		t.Fatal(err)
+	}
+	var lines []string
+	for _, a := range events.Actions {
+		lines = append(lines, a.Text)
+	}
+	joined := strings.Join(lines, "|")
+	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter_set", "sent to", "started worker"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
+		}
+	}
+	if _, err := w.d.runCTOTool(context.Background(), "charter_set", json.RawMessage(`{"node":"missing","attr":"purpose","value":"x"}`)); err == nil {
+		t.Fatal("bad graph write succeeded")
+	}
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || !strings.Contains(events.Actions[len(events.Actions)-1].Text, "failed charter_set") {
+		t.Fatalf("failed action missing: %+v %v", events.Actions, err)
+	}
+	var history []protocol.CTOGraphChange
+	if err := json.Unmarshal(w.cli.mustCall("cto_graph_history", nil), &history); err != nil || len(history) == 0 {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	w.cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: history[len(history)-1].ID, CTOChat: true})
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || len(events.Actions) == 0 || !strings.Contains(events.Actions[len(events.Actions)-1].Text, "undid graph change") {
+		t.Fatalf("undo action: %+v %v", events, err)
+	}
+	w.cli.mustCall("cto_new", nil)
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || events.GraphAfter <= 0 || len(events.Actions) != 0 {
+		t.Fatalf("new conversation baseline: %+v %v", events, err)
+	}
 
 }
 
@@ -322,5 +359,36 @@ func TestCTOQueuedStartPersistsAttribution(t *testing.T) {
 	rows, err := s.queue()
 	if err != nil || len(rows) != 1 || !rows[0].FromCTO {
 		t.Fatalf("queue: %+v %v", rows, err)
+	}
+}
+
+func TestCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	if _, err := n.d.call(context.Background(), "node.add", map[string]any{"name": "architect", "by": "cto"}); err != nil {
+		t.Fatal(err)
+	}
+	var history []protocol.CTOGraphChange
+	if err := json.Unmarshal(cli.mustCall("cto_graph_history", nil), &history); err != nil || len(history) != 1 {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	cli.mustCall("cto_new", nil)
+	cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: history[0].ID, CTOChat: true})
+	var out protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 1 || !strings.Contains(out.Actions[0].Text, "undid graph change") {
+		t.Fatalf("undo: %+v %v", out, err)
+	}
+	if _, err := os.Stat(filepath.Join(n.cfg.StateDir, "cto")); !os.IsNotExist(err) {
+		t.Fatalf("undo started server: %v", err)
+	}
+	cli.mustCall("cto_send", map[string]string{"text": "hello"})
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 1 {
+		t.Fatalf("undo lost after send: %+v %v", out, err)
+	}
+	cli.mustCall("cto_new", nil)
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 0 {
+		t.Fatalf("new conversation retained old undo: %+v %v", out, err)
 	}
 }

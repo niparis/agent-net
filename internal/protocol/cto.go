@@ -17,9 +17,10 @@ type CTOSettingsRequest struct {
 const OpCTOSettings = "cto_settings"
 
 const (
-	OpCTOSend   = "cto_send"
-	OpCTONew    = "cto_new"
-	OpCTOEvents = "cto_events"
+	OpCTOSend         = "cto_send"
+	OpCTONew          = "cto_new"
+	OpCTOEvents       = "cto_events"
+	OpCTOGraphHistory = "cto_graph_history"
 )
 
 type CTOSendRequest struct {
@@ -28,7 +29,27 @@ type CTOSendRequest struct {
 type CTOEventsRequest struct {
 	Index int `json:"index"`
 }
+type CTOAction struct {
+	ID   int64  `json:"id"`
+	Text string `json:"text"`
+	At   int64  `json:"at"`
+}
+
 type CTOEvents struct {
-	Messages []json.RawMessage `json:"messages"`
-	Next     int               `json:"next"`
+	Model      string            `json:"model,omitempty"`
+	GraphAfter int64             `json:"graph_after"`
+	Actions    []CTOAction       `json:"actions"`
+	Messages   []json.RawMessage `json:"messages"`
+	Next       int               `json:"next"`
+}
+
+// CTOGraphChange is an attributed graph history entry, oldest first.
+type CTOGraphChange struct {
+	ID       int64  `json:"id"`
+	Kind     string `json:"kind"`
+	Node     string `json:"node"`
+	Attr     string `json:"attr"`
+	OldValue string `json:"old_value"`
+	NewValue string `json:"new_value"`
+	At       int64  `json:"at"`
 }

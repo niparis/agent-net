@@ -114,7 +114,8 @@ type GraphNodeRequest struct {
 
 // GraphUndoRequest identifies a history row; zero means the latest row.
 type GraphUndoRequest struct {
-	ID int64 `json:"id,omitempty"`
+	CTOChat bool  `json:"cto_chat,omitempty"`
+	ID      int64 `json:"id,omitempty"`
 }
 
 // GraphUndoFrame avoids the frame's own id field.

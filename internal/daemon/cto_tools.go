@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -29,7 +31,7 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	return lc.d.runCTOTool(ctx, q.Name, q.Arguments)
 }
 
-func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	var args map[string]any
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &args) != nil {
 		return nil, errors.New("bad CTO tool arguments")
@@ -102,6 +104,60 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 	return nil, errors.New("unknown CTO tool")
 }
 
+// Every tool call is recorded, including reads, no-ops and failures. Graph
+// history supplies the separate before-and-after diff for a successful change.
+func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	result, err := d.runCTOToolRaw(ctx, name, raw)
+	var a struct {
+		To      string `json:"to"`
+		Body    string `json:"body"`
+		Project string `json:"project"`
+		Task    string `json:"task"`
+		Node    string `json:"node"`
+		Attr    string `json:"attr"`
+	}
+	_ = json.Unmarshal(raw, &a)
+	text := name
+	if err != nil {
+		text = fmt.Sprintf("failed %s: %v", name, err)
+	} else {
+		switch name {
+		case "graph_get":
+			text = "read graph"
+		case "charter_history":
+			text = "read charter history: " + a.Node
+		case "edge_history":
+			text = "read edge history: " + a.Node
+		case "agents":
+			text = "read agents"
+		case "workers":
+			text = "read workers"
+		case "needs_you":
+			text = "read needs you"
+		case "feed":
+			text = "read feed"
+		case "charter_set":
+			text = fmt.Sprintf("charter_set %s.%s", a.Node, a.Attr)
+		case "send":
+			text = fmt.Sprintf("sent to %s: %s", a.To, a.Body)
+		case "worker_start":
+			verb := "started"
+			if r, ok := result.(*protocol.WorkerStartResult); ok && r.Status == "queued" {
+				verb = "queued"
+			}
+			text = fmt.Sprintf("%s worker %s: %s", verb, a.Project, a.Task)
+		}
+	}
+	logErr := d.recordCTOAction(text)
+	if err != nil {
+		return result, err
+	}
+	if logErr != nil {
+		return result, logErr
+	}
+	return result, nil
+}
+
 // Send the capability check and the mutation on the same gateway link, so a
 // reconnect to an older gateway cannot strip the attribution in between.
 func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) (json.RawMessage, error) {
@@ -122,4 +178,11 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
 	}
 	return l.call(ctx, typ, params)
+}
+
+func (d *Daemon) recordCTOAction(text string) error {
+	// Empty session IDs are the not-yet-started conversation. The selection and
+	// insert are one statement so a concurrent first send cannot lose an action.
+	_, err := d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at) VALUES(COALESCE((SELECT session_id FROM cto WHERE id=1),''),?,?)`, text, time.Now().UnixNano())
+	return err
 }

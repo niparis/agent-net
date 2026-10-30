@@ -220,11 +220,22 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
 		return "", errors.New("OpenCode did not return a session ID")
 	}
-	_, err = d.st.db.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID)
-	if err == nil {
-		d.cto.model, d.cto.session = model, created.Data.ID
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return "", err
 	}
-	return created.Data.ID, err
+	defer tx.Rollback()
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id=''`, created.Data.ID); err != nil {
+		return "", err
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+	d.cto.model, d.cto.session = model, created.Data.ID
+	return created.Data.ID, nil
 }
 func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
@@ -265,24 +276,72 @@ func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
 	return map[string]string{"session_id": id}, err
 }
-func (d *Daemon) ctoNew(_ context.Context) (any, error) {
+func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, err := d.st.db.Exec(`DELETE FROM cto WHERE id=1`)
-	if err == nil {
-		c.session, c.model = "", ""
+	data, err := d.call(ctx, "cto.graph_latest", nil)
+	if err != nil {
+		return nil, err
 	}
-	return struct{}{}, err
+	var latest struct {
+		ID int64 `json:"id"`
+	}
+	if err = json.Unmarshal(data, &latest); err != nil {
+		return nil, err
+	}
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id=''`); err != nil {
+		return nil, err
+	}
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	c.session, c.model = "", ""
+	return struct{}{}, nil
 }
 func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	out := protocol.CTOEvents{Messages: []json.RawMessage{}}
-	id, err := d.ctoSession()
-	if err != nil || id == "" {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	if model, err := d.ctoModel(ctx); err == nil {
+		out.Model = model
+	}
+	if err := d.st.db.QueryRow(`SELECT graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return out, err
+	}
+	id, err := d.ctoSession()
+	if err != nil {
+		return out, err
+	}
+	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? ORDER BY id`, id)
+	if err != nil {
+		return out, err
+	}
+	out.Actions = []protocol.CTOAction{}
+	for rows.Next() {
+		var a protocol.CTOAction
+		if err = rows.Scan(&a.ID, &a.Text, &a.At); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Actions = append(out.Actions, a)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return out, err
+	}
+	if id == "" {
+		return out, nil
 	}
 	if err = d.startCTOLocked(ctx); err != nil {
 		return out, err
