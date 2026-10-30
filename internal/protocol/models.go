@@ -21,6 +21,30 @@ const maxModelCandidates = 5
 // datedSuffix matches a snapshot suffix such as ":0813" or "-20250929".
 var datedSuffix = regexp.MustCompile(`(:\d{3,}|-\d{8})$`)
 
+// modelLevels are the words after a colon that set a harness reasoning or
+// thinking level: Codex's efforts and Pi's thinking levels. They are not part
+// of the model id, so a loose name is resolved without its suffix and the
+// suffix is put back.
+var modelLevels = map[string]bool{
+	"none": true, "off": true, "minimal": true, "low": true, "medium": true,
+	"high": true, "xhigh": true, "max": true, "ultra": true, "persistent": true,
+}
+
+// SplitModelLevel splits a trailing ":<level>" from a model name. A colon that
+// is followed by anything else (a dated suffix such as ":1017", or a word such
+// as ":free") stays in the name.
+func SplitModelLevel(model string) (name, level string) {
+	i := strings.LastIndexByte(model, ':')
+	if i <= 0 || i == len(model)-1 {
+		return model, ""
+	}
+	l := strings.ToLower(model[i+1:])
+	if !modelLevels[l] {
+		return model, ""
+	}
+	return model[:i], model[i+1:]
+}
+
 // modelTokens splits a loose model name into lower case words. A dot between
 // digits stays in the word ("4.1"), and a "v" before a digit is dropped, so
 // that "v4.1" and "4.1" are the same word.
@@ -67,6 +91,13 @@ func hasToken(id, tok string) bool {
 		from = i + 1
 	}
 	return false
+}
+
+func modelWithLevel(model, level string) string {
+	if level == "" {
+		return model
+	}
+	return model + ":" + level
 }
 
 func modelPart(id string) string {
@@ -122,6 +153,17 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 			return ModelResolution{Model: m}, nil
 		}
 	}
+	// A thinking or reasoning level is not part of the id: resolve the name
+	// before it, and put the suffix back on the result.
+	base, level := SplitModelLevel(query)
+	if level != "" {
+		for _, m := range models {
+			if m == base {
+				return ModelResolution{Model: modelWithLevel(m, level)}, nil
+			}
+		}
+	}
+	query = base
 	toks := modelTokens(query)
 	if len(toks) == 0 {
 		return ModelResolution{}, fmt.Errorf("model %q has no letters or digits", query)
@@ -200,7 +242,7 @@ func ResolveModelFailed(query string, models []string, usage map[string]int, pro
 		}
 	}
 	if len(cands) == 1 || cmp(rank(cands[0]), rank(cands[1])) < 0 {
-		return ModelResolution{Model: cands[0], Demoted: demoted}, nil
+		return ModelResolution{Model: modelWithLevel(cands[0], level), Demoted: demoted}, nil
 	}
 	var tied []string
 	for _, c := range cands {

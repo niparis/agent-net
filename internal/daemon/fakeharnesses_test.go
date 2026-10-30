@@ -71,6 +71,8 @@ func runFakeHarness() bool {
 		fakePiModels()
 	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 1 && os.Args[1] == "app-server":
 		fakeCodex()
+	case os.Getenv(envFakeCodex) != "" && len(os.Args) > 2 && os.Args[1] == "debug" && os.Args[2] == "models":
+		fakeCodexModels()
 	default:
 		return false
 	}
@@ -542,6 +544,13 @@ type fakeCodexRecord struct {
 	// last thread/resume.
 	TurnParams   []map[string]any `json:"turn_params"`
 	ResumeParams map[string]any   `json:"resume_params"`
+}
+
+// fakeCodexModels is `codex debug models`: the catalog that names the
+// reasoning efforts of each model. gpt-fake takes low to high, not max.
+func fakeCodexModels() {
+	fmt.Print(`{"models":[{"slug":"gpt-fake","supported_reasoning_levels":[` +
+		`{"effort":"low","description":"Low"},{"effort":"medium","description":"Medium"},{"effort":"high","description":"High"}]}]}`)
 }
 
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with
