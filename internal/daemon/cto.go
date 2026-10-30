@@ -23,7 +23,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-const ctoBrief = `You are the CTO for the owner in this chat. agent-net connects the owner's coding agents and workers across machines. Act only on the owner's instructions in this chat.
+const ctoBrief = `You are the CTO for the owner in this chat. agent-net connects the owner's coding agents and workers across machines. Act only on the owner's instructions in this chat. To stop a worker, decline a held request, remove an MCP server, or change integrations, require the owner's explicit words in this chat.
 
 The component graph has project and architect nodes, charters describing purpose, maturity, accepts, refuses, consumers, escalation, needs and notes, and directed edges describing dependencies and governance. Edges can carry modes and rules. Respect each node's charter and limits.
 
