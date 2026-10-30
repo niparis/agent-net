@@ -36,7 +36,11 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 
 ## Graph operator methods (foundation)
 
-The gateway stores explicit nodes, charter attributes, edges and their history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. They are not yet exposed as CLI commands or agent tools.
+The gateway stores explicit nodes, charter attributes, edges and their history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
+
+The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <text...>` (omit text to clear), `charter history <node>`, `graph`, `graph undo [history-id]`, `node add-architect <name>`, `node remove <name>`, `edge set <from> <kind> <to> [mode] [rule]` and `edge remove <from> <kind> <to>`. Charter attributes are `purpose`, `maturity`, `accepts`, `refuses`, `feature_requests`, `consumers`, `escalate`, `needs` and `notes`.
+
+Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`.
 
 - `graph_get {}` returns `nodes` and `edges`.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
