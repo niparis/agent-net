@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -115,5 +116,29 @@ func TestLetStandNotifiesAndOwnerRequestsStayOutOfInbox(t *testing.T) {
 	entries, err := s.OutcomeInbox()
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("inbox: %+v %v", entries, err)
+	}
+}
+
+func TestPendingOutcomeSurvivesRetention(t *testing.T) {
+	s, clock := newTestStore(t)
+	a, b := twoSessions(t, s)
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "reason"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE sessions SET online=0`); err != nil {
+		t.Fatal(err)
+	}
+	clock.t = clock.t.Add(48 * time.Hour)
+	if _, err = s.Prune(Retention{Messages: 24 * time.Hour, Sessions: 24 * time.Hour}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.OutcomeInbox()
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("lost pending entry: %+v %v", entries, err)
 	}
 }

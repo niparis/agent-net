@@ -568,7 +568,8 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 	}
 	defer tx.Rollback()
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker != ''
-		AND (worker_started = 0 OR worker_started < ?)`, nodeID, cut)
+		AND (worker_started = 0 OR worker_started < ?)
+        AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, cut)
 	if err != nil {
 		return 0, err
 	}
@@ -625,7 +626,8 @@ func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
 	}
 	defer tx.Rollback()
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker = ''
-		AND substr(cwd, 1, ?) = ?`, nodeID, len(prefix), prefix)
+		AND substr(cwd, 1, ?) = ?
+        AND NOT EXISTS (SELECT 1 FROM graph_outcomes o JOIN messages req ON req.id=o.message_id JOIN sessions src ON src.id=req.sender WHERE o.resolution='' AND o.outcome IN ('reject','escalate') AND src.harness<>'owner' AND (sessions.id=req.sender OR sessions.id=req.recipient))`, nodeID, len(prefix), prefix)
 	if err != nil {
 		return 0, err
 	}
