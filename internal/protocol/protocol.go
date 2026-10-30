@@ -49,6 +49,7 @@ const (
 )
 
 type Message struct {
+	Overruled      bool      `json:"overruled,omitempty"`
 	ID             string    `json:"message_id"`
 	ConversationID string    `json:"conversation_id"`
 	ParentID       string    `json:"parent_message_id,omitempty"`

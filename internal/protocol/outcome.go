@@ -69,3 +69,12 @@ type OutcomeInboxEntry struct {
 	Recipient string `json:"recipient"`
 	Request   string `json:"request"`
 }
+
+// OutcomeResolution is an owner decision on an inbox entry.
+type OutcomeResolution struct {
+	ReplyID string `json:"reply_id"`
+	Action  string `json:"action"`
+	Owner   string `json:"owner,omitempty"`
+}
+
+const OverruleNote = "Nicolas overrules: do it."

@@ -751,6 +751,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.ApplyDelivery(p.MessageID, p.State, p.Detail)
 
+	case "outcome.resolve":
+		p, err := decode[protocol.OutcomeResolution](raw)
+		if err != nil {
+			return nil, reject("bad resolution")
+		}
+		node, err := st.SessionNode(p.Owner)
+		if err != nil || node != nc.id {
+			return nil, reject("owner session not on this node")
+		}
+		m, err := st.ResolveOutcome(p.ReplyID, p.Owner, p.Action)
+		if err != nil {
+			return nil, err
+		}
+		if m.ID != "" {
+			g.dispatch(ctx, m)
+		}
+		return map[string]any{"message": m}, nil
+
 	case "query.outcome_inbox":
 		entries, err := st.OutcomeInbox()
 		if err != nil {

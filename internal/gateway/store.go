@@ -147,6 +147,8 @@ CREATE TABLE graph_outcomes (source TEXT NOT NULL, target TEXT NOT NULL, message
 CREATE INDEX graph_outcomes_edge ON graph_outcomes(source, target, at);
 `, `
 ALTER TABLE graph_outcomes ADD COLUMN resolution TEXT NOT NULL DEFAULT '';
+`, `
+CREATE TABLE outcome_overrules (message_id TEXT PRIMARY KEY, reply_id TEXT NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -825,14 +827,14 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != ''
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id)
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.Overruled)
 	m.CreatedAt = time.Unix(0, created).UTC()
 	m.ExpiresAt = time.Unix(0, expires).UTC()
 	return m, err

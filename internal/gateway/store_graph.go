@@ -47,3 +47,48 @@ func (s *Store) OutcomeInbox() ([]protocol.OutcomeInboxEntry, error) {
 	}
 	return out, rows.Err()
 }
+
+// ResolveOutcome records the owner's decision and atomically creates the
+// marked request when it is overruled.
+func (s *Store) ResolveOutcome(replyID, owner, action string) (protocol.Message, error) {
+	var result protocol.Message
+	if action != "let_stand" && action != "overrule" {
+		return result, reject("invalid resolution")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return result, err
+	}
+	defer tx.Rollback()
+	var harness string
+	if err = tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, owner).Scan(&harness); err != nil || !protocol.IsOwner(harness) {
+		return result, reject("owner required")
+	}
+	var requestID, to, body, resolution, outcome, originalHarness string
+	err = tx.QueryRow(`SELECT m.id,m.recipient,m.body,o.resolution,o.outcome,s.harness FROM graph_outcomes o JOIN messages m ON m.id=o.message_id JOIN sessions s ON s.id=m.sender WHERE o.reply_id=?`, replyID).Scan(&requestID, &to, &body, &resolution, &outcome, &originalHarness)
+	if err != nil || resolution != "" || (outcome != "reject" && outcome != "escalate") || protocol.IsOwner(originalHarness) {
+		return result, reject("unknown or resolved outcome")
+	}
+	if action == "overrule" {
+		now := s.now().UTC()
+		result = protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: owner, To: to, Type: protocol.TypeRequest, Body: body, IdempotencyKey: protocol.NewID("k"), CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored, Overruled: true}
+		_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, result.ID, result.ConversationID, "", owner, to, result.Type, body, 0, result.IdempotencyKey, now.UnixNano(), result.ExpiresAt.UnixNano(), result.State)
+		if err != nil {
+			return result, err
+		}
+		if _, err = tx.Exec(`INSERT INTO outcome_overrules(message_id,reply_id) VALUES(?,?)`, result.ID, replyID); err != nil {
+			return result, err
+		}
+		s.event(tx, "msg.stored", "", owner, result.ID, "")
+	}
+	if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution=? WHERE reply_id=?`, action, replyID); err != nil {
+		return result, err
+	}
+	if err = tx.Commit(); err != nil {
+		return result, err
+	}
+	if result.ID != "" {
+		result, _, err = s.Message(result.ID)
+	}
+	return result, err
+}

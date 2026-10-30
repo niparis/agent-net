@@ -471,6 +471,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		return m.startCompose()
 	case "s":
+		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
+			return m, cmd
+		}
 		return m.startForm()
 	case "e":
 		return m.startEnter()
@@ -510,6 +513,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fixScroll()
 		}
 	case "o":
+		if cmd := m.resolveOutcome("overrule"); cmd != nil {
+			return m, cmd
+		}
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
 		m.fixScroll()

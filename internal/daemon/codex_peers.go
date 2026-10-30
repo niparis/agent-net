@@ -358,6 +358,9 @@ func codexFrame(m protocol.Message) string {
 		// (decision 0013): a trusted session may act on the request.
 		foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
 	}
+	if m.Overruled {
+		foot += "\n[agent-net] " + protocol.OverruleNote
+	}
 	if m.Type == protocol.TypeReply && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		foot += "\n" + protocol.NoAuthorityNote
 	}

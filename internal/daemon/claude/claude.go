@@ -250,6 +250,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		// the body (decision 0012): a trusted recipient may act on the request.
 		details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
 	}
+	if m.Overruled {
+		details += " [agent-net] " + protocol.OverruleNote
+	}
 	if m.Type == "reply" && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		details += " " + protocol.NoAuthorityNote
 	}

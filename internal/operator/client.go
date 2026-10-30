@@ -303,3 +303,9 @@ func (s *Client) Close() {
 		s.cl = nil
 	}
 }
+
+// ResolveOutcome records an owner decision on a rejected or escalated request.
+func (s *Client) ResolveOutcome(ctx context.Context, replyID, action string) error {
+	_, err := s.action(ctx, "outcome_overrule", protocol.OutcomeResolution{ReplyID: replyID, Action: action})
+	return err
+}

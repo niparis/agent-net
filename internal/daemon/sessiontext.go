@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"outcome_inbox": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	"outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 }
@@ -162,6 +162,16 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 	}
 	d := lc.d
 	switch method {
+	case "outcome_overrule":
+		var p protocol.OutcomeResolution
+		if json.Unmarshal(raw, &p) != nil || p.ReplyID == "" {
+			return nil, true, errors.New("outcome_overrule needs reply_id")
+		}
+		p.Owner = d.ownerSessionID()
+		if p.Owner == "" {
+			return nil, true, errors.New("owner session not registered")
+		}
+		res, err = d.call(ctx, "outcome.resolve", p)
 	case "outcome_inbox":
 		res, err = d.call(ctx, "query.outcome_inbox", struct{}{})
 	case "usage":

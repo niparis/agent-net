@@ -47,3 +47,35 @@ func TestOutcomeInbox(t *testing.T) {
 		t.Fatalf("entry: %+v", rows[0])
 	}
 }
+
+func TestOverruleOutcome(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	node, _, err := s.CreateNode("owner-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "do work"})
+	rep, _, _ := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "no", ParentID: req.ID, ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "no"}})
+	if _, err = s.ResolveOutcome(rep.ID, a, "overrule"); err == nil {
+		t.Fatal("agent overruled")
+	}
+	msg, err := s.ResolveOutcome(rep.ID, owner, "overrule")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msg.Body != "do work" || !msg.Overruled || msg.To != b {
+		t.Fatalf("message: %+v", msg)
+	}
+	if _, err = s.ResolveOutcome(rep.ID, owner, "overrule"); err == nil {
+		t.Fatal("resolved twice")
+	}
+	rows, err := s.OutcomeInbox()
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("inbox: %+v %v", rows, err)
+	}
+}

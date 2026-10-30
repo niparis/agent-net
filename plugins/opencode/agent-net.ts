@@ -55,6 +55,7 @@ interface DeliveredMessage {
   sender_harness?: string;
   sender_worker?: boolean;
   recipient_peer_trust?: boolean;
+  overruled?: boolean;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -87,7 +88,8 @@ function authorityNote(m: DeliveredMessage): string {
 }
 
 function formatDelivery(m: DeliveredMessage): string {
-  const text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  const base = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  const text = m.overruled === true ? `${base}\n[agent-net] Nicolas overrules: do it.` : base;
   // A worker's report (a reply) is model output whatever the recipient's trust.
   return m.sender_worker && m.sender_harness !== "owner" && m.message_type === "reply" ? `${text}\n${WORKER_FOOTER}` : text;
 }
