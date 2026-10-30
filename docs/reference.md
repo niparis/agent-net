@@ -1,27 +1,39 @@
 # Reference
 
-The owner-only `cto_settings` operator method reads the network-wide CTO model
-preference. Pass `{"model":"provider/model"}` to save a preference, or an empty
-model to clear it. The gateway stores it with the other owner settings. This
-setting alone does not start a CTO runtime.
+The owner-only `cto_settings` operator method reads and saves the network-wide
+CTO harness and model. Pass `{"harness":"claude","model":"opus"}` for
+Claude Code, or `{"harness":"opencode","model":"provider/model"}` for
+OpenCode. The harness defaults to `opencode`; an empty model selects the
+default. Saving one field keeps the other. The gateway stores these preferences
+with the other owner settings. Saving them does not start a CTO runtime.
 
-The owner-only `cto_send` method takes `{"text":"..."}`. It starts a private
-OpenCode server on first use and sends to its conversation. `cto_new` starts a
-fresh conversation. `cto_events` takes `{"index":0}` and returns messages in
-chronological order and a `next` index for the next poll. The conversation ID
-and OpenCode data stay in the daemon state directory across restarts. The
-server runs until the daemon stops and restarts on the next request if it exits.
+The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
+harness on first use. OpenCode runs as a private server. Claude Code runs as a
+background session using the owner's Claude login, including a Claude Max plan
+when that login uses one. It uses the model name or alias in the setting, such
+as `opus` or `sonnet`; the default is `opus`. Claude Code manages its own
+automatic compaction. Its transcript stays in Claude's projects directory.
+
+Each harness keeps its own conversation ID in daemon state across restarts and
+harness switches. `cto_new` starts a fresh conversation for the selected
+harness only. `cto_events` takes `{"index":0}` and returns messages in
+chronological order and a `next` index for the next poll. Changing harness
+stops the previous runtime; the next send resumes the selected conversation.
 The CTO is not a worker or a network session.
 
-The configured model is resolved against the local OpenCode inventory. With no
+For OpenCode, the model is resolved against the local inventory. With no
 preference, the daemon tries GPT 6.1, Opus 5.5, then DeepSeek v4 Pro using the
 model resolver. If none is available, it uses the first model in the inventory.
-A changed setting takes effect on the next send. The CTO server uses private
-XDG data, state, config and cache directories under `cto` in the daemon state
-directory. OpenCode credentials are copied with its auth export and import
-commands when the server starts.
+A changed model takes effect on the next send. OpenCode uses private XDG data,
+state, config and cache directories under `cto` in the daemon state directory.
+Its credentials are copied with its auth export and import commands at start.
 
-The CTO's private OpenCode configuration starts the hidden `agent-net cto-mcp`
+Claude Code uses a private working directory under `cto/claude` in daemon
+state. The daemon passes a private MCP configuration with `--mcp-config` and
+`--strict-mcp-config`; the only MCP server in it is `agent-net cto-mcp`. The
+ordinary agent-net MCP tools are not registered for this session.
+
+The CTO's private harness configuration starts the hidden `agent-net cto-mcp`
 stdio server. Its tools read the graph and its history, agents, workers, Needs
 you and the feed; change charters, nodes and edges or undo a change; send a
 message; and start a worker. They are listed only in the CTO's private config,
@@ -32,6 +44,7 @@ show graph changes as short diffs, offer undo and keep secrets out of charters.
 
 
 In the TUI, `C` opens the CTO pane, beside the map when the map is open.
+Its title shows the selected harness and model.
 Press Enter to write and Enter again to send. Outside the input, `n` starts a
 new conversation, `u` undoes the latest graph change attributed to the CTO,
 and Esc closes the pane. The chat polls once per second and shows recorded CTO
