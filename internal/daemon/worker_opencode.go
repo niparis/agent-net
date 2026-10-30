@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // The OpenCode worker (decision 0007).
@@ -219,6 +220,70 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 		st.Model = r.Data.Model.ProviderID + "/" + r.Data.Model.ID
 	}
 	return st
+}
+
+// failure tells whether the worker's last run failed, and why. OpenCode 2.2
+// marks a failed run with outcome "failed" on the session, and the session
+// messages then hold an "idle" entry with the error ({type, message}). The
+// same error is in the session.execution.failed event. Any failure to read it
+// gives "" (nothing known).
+func (opencodeLauncher) failure(ctx context.Context, _ *Daemon, w *worker) string {
+	if w.apiBase == "" || w.nativeID == "" {
+		return ""
+	}
+	get := func(path string, v any) bool {
+		req, err := http.NewRequestWithContext(ctx, "GET", w.apiBase+path, nil)
+		if err != nil {
+			return false
+		}
+		req.SetBasicAuth("opencode", w.apiPass)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
+	}
+	var sess struct {
+		Data struct {
+			Outcome string `json:"outcome"`
+		} `json:"data"`
+	}
+	if !get("/api/session/"+w.nativeID, &sess) || sess.Data.Outcome != "failed" {
+		return ""
+	}
+	var msgs struct {
+		Data []struct {
+			Type  string `json:"type"`
+			Error *struct {
+				Type    string `json:"type"`
+				Message string `json:"message"`
+			} `json:"error"`
+		} `json:"data"`
+	}
+	text := ""
+	if get("/api/session/"+w.nativeID+"/message", &msgs) { // newest first
+		for _, m := range msgs.Data {
+			if m.Type == "idle" && m.Error != nil {
+				text = m.Error.Message
+				if text == "" {
+					text = m.Error.Type
+				}
+				break
+			}
+		}
+	}
+	return cleanFailure(text)
+}
+
+// cleanFailure makes a provider error fit a notice: one line, secrets masked,
+// cut to 300 characters. An empty error still says that the run failed.
+func cleanFailure(s string) string {
+	s = strings.Join(strings.Fields(redact.Secrets(s)), " ")
+	if s == "" {
+		return "the harness reported a failed run with no error text"
+	}
+	return redact.Cut(s, 300)
 }
 
 // harnessBinary returns the path of an installed harness, from the inventory

@@ -76,6 +76,43 @@ func TestResolveModel(t *testing.T) {
 	}
 }
 
+// A model that failed a worker recently ranks after every other match, whatever
+// its usage, so a retry of the same short request picks the other provider.
+func TestResolveModelDemotesRecentFailures(t *testing.T) {
+	usage := map[string]int{"opencode/deepseek-v4.1-flash": 3}
+	r, err := ResolveModelFailed("deepseek 4.1", testModels, usage, nil, nil)
+	if err != nil || r.Model != "opencode/deepseek-v4.1-flash" || len(r.Demoted) != 0 {
+		t.Fatalf("without a failure: %+v, %v", r, err)
+	}
+	failed := map[string]bool{"opencode/deepseek-v4.1-flash": true}
+	r, err = ResolveModelFailed("deepseek 4.1", testModels, usage, nil, failed)
+	if err != nil || r.Model != "opencode-go/deepseek-v4.1-flash" {
+		t.Fatalf("after a failure: %+v, %v", r, err)
+	}
+	if len(r.Demoted) != 1 || r.Demoted[0] != "opencode/deepseek-v4.1-flash" {
+		t.Errorf("demoted: %v", r.Demoted)
+	}
+	// Other models of the failed provider rank after other providers, before the failed model.
+	r, err = ResolveModelFailed("deepseek 4.1 flash", []string{"opencode/deepseek-v4.1-flash", "opencode/deepseek-v4.1-flash-free"}, usage, nil, failed)
+	if err != nil || r.Model != "opencode/deepseek-v4.1-flash-free" {
+		t.Errorf("same provider: %+v, %v", r, err)
+	}
+	// Nothing else matches: the failed model is still the answer, and it is flagged.
+	r, err = ResolveModelFailed("claude sonnet 5 20260801", testModels, nil, nil, map[string]bool{"anthropic/claude-sonnet-5-20260801": true})
+	if err != nil || r.Model != "anthropic/claude-sonnet-5-20260801" || len(r.Demoted) != 1 {
+		t.Errorf("only candidate: %+v, %v", r, err)
+	}
+	// An exact id is what the caller asked for: it wins and is not flagged.
+	r, err = ResolveModelFailed("opencode/deepseek-v4.1-flash", testModels, usage, nil, failed)
+	if err != nil || r.Model != "opencode/deepseek-v4.1-flash" || len(r.Demoted) != 0 {
+		t.Errorf("exact: %+v, %v", r, err)
+	}
+	// ResolveModel itself is unchanged.
+	if got, _ := ResolveModel("deepseek 4.1", testModels, usage, nil); got != "opencode/deepseek-v4.1-flash" {
+		t.Errorf("ResolveModel: %q", got)
+	}
+}
+
 // An ambiguity error lists at most five candidates.
 func TestResolveModelListsFiveAtMost(t *testing.T) {
 	var models []string

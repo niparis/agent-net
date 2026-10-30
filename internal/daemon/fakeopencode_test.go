@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -37,6 +38,13 @@ import (
 //	FAKE_OC_EXIT=1         exit at once
 //	FAKE_OC_IGNORE_TERM=1  ignore SIGTERM
 //	FAKE_OC_WRONG_SESSION=1  say hello with another session ID than the API gave
+
+// fakeOCFailed is set when the fake gets a message with FAKE:modelfail: the
+// session then reports a failed run, as OpenCode 2.2 does when the provider
+// refuses (outcome "failed", and an idle entry with the error in the messages).
+var fakeOCFailed atomic.Bool
+
+const fakeOCError = "AI.Error: Upstream request failed: Insufficient account funds. api_key=sk-abcdefghijklmnopqrstuvwxyz123456\nadd funds"
 
 type fakeOCRecord struct {
 	Args        []string          `json:"args"`
@@ -123,7 +131,23 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
+		if fakeOCFailed.Load() {
+			fmt.Fprint(w, `{"data":{"outcome":"failed","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
+			return
+		}
 		fmt.Fprint(w, `{"data":{"cost":0.0123,"tokens":{"input":1200,"output":340,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
+	})
+	mux.HandleFunc("GET /api/session/{id}/message", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		items := []map[string]any{{"id": "msg_user", "type": "user", "text": "task"}}
+		if fakeOCFailed.Load() {
+			items = append([]map[string]any{{"id": "msg_idle", "type": "idle", "outcome": "failed",
+				"error": map[string]any{"type": "provider.upstream", "message": fakeOCError}}}, items...)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": items})
 	})
 	mux.HandleFunc("POST /api/session", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
@@ -227,6 +251,9 @@ func fakeOCPluginOnce(client, sessionID, cwd string) {
 		body := msg.Body
 		switch {
 		case strings.Contains(body, "FAKE:ignore"):
+		case strings.Contains(body, "FAKE:modelfail"):
+			// The provider refuses at once: no reply, no hand-back.
+			fakeOCFailed.Store(true)
 		case strings.Contains(body, "FAKE:start"):
 			// A worker asking for another worker. It reports what the daemon said.
 			id := nextID()

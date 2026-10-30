@@ -204,6 +204,50 @@ func TestWorkerTimedOutSendsANotice(t *testing.T) {
 	}
 }
 
+// A worker whose model call fails (a provider or billing error) ends at once
+// with a "failed" notice that carries the cleaned error text. Without this it
+// sat idle until the idle limit and its owner waited for nothing.
+func TestWorkerModelFailureSendsANotice(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Idle = time.Hour // the failure must not wait for the idle limit
+	w := startWorkerNode(t, g, set, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:modelfail do it"})
+	w.workerStopped(t, g, protocol.StopModelFails)
+	n := w.waitNotice(t, 1)[0]
+	for _, want := range []string{"status: failed", "note: the model call failed: AI.Error: Upstream request failed: Insufficient account funds.",
+		"worker: " + res.SessionID} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("notice lacks %q:\n%s", want, n.Body)
+		}
+	}
+	if strings.Contains(n.Body, "sk-abcdefghijklmnopqrstuvwxyz123456") {
+		t.Errorf("the notice leaks a secret:\n%s", n.Body)
+	}
+	if !strings.Contains(n.Body, "[REDACTED] add funds\n") || strings.Count(n.Body, "Insufficient") != 1 {
+		t.Errorf("the error is not one clean line:\n%s", n.Body)
+	}
+	if n.ParentID != res.Task.ID || n.Type != protocol.TypeReply {
+		t.Errorf("notice is not a reply to the task: %+v", n)
+	}
+	if w.d.workerCount() != 0 {
+		t.Error("the worker is still running")
+	}
+	// The gateway now ranks the model last for the same node and harness.
+	failed, err := g.gw.Store().FailedModels(w.d.NodeID(), "opencode")
+	if err != nil || failed["fake/m1"].IsZero() {
+		t.Errorf("the gateway did not record the failed model: %v, %v", failed, err)
+	}
+	// A retry of the same loose request ("m" matches fake/m1 and fake/m2) now
+	// picks the other model, and the note says why.
+	res2 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "m", Task: "FAKE:ignore retry"})
+	if res2.Model != "fake/m2" || !strings.Contains(res2.ModelNote, "m -> fake/m2") || !strings.Contains(res2.ModelNote, "fake/m1 failed a worker at") {
+		t.Errorf("retry: model %q, note %q", res2.Model, res2.ModelNote)
+	}
+}
+
 // A worker whose process dies sends a "failed" notice.
 func TestWorkerCrashSendsANotice(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")

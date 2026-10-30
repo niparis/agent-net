@@ -34,3 +34,40 @@ func TestModelUsageCountsRecentSessionsOfTheNode(t *testing.T) {
 		t.Fatalf("usage: %v", got)
 	}
 }
+
+// A model that failed a worker is remembered per node and harness for 24
+// hours, and a new failure restarts the time.
+func TestModelFailuresAreRemembered24Hours(t *testing.T) {
+	s, clock := newTestStore(t)
+	node, _, _ := s.CreateNode("h", "linux")
+	other, _, _ := s.CreateNode("o", "linux")
+	if err := s.RecordModelFailure(node, "opencode", "p/m"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordModelFailure(node, "opencode", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.FailedModels(node, "opencode")
+	if err != nil || len(got) != 1 || got["p/m"].IsZero() {
+		t.Fatalf("failed models: %v, %v", got, err)
+	}
+	if g, _ := s.FailedModels(other, "opencode"); len(g) != 0 {
+		t.Errorf("another machine sees it: %v", g)
+	}
+	if g, _ := s.FailedModels(node, "pi"); len(g) != 0 {
+		t.Errorf("another harness sees it: %v", g)
+	}
+	clock.t = clock.t.Add(23 * time.Hour)
+	if g, _ := s.FailedModels(node, "opencode"); len(g) != 1 {
+		t.Errorf("after 23 hours: %v", g)
+	}
+	s.RecordModelFailure(node, "opencode", "p/m") // fails again: the time restarts
+	clock.t = clock.t.Add(23 * time.Hour)
+	if g, _ := s.FailedModels(node, "opencode"); len(g) != 1 {
+		t.Errorf("a new failure did not restart the time: %v", g)
+	}
+	clock.t = clock.t.Add(2 * time.Hour)
+	if g, _ := s.FailedModels(node, "opencode"); len(g) != 0 {
+		t.Errorf("after 25 hours: %v", g)
+	}
+}

@@ -139,11 +139,12 @@ func (s *Store) applyDelegation(as []protocol.AgentView) error {
 				}
 				usage[ukey] = u
 			}
-			m, err := protocol.ResolveModel(asked, hi.Models, u, hi.ModelProviders)
+			fa, _ := s.FailedModels(a.NodeID, a.Harness)
+			r, err := protocol.ResolveModelFailed(asked, hi.Models, u, hi.ModelProviders, failedSet(fa))
 			if err != nil {
 				return "", err.Error(), true
 			}
-			return m, "", true
+			return r.Model, "", true
 		}
 		d := a.Delegation
 		var listed1, listed2 bool

@@ -104,6 +104,9 @@ type worker struct {
 	// ID of a Claude worker, the address of a Codex app server. It is kept in
 	// the database, so an adopted worker can be found again.
 	ref string
+	// failure is the cleaned error text of a failed model call, set when the
+	// worker ends with StopModelFails.
+	failure string
 	// info is the worker part of the session, made once so that a comparison
 	// of session infos does not see a change each time.
 	info *protocol.WorkerInfo
@@ -131,6 +134,13 @@ type stopper interface {
 // restart of the daemon.
 type adopter interface {
 	adopt(ctx context.Context, d *Daemon, w *worker) error
+}
+
+// failer is a launcher that can tell that the model call of a worker failed
+// (a provider, billing or auth error), so the worker can end with a notice
+// instead of waiting for the idle limit. It returns the error text, or "".
+type failer interface {
+	failure(ctx context.Context, d *Daemon, w *worker) string
 }
 
 // ender is a launcher that has more to clean up when a worker ends.
@@ -504,6 +514,11 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	// A worker that ends with no hand-back still tells its owner (W11). The
 	// harness statistics need the process, so they are read before the kill.
 	status, note := d.noticeFor(reason)
+	if reason == protocol.StopModelFails {
+		d.wmu.Lock()
+		note = "the model call failed: " + w.failure
+		d.wmu.Unlock()
+	}
 	sendNotice := !done && status != "" && sid != ""
 	var stats workerStats
 	if sendNotice {
@@ -563,7 +578,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 		}
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
-			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason})
+			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model})
 		cancel()
 		var re RemoteError
 		switch {
@@ -638,6 +653,13 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		due := now.Sub(w.ownerChecked) >= set.Tick*4
 		d.wmu.Unlock()
+		if msg := d.modelFailure(ctx, w); msg != "" {
+			d.wmu.Lock()
+			w.failure = msg
+			d.wmu.Unlock()
+			d.endWorker(w, protocol.StopModelFails)
+			continue
+		}
 		switch {
 		case d.gone(w):
 			d.endWorker(w, protocol.StopExited)
@@ -661,6 +683,24 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// modelFailure asks the harness whether the worker's model call failed. A
+// worker that already handed back is left alone: its owner has its answer.
+func (d *Daemon) modelFailure(ctx context.Context, w *worker) string {
+	f, ok := d.launchers[w.harness].(failer)
+	if !ok {
+		return ""
+	}
+	d.wmu.Lock()
+	skip := w.doneStatus != "" || w.stopping || w.sessionID == ""
+	d.wmu.Unlock()
+	if skip {
+		return ""
+	}
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return f.failure(cctx, d, w)
 }
 
 // ownerOffline asks the gateway whether the owner session is offline or gone.
