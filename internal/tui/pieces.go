@@ -18,8 +18,12 @@ func statusLabel(status string) string {
 }
 
 func panel(title string, body []string, width int, color lipgloss.TerminalColor) []string {
+	return panelWithBorder(title, body, width, color, roleFaint)
+}
+
+func panelWithBorder(title string, body []string, width int, color, borderColor lipgloss.TerminalColor) []string {
 	width = max(width, 4)
-	border := lipgloss.NewStyle().Foreground(roleFaint)
+	border := lipgloss.NewStyle().Foreground(borderColor)
 	heading := lipgloss.NewStyle().Foreground(color).Bold(true).Render(clip(title, width-4))
 	top := border.Render("╭─") + heading + border.Render(strings.Repeat("─", max(width-3-ansi.StringWidth(heading), 0))+"╮")
 	out := []string{top}

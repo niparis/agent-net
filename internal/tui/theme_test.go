@@ -2,6 +2,7 @@ package tui
 
 import (
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/muesli/termenv"
 	"strings"
 	"testing"
@@ -104,5 +105,21 @@ func TestMachineLoadColors(t *testing.T) {
 	}
 	if loadStyle(hotMachine).GetForeground() != roleError {
 		t.Fatal("hot load should use error")
+	}
+}
+
+func TestCTOTitleAndFocusedBorder(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := newModel(120, 34)
+	m.cto.harness, m.cto.model = "claude", "sonnet"
+	unfocused := m.ctoView(120, 10)[0]
+	if !strings.Contains(ansi.Strip(unfocused), "CTO · claude · sonnet") {
+		t.Fatalf("title: %q", unfocused)
+	}
+	m.focus = focusCTO
+	if m.ctoView(120, 10)[0] == unfocused {
+		t.Fatal("focused border did not change")
 	}
 }
