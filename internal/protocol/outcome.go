@@ -43,8 +43,15 @@ func CleanOutcome(o ReplyOutcome) (ReplyOutcome, error) {
 	default:
 		return o, fmt.Errorf("invalid outcome")
 	}
-	if o.Outcome == "redirect" && o.RedirectTo == "" {
-		return o, fmt.Errorf("redirect_to required")
+	if o.Outcome == "redirect" {
+		if o.RedirectTo == "" || o.RedirectTo == "." || o.RedirectTo == ".." {
+			return o, fmt.Errorf("invalid redirect_to node")
+		}
+		for _, r := range o.RedirectTo {
+			if !unicode.IsPrint(r) || r == '/' || r == '\\' {
+				return o, fmt.Errorf("invalid redirect_to node")
+			}
+		}
 	}
 	if o.Outcome == "escalate" && o.Recommendation == "" {
 		return o, fmt.Errorf("recommendation required")

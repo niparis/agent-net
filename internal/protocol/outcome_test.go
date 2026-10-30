@@ -14,7 +14,8 @@ func TestCleanOutcome(t *testing.T) {
 		{ReplyOutcome{Outcome: "reject"}, false}, {ReplyOutcome{Outcome: "reject", Reason: "no"}, true},
 		{ReplyOutcome{Outcome: "redirect", Reason: "elsewhere"}, false}, {ReplyOutcome{Outcome: "redirect", Reason: "elsewhere", RedirectTo: "other"}, true},
 		{ReplyOutcome{Outcome: "escalate", Reason: "unclear"}, false}, {ReplyOutcome{Outcome: "escalate", Reason: "unclear", Recommendation: "ask"}, true},
-		{ReplyOutcome{Outcome: "other"}, false}, {ReplyOutcome{Outcome: "reject", Reason: strings.Repeat("x", MaxOutcomeTextBytes+1)}, false},
+		{ReplyOutcome{Outcome: "other"}, false},
+		{ReplyOutcome{Outcome: "redirect", Reason: "elsewhere", RedirectTo: "../other"}, false}, {ReplyOutcome{Outcome: "reject", Reason: strings.Repeat("x", MaxOutcomeTextBytes+1)}, false},
 	}
 	for _, c := range cases {
 		_, err := CleanOutcome(c.input)
