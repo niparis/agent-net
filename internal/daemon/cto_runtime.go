@@ -27,12 +27,53 @@ func (openCodeCTOHarness) events(ctx context.Context, d *Daemon, index int) (pro
 	return d.openCodeCTOEvents(ctx, index)
 }
 
+func (d *Daemon) selectedCTOHarness(ctx context.Context) (ctoHarness, error) {
+	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	return d.prepareCTOHarness(settings)
+}
+
+func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, error) {
+	var h ctoHarness = openCodeCTOHarness{}
+	if settings.Harness == "claude" {
+		h = claudeCTOHarness{}
+	}
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	if h.name() == "claude" {
+		d.cto.stopLocked()
+	} else {
+		d.stopClaudeCTOLocked()
+	}
+	_, err := d.st.db.Exec(`INSERT INTO cto(id,session_id,active_harness) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET active_harness=excluded.active_harness`, h.name())
+	return h, err
+}
 func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
-	return (openCodeCTOHarness{}).send(ctx, d, text)
+	d.ctoDispatchMu.Lock()
+	defer d.ctoDispatchMu.Unlock()
+	h, err := d.selectedCTOHarness(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return h.send(ctx, d, text)
 }
 func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
-	return (openCodeCTOHarness{}).newConversation(ctx, d)
+	d.ctoDispatchMu.Lock()
+	defer d.ctoDispatchMu.Unlock()
+	h, err := d.selectedCTOHarness(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return h.newConversation(ctx, d)
 }
 func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
-	return (openCodeCTOHarness{}).events(ctx, d, index)
+	d.ctoDispatchMu.Lock()
+	defer d.ctoDispatchMu.Unlock()
+	h, err := d.selectedCTOHarness(ctx)
+	if err != nil {
+		return protocol.CTOEvents{}, err
+	}
+	return h.events(ctx, d, index)
 }

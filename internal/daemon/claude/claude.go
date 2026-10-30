@@ -282,6 +282,40 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		Message: frameMessage{Role: "user", Content: content}})
 }
 
+// BuildCTOFrame carries the owner's prompt without a peer reply address.
+// The CTO's response belongs in its transcript, not in a network message.
+func BuildCTOFrame(id, text string) ([]byte, error) {
+	content := fmt.Sprintf("<cross-session-message from-name=\"owner\" from-mode=\"prompting\">\n%s\n\n[agent-net] This is the owner speaking. Please answer in this conversation.\n</cross-session-message>", neutralize(text))
+	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: id, Priority: "next", Message: frameMessage{Role: "user", Content: content}})
+}
+
+// DeliverCTO delivers only to a session the daemon selected as its CTO.
+func (a *Adapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) daemon.Result {
+	a.mu.Lock()
+	f, ok := a.byNative[target.NativeID]
+	a.mu.Unlock()
+	if !ok || f.sock == "" {
+		return daemon.Result{Detail: "Claude session is gone or has no inbox socket"}
+	}
+	if err := checkSocket(f.sock); err != nil {
+		return daemon.Result{Detail: "inbox socket refused: " + err.Error()}
+	}
+	line, err := BuildCTOFrame(id, text)
+	if err != nil {
+		return daemon.Result{Detail: err.Error()}
+	}
+	conn, err := (&net.Dialer{Timeout: 2 * time.Second}).DialContext(ctx, "unix", f.sock)
+	if err != nil {
+		return daemon.Result{Detail: "connect to inbox failed: " + err.Error()}
+	}
+	defer conn.Close()
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	if _, err := conn.Write(append(line, '\n')); err != nil {
+		return daemon.Result{Delivered: true, Detail: "unconfirmed"}
+	}
+	return daemon.Result{Delivered: true}
+}
+
 // checkSocket accepts only a real socket owned by us, not a symlink.
 func checkSocket(path string) error {
 	fi, err := os.Lstat(path)

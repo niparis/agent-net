@@ -347,7 +347,18 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
 			return nil, true, errors.New("bad cto_settings params")
 		}
-		res, err = d.ctoSettings(ctx, q)
+		if q.Model != nil || q.Harness != nil {
+			d.ctoDispatchMu.Lock()
+			var settings protocol.CTOSettings
+			settings, err = d.ctoSettings(ctx, q)
+			if err == nil {
+				_, err = d.prepareCTOHarness(settings)
+			}
+			d.ctoDispatchMu.Unlock()
+			res = settings
+		} else {
+			res, err = d.ctoSettings(ctx, q)
+		}
 	case protocol.OpIntegrationsGet:
 		// The answers decide which integrations run with the owner's consent:
 		// only the owner at the keyboard reads or changes them (decision 0021).

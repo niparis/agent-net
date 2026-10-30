@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -37,10 +38,22 @@ func (claudeCTOHarness) name() string { return "claude" }
 
 func (d *Daemon) stopClaudeCTOLocked() {
 	c := &d.claudeCTO
-	c.root.Store(nil)
+	root := c.root.Load()
 	if c.ref != "" {
 		(claudeLauncher{}).stopID(d, c.ref)
 	}
+	if root != nil {
+		token, alive := procToken(root.pid)
+		if alive && token == root.token {
+			pgid, err := syscall.Getpgid(root.pid)
+			if err == nil && pgid == root.pid {
+				_ = syscall.Kill(-root.pid, syscall.SIGKILL)
+			} else {
+				_ = syscall.Kill(root.pid, syscall.SIGKILL)
+			}
+		}
+	}
+	c.root.Store(nil)
 	c.ref, c.session, c.model, c.token = "", "", "", ""
 }
 
@@ -121,7 +134,7 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	if model == "" {
 		model = "opus"
 	}
-	id, err := d.ctoSession()
+	id, err := d.claudeCTOSession()
 	if err != nil {
 		return nil, err
 	}
@@ -129,21 +142,23 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 		return nil, err
 	}
 	id = d.claudeCTO.session
-	if _, err = d.st.db.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, id); err != nil {
+	if _, err = d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); err != nil {
 		return nil, err
 	}
-	if _, err = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id=''`, id); err != nil {
+	if _, err = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='claude'`, id); err != nil {
 		return nil, err
 	}
-	a := d.adapters["claude"]
-	if a == nil {
+	a, ok := d.adapters["claude"].(interface {
+		DeliverCTO(context.Context, protocol.SessionInfo, string, string) Result
+	})
+	if !ok {
 		return nil, errors.New("Claude adapter is not available")
 	}
-	msg := protocol.Message{ID: protocol.NewToken(), Body: text, FromHarness: protocol.OwnerHarness, FromName: "owner"}
+	msgID := protocol.NewToken()
 	deadline, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	for {
-		res := a.Deliver(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msg)
+		res := a.DeliverCTO(deadline, protocol.SessionInfo{Harness: "claude", NativeID: id}, msgID, text)
 		if res.Delivered {
 			return map[string]string{"session_id": id}, nil
 		}
@@ -155,11 +170,44 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	}
 }
 
+func (d *Daemon) claudeCTOSession() (string, error) {
+	var id string
+	err := d.st.db.QueryRow(`SELECT claude_session_id FROM cto WHERE id=1`).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return id, err
+}
+
 func (claudeCTOHarness) newConversation(ctx context.Context, d *Daemon) (any, error) {
 	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	data, err := d.call(ctx, "cto.graph_latest", nil)
+	if err != nil {
+		return nil, err
+	}
+	var latest struct {
+		ID int64 `json:"id"`
+	}
+	if err = json.Unmarshal(data, &latest); err != nil {
+		return nil, err
+	}
 	d.stopClaudeCTOLocked()
-	d.cto.mu.Unlock()
-	return d.openCodeCTONew(ctx)
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='claude'`); err != nil {
+		return nil, err
+	}
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,claude_session_id,claude_graph_after) VALUES(1,'','',?) ON CONFLICT(id) DO UPDATE SET claude_session_id='',claude_graph_after=excluded.claude_graph_after`, latest.ID); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	return struct{}{}, nil
 }
 
 func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (protocol.CTOEvents, error) {
@@ -174,14 +222,14 @@ func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (proto
 	if out.Model == "" {
 		out.Model = "opus"
 	}
-	id, err := d.ctoSession()
+	id, err := d.claudeCTOSession()
 	if err != nil {
 		return out, err
 	}
-	if err = d.st.db.QueryRow(`SELECT graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
+	if err = d.st.db.QueryRow(`SELECT claude_graph_after FROM cto WHERE id=1`).Scan(&out.GraphAfter); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return out, err
 	}
-	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? ORDER BY id`, id)
+	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? AND harness='claude' ORDER BY id`, id)
 	if err != nil {
 		return out, err
 	}
@@ -230,10 +278,11 @@ func claudeCTOTranscript(projects, id string) ([]json.RawMessage, error) {
 	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
 	for sc.Scan() {
 		var line struct {
-			Type    string `json:"type"`
-			Side    bool   `json:"isSidechain"`
-			Meta    bool   `json:"isMeta"`
-			Message struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Side      bool   `json:"isSidechain"`
+			Meta      bool   `json:"isMeta"`
+			Message   struct {
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 		}
@@ -258,7 +307,18 @@ func claudeCTOTranscript(projects, id string) ([]json.RawMessage, error) {
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		b, _ := json.Marshal(map[string]string{"type": line.Type, "text": text})
+		if line.Type == "user" && strings.HasPrefix(text, "<cross-session-message ") {
+			if _, body, ok := strings.Cut(text, ">\n"); ok {
+				if owner, _, ok := strings.Cut(body, "\n\n[agent-net]"); ok {
+					text = owner
+				}
+			}
+		}
+		var millis int64
+		if at, err := time.Parse(time.RFC3339Nano, line.Timestamp); err == nil {
+			millis = at.UnixMilli()
+		}
+		b, _ := json.Marshal(map[string]any{"type": line.Type, "text": text, "time": map[string]int64{"created": millis}})
 		out = append(out, b)
 	}
 	return out, sc.Err()

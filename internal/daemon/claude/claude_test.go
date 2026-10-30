@@ -322,3 +322,22 @@ func TestBuildFrameReplyFooter(t *testing.T) {
 		t.Fatalf("bad footer without parent: %q", f.Message.Content)
 	}
 }
+
+func TestCTOOwnerFrameRequestsConversationReply(t *testing.T) {
+	raw, err := BuildCTOFrame("msg1", "show status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		From    string `json:"from"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(raw, &f); err != nil {
+		t.Fatal(err)
+	}
+	if f.From != "" || !strings.Contains(f.Message.Content, "show status") || !strings.Contains(f.Message.Content, "answer in this conversation") || strings.Contains(f.Message.Content, "SendMessage") {
+		t.Fatalf("frame: %s", raw)
+	}
+}

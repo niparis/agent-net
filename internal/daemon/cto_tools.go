@@ -183,6 +183,6 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 func (d *Daemon) recordCTOAction(text string) error {
 	// Empty session IDs are the not-yet-started conversation. The selection and
 	// insert are one statement so a concurrent first send cannot lose an action.
-	_, err := d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at) VALUES(COALESCE((SELECT session_id FROM cto WHERE id=1),''),?,?)`, text, time.Now().UnixNano())
+	_, err := d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at,harness) VALUES(COALESCE((SELECT CASE active_harness WHEN 'claude' THEN claude_session_id ELSE session_id END FROM cto WHERE id=1),''),?,?,COALESCE((SELECT active_harness FROM cto WHERE id=1),'opencode'))`, text, time.Now().UnixNano())
 	return err
 }

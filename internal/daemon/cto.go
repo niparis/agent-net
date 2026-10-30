@@ -228,7 +228,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if _, err = tx.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID); err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id=''`, created.Data.ID); err != nil {
+	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='opencode'`, created.Data.ID); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {
@@ -295,7 +295,7 @@ func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id=''`); err != nil {
+	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='opencode'`); err != nil {
 		return nil, err
 	}
 	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID); err != nil {
@@ -322,7 +322,7 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	if err != nil {
 		return out, err
 	}
-	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? ORDER BY id`, id)
+	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? AND harness='opencode' ORDER BY id`, id)
 	if err != nil {
 		return out, err
 	}

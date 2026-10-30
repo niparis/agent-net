@@ -169,12 +169,13 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	cto       ctoRuntime
-	claudeCTO claudeCTOState
-	cfg       Config
-	log       *log.Logger
-	st        *state
-	client    *http.Client
+	ctoDispatchMu sync.Mutex
+	cto           ctoRuntime
+	claudeCTO     claudeCTOState
+	cfg           Config
+	log           *log.Logger
+	st            *state
+	client        *http.Client
 
 	// shownHost is the name the gateway lists for this machine (the owner's
 	// display name, decision 0015). Empty until the gateway said.
