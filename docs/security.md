@@ -1,7 +1,9 @@
 # Security
 
-The network-wide CTO model preference is an owner setting. The daemon's
-`cto_settings` method uses the owner gate and refuses agent sessions. Like the
+The network-wide CTO model preference and auto-compaction rules are owner
+settings. The daemon's `cto_settings` method uses the owner gate and refuses
+agent sessions. Values are bounded: a threshold from 10 to 100 percent, a floor
+up to 10 million tokens, and cache windows up to one day. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
 that token is an owner credential and must not be shared with agents. The
 `cto_send`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the

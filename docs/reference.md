@@ -1,9 +1,33 @@
 # Reference
 
 The owner-only `cto_settings` operator method reads the network-wide CTO model
-preference. Pass `{"model":"provider/model"}` to save a preference, or an empty
-model to clear it. The gateway stores it with the other owner settings. This
+preference and the conversation auto-compaction rules. Pass
+`{"model":"provider/model"}` to save a preference, or an empty model to clear
+it. Pass a `compaction` object to change the rules; the two fields update
+independently. The gateway stores all of it with the other owner settings. This
 setting alone does not start a CTO runtime.
+
+```json
+{"compaction":{"threshold_percent":70,"floor_tokens":40000,
+ "cache_window_seconds":{"anthropic":300,"openai":300}}}
+```
+
+`threshold_percent` defaults to 70. After a CTO reply, when the conversation's
+context is at or above that share of the model's context window, the daemon
+compacts at once. `floor_tokens` defaults to 40000 and applies only to the idle
+rule. `cache_window_seconds` is per provider and defaults to 300 seconds when
+the provider is not listed. The daemon compacts an idle conversation above the
+floor at the window minus 30 seconds, so the next message does not reread a
+large cold history. One compaction is allowed per idle period, and none runs
+while a turn is active. The model reports its context window through OpenCode;
+with no window known, only the idle floor rule applies.
+
+The daemon asks OpenCode 2.2.0 to compact with
+`POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the
+next step boundary. The conversation's messages report the context before a
+compaction. The first reply after it reports the context after. The CTO chat
+shows one line, for example `compacted: 182k -> 14k tokens`; it is stored with
+the other CTO action lines.
 
 The owner-only `cto_send` method takes `{"text":"..."}`. It starts a private
 OpenCode server on first use and sends to its conversation. `cto_new` starts a

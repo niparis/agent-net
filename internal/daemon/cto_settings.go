@@ -19,9 +19,9 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	}
 	method := http.MethodGet
 	var body io.Reader
-	if in.Model != nil {
+	if in.Model != nil || in.Compaction != nil {
 		method = http.MethodPut
-		b, _ := json.Marshal(protocol.CTOSettings{Model: *in.Model})
+		b, _ := json.Marshal(in)
 		body = bytes.NewReader(b)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+"/v1/cto-settings", body)
@@ -46,5 +46,8 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	}
 	var out protocol.CTOSettings
 	err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
+	if err == nil {
+		d.cacheCTOSettings(out)
+	}
 	return out, err
 }
