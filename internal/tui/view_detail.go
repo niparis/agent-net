@@ -33,9 +33,11 @@ func (m Model) detailLines(w, n int) []string {
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
 			lines := []string{"  Request: " + sanitize(e.Request), "  Outcome: " + sanitize(e.Outcome), "  Reason: " + sanitize(e.Reason), "  Recommendation: " + sanitize(e.Recommendation), "  c: recipient conversation  C: requester conversation", "  s: let it stand  o: overrule"}
-			for i := range lines {
-				lines[i] = clip(lines[i], w)
+			var wrapped []string
+			for _, line := range lines {
+				wrapped = append(wrapped, wrap(line, w)...)
 			}
+			lines = wrapped
 			for len(lines) < n {
 				lines = append(lines, "")
 			}

@@ -69,18 +69,24 @@ func (s *Store) ResolveOutcome(replyID, owner, action string) (protocol.Message,
 	if err != nil || resolution != "" || (outcome != "reject" && outcome != "escalate") || protocol.IsOwner(originalHarness) {
 		return result, reject("unknown or resolved outcome")
 	}
+	now := s.now().UTC()
+	msgBody, msgType := body, protocol.TypeRequest
+	if action == "let_stand" {
+		first, _, _ := strings.Cut(body, "\n")
+		msgBody, msgType = "Your decision stands for: "+protocol.CleanWaitingText(first), protocol.TypeNotification
+	}
+	result = protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: owner, To: to, Type: msgType, Body: msgBody, IdempotencyKey: protocol.NewID("k"), CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored, Overruled: action == "overrule"}
+	_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, result.ID, result.ConversationID, "", owner, to, result.Type, msgBody, 0, result.IdempotencyKey, now.UnixNano(), result.ExpiresAt.UnixNano(), result.State)
+	if err != nil {
+		return result, err
+	}
 	if action == "overrule" {
-		now := s.now().UTC()
-		result = protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"), From: owner, To: to, Type: protocol.TypeRequest, Body: body, IdempotencyKey: protocol.NewID("k"), CreatedAt: now, ExpiresAt: now.Add(protocol.DefaultTTL), State: protocol.StateStored, Overruled: true}
-		_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, result.ID, result.ConversationID, "", owner, to, result.Type, body, 0, result.IdempotencyKey, now.UnixNano(), result.ExpiresAt.UnixNano(), result.State)
-		if err != nil {
-			return result, err
-		}
 		if _, err = tx.Exec(`INSERT INTO outcome_overrules(message_id,reply_id) VALUES(?,?)`, result.ID, replyID); err != nil {
 			return result, err
 		}
-		s.event(tx, "msg.stored", "", owner, result.ID, "")
 	}
+	s.event(tx, "msg.stored", "", owner, result.ID, "")
+
 	if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution=? WHERE reply_id=?`, action, replyID); err != nil {
 		return result, err
 	}

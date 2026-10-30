@@ -80,7 +80,7 @@ func TestOverruleOutcome(t *testing.T) {
 	}
 }
 
-func TestLetStandDoesNotSendAndOwnerRequestsStayOutOfInbox(t *testing.T) {
+func TestLetStandNotifiesAndOwnerRequestsStayOutOfInbox(t *testing.T) {
 	s, _ := newTestStore(t)
 	a, b := twoSessions(t, s)
 	node, _, err := s.CreateNode("host", "linux")
@@ -100,7 +100,7 @@ func TestLetStandDoesNotSendAndOwnerRequestsStayOutOfInbox(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, err := s.ResolveOutcome(rep.ID, owner, "let_stand")
-	if err != nil || m.ID != "" {
+	if err != nil || m.ID == "" || m.To != b || m.Overruled || m.Body != "Your decision stands for: work" {
 		t.Fatalf("resolution: %+v %v", m, err)
 	}
 	req, _, err = s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: b, Body: "work"})
