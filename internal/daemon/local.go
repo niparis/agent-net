@@ -363,7 +363,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			ver = "(unknown version)"
 		}
 		d.Logf("mcp hello: claude session %s pid %d runs agent-net %s, daemon runs %s", p.NativeID, pid, ver, d.helloVersion())
-		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
+		return d.mcpHelloResult(ls, "claude", p.Version), nil
 
 	case "pi", "opencode":
 		// Plugin clients run inside the harness process. The OpenCode plugin
@@ -481,7 +481,7 @@ func (lc *localConn) helloCodexMCP(p helloParams, pid int) (any, error) {
 	lc.mu.Unlock()
 	d.noteMCPHello(p.NativeID)
 	d.Logf("mcp hello: codex thread %s pid %d runs agent-net %s, daemon runs %s", p.NativeID, pid, firstNonEmpty(p.Version, "(unknown version)"), d.helloVersion())
-	return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
+	return d.mcpHelloResult(ls, "codex", p.Version), nil
 }
 
 // checkPluginPeer checks that the process behind a plugin connection is the

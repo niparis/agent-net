@@ -113,6 +113,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		kv("branch", branch),
 		kv("model", model),
 	)
+	if t := toolsText(a); t != "" {
+		out = append(out, clip("  "+sDim.Render(cell("tools", lw))+" "+sBusy.Render(t), w))
+	}
 	if f := functionText(a); f != "" {
 		out = append(out, kv("function", f))
 	}
@@ -233,4 +236,17 @@ func procList(title string, ps []protocol.ProcUsage, rows, w int) []string {
 		out = append(out, line+cell(cmd, max(w-ansi.StringWidth(line), 0)))
 	}
 	return out
+}
+
+// toolsText is the warning line for a session whose agent-net tools are older
+// than its machine's agent-net. It is empty when the tools are current, and for
+// a session that has no agent-net tools process.
+func toolsText(a protocol.AgentView) string {
+	switch {
+	case a.ToolsVersion == protocol.ToolsUnknown:
+		return "unknown (from before v0.4.7; reconnect agent-net with /mcp)"
+	case a.ToolsOld:
+		return sanitize(a.ToolsVersion) + " (old: reconnect agent-net with /mcp)"
+	}
+	return ""
 }

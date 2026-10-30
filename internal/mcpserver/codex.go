@@ -35,7 +35,8 @@ func RunCodex(ctx context.Context, socket string, opts Options) error {
 	sw := &switcher{opts: opts, conn: conn, logf: logf}
 	rt.root.OnHello = func(v string) { go sw.consider(ctx, v) }
 	rt.root.conn(ctx)
-	srv := New(rt.Call, opts.Version)
+	srv := New(rt.Call, opts.Version, rt.takeNote)
+	sw.dropNote = rt.dropNotes
 	srv.AddReceivingMiddleware(threadFromMeta())
 	dyn := NewDynamic(srv, rt.Call)
 	ictx, icancel := context.WithTimeout(ctx, 3*time.Second)
@@ -114,5 +115,30 @@ func (r *threadRouter) Close() {
 	defer r.mu.Unlock()
 	for _, d := range r.perThread {
 		d.Close()
+	}
+}
+
+// takeNote gives the stale-tools note of the thread the call came from, once.
+func (r *threadRouter) takeNote(ctx context.Context) string {
+	id, _ := ctx.Value(threadKey{}).(string)
+	if id == "" {
+		return ""
+	}
+	r.mu.Lock()
+	d := r.perThread[id]
+	r.mu.Unlock()
+	if d == nil {
+		return ""
+	}
+	return d.takeNote()
+}
+
+// dropNotes forgets every note: this process is about to become the new binary.
+func (r *threadRouter) dropNotes() {
+	r.root.dropNote()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, d := range r.perThread {
+		d.dropNote()
 	}
 }
