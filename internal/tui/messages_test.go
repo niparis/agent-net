@@ -170,3 +170,20 @@ func TestConversationFeedIncludesSessionDisconnect(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestMessageChatScrollsToSelectedMessage(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.feed = newFeed()
+	for i := 0; i < 8; i++ {
+		id := fmt.Sprintf("m%d", i)
+		m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: int64(i + 1), Kind: "msg.stored", MessageID: id, Time: t0}, ConversationID: "a"}})
+		m.feed.byMsg[id].Body = id + " body"
+	}
+	m.feedCur = 7
+	v := ansi.Strip(strings.Join(m.messagesView(120, 10), "\n"))
+	if !strings.Contains(v, "m7 body") {
+		t.Fatal(v)
+	}
+}

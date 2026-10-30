@@ -1066,11 +1066,18 @@ func (m Model) messagesView(w, h int) []string {
 	} else {
 		chat = []string{sDim.Render("Select a conversation")}
 	}
+	chatSelected := 0
+	for i, line := range chat {
+		if strings.HasPrefix(ansi.Strip(line), "▸ ") {
+			chatSelected = min(i+1, len(chat)-1)
+			break
+		}
+	}
 	if w >= 100 {
 		height := max(h-3, 0)
 		list = messageFit(list, max(height-1, 0), selected)
 		list = append(list, sDim.Render(clip(footer, listW)))
-		chat = messageFit(chat, height, 0)
+		chat = messageFit(chat, height, chatSelected)
 		left := panel("Messages · "+filter, list, listW+4, roleAccent)
 		right := panel("Conversation", chat, chatW+4, roleAccent)
 		for i := range left {
@@ -1085,7 +1092,7 @@ func (m Model) messagesView(w, h int) []string {
 	if listHeight > 0 {
 		list = append(list, sDim.Render(clip(footer, listW)))
 	}
-	chat = messageFit(chat, chatHeight, 0)
+	chat = messageFit(chat, chatHeight, chatSelected)
 	out = append(out, panel("Messages · "+filter, list, w, roleAccent)...)
 	out = append(out, panel("Conversation", chat, w, roleAccent)...)
 	return out
