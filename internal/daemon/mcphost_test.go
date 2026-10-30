@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -45,7 +46,19 @@ func TestMain(m *testing.M) {
 	hideRealHerdr()
 	// Do not run the programs of the machine the tests run on.
 	defaultDetect = func(context.Context) []protocol.HarnessInfo { return nil }
-	os.Exit(m.Run())
+	fakes, err := os.MkdirTemp("", "agent-net-fakes.")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv(envFakePids, fakes)
+	code := m.Run()
+	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {
+		fmt.Fprintf(os.Stderr, "FAIL: fake harness processes still alive after the tests (killed): %v\n", leaked)
+		code = 1
+	}
+	os.RemoveAll(fakes)
+	os.Exit(code)
 }
 
 // useHelper makes the daemon (this process) pass the helper variable on to hosted servers.

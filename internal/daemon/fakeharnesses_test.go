@@ -468,6 +468,7 @@ func fakePi() {
 		signal.Ignore(syscall.SIGTERM)
 	}
 	cwd, _ := os.Getwd()
+	fakeRegister()
 	rec := fakePiRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
 	for _, k := range []string{"AGENT_NET_WORKER", "AGENT_NET_SOCKET"} {
@@ -557,6 +558,7 @@ func fakeCodex() {
 	if os.Getenv(envFakeIgnoreTerm) != "" {
 		signal.Ignore(syscall.SIGTERM)
 	}
+	fakeRegister()
 	cwd, _ := os.Getwd()
 	rec := fakeCodexRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
