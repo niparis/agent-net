@@ -550,6 +550,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "query.nodes":
 		return g.NodesInfo()
 
+	case "query.graph":
+		return g.handleGraphView(raw)
+
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {
@@ -609,6 +612,55 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		st.Event("session.trust", nc.id, p.SessionID, "", "on="+strconv.FormatBool(p.On))
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
+
+	case "graph.get":
+		return st.Graph()
+	case "charter.set":
+		p, err := decode[protocol.CharterSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad charter.set")
+		}
+		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, "owner")
+	case "charter.history":
+		p, err := decode[protocol.GraphHistoryRequest](raw)
+		if err != nil || p.Node == "" {
+			return nil, reject("bad charter.history")
+		}
+		return st.CharterHistory(p.Node, p.Limit)
+	case "node.add", "node.remove":
+		p, err := decode[protocol.GraphNodeRequest](raw)
+		if err != nil || p.Name == "" {
+			return nil, reject("bad node request")
+		}
+		if typ == "node.add" {
+			err = st.AddArchitect(p.Name, "owner")
+		} else {
+			err = st.RemoveArchitect(p.Name, "owner")
+		}
+		return map[string]bool{"ok": true}, err
+	case "edge.set", "edge.remove":
+		p, err := decode[protocol.Edge](raw)
+		if err != nil {
+			return nil, reject("bad edge request")
+		}
+		if typ == "edge.set" {
+			err = st.SetEdge(p, "owner")
+		} else {
+			err = st.RemoveEdge(p, "owner")
+		}
+		return map[string]bool{"ok": true}, err
+	case "edge.history":
+		p, err := decode[protocol.GraphHistoryRequest](raw)
+		if err != nil {
+			return nil, reject("bad edge.history")
+		}
+		return st.EdgeHistory(p.Node, p.Limit)
+	case "graph.undo":
+		p, err := decode[protocol.GraphUndoFrame](raw)
+		if err != nil || p.HistoryID < 0 {
+			return nil, reject("bad graph.undo")
+		}
+		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, "owner")
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)

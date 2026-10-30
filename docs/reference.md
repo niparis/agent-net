@@ -55,6 +55,18 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse` and `UserPromptSubmit` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you, and clears that when you type a prompt or a tool runs after an approval. See [Needs you](#needs-you). |
 | `agent-net version` | Print the version. |
 
+## Graph operator methods (foundation)
+
+The gateway stores explicit nodes, charter attributes, edges and their history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. They are not yet exposed as CLI commands or agent tools.
+
+- `graph_get {}` returns `nodes` and `edges`.
+- `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
+- `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges.
+- `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
+- `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter or edges.
+
+History limits default to 1000 and are capped at 1000. Edge history has `old` and `new` edge objects, omitted when absent. Gateway frames use the same names with dots instead of underscores; `graph.undo` uses `history_id` because `id` identifies the frame itself.
+
 ## Ports
 
 | Port | Used by |
@@ -268,7 +280,7 @@ Each daemon samples its machine every 5 seconds, keeps 5 minutes, and reports a 
 - **Linux:** `/proc/<pid>/stat` (user, system and waited-for children time) and `/proc/stat`. CPU is the difference between two readings. The sampler costs about 5 ms per reading with 450 processes, about 0.1% of one core.
 - **macOS:** `ps -A -o pid=,ppid=,rss=,time=,comm=` for processes, `sysctl` for cores, memory size and load, `vm_stat` for memory in use (app + wired + compressed, like Activity Monitor). Load and memory are read every 4th sample. CPU time from `ps` has a resolution of 10 ms and misses processes that start and end between two readings, so tree CPU can read low for a tree that spawns many short jobs. Machine CPU is the sum of live processes' CPU time over the cores, with the same limit. This was written and tested against fixtures of the `ps`, `sysctl` and `vm_stat` output; it has not been run on a Mac.
 - **Top lists:** only on request, not in the report. Each process has its PID, short name, and the first 80 characters of its command line with tokens, `--password=`/`--token` values and `KEY=value` secrets masked.
-- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket, herdr_socket}` (answers `{argv, dir, env, host, note}`, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
+- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `graph_view {project}` (the component graph for the TUI map: nodes with charters, edges and the newest charter changes), `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket, herdr_socket}` (answers `{argv, dir, env, host, note}`, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.graph`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
 - **Counts:** `counts` returns `online`, `offline_24h` and `offline_total`. The gateway keeps offline sessions for 30 days, so a header that says "134 sessions, 12 online" is mostly old restarts. Show "12 online, 5 offline in the last 24 h".
 
 ## The project registry

@@ -275,3 +275,7 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 ## Reporting a problem
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues). For something sensitive, use GitHub's private vulnerability reporting on the repository's Security tab.
+
+## Graph foundation
+
+Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.

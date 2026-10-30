@@ -33,6 +33,7 @@ const (
 	// owner's command line or TUI, never an agent session.
 	OpUsage        = "usage"         // takes nothing, answers UsageResult
 	OpUsageTop     = "usage_top"     // takes QueryUsageTop, answers UsageTop
+	OpGraphView    = "graph_view"    // takes QueryGraph, answers GraphView
 	OpSessionText  = "session_text"  // takes TextQuery, answers TextPage
 	OpCounts       = "counts"        // takes nothing, answers SessionCounts
 	OpSessionEnter = "session_enter" // takes EnterRequest, answers EnterPlan
@@ -66,9 +67,23 @@ const (
 	OpWorkerHandback = "worker_handback" // takes WorkerHandbackRequest, answers WorkerHandbackResult
 )
 
+// Graph operator methods are available only to the owner.
+const (
+	OpGraphGet       = "graph_get"
+	OpCharterSet     = "charter_set"
+	OpCharterHistory = "charter_history"
+	OpNodeAdd        = "node_add"
+	OpNodeRemove     = "node_remove"
+	OpEdgeSet        = "edge_set"
+	OpEdgeRemove     = "edge_remove"
+	OpEdgeHistory    = "edge_history"
+	OpGraphUndo      = "graph_undo"
+)
+
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
