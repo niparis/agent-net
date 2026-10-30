@@ -362,13 +362,16 @@ check does not protect the gateway from other processes on its host. The host
 and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
 
-The experimental skill manifest hash helper bounds a bundle to 10,000 entries
-and 64 MiB of regular file data. It rejects special files, absolute or escaping
-symlinks, and files that change while being read. It is not yet connected to a
-scanner or exposed through the daemon.
+The tools inventory scanner bounds a skill bundle to 10,000 entries and
+64 MiB of regular file data. It rejects special files, absolute or escaping
+symlinks, and files that change while being read. MCP and settings files are
+limited to 1 MiB. Inventory reports are bounded to 10,000 entries and 256 KiB
+of field text. Oversized sources and reports fail the scan rather than silently
+truncating it.
 
-The inventory scanner draft limits each MCP or settings file to 1 MiB and
-refuses skill or configuration roots that escape the scan root. MCP fingerprints
-omit environment and header values, URL paths and queries, and unknown argument values. It retains a numeric value for the `--port` flag.
-Inventory reports are bounded to 10,000 entries and 256 KiB of field text;
-oversized reports and fields fail the scan rather than silently truncating it.
+MCP fingerprints omit environment and header values, URL paths and queries, and
+unknown argument values. They retain a numeric value for the `--port` flag.
+The local inventory scan and read methods use the owner gate. The gateway stores
+observations from authenticated daemons and keeps the previous records marked
+stale after a failed scan. Skill contents and raw MCP configuration are not
+sent to the gateway.
