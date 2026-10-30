@@ -12,6 +12,7 @@ Keys ─────────────────────────
   N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
   o                    show offline and dormant sessions
+  a                    active only: hide sessions idle for over an hour
   d                    give the detail pane the room of the message feed
   tab                  message feed and back; enter opens a message body
   r                    refresh now
@@ -29,10 +30,9 @@ Keys ─────────────────────────
  Reading the screen
   CPU                  machine: all cores. session: one core. (x%): 5 min avg
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
-  shared               one process, many sessions (OpenCode); listed once
+  shared               one process many sessions share; its figures are on the machine line
+  dim row              offline, or idle for more than an hour
   ?                    a figure that is missing or older than 45 seconds
-
-
 
 
 

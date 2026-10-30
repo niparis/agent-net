@@ -12,6 +12,7 @@ Keys ─────────────────────────
   N                    name the machine of the session (every machine sees it; …
   /                    filter (words match name, project, branch, model, ...)
   o                    show offline and dormant sessions
+  a                    active only: hide sessions idle for over an hour
   d                    give the detail pane the room of the message feed
   tab                  message feed and back; enter opens a message body
   r                    refresh now
@@ -20,5 +21,4 @@ Keys ─────────────────────────
   g                    go to the oldest loaded entry
   G, end, f            back to the end and follow new entries
   esc                  back to the sessions
- Everywhere
 esc close help  q quit

@@ -233,25 +233,54 @@ func TestHeavyTrees(t *testing.T) {
 	}
 }
 
-func TestSharedTreeIsListedOnceAndNotSplit(t *testing.T) {
+func TestSharedTreeIsNotARowAndItsFiguresAreInTheMachineHeading(t *testing.T) {
 	snap, u := openCodeSnapshot()
 	m := modelWith(snap, u, 120, 40)
 	v := m.View()
-	if n := strings.Count(v, "service, shared by 3 sessions"); n != 1 {
-		t.Fatalf("shared tree listed %d times:\n%s", n, v)
+	if strings.Contains(v, "service, shared by") {
+		t.Fatalf("the shared service still has a row of its own:\n%s", v)
 	}
-	if n := strings.Count(v, "shared "); n < 3 { // three rows say "shared", plus the tree line
+	if !strings.Contains(v, "opencode service 2.1G 9 procs") {
+		t.Fatalf("the machine heading does not carry the shared service:\n%s", v)
+	}
+	if n := strings.Count(v, "shared "); n < 3 { // the three sessions on the shared tree
 		t.Fatalf("the sessions are not marked shared:\n%s", v)
 	}
 	for _, row := range m.tableRows() {
-		if row.shared != nil && row.agent.SessionID != "" {
-			t.Fatal("the shared row is a session")
+		if row.agent.SessionID == "" && !row.header {
+			t.Fatal("a table row is not a machine heading or a session")
 		}
 	}
-	// The shared row cannot be selected.
+	// The shared row cannot be selected: every selection is a session.
 	m = keys(m, "G")
 	if a, ok := m.selectedAgent(); !ok || a.Harness == "" {
 		t.Fatal("no session selected")
+	}
+}
+
+func TestPrivateServiceIsOnTheWorkerRow(t *testing.T) {
+	snap := fakeSnapshot()
+	const wid = "s_00000000000000f1"
+	snap.Agents = append(snap.Agents, agent(wid, "n_mac", "Mac", "opencode", "tenebrae worker", func(a *protocol.AgentView) {
+		a.Worker = &protocol.WorkerInfo{ID: "w_1", Owner: "s_0000000000000001", Project: "tenebrae", StartedAt: t0.Add(-2 * time.Minute).Unix(), Task: "deploy the routes"}
+		a.Status = "busy"
+	}))
+	u := fakeUsage()
+	private := tree(900, "opencode", 42, 30, gib*12/10, 6, wid)
+	private.Shared = true // its own server: shared in name only
+	u.Local.Trees = append(u.Local.Trees, private)
+	m := modelWith(snap, u, 140, 40)
+	var row string
+	for _, l := range lines(m.View()) {
+		if strings.Contains(l, "deploy the routes") {
+			row = l
+		}
+	}
+	if row == "" {
+		t.Fatalf("the worker row has no task:\n%s", m.View())
+	}
+	if !strings.Contains(row, "42%") || !strings.Contains(row, "1.2G") || strings.Contains(row, "shared") {
+		t.Fatalf("the worker's own server is not on its row: %q", row)
 	}
 }
 
@@ -359,11 +388,13 @@ func TestColumnsFitEveryWidth(t *testing.T) {
 		}
 		return strings.Join(n, ",")
 	}
-	// Narrow: the usage columns stay, the description goes first.
-	if got := names(columns(78, 12)); !strings.Contains(got, "CPU,RAM,PROC") || strings.Contains(got, "FUNCTION") || strings.Contains(got, "BRANCH") {
+	// Narrow: TRUST and the usage columns stay, TASK has room, the newer
+	// columns go first.
+	if got := names(columns(78, 12)); !strings.Contains(got, "CPU,RAM") || !strings.Contains(got, "TRUST") ||
+		!strings.Contains(got, "TASK") || strings.Contains(got, "BRANCH") || strings.Contains(got, ",MODE,") || strings.Contains(got, "PROC") {
 		t.Errorf("78 columns: %s", got)
 	}
-	if got := names(columns(118, 12)); !strings.Contains(got, "FUNCTION") || !strings.Contains(got, "BRANCH") {
+	if got := names(columns(118, 12)); !strings.Contains(got, "TASK") || strings.Contains(got, "BRANCH") || strings.Contains(got, "FUNCTION") {
 		t.Errorf("118 columns: %s", got)
 	}
 	for avail := 46; avail <= 200; avail += 3 {
@@ -379,9 +410,29 @@ func TestColumnsFitEveryWidth(t *testing.T) {
 			t.Errorf("%d columns of room, %d used: %s", avail, sum, names(cols))
 		}
 	}
-	// ON is gone, and so is the dash for an unknown mode.
+	// ON is gone, and the old table columns are gone too.
 	if got := names(columns(118, 12)); strings.Contains(got, ",ON,") {
 		t.Errorf("ON column is back: %s", got)
+	}
+}
+
+func TestTaskColumnTakesTheRoomAndCutsWithDots(t *testing.T) {
+	cols := columns(120, 10)
+	var task column
+	for _, c := range cols {
+		if c.name == "TASK" {
+			task = c
+		}
+	}
+	if task.width < 20 {
+		t.Fatalf("TASK is only %d wide: %+v", task.width, cols)
+	}
+	got := cellDots("deploy the new routes", 12)
+	if got != "deploy th..." {
+		t.Fatalf("cellDots = %q", got)
+	}
+	if got := cellDots("short", 12); got != "short       " {
+		t.Fatalf("cellDots padding = %q", got)
 	}
 }
 
@@ -442,28 +493,32 @@ func TestHelpOverlay(t *testing.T) {
 
 var _ = fmt.Sprint
 
-// FUNCTION is the project description from AGENTS.md (decision 0009). An online
-// session without one says so; an offline one shows a dash.
-func TestFunctionColumnShowsTheDescriptionOrNoAgentsMD(t *testing.T) {
+// FUNCTION is the project description from AGENTS.md (decision 0009). It is in
+// the detail pane now. An online session without one says what to add; an
+// offline one says nothing.
+func TestFunctionIsInTheDetailPane(t *testing.T) {
+	const hint = "none: add a `# Project:"
 	m := newModel(120, 40)
-	byName := map[string]string{}
-	for _, l := range lines(m.View()) {
-		for _, n := range []string{"tenebrae-53", "web", "scratch"} {
-			if strings.HasPrefix(strings.TrimLeft(l, "> "), n+" ") {
-				byName[n] = strings.TrimRight(l, " ")
-			}
+	m.selected = "s_0000000000000001"
+	if v := m.View(); !strings.Contains(v, "function research") {
+		t.Errorf("description missing:\n%s", v)
+	}
+	for _, id := range []string{"s_0000000000000003", "s_0000000000000005"} {
+		m.selected = id
+		if v := m.View(); !strings.Contains(v, hint) {
+			t.Errorf("%s: empty description is not explained:\n%s", id, v)
 		}
 	}
-	if !strings.HasSuffix(byName["tenebrae-53"], "research") {
-		t.Errorf("description missing: %q", byName["tenebrae-53"])
-	}
-	if !strings.HasSuffix(byName["web"], "no AGENTS.md") || !strings.HasSuffix(byName["scratch"], "no AGENTS.md") {
-		t.Errorf("empty is not explained: %q %q", byName["web"], byName["scratch"])
+	m.selected = "s_0000000000000001"
+	for _, l := range lines(m.View()) {
+		if strings.Contains(l, "no AGENTS.md") {
+			t.Errorf("the table still says no AGENTS.md: %q", l)
+		}
 	}
 	m = keys(m, "o", "G")
 	for _, l := range lines(m.View()) {
-		if strings.Contains(l, "old-session") && strings.Contains(l, "no AGENTS.md") {
-			t.Errorf("an offline session must not say no AGENTS.md: %q", l)
+		if strings.Contains(l, "old-session") && strings.Contains(l, "none: add a") {
+			t.Errorf("an offline session must not say its description is missing: %q", l)
 		}
 	}
 	// The announced task is not a fallback for the function.

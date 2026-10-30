@@ -1,21 +1,21 @@
-agent-net tui  10 sessions, 9 online, 4 workers  filter: probe                                        updated 14:05:00
+agent-net tui  10 sessions, 9 online, 4 workers  filter: /probe                                       updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                            claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                            pi 1.4.0
  ○ old-box    v0.3.2 offline
-  NAME                           AGENT    PROJECT    BRANCH   MODEL      MODE STATUS TRUST   CPU   RAM PROC FUNCTION
+  NAME                           AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-> ↳ backtest-a                   opencode -          -        haiku-4-5  bg   idle   -         ?     ?    ? no AGENTS.md
-  ↳ backtest-b                   opencode -          -        haiku-4-5  bg   idle   -         ?     ?    ? no AGENTS.md
+> ↳ backtest-a                   opencode -         haiku-4-5  idle   -         ?     ? probe
+  ↳ backtest-b                   opencode -         haiku-4-5  idle   -         ?     ? probe
  build-vm 1 session ────────────────────────────────────────────────────────────────────────────────────────────────────
-  ↳ backtest-on-a-remote-machine opencode -          -        haiku-4-5  bg   idle   -         ?     ?    ? no AGENTS.md
+  ↳ backtest-on-a-remote-machine opencode -         haiku-4-5  idle   -         ?     ? probe
 Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
   backtest-a  opencode  idle    CPU and memory need a newer daemon and gateway
   worker   started by strategies (Mac), 14:01, project strateg… │
-  id       s_00000000000000a1                                   │
+  id       s_00000000000000a1 w_s_00000000000000a1              │
   folder   -                                                    │
   branch   -                                                    │
   model    anthropic/claude-haiku-4-5, background               │
-  function no AGENTS.md                                         │
+  function none: add a `# Project: <one line>` line to AGENTS.… │
   task     probe                                                │
   remote   -                                                    │
   messages none seen yet                                        │

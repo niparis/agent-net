@@ -89,6 +89,11 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		title += "  " + sBad.Render("offline, last seen "+m.clock(time.Unix(a.LastSeen, 0)))
 	}
 	id := a.SessionID
+	// The worker ID is here, not in the table: the table shows its task. It
+	// comes before the PID so a narrow pane never cuts it (decision 0017).
+	if a.Worker != nil && a.Worker.ID != "" {
+		id += " " + a.Worker.ID
+	}
 	if a.PID > 0 {
 		id += fmt.Sprintf(" pid %d", a.PID)
 	}
@@ -103,7 +108,8 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	model = dashIfEmpty(strings.TrimPrefix(model, ", "))
 	var out []string
 	if a.Worker != nil {
-		// Who started it matters most, so it comes first.
+		// Who started it matters most, so it comes first. Its ID is on the id
+		// line: the table shows the task instead (decision 0017).
 		out = append(out, kv("worker", fmt.Sprintf("started by %s, %s, project %s", m.who(a.Worker.Owner),
 			m.clock(time.Unix(a.Worker.StartedAt, 0)), dashIfEmpty(a.Worker.Project))))
 	}
@@ -114,6 +120,9 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		kv("model", model),
 	)
 	if f := functionText(a); f != "" {
+		if f == noAgentsMD {
+			f = "none: add a `# Project: <one line>` line to AGENTS.md"
+		}
 		out = append(out, kv("function", f))
 	}
 	if a.Profile.Task != "" {
@@ -147,7 +156,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		out = append(out, kv("worktree", tailCell(a.Repo.Worktree, w-12)))
 	}
 	if src := m.projectSource(a); src != "" {
-		out = append(out, kv("project", src))
+		out = append(out, clip("  "+sDim.Render("project source: ")+sourceText(src), w))
 	}
 
 	msgs := m.feed.messagesOf(a.SessionID, 8)
@@ -195,7 +204,7 @@ func (m Model) detailRight(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	sum += "  " + procs
 	var out []string
-	if t.Shared {
+	if sharedTree(t) {
 		out = append(out, sDim.Render(fmt.Sprintf("shared by %s, not split", plural(len(t.Sessions), sanitize(t.Harness)+" session"))))
 	}
 	e := m.top[a.SessionID]

@@ -23,7 +23,7 @@ func kid(id, node, host, name string, started time.Duration) protocol.AgentView 
 	return agent(id, node, host, "opencode", name, func(a *protocol.AgentView) {
 		a.Mode, a.Model = protocol.ModeBackground, "anthropic/claude-haiku-4-5"
 		a.Profile.Task = "probe"
-		a.Worker = &protocol.WorkerInfo{ID: "w_" + id, Owner: callerID, Project: "strategies", StartedAt: t0.Add(started).Unix()}
+		a.Worker = &protocol.WorkerInfo{ID: "w_" + id, Owner: callerID, Project: "strategies", StartedAt: t0.Add(started).Unix(), Task: name}
 	})
 }
 

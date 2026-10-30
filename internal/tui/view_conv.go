@@ -145,7 +145,7 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "move", 1}, {"enter", "open body", 1}, {"m", "msg", 1}, {"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
 	}
 	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6},
-		{"/", "filter", 3}, {"o", "offline", 4}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
+		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
 }
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
@@ -203,6 +203,7 @@ func (m Model) helpView(w, h int) []string {
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o", "show offline and dormant sessions"},
+		{"a", "active only: hide sessions idle for over an hour"},
 		{"d", "give the detail pane the room of the message feed"},
 		{"tab", "message feed and back; enter opens a message body"},
 		{"r", "refresh now"},
@@ -220,7 +221,8 @@ func (m Model) helpView(w, h int) []string {
 		{"Reading the screen", ""},
 		{"CPU", "machine: all cores. session: one core. (x%): 5 min avg"},
 		{"red numbers", "a heavy tree: over 20 processes, 200% CPU or 4G"},
-		{"shared", "one process, many sessions (OpenCode); listed once"},
+		{"shared", "one process many sessions share; its figures are on the machine line"},
+		{"dim row", "offline, or idle for more than an hour"},
 		{"?", "a figure that is missing or older than 45 seconds"},
 	}
 	out := []string{section("Keys", w)}
