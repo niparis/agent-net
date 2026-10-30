@@ -163,11 +163,11 @@ func TestGoldenHelp(t *testing.T) {
 func TestHeaderUsesCounts(t *testing.T) {
 	m := newModel(100, 30)
 	head := lines(m.View())[0]
-	if !strings.Contains(head, "12 online · 5 offline today") {
+	if !strings.Contains(head, "12 online · 1 busy") {
 		t.Fatalf("header %q", head)
 	}
-	if strings.Contains(head, "134") || strings.Contains(head, "sessions,") {
-		t.Fatalf("the old total is still in the header: %q", head)
+	if strings.Contains(head, "134") || strings.Contains(head, "offline") {
+		t.Fatalf("the old offline total is still in the header: %q", head)
 	}
 	// An older gateway has no counts: the screen counts what it has.
 	src := &fakeSource{snap: fakeSnapshot(), events: fakeEvents()}
@@ -175,7 +175,7 @@ func TestHeaderUsesCounts(t *testing.T) {
 	old.loc, old.now = time.UTC, func() time.Time { return t0 }
 	old = send(old, tea.WindowSizeMsg{Width: 100, Height: 30})
 	old = refresh(old, src)
-	if head := lines(old.View())[0]; !strings.Contains(head, "6 sessions, 5 online") {
+	if head := lines(old.View())[0]; !strings.Contains(head, "6 sessions, 5 online · 1 busy") {
 		t.Fatalf("header without counts %q", head)
 	}
 }

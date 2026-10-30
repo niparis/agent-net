@@ -1,4 +1,4 @@
-agent-net tui  7 sessions, 6 online, 1 worker                 updated 14:05:00
+agent-net tui  7 sessions, 6 online · 2 busy · workers 1 running, 0 queued  upd…
 ! Worker not started: machine build-vm does not accept workers (it was set up
   with --no-launch)
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?

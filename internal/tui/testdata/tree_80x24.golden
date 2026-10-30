@@ -1,4 +1,4 @@
-agent-net tui  10 sessions, 9 online, 4 workers               updated 14:05:00
+agent-net tui  10 sessions, 9 online · 2 busy · workers 4 running, 0 queued  up…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline

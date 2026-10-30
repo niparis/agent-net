@@ -1,6 +1,6 @@
-agent-net tui  7 sessions, 6 online, 1 worker                                                         updated 14:05:00
- ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                            claude 2.1.312  opencode 2.2.0  pi 1.4.0
- ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                            pi 1.4.0
+agent-net tui  7 sessions, 6 online · 2 busy · workers 1 running, 0 queued                            updated 14:05:00
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
  ○ old-box    v0.3.2 offline
   NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────

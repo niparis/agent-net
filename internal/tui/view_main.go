@@ -243,7 +243,7 @@ func (m Model) quotaLine(w int) string {
 
 func (m Model) titleLine(w int) string {
 	left := sTitle.Render("agent-net") + " " + sDim.Render("tui")
-	online, total, workers := 0, 0, 0
+	online, total, workers, busy := 0, 0, 0, 0
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
 			continue
@@ -254,20 +254,27 @@ func (m Model) titleLine(w int) string {
 			if a.Worker != nil {
 				workers++
 			}
+			if a.Status == "busy" {
+				busy++
+			}
 		}
 	}
 	if n := m.inboxCount(); n > 0 {
 		left += sDim.Render(fmt.Sprintf("  inbox %d", n))
 	}
-	// The gateway's counts say what matters: sessions online now and the ones
-	// that went offline today. The total of old sessions is left out. Without
-	// counts (an older gateway) the screen counts what it has.
-	mid := fmt.Sprintf("%d sessions, %d online", total, online)
+	// The gateway's online count is the one to trust; an older gateway has
+	// none, so the screen counts what it has. Offline sessions are mostly old
+	// ghosts, so the header leaves them out and says what the owner can act
+	// on: busy sessions, sessions that wait, and the worker queue.
+	mid := fmt.Sprintf("%d sessions, %d online · %d busy", total, online, busy)
 	if c := m.usage.counts; c != nil {
-		mid = fmt.Sprintf("%d online · %d offline today", c.Online, c.Offline24h)
+		mid = fmt.Sprintf("%d online · %d busy", c.Online, busy)
 	}
-	if workers > 0 {
-		mid += ", " + plural(workers, "worker")
+	if n := len(m.needsRows()); n > 0 {
+		mid += " · " + sNeeds.Render(fmt.Sprintf("%d needs you", n))
+	}
+	if q := m.queuedWorkers(); workers > 0 || q > 0 {
+		mid += fmt.Sprintf(" · workers %d running, %d queued", workers, q)
 	}
 	if n := m.learnedNew(); n > 0 {
 		mid += fmt.Sprintf(", learned %d new", n)
@@ -295,6 +302,42 @@ func (m Model) titleLine(w int) string {
 	used := ansi.StringWidth("agent-net tui") + 2 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	gap := max(w-used, 2)
 	return clip(left+"  "+mid+strings.Repeat(" ", gap)+sDim.Render(right), w)
+}
+
+// queuedWorkers counts the starts that wait for room on every machine, from
+// the admission queue in the usage reports. A machine that has no room is not
+// counted twice when its report comes both live and through the gateway.
+func (m Model) queuedWorkers() int {
+	if !m.usage.have {
+		return 0
+	}
+	var ids []string
+	if l := m.usage.raw.Local; l != nil {
+		ids = append(ids, m.usage.raw.NodeID)
+	}
+	if g := m.usage.raw.Gateway; g != nil {
+		for _, n := range g.Nodes {
+			ids = append(ids, n.NodeID)
+		}
+	}
+	seen := map[string]bool{}
+	total := 0
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		n, st := m.nodeUsage(id)
+		if st != usageOK || n.Usage.Workers == nil {
+			continue
+		}
+		q := n.Usage.Workers.Queued
+		if len(n.Usage.Workers.Queue) > q {
+			q = len(n.Usage.Workers.Queue)
+		}
+		total += q
+	}
+	return total
 }
 
 // ---- machines ----
@@ -386,10 +429,18 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	return clip(line, w)
 }
 
+// Widths of the fixed parts of a machine's usage. The CPU cell holds a
+// three-digit percentage now and in the 5 minute average: "cpu ████ 100% (100%)".
+const (
+	machineCPUW  = 20
+	machineMemW  = 18
+	machineLoadW = len("load 1.2")
+)
+
 // machineUsage writes the CPU, memory and load of a machine in a fixed width
-// (about 43 columns). An unknown figure is "?", dim.
+// (about 48 columns). An unknown figure is "?", dim.
 func (m Model) machineUsage(r machineRow, room int) string {
-	const unknownW = 46
+	unknownW := machineCPUW + 1 + machineMemW + 1 + machineLoadW
 	if !r.online {
 		return strings.Repeat(" ", unknownW)
 	}
@@ -406,7 +457,7 @@ func (m Model) machineUsage(r machineRow, room int) string {
 	if mu.Samples == 0 {
 		cpu = sDim.Render("cpu ...")
 	} else {
-		cpu = "cpu " + loadStyle(mu.CPU).Render(bar(mu.CPU/100, 4)) + " " + cell(fmtPct(mu.CPU), 3) + sDim.Render(" ("+fmtPct(mu.CPUAvg)+")")
+		cpu = "cpu " + loadStyle(mu.CPU).Render(bar(mu.CPU/100, 4)) + " " + cellR(fmtPct(mu.CPU), 4) + sDim.Render(" ("+fmtPct(mu.CPUAvg)+")")
 	}
 	memPct := 0.0
 	if mu.MemTotal > 0 {
@@ -415,9 +466,9 @@ func (m Model) machineUsage(r machineRow, room int) string {
 	mem := "mem " + loadStyle(memPct).Render(bar(memPct/100, 4)) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
 	load := sDim.Render("load ") + fmt.Sprintf("%.1f", mu.Load[0])
 	if room < unknownW {
-		return padStyled(cpu, 18) + " " + padStyled(mem, 18) // no room for the load
+		return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) // no room for the load
 	}
-	return padStyled(cpu, 18) + " " + padStyled(mem, 18) + " " + load
+	return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) + " " + load
 }
 
 // padStyled pads (or cuts) a string that holds colour codes to w columns.
