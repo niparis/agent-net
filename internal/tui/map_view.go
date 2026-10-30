@@ -317,7 +317,7 @@ func (m Model) mapFocusWithList(w, h int) []string {
 	if w < 38 {
 		return m.mapFocusView(w, h)
 	}
-	left := min(max(w/4, 17), 23)
+	left := min(max(w/5, 17), 23)
 	right := max(w-left-1, 1)
 	nodes := m.mapProjectNodes()
 	selected := 0

@@ -137,11 +137,11 @@ func TestMapKeysAreReadOnlyAndMoveTheSelection(t *testing.T) {
 		t.Fatal("left did not move the map selection")
 	}
 	m = keys(m, "g")
-	if m.mapSelectedName() != "trading-architect" {
+	if m.mapSelectedName() != "api-architect" {
 		t.Fatalf("g selected %q", m.mapSelectedName())
 	}
 	m = keys(m, "G")
-	if m.mapSelectedName() != "api-architect" {
+	if m.mapSelectedName() != "tenebrae" {
 		t.Fatalf("G selected %q", m.mapSelectedName())
 	}
 	// Keys that act on sessions do nothing on the map.
@@ -385,6 +385,15 @@ func TestMapExplainsIsolatedNode(t *testing.T) {
 	m.mp.selected = "a2a-ocs"
 	v := ansi.Strip(m.View())
 	if !strings.Contains(v, "no edges yet · ask the CTO to connect it (c)") {
+		t.Fatal(v)
+	}
+}
+
+func TestMapCompactBoxesKeepMaturityAndSessionCount(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, fakeGraph()))
+	m.mp.selected = "cogforge"
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "growing ●1") || !strings.Contains(v, "mature ○0") {
 		t.Fatal(v)
 	}
 }
