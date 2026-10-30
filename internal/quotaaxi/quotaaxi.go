@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -52,6 +53,20 @@ var (
 // ensureMu makes one install run at a time, so setup and the daemon cannot
 // start two npm processes for the same folder.
 var ensureMu sync.Mutex
+
+type cachedVersion struct {
+	mtime      int64
+	version    string
+	err        error
+	skipLogged bool
+}
+
+var versionCache = struct {
+	sync.Mutex
+	byPath map[string]cachedVersion
+}{byPath: make(map[string]cachedVersion)}
+
+var versionPattern = regexp.MustCompile(`(?:^|[^0-9A-Za-z])v?((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)(?:$|[^0-9A-Za-z.+-])`)
 
 func home() string {
 	if h, err := homeDir(); err == nil && h != "" {
@@ -119,14 +134,181 @@ func UserPath(configured string) (string, bool) {
 
 // Path finds the quota-axi to run: a copy the owner installed first, then
 // agent-net's private copy.
-func Path(configured string) (string, bool) {
+func Path(configured string, logf ...func(format string, args ...any)) (string, bool) {
 	if p, ok := UserPath(configured); ok {
-		return p, true
+		if version, err := InstalledVersion(p); err == nil && olderThanPinned(version) {
+			logSkipped(p, version, logCallback(logf))
+		} else {
+			return p, true
+		}
 	}
 	if usable(Binary()) {
 		return Binary(), true
 	}
 	return "", false
+}
+
+func logCallback(logf []func(format string, args ...any)) func(format string, args ...any) {
+	if len(logf) == 0 {
+		return nil
+	}
+	return logf[0]
+}
+
+// InstalledVersion runs the fast version command and caches its parsed
+// semantic version until the executable's modification time changes.
+func InstalledVersion(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	mtime := info.ModTime().UnixNano()
+	versionCache.Lock()
+	if cached, ok := versionCache.byPath[path]; ok && cached.mtime == mtime {
+		versionCache.Unlock()
+		return cached.version, cached.err
+	}
+	versionCache.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "--version")
+	cmd.Env = ExecEnv(path)
+	out, runErr := cmd.Output()
+	var version string
+	var parseErr error
+	if runErr != nil {
+		parseErr = fmt.Errorf("run --version: %w", runErr)
+	} else if match := versionPattern.FindStringSubmatch(strings.TrimSpace(string(out))); match == nil {
+		parseErr = fmt.Errorf("could not parse semantic version from --version output")
+	} else {
+		version = match[1]
+		if _, err := parseSemver(version); err != nil {
+			parseErr = err
+		}
+	}
+
+	versionCache.Lock()
+	versionCache.byPath[path] = cachedVersion{mtime: mtime, version: version, err: parseErr}
+	versionCache.Unlock()
+	return version, parseErr
+}
+
+type semanticVersion struct {
+	major, minor, patch uint64
+	prerelease          []string
+}
+
+func parseSemver(raw string) (semanticVersion, error) {
+	var v semanticVersion
+	main := raw
+	if i := strings.IndexByte(main, '+'); i >= 0 {
+		main = main[:i]
+	}
+	if i := strings.IndexByte(main, '-'); i >= 0 {
+		v.prerelease = strings.Split(main[i+1:], ".")
+		main = main[:i]
+	}
+	parts := strings.Split(main, ".")
+	if len(parts) != 3 {
+		return semanticVersion{}, fmt.Errorf("invalid semantic version %q", raw)
+	}
+	values := []*uint64{&v.major, &v.minor, &v.patch}
+	for i, part := range parts {
+		n, err := strconv.ParseUint(part, 10, 64)
+		if err != nil {
+			return semanticVersion{}, fmt.Errorf("invalid semantic version %q", raw)
+		}
+		*values[i] = n
+	}
+	for _, part := range v.prerelease {
+		if part == "" {
+			return semanticVersion{}, fmt.Errorf("invalid semantic version %q", raw)
+		}
+		if _, err := strconv.ParseUint(part, 10, 64); err == nil && len(part) > 1 && part[0] == '0' {
+			return semanticVersion{}, fmt.Errorf("invalid semantic version %q", raw)
+		}
+	}
+	return v, nil
+}
+
+func olderThanPinned(version string) bool {
+	got, err := parseSemver(version)
+	if err != nil {
+		return false
+	}
+	pinned, err := parseSemver(Version)
+	if err != nil {
+		return false
+	}
+	if got.major != pinned.major {
+		return got.major < pinned.major
+	}
+	if got.minor != pinned.minor {
+		return got.minor < pinned.minor
+	}
+	if got.patch != pinned.patch {
+		return got.patch < pinned.patch
+	}
+	if len(got.prerelease) == 0 {
+		return false
+	}
+	if len(pinned.prerelease) == 0 {
+		return true
+	}
+	return comparePrerelease(got.prerelease, pinned.prerelease) < 0
+}
+
+func comparePrerelease(a, b []string) int {
+	for i := 0; i < len(a) && i < len(b); i++ {
+		an, ae := strconv.ParseUint(a[i], 10, 64)
+		bn, be := strconv.ParseUint(b[i], 10, 64)
+		switch {
+		case ae == nil && be == nil:
+			if an < bn {
+				return -1
+			}
+			if an > bn {
+				return 1
+			}
+		case ae == nil:
+			return -1
+		case be == nil:
+			return 1
+		case a[i] < b[i]:
+			return -1
+		case a[i] > b[i]:
+			return 1
+		}
+	}
+	if len(a) < len(b) {
+		return -1
+	}
+	if len(a) > len(b) {
+		return 1
+	}
+	return 0
+}
+
+func logSkipped(path, version string, logf func(format string, args ...any)) {
+	if logf == nil {
+		return
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	mtime := info.ModTime().UnixNano()
+	versionCache.Lock()
+	cached, ok := versionCache.byPath[path]
+	if !ok || cached.mtime != mtime || cached.skipLogged {
+		versionCache.Unlock()
+		return
+	}
+	cached.skipLogged = true
+	versionCache.byPath[path] = cached
+	versionCache.Unlock()
+	logf("quota-axi: skipped %s (version %s is older than pinned %s)", path, version, Version)
 }
 
 // ExecEnv returns the environment for running the quota-axi at path. When a
@@ -298,8 +480,12 @@ func Ensure(ctx context.Context, logf func(format string, args ...any)) error {
 	ensureMu.Lock()
 	defer ensureMu.Unlock()
 
-	if _, ok := UserPath(""); ok {
-		return nil
+	if user, ok := UserPath(""); ok {
+		if version, err := InstalledVersion(user); err != nil || !olderThanPinned(version) {
+			return nil
+		} else {
+			logSkipped(user, version, logf)
+		}
 	}
 	if usable(Binary()) {
 		return nil

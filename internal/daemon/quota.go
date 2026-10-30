@@ -127,8 +127,8 @@ func cloneQuotas(q *protocol.Quotas) *protocol.Quotas {
 // FindQuotaAXI finds the quota-axi to run: the configured path, else the one
 // on PATH, else ~/.local/bin/quota-axi, else the usual Node folders on macOS,
 // else agent-net's private copy. A copy the owner installed always wins.
-func FindQuotaAXI(configured string) (string, bool) {
-	return quotaaxi.Path(configured)
+func FindQuotaAXI(configured string, logf ...func(format string, args ...any)) (string, bool) {
+	return quotaaxi.Path(configured, logf...)
 }
 
 // quotaAllowed is the owner's answer for the quota-axi integration. It is on
@@ -151,7 +151,7 @@ func (d *Daemon) startQuota(ctx context.Context) {
 	if every <= 0 {
 		every = defaultQuotaInterval
 	}
-	path, ok := FindQuotaAXI(d.cfg.QuotaAXIPath)
+	path, ok := FindQuotaAXI(d.cfg.QuotaAXIPath, d.Logf)
 	if !ok {
 		if !allowed {
 			return
@@ -166,7 +166,7 @@ func (d *Daemon) startQuota(ctx context.Context) {
 				}
 				return
 			}
-			p, ok := FindQuotaAXI(d.cfg.QuotaAXIPath)
+			p, ok := FindQuotaAXI(d.cfg.QuotaAXIPath, d.Logf)
 			if !ok {
 				return
 			}

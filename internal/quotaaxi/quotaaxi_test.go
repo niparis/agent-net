@@ -3,10 +3,12 @@ package quotaaxi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fakeNode writes a node that prints version for --version.
@@ -57,6 +59,88 @@ func setupPath(t *testing.T, version string) (home, log string) {
 	fakeNPM(t, bin, log)
 	t.Setenv("PATH", bin)
 	return home, log
+}
+
+func fakeQuotaVersion(t *testing.T, path, version, calls string) {
+	t.Helper()
+	body := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf '%s\\n' \"$QUOTA_VERSION\" >> \"$QUOTA_VERSION_CALLS\"; echo \"quota-axi $QUOTA_VERSION\"; exit 0; fi\nexit 0\n"
+	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUOTA_VERSION", version)
+	t.Setenv("QUOTA_VERSION_CALLS", calls)
+}
+
+func TestPathSkipsOlderUserCopyForPrivateCopy(t *testing.T) {
+	setupPath(t, "22.19.0")
+	user := filepath.Join(t.TempDir(), quotaCommand)
+	private := Binary()
+	if err := os.MkdirAll(filepath.Dir(private), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	calls := filepath.Join(t.TempDir(), "version-calls")
+	fakeQuotaVersion(t, user, "0.1.68", calls)
+	if err := os.WriteFile(private, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var logs []string
+	logf := func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) }
+	if got, ok := Path(user, logf); !ok || got != private {
+		t.Fatalf("old user copy was selected: %q %v", got, ok)
+	}
+	if len(logs) != 1 || !strings.Contains(logs[0], user) || !strings.Contains(logs[0], "0.1.68") {
+		t.Fatalf("skip log: %q", logs)
+	}
+}
+
+func TestEnsureInstallsPinnedCopyWhenUserCopyIsTooOld(t *testing.T) {
+	home, log := setupPath(t, "22.19.0")
+	user := filepath.Join(home, ".local", "bin", quotaCommand)
+	if err := os.MkdirAll(filepath.Dir(user), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeQuotaVersion(t, user, "0.1.68", filepath.Join(t.TempDir(), "version-calls"))
+	var logs []string
+	if err := Ensure(context.Background(), func(format string, args ...any) {
+		logs = append(logs, fmt.Sprintf(format, args...))
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !usable(Binary()) {
+		t.Fatal("Ensure did not install a private copy for the old user version")
+	}
+	if len(logs) != 2 || !strings.Contains(logs[0], user) || !strings.Contains(logs[0], "0.1.68") || !strings.Contains(logs[1], "installed "+Version) {
+		t.Fatalf("logs: %q", logs)
+	}
+	if raw, err := os.ReadFile(log); err != nil || !strings.Contains(string(raw), "quota-axi@"+Version) {
+		t.Fatalf("npm was not asked for the pinned copy: %q %v", raw, err)
+	}
+}
+
+func TestInstalledVersionCacheUsesMtime(t *testing.T) {
+	path := filepath.Join(t.TempDir(), quotaCommand)
+	calls := filepath.Join(t.TempDir(), "version-calls")
+	fakeQuotaVersion(t, path, "0.1.68", calls)
+	if got, err := InstalledVersion(path); err != nil || got != "0.1.68" {
+		t.Fatalf("first version: %q %v", got, err)
+	}
+	if got, err := InstalledVersion(path); err != nil || got != "0.1.68" {
+		t.Fatalf("cached version: %q %v", got, err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf '%s\\n' \"$QUOTA_VERSION\" >> \"$QUOTA_VERSION_CALLS\"; echo \"quota-axi $QUOTA_VERSION\"; exit 0; fi\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("QUOTA_VERSION", "0.1.69")
+	changed := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(path, changed, changed); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := InstalledVersion(path); err != nil || got != "0.1.69" {
+		t.Fatalf("version after mtime change: %q %v", got, err)
+	}
+	if got, err := os.ReadFile(calls); err != nil || strings.TrimSpace(string(got)) != "0.1.68\n0.1.69" {
+		t.Fatalf("version command cache invalidation: %q %v", got, err)
+	}
 }
 
 func TestEnsureInstallsThePinnedVersionInThePrivatePrefix(t *testing.T) {
@@ -161,6 +245,7 @@ func TestEnsureRetriesAtMostOnceADay(t *testing.T) {
 }
 
 func TestRemoveDeletesThePrivateFolder(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
 	prefix := Prefix()
 	if err := os.MkdirAll(filepath.Join(prefix, "node_modules", ".bin"), 0o755); err != nil {
 		t.Fatal(err)
