@@ -422,7 +422,7 @@ func TestSubscriptionPanelAndUsageRoles(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{ID: "low", PercentUsed: 30, Pace: protocol.QuotaPaceBehind}, {ID: "mid", PercentUsed: 70, Pace: protocol.QuotaPaceAhead}, {ID: "high", PercentUsed: 90}}}}}
 	v := strings.Join(m.quotasView(120, 40), "\n")
-	for _, want := range []string{"Subscriptions · read 40s ago", progressBar(.3, 10, roleGood), progressBar(.7, 10, roleWarning), progressBar(.9, 10, roleError)} {
+	for _, want := range []string{"read 40s ago", quotaBar(.3, 10, roleGood), quotaBar(.7, 10, roleWarning), quotaBar(.9, 10, roleError)} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q", want)
 		}
@@ -491,6 +491,16 @@ func TestQuotaReadingSourceLabels(t *testing.T) {
 	}
 	m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "other", Hostname: "build", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude"}}}}}}
 	if v := show(); !strings.Contains(v, "(read on research)") {
+		t.Fatal(v)
+	}
+}
+
+func TestQuotaEmptyTrack(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if !strings.Contains(v, "──────────") || strings.Contains(v, "░") {
 		t.Fatal(v)
 	}
 }

@@ -101,7 +101,7 @@ func (m Model) quotasView(w, h int) []string {
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pctText = sBad.Render(pct)
 			}
-			usage := progressBar(window.PercentUsed/100, 10, color) + " " + pctText
+			usage := quotaBar(window.PercentUsed/100, 10, color) + " " + pctText
 			usage = padStyled(usage, 20)
 
 			paceStyle := sDim
@@ -216,4 +216,13 @@ func quotaNotSetUp(p protocol.QuotaProvider) bool {
 	}
 	reason := strings.ToLower(strings.ReplaceAll(p.Error, "_", " "))
 	return strings.Contains(reason, "credential unavailable") || strings.Contains(reason, "sign-in required") || strings.Contains(reason, "sign in required") || strings.Contains(reason, "not running") || strings.Contains(reason, "cli unavailable")
+}
+
+func quotaBar(frac float64, n int, color lipgloss.TerminalColor) string {
+	n = max(n, 0)
+	filled := min(max(int(frac*float64(n)+0.5), 0), n)
+	if frac > 0 && n > 0 && filled == 0 {
+		filled = 1
+	}
+	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("─", n-filled))
 }
