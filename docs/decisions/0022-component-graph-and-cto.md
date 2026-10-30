@@ -181,6 +181,29 @@ OpenCode is the only one with all four. The CTO runs as a private `opencode serv
 
 A session that wants a charter change (for example "add api-design to my needs") says so to the owner, and the owner tells the CTO. One place to change things, one history, and no rights changed from the network.
 
+## Quotas
+
+Workers spend the owner's subscriptions. agent-net reads how much is left and plans with it. It does not measure quotas itself: it reads [quota-axi](https://github.com/kunchenguid/quota-axi), a CLI that reports the quota windows of the owner's subscriptions (Claude, Codex, OpenCode Go, DeepSeek, Cursor, OpenRouter and more) from the logins on the machine.
+
+- **Reading.** When quota-axi is installed on a machine (an integration of 0021: the owner turns it on once for all machines; agent-net does not install npm packages by itself), its daemon runs `quota-axi --json --max-age 5m --no-credential-refresh` every few minutes and sends the gateway one line per provider and window: percent used, time to reset, pace (`on pace`, `ahead`, `exhausted`). `--no-credential-refresh`: agent-net never makes quota-axi refresh a login (decision 0019's risk). No account identity is sent (`--full` is not used).
+- **Model choice.** A provider that is exhausted, or above 95% of any window, is skipped for loose model names; an exact model id still works, with a warning in the start result. A provider ahead of pace ranks below providers on pace.
+- **Admission.** A start whose model's provider is exhausted is refused with the reason and the reset time, instead of failing at the first model call.
+- **Shown** in one line of the TUI header (`claude 59%w · codex 90%w · opencode-go 76%w · cursor exhausted`), in `agent_nodes` for agents, and to the CTO, which plans with it ("codex is at 90% of its week: the next workers go to opencode-go").
+
+## Track record and playbook: what the network learns about models
+
+Which model and harness to use for which work is learned by trying, and today that knowledge stays in one session's memory. agent-net keeps it for every agent:
+
+1. **A track record, collected automatically.** agent-net already records every worker's harness, model, run time, outcome and tokens. A worker also reports `complete: false` in `agent_handback` when it hands back partial work, so a lazy model is counted. Per harness and model, `agent_nodes` and every start result show:
+   ```
+   terra · pi       4 runs: 1 complete, 3 partial (median 9 min) · cannot resume
+   terra · codex    3 runs: 0 complete, 3 partial (median 3 min) · resumes
+   deepseek-v4.1-flash · opencode   14 runs: 13 complete (median 26 min)
+   ```
+   Facts, not opinions, so they stay true when a model changes.
+2. **A playbook note per model** (and optionally per harness), written by the owner through the CTO: "terra: smart but lazy; give one layer per task with a hard checklist; continue at once". agent-net adds the note to the start result whenever an agent picks that model, so the caller briefs the worker right the first time.
+3. **The CTO** reads the track records, the playbook and the quotas when it chooses where to send work, and proposes playbook notes from what it sees ("terra handed back partial 3 times out of 4: add a note?").
+
 ## The TUI
 
 - **Map view** (key to be chosen, for example `M`): architects with the nodes they govern and the mode in brackets; the selected node's charter; its edges in and out with their request rules; its latest decisions (accepted, rejected, overruled). Read only.
@@ -213,7 +236,8 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 2. **The CTO.** OpenCode harness, private MCP tools, the TUI chat pane, diffs and undo.
 3. **Edges and modes.** depends-on, governs with advisor/arbiter/owner, deploys (the target's rule applies), request rules (replacing trust), architect roles, written approvals and the owner's inbox.
 4. **Maturity defaults wired to the controls.** Merge authority (new), sandbox, delegation, request judging.
-5. **The phone** (0006), with the same chat and Needs you.
+5. **Quotas, track record and playbook.** quota-axi reading, model choice and admission by quota, `complete: false` hand-backs, the per-model track record, playbook notes through the CTO.
+6. **The phone** (0006), with the same chat and Needs you.
 
 ## Open questions
 
