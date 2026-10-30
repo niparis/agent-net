@@ -570,3 +570,12 @@ func TestQuotaDoesNotShowOrphanWorkerFooter(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestQuotaHintsShowScrollAndExpansion(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	v := ansi.Strip(m.helpLine(80))
+	if !strings.Contains(v, "up/down scroll") || !strings.Contains(v, "s show") {
+		t.Fatal(v)
+	}
+}
