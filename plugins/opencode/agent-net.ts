@@ -618,7 +618,7 @@ function formatStarted(r: any): string {
     return (
       `${r.queue_reason}\n` +
       `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
-      `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_stop and the queue_id.` +
+      `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_stop and the queue_id.\n${workerPermissions(r)}` +
       (r.machine_note ? `\nmachine: ${r.machine_note}` : "")
     );
   }
@@ -627,10 +627,17 @@ function formatStarted(r: any): string {
     : "The task was sent as a message from you; the worker answers with agent_reply and its answer arrives in this session.";
   return (
     `Started worker ${r.session_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}.\n` +
-    (r.model_note ? `model: ${r.model_note}\n` : "") +
+    `${workerPermissions(r)}\n` +
+      (r.model_note ? `model: ${r.model_note}\n` : "") +
     (r.worktree ? `worktree: ${r.worktree} (branch ${r.branch})\n` : "") +
     `${note} Stop it with agent_stop. It ends by itself after 60 minutes without messages or 4 hours.`
   );
+}
+
+function workerPermissions(r: any): string {
+  const level = r.permissions || "sandboxed";
+  const detail = level === "read-only" ? "no writes" : level === "no-network" ? "writes only in its worktree, network off" : "writes only in its worktree, network on";
+  return `permissions: ${level} (${detail})${r.harness === "codex" ? "" : " (enforced for Codex only for now)"}`;
 }
 
 function formatProjects(r: any): string {
@@ -641,6 +648,7 @@ function formatProjects(r: any): string {
       let line = `${p.name} on ${p.hostname}: ${p.path}  [${p.source || "seen"}]`;
       if (p.remote) line += `  ${p.remote}`;
       if (p.harnesses?.length) line += `  harnesses: ${p.harnesses.join(",")}`;
+      line += `  permissions: ${p.permissions || "sandboxed"}`;
       return line;
     })
     .join("\n");
@@ -881,6 +889,7 @@ const TOOLS: ToolDef[] = [
     description:
       "Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. " +
       "The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). " +
+      "The owner sets a worker level per project, and the result shows it. " +
       "The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. " +
       WORKER_NOTE +
       " A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief." +

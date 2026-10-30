@@ -45,6 +45,12 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 			p.Remote = r.Remote
 		}
 	}
+	for i := range out {
+		out[i].Permissions, err = s.WorkerPermissions(out[i].NodeID, out[i].Name)
+		if err != nil {
+			return nil, err
+		}
+	}
 	sort.Slice(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if !strings.EqualFold(a.Name, b.Name) {

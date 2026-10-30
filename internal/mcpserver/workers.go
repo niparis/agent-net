@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -41,6 +42,7 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 	mcp.AddTool(s, tool("agent_start",
 		"Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. "+
 			"The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). "+
+			"The owner sets a worker level per project, and the result shows it. "+
 			"The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. "+
 			workerNote+" A worker cannot start workers. The project's .agent-net/worker.md, if present, is added to the brief."+
 			" If the machine has no room (CPU or memory is busy), the start is queued, not refused: the answer has status queued, a queue_id, the place in the queue and the reason, and a worker notice arrives in your session when the worker starts (or when it cannot). Cancel a queued start with agent_stop and its queue_id."+
@@ -54,7 +56,16 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 			}
 			out, err := run(ctx, protocol.OpWorkerStart, protocol.WorkerStartRequest{Project: in.Project, Machine: in.Machine,
 				Harness: in.Harness, Model: in.Model, Task: in.Task, Isolation: in.Isolation, Base: in.Base, Continue: in.Continue})
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			if m, ok := out.(map[string]any); ok {
+				level, _ := m["permissions"].(string)
+				harness, _ := m["harness"].(string)
+				raw, _ := json.Marshal(out)
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(raw) + "\n" + protocol.WorkerPermissionsText(level, harness)}}}, out, nil
+			}
+			return nil, out, nil
 		})
 	mcp.AddTool(s, tool("agent_handback",
 		"Only for a worker that agent-net started: hand your final report to the agent that started you, and mark your work done. "+

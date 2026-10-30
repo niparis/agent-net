@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // noticeLines is the result of the last action, on one or two rows: plain text
@@ -55,6 +56,13 @@ func (m Model) formView(w, rows int) []string {
 			}
 		}
 		out = append(out, clip(line, w))
+	}
+	name, machine, _ := m.resolveProject(f.value(fProject))
+	for _, p := range m.projectRows() {
+		if strings.EqualFold(p.Name, name) && machine != "" && strings.EqualFold(p.Hostname, machine) {
+			out = append(out, sDim.Render(clip("  "+protocol.WorkerPermissionsText(p.Permissions, f.value(fHarness)), w)))
+			break
+		}
 	}
 	if f.err != "" {
 		out = append(out, sBad.Render(clip("  ! "+f.err, w)))

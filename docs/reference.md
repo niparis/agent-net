@@ -281,6 +281,8 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   | `no-network` | The same | off |
   | `read-only` | None | on |
 
+  The project list includes each project's `permissions` level. The TUI start form shows the selected project's level. The start result, the worker brief and worker notices show it too; the brief explains when writes or network calls will fail. The start result and brief say when the level is not enforced. A failed or blocked Codex turn with an explicit sandbox denial reports `blocked by the sandbox (<level>)` in the notice. A command's ordinary permission or network error alone does not prove a sandbox denial.
+
   **Codex only for now.** The Codex worker is started with approval policy `never` and the sandbox of its level (`thread/start` and `thread/resume`: `approvalPolicy`, `sandbox`, `config.sandbox_workspace_write`; `turn/start`: `approvalPolicy`, `sandboxPolicy`). Its private app server also gets `-c mcp_servers.agent-net.enabled=false` when `$CODEX_HOME/config.toml` defines the agent-net MCP server, so it does not call agent-net tools (its brief does not mention them either: the end of its turn is the report). Other MCP servers stay. The daemon still declines any approval that arrives. Claude Code, OpenCode and Pi workers record the level, and the TUI detail pane shows it on a `sandbox` line with "not enforced yet", but they behave as before.
 - **How, per harness.** All run in the project folder (or the worker's worktree), and none gets a flag that turns permission checks off: a worker uses the project's own permission settings.
 

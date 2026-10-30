@@ -257,6 +257,20 @@ func openForm(t *testing.T, m Model) Model {
 	return m
 }
 
+func TestStartFormShowsProjectPermissions(t *testing.T) {
+	m, _ := workerModel(120, 34)
+	for i := range m.snap.Projects {
+		if m.snap.Projects[i].Name == "tenebrae" {
+			m.snap.Projects[i].Permissions = "read-only"
+		}
+	}
+	m = openForm(t, selectID(m, "s_0000000000000004"))
+	m = typeText(m, "tenebrae")
+	if view := strings.Join(m.formView(120, 18), "\n"); !strings.Contains(view, "permissions: read-only") {
+		t.Fatalf("form: %s", view)
+	}
+}
+
 func TestStartFormCompletesAndStarts(t *testing.T) {
 	m, src := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000004") // a session with no project on a known list
