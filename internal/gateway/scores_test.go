@@ -42,3 +42,31 @@ func TestScoresRoutes(t *testing.T) {
 		t.Fatalf("clear: %d %s", got.Code, got.Body)
 	}
 }
+
+func TestDifficultySettings(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	_, token, err := g.Store().CreateNode("test", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "/v1/difficulty", bytes.NewBufferString(body))
+		r.Header.Set("Authorization", "Bearer "+token)
+		w := httptest.NewRecorder()
+		g.Handler().ServeHTTP(w, r)
+		return w
+	}
+	if w := request(http.MethodPut, `{"hard":45}`); w.Code != 200 {
+		t.Fatalf("set: %d %s", w.Code, w.Body)
+	}
+	if w := request(http.MethodGet, ""); !bytes.Contains(w.Body.Bytes(), []byte(`"hard":45`)) {
+		t.Fatalf("get: %s", w.Body)
+	}
+	if w := request(http.MethodPut, `{"hard":101}`); w.Code != 400 {
+		t.Fatalf("invalid: %d", w.Code)
+	}
+}

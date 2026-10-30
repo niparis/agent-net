@@ -25,3 +25,20 @@ func TestScoresOwnerGate(t *testing.T) {
 		t.Fatalf("scores: %+v %v", out, err)
 	}
 }
+
+func TestDifficultyOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	if _, err := pi.call("difficulty_set", map[string]float64{"hard": 45}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("gate: %v", err)
+	}
+	cli := cliClient(t, n)
+	cli.mustCall("difficulty_set", map[string]float64{"hard": 45})
+	raw := cli.mustCall("difficulty_get", nil)
+	var out map[string]float64
+	if err := json.Unmarshal(raw, &out); err != nil || out["hard"] != 45 {
+		t.Fatalf("got %s: %v", raw, err)
+	}
+}

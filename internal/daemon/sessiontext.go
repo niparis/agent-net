@@ -35,7 +35,7 @@ var operatorMethods = map[string]bool{
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
-	protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
+	"difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
@@ -345,6 +345,14 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 			return nil, true, errors.New("cto_events needs a non-negative index")
 		}
 		res, err = d.ctoEvents(ctx, q.Index)
+	case "difficulty_get":
+		res, err = d.difficulty(ctx, nil)
+	case "difficulty_set":
+		var q map[string]float64
+		if json.Unmarshal(raw, &q) != nil || q == nil {
+			return nil, true, errors.New("bad difficulty settings")
+		}
+		res, err = d.difficulty(ctx, q)
 	case protocol.OpScoresGet:
 		res, err = d.scores(ctx, nil)
 	case protocol.OpScoresSet:

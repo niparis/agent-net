@@ -76,3 +76,52 @@ func (g *Gateway) handleScoresSet(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, out, err)
 }
+
+const difficultyKey = "difficulty_minimums"
+
+func (s *Store) difficultyMinimums() (map[string]float64, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, difficultyKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return map[string]float64{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]float64
+	err = json.Unmarshal([]byte(raw), &out)
+	return out, err
+}
+func (g *Gateway) handleDifficulty(w http.ResponseWriter, r *http.Request) {
+	node, ok := g.nodeAuthed(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method == http.MethodGet {
+		out, err := g.store.difficultyMinimums()
+		writeJSON(w, out, err)
+		return
+	}
+	var in map[string]float64
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&in) != nil || in == nil {
+		http.Error(w, "bad difficulty settings", 400)
+		return
+	}
+	for k, v := range in {
+		if _, ok := protocol.DifficultyMinimums[k]; !ok || v < 0 || v > 100 {
+			http.Error(w, "bad difficulty settings", 400)
+			return
+		}
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, difficultyKey, string(raw), g.store.now().UnixNano())
+	if err == nil {
+		g.store.Event("difficulty.set", node, "", "", "")
+	}
+	writeJSON(w, in, err)
+}
