@@ -480,7 +480,7 @@ func TestEverySizeFitsWithUsage(t *testing.T) {
 
 func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 	m := newModel(140, 30)
-	if l := m.helpLine(140); !strings.Contains(l, "d detail") || !strings.Contains(l, "? help") {
+	if l := m.helpLine(160); !strings.Contains(l, "d detail") || !strings.Contains(l, "? help") || !strings.Contains(l, "e enter (ctrl+] back)") {
 		t.Fatalf("wide key line %q", l)
 	}
 	l := m.helpLine(60)

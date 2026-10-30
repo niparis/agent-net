@@ -27,4 +27,4 @@ Selected session ─────────────────────
 Messages (live) ────────────────────────────────────────────────────────────────────────────────────
   14:02  tenebrae-53 -> ci-runner  notification                                                    ✗
   14:04  tenebrae-53 -> s_00000000  request                                                        …
-up/down select  enter conversation  e enter it  m msg  s start  x stop  / filter  ? help  q quit
+up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  ? help  q quit

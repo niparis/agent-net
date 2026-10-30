@@ -31,4 +31,4 @@ Messages (live) ─────────────────────�
   14:00  you -> tenebrae  request                                                                                      ↩
    ↳ 14:03  tenebrae -> you  reply                                                                                     ✓
   14:04  worker refused in nope: no project named nope is known
-up/down select  enter conversation  e enter it  m msg  s start  x stop  / filter  o offline  tab feed  ? help  q quit
+up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  o offline  ? help  q quit

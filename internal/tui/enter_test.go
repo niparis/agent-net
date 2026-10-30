@@ -128,7 +128,7 @@ func TestEnterWithoutASelection(t *testing.T) {
 
 func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	m, _ := workerModel(140, 30)
-	if !strings.Contains(lines(m.View())[29], "e enter it") {
+	if !strings.Contains(lines(m.View())[29], "e enter (ctrl+] back)") {
 		t.Errorf("footer: %q", lines(m.View())[29])
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})

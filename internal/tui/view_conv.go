@@ -152,7 +152,7 @@ func (m Model) hints() []hint {
 			return []hint{{"c", "recipient", 1}, {"C", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter it", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
 }
 

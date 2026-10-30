@@ -1,6 +1,7 @@
 package ptyproxy
 
 import (
+	"bufio"
 	"bytes"
 	"io"
 	"os"
@@ -31,14 +32,16 @@ func TestProxy(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- p.Run() }()
 	go func() { _, _ = keys.Write([]byte("abc\n")) }()
-	buf := make([]byte, 14)
-	if _, err := io.ReadFull(output, buf); err != nil {
-		t.Fatal(err)
+	reader := bufio.NewReader(output)
+	var seen strings.Builder
+	for !strings.Contains(seen.String(), "child:abc") {
+		b, err := reader.ReadByte()
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen.WriteByte(b)
 	}
-	if !strings.Contains(string(buf), "child:abc") {
-		t.Fatalf("output %q", buf)
-	}
-	go func() { _, _ = io.Copy(io.Discard, output) }()
+	go func() { _, _ = io.Copy(io.Discard, reader) }()
 	_, _ = keys.Write([]byte{0x1d})
 	select {
 	case err := <-done:
