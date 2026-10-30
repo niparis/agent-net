@@ -1028,7 +1028,7 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	filter := "worker events"
+	filter := "conversations"
 	switch m.events {
 	case eventsAll:
 		filter = "all events"
@@ -1048,7 +1048,13 @@ func (m Model) messagesView(w, h int) []string {
 		list = append(list, m.messageConversationLine(r, listW, i == selected && m.focus == focusFeed))
 	}
 	if len(list) == 0 {
-		list = append(list, sDim.Render("No conversations"))
+		empty := "No conversations"
+		if m.feed.unavailable != "" {
+			empty = m.feed.unavailable
+		}
+		for _, line := range wrap(empty, listW) {
+			list = append(list, sDim.Render(line))
+		}
 	}
 	footer := fmt.Sprintf("%d system events · e to show", m.systemEventCount())
 	if m.messageShowEvents {
@@ -1073,7 +1079,7 @@ func (m Model) messagesView(w, h int) []string {
 		return out
 	}
 	available := max(h-5, 0)
-	listHeight := min(max(available/2, 1), len(list))
+	listHeight := min(max((available+2)/2, 1), len(list)+1)
 	chatHeight := max(available-listHeight, 0)
 	list = messageFit(list, max(listHeight-1, 0), selected)
 	if listHeight > 0 {

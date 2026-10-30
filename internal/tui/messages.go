@@ -193,7 +193,13 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 		if it.FromCTO {
 			sender = "CTO"
 		}
-		out = append(out, sDim.Render(m.clock(it.At)+" "+sender))
+		header := m.clock(it.At) + " " + sender
+		if i == m.feedCur {
+			header = lipgloss.NewStyle().Foreground(roleAccent).Render("▸ ") + sDim.Render(header)
+		} else {
+			header = sDim.Render("  " + header)
+		}
+		out = append(out, header)
 		if text, ok := workerNoticeLine(it.Body); ok {
 			if strings.Contains(text, "✓ done") {
 				out = append(out, sBusy.Render(clip(text, w)))
@@ -227,6 +233,11 @@ func (m Model) selectedConversationItem() *feedItem {
 		return nil
 	}
 	row := rows[m.conversationIndex(rows)]
+	for _, i := range row.items {
+		if i == m.feedCur {
+			return m.feedItemAt(i)
+		}
+	}
 	return m.feedItemAt(row.items[0])
 }
 func (m Model) systemEventCount() int {

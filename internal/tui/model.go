@@ -817,6 +817,27 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.fetching = true
 			return m, m.fetchCmd()
 		}
+	case "left", "right":
+		if m.tab == 1 && m.focus == focusFeed {
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				r := rows[m.conversationIndex(rows)]
+				pos := 0
+				for i, v := range r.items {
+					if v == m.feedCur {
+						pos = i
+						break
+					}
+				}
+				if k.String() == "right" {
+					pos++
+				} else {
+					pos--
+				}
+				m.feedCur = r.items[min(max(pos, 0), len(r.items)-1)]
+			}
+			return m, nil
+		}
 	case "up", "k":
 		m.move(-1)
 	case "down", "j":

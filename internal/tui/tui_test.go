@@ -409,9 +409,7 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 	m = drainSnippets(t, m)
 	m = keys(m, "2")
 	// Move up to the first message (the last items are newer).
-	for m.feed.items[m.feedCur].MsgID != "m_1" {
-		m = keys(m, "up")
-	}
+	m = selectFeedMessage(m, "m_1")
 	golden(t, "view_80x24_feed_focus", m.View())
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = m2.(Model)
@@ -841,8 +839,8 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 		ev(15, time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build-vm" }),
 	)
 	m = refresh(m, src)
-	v := keys(m, "2").View()
-	if !strings.Contains(v, "ci-runner -> tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
+	v := keys(m, "2", "e").View()
+	if !strings.Contains(v, "ci-runner ↔ tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
 	if m.feed.lastID != 15 {
@@ -878,7 +876,7 @@ func TestFeedUnavailableOnOlderPeers(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
 	v := keys(m, "2").View()
-	if m.problem != ProblemNone || !strings.Contains(v, "no message feed: the daemon or the gateway is older than the event feed") {
+	if m.problem != ProblemNone || !strings.Contains(v, "no message feed:") || !strings.Contains(v, "older than the event feed") {
 		t.Fatalf("not explained:\n%s", v)
 	}
 	if !strings.Contains(m.View(), "tenebrae-53") {
@@ -910,9 +908,7 @@ func TestOpenMessageBody(t *testing.T) {
 	}
 	m = keys(m, "esc") // back to the lists
 	m = keys(m, "2")
-	for m.feed.items[m.feedCur].MsgID != "m_3" {
-		m = keys(m, "up")
-	}
+	m = selectFeedMessage(m, "m_3")
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = m2.(Model)
 	if !strings.Contains(m.View(), "fetching...") {
@@ -938,9 +934,7 @@ func TestOpenMessageBody(t *testing.T) {
 	}
 
 	// A message the machine cannot read.
-	for m.feed.items[m.feedCur].MsgID != "m_1" {
-		m = keys(m, "up")
-	}
+	m = selectFeedMessage(m, "m_1")
 	m2, cmd = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = send(m2.(Model), cmd())
 	if v := m.View(); !strings.Contains(v, "The body is not available here") {
