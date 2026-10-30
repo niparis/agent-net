@@ -51,3 +51,11 @@ func TestCodexFrameCarriesTheGraphRelationAfterTheBody(t *testing.T) {
 		t.Fatalf("a reply got a relation line: %q", got)
 	}
 }
+
+func TestCodexWorkerApprovalNote(t *testing.T) {
+	m := protocol.Message{FromHarness: protocol.OwnerHarness, Body: "approve", ApprovalNote: "Nicolas approved: deploy abc, 2026-01-01T00:00:00Z"}
+	got := codexWorkerText(m)
+	if !strings.Contains(got, "[agent-net] "+m.ApprovalNote) {
+		t.Fatalf("worker delivery: %q", got)
+	}
+}
