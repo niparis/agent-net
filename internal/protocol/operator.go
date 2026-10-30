@@ -69,6 +69,8 @@ const (
 
 // Graph operator methods are available only to the owner.
 const (
+	OpHeldList       = "held_list"
+	OpHeldAnswer     = "held_answer"
 	OpGraphGet       = "graph_get"
 	OpCharterSet     = "charter_set"
 	OpCharterHistory = "charter_history"
@@ -83,7 +85,7 @@ const (
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
 	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
-	OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
+	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
@@ -418,4 +420,10 @@ func CleanNodeName(s string) (string, error) {
 		}
 	}
 	return s, nil
+}
+
+// HeldAnswer is an owner decision for a request awaiting approval.
+type HeldAnswer struct {
+	MessageID string `json:"message_id"`
+	Action    string `json:"action"`
 }

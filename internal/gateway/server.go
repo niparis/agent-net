@@ -229,8 +229,18 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			return
 		case <-t.C:
 			// Expire writes one log line per message.
-			if _, err := g.store.Expire(); err != nil {
+			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)
+			} else if n > 0 {
+				g.mu.Lock()
+				nodes := make([]string, 0, len(g.conns))
+				for id := range g.conns {
+					nodes = append(nodes, id)
+				}
+				g.mu.Unlock()
+				for _, id := range nodes {
+					g.dispatchPending(ctx, id, false)
+				}
 			}
 		}
 	}
@@ -615,6 +625,27 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "held.list":
+		messages, err := st.HeldRequests()
+		return map[string]any{"messages": messages}, err
+	case "held.answer":
+		p, err := decode[protocol.HeldAnswer](raw)
+		if err != nil {
+			return nil, reject("bad held.answer")
+		}
+		m, err := st.AnswerHeld(p.MessageID, p.Action)
+		if err != nil {
+			return nil, err
+		}
+		if m.OwnerApproved {
+			g.dispatch(ctx, m)
+		} else {
+			if a, ok, err := st.Agent(m.From); err == nil && ok && a.Online {
+				g.dispatchPending(ctx, a.NodeID, false)
+			}
+		}
+		return map[string]any{"message": m}, nil
+
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true}, nil
 	case "graph.get":
@@ -896,7 +927,7 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 			g.logLine("error", "where", "request rule", "err", err)
 			return
 		}
-		if rule == "ask" {
+		if rule == "ask" && !m.OwnerApproved {
 			if _, err := g.store.db.Exec(`UPDATE messages SET state='held' WHERE id=? AND state IN ('stored','dispatched')`, m.ID); err != nil {
 				g.logLine("error", "where", "hold message", "err", err)
 			}

@@ -362,7 +362,7 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	if e.Rule == "" {
 		e.Rule = "normal"
 	}
-	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" {
+	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" && e.Rule != "never" {
 		return reject("invalid edge rule")
 	}
 	if e.Kind != "depends" && e.Kind != "governs" {

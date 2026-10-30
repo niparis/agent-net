@@ -36,7 +36,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true,
-	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
+	protocol.OpHeldList: true, protocol.OpHeldAnswer: true, protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -171,6 +171,14 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 	}
 	d := lc.d
 	switch method {
+	case protocol.OpHeldList:
+		res, err = d.call(ctx, "held.list", struct{}{})
+	case protocol.OpHeldAnswer:
+		var p protocol.HeldAnswer
+		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
+			return nil, true, errors.New("held_answer needs message_id")
+		}
+		res, err = d.call(ctx, "held.answer", p)
 	case "usage":
 		res, err = d.localUsage(ctx)
 	case "counts":
