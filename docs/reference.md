@@ -9,6 +9,11 @@ object to change the rules. Saving one field keeps the others. The gateway
 stores all of it with the other owner settings. Saving them does not start a
 CTO runtime.
 
+Run `agent-net cto` to show the settings, `agent-net cto harness claude` or
+`agent-net cto harness opencode` to change the harness, and `agent-net cto model
+opus` to set the model. Pass an empty argument (`agent-net cto model ""`) to
+restore the default model.
+
 ```json
 {"compaction":{"threshold_percent":70,"floor_tokens":40000,
  "cache_window_seconds":{"anthropic":300,"openai":300}}}
@@ -86,6 +91,7 @@ In the TUI, `C` focuses the CTO box on the Sessions tab.
 Its title shows the selected harness and model.
 Type in the focused input and press Enter to send. When the input is empty,
 `n` asks before starting a new conversation, `u` undoes the latest graph change,
+`m` opens the harness and model form,
 and Esc returns focus to the session list. The chat polls once per second and shows recorded CTO
 tool calls, including reads and failures, plus graph diffs; a graph change
 refreshes an open map.
@@ -117,6 +123,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net tui` | A live terminal view of every session on the network, with three actions: message a session as yourself, start a worker, stop a worker. It talks to the local daemon through the operator interface, so it runs on any machine. See [the screen](#the-tui-screen). |
 | `agent-net start --project NAME [--harness opencode|claude|pi|codex] [--model M] [--machine HOST] [--isolation worktree|none] "TASK"` | Start a worker: a new agent session in a known project, on the machine that holds it. It prints the worker's session ID. The task is sent to it as a message from you; its report comes back to you (see the TUI, or `agent-net messages`). In a git repository the worker gets its own git worktree on the branch `agent-net/<worker-id>` by default; `--isolation none` works in the project folder. `--model` takes a loose name such as `"deepseek 4.1"`. See [workers](#workers). |
 | `agent-net stop SESSION` | Stop a worker. The process group is killed. |
+| `agent-net cto [harness opencode\|claude\|model MODEL]` | Show CTO settings or change the harness or model. An empty model selects the default. Owner only. |
 | `agent-net workers` | The workers on the network, with machine, project, harness, model, owner, state and start time. `--json` also has the task's first line and the usage figures (`context_tokens`, `context_limit`, `tokens`). `--owner-claude UUID` keeps only the workers owned by this machine's Claude Code session with that native id (the transcript file's name). `--recent` also lists workers that ended in the last two minutes, with `ended_at`, `end_status` and `end_note`; without it the list and the table are unchanged. |
 | `agent-net send SESSION TEXT...` | Send a message as yourself (the owner of this machine). `SESSION` is a session ID or a unique agent name. |
 | `agent-net playbook set MODEL [--harness H] [--pin\|--unpin] TEXT...` | Write or replace the owner's playbook note for a model, or for a model on one harness (`H` is `opencode`, `claude`, `pi` or `codex`). With no text the note is removed. `--pin` keeps automatic learning from ever changing it. The note appears in the `agent_start` or `agent-net start` result for that model, and has at most 1 KiB. `agent-net playbook get MODEL [--harness H]` prints it; `agent-net playbook pin\|unpin MODEL [--harness H]` pins or unpins the note that is stored. See [the playbook](#the-playbook-and-the-track-record). |
@@ -554,7 +561,7 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has three tabs: `1` Sessions, `2` Messages and `3` Quotas. On Sessions, `tab` moves focus between the session list and CTO chat. In the CTO box, enter sends and esc returns to the list. When the input is empty, `o` opens the full interface, `n` starts a new conversation after confirmation, and `u` undoes the last graph change. Messages shows the feed with its existing navigation, view and event filter keys.
+`agent-net tui` has three tabs: `1` Sessions, `2` Messages and `3` Quotas. On Sessions, `tab` moves focus between the session list and CTO chat. In the CTO box, enter sends and esc returns to the list. When the input is empty, `o` opens the full interface, `n` starts a new conversation after confirmation, `u` undoes the last graph change, and `m` edits the harness and model. Messages shows the feed with its existing navigation, view and event filter keys.
 
 `agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top`, `session_text` and `session_enter` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
