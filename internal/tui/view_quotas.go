@@ -133,11 +133,7 @@ func (m Model) quotasView(w, h int) []string {
 		}
 		var notes []string
 		if r.machine != "" && reporting > 1 {
-			if r.readers == 1 {
-				notes = append(notes, "read on "+sanitize(r.machine))
-			} else {
-				notes = append(notes, sanitize(r.machine))
-			}
+			notes = append(notes, "read on "+sanitize(r.machine))
 		}
 		if p.Stale {
 			notes = append(notes, "stale reading")
@@ -198,13 +194,17 @@ func (m Model) quotasView(w, h int) []string {
 	workers = append(workers[:len(workers)-1], footer, workers[len(workers)-1])
 	out = append(out, workers...)
 	if len(out) > h {
-		header := out[:1]
-		body := out[1 : len(out)-2]
-		room := max(h-3, 0)
+		body := out[1:]
+		room := max(h-1, 0)
 		start := min(m.quotaScroll, max(len(body)-room, 0))
-		out = append(header, body[start:min(start+room, len(body))]...)
-		out = append(out, footer, workers[len(workers)-1])
+		end := min(start+room, len(body))
+		workerStart := len(body) - len(workers)
+		if start <= workerStart && end > workerStart && end-workerStart < 3 {
+			end = workerStart
+		}
+		out = append(out[:1], body[start:end]...)
 	}
+
 	for len(out) < h {
 		out = append(out, "")
 	}

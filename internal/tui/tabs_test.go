@@ -102,6 +102,9 @@ func TestQuotaViewKeepsFooterWithManyRows(t *testing.T) {
 		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("provider%d", i), Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 50}}})
 	}
 	m.usage.raw.Local.Quotas = q
+	for i := 0; i < 80; i++ {
+		m = keys(m, "down")
+	}
 	if !strings.Contains(ansi.Strip(m.View()), "workers now:") {
 		t.Fatal("footer lost")
 	}
@@ -524,6 +527,46 @@ func TestQuotaMachineErrorAtPanelFooter(t *testing.T) {
 	m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "err", Hostname: "laptop", Usage: protocol.UsageReport{QuotaError: "exit status 2"}})
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
 	if strings.Index(v, "active") > strings.Index(v, "laptop: exit status 2") {
+		t.Fatal(v)
+	}
+}
+
+func TestQuotaLiveFixtureGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		m.tab = 2
+		m.usage.raw.Hostname = "research"
+		m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "laptop", Hostname: "laptop", Usage: protocol.UsageReport{QuotaError: "exit status 2"}}}
+		q := &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
+			{Provider: "claude", Plan: "max", Windows: []protocol.QuotaWindow{{Label: "session", PercentUsed: 12}, {Label: "week", PercentUsed: 60}, {Label: "Fable week", PercentUsed: 5}}},
+			{Provider: "codex", Plan: "prolite", Windows: []protocol.QuotaWindow{{Label: "week", PercentUsed: 92}}},
+			{Provider: "copilot", Windows: []protocol.QuotaWindow{{Label: "chat"}, {Label: "completions"}, {Label: "premium interactions", Exhausted: true, PercentUsed: 100}}},
+			{Provider: "other", Windows: []protocol.QuotaWindow{{Label: "month", PercentUsed: 15}}},
+		}}
+		for i := 0; i < 17; i++ {
+			q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("unused-%02d", i), Error: "credential_unavailable"})
+		}
+		m.usage.raw.Local.Quotas = q
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
+		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra"}}}
+		v := m.View()
+		if !strings.Contains(ansi.Strip(v), "17 providers not set up · s to show") {
+			t.Fatal(v)
+		}
+		golden(t, fmt.Sprintf("quotas_live_%dx%d", size[0], size[1]), v)
+	}
+}
+
+func TestQuotaDoesNotShowOrphanWorkerFooter(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	q := &protocol.Quotas{}
+	for i := 0; i < 12; i++ {
+		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("p%02d", i), Windows: []protocol.QuotaWindow{{ID: "week"}}})
+	}
+	m.usage.raw.Local.Quotas = q
+	v := ansi.Strip(m.View())
+	if strings.Contains(v, "workers now:") && !strings.Contains(v, "Workers ·") {
 		t.Fatal(v)
 	}
 }

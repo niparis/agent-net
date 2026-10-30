@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy                                          updated 14:05:00
+╭─Subscriptions · read on research · read 40s ago──────────────────────────────────────────────────────────────────────╮
+│ PROVIDER    PLAN      WINDOW         USAGE                PACE      RESETS                                           │
+│ claude      max       session        █─────────  12%      -         -                                                │
+│                       week           ██████────  60%      -         -                                                │
+│                       Fable week     █─────────   5%      -         -                                                │
+│ codex       prolite   week           █████████─  92%      -         -                                                │
+│ copilot               chat           ──────────   0%      -         -                                                │
+│                       completions    ──────────   0%      -         -                                                │
+│                       premium inter… ██████████ exhausted -         -                                                │
+│ other                 month          ██────────  15%      -         -                                                │
+│ 17 providers not set up · s to show                                                                                  │
+│ laptop: exit status 2                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 1 registered · scores: Artificial Analysis─────────────────────────────────────────────────────────────────╮
+│ NAME       HARNESS  MODEL                  SCORE       T S N H V  USED                                               │
+│ terra      codex    gpt-6.1-terra:high     42.3/high   E E E G P  0 runs 0 done 0 failed                             │
+│ workers now: none                                                                                                    │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+1 sessions  2 messages  ? help  q quit

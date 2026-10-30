@@ -1,10 +1,11 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy                                          updated 14:05:00
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────────────────────────────────────────────╮
-│ PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS                                           │
-│ claude         max          5h       █████░░░░░  50%      behind    -                                                │
+│ PROVIDER    PLAN      WINDOW         USAGE                PACE      RESETS                                           │
+│ claude      max       5h             █████─────  50%      behind    -                                                │
 │   (read on Mac; stale reading)                                                                                       │
-│ codex          pro          week     █████████░  92%      ahead     in 2h00                                          │
-│ cursor         business     month    ██████████ exhausted -         -                                                │
+│ codex       pro       week           █████████─  92%      ahead     in 2h00                                          │
+│   (read on Mac)                                                                                                      │
+│ cursor      business  month          ██████████ exhausted -         -                                                │
 │   (read on Mac)                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 4 registered · scores: Artificial Analysis─────────────────────────────────────────────────────────────────╮
@@ -17,7 +18,6 @@
 │ terra      codex    gpt-6.1-terra:high     42.3/high   E E E G P  0 runs 0 done 0 failed                             │
 │ workers now: none                                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
