@@ -4,7 +4,11 @@ func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := "CTO"
 	if c.model != "" {
-		title += " (" + c.model + ")"
+		if c.harness != "" {
+			title += " (" + c.harness + " · " + c.model + ")"
+		} else {
+			title += " (" + c.model + ")"
+		}
 	}
 	out := []string{section(title, w)}
 	var lines []string
