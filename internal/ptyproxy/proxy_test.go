@@ -3,6 +3,7 @@ package ptyproxy
 import (
 	"bufio"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -76,7 +77,7 @@ func TestTitleRestored(t *testing.T) {
 			}
 			got := out.String()
 			prefix := "\x1b[22;0t\x1b]0;session - ctrl+] to come back\a"
-			suffix := "\x1b[23;0t"
+			suffix := "\x1b[<u\x1b[>4;0m\x1b[23;0t"
 			if !strings.HasPrefix(got, prefix) || !strings.HasSuffix(got, suffix) {
 				t.Fatalf("title sequences: %q", got)
 			}
@@ -95,5 +96,39 @@ func TestEntryNoticeBeforeChildStarts(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "agent-net: entering session. Press ctrl+] to come back here.\r\n") {
 		t.Fatalf("output %q", out.String())
+	}
+}
+
+func TestEscapeMatcher(t *testing.T) {
+	for _, seq := range []string{"\x1d", "\x1b[93;5u", "\x1b[93;5:1u", "\x1b[27;5;93~"} {
+		for split := 0; split <= len(seq); split++ {
+			t.Run(fmt.Sprintf("%q/split%d", seq, split), func(t *testing.T) {
+				var m escapeMatcher
+				var out bytes.Buffer
+				if m.write(&out, []byte("before"+seq[:split])) {
+					if split != len(seq) {
+						t.Fatal("escaped early")
+					}
+				} else if !m.write(&out, []byte(seq[split:]+"after")) {
+					t.Fatal("did not escape")
+				}
+				if out.String() != "before" {
+					t.Fatalf("forwarded %q", out.String())
+				}
+			})
+		}
+	}
+}
+
+func TestEscapeMatcherOtherInput(t *testing.T) {
+	var m escapeMatcher
+	var out bytes.Buffer
+	for _, part := range []string{"a\x1b[93;5:", "3ub\x1b[97;5u\x1b[<0;12;4M", "paste"} {
+		if m.write(&out, []byte(part)) {
+			t.Fatal("unexpected escape")
+		}
+	}
+	if got, want := out.String(), "ab\x1b[97;5u\x1b[<0;12;4Mpaste"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
 	}
 }
