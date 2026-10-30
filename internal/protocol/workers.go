@@ -44,6 +44,11 @@ type WorkerResume struct {
 // MaxAge. The daemon sends it at start and periodically (W7).
 type WorkerCleanup struct {
 	MaxAgeSeconds int64 `json:"max_age_seconds"`
+	// WorktreesDir is the folder of this machine where its workers' git
+	// worktrees live. The gateway also deletes this machine's offline sessions
+	// that are not worker records and work inside it (ghosts of workers that
+	// a user's own service registered). An older daemon sends none.
+	WorktreesDir string `json:"worktrees_dir,omitempty"`
 }
 
 // WorkerInfo is the worker part of a session. The daemon that started the
