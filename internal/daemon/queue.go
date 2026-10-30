@@ -146,7 +146,8 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, out.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
-		Harness: e.Harness, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: e.Permissions, FromCTO: e.FromCTO})
+		Harness: e.Harness, Project: e.Project, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch,
+		ProjectRules: out.ProjectRules, Permissions: e.Permissions, FromCTO: e.FromCTO})
 	cancel()
 	if err != nil {
 		if w := d.workerBySession(out.SessionID); w != nil {
@@ -189,8 +190,9 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 	if p.Owner == "" || p.SessionID == "" || d.sessionByID(p.Owner) == nil {
 		return errors.New("the owner of this queued start is not a session of this machine")
 	}
+	charter := d.charterBrief(ctx, p.Project)
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest, FromCTO: p.FromCTO,
-		Body: protocol.WorkerTaskBodyWithPermissions(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, p.Permissions)})
+		Body: protocol.WorkerTaskBodyWithCharter(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions)})
 	return err
 }
 

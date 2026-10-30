@@ -198,3 +198,41 @@ func TestInventoryTellsWhetherTheClaudePolicyHookIsInstalled(t *testing.T) {
 		t.Fatal("not seen")
 	}
 }
+
+func TestCharterReachesTheSessionEveryTurnAndNothingWithoutOne(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
+	p, _ := helloPi(t, n, "p1", "/w/cogforge", true)
+	plain, _ := helloPi(t, n, "p2", "/w/plain", true)
+	st := g.gw.Store()
+	for attr, value := range map[string]string{
+		"maturity": "mature - careful with breaking changes.",
+		"accepts":  "Generic endpoints.",
+		"refuses":  "Client-specific endpoints.",
+		"escalate": "Breaking API changes: ask Nicolas.",
+	} {
+		if err := st.SetCharter("cogforge", attr, value, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.AddArchitect("wb-architect", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetEdge(protocol.Edge{From: "wb-architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+
+	r := askPolicy(t, p, protocol.PolicyRequest{})
+	for _, want := range []string{"mature - careful with breaking changes.", "Generic endpoints.", "Client-specific endpoints.",
+		"Breaking API changes: ask Nicolas.", "wb-architect governs your node as owner", "Decide, do not defer"} {
+		if !strings.Contains(r.Charter, want) {
+			t.Errorf("charter lacks %q: %s", want, r.Charter)
+		}
+	}
+	if r.Text != "" {
+		t.Errorf("a charter without a delegation policy set text: %q", r.Text)
+	}
+	if r := askPolicy(t, plain, protocol.PolicyRequest{}); r.Charter != "" {
+		t.Errorf("a node without a charter got one: %+v", r)
+	}
+}

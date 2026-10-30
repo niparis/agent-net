@@ -56,6 +56,10 @@ const usage = `usage: agent-net <command>
   start      start a worker session: --project NAME --harness opencode --model M "<task>"
   stop       stop a worker: agent-net stop <session>
   workers    list the workers on the network with their owners
+  charter    show, set or list the history of a node's charter
+  graph      show the graph or undo a change
+  node       add or remove an architect
+  edge       set or remove an edge
   send       send a message as yourself: agent-net send <session or name> <message...>
   version    print the version of this binary
 `
@@ -124,6 +128,8 @@ func main() {
 		err = cmdStop(ctx, args)
 	case "workers":
 		err = cmdWorkers(ctx, args)
+	case "charter", "graph", "node", "edge":
+		err = cmdGraph(ctx, os.Args[1], args)
 	case "send":
 		err = cmdSend(ctx, args)
 	case "hint": // hidden: the Claude Code hook (decision 0013)

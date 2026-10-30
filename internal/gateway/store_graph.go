@@ -482,6 +482,8 @@ func (s *Store) Graph() (protocol.Graph, error) {
 			n.Charter.Accepts = value
 		case "refuses":
 			n.Charter.Refuses = value
+		case "feature_requests":
+			n.Charter.FeatureRequests = value
 		case "consumers":
 			n.Charter.Consumers = value
 		case "escalate":

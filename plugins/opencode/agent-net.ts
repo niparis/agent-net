@@ -56,6 +56,7 @@ interface DeliveredMessage {
   sender_worker?: boolean;
   sender_cto?: boolean;
   recipient_peer_trust?: boolean;
+  recipient_relation?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -119,7 +120,8 @@ function formatDeliveryBase(m: DeliveredMessage): string {
   return (
     `${m.body}\n\n` +
     `[agent-net] message ${m.message_id} from ${who} (session ${m.sender_session_id ?? "unknown"})${conv}.\n` +
-    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}`
+    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}` +
+    (m.recipient_relation ? ` ${m.recipient_relation}` : "")
   );
 }
 
@@ -558,6 +560,10 @@ function formatAgent(a: any): string {
   if (p.function) line += `  - ${p.function}`;
   if (p.task) line += `  [task: ${p.task}]`;
   if (p.expertise) line += `  [expertise: ${p.expertise}]`;
+  const c = a.charter ?? {};
+  for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
+    if (c[key]) line += `  [${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}]`;
+  }
   return line;
 }
 
@@ -603,6 +609,10 @@ function formatAgentGet(r: any): string {
   if (p.task) lines.push(`Task: ${p.task}`);
   if (p.expertise) lines.push(`Expertise: ${p.expertise}`);
   if (p.capabilities?.length) lines.push(`Capabilities: ${p.capabilities.join(", ")}`);
+  const c = a.charter ?? {};
+  for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
+    if (c[key]) lines.push(`${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}`);
+  }
   return lines.join("\n");
 }
 
@@ -710,6 +720,8 @@ const CODER_AGENT_DESCRIPTION =
 
 interface PolicyReply {
   text?: string;
+  // The node's charter context (decision 0022), independent of the policy.
+  charter?: string;
   mode?: string;
   agent_id?: string;
   coder?: string;
@@ -1425,6 +1437,9 @@ export default {
           return refreshPolicy(sid).then(async (pol) => {
             if (pol?.text && !input.system.some((part: any) => part.text.includes(pol.text))) {
               input.system.push({ type: "text", text: pol.text });
+            }
+            if (pol?.charter && !input.system.some((part: any) => part.text.includes(pol.charter!))) {
+              input.system.push({ type: "text", text: pol.charter });
             }
             await applyMain(sid, pol);
           });

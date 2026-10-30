@@ -38,3 +38,16 @@ func TestCodexCTOFrame(t *testing.T) {
 		t.Fatalf("CTO frame: %q", got)
 	}
 }
+
+func TestCodexFrameCarriesTheGraphRelationAfterTheBody(t *testing.T) {
+	m := protocol.Message{ID: "m1", From: "s_a", FromName: "alice", FromHarness: "claude", Type: protocol.TypeRequest, Body: "fix it",
+		RecipientRelation: "[agent-net] Relationship: alice governs your node as owner."}
+	got := codexFrame(m)
+	if !strings.Contains(got, m.RecipientRelation) || strings.Index(got, "fix it") > strings.Index(got, m.RecipientRelation) {
+		t.Fatalf("relation: %q", got)
+	}
+	m.Type = protocol.TypeReply
+	if got := codexFrame(m); strings.Contains(got, m.RecipientRelation) {
+		t.Fatalf("a reply got a relation line: %q", got)
+	}
+}

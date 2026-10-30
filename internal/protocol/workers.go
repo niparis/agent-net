@@ -288,6 +288,7 @@ type (
 		Owner       string `json:"owner_session"`
 		SessionID   string `json:"session_id"`
 		Harness     string `json:"harness"`
+		Project     string `json:"project,omitempty"`
 		Task        string `json:"task"`
 		Worktree    string `json:"worktree,omitempty"`
 		Branch      string `json:"branch,omitempty"`
@@ -399,6 +400,13 @@ func WorkerPermissionsText(level, harness string) string {
 }
 
 func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level string) string {
+	return WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, "", level)
+}
+
+// WorkerTaskBodyWithCharter is WorkerTaskBodyWithPermissions with the charter
+// of the worker's node. The charter section follows the project rules and
+// comes before the task (decision 0022).
+func WorkerTaskBodyWithCharter(harness, task, worktree, branch, rules, charter, level string) string {
 	b := WorkerPreamble
 	switch harness {
 	case "codex":
@@ -419,6 +427,9 @@ func WorkerTaskBodyWithPermissions(harness, task, worktree, branch, rules, level
 	}
 	if rules != "" {
 		b += "\n\nProject rules for workers\n\n" + rules
+	}
+	if charter != "" {
+		b += "\n\n" + charter
 	}
 	return b + "\n\nTask:\n" + strings.TrimSpace(task)
 }

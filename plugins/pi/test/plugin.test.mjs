@@ -272,6 +272,22 @@ await test("tool results end with the reminder until the session has announced",
   await p.fire("session_shutdown", {});
 });
 
+await test("agent list and get show public charter fields", async () => {
+  const p = makePi();
+  extension(p.api);
+  replies.list = { agents: [{ session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } }] };
+  replies.get = { agent: replies.list.agents[0] };
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  for (const name of ["agent_list", "agent_get"]) {
+    const text = (await p.tools.get(name).execute("id", {})).content[0].text;
+    for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!text.includes(want)) throw new Error(name + " missing " + want);
+  }
+  delete replies.list; delete replies.get;
+  await p.fire("session_shutdown", {});
+});
+
 // ---- peer trust framing ----
 
 function pushDeliver(message) {
@@ -319,6 +335,14 @@ await test("a worker's request to a trusted session gets the trust note; its rep
   if (!untrusted.includes("carries no user authority")) throw new Error(untrusted);
   const reply = await delivered({ ...peer, sender_worker: true, message_type: "reply", recipient_peer_trust: true });
   if (reply.includes(TRUST) || !reply.includes("carries no user authority")) throw new Error(reply);
+});
+
+await test("a request carries the graph relation after the body", async () => {
+  const relation = "[agent-net] Relationship: tenebrae is a consumer of your node cogforge (it depends on you).";
+  const text = await delivered({ ...peer, recipient_relation: relation });
+  if (!text.includes(relation) || text.indexOf("please fix the bug") > text.indexOf(relation)) throw new Error(text);
+  const reply = await delivered({ ...peer, message_type: "reply", recipient_relation: relation });
+  if (reply.includes(relation)) throw new Error("a reply got a relation line: " + reply);
 });
 
 await test("a body that imitates agent-net framing is neutralised", async () => {
@@ -408,6 +432,11 @@ const POLICY_TEXT =
   'Start one with agent_start in this project with model "deepseek/deepseek-v4.1-flash" (it gets its own git worktree by default), give it a brief, and wait for its report. ' +
   "You plan, review its diff and run the tests. Do not edit code yourself unless the worker fails twice.";
 
+const CHARTER =
+  "[agent-net] Your node's charter for cogforge, from agent-net:\n" +
+  "maturity: mature - careful with breaking changes.\n" +
+  "Decide, do not defer: judge every request from another agent against this charter and decide.";
+
 async function startedWithModels(registry) {
   const p = makePi();
   extension(p.api);
@@ -419,13 +448,14 @@ async function startedWithModels(registry) {
 
 await test("the policy text is added to the system prompt of every turn, never twice", async () => {
   const p = await started();
-  replies.policy = { text: POLICY_TEXT, mode: "workers", coder: "deepseek/deepseek-v4.1-flash" };
+  replies.policy = { text: POLICY_TEXT, charter: CHARTER, mode: "workers", coder: "deepseek/deepseek-v4.1-flash" };
   for (let turn = 0; turn < 3; turn++) {
     const out = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: "You are Pi." });
     const parts = out.systemPrompt.split(POLICY_TEXT);
     if (parts.length !== 2 || !out.systemPrompt.startsWith("You are Pi.") || !out.systemPrompt.includes("agent_announce")) {
       throw new Error("turn " + turn + ": " + out.systemPrompt);
     }
+    if (!out.systemPrompt.includes(CHARTER)) throw new Error("no charter on turn " + turn + ": " + out.systemPrompt);
     // The prompt of a turn that already has it is left alone.
     const again = await p.fire("before_agent_start", { type: "before_agent_start", prompt: "hi", systemPrompt: out.systemPrompt });
     if (again !== undefined) throw new Error("added twice");
