@@ -1,7 +1,9 @@
 1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy  filter: offline, /pi       updated 14:05:00
- ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2  claude  opencode  pi
- ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
- ○ old-box    v0.3.2 offline
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────╮
+│ ● Mac (here) v0.4.0 online  cpu ░░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2                     │
+│ ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0           │
+│ ○ old-box    v0.3.2 offline                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 1 session ──────────────────────────────────────────────────────────────────────────────
   web                opencode shop      sonnet-5   idle   -         ?     ?
@@ -16,15 +18,13 @@
 
 
 
-
-
-CTO ────────────────────────────────────────────────────────────────────────────────────────────────
-
-
-
-
-
-
-write to the CTO: it can set charters, start workers, answer what the network is doing
-> write to the CTO...
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│write to the CTO: it can set charters, start workers, answer what the network is doing            │
+│> write to the CTO...                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
 1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  tab CTO  ? help  q quit

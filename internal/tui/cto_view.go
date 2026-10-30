@@ -10,7 +10,9 @@ func (m Model) ctoView(w, h int) []string {
 			title += " (" + c.model + ")"
 		}
 	}
-	out := []string{section(title, w)}
+	w = max(w-2, 1)
+	h = max(h-2, 1)
+	out := []string{}
 	var lines []string
 	for _, v := range c.messages {
 		lines = append(lines, wrap(sanitize(v), max(w-2, 8))...)
@@ -28,7 +30,7 @@ func (m Model) ctoView(w, h int) []string {
 	if c.confirming {
 		lines = append(lines, "Start a new conversation? y/n")
 	}
-	rows := max(h-2, 0)
+	rows := max(h-1, 0)
 	if len(lines) > rows {
 		lines = lines[len(lines)-rows:]
 	}
@@ -44,5 +46,5 @@ func (m Model) ctoView(w, h int) []string {
 		input = "> write to the CTO..."
 	}
 	out = append(out, clip(input, w))
-	return out
+	return panel(title, out, w+2, roleCTO)
 }

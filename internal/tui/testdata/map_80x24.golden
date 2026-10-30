@@ -14,11 +14,11 @@ Architects without nodes ─────── │   consumers tenebrae, shop
                                  │   in   tenebrae -> cogforge
                                  │        depends, rule ask
                                  │   in   trading-architect -> cogforge
-CTO ────────────────────────────────────────────────────────────────────────────
-
-
-
-
-write to the CTO: set charters, start workers, answer what the network is doing
-> write to the CTO...
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, answer what the network is doi…│
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
 up/down select  M/esc sessions  r refresh  ? help  q quit

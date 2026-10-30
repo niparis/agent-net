@@ -87,13 +87,13 @@ func TestCTOBoxBottomAlignsTheConversation(t *testing.T) {
 	if len(out) != 10 {
 		t.Fatalf("ctoView gave %d lines", len(out))
 	}
-	if !strings.Contains(out[len(out)-2], "newest") {
+	if !strings.Contains(out[len(out)-3], "newest") {
 		t.Fatalf("newest line is not above the input:\n%s", strings.Join(out, "\n"))
 	}
-	if !strings.Contains(out[len(out)-3], "oldest") {
+	if !strings.Contains(out[len(out)-4], "oldest") {
 		t.Fatalf("oldest line is not above newest:\n%s", strings.Join(out, "\n"))
 	}
-	if out[1] != "" {
+	if strings.TrimSpace(strings.Trim(out[1], "│")) != "" {
 		t.Fatalf("conversation starts at the top of the box:\n%s", strings.Join(out, "\n"))
 	}
 }

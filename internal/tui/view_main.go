@@ -48,7 +48,7 @@ func (m Model) layout() layout {
 	}
 	if m.mode == modeNormal {
 		box := min(max((h-1)/3, 6), max(h-4, 1))
-		fixed := 1 + max(l.machines, 1) + 1 + l.needs + l.notice + 1 + box
+		fixed := 1 + max(l.machines, 1) + 3 + l.needs + l.notice + 1 + box
 		if l.banner {
 			fixed++
 		}
@@ -187,16 +187,19 @@ func (m Model) mainView(w, h int) []string {
 		add(s)
 	}
 	rows := m.machineRows()
+	var machines []string
 	for i, r := range rows {
 		if i >= maxMachineRows {
-			add(sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w)))
+			machines = append(machines, sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w-2)))
 			break
 		}
-		add(m.machineLine(r, w, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
+		machines = append(machines, m.machineLine(r, w-2, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
 	}
 	if len(rows) == 0 {
-		add(sDim.Render("  no machines yet"))
+		machines = append(machines, sDim.Render("  no machines yet"))
 	}
+	out = append(out, panel("Machines", machines, w, roleAccent)...)
+
 	if m.expand && m.mode == modeNormal {
 		add(section("Selected session", w))
 		return append(out, m.detailLines(w, max(h-len(out), 0))...)
@@ -418,6 +421,9 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	if r.online {
 		dot, state, style = "●", "online", sIdle
 	}
+	if w < 50 {
+		version, versionW = "", 0
+	}
 	line := " " + style.Render(dot) + " " + cell(name, nameW) + " " + cell(version, versionW) + " " + style.Render(cell(state, 7))
 	line += " " + m.machineUsage(r, w-ansi.StringWidth(line)-1)
 	if !r.online {
@@ -477,20 +483,20 @@ func (m Model) machineUsage(r machineRow, room int) string {
 		if st == usageStale {
 			label += "  (stale)"
 		}
-		return cell(sDim.Render(label), unknownW)
+		return sDim.Render(cell(label, unknownW))
 	}
 	mu := n.Usage.Machine
 	var cpu string
 	if mu.Samples == 0 {
 		cpu = sDim.Render("cpu ...")
 	} else {
-		cpu = "cpu " + loadStyle(mu.CPU).Render(bar(mu.CPU/100, 4)) + " " + cellR(fmtPct(mu.CPU), 4) + sDim.Render(" ("+fmtPct(mu.CPUAvg)+")")
+		cpu = "cpu " + progressBar(mu.CPU/100, 4, loadStyle(mu.CPU).GetForeground()) + " " + cellR(fmtPct(mu.CPU), 4) + sDim.Render(" ("+fmtPct(mu.CPUAvg)+")")
 	}
 	memPct := 0.0
 	if mu.MemTotal > 0 {
 		memPct = float64(mu.MemUsed) / float64(mu.MemTotal) * 100
 	}
-	mem := "mem " + loadStyle(memPct).Render(bar(memPct/100, 4)) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
+	mem := "mem " + progressBar(memPct/100, 4, loadStyle(memPct).GetForeground()) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
 	load := sDim.Render("load ") + fmt.Sprintf("%.1f", mu.Load[0])
 	if room < unknownW {
 		return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) // no room for the load
@@ -845,7 +851,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		if !selected && a.Online {
 			switch c.name {
 			case "STATUS":
-				v = m.statusCellStyle(a).Render(v)
+				v = statusLabel(v)
 			case "AGENT", "POLICY", "TASK":
 				v = sDim.Render(v)
 			case "TRUST":

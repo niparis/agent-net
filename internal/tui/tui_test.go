@@ -623,7 +623,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	}
 	// Scrolled into the middle of a machine, its heading stays on top.
 	m = keys(m, "g", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down", "down")
-	if v := lines(m.View()); !strings.HasPrefix(strings.TrimSpace(v[5]), "build-vm") {
+	if v := lines(m.View()); !strings.HasPrefix(strings.TrimSpace(v[7]), "build-vm") {
 		t.Fatalf("no machine heading above the scrolled table:\n%s", strings.Join(v, "\n"))
 	}
 	if !strings.Contains(m.View(), "> ") {

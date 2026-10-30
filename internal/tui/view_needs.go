@@ -182,21 +182,21 @@ func (m Model) needsLines(w int) []string {
 	hostW = min(hostW, 14)
 	out := []string{section(fmt.Sprintf("Needs you (%d)", len(rows)), w)}
 	for i, a := range shown {
-		marker := "  ⚠ "
+		marker := "│ ⚠ "
 		if a.Waiting.Kind == "held" {
 			if m.focus == focusSessions && a.SessionID == m.selected {
-				marker = "> ⚠ "
+				marker = "│>⚠ "
 			}
 			line := marker + sanitize(a.Waiting.Text) + "  [a/A approve, r/R reject]"
-			if marker[0] == '>' {
-				out = append(out, sSel.Render(clip(line, w)))
+			if strings.Contains(marker, ">") {
+				out = append(out, sNeeds.Render("│")+sSel.Render(clip(strings.TrimPrefix(line, "│"), w-1)))
 			} else {
 				out = append(out, sNeeds.Render(clip(line, w)))
 			}
 			continue
 		}
 		if m.focus == focusSessions && i < len(rows) && rows[i].SessionID == m.selected {
-			marker = "> ⚠ "
+			marker = "│>⚠ "
 		}
 		line := marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)
 		if hostW > 0 {
@@ -208,8 +208,8 @@ func (m Model) needsLines(w int) []string {
 		if room > 0 {
 			line += clip(text, room)
 		}
-		if marker[0] == '>' {
-			out = append(out, sSel.Render(clip(stripStyles(line), w)))
+		if strings.Contains(marker, ">") {
+			out = append(out, sNeeds.Render("│")+sSel.Render(clip(strings.TrimPrefix(stripStyles(line), "│"), w-1)))
 		} else {
 			out = append(out, clip(sNeeds.Render(marker)+stripStyles(line)[len(marker):], w))
 		}

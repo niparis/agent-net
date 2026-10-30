@@ -205,7 +205,11 @@ func (m Model) helpLine(w int) string {
 		}
 		hs = append(hs[:worst:worst], hs[worst+1:]...)
 	}
-	return sDim.Render(clip(text(), w))
+	var parts []string
+	for _, h := range hs {
+		parts = append(parts, h.key, h.label)
+	}
+	return clip(keyHints(parts...), w)
 }
 
 // helpView is the overlay that lists every key.

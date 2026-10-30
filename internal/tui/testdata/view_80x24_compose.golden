@@ -1,7 +1,9 @@
 1 Sessions  2 Messages  3 Quotas
- ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
- ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
- ○ old-box    v0.3.2 offline
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                             │
+│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                             │
+│ ○ old-box    v0.3.2 offline                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
 
 
 
@@ -12,13 +14,11 @@
 
 
 
-
-
-CTO ────────────────────────────────────────────────────────────────────────────
-
-
-
-
-write to the CTO: set charters, start workers, answer what the network is doing
-> write to the CTO...
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, answer what the network is doi…│
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
 to tenebrae> also run the tests    enter sends, esc cancels

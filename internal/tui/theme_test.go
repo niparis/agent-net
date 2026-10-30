@@ -33,3 +33,12 @@ func TestSharedPieces(t *testing.T) {
 		t.Fatalf("bar: %q", got)
 	}
 }
+
+func TestSessionsUsePanels(t *testing.T) {
+	v := newModel(80, 24).View()
+	for _, want := range []string{"╭─Machines", "╭─CTO", "╰"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q:\n%s", want, v)
+		}
+	}
+}

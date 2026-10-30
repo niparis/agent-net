@@ -22,7 +22,7 @@ import (
 var (
 	sBold   = lipgloss.NewStyle().Bold(true)
 	sDim    = lipgloss.NewStyle().Foreground(roleDim)
-	sSel    = lipgloss.NewStyle().Reverse(true)
+	sSel    = lipgloss.NewStyle().Foreground(roleBase).Background(roleAccent)
 	sTitle  = lipgloss.NewStyle().Bold(true).Foreground(roleAccent)
 	sBusy   = lipgloss.NewStyle().Foreground(roleGood)
 	sIdle   = lipgloss.NewStyle().Foreground(roleDim)
