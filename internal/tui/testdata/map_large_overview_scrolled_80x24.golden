@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 25 nodes, 10 edges     updated 14:05
+Overview  enter focus
+[ architect-3 · mature · ○0    ]
+Components
+[ project-01 · growing · ○0    ] [ project-02 · growing · ○0    ]
+[ project-03 · growing · ○0    ] [ project-04 · growing · ○0    ]
+[ project-05 · growing · ○0    ] [ project-06 · growing · ○0    ]
+[ project-07 · growing · ○0    ] [ project-08 · growing · ○0    ]
+[ project-09 · growing · ○0    ] [ project-10 · growing · ○0    ]
+architect-3 ───▶ project-03 · governs normal
+architect-3 ───▶ project-06 · governs normal
+architect-3 ───▶ project-09 · governs normal
+Isolated: isolated-01, isolated-02, isolated-03, isolated-04, isolated-05,
+isolated-06, isolated-07, isolated-08, isolated-09, isolated-10, isolated-11,
+isolated-12
++7 edges off screen
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select/scroll  left/right select  pgup/pgdn scroll  enter focus  ? help

@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 25 nodes, 10 edges                                             updated 14:05
+Overview  enter focus
+Architects
+[ architect-1 · mature · ○0        ] [ architect-2 · mature · ○0        ] [ architect-3 · mature · ○0        ]
+Components
+[ project-01 · growing · ○0        ] [ project-02 · growing · ○0        ] [ project-03 · growing · ○0        ]
+[ project-04 · growing · ○0        ] [ project-05 · growing · ○0        ] [ project-06 · growing · ○0        ]
+[ project-07 · growing · ○0        ] [ project-08 · growing · ○0        ] [ project-09 · growing · ○0        ]
+[ project-10 · growing · ○0        ]
+architect-1 ━━━▶ project-01 · governs auto
+architect-2 ┄┄┄▶ project-02 · governs ask
+architect-3 ───▶ project-03 · governs normal
+architect-1 ━━━▶ project-04 · governs auto
+architect-2 ┄┄┄▶ project-05 · governs ask
+architect-3 ───▶ project-06 · governs normal
+architect-1 ━━━▶ project-07 · governs auto
+architect-2 ┄┄┄▶ project-08 · governs ask
+architect-3 ───▶ project-09 · governs normal
+architect-1 ━━━▶ project-10 · governs auto
+Isolated: isolated-01, isolated-02, isolated-03, isolated-04, isolated-05, isolated-06, isolated-07, isolated-08,
+isolated-09, isolated-10, isolated-11, isolated-12
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select/scroll  left/right select  pgup/pgdn scroll  enter focus  ? help

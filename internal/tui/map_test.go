@@ -76,7 +76,7 @@ func openMap(t *testing.T, m Model) Model {
 func TestMapGroupsNodesByArchitect(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
 	m = keys(m, "z")
-	for _, want := range []string{"Overview", "trading-architect", "cogforge", "wbg-architect", "tenebrae", "shop", "homelab", "governs", "depends", "No architect"} {
+	for _, want := range []string{"Overview", "trading-architect", "cogforge", "wbg-architect", "tenebrae", "shop", "homelab", "governs", "depends", "Isolated"} {
 		if !strings.Contains(m.View(), want) {
 			t.Errorf("overview missing %q", want)
 		}
@@ -215,7 +215,7 @@ func TestMapFocusNavigationAndActions(t *testing.T) {
 	}
 }
 
-func TestMapOverviewAndFallback(t *testing.T) {
+func TestMapOverviewFitsNarrowTerminal(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mp.selected = "cogforge"
 	m = keys(m, "z")
@@ -223,8 +223,8 @@ func TestMapOverviewAndFallback(t *testing.T) {
 		t.Fatalf("overview missing:\n%s", m.View())
 	}
 	m.width = 50
-	if !strings.Contains(m.View(), "overview does not fit") {
-		t.Fatal("fallback missing")
+	if strings.Contains(m.View(), "overview does not fit") || !strings.Contains(m.View(), "Overview") {
+		t.Fatal("overview missing at narrow width")
 	}
 }
 
@@ -262,7 +262,7 @@ func TestOverviewConnectsNodes(t *testing.T) {
 	m.mp.selected = "cogforge"
 	m = keys(m, "z")
 	v := m.View()
-	if !strings.Contains(v, "▼") || !strings.Contains(v, "└") {
+	if !strings.Contains(v, "┄┄") || !strings.Contains(v, "━━") {
 		t.Fatalf("missing connected edge routes:\n%s", v)
 	}
 }
@@ -407,5 +407,177 @@ func TestGoldenMapNavigation(t *testing.T) {
 		golden(t, fmt.Sprintf("map_isolated_%dx%d", size[0], size[1]), m.View())
 		m = keys(m, "/", "c", "o", "g")
 		golden(t, fmt.Sprintf("map_find_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestLargeOverviewNeverFallsBack(t *testing.T) {
+	g := fakeGraph()
+	for i := 0; i < 25; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("project-%02d", i), Kind: "component"})
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z")
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Overview") || strings.Contains(v, "overview does not fit") {
+		t.Fatal(v)
+	}
+}
+
+func TestOverviewNavigationAndFocus(t *testing.T) {
+	g := fakeGraph()
+	m := openMap(t, mapModel(80, 24, g))
+	m.mp.selected = "cogforge"
+	m = keys(m, "z", "right")
+	if !m.mp.overview || m.mp.selected == "cogforge" {
+		t.Fatalf("right did not select a box: %q", m.mp.selected)
+	}
+	selected := m.mp.selected
+	m = keys(m, "enter")
+	if !m.mapOn || m.mp.overview || m.mp.selected != selected {
+		t.Fatal("enter did not return to focus")
+	}
+}
+func TestOverviewScrollKeepsEdgesWithinVisibleBoxes(t *testing.T) {
+	g := fakeGraph()
+	for i := 0; i < 60; i++ {
+		name := fmt.Sprintf("node-%02d", i)
+		g.Nodes = append(g.Nodes, protocol.Node{Name: name, Kind: "component"})
+		g.Edges = append(g.Edges, protocol.Edge{From: "trading-architect", To: name, Kind: "governs"})
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z")
+	before := ansi.Strip(m.View())
+	if !strings.Contains(before, "edges off screen") {
+		t.Fatal(before)
+	}
+	m = keys(m, "pgdown")
+	after := ansi.Strip(m.View())
+	if (m.mp.overviewScroll == 0 && m.mp.overviewEdgeScroll == 0) || before == after {
+		t.Fatal("page did not scroll")
+	}
+}
+
+func TestOverviewDownScrollsPastLastBoxToIsolated(t *testing.T) {
+	g := fakeGraph()
+	for i := 0; i < 50; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("isolated-%02d", i), Kind: "component"})
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z")
+	for i := 0; i < 60; i++ {
+		m = keys(m, "down")
+	}
+	if m.mp.overviewScroll == 0 || !strings.Contains(m.View(), "isolated-") {
+		t.Fatal("down did not scroll to isolated projects")
+	}
+}
+
+func TestOverviewOnlyDrawsEdgesBetweenVisibleBoxes(t *testing.T) {
+	g := protocol.GraphView{}
+	for i := 0; i < 30; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("node-%02d", i), Kind: "component"})
+		if i > 0 {
+			g.Edges = append(g.Edges, protocol.Edge{From: fmt.Sprintf("node-%02d", i-1), To: fmt.Sprintf("node-%02d", i), Kind: "depends", Rule: "auto"})
+		}
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z", "pgdown")
+	out, _ := m.mapOverviewView(80, m.overviewHeight())
+	text := ansi.Strip(strings.Join(out, "\n"))
+	if !strings.Contains(text, "edges off screen") {
+		t.Fatal(text)
+	}
+	visible := map[string]bool{}
+	for _, line := range out {
+		plain := ansi.Strip(line)
+		if strings.Contains(plain, "[") {
+			for _, n := range g.Nodes {
+				if strings.Contains(plain, n.Name) {
+					visible[n.Name] = true
+				}
+			}
+		}
+	}
+	for _, e := range g.Edges {
+		if strings.Contains(text, e.From+" ━━━▶ "+e.To) && (!visible[e.From] || !visible[e.To]) {
+			t.Fatalf("edge has hidden endpoint: %+v\n%s", e, text)
+		}
+	}
+}
+
+func largeOverviewGraph() protocol.GraphView {
+	g := protocol.GraphView{}
+	for i := 0; i < 3; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("architect-%d", i+1), Kind: "architect", Charter: protocol.Charter{Maturity: "mature"}})
+	}
+	for i := 0; i < 10; i++ {
+		name := fmt.Sprintf("project-%02d", i+1)
+		g.Nodes = append(g.Nodes, protocol.Node{Name: name, Kind: "component", Charter: protocol.Charter{Maturity: "growing"}})
+		rule := "normal"
+		if i%3 == 0 {
+			rule = "auto"
+		} else if i%3 == 1 {
+			rule = "ask"
+		}
+		g.Edges = append(g.Edges, protocol.Edge{From: fmt.Sprintf("architect-%d", i%3+1), To: name, Kind: "governs", Rule: rule})
+	}
+	for i := 0; i < 12; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("isolated-%02d", i+1), Kind: "component"})
+	}
+	g.Changes = []protocol.CharterChange{{Node: "project-01", Attr: "maturity", At: t0.UnixNano()}}
+	return g
+}
+func TestGoldenLargeOverview(t *testing.T) {
+	g := largeOverviewGraph()
+	if len(g.Nodes) != 25 || len(g.Edges) != 10 {
+		t.Fatal("bad fixture")
+	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := openMap(t, mapModel(size[0], size[1], g))
+		m = keys(m, "z")
+		v := m.View()
+		for _, line := range lines(v) {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatalf("wide line: %s", line)
+			}
+		}
+		if strings.Contains(v, "overview does not fit") || !strings.Contains(v, "Overview") {
+			t.Fatal(v)
+		}
+		golden(t, fmt.Sprintf("map_large_overview_%dx%d", size[0], size[1]), v)
+		m = keys(m, "pgdown", "pgdown", "pgdown", "pgdown")
+		golden(t, fmt.Sprintf("map_large_overview_scrolled_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestOverviewCompactBoxIsVisuallyClosed(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, fakeGraph()))
+	n, _ := m.mapNode("cogforge")
+	s := ansi.Strip(m.overviewBox(n, 32))
+	if !strings.HasPrefix(s, "[") || !strings.HasSuffix(s, "]") {
+		t.Fatal(s)
+	}
+}
+
+func TestOverviewIsolatedProjectsFollowEdges(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, largeOverviewGraph()))
+	m = keys(m, "z")
+	v := ansi.Strip(m.View())
+	if strings.Index(v, "Isolated:") < strings.Index(v, "governs auto") {
+		t.Fatal(v)
+	}
+}
+
+func TestOverviewCanPageThroughVisibleEdges(t *testing.T) {
+	m := openMap(t, mapModel(80, 24, largeOverviewGraph()))
+	m = keys(m, "z")
+	before := ansi.Strip(m.View())
+	if !strings.Contains(before, "architect-1 ━━━▶ project-01") || strings.Contains(before, "architect-1 ━━━▶ project-04") {
+		t.Fatal(before)
+	}
+	m = keys(m, "pgdown")
+	after := ansi.Strip(m.View())
+	if !strings.Contains(after, "architect-1 ━━━▶ project-04") {
+		t.Fatalf("next visible edges cannot be reached:\n%s", after)
 	}
 }

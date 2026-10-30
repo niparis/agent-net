@@ -1,19 +1,19 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges       updated 14:05
-overview does not fit
-  api-architect 0│                        ╭─────────────────╮
-  trading-arch… 0│                        │trading-architect│
-  wbg-architect 0│                        │mature ○ 0       │
-▸ cogforge      0│                        ╰─────────────────╯
-  homelab       0│                        ▼ governs owner normal
-  shop          1│╭──────────╮depends ask ╔══════════╗depends auto╭──────────╮
-  tenebrae      1││tenebrae  │            ║cogforge  ║            │shop      │
-                 ││growing ●1│┄┄┄┄┄┄┄┄┄┄┄▶║early ○0  ║━━━━━━━━━━━▶│mature ○0 │
-                 │╰──────────╯            ╚══════════╝            ╰──────────╯
-                 │purpose: Document and evidence API.
-                 │accepts: Generic endpoints and bug fixes.
-                 │refuses: Client-specific endpoints.
-                 │last change: maturity: early - prototype
-                 │
+Overview  enter focus
+Architects
+[ trading-archi… · mature · ○0 ] [ wbg-architect · growing · ○0 ]
+Components
+[ cogforge · early · ○0        ] [ shop · mature · ○0           ]
+[ tenebrae · growing · ●1      ]
+trading-architect ───▶ cogforge · governs normal
+wbg-architect ───▶ tenebrae · governs normal
+tenebrae ┄┄┄▶ cogforge · depends ask
+cogforge ━━━▶ shop · depends auto
+Isolated: api-architect, homelab
+
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@ overview does not fit
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down projects  left/right follow  / find  z overview  enter sessions  c CTO
+up/down select/scroll  left/right select  pgup/pgdn scroll  enter focus  ? help
