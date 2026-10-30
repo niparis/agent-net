@@ -125,7 +125,7 @@ func TestMapTogglesWithTheSessionList(t *testing.T) {
 	if m.mapOn {
 		t.Fatal("M again did not close the map")
 	}
-	if !strings.Contains(m.View(), "Selected session") {
+	if !strings.Contains(m.View(), "NAME") {
 		t.Fatalf("the session list did not come back:\n%s", m.View())
 	}
 	m = openMap(t, m)
@@ -133,7 +133,7 @@ func TestMapTogglesWithTheSessionList(t *testing.T) {
 		t.Fatalf("M did not open the map again:\n%s", m.View())
 	}
 	m = keys(m, "esc")
-	if m.mapOn || !strings.Contains(m.View(), "Selected session") {
+	if m.mapOn || !strings.Contains(m.View(), "NAME") {
 		t.Fatal("esc did not close the map")
 	}
 }

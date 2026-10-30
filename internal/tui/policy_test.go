@@ -85,7 +85,7 @@ func TestPolicyFormResolvesBeforeSavingAndSaves(t *testing.T) {
 	m = runPreviews(t, m, cmd)
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Scope
 	m = runPreviews(t, m, cmd)
-	screen := strings.Join(lines(m.View()), "\n")
+	screen := strings.Join(lines(m.View()), "\n") + "\n" + detailText(m)
 	for _, want := range []string{"Delegation policy", "native", "-> deepseek/deepseek-v4.1-flash", "-> sol/sol-6.1", "session"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("form lacks %q:\n%s", want, screen)
@@ -177,7 +177,7 @@ func TestPolicyShowsInTheTableAndDetailAndHelp(t *testing.T) {
 	}
 	m = refresh(m, src)
 	m = selectID(m, target)
-	screen := strings.Join(lines(m.View()), "\n")
+	screen := strings.Join(lines(m.View()), "\n") + "\n" + detailText(m)
 	for _, want := range []string{"POLICY", "sub", "native -> deepseek/deepseek-v4.1-flash (project)", "sol/sol-6.1", "p: change"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("screen lacks %q:\n%s", want, screen)
@@ -317,7 +317,7 @@ func TestDetailShowsWorkerPermissions(t *testing.T) {
 		}
 		m = refresh(m, src)
 		m = selectID(m, worker.SessionID)
-		s := strings.Join(lines(m.View()), "\n")
+		s := detailText(m)
 		if !strings.Contains(s, "sandbox") || !strings.Contains(s, "read-only") {
 			t.Errorf("%s: no permissions line:\n%s", harness, s)
 		}

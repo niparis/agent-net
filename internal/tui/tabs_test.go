@@ -181,3 +181,50 @@ func TestCTOBoxFocusAndSend(t *testing.T) {
 		t.Fatal("escape did not return focus")
 	}
 }
+
+func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
+	m := newModel(80, 24)
+	if !strings.Contains(m.View(), "write to the CTO: it can set charters") {
+		t.Fatal("empty CTO box missing")
+	}
+	m = keys(m, "2", "C")
+	if m.tab != 0 || m.focus != focusCTO {
+		t.Fatal("C did not focus CTO from Messages")
+	}
+	m = keys(m, "tab")
+	if m.focus != focusSessions {
+		t.Fatal("tab did not return to list")
+	}
+}
+
+func TestCTONewRequiresConfirmation(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	m := keys(New(src), "C")
+	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	m = next.(Model)
+	if cmd != nil || !m.cto.confirming || src.fresh != 0 {
+		t.Fatal("new did not ask")
+	}
+	next, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = next.(Model)
+	if cmd == nil {
+		t.Fatal("confirmation did not start new conversation")
+	}
+	cmd()
+	if src.fresh != 1 {
+		t.Fatal("new conversation was not requested")
+	}
+}
+
+func TestDetailToggleKeepsCTOVisible(t *testing.T) {
+	m := keys(newModel(120, 40), "d")
+	if !strings.Contains(m.View(), "Selected session") || !strings.Contains(m.View(), "CTO") {
+		t.Fatal("detail or CTO missing")
+	}
+	m = keys(m, "d")
+	if !strings.Contains(m.View(), "NAME") {
+		t.Fatal("session list did not return")
+	}
+}
+
+func detailText(m Model) string { return strings.Join(m.detailLines(m.width, 40), "\n") }

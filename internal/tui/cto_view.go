@@ -42,32 +42,3 @@ func (m Model) ctoView(w, h int) []string {
 	out = append(out, clip(input, w))
 	return out
 }
-func (m Model) ctoLayout(w, h int) []string {
-	if m.mapOn {
-		leftW := (w - 3) / 2
-		rightW := w - leftW - 3
-		left := m.mapView(leftW, h)
-		right := m.ctoView(rightW, h)
-		out := make([]string, 0, h)
-		for i := 0; i < h; i++ {
-			l, r := "", ""
-			if i < len(left) {
-				l = left[i]
-			}
-			if i < len(right) {
-				r = right[i]
-			}
-			out = append(out, clip(padStyled(l, leftW)+" │ "+r, w))
-		}
-		return out
-	}
-	top := h / 2
-	main := m.mainView(w, top)
-	if len(main) > top {
-		main = main[:top]
-	}
-	for len(main) < top {
-		main = append(main, "")
-	}
-	return append(main, m.ctoView(w, h-top)...)
-}

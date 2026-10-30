@@ -46,6 +46,15 @@ func (m Model) layout() layout {
 		l.moreMachines = n - maxMachineRows
 		l.machines++ // the "+N more" line
 	}
+	if m.mode == modeNormal {
+		box := min(max((h-1)/3, 6), max(h-4, 1))
+		fixed := 1 + max(l.machines, 1) + 1 + l.needs + l.notice + 1 + box
+		if l.banner {
+			fixed++
+		}
+		l.sessions = max(h-fixed, 1)
+		return l
+	}
 	// title, machines, column heads, detail heading, feed heading, key line
 	fixed := 1 + l.machines + 1 + 1 + 1 + 1 + l.needs
 	if l.banner {
@@ -180,6 +189,17 @@ func (m Model) mainView(w, h int) []string {
 	if len(rows) == 0 {
 		add(sDim.Render("  no machines yet"))
 	}
+	if m.expand && m.mode == modeNormal {
+		box := min(max(h/3, 6), max(h-3, 1))
+		add(section("Selected session", w))
+		for _, line := range m.detailLines(w, max(h-box-len(out), 0)) {
+			add(line)
+		}
+		for len(out) < h-box {
+			add("")
+		}
+		return append(out, m.ctoView(w, box)...)
+	}
 	for _, s := range m.sessionsTable(w, l.sessions) {
 		add(s)
 	}
@@ -208,7 +228,7 @@ func (m Model) mainView(w, h int) []string {
 		return out
 	}
 	if m.cto != nil {
-		box := max(h/3, 6)
+		box := min(max(h/3, 6), max(h-3, 1))
 		if len(out) > h-box {
 			out = out[:max(h-box, 0)]
 		}

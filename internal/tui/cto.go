@@ -173,6 +173,10 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if c.input.Value() == "" {
+		if _, ok := m.src.(ctoSource); !ok && (k.String() == "o" || k.String() == "n" || k.String() == "u") {
+			c.err = "CTO is unavailable"
+			return m, nil
+		}
 		switch k.String() {
 		case "o":
 			src := m.src.(ctoSource)
@@ -182,7 +186,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				plan, err := src.CTOEnter(ctx)
 				return enterMsg{name: "CTO", plan: plan, err: err}
 			}
-		case "enter", "i":
+		case "enter":
 			c.editing = true
 			return m, c.input.Focus()
 		case "u":

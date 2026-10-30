@@ -18,7 +18,7 @@ func TestDetailPaneWarnsAboutOldTools(t *testing.T) {
 		}
 		return selectID(refresh(m, src), target)
 	}
-	screen := func(m Model) string { return strings.Join(lines(m.View()), "\n") }
+	screen := func(m Model) string { return detailText(m) }
 
 	if s := screen(set("", false)); strings.Contains(s, "reconnect agent-net") {
 		t.Errorf("a session with no tools process must show no warning:\n%s", s)

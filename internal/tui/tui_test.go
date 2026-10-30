@@ -446,8 +446,7 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 	for _, want := range []string{
 		"Mac (here)", "v0.4.0", "online", "old-box", "offline", "12 online",
 		"AGENT", "NAME", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK",
-		"tenebrae-53", "opus-5-5", "busy", "shell", "claude-opus-5-5",
-		"Selected session", "pid 4242", "/Users/n/code/tenebrae",
+		"tenebrae-53", "opus-5-5", "busy", "shell", "CTO",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -482,7 +481,7 @@ func TestOfflineToggle(t *testing.T) {
 	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "filter: offline") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.View())
 	}
-	if !strings.Contains(m.View(), "offline, last seen 13 Oct") && !strings.Contains(m.View(), "offline, last seen 28 Oct") {
+	if !strings.Contains(detailText(m), "offline, last seen 13 Oct") && !strings.Contains(detailText(m), "offline, last seen 28 Oct") {
 		t.Fatalf("the detail of an offline session lacks its last seen time:\n%s", m.View())
 	}
 	m = keys(m, "o")
@@ -851,7 +850,7 @@ func TestSessionDetailShowsItsMessages(t *testing.T) {
 	for m.selected != "s_0000000000000001" {
 		m = keys(m, "down")
 	}
-	v := m.View()
+	v := detailText(m)
 	for _, want := range []string{"-> strategies (Mac)", "<- strategies (Mac)", "<- ci-runner (build-vm)", "notification  failed", "request  replied"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("detail lacks %q:\n%s", want, v)
@@ -861,7 +860,7 @@ func TestSessionDetailShowsItsMessages(t *testing.T) {
 	for m.selected != "s_0000000000000003" {
 		m = keys(m, "down")
 	}
-	if !strings.Contains(m.View(), "none seen yet") {
+	if !strings.Contains(detailText(m), "none seen yet") {
 		t.Fatalf("no 'none seen yet':\n%s", m.View())
 	}
 }
@@ -1047,13 +1046,13 @@ func TestDetailShowsTheProjectSource(t *testing.T) {
 	}
 	for id, text := range want {
 		m.selected = id
-		if v := m.View(); !strings.Contains(v, text) {
+		if v := detailText(m); !strings.Contains(v, text) {
 			t.Errorf("%s: no %q in\n%s", id, text, v)
 		}
 	}
 	// A session in a folder with no project entry shows no source.
 	m.selected = "s_0000000000000004"
-	if v := m.View(); strings.Contains(v, "project source: ") {
+	if v := detailText(m); strings.Contains(v, "project source: ") {
 		t.Errorf("a source for an unknown project:\n%s", v)
 	}
 }

@@ -119,7 +119,7 @@ func TestOwnerIsNotARowButIsNamedInTheFeed(t *testing.T) {
 func TestWorkerShowsItsOwner(t *testing.T) {
 	m, _ := workerModel(120, 34)
 	m = selectID(m, workerID)
-	v := m.View() + "\n" + keys(m, "2").View()
+	v := m.View() + "\n" + detailText(m) + "\n" + keys(m, "2").View()
 	for _, want := range []string{"↳ tenebrae", "worker   started by you (on Mac), 14:00, project tenebrae", "s_0000000000000008 w_1",
 		"worker started: tenebrae opencode in tenebrae for you", "worker refused in nope: no project named nope is known"} {
 		if !strings.Contains(v, want) {

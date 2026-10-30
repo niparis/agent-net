@@ -135,9 +135,15 @@ func New(src Source) Model {
 	ti.Cursor.SetMode(cursor.CursorHide)
 	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}}
+	ct := textinput.New()
+	ct.Prompt = "> "
+	ct.CharLimit = 65536
+	m.ctoGeneration = 1
+	m.cto = &ctoState{input: ct, generation: 1}
 	if _, ok := src.(ctoSource); ok {
-		m, _ = func() (Model, tea.Cmd) { n, c := m.startCTO(); return n.(Model), c }()
+		m.cto.polling = true
 	}
+
 	return m
 }
 
@@ -177,7 +183,7 @@ type bodyMsg struct {
 // Init starts the first refresh and the clock that asks for the next ones.
 // New marks a fetch as running, so the first tick does not start a second.
 func (m Model) Init() tea.Cmd {
-	if m.cto != nil {
+	if m.cto != nil && m.cto.polling {
 		return tea.Batch(m.fetchCmd(), tick(), m.ctoPollCmd())
 	}
 	return tea.Batch(m.fetchCmd(), tick())
@@ -293,7 +299,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
 		}
-		if m.cto != nil && !m.cto.polling {
+		if _, ok := m.src.(ctoSource); ok && m.cto != nil && !m.cto.polling {
 			m.cto.polling = true
 			cmds = append(cmds, m.ctoPollCmd())
 		}
