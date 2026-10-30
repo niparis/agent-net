@@ -16,8 +16,14 @@ func (m Model) quotasView(w, h int) []string {
 	rows := m.quotaRows()
 	nodes, ids := m.quotaNodes()
 	var errors []string
+	reporting := 0
+	singleMachine := ""
 	for _, id := range ids {
 		n := nodes[id]
+		if n.Usage.Quotas != nil {
+			reporting++
+			singleMachine = firstNonEmpty(n.Hostname, id)
+		}
 		if n.Usage.QuotaError != "" {
 			errors = append(errors, sanitize(firstNonEmpty(n.Hostname, id))+": "+sanitize(n.Usage.QuotaError))
 		}
@@ -130,7 +136,7 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, clip(line, w-4))
 		}
 		var notes []string
-		if r.machine != "" {
+		if r.machine != "" && reporting > 1 {
 			if r.readers == 1 {
 				notes = append(notes, "read on "+sanitize(r.machine))
 			} else {
@@ -155,6 +161,9 @@ func (m Model) quotasView(w, h int) []string {
 		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d providers not set up · %s", len(unset), action)))
 	}
 	title := "Subscriptions"
+	if reporting == 1 {
+		title += " · read on " + sanitize(singleMachine)
+	}
 	if newest > 0 {
 		age := m.now().Sub(time.Unix(newest, 0))
 		if age < 0 {

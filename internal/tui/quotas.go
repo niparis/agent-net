@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -14,6 +15,7 @@ type quotaRow struct {
 	at       int64
 	machine  string
 	readers  int
+	disagree bool
 }
 
 // quotaRows merges readings for the same provider and plan. A local report
@@ -33,6 +35,9 @@ func (m Model) quotaRows() []quotaRow {
 		for _, p := range q.Providers {
 			key := strings.ToLower(strings.TrimSpace(p.Provider)) + "\x00" + strings.ToLower(strings.TrimSpace(p.Plan))
 			r, ok := rows[key]
+			if ok && !reflect.DeepEqual(r.provider, p) {
+				r.disagree = true
+			}
 			r.readers++
 			if !ok || q.GeneratedAt > r.at {
 				r.provider = p
@@ -51,7 +56,7 @@ func (m Model) quotaRows() []quotaRow {
 		if m.tab == 2 && m.uiFilter != "" && !strings.Contains(strings.ToLower(r.provider.Provider+" "+r.provider.Plan+" "+r.machine), strings.ToLower(m.uiFilter)) {
 			continue
 		}
-		if counts[strings.ToLower(r.provider.Provider)] == 1 && r.readers > 1 {
+		if counts[strings.ToLower(r.provider.Provider)] == 1 && r.readers > 1 && !r.disagree {
 			r.machine = ""
 		}
 		out = append(out, r)

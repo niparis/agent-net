@@ -477,3 +477,20 @@ func TestQuotaUnconfiguredFold(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestQuotaReadingSourceLabels(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Hostname = "research"
+	m.usage.raw.Gateway.Nodes = nil
+	p := protocol.QuotaProvider{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 20}}}
+	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{p}}
+	show := func() string { return ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")) }
+	if v := show(); !strings.Contains(v, "read on research") || strings.Contains(v, "(read on research)") {
+		t.Fatal(v)
+	}
+	m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "other", Hostname: "build", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude"}}}}}}
+	if v := show(); !strings.Contains(v, "(read on research)") {
+		t.Fatal(v)
+	}
+}
