@@ -11,6 +11,9 @@ type outcomeResolver interface {
 }
 
 func (m Model) resolveOutcome(action string) tea.Cmd {
+	if m.focus != focusSessions {
+		return nil
+	}
 	id := ""
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {

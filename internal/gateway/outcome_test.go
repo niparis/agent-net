@@ -79,3 +79,40 @@ func TestOverruleOutcome(t *testing.T) {
 		t.Fatalf("inbox: %+v %v", rows, err)
 	}
 }
+
+func TestLetStandDoesNotSendAndOwnerRequestsStayOutOfInbox(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	node, _, err := s.CreateNode("host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: "owner"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "reason"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, err := s.ResolveOutcome(rep.ID, owner, "let_stand")
+	if err != nil || m.ID != "" {
+		t.Fatalf("resolution: %+v %v", m, err)
+	}
+	req, _, err = s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: b, Body: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: owner, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "reason"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := s.OutcomeInbox()
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("inbox: %+v %v", entries, err)
+	}
+}
