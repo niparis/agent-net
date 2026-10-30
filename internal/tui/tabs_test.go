@@ -504,3 +504,15 @@ func TestQuotaEmptyTrack(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestQuotaLongWindowNames(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{Label: "Fable week"}, {Label: "completions"}, {Label: "premium interactions"}}}}}
+	v := ansi.Strip(strings.Join(m.quotasView(80, 40), "\n"))
+	for _, name := range []string{"Fable week", "completions", "premium inter…"} {
+		if !strings.Contains(v, name) {
+			t.Errorf("missing %q: %s", name, v)
+		}
+	}
+}

@@ -29,7 +29,7 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	if len(rows) > 0 {
-		subscription = append(subscription, sBold.Render("PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS"))
+		subscription = append(subscription, sBold.Render("PROVIDER    PLAN      WINDOW         USAGE                PACE      RESETS"))
 	}
 	if len(rows) == 0 && len(errors) == 0 {
 		empty := "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota)."
@@ -129,7 +129,7 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("%-14s %-12s %-8s %s %s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
+			line := fmt.Sprintf("%-11s %-9s %-14s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), usage, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}
