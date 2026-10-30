@@ -8,7 +8,7 @@ Only OpenCode reported a model list, so a loose name for another harness was
 passed through unchanged. A Claude session asked for a Codex worker with
 "luna 6"; Codex refused it, and the session had to find `gpt-6-luna` itself
 and start again. The second start then waited in the admission queue because
-the failed start still counted towards the 60 second gap.
+the failed start still counted towards the start gap.
 
 ## What we do
 
@@ -32,9 +32,9 @@ the failed start still counted towards the 60 second gap.
 - **No match.** The start is refused before a worker runs, with up to five
   closest names: `no codex model matches "luna 6" on research; closest:
   gpt-6-luna, gpt-6.1-luna`.
-- **Gap.** Only a start that ran holds the 60 second gap. A start that failed,
-  or a worker that ended within 30 seconds, is cleared so the next start need
-  not wait.
+- **Gap.** Only a start that ran holds the start gap (`workers.start_gap`,
+  default 6 seconds). A start that failed, or a worker that ended within 30
+  seconds, is cleared so the next start need not wait.
 
 ## Later
 

@@ -48,8 +48,8 @@ func TestAdmitRules(t *testing.T) {
 		{name: "cpu target is configurable", mut: func(l *MachineLoad) { l.CPU5 = 82 }, set: func(s *WorkerSettings) { s.CPUTarget = 90 }, ok: true, room: protocol.RoomOK, last: long},
 		{name: "cpu 1-min hot", mut: func(l *MachineLoad) { l.CPU1 = 96 }, ok: false, room: protocol.RoomCPU, reason: "CPU 1-min average 96% (limit 95%)", last: long},
 		{name: "cpu 1-min busy but under the limit", mut: func(l *MachineLoad) { l.CPU1 = 90 }, ok: true, room: protocol.RoomOK, last: long},
-		{name: "a worker started 20 s ago", ok: false, room: protocol.RoomGap, reason: "started 20s ago", last: now.Add(-20 * time.Second)},
-		{name: "a worker started 61 s ago", ok: true, room: protocol.RoomOK, last: now.Add(-61 * time.Second)},
+		{name: "a worker started 2 s ago", ok: false, room: protocol.RoomGap, reason: "started 2s ago", last: now.Add(-2 * time.Second)},
+		{name: "a worker started 7 s ago", ok: true, room: protocol.RoomOK, last: now.Add(-7 * time.Second)},
 		{name: "gap can be switched off", set: func(s *WorkerSettings) { s.StartGap = -1 }, ok: true, room: protocol.RoomOK, last: now},
 		{name: "not measured yet", mut: func(l *MachineLoad) { l.Samples = 1 }, ok: false, room: protocol.RoomMeasuring, last: long},
 		{name: "unknown load: only the cap applies", mut: func(l *MachineLoad) { *l = MachineLoad{} }, ok: true, room: protocol.RoomOK, last: now},
@@ -63,29 +63,57 @@ func TestAdmitRules(t *testing.T) {
 		if c.set != nil {
 			c.set(&s)
 		}
-		got := admit(s, load, cost, c.running, c.last, now)
+		got := admit(s, load, cost, nil, c.running, c.last, now)
 		if got.OK != c.ok || got.Room != c.room || !strings.Contains(got.Reason, c.reason) {
 			t.Errorf("%s: got %+v, want ok=%v room=%s reason~%q", c.name, got, c.ok, c.room, c.reason)
 		}
 	}
 	// A bigger expected worker needs more memory.
 	big := WorkerCost{RAM: 7 << 30, Cores: 2, Learned: true}
-	if got := admit(set, roomyLoad(), big, 0, long, now); got.OK || got.Room != protocol.RoomMem {
+	if got := admit(set, roomyLoad(), big, nil, 0, long, now); got.OK || got.Room != protocol.RoomMem {
 		t.Errorf("a 7 GB worker on 8 GB available: %+v", got)
 	}
 	// Headroom ranks machines: more free memory and CPU means more.
-	a := admit(set, roomyLoad(), cost, 0, long, now)
+	a := admit(set, roomyLoad(), cost, nil, 0, long, now)
 	busy := roomyLoad()
 	busy.CPU5 = 60
-	b := admit(set, busy, cost, 0, long, now)
+	b := admit(set, busy, cost, nil, 0, long, now)
 	if !(a.Headroom > b.Headroom && b.Headroom > 0) {
 		t.Errorf("headroom: idle %v, busy %v", a.Headroom, b.Headroom)
 	}
 }
 
+// The workers that started in the last 5 minutes count against the room: the
+// 5-minute averages cannot show them yet.
+func TestAdmitCountsPendingWorkers(t *testing.T) {
+	set := WorkerSettings{}.filled()
+	now := time.Now()
+	long := now.Add(-time.Hour)
+	cost := defaultWorkerCost()
+	// 8 GB available, 16 GB total, reserve 1.6 GB. One more 600 MB worker
+	// needs 2.2 GB; three workers already starting (6 GB) do not fit.
+	pending := []WorkerCost{{RAM: 2 << 30, Cores: 1, Learned: true}, {RAM: 2 << 30, Cores: 1, Learned: true}, {RAM: 2 << 30, Cores: 1, Learned: true}}
+	if got := admit(set, roomyLoad(), cost, pending, 0, long, now); got.OK || got.Room != protocol.RoomMem {
+		t.Errorf("three 2 GB workers starting: %+v", got)
+	}
+	// Their CPU counts too: four cores on an eight-core machine is 50 percent,
+	// which takes a 70 percent machine over the 75 percent target.
+	hot := roomyLoad()
+	hot.CPU5, hot.CPU1 = 70, 70
+	cores := []WorkerCost{{Cores: 4, RAM: 100 << 20, Learned: true}}
+	if got := admit(set, hot, cost, cores, 0, long, now); got.OK || got.Room != protocol.RoomCPU {
+		t.Errorf("four pending cores on a 70 percent machine: %+v", got)
+	}
+	// The same workers on an idle machine fit.
+	cool := roomyLoad()
+	if got := admit(set, cool, cost, cores, 0, long, now); !got.OK {
+		t.Errorf("four pending cores on an idle machine: %+v", got)
+	}
+}
+
 func TestDefaultsOfWorkerSettings(t *testing.T) {
 	f := WorkerSettings{}.filled()
-	if f.Max != 12 || f.CPUTarget != 75 || f.QueueTimeout != 2*time.Hour || f.QueueTick != 15*time.Second || f.StartGap != time.Minute {
+	if f.Max != 12 || f.CPUTarget != 75 || f.QueueTimeout != 2*time.Hour || f.QueueTick != 15*time.Second || f.StartGap != 6*time.Second {
 		t.Errorf("defaults: %+v", f)
 	}
 	if got := defaultWorkerCost(); got.RAM != 600<<20 || got.Cores != 1 || got.Learned {
@@ -501,6 +529,36 @@ func TestStartWithRoomIsNotQueued(t *testing.T) {
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Status != "started" || res.SessionID == "" || res.Task == nil {
 		t.Errorf("%+v", res)
+	}
+}
+
+// A worker that started in the last 5 minutes counts against the room, even
+// before the 5-minute average shows it.
+func TestAdmissionCountsWorkersStartedInTheLastFiveMinutes(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fl := &fakeLoad{l: roomyLoad()}
+	w := startWorkerNode(t, g, queueSet, withLoad(fl))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	// 2.75 GB free: this one worker's 600 MB and the 1.6 GB reserve leave
+	// 0.55 GB, so the room would look fine if the running worker were
+	// forgotten until the average catches up.
+	tight := roomyLoad()
+	tight.Avail5 = 2.75 * (1 << 30)
+	fl.set(tight)
+	if wl := w.d.workerLoad(); wl.Room != protocol.RoomMem {
+		t.Fatalf("a worker started a moment ago was not counted: %+v", wl)
+	}
+	// Five minutes later the average is trusted and the worker is no longer
+	// pending: the same machine has room again.
+	w.d.wmu.Lock()
+	for _, wk := range w.d.workers {
+		wk.startedAt = time.Now().Add(-6 * time.Minute)
+	}
+	w.d.wmu.Unlock()
+	if wl := w.d.workerLoad(); wl.Room != protocol.RoomOK {
+		t.Fatalf("a long-running worker is still counted as pending: %+v", wl)
 	}
 }
 

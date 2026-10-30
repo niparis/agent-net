@@ -448,6 +448,81 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	w.workerStopped(t, g, protocol.StopIdle) // then it goes quiet and ends
 }
 
+// A busy session is working, even when no message has come for the idle time.
+func TestBusyWorkerIsNotIdle(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Idle = 400 * time.Millisecond
+	w := startWorkerNode(t, g, set, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	var native string
+	eventually(t, "the worker's session and task", func() bool {
+		rows, _ := w.d.st.workers()
+		if len(rows) != 1 || rows[0].NativeID == "" || rows[0].TaskMsg == "" {
+			return false
+		}
+		if rows[0].SessionID != res.SessionID {
+			t.Fatalf("session %q, want %q", rows[0].SessionID, res.SessionID)
+		}
+		native = rows[0].NativeID
+		return true
+	})
+	// The harness says the session is busy: it is in the middle of a turn.
+	w.d.mu.Lock()
+	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
+		ls.info.Status = "busy"
+	}
+	w.d.mu.Unlock()
+	time.Sleep(900 * time.Millisecond)
+	if n := w.d.workerCount(); n != 1 {
+		t.Fatalf("a busy worker was ended as idle: %d running", n)
+	}
+	// When it goes idle and stays quiet, the idle limit applies again.
+	w.d.mu.Lock()
+	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
+		ls.info.Status = "idle"
+	}
+	w.d.mu.Unlock()
+	w.workerStopped(t, g, protocol.StopIdle)
+}
+
+// Tokens that grow mean the worker is still working, so the idle limit does
+// not end it.
+func TestWorkerWithGrowingTokensIsNotIdle(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.Idle = 700 * time.Millisecond
+	w := startPiNode(t, g, set)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x", Isolation: protocol.IsolationWorktree})
+	var file string
+	eventually(t, "the worker's session and task", func() bool {
+		rows, _ := w.d.st.workers()
+		if len(rows) != 1 || rows[0].NativeID == "" || rows[0].TaskMsg == "" {
+			return false
+		}
+		file = piSessionFile(w.cfg.PiSessionsDir, rows[0].NativeID)
+		return file != ""
+	})
+	// The harness reports more work every so often, for longer than the idle
+	// limit. Its session file grows as Pi writes usage.
+	end := time.Now().Add(1500 * time.Millisecond)
+	for time.Now().Before(end) {
+		if f, err := os.OpenFile(file, os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			f.WriteString(`{"type":"usage","usage":{"input":10,"output":10}}` + "\n")
+			f.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if n := w.d.workerCount(); n != 1 {
+		t.Fatalf("a worker whose tokens grow was ended as idle: %d running", n)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: w.workers(t)[0].SessionID})
+}
+
 func TestWorkerEndsAtMaxAge(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet

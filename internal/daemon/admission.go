@@ -40,6 +40,13 @@ const minLoadSamples = 2
 // add load the averages could see, so the next start need not wait.
 const workerGapHoldMinAge = 30 * time.Second
 
+// pendingLoadWindow is how far back admission counts the expected cost of the
+// workers that already started. The 5-minute averages take that long to show a
+// worker, so until then its cost is added to the projected load by hand. That
+// lets starts go through together when there is room, instead of waiting for
+// the averages to catch up.
+const pendingLoadWindow = 5 * time.Minute
+
 // loadFromSampler reads the averages of a sampler. The sampler reports memory
 // in use: on Linux that is MemTotal minus MemAvailable. On macOS it is app +
 // wired + compressed memory (the way Activity Monitor counts it), so the file
@@ -99,12 +106,30 @@ type Decision struct {
 
 // admit applies the rules in order: the hard cap, memory, CPU, and the gap
 // since the last start. The first rule that says no gives the reason.
-func admit(set WorkerSettings, load MachineLoad, cost WorkerCost, running int, lastStart, now time.Time) Decision {
+//
+// pending holds the expected cost of the workers that started in the last
+// pendingLoadWindow. Their RAM is subtracted from the free memory and their
+// CPU is added to the machine's averages: the averages lag, so without them a
+// burst of starts would all see the same room and overfill the machine.
+func admit(set WorkerSettings, load MachineLoad, cost WorkerCost, pending []WorkerCost, running int, lastStart, now time.Time) Decision {
 	d := Decision{OK: true, Room: protocol.RoomOK, Headroom: -1}
+	var pendingRAM uint64
+	var pendingCores float64
+	for _, c := range pending {
+		pendingRAM += c.RAM
+		pendingCores += c.Cores
+	}
+	cpu5, cpu1 := load.CPU5, load.CPU1
+	if load.Cores > 0 {
+		// A worker's cost is in cores; the machine's figures are percent.
+		share := pendingCores / float64(load.Cores) * 100
+		cpu5 += share
+		cpu1 += share
+	}
 	if load.Known && load.Total > 0 {
 		reserve := memReserve(set, load.Total)
-		memFree := load.Avail5 - float64(cost.RAM) - reserve
-		cpuFree := set.CPUTarget - load.CPU5
+		memFree := load.Avail5 - float64(cost.RAM) - float64(pendingRAM) - reserve
+		cpuFree := set.CPUTarget - cpu5
 		d.Headroom = min(memFree/float64(load.Total), cpuFree/100)
 	}
 	no := func(room, format string, a ...any) Decision {
@@ -122,15 +147,24 @@ func admit(set WorkerSettings, load MachineLoad, cost WorkerCost, running int, l
 		return no(protocol.RoomMeasuring, "the machine load is still being measured")
 	}
 	reserve := memReserve(set, load.Total)
-	if load.Avail5-float64(cost.RAM)-reserve <= 0 {
-		return no(protocol.RoomMem, "memory 5-min average available %s, a worker needs about %s and %s stay free",
+	if load.Avail5-float64(cost.RAM)-float64(pendingRAM)-reserve <= 0 {
+		why := fmt.Sprintf("memory 5-min average available %s, a worker needs about %s and %s stay free",
 			fmtBytes(load.Avail5), fmtBytes(float64(cost.RAM)), fmtBytes(reserve))
+		if pendingRAM > 0 {
+			why += fmt.Sprintf(" (RAM of workers that started in the last %s: %s)", pendingLoadWindow, fmtBytes(float64(pendingRAM)))
+		}
+		return no(protocol.RoomMem, "%s", why)
 	}
-	if load.CPU5 >= set.CPUTarget {
-		return no(protocol.RoomCPU, "CPU 5-min average %.0f%% (target %.0f%%)", load.CPU5, set.CPUTarget)
+	if cpu5 >= set.CPUTarget {
+		why := fmt.Sprintf("CPU 5-min average %.0f%% (target %.0f%%)", cpu5, set.CPUTarget)
+		if pendingCores > 0 {
+			why = fmt.Sprintf("CPU 5-min average %.0f%% (target %.0f%%, with %.0f%% from workers that started in the last %s)",
+				cpu5, set.CPUTarget, cpu5-load.CPU5, pendingLoadWindow)
+		}
+		return no(protocol.RoomCPU, "%s", why)
 	}
-	if load.CPU1 >= protocol.WorkerCPUHot {
-		return no(protocol.RoomCPU, "CPU 1-min average %.0f%% (limit %.0f%%)", load.CPU1, protocol.WorkerCPUHot)
+	if cpu1 >= protocol.WorkerCPUHot {
+		return no(protocol.RoomCPU, "CPU 1-min average %.0f%% (limit %.0f%%)", cpu1, protocol.WorkerCPUHot)
 	}
 	if gap := set.StartGap; gap > 0 && !lastStart.IsZero() && now.Sub(lastStart) < gap {
 		return no(protocol.RoomGap, "a worker started %s ago; the next may start after %s so the averages can show it",
@@ -218,10 +252,24 @@ func (d *Daemon) clearGapAfterShortWorker(w *worker) {
 // admission decides whether a worker of this harness and model may start
 // now. The caller holds d.qmu.
 func (d *Daemon) admission(harness, model string) Decision {
+	now := time.Now()
+	load := d.load()
 	d.wmu.Lock()
 	running := len(d.workers)
+	type pendingWorker struct{ harness, model string }
+	var recent []pendingWorker
+	for _, w := range d.workers {
+		if age := now.Sub(w.startedAt); age >= 0 && age < pendingLoadWindow {
+			recent = append(recent, pendingWorker{w.harness, w.model})
+		}
+	}
 	d.wmu.Unlock()
-	return admit(d.cfg.Workers.filled(), d.load(), d.expectedCost(harness, model), running, d.lastWorkerStart(), time.Now())
+	pending := make([]WorkerCost, 0, len(recent))
+	for _, r := range recent {
+		pending = append(pending, d.expectedCostWith(r.harness, r.model, load.Total))
+	}
+	return admit(d.cfg.Workers.filled(), load, d.expectedCostWith(harness, model, load.Total), pending,
+		running, d.lastWorkerStart(), now)
 }
 
 // workerLoad is the worker count and room of this machine, for the report to

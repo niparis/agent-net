@@ -34,8 +34,10 @@ const (
 	DefaultMemReserveBytes = 1536 << 20
 	DefaultMemReserveShare = 0.10
 	// WorkerStartGap is the least time between two worker starts on a
-	// machine: the averages lag, so a new worker must show in them first.
-	WorkerStartGap = 60 * time.Second
+	// machine. The default is short because admission also adds the expected
+	// cost of the workers that started in the last few minutes (decision
+	// 0018). node.json sets it with workers.start_gap.
+	WorkerStartGap = 6 * time.Second
 	// WorkerQueueTick is how often a daemon looks at its queue.
 	WorkerQueueTick = 15 * time.Second
 	// DefaultWorkerQueueTimeout is how long a start may wait in the queue.
