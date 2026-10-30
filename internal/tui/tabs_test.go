@@ -298,7 +298,7 @@ func TestQuotaModelsSection(t *testing.T) {
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra:high", "unknown-model"}}}
 	v := ansi.Strip(m.View())
-	for _, want := range []string{"MODELS", "gpt-6.1-terra:high", "42.3", "USED 7 DAYS", "LAST", "scores: Artificial Analysis (artificialanalysis.ai)", "unscored"} {
+	for _, want := range []string{"MODELS", "gpt-6.1-terra:high", "42.3/high", "USED 7 DAYS", "LAST", "scores: Artificial Analysis (artificialanalysis.ai)", "unscored"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in:\n%s", want, v)
 		}

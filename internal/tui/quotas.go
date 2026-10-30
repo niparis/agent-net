@@ -158,7 +158,7 @@ func (m Model) quotaModelsView(w int) []string {
 	if len(rows) == 0 && unscored == 0 {
 		return nil
 	}
-	out := []string{"", sBold.Render("  MODELS"), sBold.Render(clip("  #  MODEL                      HARNESS   SCORE T  S  N  H  V  USED 7 DAYS LAST", w))}
+	out := []string{"", sBold.Render("  MODELS"), sBold.Render(clip("  #  MODEL                 HARNESS SCORE       T  S  N  H  V  USED 7 DAYS LAST", w))}
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
@@ -197,7 +197,11 @@ func (m Model) quotaModelsView(w int) []string {
 		if r.last > 0 {
 			last = time.Unix(r.last, 0).In(m.loc).Format("Jan 02")
 		}
-		line := fmt.Sprintf("  %-2d %-26s %-8s %5g %s %11d %s", rowIndex+1, cell(r.model, 26), cell(r.harness, 8), r.score.Score, strings.Join(fits, " "), r.used, last)
+		score := fmt.Sprintf("%g", r.score.Score)
+		if r.score.Effort != "" {
+			score += "/" + r.score.Effort
+		}
+		line := fmt.Sprintf("  %-2d %-21s %-7s %-11s %s %11d %s", rowIndex+1, cell(r.model, 21), cell(r.harness, 7), score, strings.Join(fits, " "), r.used, last)
 		out = append(out, clip(line, w))
 	}
 	if unscored > 0 {
