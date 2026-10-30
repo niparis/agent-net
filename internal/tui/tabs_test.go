@@ -264,6 +264,15 @@ func TestLayoutGoldens(t *testing.T) {
 			}
 		}
 		golden(t, fmt.Sprintf("messages_%dx%d", size[0], size[1]), v)
+		for i, it := range m.feed.items {
+			if it.isMessage() {
+				it.FromCTO = true
+				it.Snippet = "Please check the deployment."
+				m.feedCur = i
+				break
+			}
+		}
+		golden(t, fmt.Sprintf("messages_cto_%dx%d", size[0], size[1]), m.View())
 	}
 }
 

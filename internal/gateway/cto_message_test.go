@@ -25,6 +25,19 @@ func TestCTOSenderIsPersistedAndRequiresOwner(t *testing.T) {
 	if err != nil || len(events) != 1 || !strings.Contains(events[0], "by=cto") {
 		t.Fatalf("audit: %v %v", events, err)
 	}
+	feed, err := s.FeedEvents(0, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, event := range feed {
+		if event.MessageID == m.ID && event.FromCTO {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("CTO sender missing from feed")
+	}
 	got, ok, err := s.Message(m.ID)
 	if err != nil || !ok || !got.FromCTO || got.FromHarness != "cto" {
 		t.Fatalf("CTO sender lost: %+v %v", got, err)

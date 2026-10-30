@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -322,5 +324,39 @@ func TestHelpListsTheMessageStates(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("the help lacks %q", want)
 		}
+	}
+}
+
+func TestMessagesPanelAndCTOColors(t *testing.T) {
+	m := keys(newModel(120, 34), "2")
+	it := m.feed.items[m.feedCur]
+	it.FromCTO = true
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	v := m.View()
+	for _, want := range []string{"Messages ·", "▸", "CTO", "48;2;34;48;58"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if !strings.Contains(v, lipgloss.NewStyle().Foreground(roleCTO).Render("CTO")) {
+		t.Error("CTO sender is not purple")
+	}
+	for _, tc := range []struct {
+		state string
+		color lipgloss.TerminalColor
+	}{{protocol.StateDelivered, roleGood}, {protocol.StateFailed, roleError}, {protocol.StateReplied, roleAccent}, {protocol.StateStored, roleDim}} {
+		if !strings.Contains(messageState(tc.state), lipgloss.NewStyle().Foreground(tc.color).Render(stateSymbol(tc.state))) {
+			t.Errorf("wrong state color: %s", tc.state)
+		}
+	}
+}
+
+func TestOlderFeedDetectsCTOSender(t *testing.T) {
+	f := newFeed()
+	f.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m_cto", Detail: "type=request by=cto"}}})
+	if f.byMsg["m_cto"] == nil || !f.byMsg["m_cto"].FromCTO {
+		t.Fatal("CTO sender lost from older feed")
 	}
 }
