@@ -72,8 +72,24 @@ func TestHeaderNeedsYouUsesTheWarningColour(t *testing.T) {
 	}
 }
 
+// A machine's report reaches the screen twice: live from the local daemon and
+// again in the gateway's copy. The queue must count it once.
+func TestHeaderQueuedWorkersCountsEachMachineOnce(t *testing.T) {
+	u := fakeUsage()
+	u.Local.Workers = &protocol.WorkerLoad{Queued: 2, Room: protocol.RoomOK}
+	u.Gateway.Nodes = append(u.Gateway.Nodes, protocol.UsageNode{
+		NodeID: "n_mac", Hostname: "Mac", AgeSeconds: 2,
+		Usage: protocol.UsageReport{Workers: &protocol.WorkerLoad{Queued: 2, Room: protocol.RoomOK}},
+	})
+	u.Gateway.Nodes[0].Usage.Workers = &protocol.WorkerLoad{Queued: 1, Room: protocol.RoomCPU}
+	head := lines(modelWith(fakeSnapshot(), u, 160, 30).View())[0]
+	if !strings.Contains(head, "workers 0 running, 3 queued") {
+		t.Fatalf("header %q lacks the queue of both machines", head)
+	}
+}
+
 func TestMachineCPUAt100Fits(t *testing.T) {
-	for _, w := range []int{80, 100, 120} {
+	for _, w := range []int{50, 60, 70, 80, 100, 120} {
 		u := fakeUsage()
 		u.Local.Machine.CPU, u.Local.Machine.CPUAvg = 100, 100
 		m := modelWith(fakeSnapshot(), u, w, 24)

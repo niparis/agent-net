@@ -277,7 +277,7 @@ func (m Model) titleLine(w int) string {
 		mid += fmt.Sprintf(" · workers %d running, %d queued", workers, q)
 	}
 	if n := m.learnedNew(); n > 0 {
-		mid += fmt.Sprintf(" · learned %d new", n)
+		mid += fmt.Sprintf(", learned %d new", n)
 	}
 	var filters []string
 	if m.activeOnly {
