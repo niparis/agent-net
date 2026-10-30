@@ -436,12 +436,16 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			if err != nil {
 				return none, err
 			}
+			successes, err := g.store.SucceededModels(pick.NodeID, h.Name)
+			if err != nil {
+				return none, err
+			}
 			for _, model := range h.Models {
 				if _, ok := protocol.LookupModelScoreWithDefaultEffort(model, h.ModelDefaultEfforts[model], scores); ok {
 					scored = true
 				}
 				if protocol.WorkerProviderAllowed(h.Name, model, providers.Providers, quotas) {
-					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: failures[model]})
+					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
 				}
 			}
 		}

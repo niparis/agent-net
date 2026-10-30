@@ -15,6 +15,7 @@ type WorkerModelCandidate struct {
 	Provider      string
 	DefaultEffort string
 	Failed        bool
+	Succeeded     bool
 }
 
 // WorkerModelChoice explains an automatic worker model selection.
@@ -86,13 +87,16 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if a.choice.Failed != b.choice.Failed {
 			return !a.choice.Failed
 		}
+		if a.choice.Succeeded != b.choice.Succeeded {
+			return a.choice.Succeeded
+		}
 		return false
 	})
 	best := eligible[0]
 	ties := 1
 	for ties < len(eligible) {
 		r := eligible[ties]
-		if r.fit != best.fit || measured && r.room != best.room || r.choice.Failed != best.choice.Failed {
+		if r.fit != best.fit || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
 			break
 		}
 		ties++

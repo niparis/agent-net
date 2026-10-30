@@ -65,3 +65,21 @@ func TestWorkerAutomaticRejectsUnapprovedProvider(t *testing.T) {
 		t.Fatalf("explicit model: %+v %v", res, err)
 	}
 }
+
+func TestWorkerAutomaticPrefersRecentSuccess(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	score := 51.0
+	for _, m := range []string{"fake/m1", "fake/m2"} {
+		w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: m, Score: &score})
+	}
+	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
+	if err := g.gw.Store().RecordModelSuccess(w.node.d.NodeID(), "opencode", "fake/m2"); err != nil {
+		t.Fatal(err)
+	}
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
+	if err != nil || res.Model != "fake/m2" {
+		t.Fatalf("choice: %+v %v", res, err)
+	}
+}

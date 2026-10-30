@@ -61,3 +61,19 @@ func TestWorkerQuotaRoomMonthly(t *testing.T) {
 		t.Fatalf("room=%v note=%q known=%v blocked=%v", room, note, known, blocked)
 	}
 }
+
+func TestChooseWorkerModelPrefersRecentSuccess(t *testing.T) {
+	scores := []ModelScore{{Match: "a", Score: 51}, {Match: "b", Score: 51}}
+	candidates := []WorkerModelCandidate{{Harness: "pi", Model: "a"}, {Harness: "pi", Model: "b", Succeeded: true}}
+	for _, rotation := range []int{0, 1} {
+		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, rotation)
+		if err != nil || got.Model != "b" {
+			t.Fatalf("rotation %d: %+v %v", rotation, got, err)
+		}
+	}
+	candidates[1].Failed = true
+	got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, 0)
+	if err != nil || got.Model != "a" {
+		t.Fatalf("failed after success: %+v %v", got, err)
+	}
+}
