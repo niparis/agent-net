@@ -13,13 +13,14 @@ import (
 
 // fakeOp is an operator that records what the commands ask.
 type fakeOp struct {
-	start   protocol.WorkerStartRequest
-	stopped string
-	sentTo  string
-	sentMsg string
-	err     error
-	workers []protocol.WorkerView
-	result  protocol.WorkerStartResult
+	start    protocol.WorkerStartRequest
+	stopped  string
+	sentTo   string
+	sentMsg  string
+	workersQ protocol.WorkersQuery
+	err      error
+	workers  []protocol.WorkerView
+	result   protocol.WorkerStartResult
 }
 
 func (f *fakeOp) Snapshot(context.Context) (operator.Snapshot, error) {
@@ -40,7 +41,8 @@ func (f *fakeOp) StartWorker(_ context.Context, r protocol.WorkerStartRequest) (
 	return f.result, f.err
 }
 func (f *fakeOp) StopWorker(_ context.Context, s string) error { f.stopped = s; return f.err }
-func (f *fakeOp) Workers(context.Context) ([]protocol.WorkerView, error) {
+func (f *fakeOp) Workers(_ context.Context, q protocol.WorkersQuery) ([]protocol.WorkerView, error) {
+	f.workersQ = q
 	return f.workers, f.err
 }
 func (f *fakeOp) Usage(context.Context) (protocol.UsageResult, error) {
@@ -129,5 +131,40 @@ func TestStopSendAndWorkersCommands(t *testing.T) {
 	runWorkers(context.Background(), &fakeOp{}, &out, nil)
 	if strings.TrimSpace(out.String()) != "no workers" {
 		t.Errorf("empty: %q", out.String())
+	}
+}
+
+func TestWorkersCommandOwnerAndRecentFlags(t *testing.T) {
+	f := &fakeOp{workers: []protocol.WorkerView{
+		{SessionID: "s_w_ab12", Harness: "claude", Model: "anthropic/claude-sonnet-5", Project: "shop", Status: "busy",
+			Owner: "s_owner", StartedAt: 1700000000, Task: "write the tests"},
+		{SessionID: "s_w_cd34", Harness: "opencode", Online: false, Status: "done", Owner: "s_owner",
+			StartedAt: 1690000000, Task: "fix the parser", EndedAt: 1700000100, EndStatus: "done", EndNote: "the worker reported done"},
+	}}
+	var out bytes.Buffer
+	if err := runWorkers(context.Background(), f, &out, []string{"-json", "-recent", "-owner-claude", "11111111-2222-3333-4444-555555555555"}); err != nil {
+		t.Fatal(err)
+	}
+	want := protocol.WorkersQuery{OwnerClaude: "11111111-2222-3333-4444-555555555555", Recent: true}
+	if f.workersQ != want {
+		t.Errorf("query %+v, want %+v", f.workersQ, want)
+	}
+	for _, s := range []string{`"task": "write the tests"`, `"task": "fix the parser"`, `"ended_at": 1700000100`,
+		`"end_status": "done"`, `"end_note": "the worker reported done"`} {
+		if !strings.Contains(out.String(), s) {
+			t.Errorf("JSON lacks %q:\n%s", s, out.String())
+		}
+	}
+	// Without the flags the query is empty: the table and the TUI do not change.
+	out.Reset()
+	f.workersQ = protocol.WorkersQuery{OwnerClaude: "old", Recent: true}
+	if err := runWorkers(context.Background(), f, &out, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f.workersQ != (protocol.WorkersQuery{}) {
+		t.Errorf("default query %+v", f.workersQ)
+	}
+	if strings.Contains(out.String(), "TASK") || strings.Contains(out.String(), "END") {
+		t.Errorf("the table has a new column:\n%s", out.String())
 	}
 }

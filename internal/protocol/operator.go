@@ -206,6 +206,16 @@ type WorkerHandbackResult struct {
 	Queued bool     `json:"queued,omitempty"`
 }
 
+// WorkersQuery is the optional request of OpWorkers. An empty query lists the
+// running workers, as OpWorkers always did.
+type WorkersQuery struct {
+	// OwnerClaude keeps only the workers owned by the local Claude Code
+	// session with this native ID (the transcript file's name).
+	OwnerClaude string `json:"owner_claude,omitempty"`
+	// Recent also lists workers that ended in the last two minutes.
+	Recent bool `json:"recent,omitempty"`
+}
+
 // WorkerView is one worker as the operator sees it.
 type WorkerView struct {
 	SessionID string `json:"session_id"`
@@ -221,6 +231,14 @@ type WorkerView struct {
 	Owner     string `json:"owner"`
 	OwnerName string `json:"owner_name,omitempty"`
 	StartedAt int64  `json:"started_at"`
+	// Task is the first line of the task the owner gave, cut to about 120
+	// characters. Empty when this machine did not start the worker.
+	Task string `json:"task,omitempty"`
+	// EndedAt, EndStatus and EndNote are set for a worker that ended in the
+	// last two minutes, when the query asked for recent workers.
+	EndedAt   int64  `json:"ended_at,omitempty"`
+	EndStatus string `json:"end_status,omitempty"`
+	EndNote   string `json:"end_note,omitempty"`
 }
 
 // WorkersResult answers OpWorkers.

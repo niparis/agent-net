@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -175,7 +176,13 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		return protocol.WorkerStopResult{Session: p.Session, Stopped: true}, true, nil
 
 	case protocol.OpWorkers:
-		out, err := d.workersView(ctx)
+		var q protocol.WorkersQuery
+		if len(raw) > 0 && string(raw) != "null" {
+			if json.Unmarshal(raw, &q) != nil {
+				return nil, true, errors.New("bad workers params")
+			}
+		}
+		out, err := d.workersView(ctx, q)
 		return out, true, err
 	}
 	return nil, false, nil
@@ -218,8 +225,10 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	return out, nil
 }
 
-// workersView lists the workers on the network with their owners.
-func (d *Daemon) workersView(ctx context.Context) (*protocol.WorkersResult, error) {
+// workersView lists the workers on the network with their owners. The optional
+// query keeps the workers of one local Claude session, and adds the workers
+// that ended in the last two minutes.
+func (d *Daemon) workersView(ctx context.Context, q protocol.WorkersQuery) (*protocol.WorkersResult, error) {
 	data, err := d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
 	if err != nil {
 		return nil, err
@@ -228,7 +237,44 @@ func (d *Daemon) workersView(ctx context.Context) (*protocol.WorkersResult, erro
 	if err := json.Unmarshal(data, &r); err != nil {
 		return nil, err
 	}
-	return &protocol.WorkersResult{Workers: protocol.WorkersOf(r.Agents)}, nil
+	ws := protocol.WorkersOf(r.Agents)
+	for i := range ws {
+		ws[i].Task = d.workerTask(ws[i].SessionID)
+	}
+	owner := ""
+	if q.OwnerClaude != "" {
+		d.mu.Lock()
+		if ls := d.sessions[key("claude", q.OwnerClaude)]; ls != nil {
+			owner = ls.sessionID
+		}
+		d.mu.Unlock()
+		kept := ws[:0]
+		for _, v := range ws {
+			if owner != "" && v.Owner == owner {
+				kept = append(kept, v)
+			}
+		}
+		ws = kept
+	}
+	if q.Recent {
+		index := map[string]int{}
+		for i, v := range ws {
+			index[v.SessionID] = i
+		}
+		for _, v := range d.recentWorkers(time.Now()) {
+			if q.OwnerClaude != "" && v.Owner != owner {
+				continue
+			}
+			// The gateway may still list the session for a moment, without the
+			// end it reached. The recent entry has it.
+			if i, ok := index[v.SessionID]; ok {
+				ws[i] = v
+				continue
+			}
+			ws = append(ws, v)
+		}
+	}
+	return &protocol.WorkersResult{Workers: ws}, nil
 }
 
 // onWorkerFrame serves "worker.launch" and "worker.kill" from the gateway.

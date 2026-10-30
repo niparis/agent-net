@@ -924,6 +924,57 @@ func TestAdoptIgnoresAReusedProcessID(t *testing.T) {
 
 // ---- the owner session ----
 
+// A worker's task and its recent end are in the workers view, and the view can
+// be kept to the local Claude session that owns the worker.
+func TestWorkersQueryTaskRecentAndOwner(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	owner := w.ownerID()
+	const claudeID = "11111111-2222-3333-4444-555555555555"
+	w.d.mu.Lock()
+	w.d.sessions[key("claude", claudeID)] = &localSession{
+		info: protocol.SessionInfo{Harness: "claude", NativeID: claudeID}, sessionID: owner}
+	w.d.mu.Unlock()
+
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "say ok\nand then more"})
+	query := func(q protocol.WorkersQuery) []protocol.WorkerView {
+		t.Helper()
+		var r protocol.WorkersResult
+		json.Unmarshal(w.cli.mustCall("workers", q), &r)
+		return r.Workers
+	}
+	eventually(t, "the task of the running worker", func() bool {
+		ws := query(protocol.WorkersQuery{OwnerClaude: claudeID, Recent: true})
+		return len(ws) == 1 && ws[0].Task == "say ok" && ws[0].EndStatus == ""
+	})
+	if ws := query(protocol.WorkersQuery{OwnerClaude: "another-claude"}); len(ws) != 0 {
+		t.Fatalf("another Claude session sees workers: %+v", ws)
+	}
+	if ws := query(protocol.WorkersQuery{}); len(ws) != 1 || ws[0].Task != "say ok" {
+		t.Fatalf("the plain view: %+v", ws)
+	}
+
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
+	eventually(t, "the daemon forgot the running worker", func() bool { return w.d.workerCount() == 0 })
+	eventually(t, "the ended worker is recent", func() bool {
+		ws := query(protocol.WorkersQuery{OwnerClaude: claudeID, Recent: true})
+		return len(ws) == 1 && ws[0].SessionID == res.SessionID && ws[0].EndStatus == protocol.StatusStopped &&
+			ws[0].EndNote != "" && ws[0].EndedAt > 0 && ws[0].Task == "say ok"
+	})
+	if got := w.d.recentWorkers(time.Now().Add(recentWindow + time.Second)); len(got) != 0 {
+		t.Fatalf("an end past the window is still recent: %+v", got)
+	}
+	// Without the flag no end facts are added: the gateway keeps the session
+	// as an offline one, as it did before.
+	for _, v := range query(protocol.WorkersQuery{OwnerClaude: claudeID}) {
+		if v.EndStatus != "" || v.EndedAt != 0 || v.EndNote != "" {
+			t.Fatalf("the plain view carries an end: %+v", v)
+		}
+	}
+}
+
 func TestOwnerSessionIsRegisteredPerMachine(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	a := startNode(t, g, nodeOpts{})

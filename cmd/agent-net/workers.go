@@ -106,12 +106,14 @@ func cmdWorkers(ctx context.Context, args []string) error {
 func runWorkers(ctx context.Context, op operator.Operator, out io.Writer, args []string) error {
 	fs := flag.NewFlagSet("workers", flag.ContinueOnError)
 	asJSON := fs.Bool("json", false, "print JSON")
+	ownerClaude := fs.String("owner-claude", "", "only workers owned by this machine's Claude Code session with this native id")
+	recent := fs.Bool("recent", false, "also list workers that ended in the last two minutes")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	cctx, cancel := context.WithTimeout(ctx, operator.Timeout)
 	defer cancel()
-	ws, err := op.Workers(cctx)
+	ws, err := op.Workers(cctx, protocol.WorkersQuery{OwnerClaude: *ownerClaude, Recent: *recent})
 	if err != nil {
 		return err
 	}

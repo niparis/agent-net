@@ -127,7 +127,7 @@ func TestActionsUseTheOperatorMethodsAndTypes(t *testing.T) {
 	if stop.Session != "s_w" {
 		t.Errorf("stop params: %+v", stop)
 	}
-	ws, err := c.Workers(ctx)
+	ws, err := c.Workers(ctx, protocol.WorkersQuery{})
 	if err != nil || len(ws) != 1 || ws[0].OwnerName != "you (on mac)" {
 		t.Fatalf("workers: %+v %v", ws, err)
 	}
@@ -148,7 +148,7 @@ func TestOldDaemonRefusesTheNewCalls(t *testing.T) {
 	_, e1 := c.SendAsOwner(ctx, "s", "b")
 	_, e2 := c.StartWorker(ctx, protocol.WorkerStartRequest{})
 	e3 := c.StopWorker(ctx, "s")
-	_, e4 := c.Workers(ctx)
+	_, e4 := c.Workers(ctx, protocol.WorkersQuery{})
 	for i, err := range []error{e1, e2, e3, e4} {
 		if !errors.Is(err, ErrTooOld) || !strings.Contains(err.Error(), "older than this command") {
 			t.Errorf("call %d: %v", i, err)

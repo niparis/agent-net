@@ -178,6 +178,27 @@ func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
 	return b + "\n\nTask:\n" + strings.TrimSpace(task)
 }
 
+// WorkerTaskSummaryMax is the longest task line a status view gets.
+const WorkerTaskSummaryMax = 120
+
+// WorkerTaskSummary is the first line of the task in a worker's message: the
+// text after the brief's "Task:" line, or the message itself, cut to
+// WorkerTaskSummaryMax characters.
+func WorkerTaskSummary(body string) string {
+	if i := strings.Index(body, "\n\nTask:\n"); i >= 0 {
+		body = body[i+len("\n\nTask:\n"):]
+	}
+	line := strings.TrimSpace(body)
+	if j := strings.IndexByte(line, '\n'); j >= 0 {
+		line = strings.TrimSpace(line[:j])
+	}
+	runes := []rune(line)
+	if len(runes) > WorkerTaskSummaryMax {
+		line = strings.TrimSpace(string(runes[:WorkerTaskSummaryMax-3])) + "..."
+	}
+	return line
+}
+
 // Isolation modes of a worker. Empty means the default: a worktree when the
 // project is a repository, the project folder when it is not (W17).
 // IsolationNone opts out, for a read-only or non-code task.

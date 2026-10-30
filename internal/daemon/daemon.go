@@ -189,6 +189,9 @@ type Daemon struct {
 	wmu       sync.Mutex
 	workers   map[string]*worker
 	launchers map[string]launcher
+	// rmu guards recent, the workers that ended in the last two minutes.
+	rmu    sync.Mutex
+	recent map[string]recentWorker
 	// mcpHello is when the MCP server of each Claude session first said hello.
 	// A Claude worker waits for it before it gets its task.
 	mcpHello map[string]time.Time
@@ -255,7 +258,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, adopted: make(chan struct{}),
-		mcpHello: map[string]time.Time{}, workers: map[string]*worker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
+		mcpHello: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}

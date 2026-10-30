@@ -39,7 +39,7 @@ type Operator interface {
 	// StopWorker ends a worker.
 	StopWorker(ctx context.Context, session string) error
 	// Workers lists the workers on the network with their owners.
-	Workers(ctx context.Context) ([]protocol.WorkerView, error)
+	Workers(ctx context.Context, q protocol.WorkersQuery) ([]protocol.WorkerView, error)
 	// Usage is the CPU and memory of every machine and session. Owner only.
 	Usage(ctx context.Context) (protocol.UsageResult, error)
 	// UsageTop is the heaviest processes of one session. Owner only.
