@@ -56,19 +56,22 @@ func (s *Store) AnswerHeld(id, action string) (protocol.Message, error) {
 		if from == "" || to == "" || from == to {
 			return empty, reject("request has no distinct graph nodes")
 		}
-		e := protocol.Edge{From: from, To: to, Kind: "depends", Rule: "auto"}
-		if action == "R" {
-			e.Rule = "never"
-		}
 		var old protocol.Edge
-		old.From, old.To, old.Kind = e.From, e.To, e.Kind
-		err = tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, from, to, e.Kind).Scan(&old.Mode, &old.Rule)
+		old.From, old.To = from, to
+		err = tx.QueryRow(`SELECT kind,mode,rule FROM graph_edges WHERE source=? AND target=? ORDER BY kind LIMIT 1`, from, to).Scan(&old.Kind, &old.Mode, &old.Rule)
 		previous := ""
+		e := old
 		if err == nil {
 			b, _ := json.Marshal(old)
 			previous = string(b)
-		} else if err != sql.ErrNoRows {
+		} else if err == sql.ErrNoRows {
+			e.Kind = "depends"
+		} else {
 			return empty, err
+		}
+		e.Rule = "auto"
+		if action == "R" {
+			e.Rule = "never"
 		}
 		b, _ := json.Marshal(e)
 		if _, err = tx.Exec(`INSERT INTO graph_edges VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {

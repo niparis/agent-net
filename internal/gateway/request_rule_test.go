@@ -159,3 +159,37 @@ func TestDeclineIsRecordedWithReply(t *testing.T) {
 	}
 	t.Fatal("missing decline reply")
 }
+
+func TestAlwaysDecisionPreservesGovernanceEdge(t *testing.T) {
+	s, _ := newTestStore(t)
+	ids, _ := graphSessions(t, s, "provider")
+	if err := s.AddArchitect("advisor", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	node, _, err := s.CreateNode("h2", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sender, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "advisor", Repo: protocol.RepoInfo{Project: "advisor"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := protocol.Edge{From: "advisor", To: "provider", Kind: "governs", Mode: "advisor", Rule: "ask"}
+	if err = s.SetEdge(e, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := send(s, sender, ids["provider"], "request", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AnswerHeld(m.ID, "A"); err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Edges) != 1 || g.Edges[0].Kind != "governs" || g.Edges[0].Mode != "advisor" || g.Edges[0].Rule != "auto" {
+		t.Fatalf("edges: %#v", g.Edges)
+	}
+}
