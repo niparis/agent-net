@@ -92,6 +92,22 @@ func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 	if r.Trees == nil {
 		r.Trees = []protocol.TreeUsage{}
 	}
+	if w := r.Workers; w != nil {
+		cp := *w
+		cp.Running, cp.Queued = max(cp.Running, 0), max(cp.Queued, 0)
+		switch cp.Room {
+		case protocol.RoomOK, protocol.RoomCPU, protocol.RoomMem, protocol.RoomCap, protocol.RoomGap, protocol.RoomMeasuring:
+		default:
+			cp.Room = ""
+		}
+		if cp.Headroom != cp.Headroom || cp.Headroom > 1 {
+			cp.Headroom = -1
+		}
+		if len(cp.Reason) > 300 {
+			cp.Reason = cp.Reason[:300]
+		}
+		r.Workers = &cp
+	}
 	return r
 }
 

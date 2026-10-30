@@ -9,7 +9,8 @@ import (
 
 // The worker tools (decision 0002). An agent starts a worker in a project and
 // stops its own workers. The daemon enforces the rules: a worker cannot start
-// workers, the machine must accept them, and at most four run on a machine.
+// workers, the machine must accept them, and a start waits in a queue when the
+// machine has no room (decision 0018).
 
 const workerNote = "A worker is an agent session that agent-net starts for you with nobody watching it. It uses the project's own permission settings. " +
 	"It ends on its own after 60 minutes without messages, after 4 hours, or when you end. Only start one when your user asks."
@@ -29,7 +30,7 @@ type handbackIn struct {
 }
 
 type stopIn struct {
-	Session string `json:"session" jsonschema:"the session_id of a worker you started"`
+	Session string `json:"session" jsonschema:"the session_id of a worker you started, or the queue_id of a queued start"`
 }
 
 func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
@@ -40,6 +41,7 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 			"The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). "+
 			"The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. "+
 			workerNote+" A worker cannot start workers."+
+			" If the machine has no room (CPU or memory is busy), the start is queued, not refused: the answer has status queued, a queue_id, the place in the queue and the reason, and a worker notice arrives in your session when the worker starts (or when it cannot). Cancel a queued start with agent_stop and its queue_id."+
 			" A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. "+
 			"Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in startIn) (*mcp.CallToolResult, any, error) {
@@ -60,7 +62,7 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_stop",
-		"Stop a worker that you started, by its session_id. Its process ends at once. The person at the command line can stop any worker."),
+		"Stop a worker that you started, by its session_id. Its process ends at once. A start that is still queued (status queued) is cancelled with its queue_id. The person at the command line can stop any worker."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in stopIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, protocol.OpWorkerStop, protocol.WorkerStopRequest{Session: in.Session})
 			return nil, out, err

@@ -595,6 +595,14 @@ function formatMessages(r: any): string {
 }
 
 function formatStarted(r: any): string {
+  if (r.status === "queued") {
+    return (
+      `${r.queue_reason}\n` +
+      `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
+      `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_stop and the queue_id.` +
+      (r.machine_note ? `\nmachine: ${r.machine_note}` : "")
+    );
+  }
   const note = r.queued
     ? "The task is queued: it is sent when the gateway link is back."
     : "The task was sent as a message from you; the worker answers with agent_reply and its answer arrives in this session.";
@@ -854,6 +862,7 @@ const TOOLS: ToolDef[] = [
       "The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. " +
       WORKER_NOTE +
       " A worker cannot start workers." +
+      " If the machine has no room (CPU or memory is busy), the start is queued, not refused: the answer has status queued, a queue_id, the place in the queue and the reason, and a worker notice arrives in your session when the worker starts (or when it cannot). Cancel a queued start with agent_stop and its queue_id." +
       " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
       "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
     properties: {
@@ -885,8 +894,8 @@ const TOOLS: ToolDef[] = [
   },
   {
     name: "agent_stop",
-    description: "Stop a worker that you started, by its session_id. Its process ends at once. The person at the command line can stop any worker.",
-    properties: { session: str("The session_id of a worker you started") },
+    description: "Stop a worker that you started, by its session_id. Its process ends at once. A start that is still queued (status queued) is cancelled with its queue_id. The person at the command line can stop any worker.",
+    properties: { session: str("The session_id of a worker you started, or the queue_id of a queued start") },
     required: ["session"],
     method: "worker_stop",
     format: (r) => `Stopped worker ${r.session}.`,

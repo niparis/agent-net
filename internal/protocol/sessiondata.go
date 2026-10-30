@@ -1,5 +1,7 @@
 package protocol
 
+import "fmt"
+
 // This file holds the types for the data a session owner can ask for: how
 // much CPU and memory each machine and session uses, what happens inside a
 // session, and how many sessions are online. See decision 0007.
@@ -60,6 +62,43 @@ type TreeUsage struct {
 type UsageReport struct {
 	Machine MachineUsage `json:"machine"`
 	Trees   []TreeUsage  `json:"trees"`
+	// Workers is the machine's worker load. Nil from an older daemon.
+	Workers *WorkerLoad `json:"workers,omitempty"`
+}
+
+// Room values of WorkerLoad: why a machine has no room for another worker, or
+// "ok".
+const (
+	RoomOK        = "ok"
+	RoomCPU       = "cpu"
+	RoomMem       = "mem"
+	RoomCap       = "cap"       // the hard cap of workers is reached
+	RoomGap       = "gap"       // a worker started less than a minute ago
+	RoomMeasuring = "measuring" // the daemon has not measured the machine long enough
+)
+
+// WorkerLoad is a machine's worker count and admission state (decision 0018).
+type WorkerLoad struct {
+	Running int `json:"running"`
+	Queued  int `json:"queued"`
+	// Room is RoomOK, or the first reason that stops a new worker.
+	Room string `json:"room"`
+	// Headroom ranks machines for a start: the smaller of the free memory
+	// share and the free CPU share a new worker would leave, 0 to 1. Zero or
+	// less means no room. It is -1 when the daemon cannot say.
+	Headroom float64 `json:"headroom"`
+	// Reason is the sentence that goes with Room, for example "CPU 5-min
+	// average 82% (target 75%)". Empty when Room is ok.
+	Reason string `json:"reason,omitempty"`
+}
+
+// RoomText is a short phrase for a WorkerLoad.
+func (w WorkerLoad) RoomText() string {
+	room := w.Room
+	if room == "" {
+		room = "?"
+	}
+	return fmt.Sprintf("workers %d running, %d queued \u00b7 room: %s", w.Running, w.Queued, room)
 }
 
 // UsageNode is one machine in the answer to "query.usage".

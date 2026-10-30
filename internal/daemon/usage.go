@@ -56,16 +56,26 @@ func (d *Daemon) startUsage(ctx context.Context) {
 
 // watchedPIDs lists the process of every local session.
 func (d *Daemon) watchedPIDs() []int {
-	d.mu.Lock()
-	defer d.mu.Unlock()
 	seen := map[int]bool{}
 	var out []int
+	d.mu.Lock()
 	for _, ls := range d.sessions {
 		if pid := ls.info.PID; pid > 0 && !seen[pid] {
 			seen[pid] = true
 			out = append(out, pid)
 		}
 	}
+	d.mu.Unlock()
+	// A worker's process is followed even before its session is known, so
+	// its whole life is measured (see cost.go).
+	d.wmu.Lock()
+	for _, w := range d.workers {
+		if w.pid > 0 && !seen[w.pid] {
+			seen[w.pid] = true
+			out = append(out, w.pid)
+		}
+	}
+	d.wmu.Unlock()
 	return out
 }
 
@@ -113,7 +123,7 @@ func (d *Daemon) usageReport() (protocol.UsageReport, bool) {
 	if !ok {
 		return protocol.UsageReport{}, false
 	}
-	rep := protocol.UsageReport{Machine: machineUsage(m), Trees: []protocol.TreeUsage{}}
+	rep := protocol.UsageReport{Machine: machineUsage(m), Trees: []protocol.TreeUsage{}, Workers: d.workerLoad()}
 	// Group the sessions by process: OpenCode runs many in one.
 	type group struct {
 		harness string

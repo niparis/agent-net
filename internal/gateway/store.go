@@ -364,6 +364,18 @@ func (s *Store) upsertSession(q interface {
 		workerStarted = in.Worker.StartedAt * int64(time.Second)
 	}
 	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
+	// A new record gets the ID the daemon asks for when that ID looks right
+	// and nobody uses it: a worker whose record was lost keeps its ID.
+	newID := protocol.NewID("s")
+	if known == 0 && validSessionID(in.SessionID) {
+		var used int
+		if err := q.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, in.SessionID).Scan(&used); err != nil {
+			return "", false, err
+		}
+		if used == 0 {
+			newID = in.SessionID
+		}
+	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
 		tools_version, tools_old, created_at)
@@ -376,7 +388,7 @@ func (s *Store) upsertSession(q interface {
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old`,
-		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
+		newID, nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now)
 	if err != nil {
@@ -393,6 +405,19 @@ func (s *Store) upsertSession(q interface {
 		s.event(q, "session.new", nodeID, id, "", sessionDetail(in))
 	}
 	return id, fresh, nil
+}
+
+// validSessionID says whether id has the shape of a session ID.
+func validSessionID(id string) bool {
+	if !strings.HasPrefix(id, "s_") || len(id) < 4 || len(id) > 40 {
+		return false
+	}
+	for _, c := range id[2:] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 func sessionDetail(in protocol.SessionInfo) string {
@@ -507,9 +532,11 @@ func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 
 // CleanWorkers deletes the worker records of a node that are offline and
 // whose worker started longer ago than age. A record with no start time was
-// kept by a gateway from before the column existed, so it counts as old and
-// goes at the first cleanup. It returns how many records it deleted.
-func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
+// kept by a gateway from before the column existed, so it counts as old. A
+// record the machine lists in running is never deleted: its machine still
+// runs that worker, even if the worker is offline for a moment (a daemon
+// restart). It returns how many records it deleted.
+func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string) (int, error) {
 	if age <= 0 {
 		return 0, nil
 	}
@@ -524,6 +551,10 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	keep := map[string]bool{}
+	for _, id := range running {
+		keep[id] = true
+	}
 	var ids []string
 	for rows.Next() {
 		var id string
@@ -531,7 +562,9 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
 			rows.Close()
 			return 0, err
 		}
-		ids = append(ids, id)
+		if !keep[id] {
+			ids = append(ids, id)
+		}
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {

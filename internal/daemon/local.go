@@ -413,6 +413,12 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
 		k := key(p.Client, p.NativeID)
+		if wk != nil && wk.sessionID != "" {
+			// An adopted worker comes back under the ID it had, even if the
+			// gateway lost its record meanwhile.
+			ls.sessionID = wk.sessionID
+			ls.info.SessionID = wk.sessionID
+		}
 		d.mu.Lock()
 		old := d.sessions[k]
 		if old != nil {

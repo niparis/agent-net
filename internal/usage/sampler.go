@@ -37,9 +37,11 @@ type MachineStat struct {
 
 // TreeStat is one process tree: a root process and all its descendants.
 type TreeStat struct {
-	PID   int
-	CPU   Value // percent of one core (100 = one full core; it can be more)
-	RSS   Value // bytes, the sum over the tree
+	PID int
+	CPU Value // percent of one core (100 = one full core; it can be more)
+	RSS Value // bytes, the sum over the tree
+	// Life covers the whole time the tree was followed.
+	Life  Life
 	Procs int
 	// Samples is how many CPU samples the averages cover. 0 means the tree
 	// has only been seen once, so there is no CPU figure yet.
@@ -96,7 +98,51 @@ func (s *series) value() Value {
 	return Value{Now: s.pts[len(s.pts)-1].v, Avg: sum / float64(len(s.pts))}
 }
 
+// avgSince is the average of the values taken at or after cut, and how many
+// there are.
+func (s *series) avgSince(cut time.Time) (float64, int) {
+	sum, n := 0.0, 0
+	for _, p := range s.pts {
+		if !p.at.Before(cut) {
+			sum += p.v
+			n++
+		}
+	}
+	if n == 0 {
+		return 0, 0
+	}
+	return sum / float64(n), n
+}
+
+// Life is the figures of a tree over everything the sampler saw of it, not
+// only the last window. CPU is a percent of one core, RSS is in bytes.
+type Life struct {
+	CPUAvg, CPUPeak float64
+	RSSAvg, RSSPeak float64
+}
+
+// lifeState sums a tree's samples over its whole life.
+type lifeState struct {
+	cpuSum, cpuPeak float64
+	cpuN            int
+	rssSum, rssPeak float64
+	rssN            int
+}
+
+func (l *lifeState) value() Life {
+	var out Life
+	if l.cpuN > 0 {
+		out.CPUAvg = l.cpuSum / float64(l.cpuN)
+	}
+	if l.rssN > 0 {
+		out.RSSAvg = l.rssSum / float64(l.rssN)
+	}
+	out.CPUPeak, out.RSSPeak = l.cpuPeak, l.rssPeak
+	return out
+}
+
 type treeState struct {
+	life     lifeState
 	start    uint64 // Start of the root, to notice a reused PID
 	lastCPU  float64
 	lastAt   time.Time
@@ -304,9 +350,16 @@ func (s *Sampler) update(roots []int) {
 
 func (s *Sampler) addTree(ts *treeState, at time.Time, cpu float64, rss uint64) {
 	ts.rss.add(at, float64(rss), s.window)
+	ts.life.rssSum += float64(rss)
+	ts.life.rssN++
+	ts.life.rssPeak = max(ts.life.rssPeak, float64(rss))
 	if ts.haveCPU {
 		if dt := at.Sub(ts.lastAt).Seconds(); dt > 0 {
-			ts.cpu.add(at, max(cpu-ts.lastCPU, 0)/dt*100, s.window)
+			pct := max(cpu-ts.lastCPU, 0) / dt * 100
+			ts.cpu.add(at, pct, s.window)
+			ts.life.cpuSum += pct
+			ts.life.cpuN++
+			ts.life.cpuPeak = max(ts.life.cpuPeak, pct)
 		}
 	}
 	ts.lastCPU, ts.lastAt, ts.haveCPU = cpu, at, true
@@ -329,8 +382,36 @@ func (s *Sampler) Machine() (MachineStat, bool) {
 	return s.machine, s.cur != nil
 }
 
+// Averages are the machine figures over the last d, taken from the same
+// samples as Machine. CPU is whole-machine busy percent (0-100), MemUsed is in
+// bytes. Samples counts the CPU samples inside d; MemSamples the memory ones.
+type Averages struct {
+	CPU        float64
+	MemUsed    float64
+	MemTotal   uint64
+	Cores      int
+	Samples    int
+	MemSamples int
+}
+
+// Averages returns the averages over the last d (at most the sampler window).
+// It is all zero before the first sample.
+func (s *Sampler) Averages(d time.Duration) Averages {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cur == nil {
+		return Averages{}
+	}
+	cut := s.cur.At.Add(-d)
+	var a Averages
+	a.CPU, a.Samples = s.cpu.avgSince(cut)
+	a.MemUsed, a.MemSamples = s.mem.avgSince(cut)
+	a.MemTotal, a.Cores = s.machine.MemTotal, s.machine.Cores
+	return a
+}
+
 func (s *Sampler) treeStat(pid int, ts *treeState) TreeStat {
-	return TreeStat{PID: pid, CPU: ts.cpu.value(), RSS: ts.rss.value(), Procs: ts.procs,
+	return TreeStat{PID: pid, CPU: ts.cpu.value(), RSS: ts.rss.value(), Life: ts.life.value(), Procs: ts.procs,
 		Samples: len(ts.cpu.pts), Alive: ts.alive}
 }
 

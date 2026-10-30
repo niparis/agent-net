@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS workers (
 	main_path TEXT NOT NULL DEFAULT '', worktree TEXT NOT NULL DEFAULT '', branch TEXT NOT NULL DEFAULT '',
 	base TEXT NOT NULL DEFAULT '', task_msg TEXT NOT NULL DEFAULT '', done_status TEXT NOT NULL DEFAULT '',
 	task_text TEXT NOT NULL DEFAULT '')`)
+	if err == nil {
+		_, err = db.Exec(queueSchema)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err

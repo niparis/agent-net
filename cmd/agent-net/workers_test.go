@@ -21,6 +21,7 @@ type fakeOp struct {
 	err      error
 	workers  []protocol.WorkerView
 	result   protocol.WorkerStartResult
+	usage    protocol.UsageResult
 }
 
 func (f *fakeOp) Snapshot(context.Context) (operator.Snapshot, error) {
@@ -46,7 +47,7 @@ func (f *fakeOp) Workers(_ context.Context, q protocol.WorkersQuery) ([]protocol
 	return f.workers, f.err
 }
 func (f *fakeOp) Usage(context.Context) (protocol.UsageResult, error) {
-	return protocol.UsageResult{}, nil
+	return f.usage, nil
 }
 func (f *fakeOp) UsageTop(context.Context, string) (protocol.UsageTop, error) {
 	return protocol.UsageTop{}, nil
