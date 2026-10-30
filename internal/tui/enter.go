@@ -75,7 +75,9 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 		run = tea.Exec
 	}
 	name := r.name
-	return m, run(ptyproxy.New(cmd), func(err error) tea.Msg { return enterDoneMsg{name: name, err: err} })
+	proxy := ptyproxy.New(cmd)
+	proxy.Title = name + " - ctrl+] to come back"
+	return m, run(proxy, func(err error) tea.Msg { return enterDoneMsg{name: name, err: err} })
 }
 
 // onEnterDone is the return from the session.

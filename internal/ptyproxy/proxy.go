@@ -16,9 +16,10 @@ import (
 )
 
 type Proxy struct {
-	Cmd *exec.Cmd
-	in  io.Reader
-	out io.Writer
+	Cmd   *exec.Cmd
+	Title string
+	in    io.Reader
+	out   io.Writer
 }
 
 func New(cmd *exec.Cmd) *Proxy         { return &Proxy{Cmd: cmd} }
@@ -26,6 +27,8 @@ func (p *Proxy) SetStdin(r io.Reader)  { p.in = r }
 func (p *Proxy) SetStdout(w io.Writer) { p.out = w }
 func (p *Proxy) SetStderr(w io.Writer) {}
 func (p *Proxy) Run() error {
+	_, _ = io.WriteString(p.out, "\x1b[22;0t\x1b]0;"+p.Title+"\a")
+	defer io.WriteString(p.out, "\x1b[23;0t")
 	input, err := cancelreader.NewReader(p.in)
 	if err != nil {
 		return err

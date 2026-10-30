@@ -28,6 +28,9 @@ func capture(m *Model) (got *[]string, dir *string, env *[]string, done *func(er
 		if !ok {
 			panic("enter command is not proxied")
 		}
+		if proxy.Title != "tenebrae (Mac) - ctrl+] to come back" {
+			panic("wrong proxy title: " + proxy.Title)
+		}
 		cmd := proxy.Cmd
 		*got, *dir, *env, *done = cmd.Args, cmd.Dir, cmd.Env, cb
 		return func() tea.Msg { return nil }
