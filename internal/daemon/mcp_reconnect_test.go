@@ -99,7 +99,7 @@ func TestMCPSendRetriedAfterDropStoredOnce(t *testing.T) {
 	t.Cleanup(md.Close)
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	ss, err := mcpserver.New(md.Call).Connect(ctx, st, nil)
+	ss, err := mcpserver.New(md.Call, "").Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,6 +46,8 @@ type Operator interface {
 	UsageTop(ctx context.Context, session string) (protocol.UsageTop, error)
 	// SessionText is a page of what happens inside a session. Owner only.
 	SessionText(ctx context.Context, q protocol.TextQuery) (protocol.TextPage, error)
+	// SessionEnter says how to take over the terminal for a session. Owner only.
+	SessionEnter(ctx context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error)
 	// Counts is how many sessions are online and offline. Owner only.
 	Counts(ctx context.Context) (protocol.SessionCounts, error)
 	Close()

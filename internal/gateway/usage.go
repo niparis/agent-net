@@ -19,8 +19,8 @@ import (
 //     gateway restarts (the next report is at most 10 seconds away).
 //   - query.usage: every machine's summary.
 //   - query.counts: how many sessions are online and recently offline.
-//   - query.usage_top and query.session_text: a request from one machine's
-//     owner for the top processes or the conversation of a session on another
+//   - query.usage_top, query.session_text and query.session_enter: a request from one machine's
+//     owner for the top processes, the conversation or the way to enter a session on another
 //     machine. The gateway only relays it to the machine that holds the
 //     session and passes the answer back. It does not store, log or count the
 //     content, and writes no event.
@@ -147,7 +147,9 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 }
 
 // isRelay tells whether a frame is a request that waits for another node.
-func isRelay(typ string) bool { return typ == "query.usage_top" || typ == "query.session_text" }
+func isRelay(typ string) bool {
+	return typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter"
+}
 
 // serveRelay answers a relayed request. It runs in its own goroutine because
 // it waits for another node while this node's read loop must keep going.
@@ -201,8 +203,11 @@ func (g *Gateway) relay(ctx context.Context, typ string, raw []byte) (json.RawMe
 	delete(fields, "type")
 	delete(fields, "id")
 	wait, out := relayUsageTopWait, "node.usage_top"
-	if typ == "query.session_text" {
+	switch typ {
+	case "query.session_text":
 		wait, out = relaySessionTextMax, "node.session_text"
+	case "query.session_enter":
+		wait, out = relayUsageTopWait, "node.session_enter"
 	}
 	data, err := target.request(ctx, out, fields, wait)
 	if err != nil {

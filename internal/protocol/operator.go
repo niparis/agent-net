@@ -25,10 +25,11 @@ const (
 	// Owner-only data (decision 0008): CPU and memory, the text of a session,
 	// the session counts. They share one gate with OpSend (decision 0008): the
 	// owner's command line or TUI, never an agent session.
-	OpUsage       = "usage"        // takes nothing, answers UsageResult
-	OpUsageTop    = "usage_top"    // takes QueryUsageTop, answers UsageTop
-	OpSessionText = "session_text" // takes TextQuery, answers TextPage
-	OpCounts      = "counts"       // takes nothing, answers SessionCounts
+	OpUsage        = "usage"         // takes nothing, answers UsageResult
+	OpUsageTop     = "usage_top"     // takes QueryUsageTop, answers UsageTop
+	OpSessionText  = "session_text"  // takes TextQuery, answers TextPage
+	OpCounts       = "counts"        // takes nothing, answers SessionCounts
+	OpSessionEnter = "session_enter" // takes EnterRequest, answers EnterPlan
 
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
@@ -44,7 +45,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSend, OpWorkerStart, OpWorkerStop}
+	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.

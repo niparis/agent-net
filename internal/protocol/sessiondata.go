@@ -142,6 +142,33 @@ type TextQuery struct {
 	Sidechain bool `json:"sidechain,omitempty"`
 }
 
+// EnterRequest is OpSessionEnter: how can the owner take over the terminal for
+// one session? (decision 0002, W16)
+type EnterRequest struct {
+	SessionID string `json:"session_id"`
+	// TmuxSocket is the socket path of the tmux server the asking terminal
+	// runs in (the part of $TMUX before the first comma), or "" when it is
+	// not in tmux. With it, the plan can switch the owner's tmux client to the
+	// session's pane instead of attaching a second client.
+	TmuxSocket string `json:"tmux_socket,omitempty"`
+}
+
+// EnterPlan answers OpSessionEnter. A front end runs Argv in Dir with Env added
+// and comes back when it ends. It never builds a command itself. When Argv is
+// empty the session cannot be entered from here and Note says what to do.
+type EnterPlan struct {
+	Argv []string `json:"argv,omitempty"`
+	Dir  string   `json:"dir,omitempty"`
+	// Env is added to the environment of the command. It holds secrets of a
+	// private worker server, so it only comes for a session on the asking
+	// machine and never crosses the gateway.
+	Env map[string]string `json:"env,omitempty"`
+	// Host is the machine that holds the session.
+	Host string `json:"host,omitempty"`
+	// Note is one line for the owner: what the plan does, or why there is none.
+	Note string `json:"note,omitempty"`
+}
+
 // TextEntry is one step of a session: a prompt, a reply, a tool call or a tool
 // result.
 type TextEntry struct {

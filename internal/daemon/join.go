@@ -27,6 +27,11 @@ type NodeConfig struct {
 	CASHA256   string `json:"ca_sha256"`
 	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
 	NoLaunch bool `json:"no_launch,omitempty"`
+	// EnterSSH turns on entering a session on another machine through ssh from
+	// the TUI (decision 0002, W16). EnterSSHHosts maps a host name to the ssh
+	// target to use for it (an alias or user@host). Both are edited by hand.
+	EnterSSH      bool              `json:"enter_ssh,omitempty"`
+	EnterSSHHosts map[string]string `json:"enter_ssh_hosts,omitempty"`
 	// Workers sets the worker limits and timeouts. Absent fields take the
 	// defaults of decision 0002.
 	Workers *NodeWorkers `json:"workers,omitempty"`

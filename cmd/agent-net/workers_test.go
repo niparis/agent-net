@@ -52,6 +52,9 @@ func (f *fakeOp) UsageTop(context.Context, string) (protocol.UsageTop, error) {
 func (f *fakeOp) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
 	return protocol.TextPage{}, nil
 }
+func (f *fakeOp) SessionEnter(context.Context, protocol.EnterRequest) (protocol.EnterPlan, error) {
+	return protocol.EnterPlan{}, nil
+}
 func (f *fakeOp) Counts(context.Context) (protocol.SessionCounts, error) {
 	return protocol.SessionCounts{}, nil
 }

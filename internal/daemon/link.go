@@ -106,7 +106,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				l.write(ctx, res)
 			}
 			d.enqueue(p.Message.To, func() { d.onDeliver(ctx, p.Message) })
-		case "node.usage_top", "node.session_text":
+		case "node.usage_top", "node.session_text", "node.session_enter":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

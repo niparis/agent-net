@@ -42,6 +42,8 @@ type found struct {
 	pid  int
 	sock string
 	info protocol.SessionInfo
+	kind string // "interactive", "bg", ... from the session file
+	job  string // the background job ID, for kind bg
 }
 
 type Adapter struct {
@@ -75,6 +77,15 @@ func New(cfg Config) *Adapter {
 
 func (a *Adapter) Harness() string { return "claude" }
 
+// EnterRef gives the kind of a session ("interactive", "bg", ...) and its
+// background job ID, as its session file says. Both are "" when unknown.
+func (a *Adapter) EnterRef(nativeID string) (kind, job string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	f := a.byNative[nativeID]
+	return f.kind, f.job
+}
+
 func (a *Adapter) Start(ctx context.Context, h daemon.Host) error {
 	a.host = h
 	a.poll()
@@ -104,6 +115,7 @@ type sessionFile struct {
 	Status              string `json:"status"`
 	Kind                string `json:"kind"`
 	MessagingSocketPath string `json:"messagingSocketPath"`
+	JobID               string `json:"jobId"`
 }
 
 func pidAlive(pid int) bool {
@@ -146,7 +158,7 @@ func (a *Adapter) poll() {
 			Name: sf.Name, Status: status, Delivery: "native-claude", Mode: modeOfKind(sf.Kind),
 			Model: a.models.Model(sf.SessionID, sf.Cwd)}
 		seenModels[sf.SessionID] = true
-		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info}
+		byNative[sf.SessionID] = found{pid: sf.PID, sock: sf.MessagingSocketPath, info: info, kind: sf.Kind, job: sf.JobID}
 		if sf.MessagingSocketPath != "" {
 			bySock[sf.MessagingSocketPath] = sf.SessionID
 		}

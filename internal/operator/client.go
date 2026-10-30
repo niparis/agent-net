@@ -228,6 +228,15 @@ func (s *Client) SessionText(ctx context.Context, q protocol.TextQuery) (protoco
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) SessionEnter(ctx context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {
+	var out protocol.EnterPlan
+	raw, err := s.action(ctx, protocol.OpSessionEnter, q)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 	var out protocol.SessionCounts
 	raw, err := s.action(ctx, protocol.OpCounts, nil)

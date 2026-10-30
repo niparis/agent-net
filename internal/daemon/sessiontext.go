@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"usage": true, "usage_top": true, "session_text": true, "counts": true,
+	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -170,6 +170,12 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				res = data
 			}
 		}
+	case "session_enter":
+		var q protocol.EnterRequest
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+			return nil, true, errors.New("session_enter needs session_id")
+		}
+		res, err = d.enterPlan(ctx, q)
 	case "session_text":
 		var q protocol.TextQuery
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
@@ -363,6 +369,14 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 			err = errors.New("bad node.usage_top")
 		} else {
 			data, err = d.localUsageTop(ctx, p.SessionID)
+		}
+	case "node.session_enter":
+		var q protocol.EnterRequest
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+			err = errors.New("bad node.session_enter")
+		} else {
+			q.TmuxSocket = "" // the asker's terminal means nothing here
+			data, err = d.localEnter(ctx, q, true)
 		}
 	case "node.session_text":
 		var q protocol.TextQuery
