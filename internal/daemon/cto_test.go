@@ -317,6 +317,23 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("message not delivered")
 	}
+	var incoming protocol.MessageSent
+	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ownerSessionID(), "body": "question"})
+	if err := json.Unmarshal(rawIncoming, &incoming); err != nil || incoming.Message == nil {
+		t.Fatalf("incoming message: %s %v", rawIncoming, err)
+	}
+	call("reply", map[string]any{"message_id": incoming.Message.ID, "body": "answer"})
+	select {
+	case msg := <-peer.Pushes:
+		if !msg.FromCTO || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
+			t.Fatalf("CTO reply: %+v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("CTO reply not delivered")
+	}
+	call("get", map[string]any{"session_id": target})
+	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
+	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
 	workers := w.workers(t)
 	if len(workers) != 1 {

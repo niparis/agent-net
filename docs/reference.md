@@ -90,7 +90,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `workers`, `worker_start`, `agent_start`, `worker_stop`, `agent_stop` | `workers`, `worker_start`, `worker_stop` |
 | `owner_send`, `agent_send`, `agent_reply` | `send`, `reply` (reply to messages addressed to the owner) |
 | `usage`, `usage_top`, `counts`, `graph_view`, `session_enter` | Same names |
-| `session_trust`, `session_policy`, `node_rename` | Same names |
+| `session_trust`, `session_policy`, `node_rename` | Same names; read a session policy with `get` |
 | `integrations_get`, `integrations_set` | Same names |
 | `held_list`, `held_answer`, `inbox_list`, `inbox_answer`, `outcome_inbox`, `outcome_overrule` | Same names |
 | `graph_get`, `charter_set`, `charter_history`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `edge_history`, `graph_undo` | Same names; request rules are on `edge_set` |
@@ -98,7 +98,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `agent_learn` | `learn` |
 | `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
 | `cto_settings` | `cto_settings` |
-| `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | The current CTO chat and graph history tools; these methods manage the CTO itself. |
+| `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
 | `agent_announce`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session or worker self-service only. The CTO is neither a network session nor a worker; it talks to the owner in this chat. |
 
 The CTO can read worker track records in `nodes` and the worker roster in

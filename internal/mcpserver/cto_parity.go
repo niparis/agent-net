@@ -33,7 +33,7 @@ func init() {
 	add("graph_view", "Read the graph as shown in the map, optionally filtered to a project.", map[string]ctoField{"project": s("Project name or omit for the whole graph.")})
 	add("session_enter", "Get the owner's terminal attachment plan for a session; this does not attach the terminal.", map[string]ctoField{"session_id": sid, "tmux_socket": s("Owner terminal's tmux socket, if any."), "herdr_socket": s("Owner terminal's herdr socket, if any.")})
 	add("session_trust", "Turn peer trust for a session on or off on the owner's instruction.", map[string]ctoField{"session_id": sid, "on": b("Whether peer trust is enabled.")})
-	add("session_policy", "Read or set a session or project delegation policy and worker sandbox. Use dry_run to preview.", map[string]ctoField{"session_id": sid, "scope": en("Scope to save, or omit to read.", "session", "project"), "policy": obj("Policy object: delegate, coder_model, main_model and workers (sandboxed, no-network or read-only)."), "dry_run": b("Preview without saving.")})
+	add("session_policy", "Set or clear a session or project delegation policy and worker sandbox. Read the effective policy with get first; use dry_run to preview.", map[string]ctoField{"session_id": sid, "scope": en("Scope to save; omitted defaults to session.", "session", "project"), "policy": obj("Policy object: delegate, coder_model, main_model and workers (sandboxed, no-network or read-only)."), "dry_run": b("Preview without saving.")})
 	add("node_rename", "Set a machine's network display name; an empty name clears it.", map[string]ctoField{"node_id": s("Machine node ID."), "name": s("Display name or empty to clear.")})
 	add("integrations_get", "Read the owner's network-wide integration settings before changing any setting.", nil)
 	add("integrations_set", "Set the complete integration settings. Change integrations only with the owner's explicit words in this chat.", map[string]ctoField{"peer_messages": b("Peer message delivery."), "codex_tools": b("Codex tools."), "hint_hook": b("Peer hints."), "policy_hook": b("Policy hook."), "needs_hook": b("Needs you hook."), "workers_mod": b("Worker integration."), "quota_axi": b("Quota integration.")})
@@ -45,7 +45,7 @@ func init() {
 	add("outcome_inbox", "List request outcomes that need the owner's attention and possible overrule.", nil)
 	add("outcome_overrule", "Resolve an outcome on the owner's instruction, including overruling a rejection.", map[string]ctoField{"reply_id": s("Outcome reply ID."), "action": en("Let the outcome stand or overrule it.", "let_stand", "overrule")})
 	add("node_settings_get", "Read a node's maturity defaults, overrides and effective settings.", map[string]ctoField{"node": s("Component or architect node name.")})
-	add("node_settings_set", "Set or clear one maturity override on the owner's instruction.", map[string]ctoField{"node": s("Node name."), "setting": en("Setting to override.", "tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule"), "value": s("Valid value for the setting, or empty to clear the override.")})
+	add("node_settings_set", "Set or clear one maturity override on the owner's instruction.", map[string]ctoField{"node": s("Node name."), "setting": en("Setting to override.", "tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule"), "value": s("Value, or empty to clear: tests_before_merge uses optional, suite, suite-new-tests or suite-new-tests-review; merge_authority uses full, delegated or ask; worker_sandbox uses sandboxed, no-network or read-only; judge_consumers uses free, charter, strict or escalate; deploy_rule uses brief, ask or owner.")})
 	add("playbook_get", "Read the owner's playbook note for a model and optional harness.", map[string]ctoField{"model": model, "harness": harness})
 	add("playbook_set", "Set or clear the owner's playbook note for a model and optional harness.", map[string]ctoField{"model": model, "harness": harness, "note": s("Note text, or empty to clear."), "pin": b("Pin or unpin the note.")})
 	add("learn", "Record a finding for possible promotion to the network playbook, subject to the normal daily limit.", map[string]ctoField{"subject_kind": en("What the finding concerns.", "model", "harness", "model_harness", "project", "mcp", "machine"), "subject": s("The model, harness, project, server or machine."), "finding": s("A concise actionable finding."), "evidence": arr("Session or worker IDs supporting the finding.")})
@@ -55,5 +55,46 @@ func init() {
 		add(name, "Remove or test a shared MCP server by name. Removing requires the owner's explicit words in this chat.", map[string]ctoField{"name": s("Registered server name.")})
 	}
 	add("mcp_enable", "Enable or disable a shared MCP server on the owner's instruction.", map[string]ctoField{"name": s("Registered server name."), "enabled": b("Whether the server is enabled.")})
+	add("cto_enter", "Get the owner's terminal attachment plan for the current CTO harness.", nil)
+	add("cto_send", "Queue an owner instruction to the CTO conversation, only when the owner asks for that explicitly.", map[string]ctoField{"text": s("Owner instruction to queue.")})
+	add("cto_new", "Start a new CTO conversation for the selected harness, only when the owner asks.", nil)
+	add("cto_events", "Read messages and action lines from the current CTO conversation.", map[string]ctoField{"index": n("Message index to read from; zero begins at the start.")})
+	add("cto_graph_history", "Read graph changes recorded for CTO conversations after an optional history ID.", map[string]ctoField{"after": n("Return changes after this history ID.")})
 	add("cto_settings", "Read or set the CTO harness, model and automatic compaction settings on the owner's instruction.", map[string]ctoField{"harness": en("CTO harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction object: threshold_percent, floor_tokens and cache_window_seconds by provider.")})
+	// Nested schemas make the valid settings and credential sources visible to
+	// the model, while the daemon remains the final validator.
+	property := func(typ, desc string, values ...string) map[string]any {
+		p := map[string]any{"type": typ, "description": desc}
+		if len(values) > 0 {
+			p["enum"] = values
+		}
+		return p
+	}
+	stringsArray := func(desc string) map[string]any {
+		return map[string]any{"type": "array", "description": desc, "items": map[string]any{"type": "string"}}
+	}
+	setProperties := func(tool, field string, props map[string]any) {
+		spec := ctoTools[tool]
+		f := spec.fields[field]
+		f.properties = props
+		spec.fields[field] = f
+		ctoTools[tool] = spec
+	}
+	setProperties("session_policy", "policy", map[string]any{
+		"delegate":    property("string", "Delegation mode.", "", "off", "native", "workers"),
+		"coder_model": property("string", "Coder model name."), "main_model": property("string", "Main model name."),
+		"workers": property("string", "Worker sandbox level; project scope only.", "", "sandboxed", "no-network", "read-only"),
+	})
+	setProperties("mcp_add", "server", map[string]any{
+		"name": property("string", "Server name."), "transport": property("string", "Transport.", "stdio", "http", "sse"),
+		"command": property("string", "Stdio command."), "args": stringsArray("Stdio arguments, without secrets."), "env": stringsArray("Environment variable names, never values."),
+		"url": property("string", "Remote MCP endpoint."), "timeout_sec": property("integer", "Per-call timeout in seconds."),
+		"headers": map[string]any{"type": "array", "description": "Header names and their credential sources.", "items": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"name": property("string", "Header name."), "env": property("string", "Environment variable name."), "file": property("string", "Credential file path.")}}},
+	})
+	setProperties("cto_settings", "compaction", map[string]any{
+		"threshold_percent":    property("integer", "Context percentage that triggers compaction."),
+		"floor_tokens":         property("integer", "Minimum tokens for idle compaction."),
+		"cache_window_seconds": map[string]any{"type": "object", "description": "Prompt cache window in seconds per provider.", "additionalProperties": map[string]any{"type": "integer"}},
+	})
+
 }

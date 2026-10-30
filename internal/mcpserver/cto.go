@@ -12,9 +12,10 @@ import (
 // ctoField is one input field of a CTO tool. A fixed set of values carries an
 // enum, so the model sees the allowed values in the schema as well as the text.
 type ctoField struct {
-	typ  string
-	desc string
-	enum []string
+	typ        string
+	desc       string
+	enum       []string
+	properties map[string]any
 }
 
 // ctoToolDef is one CTO tool: its description and its input fields.
@@ -145,6 +146,10 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			prop := map[string]any{"type": f.typ, "description": f.desc}
+			if f.properties != nil {
+				prop["properties"] = f.properties
+				prop["additionalProperties"] = false
+			}
 			if f.typ == "array" {
 				prop["items"] = map[string]any{"type": "string"}
 			}
