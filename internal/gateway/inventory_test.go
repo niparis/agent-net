@@ -2,10 +2,12 @@ package gateway
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -95,5 +97,70 @@ func TestInventoryOfflineIsStale(t *testing.T) {
 	markInventoryOffline(&reports[0])
 	if reports[0].State != protocol.InventoryStale || reports[0].Items[0].State != protocol.InventoryStale {
 		t.Fatalf("not stale: %+v", reports)
+	}
+}
+
+func TestToolsItemsVariantsAndProjects(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err = s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES('one','/repo','demo',0,0)`); err != nil {
+		t.Fatal(err)
+	}
+	a := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "a", Harness: "codex", Scope: "project", Project: "demo", ProjectRoot: "/repo", Location: "/repo/.agents/skills/demo", State: "ok", Files: []string{"SKILL.md", "one.txt"}}
+	b := a
+	b.Hash = "b"
+	b.Files = []string{"SKILL.md", "two.txt"}
+	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{a, b}}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{Project: "demo"}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].Variants != 2 || items[0].Locations[0].GraphNode != "demo" {
+		t.Fatalf("items: %+v", items)
+	}
+	detail, err := s.ToolsItem(items[0].ID, func(string) bool { return true })
+	if err != nil || len(detail.VariantDiffs) != 1 {
+		t.Fatalf("detail: %+v %v", detail, err)
+	}
+}
+
+func TestInventoryNativeSecretsStayOutOfStoreAndJSON(t *testing.T) {
+	home := t.TempDir()
+	secret := "fixture-secret-12345"
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":{"demo":{"command":"node","args":["--token","`+secret+`"],"env":{"API_KEY":"`+secret+`"},"url":"https://example.invalid/path?token=`+secret+`"}}}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	report := inventory.Scan(inventory.Options{Home: home})
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if err = s.SetInventory("one", report); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err = s.db.QueryRow(`SELECT group_concat(observation) FROM tool_locations`).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err = s.db.QueryRow(`SELECT report FROM inventory_reports WHERE node_id='one'`).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, secret) || strings.Contains(stored, secret) || strings.Contains(string(b), secret) {
+		t.Fatal("secret in stored inventory or JSON")
 	}
 }

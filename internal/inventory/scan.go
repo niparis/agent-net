@@ -148,12 +148,17 @@ func Scan(o Options) protocol.InventoryReport {
 				continue
 			}
 			hash, err := skillHashRoot(skillRoot)
+			files, filesErr := skillFilesRoot(skillRoot)
+			if err == nil {
+				err = filesErr
+			}
 			skillRoot.Close()
 			if err != nil {
 				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot hash skill safely")
 				continue
 			}
 			add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), hash, protocol.InventoryOK, "")
+			report.Items[len(report.Items)-1].Files = files
 		}
 	}
 	config := func(h, scope, project, root, base, path, key string, tomlFormat bool) {
@@ -314,12 +319,17 @@ func Scan(o Options) protocol.InventoryReport {
 					continue
 				}
 				hash, err := skillHashRoot(skillRoot)
+				files, filesErr := skillFilesRoot(skillRoot)
+				if err == nil {
+					err = filesErr
+				}
 				skillRoot.Close()
 				name := filepath.Base(filepath.Dir(source))
 				if err != nil {
 					add("pi", protocol.InventorySkill, scope, project, root, source, name, "", protocol.InventoryError, "cannot hash skill safely")
 				} else {
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
+					report.Items[len(report.Items)-1].Files = files
 				}
 				continue
 			}

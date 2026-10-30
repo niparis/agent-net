@@ -121,3 +121,24 @@ func skillHashRoot(dir *os.Root) (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// skillFilesRoot lists paths without reading or following their contents.
+func skillFilesRoot(dir *os.Root) ([]string, error) {
+	var paths []string
+	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == "." {
+			return nil
+		}
+		if len(paths) >= maxFiles {
+			return fmt.Errorf("skill exceeds file count limit")
+		}
+		if !entry.IsDir() {
+			paths = append(paths, path)
+		}
+		return nil
+	})
+	return paths, err
+}

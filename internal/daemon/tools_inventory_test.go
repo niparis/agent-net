@@ -60,3 +60,28 @@ func TestInventoryGatewayAndOwnerGate(t *testing.T) {
 		t.Fatal("agent got owner inventory")
 	}
 }
+
+func TestToolsItemsOwnerGate(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	eventually(t, "tools items", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{})
+		return err == nil && strings.Contains(string(raw), `"name":"demo"`)
+	})
+	pi, _ := helloPi(t, n, "pi-tools", "/work", true)
+	if _, err := pi.call("tools_items", map[string]any{}); err == nil {
+		t.Fatal("agent accessed tools_items")
+	}
+	if _, err := pi.call("tools_item", map[string]any{"id": "x"}); err == nil {
+		t.Fatal("agent accessed tools_item")
+	}
+}
