@@ -104,6 +104,12 @@ type worker struct {
 	// taskMsg is the last request from the owner; doneStatus the status of the
 	// last hand-back ("" if none); taskText is the short line of that request.
 	taskMsg, doneStatus, taskText string
+	// taskFull is the full first task (at most 64 KiB), kept in the record so
+	// that a new worker can continue it.
+	taskFull string
+	// unfinished is true when the daemon committed the unfinished changes of
+	// the worktree on the worker's branch.
+	unfinished bool
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
@@ -315,7 +321,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref, TaskFull: w.taskFull}
 }
 
 // ---- starting ----
@@ -381,7 +387,8 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		return refuse("a worker needs an owner")
 	}
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
-		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(l.Task)}
+		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
+		taskFull: boundTask(first(l.RecordTask, l.Task))}
 	worktree, branch := "", ""
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
@@ -596,6 +603,9 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	d.killGroup(w)
 	if en, ok := d.launchers[w.harness].(ender); ok {
 		en.end(d, w)
+	}
+	if !done && reason != protocol.StopHandback && reason != protocol.StopStartFails {
+		d.saveUnfinished(w, reason)
 	}
 	d.wmu.Lock()
 	row := d.rowLocked(w, reason)
@@ -1077,6 +1087,9 @@ func (d *Daemon) adoptWorkers() {
 			r.EndedReason = protocol.StopLost
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
+			if r.DoneStatus == "" {
+				d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree}, protocol.StopLost)
+			}
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}
@@ -1084,7 +1097,8 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref}
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref,
+			taskFull: r.TaskFull}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()

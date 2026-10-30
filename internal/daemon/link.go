@@ -117,7 +117,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onOperatorFrame(ctx, l, h.Type, h.ID, raw)
 			}()
-		case "worker.launch", "worker.kill", "worker.resume":
+		case "worker.launch", "worker.kill", "worker.resume", "worker.continue":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

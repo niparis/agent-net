@@ -112,13 +112,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	var none protocol.WorkerStartAnswer
 	p.Project, p.Harness = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness)
 	p.Model, p.Machine = protocol.CleanModel(p.Model), strings.TrimSpace(p.Machine)
-	if p.Project == "" {
+	p.Continue = strings.TrimSpace(p.Continue)
+	if p.Continue == "" && p.Project == "" {
 		return none, reject("a worker needs a project")
 	}
-	if !protocol.WorkerHarnessSupported(p.Harness) {
+	if !protocol.WorkerHarnessSupported(p.Harness) && !(p.Continue != "" && p.Harness == "") {
 		return none, reject("workers can run these harnesses: %s (not %q)", strings.Join(protocol.WorkerHarnesses, ", "), p.Harness)
 	}
-	if strings.TrimSpace(p.Task) == "" {
+	if p.Continue == "" && strings.TrimSpace(p.Task) == "" {
 		return none, reject("a worker needs a task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
@@ -134,6 +135,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	if owner.Worker != nil {
 		return none, reject("a worker cannot start workers")
+	}
+
+	if p.Continue != "" {
+		return g.workerContinue(ctx, nc, p)
 	}
 
 	// Which machine and folder.
@@ -325,6 +330,79 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules}, nil
+}
+
+// workerContinue starts a new worker from an ended one. The gateway knows the
+// node of each worker session, so it asks the machine that ran the old worker.
+// The machine holds the old task and branch and checks the owner again.
+func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame) (protocol.WorkerStartAnswer, error) {
+	var none protocol.WorkerStartAnswer
+	if p.Machine != "" || p.Base != "" || p.Isolation != "" {
+		return none, reject("a continued worker keeps the machine, the branch and the isolation of the old one")
+	}
+	old, ok, err := g.store.Agent(p.Continue)
+	if err != nil {
+		return none, err
+	}
+	if !ok || old.Worker == nil {
+		// Not a session ID: try the worker ID that the machine gave it.
+		all, err := g.store.Agents(protocol.QueryAgents{IncludeOwners: true})
+		if err != nil {
+			return none, err
+		}
+		ok = false
+		for _, a := range all {
+			if a.Worker != nil && a.Worker.ID == p.Continue && a.Worker.Owner == p.Owner {
+				old, ok = a, true
+				break
+			}
+		}
+	}
+	if !ok || old.Worker == nil {
+		return none, reject("no worker with the session or worker ID %q is known (records of ended workers are dropped after a while)", p.Continue)
+	}
+	if old.Worker.Owner != p.Owner {
+		return none, reject("worker %s ended, and only the session that started it can continue it", old.SessionID)
+	}
+	if old.Online {
+		return none, reject("worker %s is still running: wait for it to end, or stop it first", old.SessionID)
+	}
+	if p.Project != "" && old.Worker.Project != "" && !strings.EqualFold(p.Project, old.Worker.Project) {
+		return none, reject("worker %s ran in project %q, not %q: a continued worker keeps its project", old.SessionID, old.Worker.Project, p.Project)
+	}
+	p.Harness = strings.TrimSpace(p.Harness)
+	if p.Harness != "" && !protocol.WorkerHarnessSupported(p.Harness) {
+		return none, reject("workers can run these harnesses: %s (not %q)", strings.Join(protocol.WorkerHarnesses, ", "), p.Harness)
+	}
+	g.mu.Lock()
+	target := g.conns[old.NodeID]
+	g.mu.Unlock()
+	if target == nil {
+		return none, reject("machine %s is offline, so worker %s cannot be continued", old.Hostname, old.SessionID)
+	}
+	cctx, cancel := context.WithTimeout(ctx, launchWait)
+	defer cancel()
+	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner,
+		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task)})
+	if err != nil {
+		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
+			return none, reject("machine %s did not start the worker: %v", old.Hostname, err)
+		}
+		return none, reject("machine %s refused the worker: %v", old.Hostname, err)
+	}
+	c, err := decode[protocol.WorkerContinued](raw)
+	if err != nil || c.SessionID == "" {
+		return none, reject("machine %s answered without a session", old.Hostname)
+	}
+	g.store.Event("worker.started", old.NodeID, c.SessionID, "",
+		strings.TrimPrefix(pairs("project", c.Project, "harness", c.Harness, "model", c.Model, "owner", p.Owner,
+			"continues", old.SessionID, "branch", c.Branch), " "))
+	g.logLine("worker.started", "node", old.NodeID, "host", old.Hostname, "session", c.SessionID,
+		"worker", c.WorkerID, "project", c.Project, "path", c.Path, "harness", c.Harness, "model", c.Model,
+		"owner", p.Owner, "from_node", nc.id, "continues", old.SessionID, "worktree", c.Worktree, "branch", c.Branch)
+	return protocol.WorkerStartAnswer{SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
+		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model,
+		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task}, nil
 }
 
 func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame) (map[string]any, error) {

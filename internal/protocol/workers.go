@@ -39,6 +39,43 @@ type WorkerResume struct {
 	Requester string `json:"requester_session"`
 }
 
+// WorkerContinue is "worker.continue", gateway to the machine: start a new
+// worker from an ended one. Only the owner of the old worker may ask.
+type WorkerContinue struct {
+	// Session is the old worker's session ID.
+	Session   string `json:"session"`
+	Requester string `json:"requester_session"`
+	// Harness and Model are empty to keep the old worker's.
+	Harness string `json:"harness,omitempty"`
+	Model   string `json:"model,omitempty"`
+	// Task is the extra text of the caller, added after the old first task.
+	Task string `json:"task,omitempty"`
+}
+
+// WorkerContinued answers "worker.continue".
+type WorkerContinued struct {
+	WorkerLaunched
+	Project string `json:"project"`
+	Path    string `json:"path"`
+	Harness string `json:"harness"`
+	Model   string `json:"model,omitempty"`
+}
+
+// ContinueIntro starts the task of a worker that continues an ended one.
+// where says what the earlier worker left: "branch" (its unfinished changes
+// are the last commit in the new worktree), "folder" (it worked in the project
+// folder) or "" (nothing).
+func ContinueIntro(reason, where string) string {
+	head := "You continue the work of an earlier worker that ended (" + reason + "). "
+	switch where {
+	case "branch":
+		return head + "Its unfinished changes are already in your worktree as the last commit. Review them critically, then finish the task."
+	case "folder":
+		return head + "It worked in the project folder, so its changes, if any, are there. Review them critically, then finish the task."
+	}
+	return head + "It left no changes. Start from its task below."
+}
+
 // WorkerCleanup is "worker.cleanup", machine to gateway: drop the worker
 // records of this machine that are offline and started longer ago than
 // MaxAge. The daemon sends it at start and periodically (W7).
@@ -97,6 +134,9 @@ type (
 		Worktree     string `json:"worktree,omitempty"`
 		Branch       string `json:"branch,omitempty"`
 		ProjectRules string `json:"project_rules,omitempty"`
+		// Task is the task text to send, set for a continued worker (it holds
+		// the old worker's first task). Empty means the caller's own task.
+		Task string `json:"task,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -112,6 +152,9 @@ type (
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
 		Base      string `json:"base,omitempty"`
+		// RecordTask is what the machine keeps as the worker's first task.
+		// Empty means Task.
+		RecordTask string `json:"record_task,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch".
 	WorkerLaunched struct {
@@ -120,6 +163,8 @@ type (
 		Worktree     string `json:"worktree,omitempty"`
 		Branch       string `json:"branch,omitempty"`
 		ProjectRules string `json:"project_rules,omitempty"`
+		// Task is the task text to send, for a continued worker.
+		Task string `json:"task,omitempty"`
 	}
 	// WorkerStopFrame is "worker.stop".
 	WorkerStopFrame struct {
@@ -283,6 +328,9 @@ type WorkerNotice struct {
 	Branch   string
 	DiffStat string // git diff --stat of the worktree, empty when none
 	Note     string // why it ended, for a worker that did not hand back
+	// Saved is true when the daemon committed the worker's unfinished changes
+	// on its branch.
+	Saved bool
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -311,6 +359,9 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	}
 	if n.Worktree != "" {
 		b.WriteString("worktree: " + n.Worktree + " (branch " + n.Branch + ")\n")
+		if n.Saved {
+			b.WriteString("unfinished changes were saved as a commit on branch " + n.Branch + "\n")
+		}
 		if n.DiffStat == "" {
 			b.WriteString("changes: none\n")
 		} else {

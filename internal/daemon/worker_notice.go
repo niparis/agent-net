@@ -106,6 +106,69 @@ func (d *Daemon) worktreeFacts(w *worker) (stat string, changed bool) {
 	return strings.Join(parts, "\n"), len(parts) > 0
 }
 
+// unfinishedSubject is the subject of the commit that keeps unfinished work.
+func unfinishedSubject(workerID, reason string) string {
+	return "agent-net: unfinished work of worker " + workerID + " (" + reason + ")"
+}
+
+// boundTask cuts a task to the 64 KiB that a worker record keeps.
+func boundTask(s string) string {
+	const max = 64 * 1024
+	if len(s) > max {
+		s = strings.ToValidUTF8(s[:max], "")
+	}
+	return s
+}
+
+func first(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// saveUnfinished commits the uncommitted changes of a worker that ended with no
+// hand-back, on the worker's branch, so that finishWorktree keeps them in a
+// commit and a new worker can continue from them. It uses the repository's
+// author when there is one, and "agent-net" when not. It tells whether a
+// commit was made.
+func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
+	d.wmu.Lock()
+	dir, id := w.worktree, w.id
+	d.wmu.Unlock()
+	if dir == "" {
+		return false
+	}
+	if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+		return false
+	}
+	ctx := context.Background()
+	if st, err := gitOut(ctx, dir, "status", "--porcelain"); err != nil || st == "" {
+		return false
+	}
+	if _, err := gitOut(ctx, dir, "add", "-A"); err != nil {
+		d.Logf("worker %s: keep unfinished work: %v", id, err)
+		return false
+	}
+	args := []string{"-c", "commit.gpgsign=false"}
+	if v, _ := gitOut(ctx, dir, "config", "user.name"); v == "" {
+		args = append(args, "-c", "user.name=agent-net")
+	}
+	if v, _ := gitOut(ctx, dir, "config", "user.email"); v == "" {
+		args = append(args, "-c", "user.email=agent-net@localhost")
+	}
+	args = append(args, "commit", "-q", "--no-verify", "-m", unfinishedSubject(id, reason))
+	if _, err := gitOut(ctx, dir, args...); err != nil {
+		d.Logf("worker %s: keep unfinished work: %v", id, err)
+		return false
+	}
+	d.wmu.Lock()
+	w.unfinished = true
+	d.wmu.Unlock()
+	d.Logf("worker.unfinished_saved worker=%s reason=%s path=%s", id, reason, dir)
+	return true
+}
+
 // finishWorktree keeps the worktree if the worker changed anything and removes
 // it (and its branch) if not.
 func (d *Daemon) finishWorktree(w *worker) {
@@ -179,6 +242,9 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Cost: st.Cost, Worktree: wt, Branch: br}
 	n.DiffStat, _ = d.worktreeFacts(w)
+	d.wmu.Lock()
+	n.Saved = w.unfinished
+	d.wmu.Unlock()
 	return n
 }
 
@@ -351,6 +417,13 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base}
 	status, note := d.noticeFor(protocol.StopLost)
+	// The new daemon committed the unfinished changes when it found the worker
+	// lost (adoptWorkers). The commit subject tells.
+	if w.worktree != "" {
+		if s, err := gitOut(ctx, w.worktree, "log", "-1", "--format=%s"); err == nil && s == unfinishedSubject(w.id, protocol.StopLost) {
+			w.unfinished = true
+		}
+	}
 	if _, err := d.sendNotice(ctx, w, d.notice(w, status, note, workerStats{}), ""); err != nil {
 		d.Logf("worker %s: notice: %v", r.ID, err)
 	}
