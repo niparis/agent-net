@@ -134,6 +134,33 @@ func (m Model) mapFocusView(w, h int) []string {
 		}
 		out = append(out, clip(padStyled(lb[i], bw)+g1+padStyled(cb[i], bw)+g2+padStyled(rb[i], bw), w))
 	}
+	// Tall screens can show more than one neighbor on each side. On smaller
+	// screens up/down cycles the visible neighbor.
+	extras := min(max((h-len(out)-4)/4, 0), max(len(left), len(right))-1)
+	for n := 1; n <= extras; n++ {
+		var l, r []mapLink
+		if n < len(left) {
+			l = []mapLink{left[(m.mp.choice+n)%len(left)]}
+		}
+		if n < len(right) {
+			r = []mapLink{right[(m.mp.choice+n)%len(right)]}
+		}
+		lbox, rbox := m.mapBox(pick(l), bw, false), m.mapBox(pick(r), bw, false)
+		for i := 0; i < 4; i++ {
+			g1, g2 := strings.Repeat(" ", gap), strings.Repeat(" ", gap)
+			middle := strings.Repeat(" ", bw/2) + sDim.Render("│")
+			if i == 0 {
+				g1 = linkLabel(l, 0, gap)
+				g2 = linkLabel(r, 0, gap)
+			}
+			if i == 2 {
+				g1 = linkArrow(l, 0, gap)
+				g2 = linkArrow(r, 0, gap)
+				middle = sDim.Render(strings.Repeat("─", bw/2) + "┼" + strings.Repeat("─", bw-bw/2-1))
+			}
+			out = append(out, clip(padStyled(lbox[i], bw)+g1+padStyled(middle, bw)+g2+padStyled(rbox[i], bw), w))
+		}
+	}
 	last := "-"
 	for _, c := range m.mp.changes {
 		if c.Node == node.Name {

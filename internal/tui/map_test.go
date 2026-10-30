@@ -265,3 +265,13 @@ func TestOverviewConnectsNodes(t *testing.T) {
 		t.Fatalf("missing connected edge routes:\n%s", v)
 	}
 }
+
+func TestFocusShowsMultipleNeighborsWhenThereIsRoom(t *testing.T) {
+	g := fakeGraph()
+	g.Edges = append(g.Edges, protocol.Edge{From: "homelab", To: "cogforge", Kind: "depends", Rule: "normal"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "cogforge"
+	if !strings.Contains(m.View(), "homelab") || !strings.Contains(m.View(), "tenebrae") {
+		t.Fatal("focus omits a neighbor")
+	}
+}
