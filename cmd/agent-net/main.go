@@ -23,6 +23,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon/claude"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/phone"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/setup"
@@ -199,7 +200,9 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	defer gw.Close()
 	if *phoneListen != "" {
-		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(phone.New(nil)))
+		op := operator.New(daemon.SocketPath())
+		defer op.Close()
+		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(phone.New(op)))
 		if err != nil {
 			return err
 		}
