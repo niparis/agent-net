@@ -147,7 +147,7 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 		}
 	}
 	// This project configuration belongs only to the private CTO server.
-	configData, err := json.Marshal(map[string]any{"agents": map[string]any{"cto": map[string]any{"mode": "primary", "description": "The owner's CTO", "system": ctoBrief}}, "mcp": map[string]any{"servers": map[string]any{"agent-net-cto": map[string]any{"type": "local", "command": []string{d.cfg.Exe, "cto-mcp"}, "environment": map[string]string{"AGENT_NET_SOCKET": d.cfg.SocketPath}}}}})
+	configData, err := d.ctoConfigData(config)
 	if err != nil {
 		return err
 	}
@@ -161,7 +161,7 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 	pass := protocol.NewToken()
 	cmd := exec.Command(bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
 	cmd.Dir = dir
-	cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
+	cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "OPENCODE_CONFIG": "", "OPENCODE_CONFIG_CONTENT": "", "OPENCODE_CONFIG_DIR": "", "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
 	logf, err := os.OpenFile(filepath.Join(dir, "opencode.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return err
@@ -196,6 +196,17 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
+}
+
+func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
+	ownerConfig, configErr := ctoOwnerConfig(config)
+	if configErr != nil {
+		d.log.Printf("CTO OpenCode config: %v; using private defaults", configErr)
+		ownerConfig = make(map[string]any)
+	}
+	ownerConfig["agents"] = map[string]any{"cto": map[string]any{"mode": "primary", "description": "The owner's CTO", "system": ctoBrief}}
+	ownerConfig["mcp"] = map[string]any{"servers": map[string]any{"agent-net-cto": map[string]any{"type": "local", "command": []string{d.cfg.Exe, "cto-mcp"}, "environment": map[string]string{"AGENT_NET_SOCKET": d.cfg.SocketPath}}}}
+	return json.Marshal(ownerConfig)
 }
 
 func (d *Daemon) ctoSession() (string, error) {
