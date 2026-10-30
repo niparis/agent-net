@@ -34,6 +34,18 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse` and `UserPromptSubmit` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you, and clears that when you type a prompt or a tool runs after an approval. See [Needs you](#needs-you). |
 | `agent-net version` | Print the version. |
 
+## Graph operator methods (foundation)
+
+The gateway stores explicit nodes, charter attributes, edges and their history in `graph_nodes`, `graph_charter`, `graph_edges` and `graph_history`. Known projects also appear as implicit component nodes. The following local methods are behind the owner gate and relay to the gateway. They are not yet exposed as CLI commands or agent tools.
+
+- `graph_get {}` returns `nodes` and `edges`.
+- `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
+- `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges.
+- `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
+- `graph_undo {id}` reverts a history row, or the latest row if id is omitted. Undo is recorded as another change and refuses a stale value. Node undo refuses to remove a node with a charter or edges.
+
+History limits default to 1000 and are capped at 1000. Edge history has `old` and `new` edge objects, omitted when absent. Gateway frames use the same names with dots instead of underscores; `graph.undo` uses `history_id` because `id` identifies the frame itself.
+
 ## Ports
 
 | Port | Used by |

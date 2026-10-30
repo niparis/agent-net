@@ -193,34 +193,163 @@ func (s *Store) CharterHistory(node string, limit int) ([]protocol.CharterChange
 	return out, rows.Err()
 }
 
-// GraphUndo reverts a charter change if its value has not since changed.
+// EdgeHistory lists edge changes touching node (or all edges when node is empty).
+func (s *Store) EdgeHistory(node string, limit int) ([]protocol.EdgeChange, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	// Filter after decoding so either endpoint can be selected.
+	rows, err := s.db.Query(`SELECT id,old_value,new_value,at,actor FROM graph_history WHERE type='edge' ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.EdgeChange{}
+	for rows.Next() {
+		var h protocol.EdgeChange
+		var old, value string
+		if err := rows.Scan(&h.ID, &old, &value, &h.At, &h.By); err != nil {
+			return nil, err
+		}
+		if old != "" {
+			h.Old = new(protocol.Edge)
+			if err := json.Unmarshal([]byte(old), h.Old); err != nil {
+				return nil, err
+			}
+		}
+		if value != "" {
+			h.New = new(protocol.Edge)
+			if err := json.Unmarshal([]byte(value), h.New); err != nil {
+				return nil, err
+			}
+		}
+		e := h.New
+		if e == nil {
+			e = h.Old
+		}
+		if e == nil {
+			return nil, fmt.Errorf("invalid edge history %d", h.ID)
+		}
+		if node == "" || e.From == node || e.To == node {
+			out = append(out, h)
+			if len(out) == limit {
+				break
+			}
+		}
+	}
+	return out, rows.Err()
+}
+
+// GraphUndo checks and reverses a history row in one transaction. The reversal
+// is itself recorded, so it can be undone. A stale row cannot overwrite changes.
 func (s *Store) GraphUndo(id int64, actor string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 	var typ, node, attr, old, value string
 	query := `SELECT type,node,attr,old_value,new_value FROM graph_history WHERE id=?`
 	if id == 0 {
 		query = `SELECT type,node,attr,old_value,new_value FROM graph_history ORDER BY id DESC LIMIT 1`
-	}
-	var err error
-	if id == 0 {
-		err = s.db.QueryRow(query).Scan(&typ, &node, &attr, &old, &value)
+		err = tx.QueryRow(query).Scan(&typ, &node, &attr, &old, &value)
 	} else {
-		err = s.db.QueryRow(query, id).Scan(&typ, &node, &attr, &old, &value)
+		err = tx.QueryRow(query, id).Scan(&typ, &node, &attr, &old, &value)
 	}
 	if err != nil {
 		return err
 	}
-	if typ != "charter" {
-		return reject("undo for %s is not supported", typ)
+	now := s.now().UnixNano()
+	switch typ {
+	case "charter":
+		var current string
+		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&current)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if current != value {
+			return reject("value changed since that history entry")
+		}
+		if _, err = graphKind(tx, node); err != nil {
+			return err
+		}
+		if old == "" {
+			_, err = tx.Exec(`DELETE FROM graph_charter WHERE node=? AND attr=?`, node, attr)
+		} else {
+			_, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, old, now, actor)
+		}
+	case "edge":
+		var e protocol.Edge
+		data := value
+		if data == "" {
+			data = old
+		}
+		if err = json.Unmarshal([]byte(data), &e); err != nil {
+			return err
+		}
+		var current protocol.Edge
+		current.From, current.To, current.Kind = e.From, e.To, e.Kind
+		err = tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind).Scan(&current.Mode, &current.Rule)
+		actual := ""
+		if err == nil {
+			b, _ := json.Marshal(current)
+			actual = string(b)
+		} else if err != sql.ErrNoRows {
+			return err
+		}
+		if actual != value {
+			return reject("edge changed since that history entry")
+		}
+		if old == "" {
+			_, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind)
+		} else {
+			if err = json.Unmarshal([]byte(old), &e); err != nil {
+				return err
+			}
+			if _, err = graphKind(tx, e.From); err != nil {
+				return err
+			}
+			if _, err = graphKind(tx, e.To); err != nil {
+				return err
+			}
+			_, err = tx.Exec(`INSERT INTO graph_edges VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule)
+		}
+	case "node":
+		var kind string
+		err = tx.QueryRow(`SELECT kind FROM graph_nodes WHERE name=?`, node).Scan(&kind)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if kind != value {
+			return reject("node changed since that history entry")
+		}
+		if old == "" {
+			var n int
+			if err = tx.QueryRow(`SELECT (SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?) + (SELECT COUNT(*) FROM graph_charter WHERE node=?)`, node, node, node).Scan(&n); err != nil {
+				return err
+			}
+			if n != 0 {
+				return reject("node has edges or charter")
+			}
+			_, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, node)
+		} else {
+			if _, e := graphKind(tx, node); e == nil {
+				return reject("node already exists")
+			} else if _, ok := e.(Rejection); !ok {
+				return e
+			}
+			_, err = tx.Exec(`INSERT INTO graph_nodes VALUES(?,?,?)`, node, old, now)
+		}
+	default:
+		return reject("unknown history type %s", typ)
 	}
-	var current string
-	err = s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&current)
-	if err != nil && err != sql.ErrNoRows {
+	if err != nil {
 		return err
 	}
-	if current != value {
-		return reject("value changed since that history entry")
+	if err = graphRecord(tx, typ, node, attr, value, old, actor, now); err != nil {
+		return err
 	}
-	return s.SetCharter(node, attr, old, actor)
+	return tx.Commit()
 }
 
 // SetEdge validates and stores a directed graph edge.

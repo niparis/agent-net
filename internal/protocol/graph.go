@@ -92,3 +92,40 @@ func CleanCharterValue(attr, value string) (string, error) {
 	}
 	return value, nil
 }
+
+// CharterSetRequest sets an attribute; an empty value clears it.
+type CharterSetRequest struct {
+	Node  string `json:"node"`
+	Attr  string `json:"attr"`
+	Value string `json:"value"`
+}
+
+// GraphHistoryRequest selects history by node, newest first.
+type GraphHistoryRequest struct {
+	Node  string `json:"node"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+// GraphNodeRequest identifies an architect.
+type GraphNodeRequest struct {
+	Name string `json:"name"`
+}
+
+// GraphUndoRequest identifies a history row; zero means the latest row.
+type GraphUndoRequest struct {
+	ID int64 `json:"id,omitempty"`
+}
+
+// GraphUndoFrame avoids the frame's own id field.
+type GraphUndoFrame struct {
+	HistoryID int64 `json:"history_id,omitempty"`
+}
+
+// EdgeChange records a change to an edge; nil means it did not exist.
+type EdgeChange struct {
+	ID  int64  `json:"id"`
+	Old *Edge  `json:"old,omitempty"`
+	New *Edge  `json:"new,omitempty"`
+	At  int64  `json:"at"`
+	By  string `json:"by"`
+}
