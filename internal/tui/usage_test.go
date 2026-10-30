@@ -133,14 +133,15 @@ func TestGoldenOpenCodeSharedTree(t *testing.T) {
 
 func TestHeaderQuotaWarning(t *testing.T) {
 	snap, u := openCodeSnapshot()
+	snap.WorkerProfiles = append(snap.WorkerProfiles, protocol.WorkerProfile{Harness: "codex"})
 	u.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92}}}}}
 	m := modelWith(snap, u, 120, 40)
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "codex 92% week - see 3") || strings.Contains(v, "quotas:") {
+	if !strings.Contains(v, "codex 92% week · 3") || strings.Contains(v, "quotas:") {
 		t.Fatal(v)
 	}
 	u.Local.Quotas.Providers[0].Windows[0].PercentUsed = 80
-	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "see 3") {
+	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "codex 80%") {
 		t.Fatal("80% should not warn")
 	}
 }
@@ -545,5 +546,25 @@ func TestFunctionIsInTheDetailPane(t *testing.T) {
 func TestWorkerCountIsSingularForOne(t *testing.T) {
 	if plural(1, "worker") != "1 worker" || plural(2, "worker") != "2 workers" || plural(0, "worker") != "0 workers" {
 		t.Fatal("plural")
+	}
+}
+
+func TestQuotaWarningUsesRelevantProviders(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Agents = nil
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6"}}
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "copilot", Windows: []protocol.QuotaWindow{{ID: "chat", Exhausted: true}}}, {Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92}}}}}
+	v := ansi.Strip(m.titleLine(120))
+	if !strings.Contains(v, "codex 92% week · 3") || strings.Contains(v, "copilot") {
+		t.Fatal(v)
+	}
+	m.snap.WorkerProfiles = nil
+	if v = ansi.Strip(m.titleLine(120)); strings.Contains(v, "codex") || strings.Contains(v, "copilot") {
+		t.Fatal(v)
+	}
+	m.snap.Agents = []protocol.AgentView{{Online: true, Harness: "claude", Model: "claude-model"}}
+	m.usage.raw.Local.Quotas.Providers = append(m.usage.raw.Local.Quotas.Providers, protocol.QuotaProvider{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week", Exhausted: true}}})
+	if v = ansi.Strip(m.titleLine(120)); !strings.Contains(v, "claude exhausted week · 3") {
+		t.Fatal(v)
 	}
 }

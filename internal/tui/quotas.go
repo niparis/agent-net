@@ -92,21 +92,34 @@ func (m Model) quotaNodes() (map[string]protocol.UsageNode, []string) {
 	return nodes, ids
 }
 
-func (m Model) quotaWarning() string {
+func (m Model) quotaWarning() (string, bool) {
+	relevant := map[string]bool{}
+	for _, p := range m.snap.WorkerProfiles {
+		if name := protocol.QuotaProviderForStart(p.Harness, p.Model); name != "" {
+			relevant[name] = true
+		}
+	}
+	for _, a := range m.snap.Agents {
+		if a.Online {
+			if name := protocol.QuotaProviderForStart(a.Harness, a.Model); name != "" {
+				relevant[name] = true
+			}
+		}
+	}
 	for _, r := range m.quotaRows() {
-		if r.provider.Stale || r.provider.Error != "" {
+		if !relevant[strings.ToLower(r.provider.Provider)] || r.provider.Stale || r.provider.Error != "" {
 			continue
 		}
 		for _, w := range r.provider.Windows {
 			if w.Exhausted || w.PercentUsed >= 100 {
-				return fmt.Sprintf("%s exhausted %s - see 3", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w)))
+				return fmt.Sprintf("%s exhausted %s · 3", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w))), true
 			}
 			if w.PercentUsed > 80 {
-				return fmt.Sprintf("%s %.0f%% %s - see 3", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w)))
+				return fmt.Sprintf("%s %.0f%% %s · 3", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w))), false
 			}
 		}
 	}
-	return ""
+	return "", false
 }
 
 type quotaModel struct {
