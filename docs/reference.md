@@ -603,3 +603,11 @@ The Pi extension, the OpenCode plugin, the Claude workers plugin folder and the 
 Setup does not use `sudo`. On Linux it may print a hint to run `sudo loginctl enable-linger <user>`, which keeps the user services running when you are logged out. You run that yourself.
 
 Setup does not change any other Claude Code or Pi setting (the one exception is the peer-message setting above, and only with your yes), and it does not touch other MCP servers.
+
+## Owner inbox and written approvals
+
+Agents use `agent_request_approval(action, recommendation)` for one exact action, or `agent_propose_idea(text, recommendation)` for an idea. The daemon binds each request to the calling session; the gateway derives its project from that session. Codex workers put the exact action and their recommendation in their report when they need approval.
+
+Press `i` in the TUI to open the inbox. Items are grouped by kind and ordered oldest first within each kind. Select an item and press enter to see its context. Press `a` to approve, `r` to refuse, or `t` to enter a one-line answer. The header counts open items, and open approvals appear under Needs you. Answers are stored together with a message queued for the requesting session. An approval covers only the exact action named in the item.
+
+The owner-only local methods are `inbox_list` and `inbox_answer` with `id` and `answer` (`approve`, `refuse`, or text). The daemon applies the same operator gate as other owner-only methods. Rejection and escalation recording can call the inbox outcome hook when those outcomes reach the owner.
