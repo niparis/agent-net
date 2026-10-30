@@ -5,7 +5,10 @@ package hint
 
 import (
 	"net/url"
+	"os"
+	"os/user"
 	"path"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -153,7 +156,7 @@ func useful(w string) bool {
 // repository name, folder name and host name, as whole names and as parts
 // ("cog-forge" gives "cogforge" and, as parts, "cog" and "forge" are too short
 // to count; "billing-api" gives "billing-api" and "billing").
-func identifiers(c Candidate, sameHost bool) map[string]string {
+func identifiers(c Candidate, sameHost bool, skip map[string]bool) map[string]string {
 	out := map[string]string{}
 	add := func(kind, name string) {
 		name = strings.ToLower(strings.TrimSpace(name))
@@ -178,11 +181,84 @@ func identifiers(c Candidate, sameHost bool) map[string]string {
 	// The host name matters, but the machine of a laptop is not a service:
 	// only its first label, and only when it is not generic.
 	// On the machine of the failing session the name is in every path, so it
-	// says nothing.
-	if h := strings.SplitN(c.Hostname, ".", 2)[0]; h != "" && !sameHost {
-		add("host", h)
+	// says nothing. A part that is the user's login or home name is in every
+	// path too, even on a peer machine.
+	if h := strings.SplitN(strings.TrimSpace(c.Hostname), ".", 2)[0]; h != "" && !sameHost {
+		h = strings.ToLower(h)
+		if joined := strings.Join(words(h), ""); useful(joined) && !skip[joined] {
+			out[joined] = "host"
+		}
+		// Keep the whole label too, so "nicolas-mbp" still matches in full.
+		if useful(h) && !skip[h] {
+			out[h] = "host"
+		}
+		for _, w := range words(h) {
+			if useful(w) && !skip[w] {
+				if _, ok := out[w]; !ok {
+					out[w] = "host"
+				}
+			}
+		}
 	}
 	return out
+}
+
+// userNames returns the login name and the base name of the home folder of
+// the daemon's user. They appear in most paths on that machine.
+func userNames() map[string]bool {
+	out := map[string]bool{}
+	add := func(name string) {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if useful(name) {
+			out[name] = true
+		}
+	}
+	if name := os.Getenv("USER"); name != "" {
+		add(name)
+	} else if u, err := user.Current(); err == nil {
+		add(u.Username)
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		add(filepath.Base(home))
+	}
+	return out
+}
+
+// maskHome blanks the user's home folder in a lower case error text, so its
+// path components do not count as names. The result stays the same length.
+func maskHome(lower string) string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return lower
+	}
+	home = strings.ToLower(filepath.Clean(home))
+	if home == "" || home == "." || home == string(filepath.Separator) {
+		return lower
+	}
+	var out strings.Builder
+	for {
+		i := strings.Index(lower, home)
+		if i < 0 {
+			break
+		}
+		end := i + len(home)
+		if end < len(lower) && isNameByte(lower[end]) {
+			// A longer name that only starts with the home folder.
+			out.WriteString(lower[:end])
+			lower = lower[end:]
+			continue
+		}
+		out.WriteString(lower[:i])
+		out.WriteString(strings.Repeat(" ", len(home)))
+		lower = lower[end:]
+	}
+	out.WriteString(lower)
+	return out.String()
+}
+
+func isNameByte(b byte) bool {
+	return b == '-' || b == '_' || b == '.' ||
+		b >= '0' && b <= '9' || b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z'
 }
 
 // repoName is the last path element of a remote URL, without ".git".
@@ -213,8 +289,9 @@ func Suggest(errText string, self Self, cands []Candidate) []Suggestion {
 	if strings.TrimSpace(errText) == "" {
 		return nil
 	}
-	have := keywords(errText)
-	lower := strings.ToLower(errText)
+	lower := maskHome(strings.ToLower(errText))
+	have := keywords(lower)
+	skip := userNames()
 	var out []Suggestion
 	for _, c := range cands {
 		if c.SessionID == "" || c.SessionID == self.SessionID || !c.Online || c.Owner {
@@ -225,7 +302,7 @@ func Suggest(errText string, self Self, cands []Candidate) []Suggestion {
 		}
 		score := 0
 		var why []string
-		for name, kind := range identifiers(c, strings.EqualFold(c.Hostname, self.Hostname)) {
+		for name, kind := range identifiers(c, strings.EqualFold(c.Hostname, self.Hostname), skip) {
 			if have[name] || strings.Contains(lower, name) {
 				score += 4
 				why = append(why, kind+" name "+quote(name))

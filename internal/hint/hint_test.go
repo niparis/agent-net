@@ -82,6 +82,28 @@ func TestSuggestIgnoresHostOfSelf(t *testing.T) {
 	}
 }
 
+func TestSuggestIgnoresLoginAndHomeNameInPaths(t *testing.T) {
+	t.Setenv("USER", "nicolas")
+	t.Setenv("HOME", "/home/nicolas")
+	c := []Candidate{{SessionID: "s_peer", Name: "peer", Hostname: "Nicolas-MBP", Online: true,
+		Project: "other", Folder: "other"}}
+	self := Self{SessionID: "s_me", Project: "client-app", Hostname: "laptop-b"}
+	got := Suggest("cannot read /home/nicolas/x: permission denied", self, c)
+	if len(got) != 0 {
+		t.Errorf("a path under home matched the host name part: %+v", got)
+	}
+	got = Suggest("ssh: connect to host nicolas-mbp port 22: Connection refused", self, c)
+	if len(got) != 1 {
+		t.Errorf("the full host name should still match: %+v", got)
+	}
+	c = []Candidate{{SessionID: "s_peer2", Name: "peer2", Hostname: "nicolas", Online: true,
+		Project: "other2", Folder: "other2"}}
+	got = Suggest("cannot reach nicolas: connection refused", self, c)
+	if len(got) != 0 {
+		t.Errorf("a single label equal to the login matched: %+v", got)
+	}
+}
+
 func TestSuggestAtMostTwo(t *testing.T) {
 	var c []Candidate
 	for _, n := range []string{"alpha", "bravo", "charlie"} {
