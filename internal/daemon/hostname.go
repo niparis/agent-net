@@ -23,9 +23,16 @@ func displayHostname(pinned, goos string, osHostname func() (string, error), scu
 		return p
 	}
 	if goos == "darwin" && scutil != nil {
-		if out, err := scutil("LocalHostName"); err == nil {
-			if n := strings.TrimSpace(out); n != "" {
-				return n
+		// HostName is what the owner can set once with scutil; it errors
+		// ("not set") when unset. LocalHostName is the Sharing name.
+		for _, key := range []string{"HostName", "LocalHostName"} {
+			if out, err := scutil(key); err == nil {
+				if n := strings.TrimSpace(out); n != "" {
+					if i := strings.IndexByte(n, '.'); i > 0 {
+						n = n[:i]
+					}
+					return n
+				}
 			}
 		}
 	}

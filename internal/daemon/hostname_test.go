@@ -32,6 +32,14 @@ func TestDisplayHostname(t *testing.T) {
 	scutil := func(out string, err error) func(string) (string, error) {
 		return func(string) (string, error) { return out, err }
 	}
+	byKey := func(m map[string]string) func(string) (string, error) {
+		return func(k string) (string, error) {
+			if v, ok := m[k]; ok {
+				return v, nil
+			}
+			return "", errors.New("HostName: not set")
+		}
+	}
 	cases := []struct {
 		name, goos, osName, pinned string
 		scutil                     func(string) (string, error)
@@ -43,6 +51,10 @@ func TestDisplayHostname(t *testing.T) {
 		{"mac scutil fails, .local", "darwin", "Laptop-1.local", "", scutil("", errors.New("x")), "Laptop-1"},
 		{"mac scutil fails, domain", "darwin", "Laptop-1.example.net", "", scutil("", errors.New("x")), "Laptop-1"},
 		{"mac scutil empty", "darwin", "Laptop1", "", scutil("  ", nil), "Laptop1"},
+		{"HostName wins over LocalHostName", "darwin", "Laptop-1.local", "", byKey(map[string]string{"HostName": "laptop-1", "LocalHostName": "Laptop-1-long"}), "laptop-1"},
+		{"HostName with domain is cut", "darwin", "x", "", byKey(map[string]string{"HostName": "laptop-1.example.net\n"}), "laptop-1"},
+		{"HostName not set falls through", "darwin", "x.local", "", byKey(map[string]string{"LocalHostName": "Laptop-1-long"}), "Laptop-1-long"},
+		{"nothing set falls to os", "darwin", "laptop-1.local", "", byKey(nil), "laptop-1"},
 		{"pinned wins", "darwin", "Laptop-1.local", "mac-mini", scutil("Laptop1", nil), "mac-mini"},
 		{"pinned on linux", "linux", "build", "ci-1", nil, "ci-1"},
 		// Linux keeps os.Hostname() as it is, even with a dot.
