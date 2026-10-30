@@ -190,19 +190,36 @@ Workers spend the owner's subscriptions. agent-net reads how much is left and pl
 - **Admission.** A start whose model's provider is exhausted is refused with the reason and the reset time, instead of failing at the first model call.
 - **Shown** in one line of the TUI header (`claude 59%w · codex 90%w · opencode-go 76%w · cursor exhausted`), in `agent_nodes` for agents, and to the CTO, which plans with it ("codex is at 90% of its week: the next workers go to opencode-go").
 
-## Track record and playbook: what the network learns about models
+## Knowledge: what the network learns about models, harnesses and projects
 
-Which model and harness to use for which work is learned by trying, and today that knowledge stays in one session's memory. agent-net keeps it for every agent:
+Which model and harness to use for which work, and the quirks of each project, are learned by trying. Today that knowledge stays in one session's memory. agent-net keeps it for every agent, in three layers.
 
-1. **A track record, collected automatically.** agent-net already records every worker's harness, model, run time, outcome and tokens. A worker also reports `complete: false` in `agent_handback` when it hands back partial work, so a lazy model is counted. Per harness and model, `agent_nodes` and every start result show:
+1. **Facts, collected automatically: the track record.** agent-net already records every worker's harness, model, run time, outcome and tokens. A worker also reports `complete: false` in `agent_handback` when it hands back partial work, so a lazy model is counted. Per harness and model:
    ```
    terra · pi       4 runs: 1 complete, 3 partial (median 9 min) · cannot resume
    terra · codex    3 runs: 0 complete, 3 partial (median 3 min) · resumes
    deepseek-v4.1-flash · opencode   14 runs: 13 complete (median 26 min)
    ```
-   Facts, not opinions, so they stay true when a model changes.
-2. **A playbook note per model** (and optionally per harness), written by the owner through the CTO: "terra: smart but lazy; give one layer per task with a hard checklist; continue at once". agent-net adds the note to the start result whenever an agent picks that model, so the caller briefs the worker right the first time.
-3. **The CTO** reads the track records, the playbook and the quotas when it chooses where to send work, and proposes playbook notes from what it sees ("terra handed back partial 3 times out of 4: add a note?").
+2. **Findings, reported by agents.** The agents that review workers' results notice things. A tool `agent_learn(subject, finding, evidence)` records one:
+   ```
+   subject:  model gpt-6.1-terra, harness pi
+   finding:  Hands back partial work after about 10 min even when told not to.
+             Delivers one layer when the brief has a hard checklist.
+   evidence: the worker sessions it saw
+   ```
+   A subject is a model, a harness, a model on a harness, a project ("cogforge tests need the TEI service up"), an MCP server or a machine. The worker notice's checklist ends with "Did you learn something about this model, harness or project? Report it with agent_learn", and the guidance says so. A finding is a proposal: it changes nothing until it is promoted.
+3. **The playbook, decided by the owner through the CTO.** The CTO reads new findings, groups duplicates, and brings them to the owner in its chat: "4 findings about terra on Pi from 2 agents: lazy after about 10 min, delivers with one layer and a checklist. Make this a playbook note?". The owner answers in plain words, and the CTO writes the note. The owner can also tell the CTO a lesson directly.
+
+**Storage**, in the gateway, one copy for the network:
+
+- findings: subject, text, evidence (worker and session ids), reporter, time, status (`new`, `promoted`, `dismissed`, `stale`). A finding never promoted goes stale after 90 days.
+- playbook: subject, note, decided by (the owner, through the CTO), time, and the findings and track record behind it. Versioned with history and undo, like charters.
+
+**Delivery:**
+
+- `agent_start` results show the playbook note and the track record line for the chosen model and harness; `agent_nodes` shows them for every model a machine offers.
+- A session gets its project's playbook notes in its per-turn context, beside the charter.
+- The CTO sees all of it when it plans work.
 
 ## The TUI
 
@@ -236,7 +253,7 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 2. **The CTO.** OpenCode harness, private MCP tools, the TUI chat pane, diffs and undo.
 3. **Edges and modes.** depends-on, governs with advisor/arbiter/owner, deploys (the target's rule applies), request rules (replacing trust), architect roles, written approvals and the owner's inbox.
 4. **Maturity defaults wired to the controls.** Merge authority (new), sandbox, delegation, request judging.
-5. **Quotas, track record and playbook.** quota-axi reading, model choice and admission by quota, `complete: false` hand-backs, the per-model track record, playbook notes through the CTO.
+5. **Quotas and knowledge.** quota-axi reading, model choice and admission by quota; `complete: false` hand-backs and the track record; `agent_learn` findings; the playbook through the CTO.
 6. **The phone** (0006), with the same chat and Needs you.
 
 ## Open questions
