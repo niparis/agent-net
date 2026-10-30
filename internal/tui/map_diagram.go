@@ -18,6 +18,8 @@ func (m Model) mapLinks(side string) []mapLink {
 	var links []mapLink
 	for _, e := range m.mp.edges {
 		switch {
+		case side == "below" && e.Kind == "governs" && e.From == m.mp.selected:
+			links = append(links, mapLink{e.To, e})
 		case side == "above" && e.Kind == "governs" && e.To == m.mp.selected:
 			links = append(links, mapLink{e.From, e})
 		case side == "in" && e.Kind != "governs" && e.To == m.mp.selected:
@@ -142,4 +144,62 @@ func (m Model) mapFocusView(w, h int) []string {
 		out = out[:h]
 	}
 	return out
+}
+
+// mapOverviewView uses separate routing rows so edges stay legible when they
+// share endpoints. If the graph cannot fit, the caller shows the focus view.
+func (m Model) mapOverviewView(w, h int) ([]string, bool) {
+	var architects, components []protocol.Node
+	governed := map[string]bool{}
+	for _, e := range m.mp.edges {
+		if e.Kind == "governs" {
+			governed[e.To] = true
+		}
+	}
+	for _, n := range m.mp.nodes {
+		if n.Kind == "architect" {
+			architects = append(architects, n)
+		} else {
+			components = append(components, n)
+		}
+	}
+	sort.Slice(architects, func(i, j int) bool { return architects[i].Name < architects[j].Name })
+	sort.Slice(components, func(i, j int) bool { return components[i].Name < components[j].Name })
+	boxWidth := 20
+	gap := 3
+	widest := max(len(architects), len(components))
+	if widest*(boxWidth+gap)-gap > w || 9+len(m.mp.edges) > h {
+		return nil, false
+	}
+	out := []string{sTitle.Render("Overview") + sDim.Render("  z focus")}
+	row := func(nodes []protocol.Node) {
+		for i := 0; i < 4; i++ {
+			var cells []string
+			for _, n := range nodes {
+				cells = append(cells, m.mapBox(n.Name, boxWidth, n.Name == m.mp.selected)[i])
+			}
+			out = append(out, strings.Join(cells, strings.Repeat(" ", gap)))
+		}
+	}
+	row(architects)
+	row(components)
+	for _, e := range m.mp.edges {
+		name := sanitize(e.From) + " "
+		arrow := linkArrow([]mapLink{{edge: e}}, 0, 4)
+		label := sDim.Render(" " + e.Kind + " " + e.Rule + " ")
+		out = append(out, clip(name+arrow+" "+sanitize(e.To)+label, w))
+	}
+	var loose []string
+	for _, n := range components {
+		if !governed[n.Name] {
+			loose = append(loose, sanitize(n.Name))
+		}
+	}
+	if len(loose) > 0 {
+		out = append(out, clip(sDim.Render("No architect: ")+strings.Join(loose, ", "), w))
+	}
+	if len(out) > h {
+		return nil, false
+	}
+	return out, true
 }

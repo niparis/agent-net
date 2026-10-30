@@ -15,6 +15,16 @@ import (
 // mapView draws the read-only graph map: the nodes on the left, the selected
 // node on the right. It never writes more than width columns.
 func (m Model) mapView(w, h int) []string {
+	if m.mp.overview {
+		if out, ok := m.mapOverviewView(w, h); ok {
+			return out
+		}
+		out := m.mapFocusView(w, h)
+		if len(out) > 0 {
+			out[0] = clip(sTitle.Render("Map")+sDim.Render("  overview does not fit"), w)
+		}
+		return out
+	}
 	return m.mapFocusView(w, h)
 }
 
