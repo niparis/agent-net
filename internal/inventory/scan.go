@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -123,8 +124,16 @@ func Scan(o Options) protocol.InventoryReport {
 				continue
 			}
 			info, err := skillRoot.Lstat("SKILL.md")
+			if errors.Is(err, os.ErrNotExist) {
+				skillRoot.Close()
+				continue
+			}
+			if err == nil && info.Mode()&os.ModeSymlink != 0 {
+				info, err = skillRoot.Stat("SKILL.md")
+			}
 			if err != nil || !info.Mode().IsRegular() {
 				skillRoot.Close()
+				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "invalid skill file")
 				continue
 			}
 			hash, err := skillHashRoot(skillRoot)
@@ -506,7 +515,13 @@ func fingerprint(name string, m map[string]any) string {
 				if !ok {
 					continue
 				}
-				if strings.HasPrefix(v, "--") && !strings.ContainsAny(v, "= /\\") && len(v) < 80 {
+				if i > 0 && args[i-1] == "--port" {
+					if port, err := strconv.Atoi(v); err == nil && port > 0 && port <= 65535 {
+						parts = append(parts, "port", strconv.Itoa(port))
+						continue
+					}
+				}
+				if v == "--port" || v == "--host" || v == "--transport" || v == "--stdio" || v == "--sse" || v == "--http" {
 					parts = append(parts, "flag", v)
 				} else {
 					parts = append(parts, "redacted")

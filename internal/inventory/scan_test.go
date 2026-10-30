@@ -397,3 +397,39 @@ func TestInvalidServersFieldReportsError(t *testing.T) {
 		t.Fatal("invalid server map accepted")
 	}
 }
+
+func TestSkillManifestAllowsInTreeSkillLink(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/linked")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "body.md"), []byte("skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("body.md", filepath.Join(dir, "SKILL.md")); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range Scan(Options{Home: home}).Items {
+		if item.Harness == "claude" && item.Name == "linked" && item.State == protocol.InventoryOK {
+			return
+		}
+	}
+	t.Fatal("missing skill with in-tree SKILL.md link")
+}
+
+func TestDescriptorMasksUnknownFlagValues(t *testing.T) {
+	a := map[string]any{"command": "node", "args": []any{"--secret-one"}}
+	b := map[string]any{"command": "node", "args": []any{"--secret-two"}}
+	if fingerprint("server", a) != fingerprint("server", b) {
+		t.Fatal("unknown flag value affected fingerprint")
+	}
+}
+
+func TestDescriptorIncludesSafePortArgument(t *testing.T) {
+	a := map[string]any{"command": "node", "args": []any{"--port", "3000"}}
+	b := map[string]any{"command": "node", "args": []any{"--port", "4000"}}
+	if fingerprint("server", a) == fingerprint("server", b) {
+		t.Fatal("safe port ignored")
+	}
+}
