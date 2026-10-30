@@ -36,10 +36,10 @@ func (m Model) ctoView(w, h int) []string {
 	}
 	var lines []string
 	for _, v := range c.messages {
-		lines = append(lines, wrap(sanitize(v), max(w-2, 8))...)
+		lines = append(lines, wrapCTOLine(v, w)...)
 	}
 	if c.err != "" {
-		lines = append(lines, "error: "+c.err)
+		lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
 	}
 	if len(lines) == 0 {
 		hint := "write to the CTO: it can set charters, start workers, answer what the network is doing"
@@ -68,4 +68,13 @@ func (m Model) ctoView(w, h int) []string {
 	}
 	out = append(out, clip(input, w))
 	return out
+}
+
+// wrapCTOLine indents continuation rows while keeping their text in the box.
+func wrapCTOLine(text string, width int) []string {
+	parts := wrap(sanitize(text), max(width-2, 8))
+	for i := 1; i < len(parts); i++ {
+		parts[i] = "  " + parts[i]
+	}
+	return parts
 }

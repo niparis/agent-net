@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -406,4 +407,37 @@ func TestCTOSendErrorKeepsRepeatedFailures(t *testing.T) {
 	if len(m.cto.messages) != 2 {
 		t.Fatalf("late send result duplicated error: %v", m.cto.messages)
 	}
+}
+
+func TestCTOWrapsLongLines(t *testing.T) {
+	m := Model{cto: &ctoState{messages: []string{"cto: " + strings.Repeat("word ", 18)}, err: strings.Repeat("failure ", 16)}}
+	view := m.ctoView(30, 12)
+	joined := strings.Join(view, "\n")
+	if strings.Contains(joined, "…") || !strings.Contains(joined, "  failure") || !strings.Contains(joined, "  word") {
+		t.Fatalf("lines not wrapped with continuation indent:\n%s", joined)
+	}
+	for _, line := range view {
+		if ansi.StringWidth(line) > 30 {
+			t.Fatalf("line too wide: %q", line)
+		}
+	}
+	m.cto.messages = []string{strings.Repeat("x", 90), "newest"}
+	m.cto.err = ""
+	view = m.ctoView(30, 4)
+	if !strings.Contains(strings.Join(view, "\n"), "newest") {
+		t.Fatal("newest line hidden")
+	}
+}
+
+func TestCTOLongErrorGolden(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = refresh(m, src.fakeSource)
+	m.src = src
+	m = send(m, m.ctoPollCmd()())
+	m = keys(m, "C")
+	m.cto.err = "Provider request failed because the account has insufficient credits. Add credits or choose another model before retrying the request. The request was not completed."
+	golden(t, "cto_long_error_80x24", m.View())
 }
