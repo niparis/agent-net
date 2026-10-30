@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy                                          updated 14:05:00
+1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges                                               updated 14:05
 Overview  z focus
 ╭──────────────────╮   ╭──────────────────╮   ╭──────────────────╮
 │wbg-architect     │   │trading-architect │   │api-architect     │
@@ -10,15 +10,15 @@ Overview  z focus
 │tenebrae          │   ║cogforge          ║   │shop              │   │homelab           │
 │growing ● 1 busy  │   ║early ○ 0         ║   │mature ○ 0        │   │growing ○ 0       │
 ╰──────────────────╯   ╚══════════════════╝   ╰──────────────────╯   ╰──────────────────╯
-          │                      ▲                      ▲
-          └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┴━━━━━━━━━━━━━━━━━━━━━━┘
+          │                      ▲                      │
+          └┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┘                      │
+                                 │                      ▲
+                                 └━━━━━━━━━━━━━━━━━━━━━━┘
 trading-architect ───▶ cogforge governs normal
 wbg-architect ───▶ tenebrae governs normal
 tenebrae ┄┄┄▶ cogforge depends ask
 cogforge ━━━▶ shop depends auto
 No architect: shop, homelab
-
-
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

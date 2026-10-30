@@ -92,12 +92,12 @@ func linkArrow(links []mapLink, choice, width int) string {
 	return style.Render(strings.Repeat(fill, max(width-1, 0)) + "▶")
 }
 func (m Model) mapFocusView(w, h int) []string {
-	out := []string{m.mapTitle(w)}
+	var out []string
 	if m.mp.err != "" {
 		if m.mp.selected == "" {
 			return append(out, sBad.Render(clip("could not read the graph: "+m.mp.err, w)))
 		}
-		out[0] = sBad.Render(clip("could not read the graph: "+m.mp.err, w))
+		out = append(out, sBad.Render(clip("could not read the graph: "+m.mp.err, w)))
 	}
 	if m.mp.selected == "" {
 		return append(out, sDim.Render("  no nodes yet"), sDim.Render("  no node selected"))
@@ -305,7 +305,7 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 	// whose edges need more lanes than fit in this compact overview.
 	type interval struct{ lo, hi int }
 	var spans []interval
-	dep1, dep2 := blank(), blank()
+	var depRows [][]string
 	for _, e := range m.mp.edges {
 		if e.Kind == "governs" {
 			continue
@@ -332,9 +332,16 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 		case "never":
 			style = sBad
 		}
-		if dep1[x1] == " " {
-			dep1[x1] = style.Render("│")
+		for _, row := range depRows {
+			if row[x1] == " " {
+				row[x1] = style.Render("│")
+			}
+			if row[x2] == " " {
+				row[x2] = style.Render("│")
+			}
 		}
+		dep1, dep2 := blank(), blank()
+		dep1[x1] = style.Render("│")
 		dep1[x2] = style.Render("▲")
 		for x := lo + 1; x < hi; x++ {
 			dep2[x] = style.Render(fill)
@@ -349,8 +356,11 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 		} else {
 			dep2[hi] = style.Render("┴")
 		}
+		depRows = append(depRows, dep1, dep2)
 	}
-	out = append(out, strings.Join(dep1, ""), strings.Join(dep2, ""))
+	for _, row := range depRows {
+		out = append(out, strings.Join(row, ""))
+	}
 	for _, e := range m.mp.edges {
 		arrow := linkArrow([]mapLink{{edge: e}}, 0, 4)
 		out = append(out, clip(sanitize(e.From)+" "+arrow+" "+sanitize(e.To)+sDim.Render(" "+e.Kind+" "+e.Rule), w))

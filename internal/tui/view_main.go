@@ -315,6 +315,17 @@ func (m Model) titleLine(w int) string {
 	if !m.haveData && m.problem == ProblemNone {
 		right = "connecting..."
 	}
+	if m.mapOn {
+		mid = fmt.Sprintf("%d nodes, %d edges", len(m.mp.nodes), len(m.mp.edges))
+		switch {
+		case m.mp.loading:
+			right = "reading..."
+		case m.mp.loaded:
+			right = "updated " + m.clock(m.mp.at)
+		default:
+			right = ""
+		}
+	}
 	used := ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	if used > w && !m.haveData && ansi.StringWidth(left)+3+ansi.StringWidth(right) <= w {
 		return clip(left+" │ "+sDim.Render(right), w)

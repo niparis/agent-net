@@ -1,5 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy                                          updated 14:05:00
-Map (read only)  7 nodes, 4 edges                                                                        updated 14:05
+1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges                                               updated 14:05
                                             ╭──────────────────────────────╮
                                             │trading-architect             │
                                             │mature ○ 0                    │
@@ -13,6 +12,7 @@ purpose: Document and evidence API.
 accepts: Generic endpoints and bug fixes.
 refuses: Client-specific endpoints.
 last change: maturity: early - prototype
+
 
 
 
