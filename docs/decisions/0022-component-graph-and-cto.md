@@ -1,7 +1,7 @@
 # 0022 - A graph of components with charters, and a CTO in the TUI
 
 **Date:** 2026-10-30
-**Status:** Accepted, being built (steps 1 to 5). Step 6, the phone, belongs to decision 0006 and is not part of this decision's build.
+**Status:** Built (steps 1 to 5), 2026-10-30. Step 6, the phone, belongs to decision 0006 and is not part of this decision's build. See "As built" at the end.
 **Context:** Today every session is an island with a few separate switches: peer trust (0013), the delegation policy (0014), the worker sandbox level (0020), and merge authority (discussed, not built). Nothing says what a repository is for, what it should refuse, how careful its agents must be, or which other repositories and agents have a say over it. The owner wants agents to react to requests from other agents the way a team would: a generic API should be able to refuse a client-specific feature and give the reason; some services matter more than others; a session that owns no code can manage the architecture of a few repositories. The owner wants to set all of this by talking, not by clicking, and to see it.
 
 Base: [0008](0008-operator-interface-and-worker-build.md) (the owner gate and operator interface), [0013](0013-peer-trust-and-hints.md), [0014](0014-delegation-policy.md), [0016](0016-needs-you.md), [0019](0019-opencode-worker-logins.md), [0020](0020-worker-sandbox.md).
@@ -270,3 +270,16 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 4. **Overrule versus architect owner:** decided for now: an overruled architect gets a notification.
 5. **CTO conversation length:** one long conversation will fill its context. Start a new one per day, or summarize?
 6. **Cost:** a strong CTO model reads the graph and history on every request. Is a daily budget wanted?
+
+## As built (2026-10-30)
+
+All of steps 1 to 5 are on main, with tests. What exists, by step:
+
+1. **Graph and charters.** Gateway tables for nodes, charters (nine attributes, maturity included), edges (`depends`, `governs` with a mode, `deploys`) and their history with undo; owner-only operator methods and the CLI (`agent-net charter`, `graph`, `node`, `edge`); charter fields in `agent_list` and `agent_get` with the AGENTS.md description as fallback; the charter, the relationship line and the "decide, do not defer" rule in every session's turn context and in worker briefs; the read-only map (`M`); request outcomes (`accept`, `reject`, `redirect`, `escalate`) on `agent_reply`, recorded on the node edge, with rejections and escalations in Needs you and the owner's overrule.
+2. **The CTO.** A private OpenCode server with its own data folder, one conversation that survives daemon restarts, a model setting, private MCP tools reachable only from its own process tree (graph reads and writes, agents, workers, Needs you, the feed, sending, starting workers), the "from the CTO, on Nicolas's instruction" note, and the chat pane (`C`) with tool lines, undo (`u`) and a new conversation (`n`).
+3. **Edges at work.** Request rules on edges (`normal`, `auto`, `ask`, `never`; the most specific rule wins; trusted sessions migrated to `* -> node: auto`); held requests in Needs you with `a`, `A`, `r`, `R`; written approvals and the owner's inbox (`i`), with answers delivered in the same transaction and approval notes only the gateway writes; outcomes and merge-authority requests create inbox items.
+4. **Maturity defaults.** Defaults per level for tests, merge authority, worker sandbox, consumer judging and deploys; per-node overrides with history; the rules in plain words in context and briefs; a deployer gets the target's deploy rule.
+5. **Quotas and knowledge.** quota-axi reading (an integration item), model choice and admission by quota, the header line and `agent_nodes`; `complete: false` hand-backs, the track record per harness and model, `agent_learn` findings with a daily limit, the automatic playbook (promoted by support, stale after 60 days, owner override), delivered only in start results and `agent_nodes`, and the quiet `L` list.
+
+Open questions 1, 5 and 6 above (maturity levels, CTO conversation length, cost budget) remain open. Merge authority is guidance plus approval objects, not a git lock: use branch protection on critical repositories.
+
