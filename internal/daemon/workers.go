@@ -754,10 +754,6 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	} else {
 		d.st.deleteWorker(id)
 	}
-	// The row says the worker ended before the worker is forgotten here, so a
-	// resume that runs meanwhile waits for it instead of starting a second
-	// process.
-	delete(d.workers, w.id)
 	d.wmu.Unlock()
 	endStatus, endNote := d.endFacts(w, reason)
 	d.rememberEnded(w, endStatus, endNote, time.Now())
@@ -767,6 +763,11 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		}
 	}
 	d.finishWorktree(w)
+	// Keep the worker registered until its worktree and branch are settled.
+	// Continue and resume must not race cleanup of the old branch.
+	d.wmu.Lock()
+	delete(d.workers, w.id)
+	d.wmu.Unlock()
 	if dir != "" && !resumable {
 		os.RemoveAll(dir)
 	}
