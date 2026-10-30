@@ -360,7 +360,6 @@ func newWorkerForm() workerForm {
 		t.Cursor.SetMode(cursor.CursorHide)
 		f.in[i] = t
 	}
-	f.in[fHarness].SetValue(protocol.WorkerHarnesses[0])
 	f.in[fProject].Focus()
 	return f
 }
@@ -511,7 +510,7 @@ func (m Model) modelCandidates(text string) []candidate {
 	text = strings.ToLower(strings.TrimSpace(text))
 	var pre, rest []candidate
 	for _, hi := range node.Harnesses {
-		if hi.Name != harness {
+		if harness != "" && hi.Name != harness {
 			continue
 		}
 		for _, mod := range hi.Models {
@@ -618,9 +617,6 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 	case name == "":
 		f.err = "Name the project."
 		return m, f.focus(fProject)
-	case f.value(fHarness) == "":
-		f.err = "Name the harness."
-		return m, f.focus(fHarness)
 	case f.value(fDifficulty) != "":
 		if _, err := protocol.DifficultyFit(0, f.value(fDifficulty), nil); err != nil {
 			f.err = err.Error()

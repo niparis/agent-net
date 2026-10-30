@@ -275,7 +275,7 @@ func TestStartFormCompletesAndStarts(t *testing.T) {
 	m, src := workerModel(120, 34)
 	m = selectID(m, "s_0000000000000004") // a session with no project on a known list
 	m = openForm(t, m)
-	if m.form.cur != fProject || m.form.value(fHarness) != "opencode" {
+	if m.form.cur != fProject || m.form.value(fHarness) != "" {
 		t.Fatalf("form start: cur %v harness %q", m.form.cur, m.form.value(fHarness))
 	}
 	// Project: "te" matches tenebrae only; tab completes it.
@@ -295,6 +295,7 @@ func TestStartFormCompletesAndStarts(t *testing.T) {
 	if m.form.cur != fHarness {
 		t.Fatalf("cur %v", m.form.cur)
 	}
+	m.form.in[fHarness].SetValue("opencode")
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.form.cur != fModel {
 		t.Fatalf("cur %v", m.form.cur)
@@ -494,5 +495,19 @@ func TestWorkerDifficultyField(t *testing.T) {
 	m.form.in[fDifficulty].SetValue("hard")
 	if !strings.Contains(m.View(), "Difficulty") {
 		t.Fatal("difficulty missing from form")
+	}
+}
+
+func TestWorkerFormAllowsAutomaticHarness(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m, _ = m.startForm()
+	m.form.in[fProject].SetValue("tenebrae")
+	m.form.in[fHarness].SetValue("")
+	m.form.in[fTask].SetValue("test")
+	m.form.cur = fTask
+	next, cmd := m.submitForm()
+	m = finish(t, next.(Model), cmd)
+	if src.started == nil || src.started.Harness != "" {
+		t.Fatalf("automatic harness: %+v", src.started)
 	}
 }

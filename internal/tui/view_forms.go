@@ -113,6 +113,10 @@ func (m Model) fieldNote(i formField) string {
 			return "no such project"
 		}
 		return "on " + machine
+	case fHarness:
+		if m.form.value(fHarness) == "" {
+			return "automatic choice"
+		}
 	case fModel:
 		if m.form.value(fModel) == "" {
 			return "automatic choice"

@@ -34,3 +34,16 @@ func TestWorkerUnscoredFallback(t *testing.T) {
 		t.Fatalf("difficulty: %v", err)
 	}
 }
+
+func TestWorkerAutomaticChoosesHarness(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	score := 51.0
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "auto", Difficulty: "hard", Task: "x"})
+	if err != nil || res.Model != "fake/m1" || res.Harness != "opencode" {
+		t.Fatalf("choice: %+v, %v", res, err)
+	}
+}

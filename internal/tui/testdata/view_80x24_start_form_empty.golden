@@ -12,7 +12,7 @@
 > ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
 Start a worker ─────────────────────────────────────────────────────────────────
 > Project
-  Harness    opencode
+  Harness       automatic choice
   Model         automatic choice
   Difficulty
   Task
