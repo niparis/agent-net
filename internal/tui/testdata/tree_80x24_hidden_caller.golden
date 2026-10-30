@@ -1,4 +1,4 @@
-agent-net tui  10 sessions, 9 online · 2 busy · workers 4 running, 0 queued  fi…
+1 Sessions   2 Quotas  10 sessions, 9 online · 2 busy · workers 4 running, 0 qu…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -21,4 +21,4 @@ Selected session ─────────────────────
 Messages (live) ────────────────────────────────────────────────────────────────
   14:02  tenebrae-53 -> ci-runner  notification                                ✗
   14:04  tenebrae-53 -> s_00000000  request                                    …
-up/down select  enter conversation  m msg  s start  x stop  ? help  q quit
+1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

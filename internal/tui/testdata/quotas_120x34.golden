@@ -3,7 +3,7 @@
   PROVIDER       PLAN         WINDOW   USAGE             PACE      RESETS
   claude         max          5h       █████░░░░░  50%   behind    -
     (read on Mac; stale reading)
-  codex          pro          week     █████████░  92%   ahead     in 2h0m0s
+  codex          pro          week     █████████░  92%   ahead     in 2h00
   cursor         business     month    ██████████ exhausted -         -
     (read on Mac)
 
@@ -31,4 +31,4 @@
 
 
   workers now: none   ·   reading 40s old
-up/down select  enter conversation  e enter it  m msg  s start  x stop  / filter  o offline  tab feed  ? help  q quit
+1/2 tabs  r refresh  ? help  q quit

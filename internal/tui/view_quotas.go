@@ -55,7 +55,12 @@ func (m Model) quotasView(w, h int) []string {
 				t := time.Unix(window.ResetsAt, 0).In(m.loc)
 				d := t.Sub(m.now())
 				if d > 0 && d < 24*time.Hour {
-					reset = "in " + d.Truncate(time.Minute).String()
+					minutes := int(d / time.Minute)
+					if minutes >= 60 {
+						reset = fmt.Sprintf("in %dh%02d", minutes/60, minutes%60)
+					} else {
+						reset = fmt.Sprintf("in %dm", minutes)
+					}
 				} else if d >= 0 && d < 7*24*time.Hour {
 					reset = t.Format("Mon 15:04")
 				} else {

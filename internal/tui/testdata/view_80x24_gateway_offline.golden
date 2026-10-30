@@ -1,4 +1,4 @@
-agent-net tui  12 online · 1 busy                             updated 14:05:00
+1 Sessions   2 Quotas  12 online · 1 busy                     updated 14:05:00
 ! Gateway offline: the daemon cannot reach it. Showing last data. Retrying.
  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2
  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8
@@ -21,4 +21,4 @@ Selected session ─────────────────────
 Messages (live) ────────────────────────────────────────────────────────────────
   14:02  tenebrae-53 -> ci-runner  notification                                ✗
   14:04  tenebrae-53 -> s_00000000  request                                    …
-up/down select  enter conversation  m msg  s start  x stop  ? help  q quit
+1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -71,4 +72,21 @@ func (m Model) quotaRows() []quotaRow {
 		return out[i].provider.Plan < out[j].provider.Plan
 	})
 	return out
+}
+
+func (m Model) quotaWarning() string {
+	for _, r := range m.quotaRows() {
+		if r.provider.Stale || r.provider.Error != "" {
+			continue
+		}
+		for _, w := range r.provider.Windows {
+			if w.Exhausted || w.PercentUsed >= 100 {
+				return fmt.Sprintf("%s exhausted %s - see 2", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w)))
+			}
+			if w.PercentUsed > 80 {
+				return fmt.Sprintf("%s %.0f%% %s - see 2", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w)))
+			}
+		}
+	}
+	return ""
 }

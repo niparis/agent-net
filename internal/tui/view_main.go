@@ -20,14 +20,13 @@ import (
 
 type layout struct {
 	banner       bool
-	quota        bool // one line of subscription quotas
-	notice       int  // rows of the result under the title (0 to 2)
-	needs        int  // rows of the "Needs you" section
-	machines     int  // machine rows shown
-	moreMachines int  // machines not shown
-	sessions     int  // rows of the table
-	detail       int  // rows of the detail pane
-	feed         int  // rows of the feed
+	notice       int // rows of the result under the title (0 to 2)
+	needs        int // rows of the "Needs you" section
+	machines     int // machine rows shown
+	moreMachines int // machines not shown
+	sessions     int // rows of the table
+	detail       int // rows of the detail pane
+	feed         int // rows of the feed
 }
 
 const maxMachineRows = 5
@@ -39,7 +38,6 @@ func (m Model) layout() layout {
 	var l layout
 	h := max(m.height, 10)
 	l.banner = m.problem != ProblemNone
-	l.quota = m.quotaText() != ""
 	l.notice = len(m.noticeLines(max(m.width, 40)))
 	l.needs = m.needsHeight()
 	n := len(m.machineRows())
@@ -51,9 +49,6 @@ func (m Model) layout() layout {
 	// title, machines, column heads, detail heading, feed heading, key line
 	fixed := 1 + l.machines + 1 + 1 + 1 + 1 + l.needs
 	if l.banner {
-		fixed++
-	}
-	if l.quota {
 		fixed++
 	}
 	fixed += l.notice
@@ -168,9 +163,6 @@ func (m Model) mainView(w, h int) []string {
 	if l.banner {
 		add(m.bannerLine(w))
 	}
-	if l.quota {
-		add(m.quotaLine(w))
-	}
 	for _, s := range m.noticeLines(w) {
 		add(s)
 	}
@@ -226,25 +218,6 @@ func (m Model) mainView(w, h int) []string {
 	return out
 }
 
-// quotaText is the one line of subscription quotas of this machine, from the
-// last local usage report (decision 0022).
-func (m Model) quotaText() string {
-	if m.usage.raw.Local == nil {
-		return ""
-	}
-	return protocol.QuotaSummary(m.usage.raw.Local.Quotas)
-}
-
-// quotaLine writes the quota text under the title. It is one compact line:
-// "quotas: claude 59%w · codex 90%w · cursor exhausted".
-func (m Model) quotaLine(w int) string {
-	s := m.quotaText()
-	if s == "" {
-		return ""
-	}
-	return clip(sDim.Render("  quotas: "+s), w)
-}
-
 var tabNames = []string{"Sessions", "Quotas"}
 
 func (m Model) titleLine(w int) string {
@@ -258,6 +231,11 @@ func (m Model) titleLine(w int) string {
 		}
 	}
 	left := strings.Join(tabs, "   ")
+	if m.tab == 0 {
+		if warning := m.quotaWarning(); warning != "" {
+			left += "  " + sBusy.Render(warning)
+		}
+	}
 	online, total, workers, busy := 0, 0, 0, 0
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
