@@ -29,6 +29,7 @@ CI runs `gofmt`, `go vet`, `go test -race` and `sh -n install.sh`. All must pass
 | `internal/setup` | `setup`, `invite`, `uninstall`, service files |
 | `internal/guidance` | the guidance text written to agent instruction files |
 | `plugins/pi` | the Pi extension (TypeScript, embedded in the binary) |
+| `plugins/claude/agent-net-workers` | the Claude Code plugin that shows a session's workers (embedded in the binary) |
 | `install.sh` | the one-line installer, published with each release and on GitHub Pages |
 | `scripts/dist.sh` | builds the Linux and macOS binaries from source |
 | `scripts/diagram.py` | draws the README diagrams in `docs/img` |

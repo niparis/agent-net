@@ -587,6 +587,54 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string)
 	return len(ids), nil
 }
 
+// CleanWorktreeSessions deletes the offline sessions of one node whose working
+// folder is inside dir (the folder where that node's daemon creates worker
+// worktrees) and that are not worker records. They are ghosts: a user's own
+// service once registered a worker's session as an ordinary one. Rows of
+// other nodes, worker records and sessions elsewhere are never touched.
+func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
+	dir = strings.TrimRight(dir, "/")
+	if !strings.HasPrefix(dir, "/") || dir == "" {
+		return 0, nil
+	}
+	prefix := dir + "/"
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker = ''
+		AND substr(cwd, 1, ?) = ?`, nodeID, len(prefix), prefix)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
+
 func (s *Store) SetNodeOffline(nodeID string) error {
 	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE node_id = ? AND online = 1`, s.now().UnixNano(), nodeID)
 	return err

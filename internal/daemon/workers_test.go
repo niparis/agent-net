@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -593,6 +594,59 @@ func TestOnlyTheWorkersProcessCanConnectAsItsSession(t *testing.T) {
 	lc2 := dialLocal(t, w.sock)
 	if _, err := lc2.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_user", "cwd": "/work/u"}); err != nil {
 		t.Fatalf("a normal OpenCode session was refused: %v", err)
+	}
+}
+
+func TestPluginHelloRefusesSessionsInTheWorktreesFolder(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	wt := filepath.Join(w.cfg.StateDir, "worktrees")
+	for _, harness := range []string{"opencode", "pi"} {
+		// A stale worker session (its record and directory are gone) seen by the
+		// user's own service: refused.
+		for i, cwd := range []string{filepath.Join(wt, "w_gone"), wt + "/w_gone/sub/../sub", wt + "/"} {
+			lc := dialLocal(t, w.sock)
+			_, err := lc.call("hello", map[string]any{"client": harness, "harness": harness, "native_id": fmt.Sprintf("ses_old_%s_%d", harness, i), "cwd": cwd})
+			if err == nil || !strings.Contains(err.Error(), "belongs to an agent-net worker") {
+				t.Fatalf("%s: a session in the worktrees folder (%s) was accepted: %v", harness, cwd, err)
+			}
+		}
+		// A sibling folder with the same prefix, and a normal folder, are fine.
+		for i, cwd := range []string{wt + "-other/w_x", "/work/u"} {
+			lc := dialLocal(t, w.sock)
+			if _, err := lc.call("hello", map[string]any{"client": harness, "harness": harness, "native_id": fmt.Sprintf("ses_ok_%s_%d", harness, i), "cwd": cwd}); err != nil {
+				t.Fatalf("%s: a normal session in %s was refused: %v", harness, cwd, err)
+			}
+		}
+	}
+}
+
+func TestDropWorktreeSessionsClosesGhosts(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	lc := dialLocal(t, w.sock)
+	if _, err := lc.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_ghost", "cwd": "/work/u"}); err != nil {
+		t.Fatal(err)
+	}
+	lc2 := dialLocal(t, w.sock)
+	if _, err := lc2.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_user", "cwd": "/work/v"}); err != nil {
+		t.Fatal(err)
+	}
+	// A ghost registered by an older daemon: its cwd is in the worktrees folder.
+	w.d.mu.Lock()
+	w.d.sessions[key("opencode", "ses_ghost")].info.Cwd = filepath.Join(w.cfg.StateDir, "worktrees", "w_old")
+	w.d.mu.Unlock()
+	w.d.dropWorktreeSessions()
+	eventually(t, "the ghost goes offline", func() bool {
+		w.d.mu.Lock()
+		defer w.d.mu.Unlock()
+		return w.d.sessions[key("opencode", "ses_ghost")] == nil
+	})
+	w.d.mu.Lock()
+	user := w.d.sessions[key("opencode", "ses_user")]
+	w.d.mu.Unlock()
+	if user == nil {
+		t.Fatal("a normal session was dropped")
 	}
 }
 

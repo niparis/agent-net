@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -83,6 +84,20 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 			"worker", p.WorkerID, "reason", p.Reason, "harness", p.Harness, "project", p.Project)
 		return nil, nil
 
+	case "worker.not_started":
+		p, err := decode[protocol.WorkerNotStarted](raw)
+		if err != nil {
+			return nil, reject("bad worker.not_started")
+		}
+		if len(p.Reason) > 300 {
+			p.Reason = p.Reason[:300]
+		}
+		g.store.Event("worker.not_started", nc.id, p.Owner, "",
+			strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "reason", p.Reason), " "))
+		g.logLine("worker.not_started", "node", nc.id, "host", g.store.hostname(nc.id), "owner", p.Owner,
+			"project", p.Project, "harness", p.Harness, "reason", p.Reason)
+		return nil, nil
+
 	case "worker.queued_start":
 		p, err := decode[protocol.WorkerQueuedStart](raw)
 		if err != nil {
@@ -102,6 +117,15 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if n > 0 {
 			g.logLine("worker.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "workers", n)
 		}
+		if p.WorktreesDir != "" {
+			ghosts, err := g.store.CleanWorktreeSessions(nc.id, p.WorktreesDir)
+			if err != nil {
+				return nil, err
+			}
+			if ghosts > 0 {
+				g.logLine("worker.ghosts.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "sessions", ghosts)
+			}
+		}
 		return map[string]any{"cleaned": n}, nil
 	}
 	return nil, reject("unknown frame type %q", typ)
@@ -113,6 +137,68 @@ func (g *Gateway) workerRefused(nc *nodeConn, owner string, p protocol.WorkerSta
 		strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "model", p.Model, "reason", reason), " "))
 	g.logLine("worker.refused", "node", nc.id, "host", g.store.hostname(nc.id), "owner", owner,
 		"project", p.Project, "harness", p.Harness, "model", p.Model, "reason", reason)
+}
+
+// workerCandidates finds the project rows a start request can mean.
+// An absolute path matches the main tree or a listed worktree of a known
+// project. The caller's own folder (CallerPath) comes first, on the caller's
+// machine. Else the name rule applies, and on each machine a registered
+// folder wins over seen-only folders of the same name.
+func (g *Gateway) workerCandidates(callerNode string, p protocol.WorkerStartFrame) ([]protocol.ProjectView, error) {
+	onMachine := func(v protocol.ProjectView) bool {
+		return p.Machine == "" || strings.EqualFold(v.Hostname, p.Machine) || v.NodeID == p.Machine
+	}
+	byPath := func(path, node string) ([]protocol.ProjectView, error) {
+		all, err := g.store.Projects("")
+		if err != nil {
+			return nil, err
+		}
+		path = filepath.Clean(path)
+		var out []protocol.ProjectView
+		for _, v := range all {
+			if (node != "" && v.NodeID != node) || !onMachine(v) {
+				continue
+			}
+			hit := v.Path == path
+			for _, w := range v.Worktrees {
+				hit = hit || w == path
+			}
+			if hit {
+				out = append(out, v)
+			}
+		}
+		return out, nil
+	}
+	if filepath.IsAbs(p.Project) {
+		return byPath(p.Project, "")
+	}
+	if p.CallerProject && p.CallerPath != "" {
+		out, err := byPath(p.CallerPath, callerNode)
+		if err != nil || len(out) > 0 {
+			return out, err
+		}
+	}
+	projects, err := g.store.Projects(p.Project)
+	if err != nil {
+		return nil, err
+	}
+	registered := map[string]bool{}
+	for _, v := range projects {
+		if strings.EqualFold(v.Name, p.Project) && v.Source != protocol.SourceSeen {
+			registered[v.NodeID] = true
+		}
+	}
+	var cands []protocol.ProjectView
+	for _, v := range projects {
+		if !strings.EqualFold(v.Name, p.Project) || !onMachine(v) {
+			continue
+		}
+		if v.Source == protocol.SourceSeen && registered[v.NodeID] {
+			continue
+		}
+		cands = append(cands, v)
+	}
+	return cands, nil
 }
 
 func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame) (protocol.WorkerStartAnswer, error) {
@@ -144,22 +230,17 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 
 	// Which machine and folder.
-	projects, err := g.store.Projects(p.Project)
+	cands, err := g.workerCandidates(nc.id, p)
 	if err != nil {
 		return none, err
 	}
-	var cands []protocol.ProjectView
-	for _, v := range projects {
-		if !strings.EqualFold(v.Name, p.Project) {
-			continue
-		}
-		if p.Machine != "" && !strings.EqualFold(v.Hostname, p.Machine) && v.NodeID != p.Machine {
-			continue
-		}
-		cands = append(cands, v)
-	}
 	if len(cands) == 0 {
-		if p.Machine != "" {
+		switch {
+		case filepath.IsAbs(p.Project) && p.Machine != "":
+			return none, reject("no known project at the path %q on machine %q (see `agent-net projects`)", p.Project, p.Machine)
+		case filepath.IsAbs(p.Project):
+			return none, reject("no known project at the path %q: register it with `agent-net projects add <path>` (see `agent-net projects`)", p.Project)
+		case p.Machine != "":
 			return none, reject("no project named %q on machine %q (see `agent-net projects`)", p.Project, p.Machine)
 		}
 		return none, reject("no project named %q is known: register it with `agent-net projects add <path>` (see `agent-net projects`)", p.Project)
@@ -253,7 +334,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			ps = append(ps, pth)
 		}
 		sort.Strings(ps)
-		return none, reject("%d folders named %q on %s (%s): register the one to use and unregister the others", len(ps), p.Project, pick.Hostname, strings.Join(ps, ", "))
+		return none, reject("%d folders named %q on %s (%s): pass one of these paths as project, or register one and unregister the others", len(ps), pick.Name, pick.Hostname, strings.Join(ps, ", "))
 	}
 
 	// The machine must be there, accept workers, and have the harness and model.

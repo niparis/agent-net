@@ -130,6 +130,9 @@ func run(t *testing.T, o Options) string {
 	if o.PolicyHook == "" {
 		o.PolicyHook = PolicyHookNo
 	}
+	if o.WorkersMod == "" {
+		o.WorkersMod = WorkersModNo
+	}
 	return runAsking(t, o)
 }
 

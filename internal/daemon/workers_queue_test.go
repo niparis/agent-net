@@ -451,9 +451,7 @@ func TestQueuedStartIsDroppedWhenItsOwnerLeaves(t *testing.T) {
 		n, _ := w.d.st.queueLen()
 		return n == 0
 	})
-	if len(w.logs.lines("worker.queue_dropped")) != 1 {
-		t.Errorf("log: %v", w.logs.lines("worker.queue"))
-	}
+	eventually(t, "the drop is logged", func() bool { return len(w.logs.lines("worker.queue_dropped")) == 1 })
 	fl.set(roomyLoad())
 	time.Sleep(150 * time.Millisecond)
 	if w.d.workerCount() != 0 {

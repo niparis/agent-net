@@ -167,6 +167,11 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 // is sent from this machine's owner session. When the owner is that session
 // (the person here started it), there is no one to send to: the log has it.
 func (d *Daemon) notStarted(ctx context.Context, e queuedStart, why string) {
+	// The gateway records it for the TUI feed, which also covers the case
+	// below where there is no one to send a message to.
+	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	d.call(rctx, "worker.not_started", protocol.WorkerNotStarted{Owner: e.Owner, Project: e.Project, Harness: e.Harness, Reason: why})
+	cancel()
 	from := d.ownerSessionID()
 	if from == "" || from == e.Owner {
 		return

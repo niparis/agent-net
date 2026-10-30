@@ -42,6 +42,7 @@ type Options struct {
 	CodexTools   string // "" ask; CodexToolsApprove or CodexToolsNo choose without a prompt
 	HintHook     string // "" ask; HintHookYes or HintHookNo choose without a prompt
 	PolicyHook   string // "" ask; PolicyHookYes or PolicyHookNo choose without a prompt
+	WorkersMod   string // "" ask; WorkersModYes or WorkersModNo choose without a prompt
 	Out          io.Writer
 }
 
@@ -118,6 +119,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.codexMCP()
 	r.claudeHintHook()
 	r.claudePolicyHook()
+	r.claudeWorkersMod()
 	r.piExtension()
 	r.opencodePlugin()
 	r.guidance()

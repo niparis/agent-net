@@ -97,8 +97,15 @@ func WorkerStartedText(session, harness, model, project, host string, waited tim
 }
 
 type WorkerCleanup struct {
-	MaxAgeSeconds int64    `json:"max_age_seconds"`
-	Running       []string `json:"running,omitempty"`
+	MaxAgeSeconds int64 `json:"max_age_seconds"`
+	// WorktreesDir is the folder of this machine where its workers' git
+	// worktrees live. The gateway also deletes this machine's offline sessions
+	// that are not worker records and work inside it (ghosts of workers that
+	// a user's own service registered). An older daemon sends none.
+	WorktreesDir string `json:"worktrees_dir,omitempty"`
+	// Running lists the session IDs of the workers the machine runs or has
+	// adopted; the gateway never drops those records.
+	Running []string `json:"running,omitempty"`
 }
 
 // WorkerInfo is the worker part of a session. The daemon that started the
@@ -134,6 +141,10 @@ type (
 		// machines, the gateway then prefers the caller's machine, or the one
 		// machine that has the harness.
 		CallerProject bool `json:"caller_project,omitempty"`
+		// CallerPath is the main working tree of the caller's own folder,
+		// set with CallerProject. The gateway matches it exactly on the
+		// caller's machine before it falls back to the name.
+		CallerPath string `json:"caller_path,omitempty"`
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
@@ -188,6 +199,14 @@ type (
 		QueueID   string `json:"queue_id,omitempty"`
 		Position  int    `json:"position,omitempty"`
 		Reason    string `json:"reason,omitempty"`
+	}
+	// WorkerNotStarted is "worker.not_started", machine to gateway: a queued
+	// start ended without a worker. The gateway records an event for the feed.
+	WorkerNotStarted struct {
+		Owner   string `json:"owner_session"`
+		Project string `json:"project"`
+		Harness string `json:"harness"`
+		Reason  string `json:"reason"`
 	}
 	// WorkerQueuedStart is "worker.queued_start", machine to gateway: a queued
 	// start has become a worker. The gateway passes it to the owner's machine

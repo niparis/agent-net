@@ -329,6 +329,7 @@ class SessionLink {
     readonly cwd: string,
     private onDeliver: (link: SessionLink, m: DeliveredMessage) => void,
     private onText: (link: SessionLink, q: TextRequest) => void,
+    private onRefused?: (link: SessionLink) => void,
   ) {}
 
   start() {
@@ -492,7 +493,12 @@ class SessionLink {
           this.backoff = BACKOFF_START_MS;
           if (this.dormant) this.request("status", { status: "dormant" }).catch(() => {});
         })
-        .catch(() => s.destroy());
+        .catch((e) => {
+          // The daemon says this session belongs to a worker and not to us.
+          // That never changes, so remember it and do not try again.
+          if (/belongs to (an agent-net|a) worker/.test(String(e?.message ?? e))) this.onRefused?.(this);
+          s.destroy();
+        });
     });
     s.on("data", (chunk: string) => {
       buf += chunk;
@@ -860,7 +866,7 @@ const TOOLS: ToolDef[] = [
       " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
       "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
     properties: {
-      project: str("The name of a project from agent_project_list. Leave it empty to use the project you are working in (on the machine that has the harness)"),
+      project: str("The name of a project from agent_project_list, or the absolute path of its folder (use a path when two folders share a name). Leave it empty to use the folder you are working in (on the machine that has the harness)"),
       task: str("What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply"),
       harness: str("opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."),
       model: str("The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."),
@@ -1063,7 +1069,7 @@ export default {
         h.links.delete(sessionID);
         again.link.stop();
       }
-      const link = new SessionLink(sessionID, found.cwd, deliver, sessionText);
+      const link = new SessionLink(sessionID, found.cwd, deliver, sessionText, (l) => dropLink(l.sessionID));
       link.model = found.model;
       link.name = sessionName(found.cwd, found.title);
       if (activeAt !== undefined) link.lastActive = activeAt;
