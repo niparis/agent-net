@@ -164,7 +164,13 @@ func (s *Store) evaluatePlaybook(kind, subject, harness string) error {
 			track = t
 		}
 	}
-	bad := track != nil && track.Runs >= 4 && track.Complete*2 < track.Runs
+	// A stopped run says nothing about the model: a stop on request or a lost
+	// worker must not make the record look bad on its own.
+	bad := false
+	if track != nil {
+		decided := track.Runs - track.Stopped
+		bad = decided >= 4 && track.Complete*2 < decided
+	}
 	if !enough && !bad {
 		return nil
 	}

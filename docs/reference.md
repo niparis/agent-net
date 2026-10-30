@@ -461,7 +461,7 @@ The network learns from the agents that review workers. An agent records one **f
 
 - **Subjects.** `subject_kind` is `model`, `harness`, `model_harness` (subject `model@harness`), `project`, `mcp` or `machine`. `subject` names it. `evidence` holds up to 20 session or worker IDs. A finding is at most 500 bytes.
 - **Quiet.** Findings are never sent as messages and never appear in Needs you. A session records at most 3 findings in 24 hours; the fourth is refused with the reason.
-- **Promotion.** The gateway promotes a pattern to a playbook note on its own, with no model call, when there are at least 3 findings on the same subject from at least 2 different sessions within 30 days, or when the track record is clearly bad (at least 4 runs and under half complete). The note is the latest finding's text, the support count and, for a model, harness or model on a harness, the track record line. An owner note or a pinned note is never changed by promotion.
+- **Promotion.** The gateway promotes a pattern to a playbook note on its own, with no model call, when there are at least 3 findings on the same subject from at least 2 different sessions within 30 days, or when the track record is clearly bad (at least 4 decided runs, stopped runs aside, and under half complete). The note is the latest finding's text, the support count and, for a model, harness or model on a harness, the track record line. An owner note or a pinned note is never changed by promotion.
 - **Stale.** An automatic note whose support is all older than 60 days goes stale and is no longer shown. A finding that is never promoted goes stale after 90 days. Owner notes and pinned notes never go stale.
 - **Delivery is only at the moment of choice:** the `agent_start` result (notes for the chosen model, harness, project and machine) and `agent_nodes` (the network's fresh notes). Never in the session context of every turn.
 - **The owner sees it when he looks:** key `L` in the TUI lists the notes with their support; the header quietly says `learned N new` for automatic notes promoted in the last day. Nothing pops up.
@@ -522,16 +522,17 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 ### The playbook and the track record
 
-The gateway learns which harness and model do well from the runs it already records. When a machine reports `worker.stopped`, the gateway adds one row to `worker_runs` (node, harness, model, outcome, start, end, run time). The outcome is `complete`, `partial` (`complete: false`), `failed` (a blocked or failed hand-back, or an abnormal end) or `timed_out` (the idle or longest-run limit). The gateway keeps the rows for 30 days (`--keep-worker-runs`) and counts them per harness and model.
+The gateway learns which harness and model do well from the runs it already records. When a machine reports `worker.stopped`, the gateway adds one row to `worker_runs` (node, harness, model, outcome, start, end, run time). The outcome is `complete`, `partial` (`complete: false`), `failed` (a blocked or failed hand-back, a process that ended by itself, or a run that errored), `timed_out` (the idle or longest-run limit) or `stopped` (a stop on request, a worker lost at a daemon restart, an owner that went away, or a start that never ran the task). A stopped run is neither a success nor a failure: it is counted apart and never makes a model look bad. The gateway keeps the rows for 30 days (`--keep-worker-runs`) and counts them per harness and model.
 
 The line it shows, in `agent_nodes` for each machine and in every `agent_start` (and `agent-net start`) result for the chosen harness and model, is:
 
 ```
 terra · pi: 4 runs: 1 complete, 3 partial (median 9 min) · cannot resume
 deepseek-v4.1-flash · opencode: 14 runs: 13 complete (median 26 min) · resumes
+gpt-6-luna · codex: 3 runs: 2 complete, 1 stopped (median 6 min) · resumes
 ```
 
-`default` stands for a worker that ran without a resolved model name. The last part says whether the harness can open an ended session again: OpenCode, Claude Code and Codex can, Pi cannot. Before the first run the line says `no runs yet`. The start result carries it as `track` (`harness`, `model`, `runs`, `complete`, `partial`, `failed`, `timed_out`, `median_run_seconds`, `resumable`), and `agent_nodes` as `tracks` on each machine.
+`default` stands for a worker that ran without a resolved model name. The last part says whether the harness can open an ended session again: OpenCode, Claude Code and Codex can, Pi cannot. Before the first run the line says `no runs yet`. The start result carries it as `track` (`harness`, `model`, `runs`, `complete`, `partial`, `failed`, `timed_out`, `stopped`, `median_run_seconds`, `resumable`), and `agent_nodes` as `tracks` on each machine.
 
 The owner can write a **playbook note** about a model (and optionally one harness) with `agent-net playbook set`, or the operator methods `playbook_set` and `playbook_get` (owner gate only; the CTO will use the same methods later). The note appears in the `playbooks` list of the start result and in `agent_nodes`. Automatic notes from findings are built the same way; see [findings and the automatic playbook](#findings-and-the-automatic-playbook). The gateway stores notes in `playbook`, one row per subject and harness, at most 1 KiB for an owner note.
 

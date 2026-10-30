@@ -52,6 +52,38 @@ func TestTrackRecordCountsAndMedian(t *testing.T) {
 	}
 }
 
+// A stopped run is counted apart and never as a failure (a stop on request is
+// not the model's fault).
+func TestTrackRecordCountsStoppedApart(t *testing.T) {
+	s, _ := newTestStore(t)
+	now := s.now()
+	add := func(outcome string, ago time.Duration) {
+		t.Helper()
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: "n1", SessionID: "s_" + outcome,
+			Harness: "opencode", Model: "m1", Outcome: outcome,
+			StartedAt: now.Add(-ago).Unix(), EndedAt: now.Add(-ago).Unix(), RunSeconds: 30}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add(protocol.OutcomeStopped, time.Hour)
+	add(protocol.OutcomeComplete, 2*time.Hour)
+	add(protocol.OutcomeFailed, 3*time.Hour)
+	tr, ok, err := s.TrackRecord("n1", "opencode", "m1", 30*24*time.Hour)
+	if err != nil || !ok {
+		t.Fatalf("track record: %v %v", ok, err)
+	}
+	if tr.Runs != 3 || tr.Stopped != 1 || tr.Failed != 1 || tr.Complete != 1 {
+		t.Errorf("counts: %+v", tr)
+	}
+	if !strings.Contains(tr.Line(), "1 stopped") {
+		t.Errorf("line: %q", tr.Line())
+	}
+	subject, ok, err := s.TrackSubject(protocol.SubjectModel, "m1", 30*24*time.Hour)
+	if err != nil || !ok || subject.Stopped != 1 || subject.Failed != 1 {
+		t.Errorf("model subject: %+v %v %v", subject, ok, err)
+	}
+}
+
 func TestTrackRecordKeepsThirtyDays(t *testing.T) {
 	s, _ := newTestStore(t)
 	now := s.now()

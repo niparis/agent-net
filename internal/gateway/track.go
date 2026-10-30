@@ -19,7 +19,7 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		return reject("a worker run needs a node, a harness and an outcome")
 	}
 	switch r.Outcome {
-	case protocol.OutcomeComplete, protocol.OutcomePartial, protocol.OutcomeFailed, protocol.OutcomeTimedOut:
+	case protocol.OutcomeComplete, protocol.OutcomePartial, protocol.OutcomeFailed, protocol.OutcomeTimedOut, protocol.OutcomeStopped:
 	default:
 		return reject("unknown worker outcome %q", r.Outcome)
 	}
@@ -89,6 +89,8 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 			tr.Failed++
 		case protocol.OutcomeTimedOut:
 			tr.TimedOut++
+		case protocol.OutcomeStopped:
+			tr.Stopped++
 		}
 		if run > 0 {
 			durations[k] = append(durations[k], run)
@@ -173,6 +175,8 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 			tr.Failed++
 		case protocol.OutcomeTimedOut:
 			tr.TimedOut++
+		case protocol.OutcomeStopped:
+			tr.Stopped++
 		}
 		if run > 0 {
 			durations = append(durations, run)

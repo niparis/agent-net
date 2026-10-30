@@ -105,6 +105,45 @@ func TestCodexRecentSuccessBreaksTheTie(t *testing.T) {
 	}
 }
 
+// A stop on request is not the model's fault: the run is neither a success nor
+// a failure, and a later loose name does not rank the model last or say that it
+// failed a worker.
+func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"fake/m1", "fake/zzz"}), nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:ignore first"})
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	var track *protocol.TrackRecord
+	eventually(t, "the gateway has the stopped run", func() bool {
+		tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "fake/m1", 30*24*time.Hour)
+		if err != nil || !ok {
+			return false
+		}
+		track = tr
+		return true
+	})
+	if track.Failed != 0 || track.Complete != 0 || track.Stopped != 1 {
+		t.Fatalf("a stop on request was counted as an outcome: %+v", track)
+	}
+	if failed, err := g.gw.Store().FailedModels(w.d.NodeID(), "opencode"); err != nil || len(failed) != 0 {
+		t.Errorf("a stop on request demoted the model: %v %v", failed, err)
+	}
+	next := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "m", Task: "FAKE:ignore second"})
+	if next.Model != "fake/m1" {
+		t.Errorf("a stopped model was not chosen again: %+v", next)
+	}
+	if strings.Contains(next.ModelNote, "failed a worker") || strings.Contains(next.ModelNote, "ranks last") {
+		t.Errorf("the start note treats a stop as a model failure: %q", next.ModelNote)
+	}
+	if next.Track == nil || next.Track.Stopped != 1 || next.Track.Failed != 0 ||
+		strings.Contains(next.Track.Line(), "failed") || !strings.Contains(next.Track.Line(), "1 stopped") {
+		t.Errorf("the start track line treats a stop as a failure: %+v", next.Track)
+	}
+}
+
 // A start that failed does not hold the gap: the next start goes at once.
 func TestFailedStartDoesNotHoldTheGap(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
