@@ -37,7 +37,14 @@ func (m Model) overviewLines(w int) []overviewLine {
 	less(architects)
 	less(components)
 	less(isolated)
-	bw := min(25, max(w, 8))
+	bw := 32
+	if w >= 110 {
+		bw = 36
+	}
+	if w < 70 {
+		bw = 25
+	}
+	bw = min(bw, max(w, 8))
 	cols := max((w+1)/(bw+1), 1)
 	var out []overviewLine
 	layer := func(title string, nodes []protocol.Node) {
@@ -197,6 +204,15 @@ func (m *Model) overviewMove(direction string) {
 			if direction == "down" && p.row > current.row && (bestRow < 0 || p.row < bestRow) {
 				bestRow = p.row
 			}
+		}
+		if bestRow < 0 {
+			step := 1
+			if direction == "up" {
+				step = -1
+			}
+			room := overviewNodeRoom(m.overviewHeight())
+			m.mp.overviewScroll = min(max(m.mp.overviewScroll+step, 0), max(len(rows)-room, 0))
+			return
 		}
 		if bestRow >= 0 {
 			distance := int(^uint(0) >> 1)

@@ -76,7 +76,7 @@ func openMap(t *testing.T, m Model) Model {
 func TestMapGroupsNodesByArchitect(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
 	m = keys(m, "z")
-	for _, want := range []string{"Overview", "trading-architect", "cogforge", "wbg-architect", "tenebrae", "shop", "homelab", "governs", "depends", "No architect"} {
+	for _, want := range []string{"Overview", "trading-architect", "cogforge", "wbg-architect", "tenebrae", "shop", "homelab", "governs", "depends", "Isolated"} {
 		if !strings.Contains(m.View(), want) {
 			t.Errorf("overview missing %q", want)
 		}
@@ -215,7 +215,7 @@ func TestMapFocusNavigationAndActions(t *testing.T) {
 	}
 }
 
-func TestMapOverviewAndFallback(t *testing.T) {
+func TestMapOverviewFitsNarrowTerminal(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.mp.selected = "cogforge"
 	m = keys(m, "z")
@@ -223,8 +223,8 @@ func TestMapOverviewAndFallback(t *testing.T) {
 		t.Fatalf("overview missing:\n%s", m.View())
 	}
 	m.width = 50
-	if !strings.Contains(m.View(), "overview does not fit") {
-		t.Fatal("fallback missing")
+	if strings.Contains(m.View(), "overview does not fit") || !strings.Contains(m.View(), "Overview") {
+		t.Fatal("overview missing at narrow width")
 	}
 }
 
@@ -262,7 +262,7 @@ func TestOverviewConnectsNodes(t *testing.T) {
 	m.mp.selected = "cogforge"
 	m = keys(m, "z")
 	v := m.View()
-	if !strings.Contains(v, "▼") || !strings.Contains(v, "└") {
+	if !strings.Contains(v, "┄┄") || !strings.Contains(v, "━━") {
 		t.Fatalf("missing connected edge routes:\n%s", v)
 	}
 }
@@ -454,5 +454,20 @@ func TestOverviewScrollKeepsEdgesWithinVisibleBoxes(t *testing.T) {
 	after := ansi.Strip(m.View())
 	if m.mp.overviewScroll == 0 || before == after {
 		t.Fatal("page did not scroll")
+	}
+}
+
+func TestOverviewDownScrollsPastLastBoxToIsolated(t *testing.T) {
+	g := fakeGraph()
+	for i := 0; i < 50; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("isolated-%02d", i), Kind: "component"})
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z")
+	for i := 0; i < 60; i++ {
+		m = keys(m, "down")
+	}
+	if m.mp.overviewScroll == 0 || !strings.Contains(m.View(), "isolated-") {
+		t.Fatal("down did not scroll to isolated projects")
 	}
 }
