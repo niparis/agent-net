@@ -533,7 +533,17 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return nil, st.SetInventory(nc.id, p)
 
 	case "query.inventory":
-		return st.Inventories()
+		p, err := decode[struct {
+			Offset int `json:"offset"`
+		}](raw)
+		if err != nil {
+			return nil, reject("bad query.inventory")
+		}
+		reports, err := st.Inventories()
+		if err != nil {
+			return nil, err
+		}
+		return inventoryPage(reports, p.Offset)
 
 	case "node.harnesses":
 		p, err := decode[protocol.NodeHarnesses](raw)

@@ -26,6 +26,18 @@ func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
 		}
 	}
 	report := inventory.Scan(inventory.Options{Home: d.cfg.InventoryHome, CodexHome: d.cfg.CodexHome, Machine: d.cfg.Hostname, Projects: projects})
+	if data, listErr := d.call(ctx, "mcp.list", struct{}{}); listErr == nil {
+		var list struct {
+			Servers []protocol.MCPServer `json:"servers"`
+		}
+		if json.Unmarshal(data, &list) == nil {
+			for _, server := range list.Servers {
+				if server.NodeID == d.cfg.NodeID {
+					report.Items = append(report.Items, inventory.FederationItem(server, report.ScannedAt))
+				}
+			}
+		}
+	}
 	if err != nil {
 		report.State = protocol.InventoryError
 		report.Reason = "project registry unavailable"

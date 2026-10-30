@@ -27,7 +27,7 @@ func (toolsTestClient) Call(_ context.Context, method string, _ any) (json.RawMe
 	if method != "inventory_get" {
 		return nil, fmt.Errorf("unexpected method %s", method)
 	}
-	return json.RawMessage(`[{"machine":"fixture","items":[{"name":"sample","kind":"skill","harness":"codex","scope":"user","state":"ok"}]}]`), nil
+	return json.RawMessage(`{"reports":[{"machine":"fixture","items":[{"name":"sample","kind":"skill","harness":"codex","scope":"user","state":"ok"}]}]}`), nil
 }
 func TestReadToolsUsesInventory(t *testing.T) {
 	var output bytes.Buffer

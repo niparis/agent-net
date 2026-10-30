@@ -397,3 +397,6 @@ The local inventory scan and read methods use the owner gate. The gateway stores
 observations from authenticated daemons and keeps the previous records marked
 stale after a failed scan. Skill contents and raw MCP configuration are not
 sent to the gateway.
+
+Inventory reads are paged to at most 240 KiB of encoded report data per response.
+MCP fingerprints include URL paths and environment variable names, but omit query strings and environment values. Unknown argument values are redacted.

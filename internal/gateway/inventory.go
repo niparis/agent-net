@@ -72,3 +72,45 @@ func (s *Store) Inventories() ([]protocol.InventoryReport, error) {
 	}
 	return reports, rows.Err()
 }
+
+// inventoryPage splits reports by item and limits encoded response size.
+func inventoryPage(reports []protocol.InventoryReport, offset int) (protocol.InventoryPage, error) {
+	const maxBytes = 240 << 10
+	if offset < 0 {
+		return protocol.InventoryPage{}, errors.New("invalid inventory offset")
+	}
+	page := protocol.InventoryPage{Reports: []protocol.InventoryReport{}}
+	index := 0
+	for _, report := range reports {
+		items := report.Items
+		if len(items) == 0 {
+			items = []protocol.InventoryItem{{}}
+		}
+		for _, item := range items {
+			if index < offset {
+				index++
+				continue
+			}
+			one := report
+			one.Items = nil
+			if len(report.Items) > 0 {
+				one.Items = []protocol.InventoryItem{item}
+			}
+			page.Reports = append(page.Reports, one)
+			b, err := json.Marshal(page)
+			if err != nil {
+				return page, err
+			}
+			if len(b) > maxBytes {
+				page.Reports = page.Reports[:len(page.Reports)-1]
+				if len(page.Reports) == 0 {
+					return page, errors.New("inventory item exceeds response limit")
+				}
+				page.Next = index
+				return page, nil
+			}
+			index++
+		}
+	}
+	return page, nil
+}

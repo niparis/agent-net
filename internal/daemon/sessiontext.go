@@ -190,7 +190,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 		res = d.scanTools(ctx)
 	case "inventory_get":
-		res, err = d.call(ctx, "query.inventory", struct{}{})
+		res, err = d.call(ctx, "query.inventory", json.RawMessage(raw))
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":

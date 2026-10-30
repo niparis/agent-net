@@ -28,15 +28,22 @@ type toolsClient interface {
 }
 
 func readTools(ctx context.Context, c toolsClient, out io.Writer) error {
-	raw, err := c.Call(ctx, "inventory_get", struct{}{})
-	if err != nil {
-		return err
+	offset := 0
+	for {
+		raw, err := c.Call(ctx, "inventory_get", map[string]int{"offset": offset})
+		if err != nil {
+			return err
+		}
+		var page protocol.InventoryPage
+		if err = json.Unmarshal(raw, &page); err != nil {
+			return err
+		}
+		printTools(out, page.Reports)
+		if page.Next == 0 {
+			break
+		}
+		offset = page.Next
 	}
-	var reports []protocol.InventoryReport
-	if err = json.Unmarshal(raw, &reports); err != nil {
-		return err
-	}
-	printTools(out, reports)
 	return nil
 }
 

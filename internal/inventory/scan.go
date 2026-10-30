@@ -573,6 +573,10 @@ func fingerprint(name string, m map[string]any) string {
 				if !ok {
 					continue
 				}
+				if i > 0 && args[i-1] == "--config" && !strings.ContainsAny(v, "?=#@ \t\n") && !strings.Contains(strings.ToLower(v), "secret") && !strings.Contains(strings.ToLower(v), "token") {
+					parts = append(parts, "config", v)
+					continue
+				}
 				if i > 0 && args[i-1] == "--port" {
 					if port, err := strconv.Atoi(v); err == nil && port > 0 && port <= 65535 {
 						parts = append(parts, "port", strconv.Itoa(port))
@@ -590,4 +594,18 @@ func fingerprint(name string, m map[string]any) string {
 	data, _ := json.Marshal(parts)
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// FederationItem converts a registry entry to a non-secret observation.
+func FederationItem(s protocol.MCPServer, now time.Time) protocol.InventoryItem {
+	args := make([]any, len(s.Args))
+	for i, a := range s.Args {
+		args[i] = a
+	}
+	env := make(map[string]any)
+	for _, e := range s.Env {
+		env[e] = nil
+	}
+	desc := map[string]any{"command": s.Command, "args": args, "env": env, "url": s.URL, "transport": s.Transport}
+	return protocol.InventoryItem{Harness: "agent-net", Kind: protocol.InventoryMCP, Scope: protocol.InventoryUser, Location: s.Name, Name: s.Name, Source: protocol.InventoryFederation, Hash: fingerprint(s.Name, desc), ScannedAt: now, State: protocol.InventoryOK}
 }

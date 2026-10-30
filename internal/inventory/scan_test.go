@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -532,5 +533,33 @@ func TestMCPFingerprintIncludesURLPathAndEnvironmentNames(t *testing.T) {
 	}
 	if fingerprint("server", base) != fingerprint("server", same) {
 		t.Fatal("secret values changed fingerprint")
+	}
+}
+
+func TestMCPFingerprintMasksSecretArguments(t *testing.T) {
+	desc := func(path, token string) map[string]any {
+		return map[string]any{"command": "node", "args": []any{"server.js", "--config", path, "--token", token}}
+	}
+	if fingerprint("s", desc("one.json", "secret-one")) != fingerprint("s", desc("one.json", "secret-two")) {
+		t.Fatal("secret changed fingerprint")
+	}
+	if fingerprint("s", desc("one.json", "secret-one")) == fingerprint("s", desc("two.json", "secret-one")) {
+		t.Fatal("non-secret argument omitted")
+	}
+}
+
+func TestFederationItemRedactsRegistryValues(t *testing.T) {
+	s := protocol.MCPServer{Name: "demo", Transport: "stdio", Command: "node", Args: []string{"--token", "fixture-secret"}, Env: []string{"API_KEY"}}
+	item := FederationItem(s, time.Time{})
+	b, err := json.Marshal(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if item.Source != protocol.InventoryFederation || item.Hash == "" || strings.Contains(string(b), "fixture-secret") {
+		t.Fatalf("unsafe federation item: %s", b)
+	}
+	s.Args[1] = "another-secret"
+	if FederationItem(s, time.Time{}).Hash != item.Hash {
+		t.Fatal("secret changes hash")
 	}
 }

@@ -43,3 +43,9 @@ type InventoryItem struct {
 	Reason      string    `json:"reason,omitempty"`
 	Unsupported []string  `json:"unsupported,omitempty"`
 }
+
+// InventoryPage bounds each owner response. Next is zero at the end.
+type InventoryPage struct {
+	Reports []InventoryReport `json:"reports"`
+	Next    int               `json:"next,omitempty"`
+}
