@@ -61,6 +61,9 @@ type Config struct {
 	SocketPath string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
+	// PiSessionsDir is where Pi writes its session files. The daemon reads a
+	// Pi worker's usage from them. Default: PiSessionsDir().
+	PiSessionsDir string
 	// CodexHome is the Codex home folder (CODEX_HOME). When set, the daemon
 	// connects to the shared Codex app server whose control socket is in it, and
 	// the open Codex threads become sessions. Empty turns that off, which is
@@ -252,6 +255,9 @@ func New(cfg Config) (*Daemon, error) {
 	}
 	if cfg.ClaudeSessionsDir == "" {
 		cfg.ClaudeSessionsDir = ClaudeSessionsDir()
+	}
+	if cfg.PiSessionsDir == "" {
+		cfg.PiSessionsDir = PiSessionsDir()
 	}
 	if cfg.SocketPath == "" {
 		cfg.SocketPath = SocketPath()

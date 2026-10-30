@@ -152,11 +152,17 @@ type worker struct {
 	// info is the worker part of the session, made once so that a comparison
 	// of session infos does not see a change each time.
 	info *protocol.WorkerInfo
+	// usage is the last figures the harness reported, and the copy in info.
+	contextTokens, contextLimit, totalTokens int64
 	// codex is the connection to the worker's Codex app server.
-	codex     *codexConn
-	exited    chan struct{} // closed when an own child is reaped; nil if adopted
-	ready     chan struct{} // closed when the session has a gateway ID
-	readyOnce sync.Once
+	codex *codexConn
+	// piLimit is the context window of the Pi model the session file names.
+	// It is read from `pi --list-models` once and kept for the worker.
+	piLimitModel string
+	piLimit      int64
+	exited       chan struct{} // closed when an own child is reaped; nil if adopted
+	ready        chan struct{} // closed when the session has a gateway ID
+	readyOnce    sync.Once
 }
 
 // launcher starts one kind of harness for a worker.
@@ -203,11 +209,36 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	if w.info == nil {
 		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
 	}
+	// The figures follow the info value, so every reader sees one version.
+	w.info.ContextTokens, w.info.ContextLimit, w.info.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
 	// response may still be writing (a data race the race detector sees).
 	cp := *w.info
 	return &cp
+}
+
+// noteWorkerUsage records the figures the harness reported and pushes the
+// worker's session when one of them changed, so a TUI on another machine sees
+// them too.
+func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) {
+	d.wmu.Lock()
+	if w.contextTokens == st.ContextTokens && w.contextLimit == st.ContextLimit && w.totalTokens == st.TotalTokens {
+		d.wmu.Unlock()
+		return
+	}
+	w.contextTokens, w.contextLimit, w.totalTokens = st.ContextTokens, st.ContextLimit, st.TotalTokens
+	if w.info == nil {
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
+	}
+	cp := *w.info
+	cp.ContextTokens, cp.ContextLimit, cp.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
+	w.info = &cp
+	sessionID := w.sessionID
+	d.wmu.Unlock()
+	if ls := d.setSessionWorker(sessionID, &cp); ls != nil {
+		go d.pushSession(ls)
+	}
 }
 
 // workerByNative returns the worker that has this harness session, or nil.
@@ -998,6 +1029,9 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			d.endWorker(w, reason)
 			continue
 		}
+		// Refresh the context and token figures while the worker runs. A
+		// harness that cannot say returns an empty result.
+		d.noteWorkerUsage(w, d.workerStats(w))
 		switch {
 		case d.gone(w):
 			d.endWorker(w, protocol.StopExited)
@@ -1075,13 +1109,14 @@ type recentWorker struct {
 func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 	d.wmu.Lock()
 	sid, owner, harness, model, project, task := w.sessionID, w.owner, w.harness, w.model, w.project, w.taskText
-	started := w.startedAt
+	started, contextTokens, contextLimit, totalTokens := w.startedAt, w.contextTokens, w.contextLimit, w.totalTokens
 	d.wmu.Unlock()
 	if sid == "" {
 		return
 	}
 	view := protocol.WorkerView{SessionID: sid, NodeID: d.cfg.NodeID, Hostname: d.cfg.Hostname, Harness: harness,
 		Model: model, Project: project, Owner: owner, StartedAt: started.Unix(), Task: task, EndedAt: at.Unix(),
+		ContextTokens: contextTokens, ContextLimit: contextLimit, Tokens: totalTokens,
 		EndStatus: status, EndNote: note, Status: status}
 	d.rmu.Lock()
 	if d.recent == nil {

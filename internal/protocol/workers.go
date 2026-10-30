@@ -161,6 +161,16 @@ type WorkerInfo struct {
 	// Task is the first line of the task its owner gave it, cut to about 120
 	// characters. Empty when the machine that started it did not say.
 	Task string `json:"task,omitempty"`
+	// ContextTokens is how many tokens the model saw on the worker's last
+	// step: input plus cache reads and cache writes of the latest assistant
+	// message or turn. 0 when the harness cannot say.
+	ContextTokens int64 `json:"context_tokens,omitempty"`
+	// ContextLimit is the context window of the worker's model, in tokens.
+	// 0 when the harness cannot say.
+	ContextLimit int64 `json:"context_limit,omitempty"`
+	// Tokens is the cumulative input plus output plus reasoning of the run,
+	// without cache reads. 0 when the harness cannot say.
+	Tokens int64 `json:"tokens,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -427,14 +437,17 @@ func ValidHandbackStatus(s string) bool {
 // WorkerNotice holds the facts of the completion notice (W11). The daemon
 // measures them; the worker does not write them.
 type WorkerNotice struct {
-	Status   string
-	Session  string
-	Harness  string
-	Model    string
-	Project  string
-	Host     string
-	RunTime  time.Duration
-	Tokens   string // "1200 in, 340 out", empty when the harness does not say
+	Status  string
+	Session string
+	Harness string
+	Model   string
+	Project string
+	Host    string
+	RunTime time.Duration
+	Tokens  string // "1200 in, 340 out", empty when the harness does not say
+	// Context is the context at the end of the run, as ContextText writes it
+	// ("210k / 1M"), empty when the harness does not say.
+	Context  string
 	Cost     string // "0.0123", empty when unknown
 	Worktree string
 	Branch   string
@@ -465,6 +478,9 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	b.WriteString("run time: " + n.RunTime.Round(time.Second).String() + "\n")
 	if n.Tokens != "" {
 		b.WriteString("tokens: " + n.Tokens + "\n")
+	}
+	if n.Context != "" {
+		b.WriteString("context at end: " + n.Context + "\n")
 	}
 	if n.Cost != "" {
 		b.WriteString("cost: " + n.Cost + "\n")

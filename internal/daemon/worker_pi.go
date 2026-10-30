@@ -1,12 +1,17 @@
 package daemon
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -68,7 +73,7 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if err != nil {
 		return err
 	}
-	defer in.Close() // the process has its own copy
+	defer in.Close() // the process has its own copy, so its input never closes
 	env := workerEnv(os.Environ(), map[string]string{
 		"AGENT_NET_WORKER": w.id,
 		"AGENT_NET_SOCKET": d.cfg.SocketPath,
@@ -95,6 +100,177 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 			return errors.New("pi exited at start")
 		}
 	}
+}
+
+// stats reads the usage of the Pi worker's session file. Pi writes the session
+// as JSONL under its session folder, named with the session ID the daemon
+// picked, so this works while the worker runs and after a daemon restart. The
+// context window comes from `pi --list-models`, once per worker and model.
+func (piLauncher) stats(ctx context.Context, d *Daemon, w *worker) workerStats {
+	d.wmu.Lock()
+	native := w.nativeID
+	d.wmu.Unlock()
+	if native == "" {
+		return workerStats{}
+	}
+	st := piSessionStats(d.cfg.PiSessionsDir, native)
+	if st.ContextTokens > 0 && st.Model != "" {
+		st.ContextLimit = d.piModelLimit(ctx, w, st.Model)
+	}
+	return st
+}
+
+// piSessionStats reads the assistant usage of a Pi session file. Context is the
+// last assistant message (input plus cache read and cache write). Tokens are
+// the session's input plus output; Pi counts reasoning inside output, so it is
+// not added again.
+func piSessionStats(dir, session string) workerStats {
+	path := piSessionFile(dir, session)
+	if path == "" {
+		return workerStats{}
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return workerStats{}
+	}
+	defer f.Close()
+	type usage struct{ in, out, cr, cw float64 }
+	var total, last usage
+	model := ""
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<16), 16<<20)
+	for sc.Scan() {
+		var line struct {
+			Type    string `json:"type"`
+			Message struct {
+				Role     string `json:"role"`
+				Provider string `json:"provider"`
+				Model    string `json:"model"`
+				Usage    struct {
+					Input      float64 `json:"input"`
+					Output     float64 `json:"output"`
+					CacheRead  float64 `json:"cacheRead"`
+					CacheWrite float64 `json:"cacheWrite"`
+				} `json:"usage"`
+			} `json:"message"`
+			Usage struct {
+				Input      float64 `json:"input"`
+				Output     float64 `json:"output"`
+				CacheRead  float64 `json:"cacheRead"`
+				CacheWrite float64 `json:"cacheWrite"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(sc.Bytes(), &line) != nil {
+			continue
+		}
+		switch {
+		case line.Type == "message" && line.Message.Role == "assistant":
+			u := usage{line.Message.Usage.Input, line.Message.Usage.Output, line.Message.Usage.CacheRead, line.Message.Usage.CacheWrite}
+			total.in, total.out, total.cr, total.cw = total.in+u.in, total.out+u.out, total.cr+u.cr, total.cw+u.cw
+			last = u
+			if line.Message.Model != "" {
+				model = line.Message.Model
+				if line.Message.Provider != "" {
+					model = line.Message.Provider + "/" + model
+				}
+			}
+		case line.Type == "usage" || line.Type == "compaction":
+			total.in += line.Usage.Input
+			total.out += line.Usage.Output
+			total.cr += line.Usage.CacheRead
+			total.cw += line.Usage.CacheWrite
+		}
+	}
+	return workerStats{Tokens: tokenText(total.in, total.out, 0, total.cr, total.cw), Model: model,
+		ContextTokens: int64(last.in + last.cr + last.cw), TotalTokens: int64(total.in + total.out)}
+}
+
+// piSessionFile finds the JSONL file of a session: Pi groups sessions by
+// working folder under the session folder, in
+// <timestamp>_<session-id>.jsonl.
+func piSessionFile(dir, session string) string {
+	matches, _ := filepath.Glob(filepath.Join(dir, "*", "*_"+session+".jsonl"))
+	more, _ := filepath.Glob(filepath.Join(dir, "*_"+session+".jsonl"))
+	matches = append(matches, more...)
+	if len(matches) == 0 {
+		return ""
+	}
+	best, bestTime := matches[0], time.Time{}
+	for _, m := range matches {
+		if fi, err := os.Stat(m); err == nil && fi.ModTime().After(bestTime) {
+			best, bestTime = m, fi.ModTime()
+		}
+	}
+	return best
+}
+
+// piModelLimit reads the context window of a model from `pi --list-models`.
+// The table is small, and the worker keeps the answer, so Pi is asked once per
+// worker and model.
+func (d *Daemon) piModelLimit(ctx context.Context, w *worker, model string) int64 {
+	d.wmu.Lock()
+	if w.piLimitModel == model {
+		limit := w.piLimit
+		d.wmu.Unlock()
+		return limit
+	}
+	d.wmu.Unlock()
+	bin, err := d.harnessBinary("pi")
+	if err != nil {
+		return 0
+	}
+	out, err := exec.CommandContext(ctx, bin, "--list-models").Output()
+	if err != nil {
+		return 0
+	}
+	limit := piModelLimitFromTable(string(out), model)
+	d.wmu.Lock()
+	w.piLimitModel, w.piLimit = model, limit
+	d.wmu.Unlock()
+	return limit
+}
+
+// piModelLimitFromTable picks the context column of the model in the table of
+// `pi --list-models`. The model is "provider/id"; a ":thinking" suffix is not
+// part of the id in the table.
+func piModelLimitFromTable(table, model string) int64 {
+	provider, id, ok := strings.Cut(model, "/")
+	if !ok {
+		return 0
+	}
+	if i := strings.LastIndexByte(id, ':'); i >= 0 {
+		id = id[:i] // a thinking level such as :low is not part of the id
+	}
+	for _, line := range strings.Split(table, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 3 || f[0] != provider || f[1] != id {
+			continue
+		}
+		return parseTokenSize(f[2])
+	}
+	return 0
+}
+
+// parseTokenSize reads a size from `pi --list-models`: 200K, 1.0M, 8.2K.
+func parseTokenSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	mult := 1.0
+	switch s[len(s)-1] {
+	case 'k', 'K':
+		mult, s = 1e3, s[:len(s)-1]
+	case 'm', 'M':
+		mult, s = 1e6, s[:len(s)-1]
+	case 'g', 'G':
+		mult, s = 1e9, s[:len(s)-1]
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0
+	}
+	return int64(v*mult + 0.5)
 }
 
 // newUUID returns a random version 4 UUID.
