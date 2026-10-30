@@ -1,4 +1,4 @@
-1 Sessions   2 Quotas  12 online · 1 busy · 2 needs you                           updated 14:05:00
+1 Sessions  2 Quotas │ 12 online · 1 busy · 2 needs you                           updated 14:05:00
 Needs you (2) ──────────────────────────────────────────────────────────────────────────────────────
 > ⚠ strategies claude           12m "Merge tenebrae-nexus/truenas-stacks #817?"
   ⚠ ci-runner  pi     build-vm   3m permission: Bash(git push origin main)

@@ -219,18 +219,19 @@ func (m Model) mainView(w, h int) []string {
 }
 
 var tabNames = []string{"Sessions", "Quotas"}
+var sActiveTab = sBold.Underline(true)
 
 func (m Model) titleLine(w int) string {
 	var tabs []string
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
 		if i == m.tab {
-			tabs = append(tabs, sBold.Render(label))
+			tabs = append(tabs, sActiveTab.Render(label))
 		} else {
 			tabs = append(tabs, sDim.Render(label))
 		}
 	}
-	left := strings.Join(tabs, "   ")
+	left := strings.Join(tabs, "  ")
 	if m.tab == 0 {
 		if warning := m.quotaWarning(); warning != "" {
 			left += "  " + sBusy.Render(warning)
@@ -292,9 +293,9 @@ func (m Model) titleLine(w int) string {
 	if !m.haveData && m.problem == ProblemNone {
 		right = "connecting..."
 	}
-	used := ansi.StringWidth(left) + 2 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	used := ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	gap := max(w-used, 2)
-	return clip(left+"  "+mid+strings.Repeat(" ", gap)+sDim.Render(right), w)
+	return clip(left+" │ "+mid+strings.Repeat(" ", gap)+sDim.Render(right), w)
 }
 
 // queuedWorkers counts the starts that wait for room on every machine, from

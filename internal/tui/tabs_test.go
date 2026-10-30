@@ -12,7 +12,7 @@ import (
 
 func TestTabSwitching(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions   2 Quotas") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Quotas") {
 		t.Fatal(m.titleLine(80))
 	}
 	m = keys(m, "2")
@@ -126,5 +126,19 @@ func TestQuotaEmptyAndMachineErrors(t *testing.T) {
 	v = ansi.Strip(m.View())
 	if !strings.Contains(v, "build: it failed: exit status 1") || strings.Contains(v, "not installed on any machine") || strings.Contains(v, "PROVIDER") {
 		t.Fatal(v)
+	}
+}
+
+func TestTabStyleAndTitleSeparator(t *testing.T) {
+	if !sActiveTab.GetBold() || !sActiveTab.GetUnderline() {
+		t.Fatal("active tab must be bold and underlined")
+	}
+	m := newModel(80, 24)
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Quotas │ ") {
+		t.Fatal(ansi.Strip(m.titleLine(80)))
+	}
+	m.tab = 1
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Quotas │ ") {
+		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 }
