@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -17,6 +19,30 @@ func setWorkersLevel(t *testing.T, w *workerNode, repo, level string) {
 	_, sid := helloPi(t, w.node, "perm-"+level, repo, true)
 	w.cli.mustCall(protocol.OpSessionPolicy, protocol.SessionPolicyRequest{SessionID: sid, Scope: protocol.ScopeProject,
 		Policy: protocol.DelegationPolicy{Workers: level}})
+}
+
+func TestWorkerRemainsActiveDuringBranchCleanup(t *testing.T) {
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	marker, release := filepath.Join(dir, "cleanup"), filepath.Join(dir, "release")
+	script := "#!/bin/sh\nif [ \"$3\" = branch ] && [ \"$4\" = -D ]; then\n  : > " + strconv.Quote(marker) + "\n  while [ ! -e " + strconv.Quote(release) + " ]; do sleep 0.01; done\nfi\nexec " + strconv.Quote(git) + " \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "git"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
+	defer os.WriteFile(release, nil, 0o600)
+	eventually(t, "branch cleanup", func() bool { _, err := os.Stat(marker); return err == nil })
+	if w.d.workerCount() != 1 {
+		t.Fatal("worker forgotten before branch cleanup finished")
+	}
 }
 
 func anyStrings(v any) []string {
