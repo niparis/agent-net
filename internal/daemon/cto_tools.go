@@ -181,13 +181,8 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 }
 
 func (d *Daemon) recordCTOAction(text string) error {
-	id, err := d.ctoSession()
-	if err != nil {
-		return err
-	}
-	if id == "" {
-		return errors.New("no CTO conversation")
-	}
-	_, err = d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at) VALUES(?,?,?)`, id, text, time.Now().UnixNano())
+	// Empty session IDs are the not-yet-started conversation. The selection and
+	// insert are one statement so a concurrent first send cannot lose an action.
+	_, err := d.st.db.Exec(`INSERT INTO cto_actions(session_id,text,at) VALUES(COALESCE((SELECT session_id FROM cto WHERE id=1),''),?,?)`, text, time.Now().UnixNano())
 	return err
 }

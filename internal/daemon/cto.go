@@ -220,11 +220,22 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
 		return "", errors.New("OpenCode did not return a session ID")
 	}
-	_, err = d.st.db.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID)
-	if err == nil {
-		d.cto.model, d.cto.session = model, created.Data.ID
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return "", err
 	}
-	return created.Data.ID, err
+	defer tx.Rollback()
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID); err != nil {
+		return "", err
+	}
+	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id=''`, created.Data.ID); err != nil {
+		return "", err
+	}
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+	d.cto.model, d.cto.session = model, created.Data.ID
+	return created.Data.ID, nil
 }
 func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
@@ -279,11 +290,22 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	if err = json.Unmarshal(data, &latest); err != nil {
 		return nil, err
 	}
-	_, err = d.st.db.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID)
-	if err == nil {
-		c.session, c.model = "", ""
+	tx, err := d.st.db.Begin()
+	if err != nil {
+		return nil, err
 	}
-	return struct{}{}, err
+	defer tx.Rollback()
+	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id=''`); err != nil {
+		return nil, err
+	}
+	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID); err != nil {
+		return nil, err
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	c.session, c.model = "", ""
+	return struct{}{}, nil
 }
 func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
@@ -297,7 +319,7 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 		return out, err
 	}
 	id, err := d.ctoSession()
-	if err != nil || id == "" {
+	if err != nil {
 		return out, err
 	}
 	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? ORDER BY id`, id)
@@ -317,6 +339,9 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	rows.Close()
 	if err != nil {
 		return out, err
+	}
+	if id == "" {
+		return out, nil
 	}
 	if err = d.startCTOLocked(ctx); err != nil {
 		return out, err

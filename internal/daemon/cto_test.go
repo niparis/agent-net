@@ -361,3 +361,34 @@ func TestCTOQueuedStartPersistsAttribution(t *testing.T) {
 		t.Fatalf("queue: %+v %v", rows, err)
 	}
 }
+
+func TestCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	if _, err := n.d.call(context.Background(), "node.add", map[string]any{"name": "architect", "by": "cto"}); err != nil {
+		t.Fatal(err)
+	}
+	var history []protocol.CTOGraphChange
+	if err := json.Unmarshal(cli.mustCall("cto_graph_history", nil), &history); err != nil || len(history) != 1 {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+	cli.mustCall("cto_new", nil)
+	cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: history[0].ID, CTOChat: true})
+	var out protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 1 || !strings.Contains(out.Actions[0].Text, "undid graph change") {
+		t.Fatalf("undo: %+v %v", out, err)
+	}
+	if _, err := os.Stat(filepath.Join(n.cfg.StateDir, "cto")); !os.IsNotExist(err) {
+		t.Fatalf("undo started server: %v", err)
+	}
+	cli.mustCall("cto_send", map[string]string{"text": "hello"})
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 1 {
+		t.Fatalf("undo lost after send: %+v %v", out, err)
+	}
+	cli.mustCall("cto_new", nil)
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 0 {
+		t.Fatalf("new conversation retained old undo: %+v %v", out, err)
+	}
+}
