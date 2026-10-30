@@ -136,11 +136,11 @@ func TestHeaderQuotaWarning(t *testing.T) {
 	u.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92}}}}}
 	m := modelWith(snap, u, 120, 40)
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "codex 92% week - see 2") || strings.Contains(v, "quotas:") {
+	if !strings.Contains(v, "codex 92% week - see 3") || strings.Contains(v, "quotas:") {
 		t.Fatal(v)
 	}
 	u.Local.Quotas.Providers[0].Windows[0].PercentUsed = 80
-	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "see 2") {
+	if strings.Contains(ansi.Strip(modelWith(snap, u, 120, 40).View()), "see 3") {
 		t.Fatal("80% should not warn")
 	}
 }

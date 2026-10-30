@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 6 sessions, 5 online · 1 busy          updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 6 sessions, 5 online · 1 busy  updated 14:05…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -9,16 +9,16 @@
   web          opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
-CTO (opencode · fake/m1) ───────────────────────────────────────────────────────
-you: Is cogforge ready?
-cto: It is mature. I updated the charter.
-charter cogforge.maturity: early -> mature
-sent to tenebrae-53: please review
+  scratch      pi       -         -          shell  -         ?     ?
 
 
 
 
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network i…
 
 
-> press Enter to write
-enter write  o open full  n new conversation  u undo  esc close
+
+
+>                                                                              …
+tab focus  enter send  o full screen  n new  u undo  esc back

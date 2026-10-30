@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 que…
+1 Sessions  2 Messages  3 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 ru…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -18,7 +18,7 @@ Selected session ─────────────────────
   branch   main                           │
   model    anthropic/claude-haiku-4-5, b… │
   function none: add a `# Project: <one … │
-Messages (live) ────────────────────────────────────────────────────────────────
-  14:03  tenebrae -> you  reply                                                ✓
-  14:04  worker refused in nope: no project named nope is known
+
+
+
 Stop worker tenebrae (Mac)? y/n

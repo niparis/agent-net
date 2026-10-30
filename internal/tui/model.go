@@ -1186,5 +1186,5 @@ func (m *Model) fixScroll() {
 	for sel >= m.tableTop+room(m.tableTop) {
 		m.tableTop++
 	}
-	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-n, 0))
+	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-1, 0))
 }

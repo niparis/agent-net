@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 10 sessions, 9 online · 2 busy · workers 4 running, 0 qu…
+1 Sessions  2 Messages  3 Quotas │ 10 sessions, 9 online · 2 busy · workers 4 r…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -18,7 +18,7 @@ Selected session ─────────────────────
   function none: add a `# Project: <one … │
   task     probe                          │
   remote   -                              │
-Messages (live) ────────────────────────────────────────────────────────────────
-  14:02  tenebrae-53 -> ci-runner  notification                                ✗
-  14:04  tenebrae-53 -> s_00000000  request                                    …
+
+
+
 1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

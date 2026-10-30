@@ -52,7 +52,7 @@ func TestCTOPaneSendAndPoll(t *testing.T) {
 	if m.cto == nil || cmd == nil {
 		t.Fatal("C did not open the CTO")
 	}
-	msg := cmd()
+	msg := m.ctoPollCmd()()
 	updated, _ = m.update(msg)
 	m = updated.(Model)
 	if !strings.Contains(m.View(), "fake/m1") || !strings.Contains(m.View(), "hello") {
@@ -75,8 +75,8 @@ func TestCTOPaneSendAndPoll(t *testing.T) {
 	}
 	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(Model)
-	if m.cto != nil {
-		t.Fatal("Esc did not close CTO")
+	if m.cto == nil || m.focus != focusSessions {
+		t.Fatal("Esc did not return focus to sessions")
 	}
 }
 
@@ -89,16 +89,18 @@ func TestCTOPaneNewConversationAndMap(t *testing.T) {
 	m.mp.loaded = true
 	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
-	if !strings.Contains(m.View(), "Map") || !strings.Contains(m.View(), "CTO") {
-		t.Fatal("map and CTO not visible together")
+	if m.mapOn || m.focus != focusCTO || !strings.Contains(m.View(), "CTO") {
+		t.Fatal("C did not focus the CTO on Sessions")
 	}
 	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
 	m = updated.(Model)
-	if cmd == nil {
-		t.Fatal("new conversation did not start")
+	if cmd != nil || !m.cto.confirming {
+		t.Fatal("new conversation did not ask for confirmation")
 	}
+	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")})
+	m = updated.(Model)
 	updated, _ = m.update(cmd())
 	m = updated.(Model)
 	if src.fresh != 1 {
@@ -106,8 +108,8 @@ func TestCTOPaneNewConversationAndMap(t *testing.T) {
 	}
 	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(Model)
-	if m.cto != nil || !m.mapOn {
-		t.Fatal("closing CTO did not retain map")
+	if m.cto == nil || m.focus != focusSessions {
+		t.Fatal("escape did not return to sessions")
 	}
 }
 
@@ -116,11 +118,11 @@ func TestCTOPaneShowsRecordedActions(t *testing.T) {
 	m := New(src)
 	m.width = 80
 	m.height = 24
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
-	v := m.View()
+	v := strings.Join(m.cto.messages, "\n")
 	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "read graph", "failed charter_set", "cogforge.maturity: early -> mature"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
@@ -136,8 +138,9 @@ func TestCTOShowsUndoAndRefreshesMap(t *testing.T) {
 	m.mapOn = true
 	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
+	m.mapOn = true
 	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("u")})
 	m = updated.(Model)
 	if cmd == nil {
@@ -148,7 +151,7 @@ func TestCTOShowsUndoAndRefreshesMap(t *testing.T) {
 	if len(src.undone) != 1 || src.undone[0] != 9 {
 		t.Fatalf("wrong undo: %v", src.undone)
 	}
-	if !strings.Contains(m.View(), "undid graph change") {
+	if !strings.Contains(strings.Join(m.cto.messages, "\n"), "undid graph change") {
 		t.Fatalf("undo not shown:\n%s", m.View())
 	}
 	if cmd == nil || !m.mp.loading {
@@ -164,8 +167,9 @@ func TestCTOGraphChangeRefreshesOpenMap(t *testing.T) {
 	m.mapOn = true
 	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
+	m.mapOn = true
 	src.history = []protocol.CTOGraphChange{{ID: 5, Kind: "node", Node: "architect", NewValue: "architect"}}
 	m.cto.polling = true
 	updated, cmd = m.update(m.ctoPollCmd()())
@@ -207,9 +211,9 @@ func TestCTOGolden(t *testing.T) {
 func TestCTOPaneSanitizesConversation(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"bad\u001b[2Jtext"}`)}, Actions: []protocol.CTOAction{{Text: "sent: \x1b[2J"}}}}
 	m := New(src)
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	if strings.Contains(m.View(), "\x1b") {
 		t.Fatal("terminal control escaped the CTO pane")
@@ -219,9 +223,9 @@ func TestCTOPaneSanitizesConversation(t *testing.T) {
 func TestCTOActionOrderFollowsConversation(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"change it","time":{"created":1000}}`), json.RawMessage(`{"type":"assistant","content":[{"type":"text","text":"done"}],"time":{"created":3000}}`)}, Actions: []protocol.CTOAction{{Text: "sent to peer: hello", At: 2500000000}}}, history: []protocol.CTOGraphChange{{Kind: "charter", Node: "node", Attr: "purpose", NewValue: "new", At: 2000000000}}}
 	m := New(src)
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	joined := strings.Join(m.cto.messages, "|")
 	a, b, c, d := strings.Index(joined, "you:"), strings.Index(joined, "charter"), strings.Index(joined, "sent to"), strings.Index(joined, "cto:")
@@ -235,7 +239,7 @@ func TestCTOPanePollingUpdatesStreamingMessage(t *testing.T) {
 	m := New(src)
 	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	updated, _ = m.update(cmd())
+	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	src.events.Messages[0] = json.RawMessage(`{"id":"msg_1","type":"assistant","content":[{"type":"text","text":"partial reply"}]}`)
 	updated, cmd = m.update(tickMsg{})

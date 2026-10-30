@@ -16,8 +16,8 @@ func TestTabSwitching(t *testing.T) {
 	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Messages  3 Quotas") {
 		t.Fatal(m.titleLine(80))
 	}
-	m = keys(m, "2")
-	if m.tab != 1 {
+	m = keys(m, "3")
+	if m.tab != 2 {
 		t.Fatal("2 did not select quotas")
 	}
 	m = keys(m, "1")

@@ -401,7 +401,7 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = refresh(m, src)
 	m = drainSnippets(t, m)
-	m = keys(m, "tab")
+	m = keys(m, "2")
 	// Move up to the first message (the last items are newer).
 	for m.feed.items[m.feedCur].MsgID != "m_1" {
 		m = keys(m, "up")
@@ -448,7 +448,6 @@ func TestViewHasEverythingAt80Columns(t *testing.T) {
 		"AGENT", "NAME", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK",
 		"tenebrae-53", "opus-5-5", "busy", "shell", "claude-opus-5-5",
 		"Selected session", "pid 4242", "/Users/n/code/tenebrae",
-		"Messages (live)", "tenebrae-53 -> ci-runner", "request", "✗",
 		"up/down select", "q quit",
 	} {
 		if !strings.Contains(out, want) {
@@ -646,7 +645,7 @@ func TestDaemonDownBanner(t *testing.T) {
 		t.Fatalf("problem %v", m.problem)
 	}
 	// The last data stays.
-	for _, want := range []string{"tenebrae-53", "Mac (here)", "updated 14:05:00", "sonnet-5-5", "request"} {
+	for _, want := range []string{"tenebrae-53", "Mac (here)", "updated 14:05:00", "sonnet-5-5"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lost %q while the daemon is down", want)
 		}
@@ -837,7 +836,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 		ev(15, time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build-vm" }),
 	)
 	m = refresh(m, src)
-	v := m.View()
+	v := keys(m, "2").View()
 	if !strings.Contains(v, "ci-runner -> tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
@@ -873,11 +872,11 @@ func TestFeedUnavailableOnOlderPeers(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
-	v := m.View()
+	v := keys(m, "2").View()
 	if m.problem != ProblemNone || !strings.Contains(v, "no message feed: the daemon or the gateway is older than the event feed") {
 		t.Fatalf("not explained:\n%s", v)
 	}
-	if !strings.Contains(v, "tenebrae-53") {
+	if !strings.Contains(m.View(), "tenebrae-53") {
 		t.Fatal("the sessions must still show")
 	}
 	// It does not ask again.
@@ -905,7 +904,7 @@ func TestOpenMessageBody(t *testing.T) {
 		t.Fatal("enter on the sessions table opened the wrong thing")
 	}
 	m = keys(m, "esc") // back to the lists
-	m = keys(m, "tab")
+	m = keys(m, "2")
 	for m.feed.items[m.feedCur].MsgID != "m_3" {
 		m = keys(m, "up")
 	}
@@ -929,7 +928,7 @@ func TestOpenMessageBody(t *testing.T) {
 	}
 	// esc goes back to the lists.
 	m = keys(m, "esc")
-	if m.open != nil || !strings.Contains(m.View(), "Selected session") {
+	if m.open != nil || !strings.Contains(m.View(), "Messages") {
 		t.Fatal("esc did not close the body")
 	}
 

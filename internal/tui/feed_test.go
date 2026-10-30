@@ -260,7 +260,7 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 		ev(2, -time.Minute, "session.new", "", "", "", "", func(e *protocol.FeedEvent) { e.Detail = "name=fresh harness=claude" }),
 	}
 	m, _ := feedModel(events, nil)
-	m = keys(m, "tab")
+	m = keys(m, "2")
 	if it := m.feedItemAt(m.feedCur); it == nil || it.Kind != "msg.stored" {
 		t.Fatalf("the cursor sits on a hidden line: %+v", it)
 	}
@@ -272,7 +272,7 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 
 func TestFeedEnterOpensTheConversationOfTheLocalEnd(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
-	m = keys(m, "tab")
+	m = keys(m, "2")
 	for m.feed.items[m.feedCur].MsgID != "m_1" {
 		m = keys(m, "up")
 	}
@@ -288,7 +288,7 @@ func TestFeedEnterOpensTheConversationOfTheLocalEnd(t *testing.T) {
 
 func TestFeedVOpensTheMessageBody(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
-	m = keys(m, "tab")
+	m = keys(m, "2")
 	for m.feed.items[m.feedCur].MsgID != "m_1" {
 		m = keys(m, "up")
 	}

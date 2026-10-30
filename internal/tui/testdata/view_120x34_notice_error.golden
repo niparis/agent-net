@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued                    updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued        updated 14:05:00
 ! Worker not started: machine build-vm does not accept workers (it was set up with --no-launch)
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
@@ -26,9 +26,9 @@ Selected session ─────────────────────
   messages 13:57  -> tenebrae-53 (Mac)  reply  delivered        │
            13:56  <- tenebrae-53 (Mac)  request  replied        │
                                                                 │
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  14:00  worker started: tenebrae opencode in tenebrae for you
-  14:00  you -> tenebrae  request                                                                                      ↩
-   ↳ 14:03  tenebrae -> you  reply                                                                                     ✓
-  14:04  worker refused in nope: no project named nope is known
+
+
+
+
+
 1/2 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  ? help  q quit

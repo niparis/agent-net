@@ -16,9 +16,10 @@ Keys ─────────────────────────
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support
   /                    filter (words match name, project, branch, model, ...)
-  o, d                 o: show offline and dormant; d: detail takes the feed room
+  o                    show offline and dormant sessions
   a                    active only: hide sessions idle for over an hour
-  tab                  message feed and back; enter opens the conversation of the local end
+  1/2/3                sessions, messages and quotas
+  tab, C               focus the CTO box; tab or esc returns to sessions
   v, l                 v: open the body of the message; l: feed events (worker, all, none)
   r                    refresh now
  Conversation
@@ -36,5 +37,4 @@ Keys ─────────────────────────
   dim row              offline, or idle for more than an hour
   ?                    a figure that is missing or older than 45 seconds
   … ✓ ↩ ✗              message state: pending, delivered, replied, failed
-  ↳                    a reply, under the message it answers
 esc close help  q quit

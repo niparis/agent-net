@@ -682,7 +682,7 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 		out = append(out, sDim.Render(msg))
 	}
-	top := min(m.tableTop, max(len(rows)-n, 0))
+	top := min(m.tableTop, max(len(rows)-1, 0))
 	if top > 0 && top < len(rows) && !rows[top].header {
 		// The machine heading has scrolled off: keep it as the first line.
 		for j := top - 1; j >= 0; j-- {

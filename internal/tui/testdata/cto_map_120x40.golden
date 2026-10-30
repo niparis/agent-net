@@ -1,40 +1,40 @@
-Map (read only)  6 nodes, 4 edges              updated -   │ CTO (opencode · fake/m1) ──────────────────────────────────
-> trading-architect    mature │ trading-architect · archi… │ you: Is cogforge ready?
-    cogforge    [owner] early │ Charter ────────────────── │ cto: It is mature. I updated the charter.
-  wbg-architect       growing │   purpose   Looks after    │ charter cogforge.maturity: early -> mature
-    tenebr… [advisor] growing │             the trading    │ sent to tenebrae-53: please review
-Components with no architect  │             system.        │
-    shop               mature │   maturity  mature -       │
-Architects without nodes ──── │             stable         │
-    api-architect       early │   accepts   -              │
-                              │   refuses   -              │
-                              │   consumers -              │
-                              │   escalate  -              │
-                              │   needs     -              │
-                              │   notes     -              │
-                              │ Edges ──────────────────── │
-                              │   out  trading-architect … │
-                              │        governs, owner, ru… │
-                              │ Last changes ───────────── │
-                              │   no changes yet           │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │
-                              │                            │ > press Enter to write
-enter write  o open full  n new conversation  u undo  esc close
+1 Sessions  2 Messages  3 Quotas │ 6 sessions, 5 online · 1 busy                                      updated 14:05:00
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+  strategies         claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
+  tenebrae-53        claude   tenebrae  opus-5-5   busy   -         ?     ?
+  web                opencode shop      sonnet-5   idle   -         ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
+  scratch            pi       -         -          shell  -         ?     ?
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+
+
+
+
+>                                                                                                                      …
+tab focus  enter send  o full screen  n new  u undo  esc back

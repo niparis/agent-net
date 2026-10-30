@@ -1,4 +1,4 @@
-1 Sessions  2 Quotas │ 12 online · 1 busy                                                             updated 14:05:00
+1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy                                                 updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2  claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
  ○ old-box    v0.3.2 offline
@@ -24,13 +24,13 @@ Selected session ─────────────────────
   messages 13:57  -> tenebrae-53 (Mac)  reply  delivered        │    4300   40%  600M claude --resume
            13:56  <- tenebrae-53 (Mac)  request  replied        │    4410    2%  300M cargo watch -x test
                                                                 │    4501    0%    4M bash -l
-Messages (live) ────────────────────────────────────────────────────────────────────────────────────────────────────────
-  13:55  build-vm connected
-  13:56  tenebrae-53 -> strategies  request                                                                            ↩
-   ↳ 13:57  strategies -> tenebrae-53  reply                                                                           ✓
-  14:01  ci-runner -> tenebrae-53  request                                                                             ✓
-  14:02  tenebrae-53 -> ci-runner  notification                                                                        ✗
-  14:04  tenebrae-53 -> s_00000000  request                                                                            …
+
+
+
+
+
+
+
 
 
 
