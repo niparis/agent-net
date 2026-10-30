@@ -1,0 +1,384 @@
+package gateway
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"unicode"
+
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+func validGraphName(name string) bool {
+	if name == "" || len(name) > protocol.ProjectMaxFieldLen || strings.TrimSpace(name) != name {
+		return false
+	}
+	for _, r := range name {
+		if !unicode.IsPrint(r) || r == '/' || r == '\\' {
+			return false
+		}
+	}
+	return name != "." && name != ".."
+}
+
+func graphKind(tx *sql.Tx, name string) (string, error) {
+	var kind string
+	err := tx.QueryRow(`SELECT kind FROM graph_nodes WHERE name=?`, name).Scan(&kind)
+	if err == nil {
+		return kind, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", err
+	}
+	var exists int
+	err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=? UNION ALL SELECT 1 FROM sessions WHERE repo_project=?)`, name, name).Scan(&exists)
+	if err != nil {
+		return "", err
+	}
+	if exists == 0 {
+		return "", reject("unknown node %q", name)
+	}
+	return "component", nil
+}
+func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64) error {
+	if actor == "" {
+		return reject("actor required")
+	}
+	_, err := tx.Exec(`INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES(?,?,?,?,?,?,?)`, typ, node, attr, old, value, at, actor)
+	return err
+}
+
+// AddArchitect creates a named architect without a project of the same name.
+func (s *Store) AddArchitect(name, actor string) error {
+	if !validGraphName(name) {
+		return reject("invalid node name")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = graphKind(tx, name); err == nil {
+		return reject("node already exists")
+	} else if _, ok := err.(Rejection); !ok {
+		return err
+	}
+	now := s.now().UnixNano()
+	if _, err = tx.Exec(`INSERT INTO graph_nodes VALUES(?,?,?)`, name, "architect", now); err != nil {
+		return err
+	}
+	if err = graphRecord(tx, "node", name, "", "", "architect", actor, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RemoveArchitect removes an architect with no edges, recording cleared attributes.
+func (s *Store) RemoveArchitect(name, actor string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	kind, err := graphKind(tx, name)
+	if err != nil {
+		return err
+	}
+	if kind != "architect" {
+		return reject("not an architect")
+	}
+	var n int
+	if err = tx.QueryRow(`SELECT COUNT(*) FROM graph_edges WHERE source=? OR target=?`, name, name).Scan(&n); err != nil {
+		return err
+	}
+	if n != 0 {
+		return reject("node has edges")
+	}
+	// Record each removed attribute before deleting it.
+	rows, err := tx.Query(`SELECT attr,value FROM graph_charter WHERE node=?`, name)
+	if err != nil {
+		return err
+	}
+	var attributes [][2]string
+	for rows.Next() {
+		var attr, value string
+		if err = rows.Scan(&attr, &value); err != nil {
+			rows.Close()
+			return err
+		}
+		attributes = append(attributes, [2]string{attr, value})
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	for _, a := range attributes {
+		if err = graphRecord(tx, "charter", name, a[0], a[1], "", actor, s.now().UnixNano()); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.Exec(`DELETE FROM graph_charter WHERE node=?`, name); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM graph_nodes WHERE name=?`, name); err != nil {
+		return err
+	}
+	if err = graphRecord(tx, "node", name, "", "architect", "", actor, s.now().UnixNano()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetCharter sets or clears one charter attribute, preserving its history.
+func (s *Store) SetCharter(node, attr, value, actor string) error {
+	value, err := protocol.CleanCharterValue(attr, value)
+	if err != nil {
+		return reject("%v", err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	kind, err := graphKind(tx, node)
+	if err != nil {
+		return err
+	}
+	var old string
+	err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&old)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if old == value {
+		return nil
+	}
+	now := s.now().UnixNano()
+	if _, err = tx.Exec(`INSERT OR IGNORE INTO graph_nodes VALUES(?,?,?)`, node, kind, now); err != nil {
+		return err
+	}
+	if value == "" {
+		_, err = tx.Exec(`DELETE FROM graph_charter WHERE node=? AND attr=?`, node, attr)
+	} else {
+		_, err = tx.Exec(`INSERT INTO graph_charter VALUES(?,?,?,?,?) ON CONFLICT(node,attr) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at,updated_by=excluded.updated_by`, node, attr, value, now, actor)
+	}
+	if err != nil {
+		return err
+	}
+	if err = graphRecord(tx, "charter", node, attr, old, value, actor, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CharterHistory lists changes newest first, bounded to 1000 entries.
+func (s *Store) CharterHistory(node string, limit int) ([]protocol.CharterChange, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
+	rows, err := s.db.Query(`SELECT id,node,attr,old_value,new_value,at,actor FROM graph_history WHERE type='charter' AND node=? ORDER BY id DESC LIMIT ?`, node, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.CharterChange{}
+	for rows.Next() {
+		var h protocol.CharterChange
+		if err := rows.Scan(&h.ID, &h.Node, &h.Attr, &h.OldValue, &h.NewValue, &h.At, &h.By); err != nil {
+			return nil, err
+		}
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// GraphUndo reverts a charter change if its value has not since changed.
+func (s *Store) GraphUndo(id int64, actor string) error {
+	var typ, node, attr, old, value string
+	query := `SELECT type,node,attr,old_value,new_value FROM graph_history WHERE id=?`
+	if id == 0 {
+		query = `SELECT type,node,attr,old_value,new_value FROM graph_history ORDER BY id DESC LIMIT 1`
+	}
+	var err error
+	if id == 0 {
+		err = s.db.QueryRow(query).Scan(&typ, &node, &attr, &old, &value)
+	} else {
+		err = s.db.QueryRow(query, id).Scan(&typ, &node, &attr, &old, &value)
+	}
+	if err != nil {
+		return err
+	}
+	if typ != "charter" {
+		return reject("undo for %s is not supported", typ)
+	}
+	var current string
+	err = s.db.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&current)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if current != value {
+		return reject("value changed since that history entry")
+	}
+	return s.SetCharter(node, attr, old, actor)
+}
+
+// SetEdge validates and stores a directed graph edge.
+func (s *Store) SetEdge(e protocol.Edge, actor string) error {
+	if e.From == e.To {
+		return reject("self edge")
+	}
+	if e.Rule == "" {
+		e.Rule = "normal"
+	}
+	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" {
+		return reject("invalid edge rule")
+	}
+	if e.Kind != "depends" && e.Kind != "governs" {
+		return reject("invalid edge kind")
+	}
+	if e.Kind == "depends" && e.Mode != "" {
+		return reject("dependency has no mode")
+	}
+	if e.Kind == "governs" && e.Mode != "advisor" && e.Mode != "arbiter" && e.Mode != "owner" {
+		return reject("invalid mode")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	from, err := graphKind(tx, e.From)
+	if err != nil {
+		return err
+	}
+	to, err := graphKind(tx, e.To)
+	if err != nil {
+		return err
+	}
+	if e.Kind == "governs" && (from != "architect" || to != "component") {
+		return reject("governs requires architect to component")
+	}
+	var old protocol.Edge
+	old.From = e.From
+	old.To = e.To
+	old.Kind = e.Kind
+	err = tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind).Scan(&old.Mode, &old.Rule)
+	previous := ""
+	if err == nil {
+		b, _ := json.Marshal(old)
+		previous = string(b)
+	} else if err != sql.ErrNoRows {
+		return err
+	}
+	b, _ := json.Marshal(e)
+	if previous == string(b) {
+		return nil
+	}
+	if _, err = tx.Exec(`INSERT INTO graph_edges VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
+		return err
+	}
+	if err = graphRecord(tx, "edge", e.From, e.Kind, previous, string(b), actor, s.now().UnixNano()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RemoveEdge deletes an edge and records its previous value.
+func (s *Store) RemoveEdge(e protocol.Edge, actor string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	err = tx.QueryRow(`SELECT mode,rule FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind).Scan(&e.Mode, &e.Rule)
+	if err != nil {
+		return err
+	}
+	b, _ := json.Marshal(e)
+	if _, err = tx.Exec(`DELETE FROM graph_edges WHERE source=? AND target=? AND kind=?`, e.From, e.To, e.Kind); err != nil {
+		return err
+	}
+	if err = graphRecord(tx, "edge", e.From, e.Kind, string(b), "", actor, s.now().UnixNano()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// Graph returns explicit and implicit nodes and all edges.
+func (s *Store) Graph() (protocol.Graph, error) {
+	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
+	rows, err := s.db.Query(`SELECT name,kind,created_at FROM graph_nodes UNION SELECT name,'component',0 FROM projects WHERE name NOT IN (SELECT name FROM graph_nodes) UNION SELECT repo_project,'component',0 FROM sessions WHERE repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
+	if err != nil {
+		return g, err
+	}
+	for rows.Next() {
+		var n protocol.Node
+		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt); err != nil {
+			rows.Close()
+			return g, err
+		}
+		g.Nodes = append(g.Nodes, n)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return g, err
+	}
+	rows, err = s.db.Query(`SELECT node,attr,value FROM graph_charter`)
+	if err != nil {
+		return g, err
+	}
+	byName := map[string]*protocol.Node{}
+	for i := range g.Nodes {
+		byName[g.Nodes[i].Name] = &g.Nodes[i]
+	}
+	for rows.Next() {
+		var name, attr, value string
+		if err = rows.Scan(&name, &attr, &value); err != nil {
+			rows.Close()
+			return g, err
+		}
+		n := byName[name]
+		if n == nil {
+			rows.Close()
+			return g, fmt.Errorf("orphan charter: %s", name)
+		}
+		switch attr {
+		case "purpose":
+			n.Charter.Purpose = value
+		case "maturity":
+			n.Charter.Maturity = value
+		case "accepts":
+			n.Charter.Accepts = value
+		case "refuses":
+			n.Charter.Refuses = value
+		case "consumers":
+			n.Charter.Consumers = value
+		case "escalate":
+			n.Charter.Escalate = value
+		case "needs":
+			n.Charter.Needs = value
+		case "notes":
+			n.Charter.Notes = value
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return g, err
+	}
+	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule FROM graph_edges ORDER BY source,target,kind`)
+	if err != nil {
+		return g, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var e protocol.Edge
+		if err = rows.Scan(&e.From, &e.To, &e.Kind, &e.Mode, &e.Rule); err != nil {
+			return g, err
+		}
+		g.Edges = append(g.Edges, e)
+	}
+	return g, rows.Err()
+}

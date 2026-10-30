@@ -174,8 +174,8 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 ## Open questions
 
 1. **Maturity levels:** are four levels right, and are the defaults in the table the right ones?
-2. **Architect sessions:** must an architect always have a running session, or can the CTO answer for an architect that has none?
-3. **Several sessions for one node:** when two sessions speak for cogforge at once, which one judges an incoming request? (Proposal: the one the sender addressed; the outcome is recorded for the node.)
-4. **Overrule versus architect owner:** when an architect is `owner` of a node and the owner overrules the architect, does the architect get told? (Proposal: yes, as a notification.)
+2. **Architect sessions:** decided for now: the CTO answers for an architect that has no running session.
+3. **Several sessions for one node:** decided for now: the addressed session judges the request, and the outcome is recorded for the node.
+4. **Overrule versus architect owner:** decided for now: an overruled architect gets a notification.
 5. **CTO conversation length:** one long conversation will fill its context. Start a new one per day, or summarize?
 6. **Cost:** a strong CTO model reads the graph and history on every request. Is a daily budget wanted?
