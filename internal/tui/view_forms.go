@@ -15,6 +15,9 @@ func (m Model) noticeLines(w int) []string {
 	if n == nil {
 		return nil
 	}
+	if strings.HasPrefix(n.text, "CTO: ") {
+		return []string{sIdle.Render(cell(clip("  "+sanitize(n.text), w), w))}
+	}
 	prefix, style := "  ", sIdle
 	if n.err {
 		prefix, style = "! ", sBad

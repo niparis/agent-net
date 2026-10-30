@@ -153,7 +153,7 @@ func (m Model) View() string {
 		}
 	}
 	// CTO notices must also be visible on the map, messages and quotas views.
-	if (m.tab != 0 || m.mapOn) && len(out) > 0 {
+	if (m.tab != 0 || m.mapOn || m.inboxOn || m.help || m.learned || m.conv != nil) && len(out) > 0 {
 		if n := m.activeNotice(); n != nil && strings.HasPrefix(n.text, "CTO: ") {
 			line := sIdle.Render(clip("  "+sanitize(n.text), w))
 			out = append(out[:1], append([]string{line}, out[1:]...)...)

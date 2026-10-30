@@ -92,6 +92,7 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "M", "esc":
 		m.mapOn = false
+		m.uiFilter = ""
 	case "?":
 		m.help = true
 	case "up", "k":

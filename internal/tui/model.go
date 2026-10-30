@@ -649,6 +649,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	for i := range tabNames {
 		if k.String() == fmt.Sprint(i+1) {
 			m.tab = i
+			m.uiFilter = ""
 			m.focus = focusSessions
 			if i == 1 {
 				m.focus = focusFeed
@@ -1246,6 +1247,18 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		m.mapOn = true
 		if q.Select != "" {
 			m.mp.selected = q.Select
+			for _, a := range m.snap.Agents {
+				if (strings.EqualFold(q.Select, a.SessionID) || strings.EqualFold(q.Select, a.Profile.Name)) && a.Repo.Project != "" {
+					m.mp.selected = a.Repo.Project
+					break
+				}
+			}
+			for _, node := range m.mp.nodes {
+				if strings.EqualFold(node.Name, m.mp.selected) {
+					m.mp.selected = node.Name
+					break
+				}
+			}
 		}
 		if !m.mp.loading {
 			m.mp.loading = true
@@ -1256,6 +1269,9 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		for _, a := range m.snap.Agents {
 			if strings.EqualFold(q.Select, a.SessionID) || q.Select != "" && (strings.EqualFold(q.Select, a.Profile.Name) || strings.EqualFold(q.Select, a.Repo.Project)) {
 				m.selected = a.SessionID
+				if !a.Online {
+					m.showOffline = true
+				}
 				break
 			}
 		}
