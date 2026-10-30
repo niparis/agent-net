@@ -4,12 +4,11 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/repoinfo"
 )
 
 func validGraphName(name string) bool {
@@ -558,8 +557,8 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string) error {
 func (s *Store) Graph() (protocol.Graph, error) {
 	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
 	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'' FROM graph_nodes
- UNION ALL SELECT name,'component',0,0,path FROM projects WHERE name NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT repo_project,'component',0,0,repo_root FROM sessions WHERE repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
+ UNION ALL SELECT name,'component',0,0,path FROM projects WHERE graph_excluded=0 AND name NOT IN (SELECT name FROM graph_nodes)
+ UNION ALL SELECT repo_project,'component',0,0,repo_root FROM sessions WHERE graph_excluded=0 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {
 		return g, err
 	}
@@ -692,29 +691,4 @@ func (s *Store) CTOLastGraphID() (int64, error) {
 	return id, err
 }
 
-// graphProjectRoot rejects scratch roots while leaving paths on other machines
-// alone. Registered project paths have already been checked by their daemon.
-func graphProjectRoot(root string) bool {
-	if root == "" || !filepath.IsAbs(root) {
-		return false
-	}
-	root = filepath.Clean(root)
-	for _, dir := range []string{os.TempDir(), os.Getenv("TMPDIR"), "/tmp", "/var/folders", "/private/var/folders"} {
-		if dir == "" {
-			continue
-		}
-		dir = filepath.Clean(dir)
-		if root == dir || strings.HasPrefix(root, dir+string(filepath.Separator)) {
-			return false
-		}
-	}
-	home, _ := os.UserHomeDir()
-	if home != "" && root == filepath.Clean(home) {
-		return false
-	}
-	parts := strings.Split(strings.Trim(root, "/"), "/")
-	if len(parts) == 2 && (parts[0] == "home" || parts[0] == "Users") {
-		return false
-	}
-	return true
-}
+func graphProjectRoot(root string) bool { return repoinfo.GraphProjectRoot(root) }

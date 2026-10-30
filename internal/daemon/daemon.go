@@ -444,15 +444,18 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
+		old.GraphExcluded = false
 		old.ToolsVersion, old.ToolsOld = "", false // set by the MCP hello, not by discovery
 		old.Waiting = nil                          // set by the local hello, not by discovery
 		probe := infos[i]
 		probe.Repo, probe.SessionID, probe.Waiting = protocol.RepoInfo{}, "", nil
+		probe.GraphExcluded = false
 		if known && old != probe {
 			infos[i].Repo = d.repo.Refresh(infos[i].Cwd)
 		} else {
 			infos[i].Repo = d.repo.Lookup(infos[i].Cwd)
 		}
+		infos[i].GraphExcluded = !repoinfo.GraphProjectRoot(infos[i].Repo.Root)
 	}
 	d.mu.Lock()
 	seen := map[string]bool{}

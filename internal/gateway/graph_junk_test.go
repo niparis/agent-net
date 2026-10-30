@@ -104,11 +104,11 @@ func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
  INSERT INTO graph_charter VALUES ('keep-charter','purpose','useful',1,'owner');
  INSERT INTO graph_edges VALUES ('keep-edge','other','depends','','normal');
  INSERT INTO graph_history(type,node,attr,old_value,new_value,at,actor) VALUES ('node','keep-history','','','component',1,'owner');
- DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version)`)
+ `)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.migrate(); err != nil {
+	if _, err := s.db.Exec(migrations[len(migrations)-2]); err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
@@ -141,6 +141,33 @@ func TestGraphCustomTemporaryAndHomeRoots(t *testing.T) {
 	} {
 		if got := graphProjectRoot(tc.root); got != tc.want {
 			t.Errorf("graphProjectRoot(%q) = %v, want %v", tc.root, got, tc.want)
+		}
+	}
+}
+
+func TestGraphUsesReportingMachineExclusions(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("test", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "remote", Repo: protocol.RepoInfo{Root: "/remote/scratch/repo", Project: "remote"}, GraphExcluded: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddProjects(node, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{{Name: "remote-registered", Path: "/remote/scratch/registered", GraphExcluded: true}}}); err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range g.Nodes {
+		if n.Name == "remote-registered" {
+			t.Fatal("reporting machine excluded registered root is visible")
+		}
+		if n.Name == "remote" {
+			t.Fatal("reporting machine excluded root is visible")
 		}
 	}
 }

@@ -26,6 +26,7 @@ const (
 
 // ProjectEntry is one registered project, as the daemon checked it.
 type ProjectEntry struct {
+	GraphExcluded bool `json:"graph_excluded,omitempty"`
 	// Name is the base name of Path.
 	Name string `json:"name"`
 	// Path is the main working tree of the repository.

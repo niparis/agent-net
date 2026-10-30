@@ -113,6 +113,7 @@ func (d *Daemon) projectAdd(ctx context.Context, req protocol.ProjectAddRequest,
 	var entries []protocol.ProjectEntry
 	seen := map[string]bool{}
 	take := func(e protocol.ProjectEntry) {
+		e.GraphExcluded = !repoinfo.GraphProjectRoot(e.Path)
 		if !seen[e.Path] {
 			seen[e.Path] = true
 			entries = append(entries, e)
