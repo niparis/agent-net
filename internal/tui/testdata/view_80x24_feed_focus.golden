@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 6 sessions, 5 online · 1 busy
 ╭─Messages · conversations─────────────────────────────────────────────────────╮
 │   tenebrae-53 ↔ s_00000000 · …                                        1m ago │
-│   tenebrae-53 ↔ ci-runner · …                                         2m ago │
-│   ci-runner ↔ tenebrae-53 · …                                         3m ago │
+│   tenebrae-53 ↔ ci-runner · …                                         3m ago │
+│   ci-runner ↔ tenebrae-53 · …                                         4m ago │
 │ ▸ tenebrae-53 ↔ strategies · Which model do you run?                  8m ago │
 │ 1 system events · e to show                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯

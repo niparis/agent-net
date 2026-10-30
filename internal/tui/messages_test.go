@@ -187,3 +187,14 @@ func TestMessageChatScrollsToSelectedMessage(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestConversationAgeUsesLastMessageTime(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m", Time: t0.Add(-5 * time.Minute)}, ConversationID: "c"}, {Event: protocol.Event{ID: 2, Kind: "msg.delivered", MessageID: "m", Time: t0.Add(-time.Minute)}, ConversationID: "c"}})
+	v := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 80, false))
+	if !strings.Contains(v, "5m ago") {
+		t.Fatal(v)
+	}
+}

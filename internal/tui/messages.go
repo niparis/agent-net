@@ -117,7 +117,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	if topic == "" {
 		topic = "…"
 	}
-	age := m.now().Sub(c.at)
+	age := m.now().Sub(last.At)
 	if age < 0 {
 		age = 0
 	}
