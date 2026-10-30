@@ -721,6 +721,8 @@ func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
 
 	// A delivery may have been dispatched while the worker was still online,
 	// but reach the daemon as its hand-back ends it.
+retryWorker:
+	var targetWorker *worker
 	for {
 		w := d.workerBySession(m.To)
 		if w == nil {
@@ -760,16 +762,34 @@ func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
 			d.sendUpdate(ctx, m.ID, protocol.StateDelivered, "queued behind the worker's turn")
 			return
 		}
+		targetWorker = w
 		break
 	}
 	ls := d.sessionByID(m.To)
 	if ls == nil {
+		if targetWorker != nil && (targetWorker.harness == "codex" || targetWorker.harness == "opencode") {
+			d.wmu.Lock()
+			ending := targetWorker.stopping || targetWorker.doneStatus != "" || d.workers[targetWorker.id] != targetWorker
+			d.wmu.Unlock()
+			if ending {
+				goto retryWorker
+			}
+		}
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "no such local session")
 		return
 	}
 	d.touchWorker(m.To, m.From)
 	d.noteAsk(m)
-	res := d.deliverTo(ctx, ls, m)
+	var res Result
+	if targetWorker != nil && targetWorker.harness == "codex" {
+		if adapter, ok := d.adapters["codex"].(*codexAdapter); ok {
+			res = adapter.deliverWorker(targetWorker, m)
+		} else {
+			res = d.deliverTo(ctx, ls, m)
+		}
+	} else {
+		res = d.deliverTo(ctx, ls, m)
+	}
 	if !res.Delivered {
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, res.Detail)
 		return

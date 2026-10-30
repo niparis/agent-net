@@ -710,8 +710,12 @@ func fakeCodex() {
 						}
 					}
 					if strings.Contains(text, "FAKE:wait") {
+						finish := "fake-codex-finish"
+						if strings.Contains(text, "FAKE:wait-second") {
+							finish = "fake-codex-finish-second"
+						}
 						for {
-							if _, err := os.Stat(filepath.Join(cwd, "fake-codex-finish")); err == nil {
+							if _, err := os.Stat(filepath.Join(cwd, finish)); err == nil {
 								break
 							}
 							select {

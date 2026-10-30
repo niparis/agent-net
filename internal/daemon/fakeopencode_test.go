@@ -569,6 +569,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 			continue
 		}
 		if strings.Contains(body, "FAKE:wait-handback") {
+			send("status", map[string]any{"status": "busy"})
 			turn(body)
 			go func() {
 				for {
@@ -578,6 +579,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 					time.Sleep(10 * time.Millisecond)
 				}
 				send("worker_handback", map[string]any{"report": "first report"})
+				send("status", map[string]any{"status": "idle"})
 				close(waitTurn)
 			}()
 			continue
@@ -585,11 +587,13 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		if strings.Contains(body, "FAKE:queued-handback") {
 			go func() {
 				<-waitTurn
+				send("status", map[string]any{"status": "busy"})
 				turn(body)
 				send("worker_handback", map[string]any{"report": "second report"})
 			}()
 			continue
 		}
+		send("status", map[string]any{"status": "busy"})
 		turn(body)
 		switch {
 		case strings.Contains(body, "FAKE:ignore"):
@@ -638,6 +642,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		default:
 			send("reply", map[string]any{"message_id": msg.ID, "body": "ok from worker (task was " + strconv.Itoa(len(body)) + " bytes)"})
 		}
+		send("status", map[string]any{"status": "idle"})
 	}
 	return generation
 }

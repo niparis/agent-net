@@ -675,7 +675,7 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:wait"})
 	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	var sent protocol.MessageSent
-	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "second turn"}), &sent)
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "second turn FAKE:wait-second"}), &sent)
 	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish"), nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -686,6 +686,12 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 2 })
 	if !strings.Contains(rec.Turns[1], "second turn") {
 		t.Fatalf("second turn: %q", rec.Turns[1])
+	}
+	if w.d.workerCount() != 1 {
+		t.Fatal("worker ended before the queued turn reported")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish-second"), nil, 0o600); err != nil {
+		t.Fatal(err)
 	}
 	second := w.replyTo(t, owner, sent.Message.ID)
 	if !strings.Contains(second.Body, "codex done") {
