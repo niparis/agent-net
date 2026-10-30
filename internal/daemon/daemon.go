@@ -168,11 +168,12 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	cto    ctoRuntime
-	cfg    Config
-	log    *log.Logger
-	st     *state
-	client *http.Client
+	cto       ctoRuntime
+	claudeCTO claudeCTOState
+	cfg       Config
+	log       *log.Logger
+	st        *state
+	client    *http.Client
 
 	// shownHost is the name the gateway lists for this machine (the owner's
 	// display name, decision 0015). Empty until the gateway said.
@@ -386,7 +387,10 @@ func (d *Daemon) Stop() {
 	if d.ln != nil {
 		d.ln.close()
 	}
-	d.cto.stop()
+	d.cto.mu.Lock()
+	d.stopClaudeCTOLocked()
+	d.cto.stopLocked()
+	d.cto.mu.Unlock()
 	d.mcp.stop()
 	d.wg.Wait()
 	d.st.close()
