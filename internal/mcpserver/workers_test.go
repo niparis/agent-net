@@ -127,3 +127,16 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerProfilesListToolReturnsRoster(t *testing.T) {
+	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "worker_profiles" {
+			return json.RawMessage(`[{"name":"demo","harness":"codex","model":"gpt"}]`), nil
+		}
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_profiles"})
+	if err != nil || res.IsError || len(res.Content) == 0 || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "demo") {
+		t.Fatalf("profiles: %+v %v", res, err)
+	}
+}
