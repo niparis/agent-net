@@ -178,8 +178,8 @@ func TestSessionNewLoggedOnce(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("lines: %v", lc.all())
 	}
-	for _, want := range []string{"session=" + id, "node=" + node, "host=box", "harness=opencode", "name=oc", "cwd=/w/proj",
-		"project=proj", "git_root=/w/proj", "remote=https://example.com/o/proj.git", "branch=main"} {
+	for _, want := range []string{"session=" + id, "node=" + node, "host=box", "harness=opencode", "name=proj", "title=oc",
+		"cwd=/w/proj", "project=proj", "git_root=/w/proj", "remote=https://example.com/o/proj.git", "branch=main"} {
 		if !strings.Contains(lines[0], want) {
 			t.Errorf("line lacks %q: %s", want, lines[0])
 		}

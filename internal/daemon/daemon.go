@@ -434,10 +434,13 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	for i := range infos {
 		infos[i].Harness = harness
 		// A session that agent-net started as a worker carries the worker flag,
-		// whichever way the harness is discovered.
+		// whichever way the harness is discovered. Its network name is
+		// "<project> worker <n>" and its TASK is the task it was given, so the
+		// harness title is not used (decision 0024).
 		if wk := d.workerByNative(harness, infos[i].NativeID); wk != nil {
 			infos[i].Worker = d.workerInfo(wk)
 			infos[i].Mode = protocol.ModeBackground
+			infos[i].Name = ""
 		}
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""

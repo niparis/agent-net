@@ -33,29 +33,41 @@ func TestTaskCellUsesAnnouncementThenTitleThenNothing(t *testing.T) {
 	}
 }
 
-func TestWorkerRowShowsItsTaskOrAFallback(t *testing.T) {
-	w := agent("s_0000000000000011", "n_mac", "Mac", "opencode", "tenebrae", func(a *protocol.AgentView) {
+// A worker's name is its automatic name, "<project> worker <n>". Its task, the
+// first line its owner gave it, is the TASK cell. A harness title is only a
+// fallback for TASK when there is no task.
+func TestWorkerRowShowsItsNameAndItsTask(t *testing.T) {
+	w := agent("s_0000000000000011", "n_mac", "Mac", "opencode", "tenebrae worker 1", func(a *protocol.AgentView) {
 		a.Worker = &protocol.WorkerInfo{ID: "w_c641d30bf14ec9d6", Owner: "s_0000000000000001", Task: "deploy the routes"}
+		a.Title = "tenebrae deploy"
 	})
-	if got := rowName(w); got != "deploy the routes" {
+	if got := rowName(w); got != "tenebrae worker 1" {
 		t.Errorf("worker row name = %q", got)
 	}
-	if got := taskText(w); got != "" {
-		t.Errorf("a worker's TASK repeats its name: %q", got)
+	if got := taskText(w); got != "deploy the routes" {
+		t.Errorf("worker task = %q", got)
 	}
-	// The name a plugin reports does not replace the task.
+	// The name a plugin reports never replaces the automatic name.
 	w.Profile.Name = "opencode worker tenebrae"
-	if got := rowName(w); got != "deploy the routes" {
-		t.Errorf("the plugin name won over the task: %q", got)
+	if got := rowName(w); got != "opencode worker tenebrae" {
+		t.Errorf("the profile name must win, got %q", got)
 	}
-	// Without a task the row says which worker it is, by its worker ID.
+	w.Profile.Name = "tenebrae worker 1"
+	// Without a task the harness title is the fallback.
 	w.Worker.Task = ""
-	if got := rowName(w); got != "worker opencode w_c641d30b" {
-		t.Errorf("worker fallback = %q", got)
-	}
-	w.Title = "tenebrae deploy"
 	if got := taskText(w); got != "tenebrae deploy" {
 		t.Errorf("a worker without a task should fall back to its title, got %q", got)
+	}
+	// With neither, the cell is blank.
+	w.Title = ""
+	if got := taskText(w); got != "" {
+		t.Errorf("empty worker task = %q", got)
+	}
+	// A row with no name says which worker it is, by its worker ID.
+	w.Profile.Name = ""
+	w.Worker.Task = "deploy the routes"
+	if got := rowName(w); got != "worker opencode w_c641d30b" {
+		t.Errorf("worker fallback = %q", got)
 	}
 }
 

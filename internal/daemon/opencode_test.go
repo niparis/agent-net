@@ -97,8 +97,8 @@ func TestOpenCodeNameAndDormantStatus(t *testing.T) {
 
 	// No name in hello: the folder name.
 	s0, id0 := helloOpenCode(t, n, "ses_plain", "/work/plain")
-	if a := agentByID(t, cli, id0); a.Profile.Name != "plain" {
-		t.Fatalf("default name %q", a.Profile.Name)
+	if a := agentByID(t, cli, id0); a.Profile.Name != "plain" || a.Title != "" {
+		t.Fatalf("default name %q title %q", a.Profile.Name, a.Title)
 	}
 
 	lc := dialLocal(t, n.sock)
@@ -109,15 +109,15 @@ func TestOpenCodeNameAndDormantStatus(t *testing.T) {
 		SessionID string `json:"session_id"`
 	}
 	json.Unmarshal(res, &r)
-	if a := agentByID(t, cli, r.SessionID); a.Profile.Name != "strategies: fix the risk model" {
-		t.Fatalf("name from hello %q", a.Profile.Name)
+	if a := agentByID(t, cli, r.SessionID); a.Profile.Name != "strategies" || a.Title != "fix the risk model" {
+		t.Fatalf("name from hello %q title %q", a.Profile.Name, a.Title)
 	}
 
 	// A title change is a status call with only a name.
 	lc.mustCall("status", map[string]any{"name": "strategies: backtest v2"})
-	eventually(t, "new name", func() bool { return agentByID(t, cli, r.SessionID).Profile.Name == "strategies: backtest v2" })
-	if a := agentByID(t, cli, r.SessionID); a.Status != "idle" {
-		t.Fatalf("a rename changed the status: %+v", a)
+	eventually(t, "new title", func() bool { return agentByID(t, cli, r.SessionID).Title == "backtest v2" })
+	if a := agentByID(t, cli, r.SessionID); a.Profile.Name != "strategies" {
+		t.Fatalf("a title change renamed the session: %+v", a)
 	}
 
 	lc.mustCall("status", map[string]any{"status": "dormant"})

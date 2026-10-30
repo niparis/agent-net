@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -214,6 +216,9 @@ CREATE TABLE IF NOT EXISTS playbook (
   PRIMARY KEY (subject_kind, subject, harness));
 INSERT OR IGNORE INTO playbook (subject_kind, subject, harness, note, source, support, track_line, pinned, stale, created_at, updated_at)
   SELECT 'model', model, harness, note, 'owner', 0, '', 0, 0, updated_at, updated_at FROM playbook_notes;
+`, `
+ALTER TABLE sessions ADD COLUMN title TEXT NOT NULL DEFAULT '';
+UPDATE sessions SET title = name;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -403,6 +408,7 @@ type newSession struct {
 // did not know.
 func (s *Store) upsertSession(q interface {
 	execer
+	Query(string, ...any) (*sql.Rows, error)
 	QueryRow(string, ...any) *sql.Row
 }, nodeID string, in protocol.SessionInfo) (id string, created bool, err error) {
 	if in.Harness == "" || in.NativeID == "" {
@@ -411,9 +417,11 @@ func (s *Store) upsertSession(q interface {
 	if in.Status == "" {
 		in.Status = "unknown"
 	}
-	var known int
-	if err := q.QueryRow(`SELECT COUNT(*) FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
-		nodeID, in.Harness, in.NativeID).Scan(&known); err != nil {
+	var knownID, knownName string
+	err = q.QueryRow(`SELECT id, name FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
+		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName)
+	known := err == nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return "", false, err
 	}
 	now := s.now().UnixNano()
@@ -441,10 +449,22 @@ func (s *Store) upsertSession(q interface {
 		workerStarted = in.Worker.StartedAt * int64(time.Second)
 	}
 	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
+	// The name is the project's (decision 0024); the harness name is only a
+	// title for the TASK column. The owner pseudo-session keeps its own name.
+	name := ""
+	if protocol.IsOwner(in.Harness) {
+		name = protocol.CleanModel(in.Name)
+	} else if name, err = chooseSessionName(q, knownID, knownName, in); err != nil {
+		return "", false, err
+	}
+	title := protocol.CleanModel(in.Name)
+	if protocol.IsOwner(in.Harness) {
+		title = ""
+	}
 	// A new record gets the ID the daemon asks for when that ID looks right
 	// and nobody uses it: a worker whose record was lost keeps its ID.
 	newID := protocol.NewID("s")
-	if known == 0 && validSessionID(in.SessionID) {
+	if !known && validSessionID(in.SessionID) {
 		var used int
 		if err := q.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, in.SessionID).Scan(&used); err != nil {
 			return "", false, err
@@ -462,19 +482,19 @@ func (s *Store) upsertSession(q interface {
 			waiting = string(b)
 		}
 	}
-	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
+	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
 		tools_version, tools_old, created_at, waiting)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
-		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
+		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting`,
-		newID, nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
+		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
 		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting)
 	if err != nil {
@@ -486,11 +506,109 @@ func (s *Store) upsertSession(q interface {
 		return "", false, err
 	}
 	// The owner session is the person, not a new agent: no session.new for it.
-	fresh := known == 0 && !protocol.IsOwner(in.Harness)
+	fresh := !known && !protocol.IsOwner(in.Harness)
 	if fresh {
-		s.event(q, "session.new", nodeID, id, "", sessionDetail(in))
+		s.event(q, "session.new", nodeID, id, "", sessionDetail(in, name))
 	}
 	return id, fresh, nil
+}
+
+// sessionBaseName is the base of a session's name: the project the daemon
+// found (the main working tree, decision 0003), or the folder it runs in. A
+// very old daemon that sends neither keeps the name it reported.
+func sessionBaseName(in protocol.SessionInfo) string {
+	name := strings.TrimSpace(in.Repo.Project)
+	if name == "" {
+		if cwd := strings.TrimSpace(in.Cwd); cwd != "" {
+			name = filepath.Base(filepath.Clean(cwd))
+		}
+	}
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		name = strings.TrimSpace(in.Name)
+	}
+	if name = protocol.CleanModel(name); name == "" {
+		name = in.Harness
+	}
+	if name == "" {
+		name = "session"
+	}
+	return name
+}
+
+// automaticName is the candidate name for a session: the base, then " 2",
+// " 3"; a worker is "<base> worker 1", "worker 2".
+func automaticName(base string, worker bool, n int) string {
+	if worker {
+		return base + " worker " + strconv.Itoa(n)
+	}
+	if n <= 1 {
+		return base
+	}
+	return base + " " + strconv.Itoa(n)
+}
+
+// isAutomaticName says whether name is one of the automatic names of this
+// base, so a reporting session keeps it and a renamed project does not.
+func isAutomaticName(name, base string, worker bool) bool {
+	if worker {
+		rest, ok := strings.CutPrefix(name, base+" worker ")
+		if !ok {
+			return false
+		}
+		n, err := strconv.Atoi(rest)
+		return err == nil && n >= 1 && strconv.Itoa(n) == rest
+	}
+	if name == base {
+		return true
+	}
+	rest, ok := strings.CutPrefix(name, base+" ")
+	if !ok {
+		return false
+	}
+	n, err := strconv.Atoi(rest)
+	return err == nil && n >= 2 && strconv.Itoa(n) == rest
+}
+
+// chooseSessionName gives a session its name. A live session keeps the name it
+// has while it fits its project. A new session, or one whose name another live
+// session took while it was away, gets the lowest free number. Only live
+// sessions hold a name (decision 0024).
+func chooseSessionName(q interface {
+	Query(string, ...any) (*sql.Rows, error)
+}, sessionID, current string, in protocol.SessionInfo) (string, error) {
+	base, worker := sessionBaseName(in), in.Worker != nil
+	used := map[string]bool{}
+	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name) FROM sessions s
+		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.online = 1 AND s.id <> ?`, sessionID)
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return "", err
+		}
+		if name != "" {
+			used[name] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	if current != "" && !used[current] && isAutomaticName(current, base, worker) {
+		return current, nil
+	}
+	first := 1
+	if !worker {
+		first = 0 // the base itself is the first name, then " 2"
+	}
+	for n := first; ; n++ {
+		name := automaticName(base, worker, n)
+		if !used[name] {
+			return name, nil
+		}
+	}
 }
 
 // validSessionID says whether id has the shape of a session ID.
@@ -506,8 +624,8 @@ func validSessionID(id string) bool {
 	return true
 }
 
-func sessionDetail(in protocol.SessionInfo) string {
-	return strings.TrimPrefix(pairs("harness", in.Harness, "name", in.Name, "project", in.Repo.Project,
+func sessionDetail(in protocol.SessionInfo, name string) string {
+	return strings.TrimPrefix(pairs("harness", in.Harness, "name", name, "title", in.Name, "project", in.Repo.Project,
 		"branch", in.Repo.Branch, "cwd", in.Cwd), " ")
 }
 
@@ -516,8 +634,10 @@ func sessionDetail(in protocol.SessionInfo) string {
 func (s *Store) logNewSessions(list []newSession) {
 	for _, n := range list {
 		host := s.hostname(n.node)
+		var name string
+		s.db.QueryRow(`SELECT name FROM sessions WHERE id = ?`, n.id).Scan(&name)
 		s.logf("session.new", "session", n.id, "node", n.node, "host", host, "harness", n.in.Harness,
-			"name", n.in.Name, "pid", n.in.PID, "cwd", n.in.Cwd, "project", n.in.Repo.Project,
+			"name", name, "title", n.in.Name, "pid", n.in.PID, "cwd", n.in.Cwd, "project", n.in.Repo.Project,
 			"git_root", n.in.Repo.Root, "worktree", n.in.Repo.Worktree, "remote", n.in.Repo.Remote, "branch", n.in.Repo.Branch)
 	}
 }
@@ -779,7 +899,7 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.name, s.created_at, s.tools_version, s.tools_old, s.waiting
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {

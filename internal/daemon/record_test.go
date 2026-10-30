@@ -80,7 +80,7 @@ func TestSessionRepoInfoReachesGateway(t *testing.T) {
 	if len(lines) != 1 {
 		t.Fatalf("session.new lines: %v", lines)
 	}
-	for _, w := range []string{"session=" + a.SessionID, "harness=fake", "name=alice", "project=shop-api", "git_root=" + repo,
+	for _, w := range []string{"session=" + a.SessionID, "harness=fake", "name=shop-api", "title=alice", "project=shop-api", "git_root=" + repo,
 		"remote=https://git.example.com/team/shop-api.git", "branch=main", "cwd=" + sub} {
 		if !strings.Contains(lines[0], w) {
 			t.Errorf("session.new lacks %q: %s", w, lines[0])

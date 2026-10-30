@@ -233,10 +233,10 @@ func TestCodexDiscovery(t *testing.T) {
 
 	eventually(t, "three open threads are sessions", func() bool { return len(codexAgents(t, cli)) == 3 })
 	got := codexAgents(t, cli)
-	if a := got["/work/api"]; a.Profile.Name != "api work" || a.Status != "idle" || a.Mode != protocol.ModeUnknown || a.Model != "gpt-x" || a.Cwd != "/work/api" {
+	if a := got["/work/api"]; a.Profile.Name != "api" || a.Title != "api work" || a.Status != "idle" || a.Mode != protocol.ModeUnknown || a.Model != "gpt-x" || a.Cwd != "/work/api" {
 		t.Fatalf("t-open: %+v", a)
 	}
-	if a := got["/work/web"]; a.Profile.Name != "web" || a.Status != "busy" {
+	if a := got["/work/web"]; a.Profile.Name != "web" || a.Title != "" || a.Status != "busy" {
 		t.Fatalf("t-busy: %+v", a)
 	}
 	if a := got["/work/ci"]; a.Mode != protocol.ModeBackground {
