@@ -1,7 +1,7 @@
-# 0006 - Phone app (planned)
+# 0006 - Phone app
 
 **Date:** 2026-10-29
-**Status:** Planned by the owner. Build after workers (0002) and the next TUI work.
+**Status:** Phase 1 built. Push notifications and the streaming conversation in P8 remain future work. The phase 1 phone app uses the gateway host daemon and its owner session through the same operator client as the TUI.
 **Context:** the owner wants to browse and use their agents from their phone, with Tailscale installed on the phone. Related: [0002](0002-workers.md), [0004](0004-tui-and-event-feed.md).
 
 ## P1 - The phone shows the same data and offers the same functions as the TUI

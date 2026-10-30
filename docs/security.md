@@ -345,3 +345,14 @@ The daemon accepts `inbox_list` and `inbox_answer` only through the owner operat
 An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that Nicolas approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
 
 Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
+
+### Phone owner identity
+
+The phone owner setting records the Tailscale login once in the gateway database.
+The phone authentication check accepts only requests from 127.0.0.1 with exactly
+one `Tailscale-User-Login` header equal to that setting. This relies on
+Tailscale Serve to authenticate the caller and supply the identity header. A
+local process can connect to a loopback listener and forge this header; the
+check does not protect the gateway from other processes on its host. The host
+and its local users must be trusted. Do not expose the HTTP listener directly
+on a network or put an untrusted proxy in front of it.

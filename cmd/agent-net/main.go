@@ -23,6 +23,8 @@ import (
 	"github.com/niparis/agent-net/internal/daemon/claude"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/operator"
+	"github.com/niparis/agent-net/internal/phone"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/setup"
 	"github.com/niparis/agent-net/internal/tui"
@@ -35,6 +37,7 @@ var version = "dev"
 
 const usage = `usage: agent-net <command>
 
+  phone      configure the phone app owner
   gateway    run the gateway server
   setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod, --[no-]quota-axi
   invite     print the one-line installer for a new machine (run on the gateway host)
@@ -78,6 +81,8 @@ func main() {
 	switch os.Args[1] {
 	case "gateway":
 		err = cmdGateway(ctx, args)
+	case "phone":
+		err = cmdPhone(args)
 	case "setup":
 		err = cmdSetup(ctx, args)
 	case "invite":
@@ -167,6 +172,7 @@ func defaultGatewayData() string {
 func cmdGateway(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("gateway", flag.ExitOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on")
+	phoneListen := fs.String("phone-listen", "", "phone HTTP listener on 127.0.0.1:port (disabled by default)")
 	data := fs.String("data", defaultGatewayData(), "data directory")
 	sans := fs.String("san", "", "extra host names or IPs for the TLS certificate, comma separated")
 	dist := fs.String("dist", setup.DefaultDist(), "directory with the agent-net-{os}-{arch} binaries served at /install/bin")
@@ -193,6 +199,15 @@ func cmdGateway(ctx context.Context, args []string) error {
 		return err
 	}
 	defer gw.Close()
+	if *phoneListen != "" {
+		op := operator.New(daemon.SocketPath())
+		defer op.Close()
+		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(phone.New(op)))
+		if err != nil {
+			return err
+		}
+		defer phone.Close()
+	}
 	if err := gw.WriteAdminInfo(*listen); err != nil {
 		return err
 	}
