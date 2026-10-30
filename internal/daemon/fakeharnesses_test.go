@@ -170,7 +170,7 @@ func fakeClaudeCLI() {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && sf.JobID != "" {
-			fmt.Printf("backgrounded · %s · %s (idle — send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
+			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
 				sf.JobID, argValue(os.Args, "--name"), sf.JobID, sf.JobID)
 			return
 		}

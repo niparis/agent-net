@@ -96,7 +96,23 @@ func (f *fakeHerdr) session(t *testing.T, pane string) int {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
+	waitProcessEnv(t, cmd.Process.Pid, "HERDR_ENV=1")
 	return cmd.Process.Pid
+}
+
+// waitProcessEnv waits until /proc/<pid>/environ shows want. On Linux cmd.Start
+// can return before the new program has set its environment area, and the file
+// then reads empty for a moment.
+func waitProcessEnv(t *testing.T, pid int, want string) {
+	t.Helper()
+	eventually(t, "environment of pid "+itoa(pid), func() bool {
+		for _, kv := range osProcessEnviron(pid) {
+			if kv == want {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func herdrAgentPane(id, term string) string {

@@ -164,6 +164,7 @@ func TestEnterTmuxOtherServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
+	waitProcessEnv(t, cmd.Process.Pid, "TMUX=/srv/sess.sock,123,0")
 	argsFile := fakeTmux(t, itoa(cmd.Process.Pid)+"|%3|dev")
 	pane, ok := findTmuxPane(cmd.Process.Pid)
 	if !ok || pane.socket != "/srv/sess.sock" || pane.id != "%3" || pane.session != "dev" {
