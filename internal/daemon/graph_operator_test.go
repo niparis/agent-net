@@ -15,7 +15,7 @@ func TestGraphOwnerRelay(t *testing.T) {
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n, "graph-agent", "/w/graph", true)
 	cli := cliClient(t, n)
-	for _, method := range []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "edge_history"} {
+	for _, method := range []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "edge_history", "node_settings_get", "node_settings_set"} {
 		if _, err := agent.call(method, map[string]any{}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
 			t.Fatalf("%s gate: %v", method, err)
 		}
@@ -73,6 +73,33 @@ func TestGraphCTOActor(t *testing.T) {
 	json.Unmarshal(cli.mustCall("charter_history", map[string]string{"node": "architect"}), &history)
 	if history[0].By != "owner" {
 		t.Fatalf("owner spoofed actor: %+v", history)
+	}
+}
+
+func TestNodeSettingsOwnerOnly(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
+	agent, _ := helloPi(t, n, "settings-agent", "/w/shop", true)
+	for _, method := range []string{"node_settings_get", "node_settings_set"} {
+		if _, err := agent.call(method, map[string]any{}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+			t.Fatalf("%s gate: %v", method, err)
+		}
+	}
+	cli := cliClient(t, n)
+	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "critical"})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
+	var got protocol.NodeSettingsResult
+	if err := json.Unmarshal(cli.mustCall("node_settings_get", map[string]any{"node": "shop"}), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Overrides[protocol.SettingDeployRule] != protocol.DeployOwner || got.Effective.DeployRule != protocol.DeployOwner {
+		t.Fatalf("settings: %+v", got)
+	}
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": ""})
+	got = protocol.NodeSettingsResult{}
+	json.Unmarshal(cli.mustCall("node_settings_get", map[string]any{"node": "shop"}), &got)
+	if len(got.Overrides) != 0 {
+		t.Fatalf("override not cleared: %+v", got.Overrides)
 	}
 }
 

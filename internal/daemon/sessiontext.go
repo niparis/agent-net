@@ -37,6 +37,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
+	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -224,7 +225,7 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				d.Logf("node.rename node=%s name=%q", q.NodeID, out.DisplayName)
 			}
 		}
-	case protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpGraphUndo:
+	case protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpGraphUndo, protocol.OpNodeSettingsGet, protocol.OpNodeSettingsSet:
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
 		frame := strings.ReplaceAll(method, "_", ".")

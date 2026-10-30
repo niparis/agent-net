@@ -150,6 +150,8 @@ CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT 
 CREATE INDEX graph_history_node ON graph_history(node, id);
 `, `
 ALTER TABLE messages ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0;
+`, `
+CREATE TABLE graph_node_settings (node TEXT NOT NULL, setting TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, setting));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

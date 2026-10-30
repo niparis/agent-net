@@ -665,6 +665,21 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad graph.undo")
 		}
 		return map[string]bool{"ok": true}, st.GraphUndo(p.HistoryID, graphActor(raw))
+	case "node.settings.get":
+		p, err := decode[protocol.NodeSettingsGetRequest](raw)
+		if err != nil || p.Node == "" {
+			return nil, reject("bad node.settings.get")
+		}
+		return st.NodeSettings(p.Node)
+	case "node.settings.set":
+		p, err := decode[protocol.NodeSettingsSetRequest](raw)
+		if err != nil || p.Node == "" || p.Setting == "" {
+			return nil, reject("bad node.settings.set")
+		}
+		if err := st.SetNodeSetting(p.Node, p.Setting, p.Value, graphActor(raw)); err != nil {
+			return nil, err
+		}
+		return st.NodeSettings(p.Node)
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)

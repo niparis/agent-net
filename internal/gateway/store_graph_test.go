@@ -48,6 +48,30 @@ func TestCharterStore(t *testing.T) {
 	}
 }
 
+func TestDeployEdgeIsStoredWithoutAMode(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	for _, n := range []string{"homelab", "shop"} {
+		if err := s.AddArchitect(n, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e := protocol.Edge{From: "homelab", To: "shop", Kind: "deploys", Rule: "normal"}
+	if err := s.SetEdge(e, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEdge(protocol.Edge{From: "homelab", To: "shop", Kind: "deploys", Mode: "owner"}, "owner"); err == nil {
+		t.Fatal("a mode on a deploy edge was accepted")
+	}
+	g, err := s.Graph()
+	if err != nil || len(g.Edges) != 1 || g.Edges[0].Kind != "deploys" {
+		t.Fatalf("graph: %#v, %v", g.Edges, err)
+	}
+}
+
 func TestGraphEdges(t *testing.T) {
 	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
 	if err != nil {
