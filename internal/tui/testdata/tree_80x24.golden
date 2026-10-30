@@ -19,6 +19,6 @@ Selected session ─────────────────────
   model    anthropic/claude-haiku-4-5, b… │
   function no AGENTS.md                   │
 Messages (live) ────────────────────────────────────────────────────────────────
-  14:02  tenebrae-53 (Mac) -> ci-runner (build-vm)       notification failed
-  14:04  tenebrae-53 (Mac) -> s_00000000                 request      dispatched
+  14:02  tenebrae-53 -> ci-runner  notification                                ✗
+  14:04  tenebrae-53 -> s_00000000  request                                    …
 up/down select  enter conversation  m msg  s start  x stop  ? help  q quit
