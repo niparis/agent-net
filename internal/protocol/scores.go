@@ -123,7 +123,7 @@ func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []
 				rank = 1
 			default:
 				_, wantLevel := SplitModelLevel(match)
-				if wantLevel != "" && !strings.EqualFold(wantLevel, level) {
+				if wantLevel != "" && !strings.EqualFold(wantLevel, requested) {
 					continue
 				}
 				if scoreName(match) == scoreName(model) && scoreName(model) != "" {

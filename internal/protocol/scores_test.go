@@ -112,3 +112,11 @@ func TestScoreHarnessDefaultEffort(t *testing.T) {
 		}
 	}
 }
+
+func TestOwnerEffortOverrideUsesHarnessDefault(t *testing.T) {
+	overrides := []ModelScore{{Match: "gpt-6.1-terra:high", Score: 60, Source: "owner"}}
+	got, ok := LookupModelScoreWithDefaultEffort("gpt-6.1-terra", "high", overrides)
+	if !ok || got.Score != 60 || got.Source != "owner" {
+		t.Fatalf("got %+v %v", got, ok)
+	}
+}
