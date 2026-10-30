@@ -81,6 +81,10 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 
 A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
 
+## Workers ended with "lost while the daemon was not running" after an upgrade
+
+Workers must survive a daemon restart. On Linux that needs `KillMode=process` in `~/.config/systemd/user/agent-net-daemon.service`; without it systemd kills the whole service group on restart. Check with `systemctl --user cat agent-net-daemon.service`. If the line is missing, run `agent-net setup`. The first restart after an automatic upgrade from an old version can still lose workers; after that they survive. On macOS the plist needs `AbandonProcessGroup` (also written by `setup`). `agent-net uninstall` stops the workers on purpose.
+
 ## A Codex thread is not listed, or cannot send
 
 - Not listed: only threads that the shared Codex app server has loaded are listed, which means a window has the thread open (or closed it a short time ago). Check that the server runs: `codex app-server daemon version`. Look in the daemon log for `codex: connected to the shared app server`. If your Codex home is not `~/.codex`, the daemon service needs `CODEX_HOME` too.

@@ -400,7 +400,7 @@ The Claude Code hook output (one line of JSON on stdout, exit 0), only when the 
 | Item | What setup does | What `agent-net uninstall` does |
 |---|---|---|
 | Binary `~/.local/bin/agent-net` | Put there by `install.sh` or the invite script, not by `setup` itself. | Keeps it. Delete it by hand. |
-| Daemon service | Writes the systemd user unit (Linux) or launchd agent (macOS), enables it and restarts it. | Stops it and deletes the unit or plist. |
+| Daemon service | Writes the systemd user unit (Linux) or launchd agent (macOS), enables it and restarts it. The unit has `KillMode=process` and the plist has `AbandonProcessGroup`, so a restart stops only the daemon and keeps the workers (the next daemon adopts them). Workers also run in their own session. A daemon that starts under systemd adds `KillMode=process` to an older unit and reloads systemd, without a restart. | Stops it and deletes the unit or plist. Then stops every worker that is still running (the `workers` step), because nothing else would. |
 | Gateway service (only with `--gateway`) | Same, listening on `0.0.0.0:7420`. | Stops it and deletes the unit or plist. |
 | Gateway binaries (only with `--gateway`) | Copies this binary into `~/.local/share/agent-net/dist`. | Keeps them. |
 | Gateway data | Created by the gateway on first start. | Keeps it, even with `--purge` (it prints a reminder). Delete the directory by hand to start over. |

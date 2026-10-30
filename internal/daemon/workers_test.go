@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"golang.org/x/sys/unix"
 )
 
 // ---- helpers ----
@@ -861,6 +862,11 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	eventually(t, "the second worker died", func() bool { return !alive(recDying.Pid) })
 	if !alive(recLive.Pid) {
 		t.Fatal("stopping the daemon killed a worker")
+	}
+	// A worker has its own session: nothing that signals the daemon's session
+	// or process group (a service manager, a terminal) reaches it.
+	if sid, err := unix.Getsid(recLive.Pid); err != nil || sid != recLive.Pid {
+		t.Errorf("worker session %d (err %v), want its own (%d)", sid, err, recLive.Pid)
 	}
 	w.node.restart()
 	w.cli = cliClient(t, w.node)

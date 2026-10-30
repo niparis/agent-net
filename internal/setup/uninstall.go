@@ -2,13 +2,18 @@ package setup
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/guidance"
 )
+
+// stopWorkers is a variable so a test can look at the call.
+var stopWorkers = daemon.StopRecordedWorkers
 
 // Uninstall undoes Setup. It leaves the binary and the gateway data alone.
 func Uninstall(o Options) error {
@@ -23,6 +28,17 @@ func Uninstall(o Options) error {
 			res, err := r.removeService(s)
 			r.step(s.Name+" service", res, err)
 		}
+	}
+	// Workers outlive the daemon on purpose (a restart keeps them), so with
+	// the service gone nobody else would stop them.
+	n, err := stopWorkers(daemon.StateDir(), 3*time.Second)
+	switch {
+	case err != nil:
+		r.step("workers", "", err)
+	case n == 0:
+		r.step("workers", "skipped (none running)", nil)
+	default:
+		r.step("workers", fmt.Sprintf("ok (stopped %d)", n), nil)
 	}
 	r.removeClaudeMCP()
 	r.removePeerMessages()
