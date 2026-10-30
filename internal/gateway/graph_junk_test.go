@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -119,6 +121,26 @@ func TestGraphJunkMigrationPreservesManagedNodes(t *testing.T) {
 		}
 		if count != tc.want {
 			t.Errorf("%s count=%d want=%d", tc.name, count, tc.want)
+		}
+	}
+}
+
+func TestGraphCustomTemporaryAndHomeRoots(t *testing.T) {
+	t.Setenv("TMPDIR", "/scratch/custom")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		root string
+		want bool
+	}{
+		{"/scratch/custom/repo", false},
+		{home, false},
+		{filepath.Join(home, "repo"), true},
+	} {
+		if got := graphProjectRoot(tc.root); got != tc.want {
+			t.Errorf("graphProjectRoot(%q) = %v, want %v", tc.root, got, tc.want)
 		}
 	}
 }
