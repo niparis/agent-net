@@ -41,9 +41,12 @@ type WorkerResume struct {
 
 // WorkerCleanup is "worker.cleanup", machine to gateway: drop the worker
 // records of this machine that are offline and started longer ago than
-// MaxAge. The daemon sends it at start and periodically (W7).
+// MaxAge. The daemon sends it at start and periodically (W7). Running lists
+// the session IDs of the workers the machine runs or has adopted: the gateway
+// never drops those records, whatever their age or state.
 type WorkerCleanup struct {
-	MaxAgeSeconds int64 `json:"max_age_seconds"`
+	MaxAgeSeconds int64    `json:"max_age_seconds"`
+	Running       []string `json:"running,omitempty"`
 }
 
 // WorkerInfo is the worker part of a session. The daemon that started the

@@ -803,7 +803,14 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second)}); err != nil &&
+	// Wait for the workers of the last run to be taken back: the gateway keeps
+	// the records of the workers listed here.
+	select {
+	case <-d.adopted:
+	case <-ctx.Done():
+		return
+	}
+	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), Running: d.runningSessionIDs()}); err != nil &&
 		!strings.Contains(err.Error(), "unknown frame type") { // an older gateway has no such frame
 		d.Logf("worker.cleanup: %v", err)
 	}
@@ -1065,6 +1072,21 @@ func (d *Daemon) adoptWorkers() {
 		}
 		d.Logf("worker.adopted worker=%s session=%s project=%s pid=%d", w.id, w.sessionID, w.project, w.pid)
 	}
+}
+
+// runningSessionIDs lists the gateway session IDs of the workers this daemon
+// runs or has adopted.
+func (d *Daemon) runningSessionIDs() []string {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	var ids []string
+	for _, w := range d.workers {
+		if w.sessionID != "" {
+			ids = append(ids, w.sessionID)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // workerCount is how many workers run on this machine.

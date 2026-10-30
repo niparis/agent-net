@@ -88,7 +88,7 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil || p.MaxAgeSeconds <= 0 {
 			return nil, reject("bad worker.cleanup")
 		}
-		n, err := g.store.CleanWorkers(nc.id, time.Duration(p.MaxAgeSeconds)*time.Second)
+		n, err := g.store.CleanWorkers(nc.id, time.Duration(p.MaxAgeSeconds)*time.Second, p.Running)
 		if err != nil {
 			return nil, err
 		}
