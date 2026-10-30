@@ -68,6 +68,8 @@ type UsageReport struct {
 	// owner turned the integration off, when quota-axi is not installed, or
 	// before the first reading.
 	Quotas *Quotas `json:"quotas,omitempty"`
+	// QuotaError is the latest quota-axi command failure, if any.
+	QuotaError string `json:"quota_error,omitempty"`
 }
 
 // Room values of WorkerLoad: why a machine has no room for another worker, or
@@ -231,6 +233,10 @@ type EnterPlan struct {
 	Host string `json:"host,omitempty"`
 	// Note is one line for the owner: what the plan does, or why there is none.
 	Note string `json:"note,omitempty"`
+	// Fallback is the manual way to enter the session on its own machine, such
+	// as "On build-box run: ...". It is set when Argv uses ssh, so a front end
+	// can show it when ssh cannot connect (exit status 255).
+	Fallback string `json:"fallback,omitempty"`
 }
 
 // TextEntry is one step of a session: a prompt, a reply, a tool call or a tool

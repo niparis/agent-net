@@ -273,7 +273,7 @@ func TestEnterRefusesTheOwnerAndUnknownSessions(t *testing.T) {
 	}
 }
 
-func TestEnterOnAnotherMachineNeedsOptInForSSH(t *testing.T) {
+func TestEnterOnAnotherMachineUsesSSHByDefault(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "claude")
 	cwd := t.TempDir()
@@ -289,30 +289,38 @@ func TestEnterOnAnotherMachineNeedsOptInForSSH(t *testing.T) {
 	})
 	host := remote.cfg.Hostname
 	cmdline := "cd " + cwd + " && exec " + bins["claude"] + " attach deadbeef"
+	fallback := "On " + host + " run: " + cmdline
 
-	// No opt-in: no command to run here, the note gives the one to run there.
+	// The default config enters through ssh, to the host the gateway lists.
 	local := startNode(t, g, nodeOpts{})
 	eventually(t, "session on the gateway", func() bool {
 		p := enterOfErr(local, id)
 		return p != nil && p.Note != ""
 	})
 	p := enterOf(t, local, id, "/tmp/mytmux")
-	if len(p.Argv) != 0 || !strings.Contains(p.Note, "On "+host+" run: "+cmdline) || !strings.Contains(p.Note, "enter_ssh") {
-		t.Fatalf("without opt-in: %+v", p)
+	if want := []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", host, cmdline}; !reflect.DeepEqual(p.Argv, want) || p.Dir != "" {
+		t.Fatalf("default: %+v", p)
+	}
+	if p.Fallback != fallback {
+		t.Fatalf("fallback %q, want %q", p.Fallback, fallback)
 	}
 
-	// Opted in: the same command through ssh -t, to the host the gateway lists.
-	optIn := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.EnterSSH = true }})
-	p = enterOf(t, optIn, id, "")
-	if want := []string{"ssh", "-t", "--", host, cmdline}; !reflect.DeepEqual(p.Argv, want) || p.Dir != "" {
-		t.Fatalf("with opt-in: %+v", p)
+	// enter_ssh false: no command to run here, the note gives the one to run there.
+	off := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.EnterSSH = false }})
+	p = enterOf(t, off, id, "")
+	if len(p.Argv) != 0 || !strings.Contains(p.Note, "On "+host+" run: "+cmdline) || !strings.Contains(p.Note, "enter_ssh is off in node.json") {
+		t.Fatalf("with enter_ssh false: %+v", p)
 	}
+	if p.Fallback != "" {
+		t.Fatalf("a plan with no command has a fallback: %+v", p)
+	}
+
 	// A per-host ssh target replaces the name; a bad one is refused.
-	alias := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.EnterSSH = true; c.EnterSSHHosts = map[string]string{host: "me@box"} }})
-	if p = enterOf(t, alias, id, ""); p.Argv[3] != "me@box" {
+	alias := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.EnterSSHHosts = map[string]string{host: "me@box"} }})
+	if p = enterOf(t, alias, id, ""); p.Argv[5] != "me@box" {
 		t.Fatalf("alias: %v", p.Argv)
 	}
-	bad := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.EnterSSH = true; c.EnterSSHHosts = map[string]string{host: "-oProxyCommand=x"} }})
+	bad := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.EnterSSHHosts = map[string]string{host: "-oProxyCommand=x"} }})
 	if p = enterOf(t, bad, id, ""); len(p.Argv) != 0 || !strings.Contains(p.Note, "bad ssh target") {
 		t.Fatalf("bad target: %+v", p)
 	}

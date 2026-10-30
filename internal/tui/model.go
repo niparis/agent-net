@@ -56,6 +56,8 @@ type Model struct {
 	now func() time.Time
 
 	width, height int
+	tab           int
+	quotaScroll   int
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap     Snapshot
@@ -79,7 +81,6 @@ type Model struct {
 	filtering bool
 	input     textinput.Model
 	focus     focus
-	tab       int
 	feedCur   int // index in the feed items when the feed has focus
 	open      *openMsg
 	quitting  bool
@@ -616,12 +617,33 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	if k.String() == "1" || k.String() == "2" || k.String() == "3" {
-		m.tab = int(k.String()[0] - '1')
-		m.focus = focusSessions
-		if m.tab == 1 {
-			m.focus = focusFeed
-			m.feedCur = m.feedLastVisible()
+	for i := range tabNames {
+		if k.String() == fmt.Sprint(i+1) {
+			m.tab = i
+			m.focus = focusSessions
+			if i == 1 {
+				m.focus = focusFeed
+				m.feedCur = m.feedLastVisible()
+			}
+			return m, nil
+		}
+	}
+	if m.tab == 2 {
+		switch k.String() {
+		case "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "down", "j":
+			m.quotaScroll++
+		case "up", "k":
+			m.quotaScroll = max(0, m.quotaScroll-1)
+		case "?":
+			m.help = true
+		case "r":
+			if !m.fetching {
+				m.fetching = true
+				return m, m.fetchCmd()
+			}
 		}
 		return m, nil
 	}

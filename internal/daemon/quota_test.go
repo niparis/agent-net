@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log"
 	"os"
@@ -264,5 +265,19 @@ func TestQuotaLoopReadsAgain(t *testing.T) {
 	wg.Wait()
 	if d.quota.snapshot() == nil {
 		t.Fatal("no reading kept")
+	}
+}
+
+func TestUsageReportCarriesQuotaError(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{cfg: Config{}, st: st}
+	d.quota.fail(errors.New("it failed"))
+	rep, ok := d.usageReport()
+	if !ok || rep.QuotaError != "it failed" {
+		t.Fatalf("report: %+v ok=%v", rep, ok)
 	}
 }

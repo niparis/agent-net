@@ -1,5 +1,6 @@
 Keys ───────────────────────────────────────────────────────────────────────────
  Sessions
+  1/2                  switch between Sessions and Quotas
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
   enter or c           open the conversation of the session
@@ -20,5 +21,4 @@ Keys ─────────────────────────
   tab                  message feed and back; enter opens the conversation of t…
   v, l                 v: open the body of the message; l: feed events (worker,…
   r                    refresh now
- Conversation
 esc close help  q quit

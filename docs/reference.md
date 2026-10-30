@@ -84,6 +84,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | Command | What it does |
 |---|---|
 | `agent-net gateway` | Run the gateway server. |
+| `agent-net phone owner LOGIN` | Set the phone owner Tailscale login once on the gateway machine. `--data DIR` selects its gateway data directory. |
 | `agent-net daemon` | Run the per-machine daemon. |
 | `agent-net mcp` | Stdio MCP server for one Claude Code session. Claude Code starts it, you do not. `agent-net mcp --codex` is the same for Codex: Codex starts one per thread. |
 | `agent-net setup` | Set this machine up. See [what setup changes](#what-setup-changes-on-your-machine). |
@@ -140,10 +141,43 @@ The owner's notes about models are behind the owner gate: only the owner's comma
 
 The model is required, and the note is at most 1024 bytes after cleaning (control characters other than newline and tab are removed). Gateway frames use `playbook.set`, `playbook.get` and `learn.add`. The CLI is `agent-net playbook set|get|pin|unpin`.
 
+## Phone app
+
+The phone app is off by default. Run a daemon on the gateway machine, joined to
+that gateway, under the same user as the gateway. The app uses that daemon's
+socket and the same operator calls as the TUI. Actions run as that machine's
+owner session. The gateway and daemon must both be running.
+
+After the gateway has created its data directory, set the Tailscale login once:
+
+```sh
+agent-net phone owner owner@example.com
+```
+
+Pass `--data DIR` before the login when the gateway uses a non-default data
+directory. The same login may be set again; a different login is refused.
+Start the gateway with `--phone-listen 127.0.0.1:7421` and run:
+
+```sh
+tailscale serve --bg http://127.0.0.1:7421
+```
+
+Open the HTTPS URL printed by Tailscale on a phone connected to the tailnet.
+In Safari, use Share, then Add to Home Screen. Tailscale Serve must be enabled
+for the tailnet. Do not use Funnel. Tagged devices do not send user identity
+headers. Only the configured login can use the app. See the [phone security
+boundary](security.md#phone-owner-identity).
+
+For a gateway installed as a service, add the flag to the gateway service
+command and restart it. A later `setup` run rewrites that command, so restore
+the flag after setup. The app refreshes its machine, session and Needs you
+sections while open. It does not send push notifications.
+
 ## Ports
 
 | Port | Used by |
 |---|---|
+| TCP 7421 | Optional phone HTTP listener, bound only to 127.0.0.1 when enabled. The port is configurable. |
 | TCP 7420 | The gateway. HTTPS and WebSocket, on `0.0.0.0` by default. Every daemon connects to it. Open it to your other machines and to nothing else. |
 
 The daemon and the agents talk over Unix sockets, not network ports.
@@ -509,7 +543,8 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 `agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top`, `session_text` and `session_enter` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
-- **Header.** `12 online · 3 busy · 1 needs you · workers 4 running, 1 queued`: the gateway's online count from `counts`, the sessions that report `busy`, the sessions that wait for you (in the warning colour, and left out when none wait), and the workers with the queued starts from the admission queue. Offline sessions are left out: they are mostly old ghosts. An older gateway has no counts: the header then says `N sessions, M online` and the same figures after it. Under it, one compact line of this machine's subscription quotas when quota-axi is read: `quotas: claude 59%w · codex 90%w · cursor exhausted` (see [subscription quotas](#subscription-quotas)). Also the inbox count, the learned count, the active filters (`filter: active, /cogforge`), and the time of the last refresh.
+- **Tabs.** Press `1` for Sessions or `2` for Quotas. The Quotas tab merges readings by provider and plan across machines and shows each window, pace, reset time, reading age and running workers. Install quota-axi and enable its integration to show readings (see [subscription quotas](#subscription-quotas)).
+- **Header.** `12 online · 3 busy · 1 needs you · workers 4 running, 1 queued`: the gateway's online count from `counts`, the sessions that report `busy`, the sessions that wait for you (in the warning colour, and left out when none wait), and the workers with the queued starts from the admission queue. Offline sessions are left out: they are mostly old ghosts. An older gateway has no counts: the header then says `N sessions, M online` and the same figures after it. A warning on the title points to tab 2 when a subscription window is above 80% or exhausted. The header also shows the inbox count, the learned count, the active filters (`filter: active, /cogforge`), and the time of the last refresh.
 - **Needs you,** a section above the machines when at least one session waits for you (decision [0016](decisions/0016-needs-you.md)). Each row has a warning mark, the session name, its harness, its machine when that is not this one, how long it has waited, and what it asks: `permission: Bash(git push origin main)`, or the question in quotes. Oldest wait first. At most five rows; more are counted in one line. The section follows the filter and the offline switch, and it is hidden when nobody waits. Its rows are the same sessions as in the table, so enter, `e` and `m` work on them. A waiting session also says `needs you` in STATUS, in the warning colour. The two sources: the Claude Code `needs-hook` hooks, and the OpenCode plugin (a permission request or a form); any other agent can say it with `agent_announce` and `waiting`.
 - **Machines,** one line each: online state, name, agent-net version, CPU now with a bar and the 5 minute average in brackets, memory used and total with a bar, 1 minute load, and the installed harnesses when the line has room. A machine with the user's shared OpenCode service shows a short dim note here (`opencode service 2.1G 9 procs`). This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
 - **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, MODEL (shortened: no provider, no `claude-` prefix), STATUS (`idle`, `busy`, `shell`, `needs you`, `dorm` for dormant, `off` for offline), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), POLICY (only when some session has a [delegation policy](#delegation-policy): `own`, `sub` or `wrk`), CPU, RAM and TASK (the task the session announced; when it never announced, the harness title if it differs from NAME, else blank). Sessions stay in the order they were first seen, oldest first, so a new session appears at the bottom of its machine and nothing re-sorts a row. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL, PROJECT and POLICY go first; TRUST always stays. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row.
@@ -572,14 +607,14 @@ A message body, including the first line the feed quotes, can only be shown for 
 
 When the plan has nothing to run, the answer has only a note, and the TUI shows it in the result line.
 
-**A session on another machine.** The question goes through the gateway to that machine. By default the TUI shows the command to run there. To let `e` run it through `ssh -t`, set in `node.json` on the machine where you use the TUI, and restart the daemon:
+**A session on another machine.** The question goes through the gateway to that machine. By default the TUI runs the command there through `ssh -t -o ConnectTimeout=5 -- <target> <command>`. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
 
 ```json
-"enter_ssh": true,
+"enter_ssh": false,
 "enter_ssh_hosts": {"build-box": "me@build-box.example"}
 ```
 
-`enter_ssh` is off by default. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh must already work without a prompt for anything but a key passphrase or a Tailscale SSH check. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
+`enter_ssh` is on by default. `"enter_ssh": false` turns it off, and then `e` shows the command to run there instead. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh runs in your terminal, with your own keys and ssh config, so it may ask for a password, a key passphrase or a Tailscale SSH check. If ssh exits with status 255 (it could not connect or log in), the TUI shows the command to run on the machine, with a hint to set `enter_ssh_hosts`. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
 
 ## Peer trust and hints
 

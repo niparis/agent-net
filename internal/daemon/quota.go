@@ -75,6 +75,13 @@ func (q *quotaState) snapshot() *protocol.Quotas {
 	return cloneQuotas(q.last)
 }
 
+// report returns the reading and its most recent command error together.
+func (q *quotaState) report() (*protocol.Quotas, string) {
+	q.lock()
+	defer q.unlock()
+	return cloneQuotas(q.last), q.err
+}
+
 // errorText returns why the newest run failed, or "".
 func (q *quotaState) errorText() string {
 	q.lock()

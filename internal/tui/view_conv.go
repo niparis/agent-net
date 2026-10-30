@@ -143,17 +143,19 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "select", 1}, {"M/esc", "sessions", 1}, {"r", "refresh", 3}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
+	case m.tab == 1:
+		return []hint{{"1/2", "tabs", 1}, {"up/down", "scroll", 1}, {"r", "refresh", 2}, {"?", "help", 1}, {"q", "quit", 1}}
 	case m.focus == focusFeed:
 		return []hint{{"up/down", "move", 1}, {"enter", "conversation", 1}, {"v", "body", 2}, {"m", "msg", 1}, {"l", "events", 3},
-			{"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
+			{"1/2", "tabs", 1}, {"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
 			return []hint{{"c", "recipient", 1}, {"C", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
-		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 5}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
+	return []hint{{"1/2", "tabs", 1}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
 }
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
@@ -217,6 +219,7 @@ func (m Model) helpLine(w int) string {
 func (m Model) helpView(w, h int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
+		{"1/2", "switch between Sessions and Quotas"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
 		{"enter or c", "open the conversation of the session"},

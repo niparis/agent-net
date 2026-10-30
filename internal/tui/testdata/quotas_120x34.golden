@@ -1,0 +1,34 @@
+1 Sessions  2 Quotas │ 12 online · 1 busy                                                             updated 14:05:00
+
+  PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS
+  claude         max          5h       █████░░░░░  50%      behind    -
+    (read on Mac; stale reading)
+  codex          pro          week     █████████░  92%      ahead     in 2h00
+  cursor         business     month    ██████████ exhausted -         -
+    (read on Mac)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  workers now: none   ·   reading 40s old
+1/2 tabs  up/down scroll  r refresh  ? help  q quit

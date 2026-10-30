@@ -1,4 +1,4 @@
-agent-net tui  12 online · 1 busy · 2 needs you                                   updated 14:05:00
+1 Sessions  2 Quotas │ 12 online · 1 busy · 2 needs you                           updated 14:05:00
 Needs you (2) ──────────────────────────────────────────────────────────────────────────────────────
 > ⚠ strategies claude           12m "Merge tenebrae-nexus/truenas-stacks #817?"
   ⚠ ci-runner  pi     build-vm   3m permission: Bash(git push origin main)
@@ -27,4 +27,4 @@ Selected session ─────────────────────
 Messages (live) ────────────────────────────────────────────────────────────────────────────────────
   14:02  tenebrae-53 -> ci-runner  notification                                                    ✗
   14:04  tenebrae-53 -> s_00000000  request                                                        …
-up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  ? help  q quit
+1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  ? help  q quit

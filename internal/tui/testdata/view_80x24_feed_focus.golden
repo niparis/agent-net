@@ -1,4 +1,4 @@
-agent-net tui  6 sessions, 5 online · 1 busy                  updated 14:05:00
+1 Sessions  2 Quotas │ 6 sessions, 5 online · 1 busy          updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -21,4 +21,4 @@ Selected session ─────────────────────
 Messages (live, enter opens the conversation) ──────────────────────────────────
 > 13:56  tenebrae-53 -> strategies  request       "Which model do you run?"    ↩
    ↳ 13:57  strategies -> tenebrae-53  reply                                   ✓
-up/down move  enter conversation  v body  m msg  tab sessions  ? help  q quit
+up/down move  enter conversation  v body  m msg  1/2 tabs  tab sessions  q quit

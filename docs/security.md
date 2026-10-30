@@ -303,7 +303,7 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 - Nothing of it is written to the gateway log, the events table or the daemon's database.
 - The gateway cannot tell an owner's CLI from a program on that machine that says it is one. A compromised enrolled machine can therefore ask for the text of any online session on the network. This widens the trust note under [what agent-net does not protect against](#what-agent-net-does-not-protect-against).
 
-**Entering a session** (`session_enter`, the TUI key `e`): same gate and same relay as the session text. The answer is a command for the owner's own terminal, so the TUI runs only what the local daemon returns. The secrets of a worker's private OpenCode or Codex server go in the answer only for a session on the asking machine; a machine answering a relayed question refuses to include them, and the asking daemon drops any `env` it gets from the gateway. For a session on another machine the TUI runs `ssh` only when you set `enter_ssh` in `node.json`. The ssh target is the host name the gateway lists for the session (or your `enter_ssh_hosts` entry), never a name inside the other machine's answer, and a target that starts with `-` or has spaces or shell characters is refused. A compromised enrolled machine can still make `e` run a command of its choice on itself, through your ssh login, when you enter one of its sessions: enter sessions only on machines you trust.
+**Entering a session** (`session_enter`, the TUI key `e`): same gate and same relay as the session text. The answer is a command for the owner's own terminal, so the TUI runs only what the local daemon returns. The secrets of a worker's private OpenCode or Codex server go in the answer only for a session on the asking machine; a machine answering a relayed question refuses to include them, and the asking daemon drops any `env` it gets from the gateway. For a session on another machine the TUI runs `ssh -t -o ConnectTimeout=5` by default, in your terminal and with your own keys and ssh config; `"enter_ssh": false` in `node.json` turns it off. agent-net stores no key and gains no access through ssh: it runs the command the local daemon planned, and the login is yours. When ssh cannot connect (exit status 255), the TUI shows the command to run on that machine instead. The ssh target is the host name the gateway lists for the session (or your `enter_ssh_hosts` entry), never a name inside the other machine's answer, and a target that starts with `-` or has spaces or shell characters is refused. A compromised enrolled machine can still make `e` run a command of its choice on itself, through your ssh login, when you enter one of its sessions: enter sessions only on machines you trust.
 
 **CPU and memory.** Each daemon reports a summary to the gateway every 10 seconds, and every enrolled machine can read it (same trust as the agent list). The summary has numbers only: no command lines. The command lines of the 5 heaviest processes of a session (first 80 characters, tokens and `--password`/`KEY=value` pairs masked) come only on request, with the same owner-only rule and relay as the session text. The gateway keeps the summaries in memory only.
 
@@ -347,3 +347,14 @@ An approval is for one exact action. The gateway stores its approval note separa
 Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
 
 The full CTO UI attaches as a client of the private OpenCode server or Claude background session. CTO tools still run in the CTO process tree and pass the same private-tool process checks.
+
+### Phone owner identity
+
+The phone owner setting records the Tailscale login once in the gateway database.
+The phone authentication check accepts only requests from 127.0.0.1 with exactly
+one `Tailscale-User-Login` header equal to that setting. This relies on
+Tailscale Serve to authenticate the caller and supply the identity header. A
+local process can connect to a loopback listener and forge this header; the
+check does not protect the gateway from other processes on its host. The host
+and its local users must be trusted. Do not expose the HTTP listener directly
+on a network or put an untrusted proxy in front of it.
