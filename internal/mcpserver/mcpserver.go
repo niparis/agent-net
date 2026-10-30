@@ -78,8 +78,12 @@ type statusIn struct {
 }
 
 // New builds the server. Each tool forwards to the daemon.
-func New(call Caller) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: "0.2.0"}, &mcp.ServerOptions{Instructions: Instructions})
+// version is the agent-net version reported to the MCP client ("dev" when empty).
+func New(call Caller, version string) *mcp.Server {
+	if version == "" {
+		version = "dev"
+	}
+	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net", Version: version}, &mcp.ServerOptions{Instructions: Instructions})
 	s.AddReceivingMiddleware(announceReminder())
 
 	tool := func(name, desc string) *mcp.Tool { return &mcp.Tool{Name: name, Description: desc} }
@@ -354,7 +358,7 @@ func Run(ctx context.Context, socket string, opts Options) error {
 	d.OnHello = func(v string) { go sw.consider(ctx, v) }
 	// Connect now if the daemon is up; if not, the first tool call tries again.
 	d.conn(ctx)
-	srv := New(d.Call)
+	srv := New(d.Call, opts.Version)
 	// Registered MCP servers' tools follow the registry while this runs.
 	dyn := NewDynamic(srv, d.Call)
 	// Load them before serving, so the first tools/list already has them.

@@ -87,7 +87,7 @@ func TestDynamicToolsFollowRegistry(t *testing.T) {
 	reg := &fakeRegistry{}
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	srv := New(reg.call)
+	srv := New(reg.call, "")
 	dyn := NewDynamic(srv, reg.call)
 	if _, err := srv.Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)

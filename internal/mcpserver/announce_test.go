@@ -113,7 +113,7 @@ func TestReminderIsPerServer(t *testing.T) {
 func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	ss, err := New(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }).Connect(ctx, st, nil)
+	ss, err := New(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }, "").Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

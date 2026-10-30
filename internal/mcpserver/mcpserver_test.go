@@ -20,7 +20,7 @@ func connect(t *testing.T, fn Caller) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
-	srv := New(fn)
+	srv := New(fn, "v0.0.0-test")
 	ss, err := srv.Connect(ctx, st, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +32,13 @@ func connect(t *testing.T, fn Caller) *mcp.ClientSession {
 	}
 	t.Cleanup(func() { cs.Close() })
 	return cs
+}
+
+func TestServerReportsBuildVersion(t *testing.T) {
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) { return nil, nil })
+	if got := cs.InitializeResult().ServerInfo.Version; got != "v0.0.0-test" {
+		t.Fatalf("server version %q, want the version given to New", got)
+	}
 }
 
 func TestToolsForwardToDaemon(t *testing.T) {

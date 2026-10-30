@@ -83,7 +83,7 @@ func newRig(t *testing.T, h *handover, call Caller) *rig {
 	ctx, cancel := context.WithCancel(context.Background())
 	rg.cancel = cancel
 	t.Cleanup(cancel)
-	srv := New(call)
+	srv := New(call, "")
 	go func() { rg.done <- srv.Run(ctx, stdioTransport{rg.conn}) }()
 	return rg
 }
