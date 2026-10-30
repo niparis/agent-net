@@ -1,0 +1,24 @@
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ you: Please draft the charter.                                               │
+│ cto:                                                                         │
+│ Here is the draft with  scope :                                              │
+│                                                                              │
+│  attr                                │ draft                                 │
+│ ─────────────────────────────────────┼────────────────────────────────────   │
+│  purpose                             │ Build tools                           │
+│  scope                               │ The network                           │
+│  owner                               │ Team                                  │
+│  maturity                            │ Early                                 │
+│  inputs                              │ Requests                              │
+│  outputs                             │ Results                               │
+│  dependencies                        │ Gateway                               │
+│  limits                              │ No deploys                            │
+│  review                              │ Weekly                                │
+│                                                                              │
+│ Let me know what you would change.                                           │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯

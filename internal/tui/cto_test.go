@@ -413,8 +413,8 @@ func TestCTOWrapsLongLines(t *testing.T) {
 	m := Model{cto: &ctoState{messages: []string{"cto: " + strings.Repeat("word ", 18)}, err: strings.Repeat("failure ", 16)}}
 	view := m.ctoView(30, 12)
 	joined := strings.Join(view, "\n")
-	if strings.Contains(joined, "…") || !strings.Contains(joined, "  failure") || !strings.Contains(joined, "  word") {
-		t.Fatalf("lines not wrapped with continuation indent:\n%s", joined)
+	if strings.Contains(joined, "…") || !strings.Contains(joined, "  failure") {
+		t.Fatalf("lines not wrapped:\n%s", joined)
 	}
 	for _, line := range view {
 		if ansi.StringWidth(line) > 30 {
@@ -493,5 +493,15 @@ func TestCTOConversationScroll(t *testing.T) {
 	m = next.(Model)
 	if got := view(); !strings.Contains(got, "seven") {
 		t.Fatalf("returned view: %s", got)
+	}
+}
+
+func TestCTOMarkdownGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := New(&fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}})
+		m.cto = &ctoState{messages: []string{"you: Please draft the charter.", "cto: Here is the **draft** with `scope`:\n\n| attr | draft |\n| --- | --- |\n| purpose | Build tools |\n| scope | The network |\n| owner | Team |\n| maturity | Early |\n| inputs | Requests |\n| outputs | Results |\n| dependencies | Gateway |\n| limits | No deploys |\n| review | Weekly |\n\nLet me know what you would change."}}
+		m.focus = focusCTO
+		view := strings.Join(m.ctoView(size[0], size[1]), "\n")
+		golden(t, fmt.Sprintf("cto_markdown_%dx%d", size[0], size[1]), view)
 	}
 }
