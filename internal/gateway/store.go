@@ -148,6 +148,8 @@ CREATE TABLE graph_charter (node TEXT NOT NULL, attr TEXT NOT NULL, value TEXT N
 CREATE TABLE graph_edges (source TEXT NOT NULL, target TEXT NOT NULL, kind TEXT NOT NULL, mode TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(source, target, kind));
 CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, node TEXT NOT NULL, attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
 CREATE INDEX graph_history_node ON graph_history(node, id);
+`, `
+ALTER TABLE messages ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -832,14 +834,17 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != ''
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO)
+	if m.FromCTO {
+		m.FromHarness = "cto"
+	}
 	m.CreatedAt = time.Unix(0, created).UTC()
 	m.ExpiresAt = time.Unix(0, expires).UTC()
 	return m, err
@@ -912,6 +917,12 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Sender).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown sender session %q", p.Sender)
 	}
+	if p.FromCTO {
+		var harness string
+		if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id = ?`, p.Sender).Scan(&harness); err != nil || harness != protocol.OwnerHarness {
+			return msg, false, reject("CTO sender requires an owner session")
+		}
+	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
 		return msg, false, reject("unknown recipient session %q", p.Recipient)
 	}
@@ -923,7 +934,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	m := protocol.Message{
 		ID: protocol.NewID("m"), From: p.Sender, To: p.Recipient, Type: p.Type, Body: p.Body,
 		IdempotencyKey: p.IdempotencyKey, CreatedAt: now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(),
-		State: protocol.StateStored,
+		State: protocol.StateStored, FromCTO: p.FromCTO,
 	}
 	if p.ParentID != "" {
 		parent, ok, err := s.message(tx, "m.id = ?", p.ParentID)
@@ -963,9 +974,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("conversation budget exceeded (%d messages)", protocol.MaxConvMessages)
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id, conversation_id, parent_id, sender, recipient, type, body, hop,
-		idem_key, created_at, expires_at, state) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		idem_key, created_at, expires_at, state, sender_cto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body, m.Hop,
-		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State)
+		m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State, m.FromCTO)
 	if err != nil {
 		return msg, false, err
 	}
@@ -975,7 +986,11 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 			return msg, false, err
 		}
 	}
-	s.event(tx, "msg.stored", "", m.From, m.ID, strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " "))
+	detail := strings.TrimPrefix(pairs("type", m.Type, "to", m.To, "bytes", len(m.Body)), " ")
+	if m.FromCTO {
+		detail += " by=cto"
+	}
+	s.event(tx, "msg.stored", "", m.From, m.ID, detail)
 	if err := tx.Commit(); err != nil {
 		return msg, false, err
 	}

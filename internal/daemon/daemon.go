@@ -168,6 +168,7 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	cto    ctoRuntime
 	cfg    Config
 	log    *log.Logger
 	st     *state
@@ -384,6 +385,7 @@ func (d *Daemon) Stop() {
 	if d.ln != nil {
 		d.ln.close()
 	}
+	d.cto.stop()
 	d.mcp.stop()
 	d.wg.Wait()
 	d.st.close()
@@ -576,6 +578,14 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 	d.touchWorker(p.Sender, p.Recipient) // a message to or from a worker keeps it alive
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
+	if p.FromCTO {
+		// An older gateway drops the CTO flag. Never queue such a message for
+		// a future, possibly older gateway.
+		if d.st.outboxLen() != 0 {
+			return nil, errors.New("CTO send unavailable while the outbox is queued")
+		}
+		return d.ctoAttributedCall(ctx, "msg.send", p)
+	}
 	if d.st.outboxLen() == 0 {
 		data, err := d.call(ctx, "msg.send", p)
 		var re RemoteError

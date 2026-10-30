@@ -88,6 +88,12 @@ func main() {
 		err = cmdJoin(ctx, args)
 	case "daemon":
 		err = cmdDaemon(ctx, args)
+	case "cto-mcp":
+		if len(args) != 0 {
+			err = errors.New("cto-mcp takes no arguments")
+		} else {
+			err = mcpserver.RunCTO(ctx, daemon.SocketPath(), version)
+		}
 	case "mcp":
 		// No subcommand: the stdio server Claude Code starts. Anything else is the registry CLI.
 		if len(args) == 0 {

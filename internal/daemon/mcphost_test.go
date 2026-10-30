@@ -3,6 +3,8 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/testmcp/tools"
 )
@@ -27,6 +30,13 @@ func TestMain(m *testing.M) {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "cto-mcp" {
+		if err := mcpserver.RunCTO(context.Background(), os.Getenv("AGENT_NET_SOCKET"), "test"); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	// The test binary is also the fake claude, pi and codex of the worker tests.
 	if runFakeHarness() {
 		return
@@ -34,6 +44,14 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == "auth" {
 		if os.Args[2] == "export" {
 			os.Stdout.WriteString("[]")
+		} else if os.Args[2] == "import" && os.Getenv("FAKE_OC_AUTH_RECORD") == "1" {
+			data, _ := io.ReadAll(os.Stdin)
+			if string(data) != "[]" {
+				os.Exit(1)
+			}
+			if err := os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-imported-auth"), data, 0o600); err != nil {
+				os.Exit(1)
+			}
 		}
 		return
 	}

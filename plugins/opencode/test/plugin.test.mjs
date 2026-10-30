@@ -194,6 +194,20 @@ function freshHub() {
   delete globalThis[Symbol.for("agent-net.opencode.hub.v1")];
 }
 
+await test("CTO mode does not initialize network behavior", async () => {
+  freshHub();
+  process.env.AGENT_NET_CTO = "1";
+  let accesses = 0;
+  const context = new Proxy({}, { get() { accesses++; throw new Error("context accessed"); } });
+  try {
+    const stop = await plugin.setup(context);
+    if (typeof stop === "function") stop();
+    if (accesses !== 0) throw new Error("context was accessed");
+  } finally {
+    delete process.env.AGENT_NET_CTO;
+  }
+});
+
 await test("session.created registers a session before any prompt", async () => {
   freshHub();
   const sessions = new Map();
@@ -816,6 +830,19 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (last[0] !== "worker_stop" || last[1].session !== "s_worker" || !gone.includes("Stopped worker s_worker")) {
     throw new Error("stop: " + JSON.stringify(last) + " " + gone);
   }
+  stop();
+});
+
+await test("a CTO message carries the CTO authority note", async () => {
+  freshHub();
+  const sessions = new Map([["ses_cto_test", session("ses_cto_test", "/work/o")]]);
+  const prompts = [];
+  const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
+  const stop = await plugin.setup(c.ctx);
+  await until("CTO recipient", () => registered("ses_cto_test"));
+  conns.get("ses_cto_test").write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_c",sender_harness:"cto",sender_cto:true,message_type:"request",body:"hello"}}})+"\n");
+  await until("CTO prompt", () => prompts.length === 1);
+  if (!prompts[0].text.includes("from the CTO, on Nicolas's instruction") || prompts[0].text.includes("from your user in person")) throw new Error(prompts[0].text);
   stop();
 });
 

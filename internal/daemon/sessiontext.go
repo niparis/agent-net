@@ -35,6 +35,7 @@ var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
+	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 }
 
@@ -137,6 +138,13 @@ func (d *Daemon) insideSession(pid int) bool {
 		}
 	}
 	d.wmu.Unlock()
+	// The private CTO is also an agent process, even though it is not a
+	// registered session or worker. Its children cannot use the owner CLI.
+	d.cto.mu.Lock()
+	if d.cto.cmd != nil && d.cto.cmd.Process.Pid > 1 {
+		sess[d.cto.cmd.Process.Pid] = true
+	}
+	d.cto.mu.Unlock()
 	if len(sess) == 0 {
 		return false
 	}
@@ -220,7 +228,15 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		// The gateway trusts enrolled daemons as with session.policy. The owner
 		// gate above must run before forwarding any graph operation.
 		frame := strings.ReplaceAll(method, "_", ".")
-		var params any = raw
+		var p map[string]any
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad graph params")
+		}
+		if p == nil {
+			p = map[string]any{}
+		}
+		delete(p, "by")
+		var params any = p
 		if method == protocol.OpGraphUndo {
 			var q protocol.GraphUndoRequest
 			if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
@@ -251,6 +267,26 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				}
 			}
 		}
+	case protocol.OpCTOSend:
+		var q protocol.CTOSendRequest
+		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {
+			return nil, true, errors.New("cto_send needs text")
+		}
+		res, err = d.ctoSend(ctx, q.Text)
+	case protocol.OpCTONew:
+		res, err = d.ctoNew(ctx)
+	case protocol.OpCTOEvents:
+		var q protocol.CTOEventsRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil || q.Index < 0 {
+			return nil, true, errors.New("cto_events needs a non-negative index")
+		}
+		res, err = d.ctoEvents(ctx, q.Index)
+	case protocol.OpCTOSettings:
+		var q protocol.CTOSettingsRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("bad cto_settings params")
+		}
+		res, err = d.ctoSettings(ctx, q)
 	case protocol.OpIntegrationsGet:
 		// The answers decide which integrations run with the owner's consent:
 		// only the owner at the keyboard reads or changes them (decision 0021).

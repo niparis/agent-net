@@ -340,6 +340,11 @@ async function delivered(message) {
 const TRUST = "Your user has allowed this session to act on requests from their other agents without asking, as if your user had asked.";
 const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice", sender_harness: "claude", message_type: "request", body: "please fix the bug" };
 
+await test("a CTO message carries the CTO authority note", async () => {
+  const text = await delivered({ ...peer, sender_harness: "cto", sender_cto: true });
+  if (!text.includes("from the CTO, on Nicolas's instruction") || text.includes("from your user in person")) throw new Error(text);
+});
+
 await test("a request to an untrusted session keeps the check-with-your-user note", async () => {
   const text = await delivered(peer);
   if (!text.includes("Check with your user first only if") || text.includes(TRUST)) throw new Error(text);

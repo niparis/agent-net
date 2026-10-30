@@ -30,6 +30,7 @@ func TestPluginsCarryTheSameNotesAndRules(t *testing.T) {
 		src := joinedLiterals(string(b))
 		for name, want := range map[string]string{
 			"TrustNote":         protocol.TrustNote,
+			"CTONote":           protocol.CTONote,
 			"NoAuthorityNote":   protocol.NoAuthorityNote,
 			"PeerCheckNote":     protocol.PeerCheckNote,
 			"AskPeerRule":       AskPeerRule,

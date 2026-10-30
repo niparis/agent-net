@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -223,6 +224,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil {
 		return none, err
 	}
+	if p.FromCTO && (!ok || owner.Harness != protocol.OwnerHarness) {
+		return none, reject("CTO worker start requires an owner session")
+	}
 	if !ok || owner.NodeID != nc.id {
 		return none, reject("owner session %q does not belong to this node", p.Owner)
 	}
@@ -419,6 +423,18 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if target == nil {
 		return none, reject("machine %s is offline", pick.Hostname)
 	}
+	// A queued start must retain CTO attribution on the target machine.
+	if p.FromCTO {
+		capCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		data, err := target.call(capCtx, "cto.worker_capabilities", nil)
+		cancel()
+		var caps struct {
+			Attribution bool `json:"attribution"`
+		}
+		if err != nil || json.Unmarshal(data, &caps) != nil || !caps.Attribution {
+			return none, reject("machine %s cannot preserve CTO attribution; upgrade its daemon", pick.Hostname)
+		}
+	}
 	// The owner sets the permission level per project (decision 0020).
 	perms, err := g.store.WorkerPermissions(pick.NodeID, pick.Name)
 	if err != nil {
@@ -427,7 +443,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
