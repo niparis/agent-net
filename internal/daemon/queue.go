@@ -29,7 +29,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 		return nil
 	}
 	q := queuedStart{ID: protocol.NewID("q"), Owner: l.Owner, Project: l.Project, Path: l.Path, Harness: l.Harness,
-		Model: l.Model, Task: l.Task, Isolation: l.Isolation, QueuedAt: time.Now()}
+		Model: l.Model, Task: l.Task, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, QueuedAt: time.Now()}
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.
 		return &protocol.WorkerLaunched{Reason: "cannot queue: " + err.Error()}
@@ -135,7 +135,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 // machine sends the task; this machine tells the owner it started.
 func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	l := protocol.WorkerLaunch{Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner,
-		Task: e.Task, Isolation: e.Isolation}
+		Task: e.Task, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask}
 	out, err := d.runWorkerStart(ctx, l)
 	if err != nil {
 		d.Logf("worker.not_started queue=%s project=%s harness=%s owner=%s reason=%q", e.ID, e.Project, e.Harness, e.Owner, err.Error())
@@ -146,7 +146,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	d.Logf("worker.dequeued queue=%s session=%s project=%s harness=%s owner=%s waited=%s", e.ID, out.SessionID, e.Project, e.Harness, e.Owner, waited.Round(time.Second))
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
-		Harness: e.Harness, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch})
+		Harness: e.Harness, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules})
 	cancel()
 	if err != nil {
 		if w := d.workerBySession(out.SessionID); w != nil {
@@ -190,7 +190,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 		return errors.New("the owner of this queued start is not a session of this machine")
 	}
 	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyFor(p.Harness, p.Task, p.Worktree, p.Branch)})
+		Body: protocol.WorkerTaskBodyWithRules(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules)})
 	return err
 }
 

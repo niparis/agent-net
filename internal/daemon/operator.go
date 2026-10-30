@@ -124,7 +124,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		// No project given: use the caller's own (W17). The command line has no
 		// project of its own, so it must name one.
 		callerProject, callerPath := false, ""
-		if strings.TrimSpace(p.Project) == "" {
+		if strings.TrimSpace(p.Project) == "" && strings.TrimSpace(p.Continue) == "" {
 			if ls != nil {
 				d.mu.Lock()
 				p.Project, callerPath = ls.info.Repo.Project, ls.info.Repo.Root
@@ -192,7 +192,12 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 // a message from the caller.
 func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
-	if p.Project == "" || p.Harness == "" || p.Task == "" {
+	p.Continue = strings.TrimSpace(p.Continue)
+	if p.Continue != "" {
+		if p.Machine != "" || p.Base != "" || p.Isolation != "" {
+			return nil, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
+		}
+	} else if p.Project == "" || p.Harness == "" || p.Task == "" {
 		return nil, errors.New("worker_start needs project, harness and task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
@@ -220,8 +225,12 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch}
 	// The task is a normal message from the caller, with the fixed preamble.
+	task := p.Task
+	if ans.Task != "" {
+		task = ans.Task // a continued worker gets the old first task
+	}
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyFor(ans.Harness, p.Task, ans.Worktree, ans.Branch)})
+		Body: protocol.WorkerTaskBodyWithRules(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules)})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}
@@ -303,6 +312,11 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 		var p protocol.WorkerQueuedStart
 		if err = json.Unmarshal(raw, &p); err == nil {
 			err = d.sendQueuedTask(ctx, p)
+		}
+	case "worker.continue":
+		var p protocol.WorkerContinue
+		if err = json.Unmarshal(raw, &p); err == nil {
+			data, err = d.continueWorker(ctx, p)
 		}
 	case "worker.resume":
 		var p protocol.WorkerResume

@@ -163,6 +163,13 @@ type WorkerStartRequest struct {
 	// (the same, and an error when it is not a repository) or "none" (work in
 	// the project folder).
 	Isolation string `json:"isolation,omitempty"`
+	// Base is an existing local branch to start the worker worktree from.
+	Base string `json:"base,omitempty"`
+	// Continue is the session ID or worker ID of an ended worker that the
+	// caller started. The new worker works on from that worker's branch, with
+	// its first task. Project, harness and model default to the old worker's.
+	// Task is then optional and is added as "Also: ...".
+	Continue string `json:"continue,omitempty"`
 }
 
 // WorkerStartResult answers OpWorkerStart.
