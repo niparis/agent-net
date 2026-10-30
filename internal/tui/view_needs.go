@@ -45,6 +45,25 @@ func (m Model) needsRows() []protocol.AgentView {
 		}
 		out = append(out, a)
 	}
+	for _, item := range m.inboxItems {
+		if item.Kind != "approval" || item.Status != "open" {
+			continue
+		}
+		var a protocol.AgentView
+		for _, candidate := range m.snap.Agents {
+			if candidate.SessionID == item.SessionID {
+				a = candidate
+				break
+			}
+		}
+		if a.SessionID == "" {
+			a.SessionID = item.SessionID
+			a.Profile.Name = item.SessionID
+			a.Harness = "agent"
+		}
+		a.Waiting = &protocol.Waiting{Kind: protocol.WaitingPermission, Text: item.Text, Since: item.CreatedAt.Unix()}
+		out = append(out, a)
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		si, sj := out[i].Waiting.Since, out[j].Waiting.Since
 		if si != sj {

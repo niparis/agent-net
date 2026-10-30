@@ -153,6 +153,12 @@ func (m Model) hints() []hint {
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
 func (m Model) helpLine(w int) string {
+	if m.inboxOn {
+		if m.inboxEditing {
+			return clip(m.inboxInput.View()+" enter sends, esc cancels", w)
+		}
+		return sDim.Render(clip("up/down select  enter details  a approve  r refuse  t answer  esc back", w))
+	}
 	if m.cto != nil {
 		if m.cto.editing {
 			return sDim.Render(clip("enter sends  esc closes", w))
