@@ -603,6 +603,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cto.editing = true
 		return m, m.cto.input.Focus()
 	}
+	if !m.filtering && m.conv == nil && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4") {
+		if k.String() == "4" {
+			return m.startMap()
+		}
+		m.mapOn = false
+	}
 	if m.mapOn {
 		return m.mapKey(k)
 	}

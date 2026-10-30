@@ -238,7 +238,7 @@ func (m Model) mainView(w, h int) []string {
 	return out
 }
 
-var tabNames = []string{"Sessions", "Messages", "Quotas"}
+var tabNames = []string{"Sessions", "Messages", "Quotas", "Map"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 func (m Model) titleLine(w int) string {

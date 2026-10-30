@@ -194,3 +194,20 @@ func TestGoldenMap(t *testing.T) {
 	m = keys(m, "down")
 	golden(t, "map_120x40", m.View())
 }
+
+func TestMapIsFourthTab(t *testing.T) {
+	m := mapModel(120, 34, fakeGraph())
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	m = next.(Model)
+	if !m.mapOn || m.tab != 3 || cmd == nil {
+		t.Fatal("4 did not open Map")
+	}
+	m = send(m, cmd())
+	if !strings.Contains(m.View(), "4 Map") || !strings.Contains(m.View(), "CTO") {
+		t.Fatal(m.View())
+	}
+	m = keys(m, "2")
+	if m.mapOn || m.tab != 1 {
+		t.Fatal("2 did not leave Map")
+	}
+}

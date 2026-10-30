@@ -51,7 +51,7 @@ type mapRow struct {
 // startMap opens the map and reads the graph. The last data stays on screen
 // while the read runs.
 func (m Model) startMap() (tea.Model, tea.Cmd) {
-	m.mapOn = true
+	m.mapOn, m.tab = true, 3
 	m.notice = notice{}
 	if m.mp.loading {
 		return m, nil
@@ -91,7 +91,7 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "M", "esc":
-		m.mapOn = false
+		m.mapOn, m.tab = false, 0
 	case "?":
 		m.help = true
 	case "up", "k":
