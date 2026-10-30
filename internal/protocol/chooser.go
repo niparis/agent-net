@@ -123,6 +123,14 @@ func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
 			duration = 24 * time.Hour
 		case "five_hour", "5h", "session":
 			duration = 5 * time.Hour
+		case "month", "monthly":
+			reset := time.Unix(w.ResetsAt, 0).UTC()
+			first := time.Date(reset.Year(), reset.Month(), 1, reset.Hour(), reset.Minute(), reset.Second(), 0, time.UTC)
+			previousMonth := first.AddDate(0, -1, 0)
+			days := previousMonth.AddDate(0, 1, -1).Day()
+			day := min(reset.Day(), days)
+			start := time.Date(previousMonth.Year(), previousMonth.Month(), day, reset.Hour(), reset.Minute(), reset.Second(), 0, time.UTC)
+			duration = reset.Sub(start)
 		}
 		if duration == 0 || w.ResetsAt <= 0 || q.GeneratedAt <= 0 {
 			continue

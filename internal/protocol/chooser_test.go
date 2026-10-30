@@ -52,3 +52,12 @@ func TestChooseWorkerModelUsesHarnessDefaultEffort(t *testing.T) {
 		t.Fatalf("choice: %+v %v", choice, err)
 	}
 }
+
+func TestWorkerQuotaRoomMonthly(t *testing.T) {
+	now := time.Date(2026, 2, 15, 0, 0, 0, 0, time.UTC)
+	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "p", Windows: []QuotaWindow{{Kind: "monthly", Label: "month", PercentUsed: 30, ResetsAt: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC).Unix()}}}}}
+	room, note, known, blocked := workerQuotaRoom(q, "p")
+	if !known || blocked || room < 20 || room > 25 || !strings.Contains(note, "50% elapsed") {
+		t.Fatalf("room=%v note=%q known=%v blocked=%v", room, note, known, blocked)
+	}
+}
