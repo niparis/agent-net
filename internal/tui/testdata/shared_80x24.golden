@@ -6,7 +6,7 @@
  Mac (here) 5 sessions ─────────────────────────────────────────────────────────
 > docs         opencode -         -          idle   -     shared
   api          opencode -         -          busy   -     shared
-  strategies   claude   strategi… sonnet-5-5 idle   -      240%  4.6G backtes...
+  strategies   claude   strategi… sonnet-5-5 idle   -      240%  4.6G backtest …
   tenebrae-53  claude   tenebrae  opus-5-5   busy   -       38%  1.2G
   web          opencode shop      sonnet-5   idle   -     shared
  build-vm 2 sessions ───────────────────────────────────────────────────────────

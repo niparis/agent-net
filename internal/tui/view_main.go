@@ -630,7 +630,7 @@ func sumMin(cols []column) int {
 	return n
 }
 
-// cellDots fits s into w columns and marks a cut with three dots, as the TASK
+// cellDots fits s into w columns and marks a cut with an ellipsis, as the TASK
 // column does.
 func cellDots(s string, w int) string {
 	if w <= 0 {
@@ -638,10 +638,10 @@ func cellDots(s string, w int) string {
 	}
 	s = sanitize(s)
 	if ansi.StringWidth(s) > w {
-		if w <= 3 {
+		if w <= 1 {
 			s = ansi.Truncate(s, w, "")
 		} else {
-			s = ansi.Truncate(s, w-3, "") + "..."
+			s = ansi.Truncate(s, w, "…")
 		}
 	}
 	if pad := w - ansi.StringWidth(s); pad > 0 {

@@ -442,7 +442,7 @@ func TestTaskColumnTakesTheRoomAndCutsWithDots(t *testing.T) {
 		t.Fatalf("TASK is only %d wide: %+v", task.width, cols)
 	}
 	got := cellDots("deploy the new routes", 12)
-	if got != "deploy th..." {
+	if got != "deploy the …" {
 		t.Fatalf("cellDots = %q", got)
 	}
 	if got := cellDots("short", 12); got != "short       " {
