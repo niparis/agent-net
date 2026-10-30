@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 6 sessions, 5 online · 1 busy
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
-│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                             │
-│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                             │
-│ ○ old-box    v0.3.2 offline                                                  │
+│  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  claude  opencode  pi      │
+│  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?  pi                        │
+│  ○ old-box    v0.3.2 offline                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
@@ -16,9 +16,9 @@
 
 ╭─CTO · opencode · fake/m1─────────────────────────────────────────────────────╮
 │                                                                              │
-│error: Provider request failed because the account has insufficient credits.  │
-│  Add credits or choose another model before retrying the request. The request│
-│  was not completed.                                                          │
-│> write to the CTO...                                                         │
+│ error: Provider request failed because the account has insufficient          │
+│   credits. Add credits or choose another model before retrying the request.  │
+│   The request was not completed.                                             │
+│ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 tab focus  enter send  m model  o full screen  n new  u undo  esc back

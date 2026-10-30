@@ -142,3 +142,23 @@ func TestMachineHarnessesAreNamesOnly(t *testing.T) {
 	}
 	t.Fatal("missing machine")
 }
+
+func TestPanelPadsAndClipsInnerWidth(t *testing.T) {
+	lines := panel("title", []string{"abcdefghi", "x"}, 10, roleAccent)
+	if got := ansi.Strip(lines[1]); got != "│ abcde… │" {
+		t.Fatalf("long body: %q", got)
+	}
+	if got := ansi.Strip(lines[2]); got != "│ x      │" {
+		t.Fatalf("short body: %q", got)
+	}
+}
+
+func TestMachinePanelDoesNotClipPadding(t *testing.T) {
+	m := newModel(80, 24)
+	m.usage.have = false
+	for _, line := range strings.Split(m.View(), "\n") {
+		if strings.Contains(line, "Mac (here)") && strings.Contains(line, "cpu ?") && strings.Contains(line, "…") {
+			t.Fatalf("machine row clipped padding: %q", line)
+		}
+	}
+}

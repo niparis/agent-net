@@ -190,10 +190,10 @@ func (m Model) mainView(w, h int) []string {
 	var machines []string
 	for i, r := range rows {
 		if i >= maxMachineRows {
-			machines = append(machines, sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w-2)))
+			machines = append(machines, sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w-4)))
 			break
 		}
-		machines = append(machines, m.machineLine(r, w-2, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
+		machines = append(machines, m.machineLine(r, w-4, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
 	}
 	if len(rows) == 0 {
 		machines = append(machines, sDim.Render("  no machines yet"))
@@ -490,7 +490,7 @@ const (
 func (m Model) machineUsage(r machineRow, room int) string {
 	unknownW := machineCPUW + 1 + machineMemW + 1 + machineLoadW
 	if !r.online {
-		return strings.Repeat(" ", unknownW)
+		return ""
 	}
 	n, st := m.nodeUsage(r.nodeID)
 	if st != usageOK || n.Usage.Machine.Samples == 0 && n.Usage.Machine.MemTotal == 0 {
@@ -498,7 +498,7 @@ func (m Model) machineUsage(r machineRow, room int) string {
 		if st == usageStale {
 			label += "  (stale)"
 		}
-		return sDim.Render(cell(label, unknownW))
+		return sDim.Render(clip(label, max(room, 0)))
 	}
 	mu := n.Usage.Machine
 	var cpu string

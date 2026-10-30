@@ -28,7 +28,7 @@ func panelWithBorder(title string, body []string, width int, color, borderColor 
 	top := border.Render("╭─") + heading + border.Render(strings.Repeat("─", max(width-3-ansi.StringWidth(heading), 0))+"╮")
 	out := []string{top}
 	for _, line := range body {
-		out = append(out, border.Render("│")+padStyled(clip(line, width-2), width-2)+border.Render("│"))
+		out = append(out, border.Render("│")+" "+padStyled(clip(line, width-4), width-4)+" "+border.Render("│"))
 	}
 	return append(out, border.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 }
