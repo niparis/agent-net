@@ -421,10 +421,10 @@ func (m Model) feedLine(i, w int, dup map[string]bool, under bool) string {
 	lead := "  "
 	selected := m.focus == focusFeed && i == m.feedCur
 	if selected {
-		lead = "> "
+		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	if under {
-		lead += " ↳ "
+		lead += " └ "
 	}
 	at := cell(m.clock(it.At), 6)
 	var line string
@@ -438,39 +438,63 @@ func (m Model) feedLine(i, w int, dup map[string]bool, under bool) string {
 		}
 	}
 	if selected {
-		return sSel.Render(clip(stripStyles(line), w))
+		return selectedRow(clip(line, w))
 	}
 	return clip(line, w)
 }
 
 // messageLine lays out one message: names first, then the type, the quoted
 // first line of the body and the state mark at the right edge.
+func messageState(state string) string {
+	symbol := stateSymbol(state)
+	switch state {
+	case protocol.StateDelivered:
+		return sBusy.Render(symbol)
+	case protocol.StateReplied:
+		return lipgloss.NewStyle().Foreground(roleAccent).Render(symbol)
+	case protocol.StateFailed, protocol.StateExpired, "refused":
+		return sBad.Render(symbol)
+	default:
+		return sDim.Render(symbol)
+	}
+}
+
 func (m Model) messageLine(it *feedItem, lead, at string, w int, dup map[string]bool) string {
 	const typeW = 12
-	// lead, time, the arrow, the two gaps, the type, the gap before the mark.
+	from, to := m.feedDisplayName(it.From, dup), m.feedDisplayName(it.To, dup)
+	if it.FromCTO {
+		from = "CTO"
+	}
+	fromCell := func(width int) string {
+		name := cell(from, width)
+		if it.FromCTO {
+			return lipgloss.NewStyle().Foreground(roleCTO).Render(name)
+		}
+		return name
+	}
 	fixed := ansi.StringWidth(lead) + 6 + 1 + 4 + 2 + typeW + 2 + 2 + 1
 	room := w - fixed
 	if room < 6 {
-		// Too narrow for names and a snippet: keep the ends, cut the rest.
-		return lead + at + " " + cell(m.feedDisplayName(it.From, dup), 8) + " -> " +
-			cell(m.feedDisplayName(it.To, dup), 8) + " " + stateSymbol(it.State)
+		return lead + sDim.Render(at) + " " + fromCell(8) + sDim.Render(" -> ") + cell(to, 8) + " " + messageState(it.State)
 	}
-	// Names take at most three fifths of the room, leaving a snippet the rest.
 	budget := room
 	if room > 14 {
 		budget = min(room-8, max(room*3/5, 12))
 	}
-	fw, tw := fitNames(m.feedDisplayName(it.From, dup), m.feedDisplayName(it.To, dup), budget)
-	prefix := lead + at + " " + cell(m.feedDisplayName(it.From, dup), fw) + " -> " +
-		cell(m.feedDisplayName(it.To, dup), tw) + "  " + cell(dashIfEmpty(it.Type), typeW) + "  "
+	fw, tw := fitNames(from, to, budget)
+	prefix := lead + sDim.Render(at) + " " + fromCell(fw) + sDim.Render(" -> ") + cell(to, tw) + "  " + sDim.Render(cell(dashIfEmpty(it.Type), typeW)) + "  "
 	room = w - ansi.StringWidth(prefix) - 3
 	if it.Snippet != "" && room >= 4 {
-		prefix += clip(`"`+it.Snippet+`"`, room)
+		snippet := clip(`"`+it.Snippet+`"`, room)
+		if it.FromCTO {
+			snippet = lipgloss.NewStyle().Foreground(roleCTO).Render(snippet)
+		}
+		prefix += snippet
 	}
 	if pad := w - ansi.StringWidth(prefix) - 1; pad > 0 {
 		prefix += strings.Repeat(" ", pad)
 	}
-	return prefix + sDim.Render(stateSymbol(it.State))
+	return prefix + messageState(it.State)
 }
 
 // fitNames splits the room for two names, giving the longer one what the

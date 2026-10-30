@@ -1,25 +1,25 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy                                          updated 14:05:00
-Messages (live, enter opens the conversation) ──────────────────────────────────────────────────────────────────────────
-  13:55  build-vm connected
-  13:56  tenebrae-53 -> strategies  request                                                                            ↩
-   ↳ 13:57  strategies -> tenebrae-53  reply                                                                           ✓
-  14:01  ci-runner -> tenebrae-53  request                                                                             ✓
-  14:02  tenebrae-53 -> ci-runner  notification                                                                        ✗
-> 14:04  tenebrae-53 -> s_00000000  request                                                                            …
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+╭─Messages · worker events─────────────────────────────────────────────────────────────────────────────────────────────╮
+│   13:55  build-vm connected                                                                                          │
+│   13:56  tenebrae-53 -> strategies  request                                                                        ↩ │
+│    └ 13:57  strategies -> tenebrae-53  reply                                                                       ✓ │
+│   14:01  ci-runner -> tenebrae-53  request                                                                         ✓ │
+│   14:02  tenebrae-53 -> ci-runner  notification                                                                    ✗ │
+│ ▸ 14:04  tenebrae-53 -> s_00000000  request                                                                        … │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -28,7 +28,7 @@ Messages (live, enter opens the conversation) ───────────�
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│write to the CTO: it can set charters, start workers, answer what the network is doing                                │
-│> write to the CTO...                                                                                                 │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter conversation  v view  l events  1 sessions  ? help
+up/down select  enter conversation  v view  l events  tab CTO  1 sessions  ? help

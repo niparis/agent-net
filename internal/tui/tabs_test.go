@@ -285,6 +285,15 @@ func TestLayoutGoldens(t *testing.T) {
 			}
 		}
 		golden(t, fmt.Sprintf("messages_%dx%d", size[0], size[1]), v)
+		for i, it := range m.feed.items {
+			if it.isMessage() {
+				it.FromCTO = true
+				it.Snippet = "Please check the deployment."
+				m.feedCur = i
+				break
+			}
+		}
+		golden(t, fmt.Sprintf("messages_cto_%dx%d", size[0], size[1]), m.View())
 	}
 }
 
@@ -397,5 +406,12 @@ func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
 	}
 	if strings.Contains(v, "gpt-6.1-sol") {
 		t.Fatalf("unregistered model listed: %s", v)
+	}
+}
+
+func TestMessagesHintShowsCTOFocus(t *testing.T) {
+	m := keys(newModel(120, 34), "2")
+	if !strings.Contains(ansi.Strip(m.helpLine(120)), "tab CTO") {
+		t.Fatal("Messages help omits CTO focus")
 	}
 }

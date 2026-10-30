@@ -1,24 +1,24 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 6 sessions, 5 online · 1 busy
-Messages (live, enter opens the conversation) ──────────────────────────────────
-  13:55  build-vm connected
-> 13:56  tenebrae-53 -> strategies  request       "Which model do you run?"    ↩
-   ↳ 13:57  strategies -> tenebrae-53  reply                                   ✓
-  14:01  ci-runner -> tenebrae-53  request                                     ✓
-  14:02  tenebrae-53 -> ci-runner  notification                                ✗
-  14:04  tenebrae-53 -> s_00000000  request                                    …
-
-
-
-
-
-
-
-
+╭─Messages · worker events─────────────────────────────────────────────────────╮
+│   13:55  build-vm connected                                                  │
+│ ▸ 13:56  tenebrae-53 -> strategies  request       "Which model do you ru…  ↩ │
+│    └ 13:57  strategies -> tenebrae-53  reply                               ✓ │
+│   14:01  ci-runner -> tenebrae-53  request                                 ✓ │
+│   14:02  tenebrae-53 -> ci-runner  notification                            ✗ │
+│   14:04  tenebrae-53 -> s_00000000  request                                … │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│write to the CTO: set charters, start workers, ask about the network          │
-│> write to the CTO...                                                         │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter conversation  v view  l events  1 sessions  ? help
+up/down select  enter conversation  v view  l events  tab CTO  1 sessions

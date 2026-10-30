@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -102,7 +103,7 @@ func TestMapTogglesWithTheSessionList(t *testing.T) {
 		t.Fatalf("the session list did not come back:\n%s", m.View())
 	}
 	m = openMap(t, m)
-	if !strings.Contains(m.View(), "Map (read only)") {
+	if !strings.Contains(m.View(), "nodes, ") {
 		t.Fatalf("M did not open the map again:\n%s", m.View())
 	}
 	m = keys(m, "esc")
@@ -282,5 +283,34 @@ func TestMapReadFailureKeepsLastGraphVisible(t *testing.T) {
 	m.applyMap(mapMsg{err: errors.New("temporary failure")})
 	if v := m.View(); !strings.Contains(v, "cogforge") || !strings.Contains(v, "temporary failure") {
 		t.Fatalf("last graph or error missing:\n%s", v)
+	}
+}
+
+func TestFocusCountsAppearOnlyOnTabBar(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	m.mp.selected = "cogforge"
+	v := ansi.Strip(m.View())
+	ls := strings.Split(v, "\n")
+	if !strings.Contains(ls[0], "7 nodes, 4 edges") {
+		t.Fatalf("counts missing on tab bar: %q", ls[0])
+	}
+	if strings.Contains(v, "Map (read only)") || strings.Count(v, "updated ") != 1 {
+		t.Fatalf("duplicate header: %s", v)
+	}
+}
+func TestMatureUsesDistinctBlue(t *testing.T) {
+	if mapLevelStyle("mature").GetForeground() != roleMature || roleMature == roleAccent {
+		t.Fatal("mature should use blue")
+	}
+}
+func TestOverviewRoutesEachDependencyInItsOwnLane(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	m.mp.selected = "cogforge"
+	m.mp.overview = true
+	v := ansi.Strip(m.View())
+	for _, line := range strings.Split(v, "\n") {
+		if strings.Contains(line, "┄┄") && strings.Contains(line, "━━") {
+			t.Fatalf("edges share a lane: %q", line)
+		}
 	}
 }

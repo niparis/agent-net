@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued  updated 14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude  opencode  pi                   │
-│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi                                     │
-│ ○ old-box    v0.3.2 offline                                                                                          │
+│  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude  opencode  pi                  │
+│  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi                                    │
+│  ○ old-box    v0.3.2 offline                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 > Project    t
@@ -28,7 +28,7 @@ Start a worker ─────────────────────�
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│write to the CTO: it can set charters, start workers, answer what the network is doing                                │
-│> write to the CTO...                                                                                                 │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 tab completes  up/down or enter: field  enter on the task starts  esc cancels

@@ -5,6 +5,7 @@ import "github.com/charmbracelet/lipgloss"
 // The light variants are dark enough to read against a white terminal.
 var (
 	roleSelection lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#e6f1f2", Dark: "#22303a"}
+	roleMature    lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#315da8", Dark: "#7aa7f5"}
 	roleAccent    lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#00666b", Dark: "#5fc4c9"}
 	roleGood      lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#246b32", Dark: "#7ccf8a"}
 	roleWarning   lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#865000", Dark: "#f0b35a"}

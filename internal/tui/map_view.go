@@ -21,7 +21,10 @@ func (m Model) mapView(w, h int) []string {
 		}
 		out := m.mapFocusView(w, h)
 		if len(out) > 0 {
-			out[0] = clip(sTitle.Render("Map")+sDim.Render("  overview does not fit"), w)
+			out = append([]string{sDim.Render("overview does not fit")}, out...)
+			if len(out) > h {
+				out = out[:h]
+			}
 		}
 		return out
 	}
@@ -146,7 +149,7 @@ func (m Model) mapNodeLine(r mapRow, width int, selected bool) string {
 func mapLevelStyle(level string) lipgloss.Style {
 	switch level {
 	case "mature":
-		return sTitle
+		return lipgloss.NewStyle().Foreground(roleMature)
 	case "critical":
 		return sBad
 	case "growing":

@@ -197,10 +197,10 @@ func (m Model) mainView(w, h int) []string {
 	var machines []string
 	for i, r := range rows {
 		if i >= maxMachineRows {
-			machines = append(machines, sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w-2)))
+			machines = append(machines, sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w-4)))
 			break
 		}
-		machines = append(machines, m.machineLine(r, w-2, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
+		machines = append(machines, m.machineLine(r, w-4, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
 	}
 	if len(rows) == 0 {
 		machines = append(machines, sDim.Render("  no machines yet"))
@@ -321,6 +321,17 @@ func (m Model) titleLine(w int) string {
 	}
 	if !m.haveData && m.problem == ProblemNone {
 		right = "connecting..."
+	}
+	if m.mapOn {
+		mid = fmt.Sprintf("%d nodes, %d edges", len(m.mp.nodes), len(m.mp.edges))
+		switch {
+		case m.mp.loading:
+			right = "reading..."
+		case m.mp.loaded:
+			right = "updated " + m.clock(m.mp.at)
+		default:
+			right = ""
+		}
 	}
 	used := ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	if used > w && !m.haveData && ansi.StringWidth(left)+3+ansi.StringWidth(right) <= w {
@@ -497,7 +508,7 @@ const (
 func (m Model) machineUsage(r machineRow, room int) string {
 	unknownW := machineCPUW + 1 + machineMemW + 1 + machineLoadW
 	if !r.online {
-		return strings.Repeat(" ", unknownW)
+		return ""
 	}
 	n, st := m.nodeUsage(r.nodeID)
 	if st != usageOK || n.Usage.Machine.Samples == 0 && n.Usage.Machine.MemTotal == 0 {
@@ -505,7 +516,7 @@ func (m Model) machineUsage(r machineRow, room int) string {
 		if st == usageStale {
 			label += "  (stale)"
 		}
-		return sDim.Render(cell(label, unknownW))
+		return sDim.Render(clip(label, max(room, 0)))
 	}
 	mu := n.Usage.Machine
 	var cpu string
@@ -1013,6 +1024,12 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	out = append(out, m.feedHeading(w))
-	return append(out, m.feedLines(w, max(h-2, 0))...)
+	filter := "worker events"
+	switch m.events {
+	case eventsAll:
+		filter = "all events"
+	case eventsNone:
+		filter = "no session/worker events"
+	}
+	return append(out, panel("Messages · "+filter, m.feedLines(max(w-4, 1), max(h-3, 0)), w, roleAccent)...)
 }

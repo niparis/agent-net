@@ -24,11 +24,14 @@ func TestScreens(t *testing.T) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := osexec.Command(os.Args[0], "-test.run", "^(TestQuotaViewGoldens|TestLayoutGoldens|TestViewGoldenNeeds|TestGoldenMainWithUsage|TestGoldenDetailWithTopProcesses|TestGoldenStaleUsage|TestGoldenOpenCodeSharedTree|TestGoldenHelp|TestGoldenFeedSnippets|TestGoldenMap|TestViewGolden80|TestViewGolden120|TestViewGoldenOfflineAndFilter|TestViewGoldenFeedFocusAndBody|TestDaemonDownBanner|TestGatewayOfflineBanner|TestPolicyFormGolden|TestActionScreensGolden|TestGoldenConversation|TestTreeGolden)$", "-screens", dir)
+	cmd := osexec.Command(os.Args[0], "-test.run", "^(TestQuotaViewGoldens|TestLayoutGoldens|TestCTOLongErrorGolden|TestViewGoldenNeeds|TestGoldenMainWithUsage|TestGoldenDetailWithTopProcesses|TestGoldenStaleUsage|TestGoldenOpenCodeSharedTree|TestGoldenHelp|TestGoldenFeedSnippets|TestGoldenMap|TestViewGolden80|TestViewGolden120|TestViewGoldenOfflineAndFilter|TestViewGoldenFeedFocusAndBody|TestDaemonDownBanner|TestGatewayOfflineBanner|TestPolicyFormGolden|TestActionScreensGolden|TestGoldenConversation|TestTreeGolden)$", "-screens", dir)
 	cmd.Env = append(os.Environ(), "AGENT_NET_SCREEN_CHILD=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("render scenes: %v\n%s", err, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cto_long_error_80x24.ansi")); err != nil {
+		t.Fatalf("missing long CTO error preview: %v", err)
 	}
 	files, err := filepath.Glob(filepath.Join(dir, "*.ansi"))
 	if err != nil || len(files) == 0 {

@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
-│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                             │
-│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                             │
-│ ○ old-box    v0.3.2 offline                                                  │
+│  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  claude  opencode  pi      │
+│  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?  pi                        │
+│  ○ old-box    v0.3.2 offline                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 
@@ -18,7 +18,7 @@
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│write to the CTO: set charters, start workers, ask about the network          │
-│> write to the CTO...                                                         │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 to tenebrae> also run the tests    enter sends, esc cancels

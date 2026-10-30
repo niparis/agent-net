@@ -62,6 +62,7 @@ type feedItem struct {
 	Type    string // request, reply or notification
 	Parent  string // the message this one answers
 	State   string
+	FromCTO bool
 	Detail  string
 	Host    string // machine of a node event
 	Session string // session of a session.new event
@@ -132,6 +133,7 @@ func (f *feed) applyMessage(e protocol.FeedEvent) {
 		f.byMsg[e.MessageID] = it
 		f.add(it)
 	}
+	it.FromCTO = it.FromCTO || e.FromCTO || (e.Kind == "msg.stored" && parseDetail(e.Detail)["by"] == "cto")
 	if it.Parent == "" {
 		it.Parent = e.Parent
 	}
@@ -266,6 +268,7 @@ func (m *Model) applySnippet(r snippetMsg) {
 		it.Snip = snipFailed
 		return
 	}
+	it.FromCTO = it.FromCTO || r.msg.FromCTO
 	it.Snippet = firstLine(r.msg.Body)
 	it.Snip = snipDone
 }

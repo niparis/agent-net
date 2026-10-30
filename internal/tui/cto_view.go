@@ -16,7 +16,7 @@ func (m Model) ctoView(w, h int) []string {
 		borderColor = roleCTO
 	}
 
-	w = max(w-2, 1)
+	w = max(w-4, 1)
 	h = max(h-2, 1)
 	out := []string{}
 	if f := c.settingsForm; f != nil {
@@ -38,7 +38,7 @@ func (m Model) ctoView(w, h int) []string {
 		for len(out) < h {
 			out = append(out, "")
 		}
-		return panelWithBorder(title, out[:min(len(out), h)], w+2, roleCTO, borderColor)
+		return panelWithBorder(title, out[:min(len(out), h)], w+4, roleCTO, borderColor)
 	}
 	var lines []string
 	for _, v := range c.messages {
@@ -83,7 +83,7 @@ func (m Model) ctoView(w, h int) []string {
 		input = "> write to the CTO..."
 	}
 	out = append(out, clip(input, w))
-	return panelWithBorder(title, out, w+2, roleCTO, borderColor)
+	return panelWithBorder(title, out, w+4, roleCTO, borderColor)
 }
 
 // wrapCTOLine indents continuation rows while keeping their text in the box.

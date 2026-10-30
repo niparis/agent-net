@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 6 sessions, 5 online · 1 busy                               updated 14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude  opencode  pi                   │
-│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi                                     │
-│ ○ old-box    v0.3.2 offline                                                                                          │
+│  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude  opencode  pi                  │
+│  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi                                    │
+│  ○ old-box    v0.3.2 offline                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -21,9 +21,9 @@
 
 
 ╭─CTO · opencode · fake/m1─────────────────────────────────────────────────────────────────────────────────────────────╮
-│> Harness: < opencode >                                                                                               │
-│  Model:   fake/m1                                                                                                    │
-│  up/down select  left/right harness  tab complete  enter save  esc cancel                                            │
+│ > Harness: < opencode >                                                                                              │
+│   Model:   fake/m1                                                                                                   │
+│   up/down select  left/right harness  tab complete  enter save  esc cancel                                           │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy  updated 14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
-│ ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)    claude  opencode  pi       │
-│ ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G   pi      │
-│ ○ old-box    v0.3.2 offline                                                  │
+│  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)    claude  opencode  pi      │
+│  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G   pi     │
+│  ○ old-box    v0.3.2 offline                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│write to the CTO: set charters, start workers, ask about the network          │
-│> write to the CTO...                                                         │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 1/2/3/4 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
