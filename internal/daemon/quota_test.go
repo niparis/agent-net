@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -77,6 +79,16 @@ func fakeQuotaAXI(t *testing.T, dir, body string, argsFile string) string {
 	return path
 }
 
+func fakeQuotaAXIExit(t *testing.T, dir, version, body string, exitCode int, stderr string) string {
+	t.Helper()
+	path := filepath.Join(dir, "quota-axi")
+	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 'quota-axi " + version + "'; exit 0; fi\ncat <<'QUOTA_EOF'\n" + body + "\nQUOTA_EOF\nprintf '%s\\n' '" + stderr + "' >&2\nexit " + strconv.Itoa(exitCode) + "\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestReadQuotaAXIParsesWindowsAndPace(t *testing.T) {
 	dir := t.TempDir()
 	args := filepath.Join(dir, "args")
@@ -106,6 +118,63 @@ func TestReadQuotaAXIParsesWindowsAndPace(t *testing.T) {
 	}
 	if strings.Contains(string(mustRead(t, args)), "--full") {
 		t.Error("agent-net passed --full")
+	}
+}
+
+func TestReadQuotaAXIUsesJSONWhenEveryProviderFailed(t *testing.T) {
+	json := strings.Replace(fakeQuotaJSON,
+		`"state": {"status": "fresh", "stale": false}`,
+		`"state": {"status": "error", "stale": false, "error": "provider unavailable"}`, 1)
+	path := fakeQuotaAXIExit(t, t.TempDir(), "0.1.69", json, 1, "provider failure")
+	q, err := readQuotaAXI(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q == nil || len(q.Providers) != 4 {
+		t.Fatalf("report from exit 1: %+v", q)
+	}
+	claude, ok := q.Provider("claude")
+	if !ok || claude.Error != "provider unavailable" {
+		t.Fatalf("provider failure was lost: %+v", claude)
+	}
+}
+
+func TestReadQuotaAXIFallsBackToPrivateCopyOnOptionRejection(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	user := fakeQuotaAXIExit(t, t.TempDir(), "0.1.69", fakeQuotaJSON, 2, "unknown option")
+	private := quotaaxi.Binary()
+	if err := os.MkdirAll(filepath.Dir(private), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(private, []byte("#!/bin/sh\ncat <<'QUOTA_EOF'\n"+fakeQuotaJSON+"\nQUOTA_EOF\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldEnsure := ensureQuotaAXIPrivate
+	ensureQuotaAXIPrivate = func(context.Context, func(string, ...any)) error { return nil }
+	t.Cleanup(func() { ensureQuotaAXIPrivate = oldEnsure })
+	var logs []string
+	q, err := readQuotaAXIWith(context.Background(), user, func(format string, args ...any) {
+		logs = append(logs, fmt.Sprintf(format, args...))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if q == nil || len(q.Providers) != 4 {
+		t.Fatalf("fallback report: %+v", q)
+	}
+	if len(logs) != 1 || logs[0] != "quota-axi rejected its options (version 0.1.69); using the pinned copy" {
+		t.Fatalf("fallback log: %q", logs)
+	}
+}
+
+func TestReadQuotaAXIIncludesOnlyRedactedFirstStderrLine(t *testing.T) {
+	path := fakeQuotaAXIExit(t, t.TempDir(), "0.1.69", "not json", 3, "  provider failed: token=private-value\nsecond line")
+	_, err := readQuotaAXI(context.Background(), path)
+	if err == nil {
+		t.Fatal("failed quota-axi returned no error")
+	}
+	if got := err.Error(); !strings.Contains(got, "provider failed: token=[REDACTED]") || strings.Contains(got, "private-value") || strings.Contains(got, "second line") {
+		t.Fatalf("unexpected error text: %q", got)
 	}
 }
 

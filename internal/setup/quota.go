@@ -3,6 +3,7 @@ package setup
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/niparis/agent-net/internal/quotaaxi"
 )
@@ -32,12 +33,14 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		}
 		return
 	}
-	if _, ok := quotaaxi.UserPath(""); ok {
-		r.step(quotaStepName, "ok (using the installed quota-axi)", nil)
-		return
-	}
-	if _, ok := quotaaxi.Path(""); ok {
-		r.step(quotaStepName, "ok (already installed)", nil)
+	if path, ok := quotaaxi.Path("", func(format string, args ...any) {
+		fmt.Fprintf(r.Out, format+"\n", args...)
+	}); ok {
+		if path == quotaaxi.Binary() {
+			r.step(quotaStepName, "ok (already installed)", nil)
+		} else {
+			r.step(quotaStepName, "ok (using the installed quota-axi)", nil)
+		}
 		return
 	}
 	if err := ensureQuotaAXI(ctx, nil); err != nil {
