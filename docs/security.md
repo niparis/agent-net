@@ -271,3 +271,7 @@ Only the owner can use `outcome_overrule`: the daemon applies the owner gate use
 An overruled request has a gateway-stored marker separate from its body. Adapters write `[agent-net] Nicolas overrules: do it.` only when that marker is present. The marker cannot be supplied to `agent_send` or `agent_reply`. Message bodies have the `[agent-net` marker broken before delivery, so a peer cannot imitate the framed note. The owner's gate is a barrier against a command running inside a session, not a defense against a program that detaches from its process tree.
 
 Outcome reasons and recommendations are visible to enrolled machines through the owner inbox. They are limited to 2048 bytes each and cleaned of controls. Do not put secrets in them. Unresolved rejections and escalations keep their request and reply messages and both session records past the normal retention period; normal retention applies after the owner answers.
+
+## Graph foundation
+
+Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.

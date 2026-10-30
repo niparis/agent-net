@@ -141,7 +141,13 @@ UPDATE sessions SET created_at = last_seen;
 ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
 `, `
 CREATE TABLE owner_settings (
- key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+	key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
+`, `
+CREATE TABLE graph_nodes (name TEXT PRIMARY KEY, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE graph_charter (node TEXT NOT NULL, attr TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY(node, attr));
+CREATE TABLE graph_edges (source TEXT NOT NULL, target TEXT NOT NULL, kind TEXT NOT NULL, mode TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(source, target, kind));
+CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, node TEXT NOT NULL, attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
+CREATE INDEX graph_history_node ON graph_history(node, id);
 `, `
 CREATE TABLE graph_outcomes (source TEXT NOT NULL, target TEXT NOT NULL, message_id TEXT NOT NULL, reply_id TEXT NOT NULL PRIMARY KEY, outcome TEXT NOT NULL, reason TEXT NOT NULL, redirect_to TEXT NOT NULL, recommendation TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX graph_outcomes_edge ON graph_outcomes(source, target, at);
@@ -149,6 +155,7 @@ CREATE INDEX graph_outcomes_edge ON graph_outcomes(source, target, at);
 ALTER TABLE graph_outcomes ADD COLUMN resolution TEXT NOT NULL DEFAULT '';
 `, `
 CREATE TABLE outcome_overrules (message_id TEXT PRIMARY KEY, reply_id TEXT NOT NULL);
+
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

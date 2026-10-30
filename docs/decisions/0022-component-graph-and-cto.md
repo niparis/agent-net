@@ -1,7 +1,7 @@
 # 0022 - A graph of components with charters, and a CTO in the TUI
 
 **Date:** 2026-10-30
-**Status:** Draft. Not built. For the owner to correct before work starts.
+**Status:** Accepted, being built (steps 1 to 5). Step 6, the phone, belongs to decision 0006 and is not part of this decision's build.
 **Context:** Today every session is an island with a few separate switches: peer trust (0013), the delegation policy (0014), the worker sandbox level (0020), and merge authority (discussed, not built). Nothing says what a repository is for, what it should refuse, how careful its agents must be, or which other repositories and agents have a say over it. The owner wants agents to react to requests from other agents the way a team would: a generic API should be able to refuse a client-specific feature and give the reason; some services matter more than others; a session that owns no code can manage the architecture of a few repositories. The owner wants to set all of this by talking, not by clicking, and to see it.
 
 Base: [0008](0008-operator-interface-and-worker-build.md) (the owner gate and operator interface), [0013](0013-peer-trust-and-hints.md), [0014](0014-delegation-policy.md), [0016](0016-needs-you.md), [0019](0019-opencode-worker-logins.md), [0020](0020-worker-sandbox.md).
@@ -181,6 +181,52 @@ OpenCode is the only one with all four. The CTO runs as a private `opencode serv
 
 A session that wants a charter change (for example "add api-design to my needs") says so to the owner, and the owner tells the CTO. One place to change things, one history, and no rights changed from the network.
 
+## Quotas
+
+Workers spend the owner's subscriptions. agent-net reads how much is left and plans with it. It does not measure quotas itself: it reads [quota-axi](https://github.com/kunchenguid/quota-axi), a CLI that reports the quota windows of the owner's subscriptions (Claude, Codex, OpenCode Go, DeepSeek, Cursor, OpenRouter and more) from the logins on the machine.
+
+- **Reading.** When quota-axi is installed on a machine (an integration of 0021: the owner turns it on once for all machines; agent-net does not install npm packages by itself), its daemon runs `quota-axi --json --max-age 5m --no-credential-refresh` every few minutes and sends the gateway one line per provider and window: percent used, time to reset, pace (`on pace`, `ahead`, `exhausted`). `--no-credential-refresh`: agent-net never makes quota-axi refresh a login (decision 0019's risk). No account identity is sent (`--full` is not used).
+- **Model choice.** A provider that is exhausted, or above 95% of any window, is skipped for loose model names; an exact model id still works, with a warning in the start result. A provider ahead of pace ranks below providers on pace.
+- **Admission.** A start whose model's provider is exhausted is refused with the reason and the reset time, instead of failing at the first model call.
+- **Shown** in one line of the TUI header (`claude 59%w · codex 90%w · opencode-go 76%w · cursor exhausted`), in `agent_nodes` for agents, and to the CTO, which plans with it ("codex is at 90% of its week: the next workers go to opencode-go").
+
+## Knowledge: what the network learns about models, harnesses and projects
+
+Which model and harness to use for which work, and the quirks of each project, are learned by trying. Today that knowledge stays in one session's memory. agent-net keeps it for every agent, in three layers.
+
+1. **Facts, collected automatically: the track record.** agent-net already records every worker's harness, model, run time, outcome and tokens. A worker also reports `complete: false` in `agent_handback` when it hands back partial work, so a lazy model is counted. Per harness and model:
+   ```
+   terra · pi       4 runs: 1 complete, 3 partial (median 9 min) · cannot resume
+   terra · codex    3 runs: 0 complete, 3 partial (median 3 min) · resumes
+   deepseek-v4.1-flash · opencode   14 runs: 13 complete (median 26 min)
+   ```
+2. **Findings, reported by agents.** The agents that review workers' results notice things. A tool `agent_learn(subject, finding, evidence)` records one:
+   ```
+   subject:  model gpt-6.1-terra, harness pi
+   finding:  Hands back partial work after about 10 min even when told not to.
+             Delivers one layer when the brief has a hard checklist.
+   evidence: the worker sessions it saw
+   ```
+   A subject is a model, a harness, a model on a harness, a project ("cogforge tests need the TEI service up"), an MCP server or a machine. The worker notice's checklist ends with "Did you learn something about this model, harness or project? Report it with agent_learn", and the guidance says so. A finding is a proposal: it changes nothing until it is promoted.
+3. **The playbook, built automatically.** The owner wants to know what the network learned, not to decide on each finding. The gateway promotes a pattern to a playbook note on its own when it has enough support: at least 3 findings on the same subject from at least 2 different sessions within 30 days, or a clearly bad track record (at least 4 runs and under half complete). The note is the latest finding's text, its support count and the track record line, with no model call. A note whose support is all older than 60 days goes stale and is no longer shown. The owner (or the CTO on the owner's word) can write, pin or remove a note at any time; the owner never has to.
+
+**Quiet by design.** Knowledge must not become theater that interrupts the team:
+
+- An agent reports a finding only when it would change how someone picks or briefs that model, harness or project next time. Never routine results. At most 3 findings per session per day.
+- Findings are never sent as messages and never appear in Needs you.
+- Playbook notes appear only at the moment of choice: in the `agent_start` result and in `agent_nodes`. Not in every turn's context.
+- The owner sees what was learned when he looks: a "Learned" list in the TUI (key `L`) with each note's support, a quiet count in the header ("learned 2 new") that never pops up, and the CTO answering "what have we learned this week?".
+
+**Storage**, in the gateway, one copy for the network:
+
+- findings: subject, text, evidence (worker and session ids), reporter, time, status (`new`, `promoted`, `dismissed`, `stale`). A finding never promoted goes stale after 90 days.
+- playbook: subject, note, how it was made (automatic, or written by the owner or the CTO), time, and the findings and track record behind it. Versioned with history and undo, like charters.
+
+**Delivery:**
+
+- `agent_start` results show the playbook note and the track record line for the chosen model and harness; `agent_nodes` shows them for every model a machine offers.
+- The CTO sees all of it when it plans work.
+
 ## The TUI
 
 - **Map view** (key to be chosen, for example `M`): architects with the nodes they govern and the mode in brackets; the selected node's charter; its edges in and out with their request rules; its latest decisions (accepted, rejected, overruled). Read only.
@@ -213,13 +259,14 @@ Existing settings are migrated into the graph so nothing changes for the owner o
 2. **The CTO.** OpenCode harness, private MCP tools, the TUI chat pane, diffs and undo.
 3. **Edges and modes.** depends-on, governs with advisor/arbiter/owner, deploys (the target's rule applies), request rules (replacing trust), architect roles, written approvals and the owner's inbox.
 4. **Maturity defaults wired to the controls.** Merge authority (new), sandbox, delegation, request judging.
-5. **The phone** (0006), with the same chat and Needs you.
+5. **Quotas and knowledge.** quota-axi reading, model choice and admission by quota; `complete: false` hand-backs and the track record; `agent_learn` findings; the automatic, quiet playbook.
+6. **The phone** (0006), with the same chat and Needs you.
 
 ## Open questions
 
 1. **Maturity levels:** are four levels right, and are the defaults in the table the right ones?
-2. **Architect sessions:** must an architect always have a running session, or can the CTO answer for an architect that has none?
-3. **Several sessions for one node:** when two sessions speak for cogforge at once, which one judges an incoming request? (Proposal: the one the sender addressed; the outcome is recorded for the node.)
-4. **Overrule versus architect owner:** when an architect is `owner` of a node and the owner overrules the architect, does the architect get told? (Proposal: yes, as a notification.)
+2. **Architect sessions:** decided for now: the CTO answers for an architect that has no running session.
+3. **Several sessions for one node:** decided for now: the addressed session judges the request, and the outcome is recorded for the node.
+4. **Overrule versus architect owner:** decided for now: an overruled architect gets a notification.
 5. **CTO conversation length:** one long conversation will fill its context. Start a new one per day, or summarize?
 6. **Cost:** a strong CTO model reads the graph and history on every request. Is a daily budget wanted?

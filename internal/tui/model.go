@@ -105,6 +105,10 @@ type Model struct {
 	top map[string]*topEntry
 	// conv is the open conversation, or nil (conv.go).
 	conv *convState
+	// mapOn shows the read-only graph map instead of the session list, and mp
+	// is its data (map.go).
+	mapOn bool
+	mp    mapState
 	// help shows the key overlay; expand gives the detail pane the room of the
 	// message feed.
 	help   bool
@@ -233,11 +237,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	nm := next.(Model)
 	// After any change, fetch the top processes the detail pane wants.
 	cmds := []tea.Cmd{cmd}
-	if c := nm.wantTop(); c != nil {
-		cmds = append(cmds, c)
-	}
-	if c := nm.wantSnippets(); c != nil {
-		cmds = append(cmds, c)
+	if !nm.mapOn {
+		if c := nm.wantTop(); c != nil {
+			cmds = append(cmds, c)
+		}
+		if c := nm.wantSnippets(); c != nil {
+			cmds = append(cmds, c)
+		}
 	}
 	return nm, tea.Batch(cmds...)
 }
@@ -278,6 +284,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case fetchedMsg:
 		m.fetching = false
 		m.applyFetch(msg)
+		return m, nil
+
+	case mapMsg:
+		m.applyMap(msg)
 		return m, nil
 
 	case enterMsg:
@@ -421,6 +431,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
+	if m.mapOn {
+		return m.mapKey(k)
+	}
 	if m.conv != nil {
 		return m.convKey(k)
 	}
@@ -487,6 +500,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startIntegrations()
 	case "N":
 		return m.startRename()
+	case "M":
+		return m.startMap()
 	case "?":
 		m.help = true
 	case "d":

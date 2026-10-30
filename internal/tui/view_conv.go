@@ -139,6 +139,8 @@ func (m Model) hints() []hint {
 		return []hint{{"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.conv != nil:
 		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
+	case m.mapOn:
+		return []hint{{"up/down", "select", 1}, {"M/esc", "sessions", 1}, {"r", "refresh", 3}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusFeed:
@@ -207,6 +209,7 @@ func (m Model) helpView(w, h int) []string {
 		{"t", "peer trust on/off: act on requests of other agents (y/n)"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
+		{"M", "map: charters, maturity, edges and history (read only)"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "o: show offline and dormant; d: detail takes the feed room"},

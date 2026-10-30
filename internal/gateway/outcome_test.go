@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"database/sql"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -12,6 +14,14 @@ func TestRecordOutcome(t *testing.T) {
 	a, b := twoSessions(t, s)
 	if _, err := s.db.Exec(`UPDATE sessions SET repo_project=CASE id WHEN ? THEN 'consumer' ELSE 'provider' END WHERE id IN (?,?)`, a, a, b); err != nil {
 		t.Fatal(err)
+	}
+	edge := protocol.Edge{From: "consumer", To: "provider", Kind: "depends"}
+	if err := s.SetEdge(edge, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	graph, err := s.Graph()
+	if err != nil || len(graph.Edges) != 1 || graph.Edges[0].From != edge.From || graph.Edges[0].To != edge.To {
+		t.Fatalf("graph: %+v %v", graph, err)
 	}
 	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request"})
 	if err != nil {
@@ -140,5 +150,49 @@ func TestPendingOutcomeSurvivesRetention(t *testing.T) {
 	entries, err := s.OutcomeInbox()
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("lost pending entry: %+v %v", entries, err)
+	}
+}
+
+// The graph foundation's last migration is the predecessor of the outcome
+// migrations, so upgrading an existing gateway preserves its graph.
+func TestOutcomeMigrationsAfterGraph(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "upgrade.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`); err != nil {
+		t.Fatal(err)
+	}
+	oldCount := len(migrations) - 3
+	for i, migration := range migrations[:oldCount] {
+		if _, err = db.Exec(migration); err != nil {
+			t.Fatalf("migration %d: %v", i+1, err)
+		}
+		if _, err = db.Exec(`INSERT INTO schema_version VALUES (?)`, i+1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err = db.Exec(`INSERT INTO graph_nodes VALUES ('architect','architect',1)`); err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	graph, err := s.Graph()
+	if err != nil || len(graph.Nodes) != 1 || graph.Nodes[0].Name != "architect" {
+		t.Fatalf("graph: %+v %v", graph, err)
+	}
+	if _, err = s.Outcomes("", "", 10); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.SchemaVersion()
+	if err != nil || v != len(migrations) {
+		t.Fatalf("version: %d %v", v, err)
 	}
 }
