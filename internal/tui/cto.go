@@ -26,6 +26,9 @@ type ctoState struct {
 	model, err       string
 	messages         []string
 	history          []protocol.CTOGraphChange
+	local            []string
+	historyLoaded    bool
+	lastGraphID      int64
 	generation       int
 }
 type ctoPollMsg struct {
@@ -36,6 +39,11 @@ type ctoPollMsg struct {
 	generation int
 }
 type ctoSendMsg struct {
+	err        error
+	generation int
+}
+type ctoUndoMsg struct {
+	id         int64
 	err        error
 	generation int
 }
@@ -120,6 +128,19 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case "enter", "i":
 			c.editing = true
 			return m, c.input.Focus()
+		case "u":
+			if len(c.history) == 0 {
+				c.err = "No CTO graph change to undo"
+				return m, nil
+			}
+			id := c.history[len(c.history)-1].ID
+			src := m.src.(ctoSource)
+			g := c.generation
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				return ctoUndoMsg{id: id, err: src.CTOUndo(ctx, id), generation: g}
+			}
 		case "n":
 			src := m.src.(ctoSource)
 			g := c.generation
@@ -180,6 +201,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	for _, a := range r.events.Actions {
 		c.messages = append(c.messages, a.Text)
 	}
+	c.messages = append(c.messages, c.local...)
 	for _, raw := range r.events.Messages {
 		if text := ctoMessage(raw); text != "" {
 			c.messages = append(c.messages, text)

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	osexec "os/exec"
 	"sort"
 	"strings"
@@ -273,7 +274,37 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case ctoPollMsg:
+		if m.cto == nil || m.cto.generation != msg.generation {
+			return m, nil
+		}
+		oldID, loaded := m.cto.lastGraphID, m.cto.historyLoaded
 		m.applyCTOPoll(msg)
+		if msg.err == nil {
+			m.cto.historyLoaded = true
+			if len(msg.history) > 0 {
+				m.cto.lastGraphID = msg.history[len(msg.history)-1].ID
+			}
+			if loaded && m.mapOn && oldID != m.cto.lastGraphID {
+				m.mp.loading = true
+				return m, m.mapCmd()
+			}
+		}
+		return m, nil
+	case ctoUndoMsg:
+		if m.cto == nil || m.cto.generation != msg.generation {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.cto.err = sanitize(msg.err.Error())
+			return m, nil
+		}
+		line := fmt.Sprintf("undid graph change #%d", msg.id)
+		m.cto.local = append(m.cto.local, line)
+		m.cto.messages = append(m.cto.messages, line)
+		if m.mapOn {
+			m.mp.loading = true
+			return m, m.mapCmd()
+		}
 		return m, nil
 	case ctoSendMsg:
 		if m.cto != nil && m.cto.generation == msg.generation {
@@ -291,6 +322,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cto.err = sanitize(msg.err.Error())
 			} else {
 				m.cto.messages = nil
+				m.cto.local = nil
 				if !m.cto.polling {
 					m.cto.polling = true
 					return m, m.ctoPollCmd()
