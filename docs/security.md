@@ -3,7 +3,7 @@
 The network-wide CTO model preference is an owner setting. The daemon's
 `cto_settings` method uses the owner gate and refuses agent sessions. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
-that token is an owner credential and must not be shared with agents. model
+that token is an owner credential and must not be shared with agents.
 
 This page says what agent-net trusts, how it checks it, and what it does not protect against. Every statement here was checked against the code. Where a check is weak, the page says so.
 
