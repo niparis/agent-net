@@ -10,7 +10,7 @@ The Tools tab and CTO chat show skills and MCP servers found on every enrolled m
 
 ## Research: native sources and behavior
 
-Checked 2026-10-30 against the documentation linked below and local directories and config structure, read-only. Claude Code reports 2.1.314 and Codex 0.163.0. OpenCode and Pi were not on this worker's PATH, despite their configuration directories being present, so their installed binary versions and runtime behavior could not be verified here. A build worker must check the actual installed versions before choosing version-specific adapters. Do not infer native support from a different release. Skills are directories with `SKILL.md` Markdown and YAML front matter plus optional files unless noted. JSON/JSONC and TOML config may contain credentials: never report raw config.
+Checked 2026-10-30 against the documentation linked below and local directories and config structure, read-only. Claude Code reports 2.1.314, Codex 0.163.0, OpenCode 2.2.0 and Pi 1.4.0. OpenCode and Pi were found under the Node installation after extending PATH. Do not infer native support from a different release. Skills are directories with `SKILL.md` Markdown and YAML front matter plus optional files unless noted. JSON/JSONC and TOML config may contain credentials: never report raw config.
 
 | Harness | User skills / MCP | Project skills / MCP and outside-repo activation | Running sessions |
 |---|---|---|---|
