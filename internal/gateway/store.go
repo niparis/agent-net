@@ -137,6 +137,8 @@ ALTER TABLE sessions ADD COLUMN tools_old INTEGER NOT NULL DEFAULT 0;
 `, `
 ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
 UPDATE sessions SET created_at = last_seen;
+`, `
+ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -364,10 +366,31 @@ func (s *Store) upsertSession(q interface {
 		workerStarted = in.Worker.StartedAt * int64(time.Second)
 	}
 	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
+	// A new record gets the ID the daemon asks for when that ID looks right
+	// and nobody uses it: a worker whose record was lost keeps its ID.
+	newID := protocol.NewID("s")
+	if known == 0 && validSessionID(in.SessionID) {
+		var used int
+		if err := q.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, in.SessionID).Scan(&used); err != nil {
+			return "", false, err
+		}
+		if used == 0 {
+			newID = in.SessionID
+		}
+	}
+	waiting := ""
+	if w := protocol.CleanWaiting(in.Waiting); w != nil {
+		if w.Since == 0 {
+			w.Since = s.now().Unix()
+		}
+		if b, err := json.Marshal(w); err == nil {
+			waiting = string(b)
+		}
+	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
-		tools_version, tools_old, created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
@@ -375,10 +398,10 @@ func (s *Store) upsertSession(q interface {
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
-		tools_version=excluded.tools_version, tools_old=excluded.tools_old`,
-		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
+		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting`,
+		newID, nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
-		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now)
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting)
 	if err != nil {
 		return "", false, err
 	}
@@ -393,6 +416,19 @@ func (s *Store) upsertSession(q interface {
 		s.event(q, "session.new", nodeID, id, "", sessionDetail(in))
 	}
 	return id, fresh, nil
+}
+
+// validSessionID says whether id has the shape of a session ID.
+func validSessionID(id string) bool {
+	if !strings.HasPrefix(id, "s_") || len(id) < 4 || len(id) > 40 {
+		return false
+	}
+	for _, c := range id[2:] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z') {
+			return false
+		}
+	}
+	return true
 }
 
 func sessionDetail(in protocol.SessionInfo) string {
@@ -507,9 +543,11 @@ func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 
 // CleanWorkers deletes the worker records of a node that are offline and
 // whose worker started longer ago than age. A record with no start time was
-// kept by a gateway from before the column existed, so it counts as old and
-// goes at the first cleanup. It returns how many records it deleted.
-func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
+// kept by a gateway from before the column existed, so it counts as old. A
+// record the machine lists in running is never deleted: its machine still
+// runs that worker, even if the worker is offline for a moment (a daemon
+// restart). It returns how many records it deleted.
+func (s *Store) CleanWorkers(nodeID string, age time.Duration, running []string) (int, error) {
 	if age <= 0 {
 		return 0, nil
 	}
@@ -521,6 +559,63 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
 	defer tx.Rollback()
 	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker != ''
 		AND (worker_started = 0 OR worker_started < ?)`, nodeID, cut)
+	if err != nil {
+		return 0, err
+	}
+	keep := map[string]bool{}
+	for _, id := range running {
+		keep[id] = true
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		if !keep[id] {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	if len(ids) > 0 {
+		s.logf("worker.cleaned", "node", nodeID, "workers", len(ids))
+	}
+	return len(ids), nil
+}
+
+// CleanWorktreeSessions deletes the offline sessions of one node whose working
+// folder is inside dir (the folder where that node's daemon creates worker
+// worktrees) and that are not worker records. They are ghosts: a user's own
+// service once registered a worker's session as an ordinary one. Rows of
+// other nodes, worker records and sessions elsewhere are never touched.
+func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
+	dir = strings.TrimRight(dir, "/")
+	if !strings.HasPrefix(dir, "/") || dir == "" {
+		return 0, nil
+	}
+	prefix := dir + "/"
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker = ''
+		AND substr(cwd, 1, ?) = ?`, nodeID, len(prefix), prefix)
 	if err != nil {
 		return 0, err
 	}
@@ -547,9 +642,6 @@ func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
 	}
 	if err := tx.Commit(); err != nil {
 		return 0, err
-	}
-	if len(ids) > 0 {
-		s.logf("worker.cleaned", "node", nodeID, "workers", len(ids))
 	}
 	return len(ids), nil
 }
@@ -604,7 +696,7 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.name, s.created_at, s.tools_version, s.tools_old
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.name, s.created_at, s.tools_version, s.tools_old, s.waiting
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -613,16 +705,22 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var lastSeen, created int64
 	var caps, worker string
 	var trust int
-	var deleg string
+	var deleg, waiting string
 	var toolsOld int
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld)
+		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting)
 	if err != nil {
 		return a, err
 	}
 	a.ToolsOld = toolsOld != 0
+	if waiting != "" {
+		var w protocol.Waiting
+		if json.Unmarshal([]byte(waiting), &w) == nil {
+			a.Waiting = protocol.CleanWaiting(&w)
+		}
+	}
 	if deleg != "" {
 		var p protocol.DelegationPolicy
 		if json.Unmarshal([]byte(deleg), &p) == nil && !p.Empty() {

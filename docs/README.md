@@ -31,6 +31,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0013](decisions/0013-peer-trust-and-hints.md): peer trust (a per-session switch, set by the owner, that lets a session act on peer requests without asking), the sender-relays rule, and hints about which session can help after a failed tool call.
 - [0014](decisions/0014-delegation-policy.md): delegation policy (the owner sets, per session or project, whether a session does the coding itself or hands it to a native subagent or a worker; applied on every turn).
 - [0015](decisions/0015-machine-display-name.md): machine display name (the owner names a machine once, from the TUI; every machine shows it).
+- [0018](decisions/0018-admit-workers-by-machine-load.md): workers start by recent CPU and memory load, with a queue and a choice of machine by headroom.
 - [0006](decisions/0006-phone-app.md): phone app, planned: same data and actions as the TUI, through one shared operator interface.
 - [spike/](spike/): what we measured about each agent before building.
 - [step2-design.md](step2-design.md): protocol and message design for the gateway, daemon and Claude and Pi adapters. Still a good description of the wire protocol.

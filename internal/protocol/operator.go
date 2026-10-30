@@ -193,6 +193,17 @@ type WorkerStartResult struct {
 	Task *Message `json:"task,omitempty"`
 	// Queued is true when the task message waits in the outbox.
 	Queued bool `json:"queued,omitempty"`
+	// Status is "started" or "queued". A queued start has no SessionID yet:
+	// the machine has no room now, QueueID names the start (agent_stop takes
+	// it), Position is its place in that machine's queue, and QueueReason
+	// says why it waits. A worker notice follows when it starts.
+	Status      string `json:"status,omitempty"`
+	QueueID     string `json:"queue_id,omitempty"`
+	Position    int    `json:"position,omitempty"`
+	QueueReason string `json:"queue_reason,omitempty"`
+	// MachineNote says why this machine was picked when the project is on
+	// several. Empty otherwise.
+	MachineNote string `json:"machine_note,omitempty"`
 }
 
 // WorkerStopRequest is OpWorkerStop.

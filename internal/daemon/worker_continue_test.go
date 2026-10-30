@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -148,7 +149,7 @@ func TestContinueNeedsTheOwner(t *testing.T) {
 		t.Errorf("machine check: %v", err)
 	}
 	_, other := helloPi(t, w.node, "pi-other", "/work/other", true)
-	_, err := w.d.workerStartCall(t.Context(), other, protocol.WorkerStartRequest{Continue: old.SessionID}, false)
+	_, err := w.d.workerStartCall(t.Context(), other, protocol.WorkerStartRequest{Continue: old.SessionID}, false, "")
 	if err == nil || !strings.Contains(err.Error(), "only the session that started") {
 		t.Errorf("gateway check: %v", err)
 	}
@@ -190,6 +191,70 @@ func TestContinueAfterHandback(t *testing.T) {
 	}
 	if !strings.Contains(res.Task.Body, "ended (handback)") {
 		t.Errorf("task: %s", res.Task.Body)
+	}
+}
+
+// A continued start goes through admission like any start: with no room it is
+// queued, keeps its base and its task, and starts when there is room.
+func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fl := &fakeLoad{l: roomyLoad()}
+	w := startWorkerNode(t, g, queueSet, withLoad(fl))
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, piID := helloPi(t, w.node, "caller", "/work/caller", true)
+	old := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "write half.txt", Isolation: protocol.IsolationWorktree})
+	if old.SessionID == "" {
+		t.Fatalf("%+v", old)
+	}
+	if err := os.WriteFile(filepath.Join(old.Worktree, "half.txt"), []byte("half\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pi.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+
+	fl.set(cpuBusy())
+	var r protocol.WorkerStartResult
+	json.Unmarshal(pi.mustCall("worker_start", protocol.WorkerStartRequest{Continue: old.SessionID, Task: "and tests"}), &r)
+	if r.Status != "queued" || !protocol.IsQueueID(r.QueueID) {
+		t.Fatalf("continue was not queued: %+v", r)
+	}
+	fl.set(roomyLoad())
+	var started protocol.Message
+	for {
+		started = pi.nextPush()
+		if strings.Contains(started.Body, "status: started") {
+			break
+		}
+	}
+	sid := started.From
+	if sid == "" || sid == old.SessionID {
+		t.Fatalf("started notice: %+v", started)
+	}
+	eventually(t, "the continued task reached the new worker", func() bool {
+		for _, m := range w.messagesOf(t, sid) {
+			if m.From == piID && strings.Contains(m.Body, "You continue the work of an earlier worker that ended (stopped)") &&
+				strings.Contains(m.Body, "write half.txt") && strings.Contains(m.Body, "Also: and tests") {
+				return true
+			}
+		}
+		return false
+	})
+	rows, _ := w.d.st.workers()
+	found := false
+	for _, row := range rows {
+		if row.SessionID == sid {
+			found = true
+			if got := gitOutT(t, row.Worktree, "show", "HEAD:half.txt"); got != "half" {
+				t.Errorf("half.txt in the new worktree: %q", got)
+			}
+			if row.TaskFull != "write half.txt\n\nAlso: and tests" {
+				t.Errorf("task_full %q", row.TaskFull)
+			}
+		}
+	}
+	if !found {
+		t.Error("no record of the new worker")
 	}
 }
 

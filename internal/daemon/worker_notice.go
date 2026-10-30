@@ -429,3 +429,46 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	}
 	d.finishWorktree(w)
 }
+
+// worktreesDir is the folder where this daemon creates the git worktrees of
+// its workers, as a cleaned absolute path.
+func (d *Daemon) worktreesDir() string {
+	root, err := filepath.Abs(filepath.Join(d.cfg.StateDir, "worktrees"))
+	if err != nil {
+		return ""
+	}
+	return root
+}
+
+// dropWorktreeSessions closes the plugin connections of live sessions that
+// work inside the worktrees folder and are not a worker's own. They are ghosts
+// of workers that a user's own service registered before the hello refused
+// them. Closing the connection takes the session offline.
+func (d *Daemon) dropWorktreeSessions() {
+	var drop []*localConn
+	d.mu.Lock()
+	for _, ls := range d.sessions {
+		if ls.conn != nil && !ls.owned && ls.info.Worker == nil && d.inWorktreesDir(ls.info.Cwd) {
+			drop = append(drop, ls.conn)
+		}
+	}
+	d.mu.Unlock()
+	for _, c := range drop {
+		c.close()
+	}
+}
+
+// inWorktreesDir tells whether cwd is inside the folder where this daemon
+// creates the git worktrees of its workers. It compares cleaned absolute paths
+// and works for a folder that no longer exists.
+func (d *Daemon) inWorktreesDir(cwd string) bool {
+	root := d.worktreesDir()
+	if cwd == "" || root == "" {
+		return false
+	}
+	p, err := filepath.Abs(cwd)
+	if err != nil {
+		return false
+	}
+	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
+}

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,10 +48,38 @@ type NodeConfig struct {
 // NodeWorkers is the "workers" part of node.json. Durations are Go durations
 // such as "60m" or "4h".
 type NodeWorkers struct {
+	// Max is the hard cap of workers on the machine (default 12).
 	Max        int    `json:"max,omitempty"`
 	Idle       string `json:"idle,omitempty"`
 	MaxAge     string `json:"max_age,omitempty"`
 	OwnerGrace string `json:"owner_grace,omitempty"`
+	// CPUTarget is the 5-minute CPU busy percent above which no worker starts
+	// (default 75). MemReserve is the memory that stays free, such as "2GB"
+	// (default: the larger of 1.5GB and 10 percent of RAM). QueueTimeout is how
+	// long a start may wait in the queue (default 2h).
+	CPUTarget    float64 `json:"cpu_target,omitempty"`
+	MemReserve   string  `json:"mem_reserve,omitempty"`
+	QueueTimeout string  `json:"queue_timeout,omitempty"`
+}
+
+// parseSize reads a size such as "2GB", "1536MB" or "1.5GiB" into bytes.
+func parseSize(s string) (uint64, error) {
+	t := strings.ToLower(strings.TrimSpace(s))
+	mult := float64(1)
+	for _, u := range []struct {
+		suffix string
+		mult   float64
+	}{{"gib", 1 << 30}, {"gb", 1 << 30}, {"g", 1 << 30}, {"mib", 1 << 20}, {"mb", 1 << 20}, {"m", 1 << 20}} {
+		if strings.HasSuffix(t, u.suffix) {
+			t, mult = strings.TrimSpace(strings.TrimSuffix(t, u.suffix)), u.mult
+			break
+		}
+	}
+	v, err := strconv.ParseFloat(t, 64)
+	if err != nil || v <= 0 {
+		return 0, fmt.Errorf("not a size like 2GB or 1536MB: %q", s)
+	}
+	return uint64(v * mult), nil
 }
 
 // WorkerSettings returns the worker settings of node.json.
@@ -60,11 +89,25 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 		return s, nil
 	}
 	s.Max = nc.Workers.Max
+	if nc.Workers.CPUTarget != 0 {
+		if nc.Workers.CPUTarget < 0 || nc.Workers.CPUTarget > 100 {
+			return s, errors.New("node.json: workers.cpu_target must be a percent between 1 and 100")
+		}
+		s.CPUTarget = nc.Workers.CPUTarget
+	}
+	if nc.Workers.MemReserve != "" {
+		n, err := parseSize(nc.Workers.MemReserve)
+		if err != nil {
+			return s, fmt.Errorf("node.json: workers.mem_reserve: %v", err)
+		}
+		s.MemReserve = n
+	}
 	for _, f := range []struct {
 		name string
 		in   string
 		out  *time.Duration
-	}{{"idle", nc.Workers.Idle, &s.Idle}, {"max_age", nc.Workers.MaxAge, &s.MaxAge}, {"owner_grace", nc.Workers.OwnerGrace, &s.OwnerGrace}} {
+	}{{"idle", nc.Workers.Idle, &s.Idle}, {"max_age", nc.Workers.MaxAge, &s.MaxAge}, {"owner_grace", nc.Workers.OwnerGrace, &s.OwnerGrace},
+		{"queue_timeout", nc.Workers.QueueTimeout, &s.QueueTimeout}} {
 		if f.in == "" {
 			continue
 		}

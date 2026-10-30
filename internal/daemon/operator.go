@@ -123,11 +123,11 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		// No project given: use the caller's own (W17). The command line has no
 		// project of its own, so it must name one.
-		callerProject := false
+		callerProject, callerPath := false, ""
 		if strings.TrimSpace(p.Project) == "" && strings.TrimSpace(p.Continue) == "" {
 			if ls != nil {
 				d.mu.Lock()
-				p.Project = ls.info.Repo.Project
+				p.Project, callerPath = ls.info.Repo.Project, ls.info.Repo.Root
 				d.mu.Unlock()
 				callerProject = p.Project != ""
 			}
@@ -135,7 +135,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 				return nil, true, errors.New("no project: name one (agent_project_list), or start the worker from a session that runs in a project folder")
 			}
 		}
-		out, err := d.workerStartCall(ctx, sid, p, callerProject)
+		out, err := d.workerStartCall(ctx, sid, p, callerProject, callerPath)
 		return out, true, err
 
 	case protocol.OpWorkerHandback:
@@ -190,7 +190,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 // workerStartCall asks the gateway to start a worker, then sends the task as
 // a message from the caller.
-func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool) (*protocol.WorkerStartResult, error) {
+func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
 	p.Continue = strings.TrimSpace(p.Continue)
 	if p.Continue != "" {
@@ -207,15 +207,22 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return nil, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}
 	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
-	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject})
+	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath})
 	if err != nil {
 		return nil, tooOldGateway(err)
 	}
 	var ans protocol.WorkerStartAnswer
-	if err := json.Unmarshal(data, &ans); err != nil || ans.SessionID == "" {
+	if err := json.Unmarshal(data, &ans); err != nil || (ans.SessionID == "" && !ans.Queued) {
 		return nil, errors.New("the gateway answered without a worker session")
 	}
-	out := &protocol.WorkerStartResult{SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
+	if ans.Queued {
+		// No room on the machine: the start waits there, and its owner's
+		// machine sends the task when it begins (decision 0018).
+		return &protocol.WorkerStartResult{Status: "queued", QueueID: ans.QueueID, Position: ans.Position, QueueReason: ans.Reason,
+			NodeID: ans.NodeID, Hostname: ans.Hostname, Project: ans.Project, Path: ans.Path, Harness: ans.Harness,
+			Model: ans.Model, ModelNote: ans.ModelNote, MachineNote: ans.MachineNote}, nil
+	}
+	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch}
 	// The task is a normal message from the caller, with the fixed preamble.
 	task := p.Task
@@ -299,7 +306,12 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	case "worker.kill":
 		var p protocol.WorkerKill
 		if err = json.Unmarshal(raw, &p); err == nil {
-			err = d.stopWorkerSession(p.Session)
+			err = d.stopWorkerSession(p)
+		}
+	case "worker.task":
+		var p protocol.WorkerQueuedStart
+		if err = json.Unmarshal(raw, &p); err == nil {
+			err = d.sendQueuedTask(ctx, p)
 		}
 	case "worker.continue":
 		var p protocol.WorkerContinue
