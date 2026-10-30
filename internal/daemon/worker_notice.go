@@ -235,8 +235,11 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 // handbackTo is handback to another session than the owner (see sendNoticeTo).
 func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
 	d.wmu.Lock()
-	sessionID := w.sessionID
+	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
+	if stopping {
+		return nil, errors.New("the worker is ending")
+	}
 	if req.Status == "" {
 		req.Status = protocol.StatusDone
 	}
@@ -247,7 +250,11 @@ func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerH
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
 	st := d.workerStats(w)
-	n := d.notice(w, req.Status, "", st)
+	note := "the worker ended after its hand-back; a message from you starts it again"
+	if _, canResume := d.launchers[w.harness].(resumer); !canResume {
+		note = "the worker ended after its hand-back; this harness cannot be started again (" + cannotResumeReason(w.harness) + ")"
+	}
+	n := d.notice(w, req.Status, note, st)
 	raw, err := d.sendNoticeTo(ctx, w, n, req.Report, to, replyTo)
 	if err != nil {
 		return nil, err
@@ -257,6 +264,9 @@ func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerH
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
 	d.Logf("worker.handback worker=%s session=%s status=%s", w.id, sessionID, req.Status)
+	// Like a Claude Code subagent, a worker ends when it hands back (W10). Its
+	// harness session is kept, so the owner's next message starts it again.
+	go d.endWorker(w, protocol.StopHandback)
 	out := &protocol.WorkerHandbackResult{Status: req.Status}
 	var sent protocol.MessageSent
 	if json.Unmarshal(raw, &sent) == nil {
@@ -274,11 +284,46 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	}
 	d.wmu.Lock()
 	w.taskMsg = m.ID
+	var updated *protocol.WorkerInfo
 	if task := protocol.WorkerTaskSummary(m.Body); task != "" {
 		w.taskText = task
+		if w.info != nil {
+			// Replace, never change in place: a response on another goroutine
+			// may still be writing the old value.
+			cp := *w.info
+			cp.Task = task
+			w.info = &cp
+			updated = w.info
+		}
 	}
 	d.saveWorkerLocked(w)
+	sessionID := w.sessionID
 	d.wmu.Unlock()
+	if updated != nil {
+		if ls := d.setSessionWorker(sessionID, updated); ls != nil {
+			// Tell the gateway now: the row name follows the task, and the
+			// session may not report again soon.
+			go d.pushSession(ls)
+		}
+	}
+}
+
+// setSessionWorker gives the worker's local session a new worker value and
+// returns it, or nil. The value is never changed in place, so a reader may
+// keep the old one.
+func (d *Daemon) setSessionWorker(sessionID string, info *protocol.WorkerInfo) *localSession {
+	if sessionID == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, ls := range d.sessions {
+		if ls.sessionID == sessionID && ls.info.Worker != nil {
+			ls.info.Worker = info
+			return ls
+		}
+	}
+	return nil
 }
 
 // ---- a worker that was lost while the daemon was down ----
@@ -296,4 +341,47 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 		d.Logf("worker %s: notice: %v", r.ID, err)
 	}
 	d.finishWorktree(w)
+}
+
+// worktreesDir is the folder where this daemon creates the git worktrees of
+// its workers, as a cleaned absolute path.
+func (d *Daemon) worktreesDir() string {
+	root, err := filepath.Abs(filepath.Join(d.cfg.StateDir, "worktrees"))
+	if err != nil {
+		return ""
+	}
+	return root
+}
+
+// dropWorktreeSessions closes the plugin connections of live sessions that
+// work inside the worktrees folder and are not a worker's own. They are ghosts
+// of workers that a user's own service registered before the hello refused
+// them. Closing the connection takes the session offline.
+func (d *Daemon) dropWorktreeSessions() {
+	var drop []*localConn
+	d.mu.Lock()
+	for _, ls := range d.sessions {
+		if ls.conn != nil && !ls.owned && ls.info.Worker == nil && d.inWorktreesDir(ls.info.Cwd) {
+			drop = append(drop, ls.conn)
+		}
+	}
+	d.mu.Unlock()
+	for _, c := range drop {
+		c.close()
+	}
+}
+
+// inWorktreesDir tells whether cwd is inside the folder where this daemon
+// creates the git worktrees of its workers. It compares cleaned absolute paths
+// and works for a folder that no longer exists.
+func (d *Daemon) inWorktreesDir(cwd string) bool {
+	root := d.worktreesDir()
+	if cwd == "" || root == "" {
+		return false
+	}
+	p, err := filepath.Abs(cwd)
+	if err != nil {
+		return false
+	}
+	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
 }

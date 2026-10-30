@@ -12,6 +12,7 @@ Keys ─────────────────────────
   N                    name the machine of the session (every machine sees it; empty resets)
   /                    filter (words match name, project, branch, model, ...)
   o, d                 o: show offline and dormant; d: detail takes the feed room
+  a                    active only: hide sessions idle for over an hour
   tab                  message feed and back; enter opens the conversation of the local end
   v, l                 v: open the body of the message; l: feed events (worker, all, none)
   r                    refresh now
@@ -29,12 +30,11 @@ Keys ─────────────────────────
  Reading the screen
   CPU                  machine: all cores. session: one core. (x%): 5 min avg
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
-  shared               one process, many sessions (OpenCode); listed once
+  shared               one process many sessions share; its figures are on the machine line
+  dim row              offline, or idle for more than an hour
   ?                    a figure that is missing or older than 45 seconds
   … ✓ ↩ ✗              message state: pending, delivered, replied, failed
   ↳                    a reply, under the message it answers
   "..."                the first line of the body, when this machine is in the conversation
-
-
 
 esc close help  q quit

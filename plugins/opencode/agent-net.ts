@@ -329,6 +329,7 @@ class SessionLink {
     readonly cwd: string,
     private onDeliver: (link: SessionLink, m: DeliveredMessage) => void,
     private onText: (link: SessionLink, q: TextRequest) => void,
+    private onRefused?: (link: SessionLink) => void,
   ) {}
 
   start() {
@@ -511,7 +512,12 @@ class SessionLink {
           this.backoff = BACKOFF_START_MS;
           if (this.dormant) this.request("status", { status: "dormant" }).catch(() => {});
         })
-        .catch(() => s.destroy());
+        .catch((e) => {
+          // The daemon says this session belongs to a worker and not to us.
+          // That never changes, so remember it and do not try again.
+          if (/belongs to (an agent-net|a) worker/.test(String(e?.message ?? e))) this.onRefused?.(this);
+          s.destroy();
+        });
     });
     s.on("data", (chunk: string) => {
       buf += chunk;
@@ -1080,7 +1086,7 @@ export default {
         h.links.delete(sessionID);
         again.link.stop();
       }
-      const link = new SessionLink(sessionID, found.cwd, deliver, sessionText);
+      const link = new SessionLink(sessionID, found.cwd, deliver, sessionText, (l) => dropLink(l.sessionID));
       link.model = found.model;
       link.name = sessionName(found.cwd, found.title);
       if (activeAt !== undefined) link.lastActive = activeAt;

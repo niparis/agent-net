@@ -395,8 +395,12 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			}
 			winfo = d.workerInfo(wk)
 			p.Mode = protocol.ModeBackground // nobody watches a worker
-		} else if d.workerOwnsNative(p.Client, p.NativeID) {
+		} else if d.workerOwnsNative(p.Client, p.NativeID) || d.st.workerNativeKnown(p.Client, p.NativeID) {
 			return nil, errors.New("that session belongs to a worker started by this daemon; only the worker's own process can connect as it")
+		} else if d.inWorktreesDir(p.Cwd) {
+			// A worker of an older run, whose record is gone: the native ID is
+			// unknown, but the folder gives it away.
+			return nil, errors.New("that session belongs to an agent-net worker; only the worker's own process can connect as it")
 		}
 		if p.Mode == "" {
 			// A plugin from before the mode existed, or one that cannot tell

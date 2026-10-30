@@ -30,6 +30,8 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noPolicyHook := fs.Bool("no-claude-policy-hook", false, "do not add that hook and do not ask")
 	needsHook := fs.Bool("claude-needs-hook", false, `add the Claude Code hooks that show a waiting session under "Needs you" in the TUI (only if not asked before)`)
 	noNeedsHook := fs.Bool("no-claude-needs-hook", false, "do not add those hooks and do not ask")
+	workersMod := fs.Bool("claude-workers-mod", false, "install the Claude Code plugin that shows this session's workers (only if not asked before)")
+	noWorkersMod := fs.Bool("no-claude-workers-mod", false, "do not install that plugin and do not ask")
 	fs.Parse(args)
 	if *acceptCodex && *noAcceptCodex {
 		return errors.New("--accept-codex-tools and --no-accept-codex-tools cannot be used together")
@@ -42,6 +44,9 @@ func cmdSetup(ctx context.Context, args []string) error {
 	}
 	if *needsHook && *noNeedsHook {
 		return errors.New("--claude-needs-hook and --no-claude-needs-hook cannot be used together")
+	}
+	if *workersMod && *noWorkersMod {
+		return errors.New("--claude-workers-mod and --no-claude-workers-mod cannot be used together")
 	}
 	needs := ""
 	if *needsHook {
@@ -67,6 +72,12 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noHintHook {
 		hint = setup.HintHookNo
 	}
+	workers := ""
+	if *workersMod {
+		workers = setup.WorkersModYes
+	} else if *noWorkersMod {
+		workers = setup.WorkersModNo
+	}
 	if *accept && *noAccept {
 		return errors.New("--accept-peer-messages and --no-accept-peer-messages cannot be used together")
 	}
@@ -76,7 +87,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

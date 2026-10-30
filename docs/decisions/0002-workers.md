@@ -41,12 +41,13 @@ A worker uses the project's own permission settings. It never runs with permissi
 
 The daemon that started a worker owns its process and kills the process group when one of these happens:
 
+- it hands back its report (any status): the process ends then, like a Claude Code subagent (W18);
 - no message to or from the worker for 60 minutes;
 - 4 hours since it started;
 - its owner session ended or stayed offline for 10 minutes;
 - `agent_stop` from its owner, or `agent-net stop <session>`.
 
-The daemon stores each worker's process ID and start time, so after a daemon restart it takes its workers back or ends them. `agent-net workers` lists them.
+The daemon stores each worker's process ID and start time, so after a daemon restart it takes its workers back or ends them. `agent-net workers` lists them, and only the ones that run: a worker that ended leaves the list. A worker that ended after its hand-back keeps its harness session, so the owner's next message starts it again (W18). A record of an ended worker that is older than the longest run time is cleaned, on the machine and on the gateway.
 
 ## W8 - Limits
 
@@ -70,7 +71,7 @@ The task text from the caller follows the brief. The worker also gets the projec
 
 ### W10 - One explicit hand-back
 
-Claude Code ends a subagent with one call, `SubagentHandback({message})`. It is delivered once, and plain text left at the end of the run is not delivered. Workers get the same: `agent_handback(report)`. It sends the final report to the caller and marks the worker done. A plain `agent_reply` still works for questions in between. A done worker stays up for follow-ups until the idle timeout, then ends.
+Claude Code ends a subagent with one call, `SubagentHandback({message})`. It is delivered once, and plain text left at the end of the run is not delivered. Workers get the same: `agent_handback(report)`. It sends the final report to the caller and ends the worker, as W19 says. A plain `agent_reply` still works for questions in between.
 
 ### W11 - A completion notice with facts, not only text
 
@@ -203,3 +204,22 @@ Bug: `agent-net upgrade` restarted the systemd service and all workers died ("lo
 - **A stop or restart keeps workers; an uninstall does not.** The daemon cannot tell a restart from a stop, so it never kills workers on shutdown. `agent-net uninstall` stops them itself, after it stops the service: it reads the worker rows in the daemon database and sends SIGTERM, then SIGKILL, to each process group whose process is still the recorded run (same start time). This works with the daemon down. A plain `systemctl --user stop` leaves workers running until the next daemon adopts them or the owner uninstalls. An ExecStop hook was rejected: it would run on restart too.
 - **Old installs.** `agent-net upgrade` runs the new binary's `setup`, which rewrites the unit and runs `daemon-reload` before the restart, so that upgrade already keeps workers. An automatic or remote upgrade restarts with the old unit, so that one restart still kills workers; the new daemon then adds `KillMode=process` to the unit on start (and reloads systemd, no restart), so the following restarts keep them. On macOS the plist is only changed by `setup`, because loading a new plist means stopping the daemon.
 - Checked: workers have no pipe to the daemon (stdin is /dev/null, or for Pi a fifo that Pi itself holds open for reading and writing, stdout is a log file or /dev/null), and no `Pdeathsig`.
+
+### W19 - A hand-back ends the worker, and the owner's next message starts it again
+
+A worker that hands back ends, like a Claude Code subagent: the daemon ends its process right after the notice, and logs `worker.stopped reason=handback ended_after_handback=1`. The notice says so. The worktree is handled exactly as before: kept when it has changes, removed when it has none. The harness's own session data is kept.
+
+A message from the worker's owner to that session ID starts the worker again on the same harness session, with the same model, project and worktree, and delivers the message. The resumed worker is a worker: the same brief rules apply, and its next hand-back ends it again. Only the owner may do this. Another sender gets a clear refusal, and so does everyone when the harness cannot open an existing session.
+
+What "resume" means per harness:
+
+| Harness | How it starts again | Session kept |
+|---|---|---|
+| OpenCode | a new private `opencode serve` on the same data and state folders, with the same session ID in the plugin's session file, and the project loaded again. The conversation is the same OpenCode session. | yes |
+| Claude Code | `claude --bg --resume <session-id>` with the same settings, model and MCP server. The transcript is the same Claude session. | yes |
+| Codex | a new private `codex app-server`, then `thread/resume <thread-id>`; the next message is a turn on the same thread. | yes |
+| Pi | not possible: Pi's rpc mode cannot open an existing session; the daemon starts a new one with `--session-id` and Pi has no resume flag. The refusal says this, and the owner can read the old session with `agent-net show` or open its session file in Pi. | no |
+
+A worker can be started again only while its record is younger than the longest run time (`max_age`, 4 hours by default). Every ended worker keeps its record until then, so the daemon knows that the harness session is a worker's and the plugin of another OpenCode server cannot register it as a normal session; a hand-back record is also what a follow-up starts again. After that, the record is cleaned: on the machine at daemon start and every 10 minutes, and on the gateway through `worker.cleanup`. A gateway record that is offline and past that age is deleted, so an old worker does not stay listed. A worker the machine says it does not run leaves the list at once.
+
+The idle time and the longest run time stay as safety nets for workers that are running. The owner-gone grace is unchanged.

@@ -62,6 +62,7 @@ type Model struct {
 	selIdx      int    // position in the visible list, to move on when the session leaves
 	tableTop    int    // first table row on screen
 	showOffline bool
+	activeOnly  bool
 	// events says how much of the quiet session and worker news the feed
 	// shows (l).
 	events    feedEvents
@@ -495,6 +496,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.showOffline = !m.showOffline
 		m.ensureSelection()
 		m.fixScroll()
+	case "a":
+		m.activeOnly = !m.activeOnly
+		m.ensureSelection()
+		m.fixScroll()
 	case "l":
 		m.events = (m.events + 1) % 3
 		m.feedClamp()
@@ -608,9 +613,37 @@ type group struct {
 	nodeID string
 	host   string
 	agents []protocol.AgentView
+	// hidden is how many sessions the active-only filter hides on this
+	// machine. It is 0 when the filter is off.
+	hidden int
 	// marks says how a worker row is drawn, by session ID. A session with no
 	// mark is a plain row.
 	marks map[string]treeMark
+}
+
+// idleAfter is how long a session may sit idle before the screen calls it
+// quiet: dim on every screen, and hidden by the active-only filter.
+const idleAfter = time.Hour
+
+// idleLong tells whether a session is idle and has had no activity for more
+// than idleAfter. LastSeen is the last time its machine reported it.
+func (m Model) idleLong(a protocol.AgentView) bool {
+	if !a.Online || a.Status != "idle" || a.LastSeen == 0 {
+		return false
+	}
+	return m.now().Sub(time.Unix(a.LastSeen, 0)) > idleAfter
+}
+
+// sessionStart is the order key of a session: when the gateway first saw it.
+// Older gateways do not say, so those sessions keep the order of their IDs.
+func sessionStart(a protocol.AgentView) int64 {
+	if a.FirstSeen > 0 {
+		return a.FirstSeen
+	}
+	if a.Worker != nil && a.Worker.StartedAt > 0 {
+		return a.Worker.StartedAt
+	}
+	return 0
 }
 
 // treeMark is how a worker row hangs under the session that started it.
@@ -637,9 +670,10 @@ func matches(a protocol.AgentView, filter string) bool {
 	return true
 }
 
-// groups returns the sessions that pass the filter and the offline switch,
-// grouped by machine. The order is stable between refreshes: machines by name,
-// online sessions first, then by name.
+// groups returns the sessions that pass the filter and the switches, grouped
+// by machine. The order is stable between refreshes: machines by name, and
+// within a machine the sessions by when they were first seen, oldest first.
+// No other key sorts them.
 func (m Model) groups() []group {
 	by := map[string]*group{}
 	var order []*group
@@ -652,6 +686,11 @@ func (m Model) groups() []group {
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue
 		}
+		// A worker that ended is not a row, even when offline sessions are
+		// shown: it is offline until its owner's next message starts it again.
+		if a.Worker != nil && !a.Online {
+			continue
+		}
 		if !matches(a, m.filter) {
 			continue
 		}
@@ -660,6 +699,10 @@ func (m Model) groups() []group {
 			g = &group{nodeID: a.NodeID, host: m.nodeName(a.NodeID, a.Hostname)}
 			by[a.NodeID] = g
 			order = append(order, g)
+		}
+		if m.activeOnly && m.idleLong(a) {
+			g.hidden++
+			continue
 		}
 		g.agents = append(g.agents, a)
 		if a.Worker != nil {
@@ -680,12 +723,8 @@ func (m Model) groups() []group {
 	for _, g := range order {
 		sort.SliceStable(g.agents, func(i, j int) bool {
 			a, b := g.agents[i], g.agents[j]
-			if a.Online != b.Online {
-				return a.Online
-			}
-			an, bn := strings.ToLower(a.Profile.Name), strings.ToLower(b.Profile.Name)
-			if an != bn {
-				return an < bn
+			if sa, sb := sessionStart(a), sessionStart(b); sa != sb {
+				return sa < sb
 			}
 			return a.SessionID < b.SessionID
 		})
@@ -746,7 +785,7 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	}
 	out := make([]group, 0, len(groups))
 	for _, g := range groups {
-		ng := group{nodeID: g.nodeID, host: g.host, marks: map[string]treeMark{}}
+		ng := group{nodeID: g.nodeID, host: g.host, hidden: g.hidden, marks: map[string]treeMark{}}
 		var walk func(a protocol.AgentView, lead string)
 		walk = func(a protocol.AgentView, lead string) {
 			ng.agents = append(ng.agents, a)
@@ -773,7 +812,7 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 			}
 			walk(a, "")
 		}
-		if len(ng.agents) > 0 { // a machine whose sessions all hang under others has no group
+		if len(ng.agents) > 0 || ng.hidden > 0 { // a machine whose sessions all hang under others or are hidden still shows its heading
 			out = append(out, ng)
 		}
 	}
@@ -865,23 +904,14 @@ type tableRow struct {
 	g      group
 	agent  protocol.AgentView
 	mark   treeMark // how a worker hangs under its caller
-	// shared is a process tree several sessions use (the OpenCode service). It
-	// is listed once, after the sessions of its machine, and cannot be selected.
-	shared *protocol.TreeUsage
 }
 
 func (m Model) tableRows() []tableRow {
 	var rows []tableRow
 	for _, g := range m.groups() {
 		rows = append(rows, tableRow{header: true, g: g})
-		ids := map[string]bool{}
 		for _, a := range g.agents {
 			rows = append(rows, tableRow{agent: a, mark: g.marks[a.SessionID]})
-			ids[a.SessionID] = true
-		}
-		for _, t := range m.sharedTreesOf(g.nodeID, ids) {
-			t := t
-			rows = append(rows, tableRow{g: g, shared: &t})
 		}
 	}
 	return rows

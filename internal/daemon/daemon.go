@@ -197,6 +197,9 @@ type Daemon struct {
 	// rmu guards recent, the workers that ended in the last two minutes.
 	rmu    sync.Mutex
 	recent map[string]recentWorker
+	// resumeMu serializes starting an ended worker again, so two messages
+	// from its owner cannot start two processes.
+	resumeMu sync.Mutex
 	// mcpHello is when the MCP server of each Claude session first said hello.
 	// A Claude worker waits for it before it gets its task.
 	mcpHello map[string]time.Time

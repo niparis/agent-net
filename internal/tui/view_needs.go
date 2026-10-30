@@ -33,6 +33,13 @@ func (m Model) needsRows() []protocol.AgentView {
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue
 		}
+		// An ended worker is not a row, even when offline sessions are shown.
+		if a.Worker != nil && !a.Online {
+			continue
+		}
+		if m.activeOnly && m.idleLong(a) {
+			continue
+		}
 		if !matches(a, m.filter) {
 			continue
 		}

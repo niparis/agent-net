@@ -130,8 +130,13 @@ ALTER TABLE nodes ADD COLUMN reported_hostname TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
 UPDATE nodes SET reported_hostname = hostname;
 `, `
+ALTER TABLE sessions ADD COLUMN worker_started INTEGER NOT NULL DEFAULT 0;
+`, `
 ALTER TABLE sessions ADD COLUMN tools_version TEXT NOT NULL DEFAULT '';
 ALTER TABLE sessions ADD COLUMN tools_old INTEGER NOT NULL DEFAULT 0;
+`, `
+ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;
+UPDATE sessions SET created_at = last_seen;
 `, `
 ALTER TABLE sessions ADD COLUMN waiting TEXT NOT NULL DEFAULT '';
 `}
@@ -351,12 +356,14 @@ func (s *Store) upsertSession(q interface {
 		in.Worker = nil
 	}
 	worker := ""
+	var workerStarted int64
 	if in.Worker != nil {
 		raw, err := json.Marshal(in.Worker)
 		if err != nil {
 			return "", false, err
 		}
 		worker = string(raw)
+		workerStarted = in.Worker.StartedAt * int64(time.Second)
 	}
 	in.Repo.Description = protocol.CleanDescription(in.Repo.Description)
 	waiting := ""
@@ -369,20 +376,20 @@ func (s *Store) upsertSession(q interface {
 		}
 	}
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, pid, status, delivery, last_seen, online,
-		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description,
-		tools_version, tools_old, waiting)
-		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?)
+		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
+		tools_version, tools_old, created_at, waiting)
+		VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
 		repo_root=excluded.repo_root, repo_project=excluded.repo_project,
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
-		repo_description=excluded.repo_description, tools_version=excluded.tools_version, tools_old=excluded.tools_old,
-		waiting=excluded.waiting`,
+		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
+		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting`,
 		protocol.NewID("s"), nodeID, in.Harness, in.NativeID, in.Name, in.Cwd, in.PID, in.Status, in.Delivery, now,
-		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker, in.Repo.Description,
-		protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), waiting)
+		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting)
 	if err != nil {
 		return "", false, err
 	}
@@ -509,6 +516,103 @@ func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 	return err
 }
 
+// CleanWorkers deletes the worker records of a node that are offline and
+// whose worker started longer ago than age. A record with no start time was
+// kept by a gateway from before the column existed, so it counts as old and
+// goes at the first cleanup. It returns how many records it deleted.
+func (s *Store) CleanWorkers(nodeID string, age time.Duration) (int, error) {
+	if age <= 0 {
+		return 0, nil
+	}
+	cut := s.now().Add(-age).UnixNano()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker != ''
+		AND (worker_started = 0 OR worker_started < ?)`, nodeID, cut)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	if len(ids) > 0 {
+		s.logf("worker.cleaned", "node", nodeID, "workers", len(ids))
+	}
+	return len(ids), nil
+}
+
+// CleanWorktreeSessions deletes the offline sessions of one node whose working
+// folder is inside dir (the folder where that node's daemon creates worker
+// worktrees) and that are not worker records. They are ghosts: a user's own
+// service once registered a worker's session as an ordinary one. Rows of
+// other nodes, worker records and sessions elsewhere are never touched.
+func (s *Store) CleanWorktreeSessions(nodeID, dir string) (int, error) {
+	dir = strings.TrimRight(dir, "/")
+	if !strings.HasPrefix(dir, "/") || dir == "" {
+		return 0, nil
+	}
+	prefix := dir + "/"
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 0 AND worker = ''
+		AND substr(cwd, 1, ?) = ?`, nodeID, len(prefix), prefix)
+	if err != nil {
+		return 0, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`DELETE FROM profiles WHERE session_id = ?`, id); err != nil {
+			return 0, err
+		}
+		if _, err := tx.Exec(`DELETE FROM sessions WHERE id = ?`, id); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
+}
+
 func (s *Store) SetNodeOffline(nodeID string) error {
 	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE node_id = ? AND online = 1`, s.now().UnixNano(), nodeID)
 	return err
@@ -559,13 +663,13 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.tools_version, s.tools_old, s.waiting
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.name, s.created_at, s.tools_version, s.tools_old, s.waiting
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var a protocol.AgentView
 	var online int
-	var lastSeen int64
+	var lastSeen, created int64
 	var caps, worker string
 	var trust int
 	var deleg, waiting string
@@ -573,7 +677,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise, &deleg, &a.ToolsVersion, &toolsOld, &waiting)
+		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting)
 	if err != nil {
 		return a, err
 	}
@@ -599,6 +703,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	}
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
+	a.FirstSeen = created / int64(time.Second)
 	if json.Unmarshal([]byte(caps), &a.Profile.Capabilities) != nil || a.Profile.Capabilities == nil {
 		a.Profile.Capabilities = []string{}
 	}

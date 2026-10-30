@@ -317,6 +317,19 @@ func (m Model) projectSource(a protocol.AgentView) string {
 	return ""
 }
 
+// sourceText says in words where the project of a session is known from.
+func sourceText(src string) string {
+	switch src {
+	case protocol.SourceSeen:
+		return "seen in a session"
+	case protocol.SourceRegistered:
+		return "registered"
+	case protocol.SourceBoth:
+		return "seen in a session and registered"
+	}
+	return sanitize(src)
+}
+
 // sessionMessageLine describes one message of a session: time, direction, the
 // other end, type and state.
 func (m Model) sessionMessageLine(self string, it *feedItem) string {

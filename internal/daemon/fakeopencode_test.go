@@ -116,6 +116,16 @@ func runFakeOpenCode() {
 		rec.LocationDir = r.Header.Get("x-opencode-directory")
 		id := rec.SessionID
 		mu.Unlock()
+		// A resumed server has no POST /api/session: the daemon writes the
+		// existing session ID to the file the plugin reads.
+		if id == "" {
+			if raw, err := os.ReadFile(os.Getenv("AGENT_NET_WORKER_SESSION_FILE")); err == nil {
+				id = strings.TrimSpace(string(raw))
+				mu.Lock()
+				rec.SessionID = id
+				mu.Unlock()
+			}
+		}
 		write()
 		if id != "" && os.Getenv("FAKE_OC_NOPLUGIN") == "" {
 			hello := id

@@ -133,6 +133,9 @@ func run(t *testing.T, o Options) string {
 	if o.NeedsHook == "" {
 		o.NeedsHook = NeedsHookNo
 	}
+	if o.WorkersMod == "" {
+		o.WorkersMod = WorkersModNo
+	}
 	return runAsking(t, o)
 }
 

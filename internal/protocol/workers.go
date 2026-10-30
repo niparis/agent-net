@@ -26,7 +26,30 @@ const (
 	StopLost       = "lost"           // gone while the daemon was not running
 	StopStartFails = "start_failed"   // it never became a session
 	StopModelFails = "model_failed"   // the model call failed (provider, billing or auth error)
+	// StopHandback means the worker handed back its report and the daemon
+	// ended it, like a Claude Code subagent. The harness session is kept, so
+	// a message from the owner starts it again (W10).
+	StopHandback = "handback"
 )
+
+// WorkerResume is "worker.resume", gateway to the machine: start an ended
+// worker again on its own harness session. Only its owner may ask.
+type WorkerResume struct {
+	Session   string `json:"session"`
+	Requester string `json:"requester_session"`
+}
+
+// WorkerCleanup is "worker.cleanup", machine to gateway: drop the worker
+// records of this machine that are offline and started longer ago than
+// MaxAge. The daemon sends it at start and periodically (W7).
+type WorkerCleanup struct {
+	MaxAgeSeconds int64 `json:"max_age_seconds"`
+	// WorktreesDir is the folder of this machine where its workers' git
+	// worktrees live. The gateway also deletes this machine's offline sessions
+	// that are not worker records and work inside it (ghosts of workers that
+	// a user's own service registered). An older daemon sends none.
+	WorktreesDir string `json:"worktrees_dir,omitempty"`
+}
 
 // WorkerInfo is the worker part of a session. The daemon that started the
 // worker reports it; the gateway keeps it. A session with it is a worker, and
@@ -40,6 +63,9 @@ type WorkerInfo struct {
 	// Project is the project name it was started in.
 	Project   string `json:"project,omitempty"`
 	StartedAt int64  `json:"started_at"`
+	// Task is the first line of the task its owner gave it, cut to about 120
+	// characters. Empty when the machine that started it did not say.
+	Task string `json:"task,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -83,6 +109,9 @@ type (
 		Harness string `json:"harness"`
 		Model   string `json:"model,omitempty"`
 		Owner   string `json:"owner_session"`
+		// Task is what the worker should do. The machine that starts it uses
+		// the first line as the worker's name in a status view.
+		Task string `json:"task,omitempty"`
 		// Isolation is "" (a worktree if the folder is a repository),
 		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`

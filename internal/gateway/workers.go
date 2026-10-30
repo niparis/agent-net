@@ -72,11 +72,39 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
+		// The worker has ended: it leaves the worker list, and its record stays
+		// (offline) only for a follow-up that starts it again.
+		if err := g.store.SetSessionOffline(nc.id, p.SessionID); err != nil {
+			return nil, err
+		}
 		detail := strings.TrimPrefix(pairs("reason", p.Reason, "harness", p.Harness, "project", p.Project, "model", p.Model), " ")
 		g.store.Event("worker.stopped", nc.id, p.SessionID, "", detail)
 		g.logLine("worker.stopped", "node", nc.id, "host", g.store.hostname(nc.id), "session", p.SessionID,
 			"worker", p.WorkerID, "reason", p.Reason, "harness", p.Harness, "project", p.Project)
 		return nil, nil
+
+	case "worker.cleanup":
+		p, err := decode[protocol.WorkerCleanup](raw)
+		if err != nil || p.MaxAgeSeconds <= 0 {
+			return nil, reject("bad worker.cleanup")
+		}
+		n, err := g.store.CleanWorkers(nc.id, time.Duration(p.MaxAgeSeconds)*time.Second)
+		if err != nil {
+			return nil, err
+		}
+		if n > 0 {
+			g.logLine("worker.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "workers", n)
+		}
+		if p.WorktreesDir != "" {
+			ghosts, err := g.store.CleanWorktreeSessions(nc.id, p.WorktreesDir)
+			if err != nil {
+				return nil, err
+			}
+			if ghosts > 0 {
+				g.logLine("worker.ghosts.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "sessions", ghosts)
+			}
+		}
+		return map[string]any{"cleaned": n}, nil
 	}
 	return nil, reject("unknown frame type %q", typ)
 }
@@ -285,7 +313,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Isolation: p.Isolation})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -327,6 +355,9 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 	if !protocol.IsOwner(req.Harness) && req.SessionID != w.Worker.Owner {
 		return nil, reject("only the worker's owner or the person at the command line can stop it")
 	}
+	if !w.Online {
+		return nil, reject("worker %s has already ended", p.Session)
+	}
 	g.mu.Lock()
 	target := g.conns[w.NodeID]
 	g.mu.Unlock()
@@ -336,7 +367,43 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if _, err := target.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session}); err != nil {
+		// The machine says it does not run this worker. Drop it from the list;
+		// its record and the machine's own cleanup decide about a resume.
+		if strings.Contains(err.Error(), "no worker with session") {
+			g.store.SetSessionOffline(w.NodeID, p.Session)
+		}
 		return nil, reject("machine %s did not stop the worker: %v", w.Hostname, err)
 	}
 	return map[string]any{"stopped": true}, nil
+}
+
+// resumeEndedWorker starts again the worker whose session this is, when its
+// owner sends it a message. An ended worker is offline and still flagged as a
+// worker; its record names the owner. Anyone else gets a clear refusal, as for
+// an offline session. The machine decides whether its harness can resume.
+func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) error {
+	a, ok, err := g.store.Agent(p.Recipient)
+	if err != nil || !ok || a.Worker == nil || a.Online {
+		return err
+	}
+	if a.Worker.Owner != p.Sender {
+		return reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
+	}
+	g.mu.Lock()
+	target := g.conns[a.NodeID]
+	g.mu.Unlock()
+	if target == nil {
+		return reject("machine %s is offline, so worker %s cannot be started again", a.Hostname, p.Recipient)
+	}
+	cctx, cancel := context.WithTimeout(ctx, launchWait)
+	defer cancel()
+	if _, err := target.call(cctx, "worker.resume", protocol.WorkerResume{Session: p.Recipient, Requester: p.Sender}); err != nil {
+		// The machine does not have a record it can resume. Do not keep showing
+		// it as a worker that could start again.
+		g.store.SetSessionOffline(a.NodeID, p.Recipient)
+		g.logLine("worker.resume_failed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "reason", err)
+		return reject("worker %s cannot be started again: %v", p.Recipient, err)
+	}
+	g.logLine("worker.resumed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "owner", p.Sender)
+	return nil
 }

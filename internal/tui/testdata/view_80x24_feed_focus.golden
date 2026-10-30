@@ -2,14 +2,14 @@ agent-net tui  6 sessions, 5 online                           updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
-  NAME               AGENT    PROJECT    MODEL      MODE STATUS   CPU   RAM PROC
+  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-> strategies         claude   strategies sonnet-5-5 bg   idle       ?     ?    ?
-  tenebrae-53        claude   tenebrae   opus-5-5   fg   busy       ?     ?    ?
-  web                opencode shop       sonnet-5   ?    idle       ?     ?    ?
+> strategies   claude   strategi… sonnet-5-5 idle   -         ?     ? backtes...
+  tenebrae-53  claude   tenebrae  opus-5-5   busy   -         ?     ?
+  web          opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net  gpt-6      bg   idle       ?     ?    ?
-  scratch            pi       -          -          fg   shell      ?     ?    ?
+  ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
+  scratch      pi       -         -          shell  -         ?     ?
 Selected session ───────────────────────────────────────────────────────────────
   strategies  claude  idle    CPU and memory need a newer daemon and gateway
   id       s_0000000000000002 pid 4300    │

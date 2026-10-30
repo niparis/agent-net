@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"os"
@@ -328,14 +329,14 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 		t.Errorf("follow-up reply: %+v", r)
 	}
 
-	// Stop it: the group is gone, the session is offline, the end is recorded.
+	// Stop it: the group is gone, and an ended worker leaves the list.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the worker process is gone", func() bool { return !alive(rec.Pid) })
 	eventually(t, "the child in the group is gone", func() bool { return !alive(rec.ChildPid) })
 	if err := syscall.Kill(-rec.Pgid, 0); err != syscall.ESRCH {
 		t.Errorf("the process group is still there: %v", err)
 	}
-	eventually(t, "the session is offline", func() bool { return len(w.workers(t)) == 1 && !w.workers(t)[0].Online })
+	eventually(t, "the stopped worker leaves the list", func() bool { return len(w.workers(t)) == 0 })
 	w.workerStopped(t, g, protocol.StopRequested)
 	started, _ := g.gw.Store().Events("worker.started")
 	if len(started) != 1 || !strings.Contains(started[0], "project=shop") || !strings.Contains(started[0], "owner="+owner) {
@@ -354,8 +355,12 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	if w.d.workerCount() != 0 {
 		t.Errorf("the daemon still counts %d workers", w.d.workerCount())
 	}
-	if rows, _ := w.d.st.workers(); len(rows) != 0 {
-		t.Errorf("worker rows left in daemon.db: %+v", rows)
+	eventually(t, "the ended worker row is kept and reported", func() bool {
+		rows, _ := w.d.st.workers()
+		return len(rows) == 1 && rows[0].EndedReason == protocol.StopRequested && rows[0].Reported && !rows[0].Resumable
+	})
+	if rows, _ := w.d.st.workers(); len(rows) != 1 {
+		t.Errorf("worker rows in daemon.db: %+v", rows)
 	}
 	if _, err := os.Stat(filepath.Join(w.cfg.StateDir, "workers")); err == nil {
 		if ents, _ := os.ReadDir(filepath.Join(w.cfg.StateDir, "workers")); len(ents) != 0 {
@@ -589,6 +594,59 @@ func TestOnlyTheWorkersProcessCanConnectAsItsSession(t *testing.T) {
 	lc2 := dialLocal(t, w.sock)
 	if _, err := lc2.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_user", "cwd": "/work/u"}); err != nil {
 		t.Fatalf("a normal OpenCode session was refused: %v", err)
+	}
+}
+
+func TestPluginHelloRefusesSessionsInTheWorktreesFolder(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	wt := filepath.Join(w.cfg.StateDir, "worktrees")
+	for _, harness := range []string{"opencode", "pi"} {
+		// A stale worker session (its record and directory are gone) seen by the
+		// user's own service: refused.
+		for i, cwd := range []string{filepath.Join(wt, "w_gone"), wt + "/w_gone/sub/../sub", wt + "/"} {
+			lc := dialLocal(t, w.sock)
+			_, err := lc.call("hello", map[string]any{"client": harness, "harness": harness, "native_id": fmt.Sprintf("ses_old_%s_%d", harness, i), "cwd": cwd})
+			if err == nil || !strings.Contains(err.Error(), "belongs to an agent-net worker") {
+				t.Fatalf("%s: a session in the worktrees folder (%s) was accepted: %v", harness, cwd, err)
+			}
+		}
+		// A sibling folder with the same prefix, and a normal folder, are fine.
+		for i, cwd := range []string{wt + "-other/w_x", "/work/u"} {
+			lc := dialLocal(t, w.sock)
+			if _, err := lc.call("hello", map[string]any{"client": harness, "harness": harness, "native_id": fmt.Sprintf("ses_ok_%s_%d", harness, i), "cwd": cwd}); err != nil {
+				t.Fatalf("%s: a normal session in %s was refused: %v", harness, cwd, err)
+			}
+		}
+	}
+}
+
+func TestDropWorktreeSessionsClosesGhosts(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	lc := dialLocal(t, w.sock)
+	if _, err := lc.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_ghost", "cwd": "/work/u"}); err != nil {
+		t.Fatal(err)
+	}
+	lc2 := dialLocal(t, w.sock)
+	if _, err := lc2.call("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "ses_user", "cwd": "/work/v"}); err != nil {
+		t.Fatal(err)
+	}
+	// A ghost registered by an older daemon: its cwd is in the worktrees folder.
+	w.d.mu.Lock()
+	w.d.sessions[key("opencode", "ses_ghost")].info.Cwd = filepath.Join(w.cfg.StateDir, "worktrees", "w_old")
+	w.d.mu.Unlock()
+	w.d.dropWorktreeSessions()
+	eventually(t, "the ghost goes offline", func() bool {
+		w.d.mu.Lock()
+		defer w.d.mu.Unlock()
+		return w.d.sessions[key("opencode", "ses_ghost")] == nil
+	})
+	w.d.mu.Lock()
+	user := w.d.sessions[key("opencode", "ses_user")]
+	w.d.mu.Unlock()
+	if user == nil {
+		t.Fatal("a normal session was dropped")
 	}
 }
 
@@ -900,9 +958,15 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	// same one, found again by its process ID and start time.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: live.SessionID})
 	eventually(t, "the adopted worker is gone", func() bool { return !alive(recLive.Pid) && !alive(recLive.ChildPid) })
-	if rows, _ := w.d.st.workers(); len(rows) != 0 {
-		t.Errorf("rows left: %+v", rows)
-	}
+	eventually(t, "the adopted worker row is ended and reported", func() bool {
+		rows, _ := w.d.st.workers()
+		for _, r := range rows {
+			if r.EndedReason == protocol.StopRequested && r.Reported {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // A process ID that was reused is not a worker: the start time differs.

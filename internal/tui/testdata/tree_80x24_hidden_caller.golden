@@ -1,21 +1,21 @@
-agent-net tui  10 sessions, 9 online, 4 workers  filter: probe  updated 14:05:00
+agent-net tui  10 sessions, 9 online, 4 workers  filter: /probe  updated 14:05:…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
-  NAME                AGENT    PROJECT   MODEL      MODE STATUS   CPU   RAM PROC
+  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────
-> ↳ backtest-a        opencode -         haiku-4-5  bg   idle       ?     ?    ?
-  ↳ backtest-b        opencode -         haiku-4-5  bg   idle       ?     ?    ?
+> ↳ backtest-a opencode -         haiku-4-5  idle   -         ?     ? probe
+  ↳ backtest-b opencode -         haiku-4-5  idle   -         ?     ? probe
  build-vm 1 session ────────────────────────────────────────────────────────────
-  ↳ backtest-on-a-re… opencode -         haiku-4-5  bg   idle       ?     ?    ?
+  ↳ backtest-… opencode -         haiku-4-5  idle   -         ?     ? probe
 Selected session ───────────────────────────────────────────────────────────────
   backtest-a  opencode  idle    CPU and memory need a newer daemon and gateway
   worker   started by strategies (Mac), … │
-  id       s_00000000000000a1             │
+  id       s_00000000000000a1 w_s_000000… │
   folder   -                              │
   branch   -                              │
   model    anthropic/claude-haiku-4-5, b… │
-  function no AGENTS.md                   │
+  function none: add a `# Project: <one … │
   task     probe                          │
   remote   -                              │
 Messages (live) ────────────────────────────────────────────────────────────────

@@ -108,26 +108,26 @@ func (m Model) treeOf(a protocol.AgentView) (protocol.TreeUsage, usageState) {
 	return protocol.TreeUsage{}, usageNone
 }
 
-// sharedTreesOf returns the shared trees (the OpenCode service) of a machine
-// that have at least one session in ids, once each.
-func (m Model) sharedTreesOf(nodeID string, ids map[string]bool) []protocol.TreeUsage {
+// sharedTree tells whether the tree is one process several sessions share. A
+// tree marked shared with exactly one session is that session's own private
+// server: its figures belong on the session's row.
+func sharedTree(t protocol.TreeUsage) bool {
+	return t.Shared && len(t.Sessions) > 1
+}
+
+// sharedService returns the shared OpenCode service of a machine, if it has
+// one. Its figures go in the machine heading, not on a session row.
+func (m Model) sharedService(nodeID string) (protocol.TreeUsage, usageState) {
 	n, st := m.nodeUsage(nodeID)
 	if st != usageOK {
-		return nil
+		return protocol.TreeUsage{}, st
 	}
-	var out []protocol.TreeUsage
 	for _, t := range n.Usage.Trees {
-		if !t.Shared {
-			continue
-		}
-		for _, s := range t.Sessions {
-			if ids[s] {
-				out = append(out, t)
-				break
-			}
+		if sharedTree(t) {
+			return t, usageOK
 		}
 	}
-	return out
+	return protocol.TreeUsage{}, usageNone
 }
 
 // heavy tells whether a tree is worth a warning.

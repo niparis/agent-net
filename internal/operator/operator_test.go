@@ -183,7 +183,7 @@ func TestSnapshotIncludesOwnersAndWorkers(t *testing.T) {
 			if !q.IncludeOwners {
 				t.Error("the snapshot must ask for the owner sessions, to name them in the feed")
 			}
-			return protocol.AgentsResult{Agents: []protocol.AgentView{{SessionID: "s_w", Worker: &protocol.WorkerInfo{Owner: "s_o"}}}}, ""
+			return protocol.AgentsResult{Agents: []protocol.AgentView{{SessionID: "s_w", Online: true, Worker: &protocol.WorkerInfo{Owner: "s_o"}}}}, ""
 		case protocol.OpProjects:
 			return protocol.ProjectsResult{}, ""
 		}

@@ -36,7 +36,7 @@ var version = "dev"
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook
+  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)

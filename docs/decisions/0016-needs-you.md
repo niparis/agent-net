@@ -18,7 +18,7 @@ A session has an optional `waiting`:
 - `text` is one line, at most 200 characters, with control characters removed. The daemon cleans it and the gateway cleans it again.
 - `since` is Unix seconds, set by the daemon when the wait began if the caller did not say.
 
-It is a field of `SessionInfo` and of `AgentView` in `internal/protocol`. The daemon keeps it with the local session, sends it with `session.upsert`, and the gateway stores it in `sessions.waiting` (migration 14, after the migrations on main when this was built). Every machine reads it from `query.agents`, so every TUI sees the same waits. An older gateway ignores the field; an older daemon sends none.
+It is a field of `SessionInfo` and of `AgentView` in `internal/protocol`. The daemon keeps it with the local session, sends it with `session.upsert`, and the gateway stores it in `sessions.waiting` (migration 16, after created_at, the last one on main when this was merged). Every machine reads it from `query.agents`, so every TUI sees the same waits. An older gateway ignores the field; an older daemon sends none.
 
 ## When it is cleared
 
