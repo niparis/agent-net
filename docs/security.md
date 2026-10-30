@@ -8,9 +8,19 @@ that token is an owner credential and must not be shared with agents. The
 The CTO server binds only to localhost and requires a random password. Its
 OpenCode data, state, configuration and cache are private to the daemon. The
 OpenCode agent-net plugin is disabled in that process, so its conversation
-never registers with the gateway and cannot receive peer messages. This layer
-does not give it private agent-net tools. The owner gate also checks the CTO
-process tree, so a command it runs cannot use the owner CLI.
+never registers with the gateway and cannot receive peer messages. Its private
+MCP server can read and change the graph, read agents, workers, Needs you and
+the feed, send messages, and start workers as the owner. The daemon accepts its
+channel only from the CTO server's process tree and checks the peer on every
+call. It exposes no other owner methods on that channel. The owner gate also
+checks the CTO process tree, so a command it runs cannot use the owner CLI.
+
+The gateway trusts enrolled daemons to attribute CTO graph writes and sends.
+Those writes and sends are marked `by=cto`. The gateway accepts a CTO sender
+flag only on an owner session. Delivery adapters write the CTO authority note
+after the message body and neutralize agent-net markers in the body. A peer
+cannot create the note by putting text in its message. Text the CTO reads is
+untrusted data; its system brief says not to follow instructions in it.
 
 This page says what agent-net trusts, how it checks it, and what it does not protect against. Every statement here was checked against the code. Where a check is weak, the page says so.
 

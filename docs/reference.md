@@ -21,6 +21,16 @@ XDG data, state, config and cache directories under `cto` in the daemon state
 directory. OpenCode credentials are copied with its auth export and import
 commands when the server starts.
 
+The CTO's private OpenCode configuration starts the hidden `agent-net cto-mcp`
+stdio server. Its tools read the graph and its history, agents, workers, Needs
+you and the feed; change charters, nodes and edges or undo a change; send a
+message; and start a worker. They are listed only in the CTO's private config,
+not the network MCP registry. Graph changes and CTO sends are recorded with
+`by=cto`. CTO messages carry an agent-net authority note on delivery. The CTO's
+system brief treats information it reads as data and asks it to show actions,
+show graph changes as short diffs, offer undo and keep secrets out of charters.
+
+
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
 ## Commands
