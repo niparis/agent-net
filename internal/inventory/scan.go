@@ -185,8 +185,13 @@ func Scan(o Options) protocol.InventoryReport {
 			doc = projectDoc
 			key = "mcpServers"
 		}
-		servers, ok := doc[key].(map[string]any)
+		rawServers, present := doc[key]
+		if !present {
+			return
+		}
+		servers, ok := rawServers.(map[string]any)
 		if !ok {
+			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "invalid server map")
 			return
 		}
 		if len(servers) > maxFiles {
@@ -347,6 +352,10 @@ func Scan(o Options) protocol.InventoryReport {
 		} `toml:"projects"`
 	}
 	_ = toml.Unmarshal(readTrust(codex, filepath.Join(codex, "config.toml")), &codexTrust)
+	var piSettingsTrust struct {
+		DefaultProjectTrust string `json:"defaultProjectTrust"`
+	}
+	_ = json.Unmarshal(readTrust(home, filepath.Join(home, ".pi/agent/settings.json")), &piSettingsTrust)
 	var piTrust map[string]bool
 	_ = json.Unmarshal(readTrust(home, filepath.Join(home, ".pi/agent/trust.json")), &piTrust)
 	piTrusted := func(path string) bool {
@@ -356,7 +365,7 @@ func Scan(o Options) protocol.InventoryReport {
 			}
 			parent := filepath.Dir(path)
 			if parent == path {
-				return false
+				return piSettingsTrust.DefaultProjectTrust == "always"
 			}
 			path = parent
 		}

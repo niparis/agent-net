@@ -367,3 +367,33 @@ func TestInventoryLimitsOversizedNames(t *testing.T) {
 		}
 	}
 }
+
+func TestPiDefaultProjectTrust(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	files := map[string]string{filepath.Join(home, ".pi/agent/settings.json"): `{"defaultProjectTrust":"always"}`, filepath.Join(project, ".pi/mcp.json"): `{"mcpServers":{"local":{"command":"node"}}}`}
+	for path, content := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, v := range Scan(Options{Home: home, Projects: []protocol.ProjectEntry{{Name: "p", Path: project}}}).Items {
+		if v.Harness == "pi" && v.Name == "local" {
+			return
+		}
+	}
+	t.Fatal("default trust ignored")
+}
+
+func TestInvalidServersFieldReportsError(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte(`{"mcpServers":"invalid"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	report := Scan(Options{Home: home})
+	if report.State != protocol.InventoryError {
+		t.Fatal("invalid server map accepted")
+	}
+}
