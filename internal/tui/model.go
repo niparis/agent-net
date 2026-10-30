@@ -260,6 +260,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{tick()}
+		if m.mapOn && !m.mp.loading {
+			m.mp.loading = true
+			cmds = append(cmds, m.mapCmd())
+		}
 		if m.cto != nil && !m.cto.polling {
 			m.cto.polling = true
 			cmds = append(cmds, m.ctoPollCmd())
@@ -284,7 +288,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(msg.history) > 0 {
 				m.cto.lastGraphID = msg.history[len(msg.history)-1].ID
 			}
-			if loaded && m.mapOn && oldID != m.cto.lastGraphID {
+			if loaded && m.mapOn && !m.mp.loading && oldID != m.cto.lastGraphID {
 				m.mp.loading = true
 				return m, m.mapCmd()
 			}

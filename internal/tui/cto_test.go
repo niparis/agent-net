@@ -245,3 +245,14 @@ func TestCTOPanePollingUpdatesStreamingMessage(t *testing.T) {
 		t.Fatalf("stream: %+v", m.cto.messages)
 	}
 }
+
+func TestMapRefreshesWhenCTOPaneClosed(t *testing.T) {
+	m := mapModel(120, 40, fakeGraph())
+	m.mapOn = true
+	m.mp.loading = false
+	updated, cmd := m.update(tickMsg{})
+	m = updated.(Model)
+	if cmd == nil || !m.mp.loading {
+		t.Fatal("open map did not refresh while CTO pane was closed")
+	}
+}
