@@ -60,7 +60,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	for _, tl := range list.Tools {
 		tools[tl.Name] = tl
 	}
-	wantTools := []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo", "agents", "workers", "needs_you", "feed", "send", "worker_start", "score_set", "worker_providers_set"}
+	wantTools := []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo", "agents", "workers", "needs_you", "feed", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove", "worker_profile_list"}
 	if len(tools) != len(wantTools) {
 		t.Fatalf("got %d tools, want %d: %v", len(tools), len(wantTools), tools)
 	}
@@ -133,7 +133,7 @@ func TestCTOToolsForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	for _, name := range []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo", "agents", "workers", "needs_you", "feed", "send", "worker_start", "score_set", "worker_providers_set"} {
+	for _, name := range []string{"graph_get", "charter_set", "charter_history", "node_add", "node_remove", "edge_set", "edge_remove", "edge_history", "graph_undo", "agents", "workers", "needs_you", "feed", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove", "worker_profile_list"} {
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
 		if err != nil || out.IsError || !seen[name] {
 			t.Errorf("%s: %+v %v", name, out, err)

@@ -113,6 +113,9 @@ func runStop(ctx context.Context, op operator.Operator, out io.Writer, args []st
 
 // cmdWorkers: agent-net workers.
 func cmdWorkers(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "profiles" {
+		return cmdWorkerProfiles(ctx, args[1:])
+	}
 	return runWorkers(ctx, opClient(), os.Stdout, args)
 }
 

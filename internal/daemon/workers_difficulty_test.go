@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -81,5 +82,30 @@ func TestWorkerAutomaticPrefersRecentSuccess(t *testing.T) {
 	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
 	if err != nil || res.Model != "fake/m2" {
 		t.Fatalf("choice: %+v %v", res, err)
+	}
+}
+
+func TestWorkerProfilesAgentManagement(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	pi, id := helloPi(t, w.node, "profiles-pi", repo, true)
+	raw, err := pi.call(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "m1", Effort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var p protocol.WorkerProfile
+	if err = json.Unmarshal(raw, &p); err != nil || p.Model != "fake/m1" || p.AddedBy != id || p.Effort != "high" {
+		t.Fatalf("profile: %s %v", raw, err)
+	}
+	raw = pi.mustCall(protocol.OpWorkerProfiles, nil)
+	var profiles []protocol.WorkerProfile
+	if err = json.Unmarshal(raw, &profiles); err != nil || len(profiles) != 1 {
+		t.Fatalf("list %s %v", raw, err)
+	}
+	pi.mustCall(protocol.OpWorkerProfileRemove, protocol.WorkerProfileRequest{Name: p.Name})
+	if _, err = pi.call(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "missing-model"}); err == nil {
+		t.Fatal("unknown model accepted")
 	}
 }

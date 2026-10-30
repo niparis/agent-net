@@ -619,7 +619,8 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		"nodes": true, "restart": true, "projects": true, "events": true, protocol.OpWorkers: true}
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
 		method != "project_add" && method != "project_remove" &&
-		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop {
+		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop &&
+		method != protocol.OpWorkerProfiles && method != protocol.OpWorkerProfileAdd && method != protocol.OpWorkerProfileRemove {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}
 	// Sender identity is never taken from params: the bound session is used.

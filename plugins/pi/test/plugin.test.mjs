@@ -249,6 +249,16 @@ await test("the announce rule goes into the system prompt once per turn", async 
   if (again !== undefined) throw new Error("added twice");
 });
 
+await test("worker profile tools reach the daemon", async () => {
+  const p = makePi(); extension(p.api);
+  const n = hellos.length; await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  for (const [name, method, args] of [["agent_worker_profiles", "worker_profiles", {}], ["agent_worker_profile_add", "worker_profile_add", { harness: "opencode", model: "fake/m1" }], ["agent_worker_profile_remove", "worker_profile_remove", { name: "demo" }]]) {
+    const tool = p.tools.get(name); if (!tool) throw new Error("missing " + name);
+    await tool.execute("id", args); if (requests.at(-1).method !== method) throw new Error("wrong method " + name);
+  }
+});
+
 await test("agent_nodes and agent_start show the track record and playbook", async () => {
   const p = makePi();
   extension(p.api);

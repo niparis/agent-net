@@ -103,7 +103,7 @@ var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, 
 	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop}
+	OpIntegrationsGet, OpIntegrationsSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.

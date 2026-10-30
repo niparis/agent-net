@@ -38,6 +38,12 @@ func (g *Gateway) serveWorker(ctx context.Context, nc *nodeConn, h protocol.Head
 
 func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	switch typ {
+	case "worker.profile.list", "worker.profile.add", "worker.profile.remove":
+		p, err := decode[protocol.WorkerProfileFrame](raw)
+		if err != nil {
+			return nil, reject("bad worker profile request")
+		}
+		return g.workerProfileAction(nc.id, typ, p)
 	case "worker.start":
 		p, err := decode[protocol.WorkerStartFrame](raw)
 		if err != nil {

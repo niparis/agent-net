@@ -817,6 +817,10 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_w", () => registered("ses_w"));
+  for (const [name, method, args] of [["agent_worker_profiles", "worker_profiles", {}], ["agent_worker_profile_add", "worker_profile_add", { harness: "opencode", model: "fake/m1" }], ["agent_worker_profile_remove", "worker_profile_remove", { name: "demo" }]]) {
+    const tool = tools.find((t) => t.name === name); if (!tool) throw new Error("missing " + name);
+    await tool.execute(args, { sessionID: "ses_w" }); if (calls.at(-1)[0] !== method) throw new Error("wrong method " + name);
+  }
   const start = tools.find((t) => t.name === "agent_start");
   const stopTool = tools.find((t) => t.name === "agent_stop");
   if (!start || !stopTool) throw new Error("worker tools are not registered");
