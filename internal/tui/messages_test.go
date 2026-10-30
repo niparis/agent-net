@@ -81,3 +81,21 @@ func TestMessageSystemEventsToggle(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestConversationWorkerNameAndActivity(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.feed = newFeed()
+	id := m.snap.Agents[0].SessionID
+	m.snap.Agents[0].Worker = &protocol.WorkerInfo{ID: "w_8"}
+	m.snap.Agents[0].Profile.Name = "shop worker 8"
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0.Add(-5 * time.Minute)}, ConversationID: "a", From: id, To: "s_0000000000000002", Type: "request"}, {Event: protocol.Event{ID: 2, Kind: "msg.delivered", MessageID: "one", Time: t0.Add(-time.Minute)}, ConversationID: "a"}})
+	rows := m.messageConversations()
+	if !rows[0].at.Equal(t0.Add(-time.Minute)) {
+		t.Fatal(rows[0].at)
+	}
+	v := ansi.Strip(m.messageConversationLine(rows[0], 80, false))
+	if !strings.Contains(v, "worker 8") || strings.Contains(v, "shop worker") {
+		t.Fatal(v)
+	}
+}

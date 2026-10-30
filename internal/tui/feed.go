@@ -55,6 +55,7 @@ var stateRank = map[string]int{
 type feedItem struct {
 	EventID        int64
 	At             time.Time
+	Updated        time.Time
 	Kind           string // kind of the first event
 	MsgID          string // set for a message
 	From           string // sender session ID
@@ -134,6 +135,9 @@ func (f *feed) applyMessage(e protocol.FeedEvent) {
 		it = &feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, MsgID: e.MessageID, Parent: e.Parent, State: state}
 		f.byMsg[e.MessageID] = it
 		f.add(it)
+	}
+	if e.Time.After(it.Updated) {
+		it.Updated = e.Time
 	}
 	if e.ConversationID != "" {
 		it.ConversationID = e.ConversationID

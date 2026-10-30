@@ -40,8 +40,12 @@ func (m Model) messageConversations() []messageConversation {
 			groups[id] = g
 		}
 		g.items = append(g.items, i)
-		if it.At.After(g.at) {
-			g.at = it.At
+		activity := it.At
+		if it.Updated.After(activity) {
+			activity = it.Updated
+		}
+		if activity.After(g.at) {
+			g.at = activity
 		}
 		g.cto = g.cto || it.FromCTO
 	}
@@ -51,7 +55,7 @@ func (m Model) messageConversations() []messageConversation {
 			var b strings.Builder
 			for _, i := range g.items {
 				it := m.feed.items[i]
-				fmt.Fprintf(&b, "%s %s %s %s %s ", m.feedName(it.From), m.feedName(it.To), it.Snippet, it.Type, it.Body)
+				fmt.Fprintf(&b, "%s %s %s %s %s ", m.conversationName(it.From), m.conversationName(it.To), it.Snippet, it.Type, it.Body)
 			}
 			if !strings.Contains(strings.ToLower(b.String()), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
 				continue
@@ -103,11 +107,11 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	}
 	first := m.feed.items[c.items[0]]
 	last := m.feed.items[c.items[len(c.items)-1]]
-	from := m.feedName(first.From)
+	from := m.conversationName(first.From)
 	if first.FromCTO {
 		from = "CTO"
 	}
-	to := m.feedName(first.To)
+	to := m.conversationName(first.To)
 	names := from + " ↔ " + to
 	topic := first.Snippet
 	if topic == "" {
@@ -185,7 +189,7 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 	}
 	for _, i := range c.items {
 		it := m.feed.items[i]
-		sender := m.feedName(it.From)
+		sender := m.conversationName(it.From)
 		if it.FromCTO {
 			sender = "CTO"
 		}
@@ -233,4 +237,14 @@ func (m Model) systemEventCount() int {
 		}
 	}
 	return n
+}
+
+func (m Model) conversationName(id string) string {
+	name := m.feedName(id)
+	if a, ok := m.agentByID(id); ok && a.Worker != nil {
+		if i := strings.LastIndex(name, "worker "); i >= 0 {
+			return name[i:]
+		}
+	}
+	return name
 }
