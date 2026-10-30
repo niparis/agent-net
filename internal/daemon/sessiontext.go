@@ -33,7 +33,7 @@ import (
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
-	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
+	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 }
@@ -170,6 +170,8 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		if data, err = d.call(ctx, "query.counts", struct{}{}); err == nil {
 			res = data
 		}
+	case protocol.OpGraphView:
+		res, _, err = lc.dispatchGraphView(ctx, raw)
 	case "usage_top":
 		var p protocol.QueryUsageTop
 		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {

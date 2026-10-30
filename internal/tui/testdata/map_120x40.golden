@@ -1,0 +1,40 @@
+Map (read only)  6 nodes, 4 edges                                                                        updated 14:05
+  trading-architect                   mature │ cogforge · component ────────────────────────────────────────────────────
+>   cogforge                   [owner] early │ Charter ─────────────────────────────────────────────────────────────────
+  wbg-architect                      growing │   purpose   Document and evidence API.
+    tenebrae               [advisor] growing │   maturity  early - prototype
+Components with no architect ─────────────── │   accepts   Generic endpoints and bug fixes.
+    shop                              mature │   refuses   Client-specific endpoints.
+Architects without nodes ─────────────────── │   consumers tenebrae, shop
+    api-architect                      early │   escalate  Breaking API changes.
+                                             │   needs     MCP: tenebrae-library
+                                             │   notes     Deploy through homelab.
+                                             │ Edges ───────────────────────────────────────────────────────────────────
+                                             │   in   tenebrae -> cogforge
+                                             │        depends, rule ask
+                                             │   in   trading-architect -> cogforge
+                                             │        governs, owner, rule normal
+                                             │   out  cogforge -> shop
+                                             │        depends, rule auto
+                                             │ Last changes ────────────────────────────────────────────────────────────
+                                             │ 12:05  you (on Mac)  maturity
+                                             │ 28 Oct  owner  purpose
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+                                             │
+up/down select  M/esc sessions  r refresh  ? help  q quit

@@ -52,6 +52,9 @@ func (f *fakeOp) Usage(context.Context) (protocol.UsageResult, error) {
 func (f *fakeOp) UsageTop(context.Context, string) (protocol.UsageTop, error) {
 	return protocol.UsageTop{}, nil
 }
+func (f *fakeOp) GraphView(context.Context, protocol.QueryGraph) (protocol.GraphView, error) {
+	return protocol.GraphView{}, nil
+}
 func (f *fakeOp) SessionText(context.Context, protocol.TextQuery) (protocol.TextPage, error) {
 	return protocol.TextPage{}, nil
 }

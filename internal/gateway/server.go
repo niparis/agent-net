@@ -548,6 +548,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 	case "query.nodes":
 		return g.NodesInfo()
 
+	case "query.graph":
+		return g.handleGraphView(raw)
+
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
 		if err != nil {

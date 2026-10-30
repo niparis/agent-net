@@ -33,6 +33,7 @@ const (
 	// owner's command line or TUI, never an agent session.
 	OpUsage        = "usage"         // takes nothing, answers UsageResult
 	OpUsageTop     = "usage_top"     // takes QueryUsageTop, answers UsageTop
+	OpGraphView    = "graph_view"    // takes QueryGraph, answers GraphView
 	OpSessionText  = "session_text"  // takes TextQuery, answers TextPage
 	OpCounts       = "counts"        // takes nothing, answers SessionCounts
 	OpSessionEnter = "session_enter" // takes EnterRequest, answers EnterPlan
@@ -81,7 +82,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
 	OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
 
