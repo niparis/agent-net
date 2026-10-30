@@ -129,8 +129,8 @@ var ctoTools = map[string]ctoToolDef{
 		desc: "Start a worker in a project on one of the owner's machines. The worker gets its own git worktree by default, and its report comes back as a message. Only do this when the owner asks.",
 		fields: map[string]ctoField{
 			"project":    {typ: "string", desc: "Known project name or absolute path. Empty uses the CTO's own project."},
-			"harness":    {typ: "string", desc: "Harness for the worker. Empty uses the default, opencode.", enum: []string{"opencode", "claude", "pi", "codex"}},
-			"model":      {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty uses the harness default."},
+			"harness":    {typ: "string", desc: "Harness for the worker. Empty lets automatic model selection choose one.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"model":      {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty or auto selects by difficulty and quota."},
 			"difficulty": {typ: "string", desc: "Task difficulty for automatic model selection; defaults to normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
 			"task":       {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
 			"machine":    {typ: "string", desc: "Machine that holds the project, when more than one does."},
