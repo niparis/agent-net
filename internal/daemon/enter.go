@@ -273,13 +273,8 @@ func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, pl
 		tmux = append(tmux, "-S", pane.socket)
 	}
 	out := protocol.EnterPlan{Host: plan.Host}
-	if q.TmuxSocket != "" && (pane.socket == "" || pane.socket == q.TmuxSocket) {
-		out.Argv = append(tmux, "switch-client", "-t", pane.id)
-		out.Note = fmt.Sprintf("Switched your tmux client to the pane of %s. Use your tmux keys to come back here.", name)
-		return out, nil
-	}
 	out.Argv = append(tmux, "select-window", "-t", pane.id, ";", "select-pane", "-t", pane.id, ";", "attach-session", "-t", pane.session)
-	if q.TmuxSocket != "" { // another tmux server than ours: not nested, a new client
+	if q.TmuxSocket != "" { // allow an attach from inside tmux
 		out.Argv = append([]string{"env", "-u", "TMUX"}, out.Argv...)
 	}
 	out.Note = fmt.Sprintf("Attached to tmux session %s at the pane of %s. Detach (prefix d) to come back.", pane.session, name)

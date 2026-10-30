@@ -145,9 +145,9 @@ func TestEnterTmuxPane(t *testing.T) {
 	if !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("not in tmux: argv %v, want %v", p.Argv, want)
 	}
-	// The TUI is in tmux: switch its client to the pane.
+	// The TUI is in tmux: attach a nested client.
 	p = enterOf(t, n, id, "/tmp/tmux-1000/default")
-	if want := []string{"tmux", "switch-client", "-t", "%7"}; !reflect.DeepEqual(p.Argv, want) {
+	if want := []string{"env", "-u", "TMUX", "tmux", "select-window", "-t", "%7", ";", "select-pane", "-t", "%7", ";", "attach-session", "-t", "work"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("in tmux: argv %v, want %v", p.Argv, want)
 	}
 	if b, _ := os.ReadFile(argsFile); !strings.Contains(string(b), "list-panes -a") {
@@ -180,7 +180,7 @@ func TestEnterTmuxOtherServer(t *testing.T) {
 		t.Fatalf("argv %v, want %v", p.Argv, want)
 	}
 	p, _ = d.tmuxPlan(protocol.SessionInfo{PID: cmd.Process.Pid}, protocol.EnterRequest{TmuxSocket: "/srv/sess.sock"}, protocol.EnterPlan{}, "s")
-	if want := []string{"tmux", "-S", "/srv/sess.sock", "switch-client", "-t", "%3"}; !reflect.DeepEqual(p.Argv, want) {
+	if want := []string{"env", "-u", "TMUX", "tmux", "-S", "/srv/sess.sock", "select-window", "-t", "%3", ";", "select-pane", "-t", "%3", ";", "attach-session", "-t", "dev"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("same server: argv %v, want %v", p.Argv, want)
 	}
 }
