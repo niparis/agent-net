@@ -2,12 +2,6 @@
  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2
  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8
  ○ old-box    v0.3.2 offline
-  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
- Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-> strategies   claude   strategi… sonnet-5-5 idle   -      240%  4.6G backtes...
-  tenebrae-53  claude   tenebrae  opus-5-5   busy   -       38%  1.2G
-  web          opencode shop      sonnet-5   idle   -         ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────
 Selected session ───────────────────────────────────────────────────────────────
   strategies  claude  idle    CPU 240% (5m 180%)  RAM 4.6G (4.6G)  34 procs
   id       s_0000000000000002 pid 4300    │     PID   CPU   RAM by CPU
@@ -19,6 +13,12 @@ Selected session ─────────────────────
   remote   git@git.example.com:team/stra… │     PID   CPU   RAM by RAM
   worktree …s/.claude/worktrees/agent-a7… │    4402   18%  1.2G python3 backtes…
   project source: registered              │    4301  180%  900M node /srv/app/d…
+  messages 13:57  -> tenebrae-53 (Mac)  … │    4300   40%  600M claude --resume
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: set charters, start workers, answer what the network is doing
 
 
+
+
+> write to the CTO...
 1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

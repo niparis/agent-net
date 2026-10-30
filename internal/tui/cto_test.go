@@ -6,7 +6,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -176,35 +175,6 @@ func TestCTOGraphChangeRefreshesOpenMap(t *testing.T) {
 	m = updated.(Model)
 	if cmd == nil || !m.mp.loading {
 		t.Fatal("CTO graph change did not refresh map")
-	}
-}
-
-func TestCTOGolden(t *testing.T) {
-	for _, size := range []struct {
-		w, h  int
-		name  string
-		mapOn bool
-	}{{80, 24, "cto_80x24", false}, {120, 40, "cto_map_120x40", true}} {
-		src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot(), graph: fakeGraph()}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"Is cogforge ready?"}`), json.RawMessage(`{"type":"assistant","content":[{"type":"text","text":"It is mature. I updated the charter."}]}`)}, Actions: []protocol.CTOAction{{ID: 1, Text: "sent to tenebrae-53: please review"}}}, history: []protocol.CTOGraphChange{{ID: 4, Kind: "charter", Node: "cogforge", Attr: "maturity", OldValue: "early", NewValue: "mature"}}}
-		m := New(src)
-		m.width = size.w
-		m.height = size.h
-		m.snap = fakeSnapshot()
-		m.haveData = true
-		m.lastOK = t0
-		m.loc = time.UTC
-		if size.mapOn {
-			m.mapOn = true
-			m.mp.nodes = fakeGraph().Nodes
-			m.mp.edges = fakeGraph().Edges
-			m.mp.loaded = true
-			m.mapEnsureSelection()
-		}
-		updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
-		m = updated.(Model)
-		updated, _ = m.update(cmd())
-		m = updated.(Model)
-		golden(t, size.name, m.View())
 	}
 }
 

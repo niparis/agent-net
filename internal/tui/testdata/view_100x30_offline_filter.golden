@@ -8,23 +8,23 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────
 > ci-runner          pi       agent-net gpt-6      idle   -        5%  300M
   scratch            pi       -         -          shell  -       <1%   80M
-Selected session ───────────────────────────────────────────────────────────────────────────────────
-  ci-runner  pi  idle    CPU 5% (5m 3%)  RAM 300M (300M)  3 procs
-  id       s_0000000000000004 pid 981                │ processes: too old for this action
-  folder   /srv/agent-net                            │
-  branch   main                                      │
-  model    openai/gpt-6, background                  │
-  function runs the test suite                       │
-  remote   -                                         │
-  messages 14:02  <- tenebrae-53 (Mac)  notificatio… │
-           14:01  -> tenebrae-53 (Mac)  request  de… │
-                                                     │
-                                                     │
-                                                     │
-                                                     │
 
 
 
 
 
+
+
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+> write to the CTO...
 1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  ? help  q quit

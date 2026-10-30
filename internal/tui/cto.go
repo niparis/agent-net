@@ -64,6 +64,7 @@ func (m Model) startCTO() (tea.Model, tea.Cmd) {
 	}
 	ti := textinput.New()
 	ti.Prompt = "> "
+	ti.Placeholder = "write to the CTO..."
 	ti.CharLimit = 65536
 	m.cto = &ctoState{input: ti, polling: true, generation: m.ctoGeneration + 1}
 	m.ctoGeneration++

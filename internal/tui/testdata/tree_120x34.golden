@@ -14,21 +14,21 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner                        pi       agent-net gpt-6      idle   -         ?     ?
   scratch                          pi       -         -          shell  -         ?     ?
-Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  backtest-b  opencode  idle    CPU and memory need a newer daemon and gateway
-  worker   started by strategies (Mac), 14:02, project strateg… │
-  id       s_00000000000000a2 w_s_00000000000000a2              │
-  folder   -                                                    │
-  branch   -                                                    │
-  model    anthropic/claude-haiku-4-5, background               │
-  function none: add a `# Project: <one line>` line to AGENTS.… │
-  task     probe                                                │
-  remote   -                                                    │
-  messages none seen yet                                        │
-                                                                │
-                                                                │
-                                                                │
 
 
 
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+write to the CTO: it can set charters, start workers, answer what the network is doing
+
+
+
+
+
+
+
+
+> write to the CTO...
 1/2 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  ? help  q quit

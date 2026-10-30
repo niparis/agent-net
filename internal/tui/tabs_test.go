@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -184,7 +185,7 @@ func TestCTOBoxFocusAndSend(t *testing.T) {
 
 func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.Contains(m.View(), "write to the CTO: it can set charters") {
+	if !strings.Contains(m.View(), "write to the CTO: set charters") {
 		t.Fatal("empty CTO box missing")
 	}
 	m = keys(m, "2", "C")
@@ -228,3 +229,40 @@ func TestDetailToggleKeepsCTOVisible(t *testing.T) {
 }
 
 func detailText(m Model) string { return strings.Join(m.detailLines(m.width, 40), "\n") }
+
+func TestLayoutGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		for _, conversation := range []bool{false, true} {
+			src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot(), events: fakeEvents(), usage: fakeUsage(), counts: fakeCounts()}}
+			if conversation {
+				src.events = protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"i want to set up the charter for cogforge, help me"}`), json.RawMessage(`{"type":"assistant","text":"Sure. What does cogforge own today?"}`)}, Actions: []protocol.CTOAction{{Text: "read graph"}}}
+			}
+			m := New(src)
+			m.loc, m.now = time.UTC, func() time.Time { return t0 }
+			m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+			m = refresh(m, src.fakeSource)
+			m.src = src
+			m = send(m, m.ctoPollCmd()())
+			m = keys(m, "C")
+			kind := "empty"
+			if conversation {
+				kind = "conversation"
+			}
+			v := m.View()
+			for _, line := range lines(v) {
+				if ansi.StringWidth(line) > size[0] {
+					t.Fatalf("line exceeds %d: %q", size[0], line)
+				}
+			}
+			golden(t, fmt.Sprintf("sessions_%dx%d_%s_focused", size[0], size[1], kind), v)
+		}
+		m := keys(newModel(size[0], size[1]), "2")
+		v := m.View()
+		for _, line := range lines(v) {
+			if ansi.StringWidth(line) > size[0] {
+				t.Fatalf("line exceeds %d: %q", size[0], line)
+			}
+		}
+		golden(t, fmt.Sprintf("messages_%dx%d", size[0], size[1]), v)
+	}
+}

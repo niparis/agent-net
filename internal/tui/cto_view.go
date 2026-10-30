@@ -19,7 +19,11 @@ func (m Model) ctoView(w, h int) []string {
 		lines = append(lines, "error: "+c.err)
 	}
 	if len(lines) == 0 {
-		lines = append(lines, sDim.Render("write to the CTO: it can set charters, start workers, answer what the network is doing"))
+		hint := "write to the CTO: it can set charters, start workers, answer what the network is doing"
+		if w < 84 {
+			hint = "write to the CTO: set charters, start workers, answer what the network is doing"
+		}
+		lines = append(lines, sDim.Render(hint))
 	}
 	if c.confirming {
 		lines = append(lines, "Start a new conversation? y/n")
@@ -34,7 +38,7 @@ func (m Model) ctoView(w, h int) []string {
 	for len(out) < h-1 {
 		out = append(out, "")
 	}
-	c.input.Width = max(w-2, 1)
+	c.input.Width = max(w-4, 1)
 	input := c.input.View()
 	if !c.editing {
 		input = "> write to the CTO..."

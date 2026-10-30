@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas │ 10 sessions, 9 online · 2 busy · workers 4 r…
+1 Sessions  2 Messages  3 Quotas
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -8,17 +8,17 @@
   ↳ backtest-b opencode -         haiku-4-5  idle   -         ?     ? probe
  build-vm 1 session ────────────────────────────────────────────────────────────
   ↳ backtest-… opencode -         haiku-4-5  idle   -         ?     ? probe
-Selected session ───────────────────────────────────────────────────────────────
-  backtest-a  opencode  idle    CPU and memory need a newer daemon and gateway
-  worker   started by strategies (Mac), … │
-  id       s_00000000000000a1 w_s_000000… │
-  folder   -                              │
-  branch   -                              │
-  model    anthropic/claude-haiku-4-5, b… │
-  function none: add a `# Project: <one … │
-  task     probe                          │
-  remote   -                              │
 
 
 
+
+
+
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: set charters, start workers, answer what the network is doing
+
+
+
+
+> write to the CTO...
 1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

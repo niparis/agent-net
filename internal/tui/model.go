@@ -137,6 +137,7 @@ func New(src Source) Model {
 		top: map[string]*topEntry{}}
 	ct := textinput.New()
 	ct.Prompt = "> "
+	ct.Placeholder = "write to the CTO..."
 	ct.CharLimit = 65536
 	m.ctoGeneration = 1
 	m.cto = &ctoState{input: ct, generation: 1}

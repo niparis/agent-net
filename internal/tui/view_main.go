@@ -322,6 +322,20 @@ func (m Model) titleLine(w int) string {
 		right = "connecting..."
 	}
 	used := ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	if used > w {
+		right = ""
+		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid)
+	}
+	if used > w {
+		mid = ""
+		used = ansi.StringWidth(left)
+	}
+	if mid == "" {
+		return clip(left, w)
+	}
+	if right == "" {
+		return clip(left+" │ "+mid, w)
+	}
 	gap := max(w-used, 2)
 	return clip(left+" │ "+mid+strings.Repeat(" ", gap)+sDim.Render(right), w)
 }

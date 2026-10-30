@@ -10,15 +10,15 @@
   tenebrae-53  claude   tenebrae  opus-5-5   busy   -       38%  1.2G
   web          opencode shop      sonnet-5   idle   -     shared
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-Selected session ───────────────────────────────────────────────────────────────
-  docs  opencode  idle    CPU 22% (5m 15%)  RAM 2.1G (2.1G)  9 procs
-  id       s_0000000000000007             │ shared by 3 opencode sessions, not …
-  folder   -                              │ processes: too old for this action
-  branch   -                              │
-  model    -                              │
-  function none: add a `# Project: <one … │
-  remote   -                              │
+  ci-runner    pi       agent-net gpt-6      idle   -        5%  300M
+  scratch      pi       -         -          shell  -       <1%   80M
+
+
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: set charters, start workers, answer what the network is doing
 
 
 
+
+> write to the CTO...
 1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

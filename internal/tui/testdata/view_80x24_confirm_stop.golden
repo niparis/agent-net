@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 ru…
+1 Sessions  2 Messages  3 Quotas
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -10,15 +10,15 @@
   web          opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
-Selected session ───────────────────────────────────────────────────────────────
-  tenebrae  opencode  busy    CPU and memory need a newer daemon and gateway
-  worker   started by you (on Mac), 14:0… │
-  id       s_0000000000000008 w_1         │
-  folder   /Users/n/code/tenebrae         │
-  branch   main                           │
-  model    anthropic/claude-haiku-4-5, b… │
-  function none: add a `# Project: <one … │
 
 
 
+
+CTO ────────────────────────────────────────────────────────────────────────────
+write to the CTO: set charters, start workers, answer what the network is doing
+
+
+
+
+> write to the CTO...
 Stop worker tenebrae (Mac)? y/n
