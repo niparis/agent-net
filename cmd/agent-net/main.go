@@ -23,6 +23,7 @@ import (
 	"github.com/niparis/agent-net/internal/daemon/claude"
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/phone"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/setup"
 	"github.com/niparis/agent-net/internal/tui"
@@ -198,7 +199,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 	}
 	defer gw.Close()
 	if *phoneListen != "" {
-		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(http.NotFoundHandler()))
+		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(phone.New(nil)))
 		if err != nil {
 			return err
 		}
