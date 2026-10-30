@@ -11,14 +11,15 @@ const CharterValueMaxBytes = 2048
 
 // Charter contains the fixed, independently versioned attributes of a node.
 type Charter struct {
-	Purpose   string `json:"purpose,omitempty"`
-	Maturity  string `json:"maturity,omitempty"`
-	Accepts   string `json:"accepts,omitempty"`
-	Refuses   string `json:"refuses,omitempty"`
-	Consumers string `json:"consumers,omitempty"`
-	Escalate  string `json:"escalate,omitempty"`
-	Needs     string `json:"needs,omitempty"`
-	Notes     string `json:"notes,omitempty"`
+	Purpose         string `json:"purpose,omitempty"`
+	Maturity        string `json:"maturity,omitempty"`
+	Accepts         string `json:"accepts,omitempty"`
+	Refuses         string `json:"refuses,omitempty"`
+	FeatureRequests string `json:"feature_requests,omitempty"`
+	Consumers       string `json:"consumers,omitempty"`
+	Escalate        string `json:"escalate,omitempty"`
+	Needs           string `json:"needs,omitempty"`
+	Notes           string `json:"notes,omitempty"`
 }
 
 // Node is a component or an architect. Components can be implicit projects.
@@ -72,7 +73,7 @@ func ParseMaturity(value string) (level, text string, err error) {
 // CleanCharterValue removes control characters other than newlines, then validates the value.
 func CleanCharterValue(attr, value string) (string, error) {
 	switch attr {
-	case "purpose", "maturity", "accepts", "refuses", "consumers", "escalate", "needs", "notes":
+	case "purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes":
 	default:
 		return "", fmt.Errorf("unknown charter attribute")
 	}
@@ -113,7 +114,8 @@ type GraphNodeRequest struct {
 
 // GraphUndoRequest identifies a history row; zero means the latest row.
 type GraphUndoRequest struct {
-	ID int64 `json:"id,omitempty"`
+	CTOChat bool  `json:"cto_chat,omitempty"`
+	ID      int64 `json:"id,omitempty"`
 }
 
 // GraphUndoFrame avoids the frame's own id field.

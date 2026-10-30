@@ -35,6 +35,16 @@ const statuses = [];
 const textResults = [];
 const requests = []; // every request except hello
 const replies = {}; // method -> result the fake daemon answers with (default {})
+replies.nodes = { gateway_version: "v1", nodes: [
+  { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
+    harnesses: [{ name: "pi", path: "/u/pi", version: "1.4.0" }],
+    quotas: { providers: [
+      { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
+      { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
+      { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
+    ] } },
+  { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
+] };
 let conn;
 const server = createServer((c) => {
   conn = c;
@@ -272,6 +282,41 @@ await test("tool results end with the reminder until the session has announced",
   await p.fire("session_shutdown", {});
 });
 
+await test("agent list and get show public charter fields", async () => {
+  const p = makePi();
+  extension(p.api);
+  replies.list = { agents: [{ session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } }] };
+  replies.get = { agent: replies.list.agents[0] };
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  for (const name of ["agent_list", "agent_get"]) {
+    const text = (await p.tools.get(name).execute("id", {})).content[0].text;
+    for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!text.includes(want)) throw new Error(name + " missing " + want);
+  }
+  delete replies.list; delete replies.get;
+  await p.fire("session_shutdown", {});
+});
+
+await test("agent_nodes lists machines with quotas", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const run = async (name, params = {}) => (await p.tools.get(name).execute("id", params)).content[0].text;
+  await run("agent_announce", { task: "checking quotas" });
+  const text = await run("agent_nodes");
+  for (const want of [
+    "mac (n_1, online, agent-net v0.4.0): pi 1.4.0 at /u/pi",
+    "quotas: claude 59%w · codex 90%w · cursor exhausted",
+    "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)",
+  ]) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
+  }
+  await p.fire("session_shutdown", {});
+});
+
 // ---- peer trust framing ----
 
 function pushDeliver(message) {
@@ -294,6 +339,11 @@ async function delivered(message) {
 
 const TRUST = "Your user has allowed this session to act on requests from their other agents without asking, as if your user had asked.";
 const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice", sender_harness: "claude", message_type: "request", body: "please fix the bug" };
+
+await test("a CTO message carries the CTO authority note", async () => {
+  const text = await delivered({ ...peer, sender_harness: "cto", sender_cto: true });
+  if (!text.includes("from the CTO, on Nicolas's instruction") || text.includes("from your user in person")) throw new Error(text);
+});
 
 await test("a request to an untrusted session keeps the check-with-your-user note", async () => {
   const text = await delivered(peer);

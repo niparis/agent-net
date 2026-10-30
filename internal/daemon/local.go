@@ -312,6 +312,15 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return nil, fmt.Errorf("cannot read the peer process: %w", err)
 	}
 	switch p.Client {
+	case "cto-mcp":
+		if !d.isCTOPeer(pid) {
+			return nil, errors.New("only the CTO server's process tree can use this channel")
+		}
+		lc.mu.Lock()
+		lc.client, lc.peerPID = "cto-mcp", pid
+		lc.mu.Unlock()
+		return map[string]any{"version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
+
 	case "cli":
 		lc.mu.Lock()
 		lc.client = "cli"
@@ -577,6 +586,12 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	lc.mu.Lock()
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
+	if client == "cto-mcp" {
+		if method != "cto_tool" {
+			return nil, errors.New("method not available to CTO channel")
+		}
+		return lc.ctoTool(ctx, raw)
+	}
 	if res, ok, err := lc.dispatchOperator(ctx, method, raw); ok {
 		return res, err
 	}

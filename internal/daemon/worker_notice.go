@@ -146,6 +146,15 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 	if st, err := gitOut(ctx, dir, "status", "--porcelain"); err != nil || st == "" {
 		return false
 	}
+	// A commit now would drop the merge parents (or the rest of a rebase), so
+	// the worktree stays as it is. It is kept because it has changes.
+	if gitOperationInProgress(ctx, dir) {
+		d.wmu.Lock()
+		w.leftAsIs = true
+		d.wmu.Unlock()
+		d.Logf("worker.unfinished_left worker=%s reason=%s path=%s (a git merge, rebase, cherry-pick or revert is in progress)", id, reason, dir)
+		return false
+	}
 	if _, err := gitOut(ctx, dir, "add", "-A"); err != nil {
 		d.Logf("worker %s: keep unfinished work: %v", id, err)
 		return false
@@ -167,6 +176,24 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 	d.wmu.Unlock()
 	d.Logf("worker.unfinished_saved worker=%s reason=%s path=%s", id, reason, dir)
 	return true
+}
+
+// gitOperationInProgress tells whether the worktree is in the middle of a
+// merge, rebase, cherry-pick or revert.
+func gitOperationInProgress(ctx context.Context, dir string) bool {
+	for _, name := range []string{"MERGE_HEAD", "rebase-merge", "rebase-apply", "CHERRY_PICK_HEAD", "REVERT_HEAD"} {
+		p, err := gitOut(ctx, dir, "rev-parse", "--git-path", name)
+		if err != nil || p == "" {
+			continue
+		}
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		if _, err := os.Stat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // finishWorktree keeps the worktree if the worker changed anything and removes
@@ -252,7 +279,11 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	n.DiffStat, _ = d.worktreeFacts(w)
 	d.wmu.Lock()
 	n.Saved = w.unfinished
+	leftAsIs := w.leftAsIs
 	d.wmu.Unlock()
+	if leftAsIs {
+		n.Note = strings.TrimSpace(n.Note + " A git merge was in progress; the worktree was left as is.")
+	}
 	return n
 }
 

@@ -260,23 +260,38 @@ func (m Model) renameCmd(id, name string) tea.Cmd {
 // on requests from other agents without asking its user.
 func (m Model) startTrust() (Model, tea.Cmd) {
 	a, ok := m.selectedAgent()
-	switch {
-	case !ok:
-		m.fail("Nothing is selected: pick a session first.")
-		return m, nil
-	case protocol.IsOwner(a.Harness):
-		m.fail("That is you, not an agent session.")
+	if !ok || protocol.IsOwner(a.Harness) {
+		m.fail("Pick an agent session.")
 		return m, nil
 	}
-	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
-	if a.PeerTrust {
-		m.say("Turning peer trust off...")
-		return m, m.trustCmd(a.SessionID, name, false)
+	project := firstNonEmpty(a.Repo.Project, a.Profile.Project)
+	if project == "" {
+		m.fail("This session has no project node.")
+		return m, nil
 	}
-	m.mode = modeTrust
-	m.confirmID, m.confirmName = a.SessionID, name
-	m.notice = notice{}
-	return m, nil
+	rule := m.wildcardRule(project)
+	next := "ask"
+	if rule == "ask" {
+		next = "auto"
+	} else if rule == "auto" {
+		next = "normal"
+	}
+	setter, ok := m.src.(interface {
+		SetRequestRule(context.Context, protocol.Edge) error
+	})
+	if !ok {
+		m.fail("Request rules are unavailable.")
+		return m, nil
+	}
+	e := protocol.Edge{From: "*", To: project, Kind: "depends", Rule: next}
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := setter.SetRequestRule(ctx, e); err != nil {
+			return actionMsg{err: fmt.Errorf("Request rule not changed: %s", explain(err))}
+		}
+		return actionMsg{text: "Request rule for " + project + " is " + next + "."}
+	}
 }
 
 func (m Model) trustKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {

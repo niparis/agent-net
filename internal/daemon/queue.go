@@ -29,7 +29,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 		return nil
 	}
 	q := queuedStart{ID: protocol.NewID("q"), Owner: l.Owner, Project: l.Project, Path: l.Path, Harness: l.Harness,
-		Model: l.Model, Task: l.Task, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions, QueuedAt: time.Now()}
+		Model: l.Model, Task: l.Task, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: time.Now()}
 	if err := d.st.addQueued(q); err != nil {
 		// Without a queue the old behaviour is the safe one: refuse.
 		return &protocol.WorkerLaunched{Reason: "cannot queue: " + err.Error()}
@@ -147,7 +147,7 @@ func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
 	cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: e.Owner, SessionID: out.SessionID,
 		Harness: e.Harness, Project: e.Project, Task: e.Task, Worktree: out.Worktree, Branch: out.Branch,
-		ProjectRules: out.ProjectRules, Permissions: e.Permissions})
+		ProjectRules: out.ProjectRules, Permissions: e.Permissions, FromCTO: e.FromCTO})
 	cancel()
 	if err != nil {
 		if w := d.workerBySession(out.SessionID); w != nil {
@@ -191,7 +191,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 		return errors.New("the owner of this queued start is not a session of this machine")
 	}
 	charter := d.charterBrief(ctx, p.Project)
-	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
+	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest, FromCTO: p.FromCTO,
 		Body: protocol.WorkerTaskBodyWithCharter(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions)})
 	return err
 }

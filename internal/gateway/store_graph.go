@@ -306,8 +306,10 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 			if err = json.Unmarshal([]byte(old), &e); err != nil {
 				return err
 			}
-			if _, err = graphKind(tx, e.From); err != nil {
-				return err
+			if e.From != "*" {
+				if _, err = graphKind(tx, e.From); err != nil {
+					return err
+				}
 			}
 			if _, err = graphKind(tx, e.To); err != nil {
 				return err
@@ -360,7 +362,7 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	if e.Rule == "" {
 		e.Rule = "normal"
 	}
-	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" {
+	if e.Rule != "normal" && e.Rule != "auto" && e.Rule != "ask" && e.Rule != "never" {
 		return reject("invalid edge rule")
 	}
 	if e.Kind != "depends" && e.Kind != "governs" {
@@ -377,9 +379,14 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 		return err
 	}
 	defer tx.Rollback()
-	from, err := graphKind(tx, e.From)
-	if err != nil {
-		return err
+	from := "component"
+	if e.From != "*" {
+		from, err = graphKind(tx, e.From)
+		if err != nil {
+			return err
+		}
+	} else if e.Kind != "depends" {
+		return reject("wildcard requires dependency")
 	}
 	to, err := graphKind(tx, e.To)
 	if err != nil {
@@ -482,6 +489,8 @@ func (s *Store) Graph() (protocol.Graph, error) {
 			n.Charter.Accepts = value
 		case "refuses":
 			n.Charter.Refuses = value
+		case "feature_requests":
+			n.Charter.FeatureRequests = value
 		case "consumers":
 			n.Charter.Consumers = value
 		case "escalate":
@@ -510,4 +519,28 @@ func (s *Store) Graph() (protocol.Graph, error) {
 		g.Edges = append(g.Edges, e)
 	}
 	return g, rows.Err()
+}
+
+// CTOGraphHistory returns all attributed CTO changes after a history ID.
+func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) {
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE actor='cto' AND id>? ORDER BY id`, after)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.CTOGraphChange{}
+	for rows.Next() {
+		var v protocol.CTOGraphChange
+		if err = rows.Scan(&v.ID, &v.Kind, &v.Node, &v.Attr, &v.OldValue, &v.NewValue, &v.At); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) CTOLastGraphID() (int64, error) {
+	var id int64
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto'`).Scan(&id)
+	return id, err
 }

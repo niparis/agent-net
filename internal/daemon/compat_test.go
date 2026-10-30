@@ -29,7 +29,7 @@ func TestOldDaemonAgainstNewGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	hc, _ := PinnedClient(ca)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(5*time.Second))
 	defer cancel()
 	ws, _, err := websocket.Dial(ctx, nc.GatewayURL+"/v1/node", &websocket.DialOptions{
 		HTTPClient: hc, HTTPHeader: http.Header{"Authorization": {"Bearer " + nc.Token}}})
@@ -166,7 +166,7 @@ func TestNewDaemonAgainstOldGateway(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		select {
 		case <-detected:
-		case <-time.After(2 * time.Second):
+		case <-time.After(scaled(2 * time.Second)):
 			t.Fatal("detection did not run again")
 		}
 	}

@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -223,6 +224,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil {
 		return none, err
 	}
+	if p.FromCTO && (!ok || owner.Harness != protocol.OwnerHarness) {
+		return none, reject("CTO worker start requires an owner session")
+	}
 	if !ok || owner.NodeID != nc.id {
 		return none, reject("owner session %q does not belong to this node", p.Owner)
 	}
@@ -367,6 +371,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	// A loose model name is resolved against the machine's own list (W17).
 	// Without a list (claude, or a harness that cannot list), it passes through.
 	var modelNote string
+	quotas := g.nodeQuotas(pick.NodeID)
 	if p.Model != "" && len(hi.Models) > 0 {
 		usage, err := g.store.ModelUsage(pick.NodeID, p.Harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
 		if err != nil {
@@ -377,13 +382,20 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
-		res, err := protocol.ResolveModelFailed(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt))
+		res, err := protocol.ResolveModelQuota(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), quotas)
 		if err != nil {
 			return none, reject("model on %s: %v", node.Hostname, err)
 		}
 		resolved := res.Model
 		if resolved != asked || len(res.Demoted) > 0 {
 			modelNote = asked + " -> " + resolved
+		}
+		if res.QuotaNote != "" {
+			if modelNote == "" {
+				modelNote = asked + " (" + res.QuotaNote + ")"
+			} else {
+				modelNote += " (" + res.QuotaNote + ")"
+			}
 		}
 		if len(res.Demoted) > 0 {
 			var parts []string
@@ -399,12 +411,29 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 		p.Model = resolved
 	}
+	// A provider with no allowance left refuses the start now, with the reset
+	// time, instead of failing at the first model call (decision 0022).
+	if reason := protocol.QuotaRefusal(quotas, p.Harness, p.Model); reason != "" {
+		return none, reject("machine %s: %s", node.Hostname, reason)
+	}
 
 	g.mu.Lock()
 	target := g.conns[pick.NodeID]
 	g.mu.Unlock()
 	if target == nil {
 		return none, reject("machine %s is offline", pick.Hostname)
+	}
+	// A queued start must retain CTO attribution on the target machine.
+	if p.FromCTO {
+		capCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		data, err := target.call(capCtx, "cto.worker_capabilities", nil)
+		cancel()
+		var caps struct {
+			Attribution bool `json:"attribution"`
+		}
+		if err != nil || json.Unmarshal(data, &caps) != nil || !caps.Attribution {
+			return none, reject("machine %s cannot preserve CTO attribution; upgrade its daemon", pick.Hostname)
+		}
 	}
 	// The owner sets the permission level per project (decision 0020).
 	perms, err := g.store.WorkerPermissions(pick.NodeID, pick.Name)
@@ -414,7 +443,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

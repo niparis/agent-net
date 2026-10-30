@@ -10,7 +10,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The integrations form (decision 0021): key I. The owner turns the six setup
+// The integrations form (decision 0021): key I. The owner turns the seven setup
 // integrations on or off for the whole network. Every machine applies the
 // saved answers at its next daemon start, or within a minute.
 

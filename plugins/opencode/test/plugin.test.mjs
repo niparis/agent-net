@@ -29,6 +29,7 @@ const closed = [];
 const calls = []; // [method, params] of every call except hello
 const conns = new Map(); // session ID -> its latest daemon connection
 const textResults = []; // params of every session_text_result
+let charterReply = null;
 let hintReply = {}; // what the fake daemon answers to "hint"
 let policyReply = {}; // what the fake daemon answers to "policy"
 const server = createServer((conn) => {
@@ -51,7 +52,9 @@ const server = createServer((conn) => {
       if (line.method === "session_text_result") textResults.push(line.params);
       if (line.method === "status") statuses.push({ id: conn.sessionID, params: line.params });
       const result =
-        line.method === "project_add"
+        charterReply && line.method === "list" ? { agents: [charterReply] }
+        : charterReply && line.method === "get" ? { agent: charterReply }
+        : line.method === "project_add"
           ? { machine: "mac", dry_run: !!line.params.dry_run,
               added: [{ name: "alpha", path: "/c/alpha", remote: "https://example.com/alpha.git" }],
               existing: [{ name: "beta", path: "/c/beta" }],
@@ -75,7 +78,12 @@ const server = createServer((conn) => {
         : line.method === "nodes"
           ? { gateway_version: "v1", nodes: [
               { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
-                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }] },
+                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }],
+                quotas: { providers: [
+                  { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
+                  { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
+                  { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
+                ] } },
               { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
             ] }
           : {};
@@ -185,6 +193,20 @@ async function test(name, fn) {
 function freshHub() {
   delete globalThis[Symbol.for("agent-net.opencode.hub.v1")];
 }
+
+await test("CTO mode does not initialize network behavior", async () => {
+  freshHub();
+  process.env.AGENT_NET_CTO = "1";
+  let accesses = 0;
+  const context = new Proxy({}, { get() { accesses++; throw new Error("context accessed"); } });
+  try {
+    const stop = await plugin.setup(context);
+    if (typeof stop === "function") stop();
+    if (accesses !== 0) throw new Error("context was accessed");
+  } finally {
+    delete process.env.AGENT_NET_CTO;
+  }
+});
 
 await test("session.created registers a session before any prompt", async () => {
   freshHub();
@@ -296,10 +318,27 @@ await test("agent_nodes lists machines with their harnesses", async () => {
   if (!tool) throw new Error("agent_nodes is not registered");
   const out = (await tool.execute({}, { sessionID: "ses_n" })).content;
   for (const want of ["mac (n_1, online, agent-net v0.4.0): opencode v2 (2 models) at /u/opencode",
+                      "quotas: claude 59%w · codex 90%w · cursor exhausted",
                       "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   stop();
+});
+
+await test("agent list and get show public charter fields", async () => {
+  freshHub();
+  const sessions = new Map([["ses_charter", session("ses_charter", "/work/c")]]);
+  let tools;
+  const c = makeContext("/work/c", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello", () => registered("ses_charter"));
+  charterReply = { session_id: "s_x", charter: { purpose: "description", purpose_fallback: true, maturity: "mature", accepts: "bugs", refuses: "special cases", feature_requests: "ask first" } };
+  try {
+    for (const name of ["agent_list", "agent_get"]) {
+      const out = (await tools.find((t) => t.name === name).execute({}, { sessionID: "ses_charter" })).content;
+      for (const want of ["description", "project description", "mature", "bugs", "special cases", "ask first"]) if (!out.includes(want)) throw new Error(name + " missing " + want);
+    }
+  } finally { charterReply = null; stop(); }
 });
 
 await test("agent_project_add and agent_project_list reach the daemon and print a short result", async () => {
@@ -791,6 +830,19 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (last[0] !== "worker_stop" || last[1].session !== "s_worker" || !gone.includes("Stopped worker s_worker")) {
     throw new Error("stop: " + JSON.stringify(last) + " " + gone);
   }
+  stop();
+});
+
+await test("a CTO message carries the CTO authority note", async () => {
+  freshHub();
+  const sessions = new Map([["ses_cto_test", session("ses_cto_test", "/work/o")]]);
+  const prompts = [];
+  const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
+  const stop = await plugin.setup(c.ctx);
+  await until("CTO recipient", () => registered("ses_cto_test"));
+  conns.get("ses_cto_test").write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_c",sender_harness:"cto",sender_cto:true,message_type:"request",body:"hello"}}})+"\n");
+  await until("CTO prompt", () => prompts.length === 1);
+  if (!prompts[0].text.includes("from the CTO, on Nicolas's instruction") || prompts[0].text.includes("from your user in person")) throw new Error(prompts[0].text);
   stop();
 });
 

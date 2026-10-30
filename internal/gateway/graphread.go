@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"database/sql"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -89,4 +90,29 @@ func (g *Gateway) relationForDelivery(m protocol.Message) string {
 		return ""
 	}
 	return rel
+}
+
+// RequestRule resolves the most specific request rule for two sessions.
+func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
+	from, ok, err := s.Agent(fromSession)
+	if err != nil || !ok {
+		return "normal", err
+	}
+	to, ok, err := s.Agent(toSession)
+	if err != nil || !ok {
+		return "normal", err
+	}
+	source, target := projectOfSession(from), projectOfSession(to)
+	if target == "" {
+		if to.PeerTrust {
+			return "auto", nil
+		}
+		return "normal", nil
+	}
+	var rule string
+	err = s.db.QueryRow(`SELECT rule FROM graph_edges WHERE target=? AND (source=? OR source='*') ORDER BY CASE WHEN source=? THEN 0 ELSE 1 END, kind LIMIT 1`, target, source, source).Scan(&rule)
+	if err == sql.ErrNoRows {
+		return "normal", nil
+	}
+	return rule, err
 }

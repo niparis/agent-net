@@ -129,6 +129,20 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 			snap.Outcomes = in.Entries
 		}
 	}
+	if raw, err := s.Call(ctx, protocol.OpHeldList, nil); err == nil {
+		var held struct {
+			Messages []protocol.Message `json:"messages"`
+		}
+		if json.Unmarshal(raw, &held) == nil {
+			snap.Held = held.Messages
+		}
+	}
+	if raw, err := s.Call(ctx, protocol.OpGraphGet, nil); err == nil {
+		var graph protocol.Graph
+		if json.Unmarshal(raw, &graph) == nil {
+			snap.Edges = graph.Edges
+		}
+	}
 	// Best effort, like the node list.
 	if raw, err := s.Call(ctx, protocol.OpProjects, protocol.QueryProjects{}); err == nil {
 		var pr protocol.ProjectsResult
@@ -307,5 +321,15 @@ func (s *Client) Close() {
 // ResolveOutcome records an owner decision on a rejected or escalated request.
 func (s *Client) ResolveOutcome(ctx context.Context, replyID, action string) error {
 	_, err := s.action(ctx, "outcome_overrule", protocol.OutcomeResolution{ReplyID: replyID, Action: action})
+	return err
+}
+
+func (s *Client) AnswerHeld(ctx context.Context, q protocol.HeldAnswer) error {
+	_, err := s.action(ctx, protocol.OpHeldAnswer, q)
+	return err
+}
+
+func (s *Client) SetRequestRule(ctx context.Context, e protocol.Edge) error {
+	_, err := s.action(ctx, protocol.OpEdgeSet, e)
 	return err
 }

@@ -41,7 +41,7 @@ The script downloads the binary to `~/.local/bin/agent-net` and runs `agent-net 
 ```
 join                  ok (node n_...)
 daemon service        ok (restarted)
-integrations:         6 of 6 on (your network settings)
+integrations:         7 of 7 on (your network settings)
 claude code           ok
 claude peer messages  accept (set by agent-net)
 claude workers mod    on (plugin agent-net-workers@agent-net, user scope)
@@ -56,7 +56,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - joins the gateway (skipped if this machine already joined the same gateway),
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
-- asks one question for the six integrations, or applies the answers your network already has (see [Integrations](#integrations)),
+- asks one question for the seven integrations, or applies the answers your network already has (see [Integrations](#integrations)),
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found (see [codex.md](codex.md)),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink is left alone; see [opencode.md](opencode.md)),
@@ -64,7 +64,7 @@ Steps that do not apply say `skipped (reason)`. Setup:
 
 ### Integrations
 
-Setup asks one short question for the six integrations:
+Setup asks one short question for the seven integrations:
 
 ```
 Connect your agents fully? Recommended:
@@ -74,13 +74,14 @@ Connect your agents fully? Recommended:
   - Claude: apply the delegation policy you set in the TUI
   - Claude: show "Needs you" in the TUI
   - Claude: show your workers above the prompt
+  - Quota: read your subscription quotas with quota-axi
 Details: docs/setup.md#integrations
 Turn all on? [Y/n/c]
 ```
 
-Enter or `y` turns all six on. `n` turns all six off. `c` asks one line per item, `<item>? [Y/n]`. `--all` and `--none` answer without a question. The per-item flags below override one item and are a local answer for this machine.
+Enter or `y` turns all seven on. `n` turns all seven off. `c` asks one line per item, `<item>? [Y/n]`. `--all` and `--none` answer without a question. The per-item flags below override one item and are a local answer for this machine.
 
-The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 6 of 6 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. `I` in the TUI opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
+The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 7 of 7 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. `I` in the TUI opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
 
 Each item, what it changes, and how to turn it off:
 
@@ -95,6 +96,8 @@ Each item, what it changes, and how to turn it off:
 **Claude: show "Needs you" in the TUI.** Hooks tell the local daemon when a Claude Code session waits for your permission or input, so it appears under "Needs you" with what it asks. A prompt clears that. They add `PermissionRequest`, `Notification` (idle, agent needs input and elicitation waits), `PreToolUse` and `UserPromptSubmit`, each with a 2 second timeout, and keep every other hook. Only the local daemon is called. No model is called. `--claude-needs-hook` and `--no-claude-needs-hook` are the per-item flags. Uninstall removes only our entries.
 
 **Claude: show your workers above the prompt.** Setup installs the `agent-net-workers` Claude Code plugin from a local marketplace, `~/.local/share/agent-net/claude-plugins`. In every Claude Code session on this machine it shows the workers that session started in a band above the prompt and on the status line, and a line when a worker ends. Setup runs `claude plugin marketplace add` and `claude plugin install agent-net-workers@agent-net -s user`. A later setup run, the daemon at start, and an upgrade rewrite the folder when the files differ from the binary. After an upgrade, sessions that were already open need `/reload-plugins`. `--claude-workers-mod` and `--no-claude-workers-mod` are the per-item flags. If the `claude` command is missing or fails, the step says so and setup continues. Uninstall runs the matching `claude plugin` commands and deletes the folder.
+
+**Quota: read your subscription quotas with quota-axi.** When [quota-axi](https://github.com/kunchenguid/quota-axi) is installed, the daemon runs it every 5 minutes to read the subscription windows of your model providers. It is only started when the CLI is found on `PATH`, in `~/.local/bin`, or at the absolute path in `node.json` `quota_axi`. agent-net never installs it. It calls `quota-axi --json --max-age 5m --no-credential-refresh`, so quota-axi never refreshes a login, and it never uses `--full`, so no account identity is read. The reading chooses the model for a loose name and refuses a start whose provider is exhausted. `--quota-axi` and `--no-quota-axi` are the per-item flags. Without an answer it is on when quota-axi is installed. See [reference.md](reference.md#subscription-quotas) and [security.md](security.md#subscription-quotas).
 
 A per-item flag is remembered in `~/.config/agent-net/integrations-local.json` and wins over the network answer on this machine. `agent-net uninstall` still removes what this machine installed, whether the answer came from the network or from a local flag. An answer cannot turn off a value the owner set by hand: setup reports it and leaves it alone.
 

@@ -31,16 +31,17 @@ func TestSetupOneQuestionAllOn(t *testing.T) {
 		"Connect your agents fully? Recommended:",
 		"Claude: accept messages from your other agents",
 		"Codex: call agent-net tools without asking",
+		"Quota: read your subscription quotas with quota-axi",
 		"Details: docs/setup.md#integrations",
 		"Turn all on? [Y/n/c]",
-		"integrations: 6 of 6 on",
+		"integrations: 7 of 7 on",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
 	}
 	got, ok, err := f.gw.Store().Integrations()
-	if err != nil || !ok || got.CountOn() != 6 {
+	if err != nil || !ok || got.CountOn() != 7 {
 		t.Fatalf("network answers: %+v ok=%v err=%v", got, ok, err)
 	}
 	// The one question replaces the old questions.
@@ -49,12 +50,34 @@ func TestSetupOneQuestionAllOn(t *testing.T) {
 	}
 }
 
+func TestQuotaAXIIsOnByDefaultWhenInstalled(t *testing.T) {
+	f := newFixture(t)
+	local := filepath.Join(f.home, ".local", "bin")
+	if err := os.MkdirAll(local, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(local, "quota-axi"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	in := (&runner{Options: Options{}}).currentIntegrations()
+	if !in.QuotaAXI {
+		t.Fatal("an installed quota-axi was not on by default")
+	}
+	if err := os.Remove(filepath.Join(local, "quota-axi")); err != nil {
+		t.Fatal(err)
+	}
+	in = (&runner{Options: Options{}}).currentIntegrations()
+	if in.QuotaAXI {
+		t.Fatal("quota-axi was on without being installed")
+	}
+}
+
 func TestSetupOneQuestionNone(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
 	answer(t, "n\n")
 	out := runAskingAll(t, Options{Join: f.newJoin(t)})
-	if !strings.Contains(out, "integrations: 0 of 6 on") {
+	if !strings.Contains(out, "integrations: 0 of 7 on") {
 		t.Errorf("output:\n%s", out)
 	}
 	got, ok, err := f.gw.Store().Integrations()
@@ -67,7 +90,7 @@ func TestSetupOneQuestionCustom(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
 	// c, then yes, no, yes, no, yes, no.
-	answer(t, "c\ny\nn\ny\nn\ny\nn\n")
+	answer(t, "c\ny\nn\ny\nn\ny\nn\ny\n")
 	out := runAskingAll(t, Options{Join: f.newJoin(t)})
 	if !strings.Contains(out, "Claude: show your workers above the prompt? [Y/n]") {
 		t.Errorf("custom question lines missing:\n%s", out)
@@ -92,7 +115,7 @@ func TestSetupIntegrationFlagsSkipTheQuestion(t *testing.T) {
 	if strings.Contains(out, "Turn all on?") {
 		t.Errorf("--none still asked:\n%s", out)
 	}
-	if !strings.Contains(out, "integrations: 0 of 6 on") {
+	if !strings.Contains(out, "integrations: 0 of 7 on") {
 		t.Errorf("output:\n%s", out)
 	}
 	if _, ok, _ := f.gw.Store().Integrations(); !ok {
@@ -108,7 +131,7 @@ func TestSetupUsesNetworkAnswersWithoutAsking(t *testing.T) {
 	if strings.Contains(out, "Turn all on?") {
 		t.Errorf("asked although the network has answers:\n%s", out)
 	}
-	if !strings.Contains(out, "integrations: 6 of 6 on (your network settings)") {
+	if !strings.Contains(out, "integrations: 7 of 7 on (your network settings)") {
 		t.Errorf("output:\n%s", out)
 	}
 	if !strings.Contains(out, "claude hint hook on") {

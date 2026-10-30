@@ -131,6 +131,11 @@ type Config struct {
 	// UsageReportInterval is how often the summary goes to the gateway.
 	// Default: 10 seconds.
 	UsageReportInterval time.Duration
+	// QuotaAXIPath is quota_axi from node.json. Empty means find it on PATH
+	// or in ~/.local/bin. Tests set a fake script here.
+	QuotaAXIPath string
+	// QuotaInterval is how often quota-axi is run. Default: 5 minutes.
+	QuotaInterval time.Duration
 	// TextTimeout is how long to wait for a plugin to hand over a session's
 	// conversation. Default: 8 seconds.
 	TextTimeout time.Duration
@@ -163,6 +168,7 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	cto    ctoRuntime
 	cfg    Config
 	log    *log.Logger
 	st     *state
@@ -199,6 +205,8 @@ type Daemon struct {
 
 	// usage is the state of CPU and memory reporting (usage.go).
 	usage usageState
+	// quota holds the newest quota-axi reading (quota.go).
+	quota quotaState
 	// hints holds the rate limits and the session cache of hints (hint.go).
 	hints hintState
 	// policy caches the delegation policy per session (policy.go).
@@ -377,6 +385,7 @@ func (d *Daemon) Stop() {
 	if d.ln != nil {
 		d.ln.close()
 	}
+	d.cto.stop()
 	d.mcp.stop()
 	d.wg.Wait()
 	d.st.close()
@@ -569,6 +578,14 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 	d.touchWorker(p.Sender, p.Recipient) // a message to or from a worker keeps it alive
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
+	if p.FromCTO {
+		// An older gateway drops the CTO flag. Never queue such a message for
+		// a future, possibly older gateway.
+		if d.st.outboxLen() != 0 {
+			return nil, errors.New("CTO send unavailable while the outbox is queued")
+		}
+		return d.ctoAttributedCall(ctx, "msg.send", p)
+	}
 	if d.st.outboxLen() == 0 {
 		data, err := d.call(ctx, "msg.send", p)
 		var re RemoteError

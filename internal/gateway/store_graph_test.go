@@ -77,3 +77,20 @@ func TestGraphEdges(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCTOGraphHistoryAllKinds(t *testing.T) {
+	s, _ := newTestStore(t)
+	if err := s.AddArchitect("architect", "cto"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCharter("architect", "purpose", "design", "cto"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCharter("architect", "purpose", "other", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.CTOGraphHistory(0)
+	if err != nil || len(rows) != 2 || rows[0].Kind != "node" || rows[1].OldValue != "" || rows[1].NewValue != "design" {
+		t.Fatalf("history: %+v %v", rows, err)
+	}
+}

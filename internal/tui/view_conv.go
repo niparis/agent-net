@@ -158,6 +158,12 @@ func (m Model) hints() []hint {
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
 func (m Model) helpLine(w int) string {
+	if m.cto != nil {
+		if m.cto.editing {
+			return sDim.Render(clip("enter sends  esc closes", w))
+		}
+		return sDim.Render(clip("enter write  n new conversation  u undo  esc close", w))
+	}
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
 	}
@@ -206,10 +212,11 @@ func (m Model) helpView(w, h int) []string {
 		{"m", "send a message to the session as yourself"},
 		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x", "stop the selected worker (asks y/n)"},
-		{"t", "peer trust on/off: act on requests of other agents (y/n)"},
+		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"M", "map: charters, maturity, edges and history (read only)"},
+		{"C", "CTO: chat, new conversation and undo graph changes"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "o: show offline and dormant; d: detail takes the feed room"},

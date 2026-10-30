@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
@@ -52,6 +53,22 @@ func (m Model) needsRows() []protocol.AgentView {
 		}
 		out = append(out, a)
 	}
+	for _, held := range m.snap.Held {
+		recipient := held.To
+		for _, agent := range m.snap.Agents {
+			if agent.SessionID == held.To && agent.Profile.Name != "" {
+				recipient = agent.Profile.Name
+				break
+			}
+		}
+		first, _, _ := strings.Cut(held.Body, "\n")
+		label := held.FromName
+		if label == "" {
+			label = held.From
+		}
+		text := label + " -> " + recipient + ": " + first
+		out = append(out, protocol.AgentView{SessionID: held.ID, NodeID: m.snap.NodeID, Online: true, Harness: "request", Profile: protocol.Profile{Name: text}, Waiting: &protocol.Waiting{Kind: "held", Text: text, Since: held.CreatedAt.Unix()}})
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		si, sj := out[i].Waiting.Since, out[j].Waiting.Since
 		if si != sj {
@@ -85,6 +102,8 @@ func (m Model) needsHeight() int {
 func needsText(w *protocol.Waiting) string {
 	text := sanitize(w.Text)
 	switch w.Kind {
+	case "held":
+		return "a approve  A always  r reject  R never"
 	case protocol.WaitingPermission:
 		if text == "" {
 			return "permission"
@@ -145,6 +164,18 @@ func (m Model) needsLines(w int) []string {
 	out := []string{section(fmt.Sprintf("Needs you (%d)", len(rows)), w)}
 	for i, a := range shown {
 		marker := "  ⚠ "
+		if a.Waiting.Kind == "held" {
+			if m.focus == focusSessions && a.SessionID == m.selected {
+				marker = "> ⚠ "
+			}
+			line := marker + sanitize(a.Waiting.Text) + "  [a/A approve, r/R reject]"
+			if marker[0] == '>' {
+				out = append(out, sSel.Render(clip(line, w)))
+			} else {
+				out = append(out, sNeeds.Render(clip(line, w)))
+			}
+			continue
+		}
 		if m.focus == focusSessions && i < len(rows) && rows[i].SessionID == m.selected {
 			marker = "> ⚠ "
 		}
