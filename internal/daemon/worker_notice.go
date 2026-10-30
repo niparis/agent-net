@@ -355,10 +355,10 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 
 // handbackTo is handback to another session than the owner (see sendNoticeTo).
 func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
-	return d.handbackToNote(ctx, w, req, to, replyTo, "")
+	return d.handbackToNote(ctx, w, req, to, replyTo, "", true)
 }
 
-func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string) (*protocol.WorkerHandbackResult, error) {
+func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool) (*protocol.WorkerHandbackResult, error) {
 	d.wmu.Lock()
 	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
@@ -395,7 +395,9 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	d.Logf("worker.handback worker=%s session=%s status=%s complete=%t", w.id, sessionID, req.Status, req.IsComplete())
 	// Like a Claude Code subagent, a worker ends when it hands back (W10). Its
 	// harness session is kept, so the owner's next message starts it again.
-	go d.endWorker(w, protocol.StopHandback)
+	if end {
+		go d.endWorker(w, protocol.StopHandback)
+	}
 	out := &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete()}
 	var sent protocol.MessageSent
 	if json.Unmarshal(raw, &sent) == nil {
