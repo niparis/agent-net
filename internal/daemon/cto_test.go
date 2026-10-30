@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -314,15 +315,28 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil {
 		t.Fatal(err)
 	}
-	if len(events.Actions) != 2 || !strings.Contains(events.Actions[0].Text, "sent to") || !strings.Contains(events.Actions[1].Text, "started worker") {
-		t.Fatalf("actions: %+v", events.Actions)
+	var lines []string
+	for _, a := range events.Actions {
+		lines = append(lines, a.Text)
+	}
+	joined := strings.Join(lines, "|")
+	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter_set", "sent to", "started worker"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
+		}
+	}
+	if _, err := w.d.runCTOTool(context.Background(), "charter_set", json.RawMessage(`{"node":"missing","attr":"purpose","value":"x"}`)); err == nil {
+		t.Fatal("bad graph write succeeded")
+	}
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || !strings.Contains(events.Actions[len(events.Actions)-1].Text, "failed charter_set") {
+		t.Fatalf("failed action missing: %+v %v", events.Actions, err)
 	}
 	var history []protocol.CTOGraphChange
 	if err := json.Unmarshal(w.cli.mustCall("cto_graph_history", nil), &history); err != nil || len(history) == 0 {
 		t.Fatalf("history: %+v %v", history, err)
 	}
 	w.cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: history[len(history)-1].ID, CTOChat: true})
-	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || len(events.Actions) != 3 || !strings.Contains(events.Actions[2].Text, "undid graph change") {
+	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || len(events.Actions) == 0 || !strings.Contains(events.Actions[len(events.Actions)-1].Text, "undid graph change") {
 		t.Fatalf("undo action: %+v %v", events, err)
 	}
 	w.cli.mustCall("cto_new", nil)

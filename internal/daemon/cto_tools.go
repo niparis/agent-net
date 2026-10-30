@@ -31,7 +31,7 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 	return lc.d.runCTOTool(ctx, q.Name, q.Arguments)
 }
 
-func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	var args map[string]any
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &args) != nil {
 		return nil, errors.New("bad CTO tool arguments")
@@ -89,11 +89,7 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		if err != nil {
 			return nil, err
 		}
-		result, err := d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
-		if err == nil {
-			err = d.recordCTOAction(fmt.Sprintf("sent to %s: %s", p.To, p.Body))
-		}
-		return result, err
+		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
 	case "worker_start":
 		var p protocol.WorkerStartRequest
 		if json.Unmarshal(raw, &p) != nil {
@@ -103,13 +99,63 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		if sid == "" {
 			return nil, errNotConnected
 		}
-		result, err := d.workerStartCall(ctx, sid, p, false, "", true)
-		if err == nil {
-			err = d.recordCTOAction(fmt.Sprintf("started worker %s: %s", p.Project, p.Task))
-		}
-		return result, err
+		return d.workerStartCall(ctx, sid, p, false, "", true)
 	}
 	return nil, errors.New("unknown CTO tool")
+}
+
+// Every tool call is recorded, including reads, no-ops and failures. Graph
+// history supplies the separate before-and-after diff for a successful change.
+func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	result, err := d.runCTOToolRaw(ctx, name, raw)
+	var a struct {
+		To      string `json:"to"`
+		Body    string `json:"body"`
+		Project string `json:"project"`
+		Task    string `json:"task"`
+		Node    string `json:"node"`
+		Attr    string `json:"attr"`
+	}
+	_ = json.Unmarshal(raw, &a)
+	text := name
+	if err != nil {
+		text = fmt.Sprintf("failed %s: %v", name, err)
+	} else {
+		switch name {
+		case "graph_get":
+			text = "read graph"
+		case "charter_history":
+			text = "read charter history: " + a.Node
+		case "edge_history":
+			text = "read edge history: " + a.Node
+		case "agents":
+			text = "read agents"
+		case "workers":
+			text = "read workers"
+		case "needs_you":
+			text = "read needs you"
+		case "feed":
+			text = "read feed"
+		case "charter_set":
+			text = fmt.Sprintf("charter_set %s.%s", a.Node, a.Attr)
+		case "send":
+			text = fmt.Sprintf("sent to %s: %s", a.To, a.Body)
+		case "worker_start":
+			verb := "started"
+			if r, ok := result.(*protocol.WorkerStartResult); ok && r.Status == "queued" {
+				verb = "queued"
+			}
+			text = fmt.Sprintf("%s worker %s: %s", verb, a.Project, a.Task)
+		}
+	}
+	logErr := d.recordCTOAction(text)
+	if err != nil {
+		return result, err
+	}
+	if logErr != nil {
+		return result, logErr
+	}
+	return result, nil
 }
 
 // Send the capability check and the mutation on the same gateway link, so a

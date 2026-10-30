@@ -108,7 +108,7 @@ func TestCTOPaneNewConversationAndMap(t *testing.T) {
 }
 
 func TestCTOPaneShowsRecordedActions(t *testing.T) {
-	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}, events: protocol.CTOEvents{Actions: []protocol.CTOAction{{ID: 1, Text: "sent to tenebrae-53: hello"}, {ID: 2, Text: "started worker shop"}}}, history: []protocol.CTOGraphChange{{ID: 8, Kind: "charter", Node: "cogforge", Attr: "maturity", OldValue: "early", NewValue: "mature"}}}
+	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}, events: protocol.CTOEvents{Actions: []protocol.CTOAction{{ID: 1, Text: "sent to tenebrae-53: hello"}, {ID: 2, Text: "started worker shop"}, {ID: 3, Text: "read graph"}, {ID: 4, Text: "failed charter_set: no such node"}}}, history: []protocol.CTOGraphChange{{ID: 8, Kind: "charter", Node: "cogforge", Attr: "maturity", OldValue: "early", NewValue: "mature"}}}
 	m := New(src)
 	m.width = 80
 	m.height = 24
@@ -117,7 +117,7 @@ func TestCTOPaneShowsRecordedActions(t *testing.T) {
 	updated, _ = m.update(cmd())
 	m = updated.(Model)
 	v := m.View()
-	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "cogforge.maturity: early -> mature"} {
+	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "read graph", "failed charter_set", "cogforge.maturity: early -> mature"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}

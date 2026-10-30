@@ -35,7 +35,8 @@ In the TUI, `C` opens the CTO pane, beside the map when the map is open.
 Press Enter to write and Enter again to send. Outside the input, `n` starts a
 new conversation, `u` undoes the latest graph change attributed to the CTO,
 and Esc closes the pane. The chat polls once per second and shows recorded CTO
-actions; a graph change refreshes an open map.
+tool calls, including reads and failures, plus graph diffs; a graph change
+refreshes an open map.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
