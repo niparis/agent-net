@@ -16,6 +16,14 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func TestCTOBriefTeachesGraphUse(t *testing.T) {
+	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo"} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("ctoBrief lacks %q", want)
+		}
+	}
+}
+
 func TestCTORuntime(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
