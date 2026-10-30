@@ -16,7 +16,12 @@ call. It exposes no other owner methods on that channel. The owner gate also
 checks the CTO process tree, so a command it runs cannot use the owner CLI.
 
 The gateway trusts enrolled daemons to attribute CTO graph writes and sends.
-Those writes and sends are marked `by=cto`. The gateway accepts a CTO sender
+Those writes and sends are marked `by=cto`. A CTO write or send checks that
+the gateway supports attribution on the same connection; it is refused on an
+older gateway. A CTO worker start also checks the target daemon, so a queued
+task keeps its attribution. CTO sends are not queued across a gateway outage.
+The gateway labels the sender as `cto`, so an older receiver treats it as a
+peer rather than as the owner speaking in person. The gateway accepts a CTO sender
 flag only on an owner session. Delivery adapters write the CTO authority note
 after the message body and neutralize agent-net markers in the body. A peer
 cannot create the note by putting text in its message. Text the CTO reads is

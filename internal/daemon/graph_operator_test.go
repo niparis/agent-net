@@ -75,3 +75,18 @@ func TestGraphCTOActor(t *testing.T) {
 		t.Fatalf("owner spoofed actor: %+v", history)
 	}
 }
+
+func TestCTOGatewayCapability(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	raw, err := n.d.call(context.Background(), "cto.capabilities", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var caps struct {
+		Attribution bool `json:"attribution"`
+	}
+	if json.Unmarshal(raw, &caps) != nil || !caps.Attribution {
+		t.Fatalf("CTO capability: %s", raw)
+	}
+}

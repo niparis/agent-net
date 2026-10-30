@@ -836,6 +836,9 @@ func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
 		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO)
+	if m.FromCTO {
+		m.FromHarness = "cto"
+	}
 	m.CreatedAt = time.Unix(0, created).UTC()
 	m.ExpiresAt = time.Unix(0, expires).UTC()
 	return m, err

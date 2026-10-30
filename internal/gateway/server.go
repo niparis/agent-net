@@ -613,6 +613,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 
+	case "cto.capabilities":
+		return map[string]bool{"attribution": true}, nil
 	case "graph.get":
 		return st.Graph()
 	case "charter.set":

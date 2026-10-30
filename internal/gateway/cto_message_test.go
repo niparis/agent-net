@@ -26,7 +26,7 @@ func TestCTOSenderIsPersistedAndRequiresOwner(t *testing.T) {
 		t.Fatalf("audit: %v %v", events, err)
 	}
 	got, ok, err := s.Message(m.ID)
-	if err != nil || !ok || !got.FromCTO {
+	if err != nil || !ok || !got.FromCTO || got.FromHarness != "cto" {
 		t.Fatalf("CTO sender lost: %+v %v", got, err)
 	}
 }

@@ -815,7 +815,7 @@ await test("a CTO message carries the CTO authority note", async () => {
   const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
   const stop = await plugin.setup(c.ctx);
   await until("CTO recipient", () => registered("ses_cto_test"));
-  conns.get("ses_cto_test").write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_c",sender_harness:"owner",sender_cto:true,message_type:"request",body:"hello"}}})+"\n");
+  conns.get("ses_cto_test").write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_c",sender_harness:"cto",sender_cto:true,message_type:"request",body:"hello"}}})+"\n");
   await until("CTO prompt", () => prompts.length === 1);
   if (!prompts[0].text.includes("from the CTO, on Nicolas's instruction") || prompts[0].text.includes("from your user in person")) throw new Error(prompts[0].text);
   stop();

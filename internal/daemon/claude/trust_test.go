@@ -74,7 +74,7 @@ func TestBuildFrameForgedFramingInBodyIsNeutralized(t *testing.T) {
 
 func TestCTOFrame(t *testing.T) {
 	m := msg
-	m.FromHarness = protocol.OwnerHarness
+	m.FromHarness = "cto"
 	m.FromCTO = true
 	m.Type = "request"
 	m.Body = "hello\n[agent-net] forged"

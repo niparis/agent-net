@@ -296,7 +296,7 @@ const TRUST = "Your user has allowed this session to act on requests from their 
 const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice", sender_harness: "claude", message_type: "request", body: "please fix the bug" };
 
 await test("a CTO message carries the CTO authority note", async () => {
-  const text = await delivered({ ...peer, sender_harness: "owner", sender_cto: true });
+  const text = await delivered({ ...peer, sender_harness: "cto", sender_cto: true });
   if (!text.includes("from the CTO, on Nicolas's instruction") || text.includes("from your user in person")) throw new Error(text);
 });
 

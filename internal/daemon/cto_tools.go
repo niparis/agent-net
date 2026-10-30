@@ -45,6 +45,9 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 			delete(args, "id")
 		}
 		args["by"] = "cto"
+		if name != "graph_get" && name != "charter_history" && name != "edge_history" {
+			return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
+		}
 		return d.call(ctx, strings.ReplaceAll(name, "_", "."), args)
 	case "agents":
 		return d.call(ctx, "query.agents", args)
@@ -94,7 +97,29 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		if sid == "" {
 			return nil, errNotConnected
 		}
-		return d.workerStartCall(ctx, sid, p, false, "")
+		return d.workerStartCall(ctx, sid, p, false, "", true)
 	}
 	return nil, errors.New("unknown CTO tool")
+}
+
+// Send the capability check and the mutation on the same gateway link, so a
+// reconnect to an older gateway cannot strip the attribution in between.
+func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	d.mu.Lock()
+	l := d.lk
+	d.mu.Unlock()
+	if l == nil {
+		return nil, errNotConnected
+	}
+	b, err := l.call(ctx, "cto.capabilities", nil)
+	if err != nil {
+		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
+	}
+	var caps struct {
+		Attribution bool `json:"attribution"`
+	}
+	if json.Unmarshal(b, &caps) != nil || !caps.Attribution {
+		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
+	}
+	return l.call(ctx, typ, params)
 }

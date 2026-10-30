@@ -183,6 +183,7 @@ type WorkerInfo struct {
 type (
 	// WorkerStartFrame is "worker.start".
 	WorkerStartFrame struct {
+		FromCTO bool `json:"sender_cto,omitempty"`
 		WorkerStartRequest
 		// Owner is the caller's session ID. The gateway checks it belongs to
 		// the sending node.
@@ -234,6 +235,7 @@ type (
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
+		FromCTO bool   `json:"sender_cto,omitempty"`
 		Project string `json:"project"`
 		Path    string `json:"path"`
 		Harness string `json:"harness"`
@@ -281,6 +283,7 @@ type (
 	// as "worker.task", and that machine sends the task, because only the
 	// owner's machine may send as the owner.
 	WorkerQueuedStart struct {
+		FromCTO     bool   `json:"sender_cto,omitempty"`
 		Permissions string `json:"permissions,omitempty"`
 		Owner       string `json:"owner_session"`
 		SessionID   string `json:"session_id"`

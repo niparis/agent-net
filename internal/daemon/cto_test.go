@@ -292,4 +292,35 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		t.Fatal("message not delivered")
 	}
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
+	workers := w.workers(t)
+	if len(workers) != 1 {
+		t.Fatalf("worker not started: %+v", workers)
+	}
+	messages := w.messagesOf(t, workers[0].SessionID)
+	foundTask := false
+	for _, m := range messages {
+		if m.Type == protocol.TypeRequest && m.FromCTO {
+			foundTask = true
+		}
+	}
+	if !foundTask {
+		t.Fatalf("worker task did not carry CTO attribution: %+v", messages)
+	}
+
+}
+
+func TestCTOQueuedStartPersistsAttribution(t *testing.T) {
+	s, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	q := queuedStart{ID: "q_test", Owner: "owner", Project: "p", Path: "/tmp/p", Harness: "opencode", Task: "t", QueuedAt: time.Now(), FromCTO: true}
+	if err := s.addQueued(q); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.queue()
+	if err != nil || len(rows) != 1 || !rows[0].FromCTO {
+		t.Fatalf("queue: %+v %v", rows, err)
+	}
 }

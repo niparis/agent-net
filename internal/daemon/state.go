@@ -95,6 +95,14 @@ CREATE TABLE IF NOT EXISTS workers (
 			}
 		}
 	}
+	var hasCTO int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'sender_cto'`).Scan(&hasCTO)
+	if hasCTO == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()
