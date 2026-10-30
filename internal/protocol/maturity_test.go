@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -94,7 +93,7 @@ func TestNodeContextStatesRulesAndTheDeployTargetsRule(t *testing.T) {
 	for _, want := range []string{
 		"maturity growing: run the suite; merge and push to the default branch; deploy as the brief says",
 		"judge requests from consumers by the charter",
-		"You deploy shop; its maturity critical: run the suite, add tests for new behavior and get a review; merge needs your owner's written approval; ask the owner before deploying",
+		"You deploy shop; its maturity critical: run the suite, add tests for new behavior and get a review; merge needs your owner's written approval (request the exact action with agent_request_approval, or put it and your recommendation in a Codex worker report); ask the owner before deploying",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("context lacks %q:\n%s", want, got)
@@ -108,7 +107,7 @@ func TestCharterBriefStatesTheNodeRules(t *testing.T) {
 	got := CharterBrief(n)
 	for _, want := range []string{
 		"maturity: mature - careful.",
-		"maturity mature: run the suite and add tests for new behavior; merge needs your owner's written approval; ask before deploying",
+		"maturity mature: run the suite and add tests for new behavior; merge needs your owner's written approval (request the exact action with agent_request_approval, or put it and your recommendation in a Codex worker report); ask before deploying",
 		"judge requests from consumers strictly",
 	} {
 		if !strings.Contains(got, want) {
@@ -150,11 +149,38 @@ func TestMergeApproval(t *testing.T) {
 	if got := MergeApprovalFor(g, "cogforge"); got.Authority != MergeAsk || !got.Written || !got.Required {
 		t.Fatalf("ask approval: %#v", got)
 	}
-	if _, err := RequestWrittenApproval(ApprovalRequest{Action: "merge cogforge abc123"}); !errors.Is(err, ErrInboxNotBuilt) {
-		t.Fatalf("inbox stub: %v", err)
-	}
 	note := WrittenApprovalNote("Nicolas", "merge cogforge abc123", time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC))
-	if note != "Nicolas approved: merge cogforge abc123, 14:02" {
+	if note != "Nicolas approved: merge cogforge abc123, 2026-10-30T14:02:00Z" {
 		t.Fatalf("note: %q", note)
+	}
+}
+
+func TestApprovalOverridesWithoutMaturityStillGiveInboxGuidance(t *testing.T) {
+	d := NodeDefaults("", map[string]string{SettingMergeAuthority: MergeAsk, SettingDeployRule: DeployOwner})
+	text := d.RulesText()
+	if !strings.Contains(text, "merge needs your owner's written approval") || !strings.Contains(text, "ask the owner before deploying") || !strings.Contains(text, "agent_request_approval") {
+		t.Fatalf("missing approval guidance: %q", text)
+	}
+}
+
+func TestApprovalGuidanceWithoutCharter(t *testing.T) {
+	n := Node{Name: "app", Settings: map[string]string{SettingMergeAuthority: MergeAsk}}
+	if text := CharterBrief(n); !strings.Contains(text, "agent_request_approval") {
+		t.Fatalf("worker guidance: %q", text)
+	}
+	g := Graph{Nodes: []Node{n, {Name: "deployer"}, {Name: "critical", Charter: Charter{Maturity: "critical"}}}, Edges: []Edge{{From: "deployer", To: "critical", Kind: "deploys"}}}
+	if text := NodeContext(g, "app"); !strings.Contains(text, "agent_request_approval") {
+		t.Fatalf("node guidance: %q", text)
+	}
+	if text := NodeContext(g, "deployer"); !strings.Contains(text, "agent_request_approval") || !strings.Contains(text, "critical") {
+		t.Fatalf("deploy guidance: %q", text)
+	}
+}
+
+func TestWorkerDeployApprovalUsesTargetRule(t *testing.T) {
+	g := Graph{Nodes: []Node{{Name: "deployer"}, {Name: "critical", Charter: Charter{Maturity: "critical"}}, {Name: "early", Charter: Charter{Maturity: "early"}}}, Edges: []Edge{{From: "deployer", To: "critical", Kind: "deploys"}, {From: "deployer", To: "early", Kind: "deploys"}}}
+	text := WorkerDeployApprovalRules(g, "deployer")
+	if !strings.Contains(text, "critical") || !strings.Contains(text, "agent_request_approval") || strings.Contains(text, "early") {
+		t.Fatalf("worker deploy rules: %q", text)
 	}
 }

@@ -320,3 +320,11 @@ Outcome reasons and recommendations are visible to enrolled machines through the
 ## Graph foundation
 
 Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
+
+## Written approvals and the inbox
+
+The daemon accepts `inbox_list` and `inbox_answer` only through the owner operator gate. Agent tools can create requests only for their bound session; the gateway checks that the session belongs to the authenticated daemon and derives the project from it. As with other owner operations, a compromised enrolled machine is within the trust boundary.
+
+An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that Nicolas approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
+
+Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.

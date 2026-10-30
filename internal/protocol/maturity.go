@@ -1,7 +1,6 @@
 package protocol
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -187,7 +186,7 @@ func (d MaturityDefaults) MergeText() string {
 	case MergeDelegated:
 		return "merge needs your owner's or a delegate's approval"
 	case MergeAsk:
-		return "merge needs your owner's written approval"
+		return "merge needs your owner's written approval (request the exact action with agent_request_approval, or put it and your recommendation in a Codex worker report)"
 	}
 	return "merge and push to the default branch"
 }
@@ -198,7 +197,7 @@ func (d MaturityDefaults) DeployText() string {
 	case DeployAsk:
 		return "ask before deploying"
 	case DeployOwner:
-		return "ask the owner before deploying"
+		return "ask the owner before deploying (request written approval for the exact action with agent_request_approval, or put it and your recommendation in a Codex worker report)"
 	}
 	return "deploy as the brief says"
 }
@@ -217,13 +216,17 @@ func (d MaturityDefaults) ConsumerText() string {
 }
 
 // RulesText is the short sentence a session of the node gets every turn and a
-// worker gets in its brief. It is empty when the node has no maturity: a level
-// that was never set must not invent rules.
+// worker gets in its brief. It is empty when the node has no maturity and no
+// written-approval override.
 func (d MaturityDefaults) RulesText() string {
-	if d.Level == "" {
-		return ""
+	level := d.Level
+	if level == "" {
+		if d.MergeAuthority != MergeAsk && d.DeployRule != DeployOwner {
+			return ""
+		}
+		level = "not set"
 	}
-	return fmt.Sprintf("maturity %s: %s; %s; %s", d.Level, d.TestText(), d.MergeText(), d.DeployText())
+	return fmt.Sprintf("maturity %s: %s; %s; %s", level, d.TestText(), d.MergeText(), d.DeployText())
 }
 
 // MergeApproval is the approval a merge under a node's authority needs.
@@ -283,22 +286,8 @@ type ApprovalRequest struct {
 	Recommendation string `json:"recommendation,omitempty"`
 }
 
-// ErrInboxNotBuilt says the owner's inbox is not in this build. Decision 0022
-// step 3b adds it; until then a caller must ask its owner directly.
-var ErrInboxNotBuilt = errors.New("the owner's inbox is not built yet: ask your owner directly; only an agent-net approval note counts as approval")
-
-// RequestWrittenApproval is the inbox entry point. The inbox and its approval
-// notes arrive with decision 0022 step 3b; this stub names that fact instead of
-// pretending an approval can be requested.
-func RequestWrittenApproval(req ApprovalRequest) (string, error) {
-	if strings.TrimSpace(req.Action) == "" {
-		return "", errors.New("an approval request needs the exact action")
-	}
-	return "", ErrInboxNotBuilt
-}
-
 // WrittenApprovalNote is the note only agent-net can write for an approved
 // action. It names one action: a different commit needs a new approval.
 func WrittenApprovalNote(owner, action string, at time.Time) string {
-	return fmt.Sprintf("%s approved: %s, %s", owner, action, at.Format("15:04"))
+	return fmt.Sprintf("%s approved: %s, %s", owner, action, at.UTC().Format(time.RFC3339))
 }

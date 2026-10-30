@@ -801,6 +801,56 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"profile": prof}, nil
 
+	case "inbox.create":
+		var p struct {
+			SessionID      string `json:"session_id"`
+			Kind           string `json:"kind"`
+			Text           string `json:"text"`
+			Recommendation string `json:"recommendation"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.create")
+		}
+		if p.Kind != "approval" && p.Kind != "feature_idea" {
+			return nil, reject("invalid inbox kind")
+		}
+		agent, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || agent.NodeID != nc.id || agent.Harness == protocol.OwnerHarness {
+			return nil, reject("session does not belong to this node")
+		}
+		var item protocol.InboxItem
+		if p.Kind == "approval" {
+			item, err = st.RequestWrittenApproval(agent.SessionID, agent.Repo.Project, protocol.ApprovalRequest{Action: p.Text, Recommendation: p.Recommendation})
+		} else {
+			item, err = st.CreateInboxItem(protocol.InboxItem{Kind: p.Kind, SessionID: agent.SessionID, Node: agent.Repo.Project, Text: p.Text, Recommendation: p.Recommendation})
+		}
+		return map[string]any{"item": item}, err
+
+	case "inbox.list":
+		items, err := st.ListInbox()
+		return map[string]any{"items": items}, err
+
+	case "inbox.answer":
+		var p struct {
+			ID     string `json:"id"`
+			Answer string `json:"answer"`
+		}
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, reject("bad inbox.answer")
+		}
+		item, err := st.AnswerInbox(p.ID, p.Answer)
+		if err != nil {
+			return nil, err
+		}
+		node, err := st.SessionNode(item.SessionID)
+		if err == nil {
+			g.dispatchPending(ctx, node, false)
+		}
+		return map[string]any{"item": item}, nil
+
 	case "msg.send":
 		p, err := decode[protocol.MsgSend](raw)
 		if err != nil {

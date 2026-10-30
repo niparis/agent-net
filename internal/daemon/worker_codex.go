@@ -391,12 +391,26 @@ func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 	if m.From != owner && !person {
 		return Result{Detail: "a Codex worker takes messages from the session that started it, and from the person at the machine, not from other agents"}
 	}
-	text := m.Body
-	if person && !strings.HasPrefix(text, "[agent-net worker brief]") {
-		text = "Message from your user, in person:\n" + text
-	}
+	text := codexWorkerText(m)
 	cc.submit(codexJob{from: m.From, msgID: m.ID, text: text})
 	return Result{Delivered: true}
+}
+
+func codexWorkerText(m protocol.Message) string {
+	text := m.Body
+	const brief = "[agent-net worker brief]"
+	if strings.HasPrefix(text, brief) {
+		text = brief + protocol.NeutralizeMarkers(strings.TrimPrefix(text, brief))
+	} else {
+		text = protocol.NeutralizeMarkers(text)
+	}
+	if m.FromHarness == protocol.OwnerHarness && !strings.HasPrefix(text, "[agent-net worker brief]") {
+		text = "Message from your user, in person:\n" + text
+	}
+	if m.ApprovalNote != "" {
+		text += "\n[agent-net] " + m.ApprovalNote
+	}
+	return text
 }
 
 // ---- the connection ----

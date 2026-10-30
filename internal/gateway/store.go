@@ -166,6 +166,23 @@ CREATE INDEX graph_outcomes_edge ON graph_outcomes(source, target, at);
 ALTER TABLE graph_outcomes ADD COLUMN resolution TEXT NOT NULL DEFAULT '';
 `, `
 CREATE TABLE outcome_overrules (message_id TEXT PRIMARY KEY, reply_id TEXT NOT NULL);
+`, `
+CREATE TABLE inbox_items (
+ id TEXT PRIMARY KEY, kind TEXT NOT NULL, session_id TEXT NOT NULL, node TEXT NOT NULL,
+ text TEXT NOT NULL, recommendation TEXT NOT NULL, message_id TEXT NOT NULL,
+ conversation_id TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL,
+ answer TEXT NOT NULL DEFAULT '', answered_at INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX inbox_items_order ON inbox_items(created_at, id);
+`, `
+ALTER TABLE messages ADD COLUMN approval_note TEXT NOT NULL DEFAULT '';
+`, `
+INSERT INTO inbox_items(id,kind,session_id,node,text,recommendation,message_id,conversation_id,created_at,status,answer)
+SELECT 'i_' || o.reply_id, CASE o.outcome WHEN 'reject' THEN 'rejection' ELSE 'escalation' END,
+       request.recipient, o.target, 'Request: ' || substr(request.body,1,500) || char(10) || 'Reason: ' || o.reason, o.recommendation, o.reply_id, request.conversation_id, o.at,
+       CASE WHEN o.resolution='' THEN 'open' ELSE 'answered' END, o.resolution
+FROM graph_outcomes o JOIN messages request ON request.id=o.message_id
+JOIN sessions sender ON sender.id=request.sender
+WHERE o.outcome IN ('reject','escalate') AND sender.harness<>'owner';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -858,14 +875,14 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 
 const msgSelect = `SELECT m.id, m.conversation_id, m.parent_id, m.sender, m.recipient, m.type, m.body, m.hop,
 	m.idem_key, m.created_at, m.expires_at, m.state,
-	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id)
+	COALESCE(NULLIF(p.name,''), s.name, ''), COALESCE(s.harness, ''), COALESCE(s.worker, '') != '', m.sender_cto, m.owner_approved, EXISTS(SELECT 1 FROM outcome_overrules oo WHERE oo.message_id=m.id), m.approval_note
 	FROM messages m LEFT JOIN sessions s ON s.id = m.sender LEFT JOIN profiles p ON p.session_id = m.sender`
 
 func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	var m protocol.Message
 	var created, expires int64
 	err := sc.Scan(&m.ID, &m.ConversationID, &m.ParentID, &m.From, &m.To, &m.Type, &m.Body, &m.Hop,
-		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled)
+		&m.IdempotencyKey, &created, &expires, &m.State, &m.FromName, &m.FromHarness, &m.FromWorker, &m.FromCTO, &m.OwnerApproved, &m.Overruled, &m.ApprovalNote)
 	if m.FromCTO {
 		m.FromHarness = "cto"
 	}
@@ -1035,6 +1052,22 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		}
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
 			return msg, false, err
+		}
+		if p.Outcome == "reject" || p.Outcome == "escalate" {
+			var harness string
+			if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id=?`, m.To).Scan(&harness); err != nil {
+				return msg, false, err
+			}
+			if !protocol.IsOwner(harness) {
+				var requestBody string
+				if err := tx.QueryRow(`SELECT body FROM messages WHERE id=?`, p.ParentID).Scan(&requestBody); err != nil {
+					return msg, false, err
+				}
+				text := "Request: " + protocol.CleanWaitingText(requestBody) + "\nReason: " + p.Reason
+				if _, err := s.inboxFromOutcome(tx, p.Outcome, m.From, to, text, p.Recommendation, m.ID, m.ConversationID); err != nil {
+					return msg, false, err
+				}
+			}
 		}
 	}
 	if m.ParentID != "" {

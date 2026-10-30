@@ -46,3 +46,13 @@ func (s *heldTestSource) AnswerHeld(_ context.Context, q protocol.HeldAnswer) er
 	s.answer = q
 	return nil
 }
+
+func TestHeldAndInboxApprovalBothAppearInNeeds(t *testing.T) {
+	m := newModel(120, 30)
+	m.snap.Held = []protocol.Message{{ID: "m_held", FromName: "alice", To: "s_2", Body: "please help"}}
+	m.inboxItems = []protocol.InboxItem{{ID: "i_1", Kind: "approval", SessionID: "s_1", Text: "deploy abc", Status: "open"}}
+	view := m.View()
+	if !strings.Contains(view, "please help") || !strings.Contains(view, "deploy abc") || !strings.Contains(view, "Needs you (2)") {
+		t.Fatalf("needs: %s", view)
+	}
+}

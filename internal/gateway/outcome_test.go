@@ -3,6 +3,7 @@ package gateway
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -164,7 +165,16 @@ func TestOutcomeMigrationsAfterGraph(t *testing.T) {
 	if _, err = db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
-	oldCount := len(migrations) - 3
+	oldCount := 0
+	for i, migration := range migrations {
+		if strings.Contains(migration, "CREATE TABLE graph_outcomes") {
+			oldCount = i
+			break
+		}
+	}
+	if oldCount == 0 {
+		t.Fatal("missing outcome migration")
+	}
 	for i, migration := range migrations[:oldCount] {
 		if _, err = db.Exec(migration); err != nil {
 			t.Fatalf("migration %d: %v", i+1, err)
@@ -194,5 +204,112 @@ func TestOutcomeMigrationsAfterGraph(t *testing.T) {
 	v, err := s.SchemaVersion()
 	if err != nil || v != len(migrations) {
 		t.Fatalf("version: %d %v", v, err)
+	}
+}
+
+func TestOutcomeCreatesAndResolvesUnifiedInboxItem(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request context"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "refused", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "outside charter"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Kind != "rejection" || items[0].SessionID != b || items[0].MessageID != rep.ID || items[0].ConversationID != req.ConversationID || !strings.Contains(items[0].Text, "request context") || !strings.Contains(items[0].Text, "outside charter") {
+		t.Fatalf("items %+v, %v", items, err)
+	}
+	node, _, _ := s.CreateNode("owner", "linux")
+	oid, _ := s.UpsertSession(node, owner("owner"))
+	if _, err = s.ResolveOutcome(rep.ID, oid, "let_stand"); err != nil {
+		t.Fatal(err)
+	}
+	items, err = s.ListInbox()
+	if err != nil || items[0].Status == "open" {
+		t.Fatalf("unresolved %+v, %v", items, err)
+	}
+}
+
+func TestAnswerUnifiedOutcomeClearsOutcomeInbox(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	node := mustNode(t, s, b)
+	_, err := s.UpsertSession(node, owner("test"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "question"})
+	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "no"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items %v %v", items, err)
+	}
+	if _, err = s.AnswerInbox(items[0].ID, "please reconsider"); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.OutcomeInbox()
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("outcomes: %+v %v", rows, err)
+	}
+}
+
+func TestExistingOutcomesMigrateToInbox(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, _, _ := s.CreateNode("host", "linux")
+	a, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "a"})
+	b, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "b"})
+	req, _, _ := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request"})
+	rep, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "no"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{`DROP TABLE inbox_items`, `ALTER TABLE messages DROP COLUMN approval_note`, `DELETE FROM schema_version WHERE version > (SELECT MAX(version)-3 FROM schema_version)`} {
+		if _, err = s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.Close()
+	s, err = OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].MessageID != rep.ID {
+		t.Fatalf("items %+v, %v", items, err)
+	}
+}
+
+func TestOutcomeInboxFailureRollsBackReply(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	req, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`CREATE TRIGGER fail_outcome_inbox BEFORE INSERT ON inbox_items BEGIN SELECT RAISE(ABORT,'fail'); END`); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, ParentID: req.ID, Body: "no", ReplyOutcome: protocol.ReplyOutcome{Outcome: "reject", Reason: "no"}})
+	if err == nil {
+		t.Fatal("expected inbox failure")
+	}
+	outcomes, err := s.Outcomes("", "", 10)
+	if err != nil || len(outcomes) != 0 {
+		t.Fatalf("outcomes %+v %v", outcomes, err)
+	}
+	req, ok, err := s.Message(req.ID)
+	if err != nil || !ok || req.State != protocol.StateStored {
+		t.Fatalf("request %+v %v", req, err)
 	}
 }

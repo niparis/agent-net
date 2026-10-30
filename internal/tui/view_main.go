@@ -115,6 +115,10 @@ func (m Model) View() string {
 	add := func(s string) { out = append(out, s) }
 
 	switch {
+	case m.inboxOn:
+		for _, s := range m.inboxView(w) {
+			add(s)
+		}
 	case m.help:
 		for _, s := range m.helpView(w, h-1) {
 			add(s)
@@ -247,6 +251,9 @@ func (m Model) titleLine(w int) string {
 				workers++
 			}
 		}
+	}
+	if n := m.inboxCount(); n > 0 {
+		left += sDim.Render(fmt.Sprintf("  inbox %d", n))
 	}
 	// The gateway's counts say what matters: sessions online now and the ones
 	// that went offline today. The total of old sessions is left out. Without

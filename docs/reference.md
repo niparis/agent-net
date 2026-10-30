@@ -626,6 +626,15 @@ Setup does not use `sudo`. On Linux it may print a hint to run `sudo loginctl en
 
 Setup does not change any other Claude Code or Pi setting (the one exception is the peer-message setting above, and only with your yes), and it does not touch other MCP servers.
 
+## Owner inbox and written approvals
+
+Agents use `agent_request_approval(action, recommendation)` for one exact action, or `agent_propose_idea(text, recommendation)` for an idea. The daemon binds each request to the calling session; the gateway derives its project from that session. Codex workers put the exact action and their recommendation in their report when they need approval.
+
+Press `i` in the TUI to open the inbox. Items are grouped by kind and ordered oldest first within each kind. Select an item and press enter to see its context. Press `a` to approve, `r` to refuse, or `t` to enter a one-line answer. The header counts open items, and open approvals appear under Needs you. Answers are stored together with a message queued for the requesting session. An approval covers only the exact action named in the item.
+
+The owner-only local methods are `inbox_list` and `inbox_answer` with `id` and `answer` (`approve`, `refuse`, or text). The daemon applies the same operator gate as other owner-only methods. Rejections and escalations of agent requests are also recorded in this inbox, with the request, reason, recommendation and conversation. Answering an item or resolving it from Needs you closes it in both views. Existing outcomes are added to the inbox when the gateway upgrades.
+
+For a node with `ask` merge authority, request approval for the exact merge using `agent_request_approval`. A deployer follows the target node's deploy rule: for a critical target, request written approval for the exact deploy using the same tool. Codex workers include the action and recommendation in their report.
 ### Request outcomes
 
 `agent_reply` accepts optional `outcome`: `accept`, `reject`, `redirect` or `escalate`. Reject, redirect and escalate need `reason`; redirect also needs `redirect_to` (a node name), and escalate needs `recommendation`. Each text field is limited to 2048 bytes, and the node name to the project name limit. Control characters are removed. Outcomes apply to replies to requests. The gateway records the request's source and target project names, request and reply IDs, outcome, reason, redirect, recommendation and time. Projects unknown to the sessions appear as empty names.

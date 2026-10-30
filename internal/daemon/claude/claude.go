@@ -268,6 +268,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 	if m.Type == "request" && m.RecipientRelation != "" {
 		details += " " + m.RecipientRelation
 	}
+	if m.ApprovalNote != "" {
+		details += "\n[agent-net] " + m.ApprovalNote
+	}
 	var attrs []string
 	if from != "" {
 		attrs = append(attrs, fmt.Sprintf(`from="%s"`, from))

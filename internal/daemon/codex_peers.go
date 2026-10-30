@@ -376,5 +376,8 @@ func codexFrame(m protocol.Message) string {
 	if m.Type == protocol.TypeRequest && m.RecipientRelation != "" {
 		foot += " " + m.RecipientRelation
 	}
+	if m.ApprovalNote != "" {
+		foot += "\n[agent-net] " + m.ApprovalNote
+	}
 	return strings.TrimRight(protocol.NeutralizeMarkers(m.Body), "\n") + "\n\n" + foot
 }

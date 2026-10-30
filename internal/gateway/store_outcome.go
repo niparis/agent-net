@@ -91,6 +91,9 @@ func (s *Store) ResolveOutcome(replyID, owner, action string) (protocol.Message,
 	if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution=? WHERE reply_id=?`, action, replyID); err != nil {
 		return result, err
 	}
+	if _, err = tx.Exec(`UPDATE inbox_items SET status='answered',answer=?,answered_at=? WHERE message_id=? AND kind IN ('rejection','escalation') AND status='open'`, action, now.UnixNano(), replyID); err != nil {
+		return result, err
+	}
 	if err = tx.Commit(); err != nil {
 		return result, err
 	}
