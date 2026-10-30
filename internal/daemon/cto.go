@@ -237,7 +237,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	d.cto.model, d.cto.session = model, created.Data.ID
 	return created.Data.ID, nil
 }
-func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
+func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -276,7 +276,7 @@ func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
 	return map[string]string{"session_id": id}, err
 }
-func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
+func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -307,7 +307,7 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	c.session, c.model = "", ""
 	return struct{}{}, nil
 }
-func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
+func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
