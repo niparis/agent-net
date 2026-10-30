@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas │ 6 sessions, 5 online · 1 busy
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
+ ○ old-box    v0.3.2 offline
+  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────
+> strategies   claude   strategi… sonnet-5-5 idle   -         ?     ? backtest …
+  tenebrae-53  claude   tenebrae  opus-5-5   busy   -         ?     ?
+  web          opencode shop      sonnet-5   idle   -         ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────
+  ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
+  scratch      pi       -         -          shell  -         ?     ?
+
+
+
+
+CTO (opencode · fake/m1) ───────────────────────────────────────────────────────
+
+
+error: Provider request failed because the account has insufficient credits.
+  Add credits or choose another model before retrying the request. The request
+  was not completed.
+> write to the CTO...
+tab focus  enter send  m model  o full screen  n new  u undo  esc back

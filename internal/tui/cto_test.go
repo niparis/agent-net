@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -359,5 +360,96 @@ func TestCTOProviderErrorsSuggestModelChange(t *testing.T) {
 	m = next.(Model)
 	if !strings.HasSuffix(m.cto.messages[0], " (m to change the model)") {
 		t.Fatal(m.cto.messages)
+	}
+}
+
+func TestCTOSendErrorReconcilesPolledMessages(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	model, _ := New(src).startCTO()
+	m := model.(Model)
+	g := m.cto.generation
+	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g})
+	m = next.(Model)
+	poll := ctoPollMsg{generation: g, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","error":{"message":"quota exceeded"}}`)}}}
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 1 {
+		t.Fatalf("duplicate error: %v", m.cto.messages)
+	}
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 1 {
+		t.Fatalf("duplicate after second poll: %v", m.cto.messages)
+	}
+}
+
+func TestCTOSendErrorKeepsRepeatedFailures(t *testing.T) {
+	model, _ := New(&fakeCTOSource{fakeSource: &fakeSource{}}).startCTO()
+	m := model.(Model)
+	g := m.cto.generation
+	raw := json.RawMessage(`{"error":{"message":"quota exceeded"}}`)
+	poll := ctoPollMsg{generation: g, events: protocol.CTOEvents{Messages: []json.RawMessage{raw}}}
+	m.applyCTOPoll(poll)
+	line := ctoMessage(raw)
+	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g, baseline: map[string]int{line: 1}})
+	m = next.(Model)
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 2 {
+		t.Fatalf("older failure hid a new one: %v", m.cto.messages)
+	}
+	poll.events.Messages = append(poll.events.Messages, raw)
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 2 {
+		t.Fatalf("repeated errors: %v", m.cto.messages)
+	}
+	// A poll can arrive before the send result.
+	m.applyCTOPoll(poll)
+	next, _ = m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g, baseline: map[string]int{line: 1}})
+	m = next.(Model)
+	if len(m.cto.messages) != 2 {
+		t.Fatalf("late send result duplicated error: %v", m.cto.messages)
+	}
+}
+
+func TestCTOWrapsLongLines(t *testing.T) {
+	m := Model{cto: &ctoState{messages: []string{"cto: " + strings.Repeat("word ", 18)}, err: strings.Repeat("failure ", 16)}}
+	view := m.ctoView(30, 12)
+	joined := strings.Join(view, "\n")
+	if strings.Contains(joined, "…") || !strings.Contains(joined, "  failure") || !strings.Contains(joined, "  word") {
+		t.Fatalf("lines not wrapped with continuation indent:\n%s", joined)
+	}
+	for _, line := range view {
+		if ansi.StringWidth(line) > 30 {
+			t.Fatalf("line too wide: %q", line)
+		}
+	}
+	m.cto.messages = []string{strings.Repeat("x", 90), "newest"}
+	m.cto.err = ""
+	view = m.ctoView(30, 4)
+	if !strings.Contains(strings.Join(view, "\n"), "newest") {
+		t.Fatal("newest line hidden")
+	}
+}
+
+func TestCTOLongErrorGolden(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
+	m = refresh(m, src.fakeSource)
+	m.src = src
+	m = send(m, m.ctoPollCmd()())
+	m = keys(m, "C")
+	m.cto.err = "Provider request failed because the account has insufficient credits. Add credits or choose another model before retrying the request. The request was not completed."
+	golden(t, "cto_long_error_80x24", m.View())
+}
+
+func TestCTOPollFailureDoesNotRepeatSendFailure(t *testing.T) {
+	model, _ := New(&fakeCTOSource{fakeSource: &fakeSource{}}).startCTO()
+	m := model.(Model)
+	g := m.cto.generation
+	next, _ := m.Update(ctoSendMsg{err: errors.New("connection failed"), generation: g})
+	m = next.(Model)
+	m.applyCTOPoll(ctoPollMsg{err: errors.New("connection failed"), generation: g})
+	if got := strings.Join(m.ctoView(80, 8), "\n"); strings.Count(got, "error: connection failed") != 1 {
+		t.Fatalf("duplicate poll error:\n%s", got)
 	}
 }
