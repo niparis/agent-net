@@ -62,3 +62,17 @@ func TestPaddedBusyStatusHasBackground(t *testing.T) {
 		t.Fatalf("padded busy status has no background: %q", statusLabel("busy  "))
 	}
 }
+
+func TestSelectedSessionKeepsColors(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	m := newModel(120, 34)
+	v := m.View()
+	if !strings.Contains(v, "▸") {
+		t.Fatal("missing selection marker")
+	}
+	if !strings.Contains(v, "48;2;34;48;58") {
+		t.Fatal("missing subtle selection background")
+	}
+}

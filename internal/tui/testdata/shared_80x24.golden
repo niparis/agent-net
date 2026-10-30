@@ -6,7 +6,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 5 sessions ─────────────────────────────────────────────────────────
-> docs         opencode -         -          idle   -     shared
+▸ docs         opencode -         -          idle   -     shared
   api          opencode -         -          busy   -     shared
   strategies   claude   strategi… sonnet-5-5 idle   -      240%  4.6G backtest …
   tenebrae-53  claude   tenebrae  opus-5-5   busy   -       38%  1.2G

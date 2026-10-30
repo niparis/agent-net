@@ -814,7 +814,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	selected := a.SessionID == m.selected
 	marker := "  "
 	if selected {
-		marker = "> "
+		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	uc := m.usageCells(a, cols)
 	var parts []string
@@ -852,7 +852,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		} else {
 			v = cell(v, c.width)
 		}
-		if !selected && a.Online {
+		if a.Online {
 			switch c.name {
 			case "STATUS":
 				v = statusLabel(v)
@@ -871,7 +871,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	line := marker + strings.Join(parts, " ")
 	switch {
 	case selected:
-		return sSel.Render(clip(stripStyles(line), w))
+		return lipgloss.NewStyle().Background(roleSelection).Render(clip(line, w))
 	case !a.Online || m.idleLong(a):
 		return sDim.Render(clip(stripStyles(line), w))
 	}

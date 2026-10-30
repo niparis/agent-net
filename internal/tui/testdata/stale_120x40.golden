@@ -6,7 +6,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-> strategies         claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
+▸ strategies         claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
   tenebrae-53        claude   tenebrae  opus-5-5   busy   -         ?     ?
   web                opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────

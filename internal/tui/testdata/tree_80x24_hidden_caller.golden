@@ -6,7 +6,7 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 2 sessions ─────────────────────────────────────────────────────────
-> ↳ backtest-a opencode -         haiku-4-5  idle   -         ?     ? probe
+▸ ↳ backtest-a opencode -         haiku-4-5  idle   -         ?     ? probe
   ↳ backtest-b opencode -         haiku-4-5  idle   -         ?     ? probe
  build-vm 1 session ────────────────────────────────────────────────────────────
   ↳ backtest-… opencode -         haiku-4-5  idle   -         ?     ? probe
