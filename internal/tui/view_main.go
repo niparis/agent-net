@@ -664,7 +664,11 @@ func (m Model) sessionsTable(w, n int) []string {
 			policy = policy || policyBadge(a.Delegation) != ""
 		}
 	}
-	cols := m.needsColumns(columnsFor(w-2, nameWant, policy)) // two columns for the selection marker
+	avail := w - 2 // two columns for the selection marker
+	if len(m.needsRows()) > 0 {
+		avail -= 3
+	} // reserve the wider status
+	cols := m.needsColumns(columnsFor(avail, nameWant, policy))
 	wanted := 5
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
