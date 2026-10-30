@@ -135,6 +135,14 @@ func (m Model) View() string {
 		for _, s := range m.ctoLayout(w, h-1) {
 			add(s)
 		}
+	case m.tab == 1:
+		for _, s := range m.messagesView(w, h-1) {
+			add(s)
+		}
+	case m.tab == 2:
+		for _, s := range m.quotasView(w, h-1) {
+			add(s)
+		}
 	case m.mapOn:
 		for _, s := range m.mapView(w, h-1) {
 			add(s)
@@ -215,10 +223,7 @@ func (m Model) mainView(w, h int) []string {
 	for _, s := range m.detailLines(w, l.detail) {
 		add(s)
 	}
-	add(m.feedHeading(w))
-	for _, s := range m.feedLines(w, l.feed) {
-		add(s)
-	}
+
 	return out
 }
 
@@ -242,7 +247,7 @@ func (m Model) quotaLine(w int) string {
 }
 
 func (m Model) titleLine(w int) string {
-	left := sTitle.Render("agent-net") + " " + sDim.Render("tui")
+	left := sTitle.Render("1 Sessions  2 Messages  3 Quotas")
 	online, total, workers, busy := 0, 0, 0, 0
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
@@ -938,4 +943,22 @@ func (m Model) requestRuleBadge(a protocol.AgentView) string {
 		return fmt.Sprintf("%s +%d", rule, n)
 	}
 	return rule
+}
+
+func (m Model) messagesView(w, h int) []string {
+	out := []string{m.titleLine(w)}
+	if m.open != nil {
+		return append(out, m.messageView(w, h-1)...)
+	}
+	out = append(out, m.feedHeading(w))
+	return append(out, m.feedLines(w, max(h-2, 0))...)
+}
+func (m Model) quotasView(w, h int) []string {
+	out := []string{m.titleLine(w), section("Quotas", w)}
+	if q := m.quotaText(); q != "" {
+		out = append(out, clip(q, w))
+	} else {
+		out = append(out, "No quota data available.")
+	}
+	return out
 }

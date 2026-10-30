@@ -78,6 +78,7 @@ type Model struct {
 	filtering bool
 	input     textinput.Model
 	focus     focus
+	tab       int
 	feedCur   int // index in the feed items when the feed has focus
 	open      *openMsg
 	quitting  bool
@@ -597,6 +598,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.open.scroll = max(m.open.scroll-10, 0)
 		case "pgdown":
 			m.open.scroll += 10
+		}
+		return m, nil
+	}
+	if k.String() == "1" || k.String() == "2" || k.String() == "3" {
+		m.tab = int(k.String()[0] - '1')
+		m.focus = focusSessions
+		if m.tab == 1 {
+			m.focus = focusFeed
+			m.feedCur = m.feedLastVisible()
 		}
 		return m, nil
 	}
