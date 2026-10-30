@@ -465,7 +465,8 @@ connection and cannot be called by an agent session.
 A failed scan leaves the previous observations marked stale. The inventory is
 read-only and does not execute skills or servers. MCP fingerprints omit
 sensitive descriptor values. Extension-provided MCP servers, package-managed skills, OpenCode custom config
-locations and session-specific trust overrides need manual inspection. A row is
+locations, Pi standalone Markdown skills and session-specific trust overrides need
+manual inspection. A row is
 an observation, not proof that a running session has loaded it.
 
 ## The project registry

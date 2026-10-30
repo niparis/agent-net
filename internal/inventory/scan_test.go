@@ -497,3 +497,27 @@ func TestPiProjectExtensionsReportedManual(t *testing.T) {
 	}
 	t.Fatal("missing project extension warning")
 }
+
+func TestPiCompatibleAndNestedSkillRoots(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	files := []string{filepath.Join(home, ".agents/skills/compatible/SKILL.md"), filepath.Join(home, ".pi/agent/skills/group/nested/SKILL.md"), filepath.Join(project, ".agents/skills/project-compatible/SKILL.md")}
+	for _, path := range files {
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("skill"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := map[string]bool{}
+	for _, item := range Scan(Options{Home: home, Projects: []protocol.ProjectEntry{{Name: "p", Path: project}}}).Items {
+		if item.Harness == "pi" {
+			found[item.Name] = true
+		}
+	}
+	for _, name := range []string{"compatible", "nested", "project-compatible"} {
+		if !found[name] {
+			t.Errorf("missing %s", name)
+		}
+	}
+}

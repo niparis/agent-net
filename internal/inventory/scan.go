@@ -68,7 +68,15 @@ func Scan(o Options) protocol.InventoryReport {
 		}
 		return true
 	}
-	skills := func(h, scope, project, root, base, path string) {
+	sourceCount := 0
+	var skills func(h, scope, project, root, base, path string)
+	skills = func(h, scope, project, root, base, path string) {
+		sourceCount++
+		relDepth, depthErr := filepath.Rel(base, path)
+		if depthErr != nil || sourceCount > maxFiles || strings.Count(relDepth, string(os.PathSeparator)) > 32 {
+			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "skill source exceeds traversal limit")
+			return
+		}
 		if !safe(base, path) {
 			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "source contains a symlink")
 			return
@@ -126,6 +134,9 @@ func Scan(o Options) protocol.InventoryReport {
 			info, err := skillRoot.Lstat("SKILL.md")
 			if errors.Is(err, os.ErrNotExist) {
 				skillRoot.Close()
+				if h == "pi" {
+					skills(h, scope, project, root, base, p)
+				}
 				continue
 			}
 			if err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -320,7 +331,7 @@ func Scan(o Options) protocol.InventoryReport {
 	if codex == "" {
 		codex = filepath.Join(home, ".codex")
 	}
-	for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".config/opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/agent/skills"}} {
+	for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".config/opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/agent/skills"}, {"pi", ".agents/skills"}} {
 		skills(x[0], protocol.InventoryUser, "", "", home, filepath.Join(home, x[1]))
 	}
 	skills("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "skills"))
@@ -408,7 +419,7 @@ func Scan(o Options) protocol.InventoryReport {
 	}
 	for _, p := range o.Projects {
 		base := filepath.Clean(p.Path)
-		for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}} {
+		for _, x := range [][2]string{{"claude", ".claude/skills"}, {"codex", ".agents/skills"}, {"opencode", ".opencode/skills"}, {"opencode", ".claude/skills"}, {"opencode", ".agents/skills"}, {"pi", ".pi/skills"}, {"pi", ".agents/skills"}} {
 			skills(x[0], protocol.InventoryProject, p.Name, base, base, filepath.Join(base, x[1]))
 		}
 		config("claude", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".mcp.json"), "mcpServers", false)

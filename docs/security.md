@@ -363,7 +363,8 @@ and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
 
 The tools inventory scanner bounds a skill bundle to 10,000 entries and
-64 MiB of regular file data. It rejects special files, absolute or escaping
+64 MiB of regular file data. Pi source discovery is limited to 10,000
+directories and 32 path components. It rejects special files, absolute or escaping
 symlinks, and files that change while being read. MCP and settings files are
 limited to 1 MiB. Inventory reports are bounded to 10,000 entries and 256 KiB
 of field text. Oversized sources and reports fail the scan rather than silently
