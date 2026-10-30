@@ -231,8 +231,9 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	if ans.Task != "" {
 		task = ans.Task // a continued worker gets the old first task
 	}
+	charter := d.charterBrief(ctx, ans.Project)
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
-		Body: protocol.WorkerTaskBodyWithPermissions(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, ans.Permissions)})
+		Body: protocol.WorkerTaskBodyWithCharter(ans.Harness, task, ans.Worktree, ans.Branch, ans.ProjectRules, charter, ans.Permissions)})
 	if err != nil {
 		return out, fmt.Errorf("worker %s started, but sending the task failed: %w", ans.SessionID, err)
 	}

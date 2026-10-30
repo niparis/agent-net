@@ -73,6 +73,11 @@ type Message struct {
 	// recipient session (decision 0012). A sender cannot set it: it is not a
 	// field of MsgSend, and the gateway overwrites it on every delivery.
 	RecipientTrust bool `json:"recipient_peer_trust,omitempty"`
+	// RecipientRelation is filled by the gateway when it hands a request to
+	// the recipient's daemon: the graph relation from the sender's node to the
+	// recipient's node (decision 0022). It is agent-net's own text, after the
+	// body, and a sender cannot set it.
+	RecipientRelation string `json:"recipient_relation,omitempty"`
 }
 
 // SessionInfo is what a daemon reports about one local session.

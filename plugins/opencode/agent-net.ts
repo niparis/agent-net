@@ -55,6 +55,7 @@ interface DeliveredMessage {
   sender_harness?: string;
   sender_worker?: boolean;
   recipient_peer_trust?: boolean;
+  recipient_relation?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -115,7 +116,8 @@ function formatDeliveryBase(m: DeliveredMessage): string {
   return (
     `${m.body}\n\n` +
     `[agent-net] message ${m.message_id} from ${who} (session ${m.sender_session_id ?? "unknown"})${conv}.\n` +
-    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}`
+    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}` +
+    (m.recipient_relation ? ` ${m.recipient_relation}` : "")
   );
 }
 
@@ -706,6 +708,8 @@ const CODER_AGENT_DESCRIPTION =
 
 interface PolicyReply {
   text?: string;
+  // The node's charter context (decision 0022), independent of the policy.
+  charter?: string;
   mode?: string;
   agent_id?: string;
   coder?: string;
@@ -1419,6 +1423,9 @@ export default {
           return refreshPolicy(sid).then(async (pol) => {
             if (pol?.text && !input.system.some((part: any) => part.text.includes(pol.text))) {
               input.system.push({ type: "text", text: pol.text });
+            }
+            if (pol?.charter && !input.system.some((part: any) => part.text.includes(pol.charter!))) {
+              input.system.push({ type: "text", text: pol.charter });
             }
             await applyMain(sid, pol);
           });
