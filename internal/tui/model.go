@@ -55,6 +55,8 @@ type Model struct {
 	now func() time.Time
 
 	width, height int
+	tab           int
+	quotaScroll   int
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap     Snapshot
@@ -595,6 +597,31 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.open.scroll = max(m.open.scroll-10, 0)
 		case "pgdown":
 			m.open.scroll += 10
+		}
+		return m, nil
+	}
+	for i := range tabNames {
+		if k.String() == fmt.Sprint(i+1) {
+			m.tab = i
+			return m, nil
+		}
+	}
+	if m.tab != 0 {
+		switch k.String() {
+		case "q":
+			m.quitting = true
+			return m, tea.Quit
+		case "down", "j":
+			m.quotaScroll++
+		case "up", "k":
+			m.quotaScroll = max(0, m.quotaScroll-1)
+		case "?":
+			m.help = true
+		case "r":
+			if !m.fetching {
+				m.fetching = true
+				return m, m.fetchCmd()
+			}
 		}
 		return m, nil
 	}

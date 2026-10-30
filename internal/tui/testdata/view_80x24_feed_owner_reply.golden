@@ -1,4 +1,4 @@
-agent-net tui  7 sessions, 6 online · 2 busy · workers 1 running, 0 queued  upd…
+1 Sessions  2 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 que…
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
  ○ old-box    v0.3.2 offline
@@ -21,4 +21,4 @@ Selected session ─────────────────────
 Messages (live, enter opens the conversation) ──────────────────────────────────
   14:03  tenebrae -> you  reply                                                ✓
 > 14:04  worker refused in nope: no project named nope is known
-up/down move  enter conversation  v body  m msg  tab sessions  ? help  q quit
+up/down move  enter conversation  v body  m msg  1/2 tabs  tab sessions  q quit

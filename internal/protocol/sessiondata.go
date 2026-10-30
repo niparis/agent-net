@@ -68,6 +68,8 @@ type UsageReport struct {
 	// owner turned the integration off, when quota-axi is not installed, or
 	// before the first reading.
 	Quotas *Quotas `json:"quotas,omitempty"`
+	// QuotaError is the latest quota-axi command failure, if any.
+	QuotaError string `json:"quota_error,omitempty"`
 }
 
 // Room values of WorkerLoad: why a machine has no room for another worker, or

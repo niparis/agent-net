@@ -1,4 +1,4 @@
-agent-net tui  7 sessions, 6 online · 2 busy · workers 1 running, 0 queued  upd…
+1 Sessions  2 Quotas │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 que…
   Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
@@ -21,4 +21,4 @@ Selected session ─────────────────────
 Messages (live) ────────────────────────────────────────────────────────────────
   14:03  tenebrae -> you  reply                                                ✓
   14:04  worker refused in nope: no project named nope is known
-up/down select  enter conversation  m msg  s start  x stop  ? help  q quit
+1/2 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

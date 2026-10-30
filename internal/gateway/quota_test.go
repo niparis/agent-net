@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -37,5 +38,12 @@ func TestNodesInfoCarriesQuotas(t *testing.T) {
 	info, _ = g.NodesInfo()
 	if len(info.Nodes) != 1 || info.Nodes[0].Quotas != nil {
 		t.Errorf("stale quotas: %+v", info.Nodes[0].Quotas)
+	}
+}
+
+func TestCleanQuotaError(t *testing.T) {
+	r := cleanUsage(protocol.UsageReport{QuotaError: strings.Repeat("x", 400)})
+	if len(r.QuotaError) > 300 || r.QuotaError == "" {
+		t.Fatalf("error length %d", len(r.QuotaError))
 	}
 }

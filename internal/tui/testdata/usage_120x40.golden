@@ -1,4 +1,4 @@
-agent-net tui  12 online · 1 busy                                                                     updated 14:05:00
+1 Sessions  2 Quotas │ 12 online · 1 busy                                                             updated 14:05:00
  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G   load 1.2  claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi 1.4.0
  ○ old-box    v0.3.2 offline
@@ -37,4 +37,4 @@ Messages (live) ─────────────────────�
 
 
 
-up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  o offline  ? help  q quit
+1/2 tabs  up/down select  enter conversation  e enter (ctrl+] back)  m msg  s start  x stop  / filter  ? help  q quit
