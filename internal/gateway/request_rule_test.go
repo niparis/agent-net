@@ -29,3 +29,23 @@ func TestRequestRulePrecedence(t *testing.T) {
 	}
 	check("auto")
 }
+
+func TestRequestRuleHoldsAtStorage(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if _, err := s.db.Exec(`UPDATE sessions SET repo_project=CASE id WHEN ? THEN 'consumer' ELSE 'provider' END WHERE id IN (?,?)`, a, a, b); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEdge(protocol.Edge{From: "*", To: "provider", Kind: "depends", Rule: "ask"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := send(s, a, b, "held", "")
+	if err != nil || m.State != "held" {
+		t.Fatalf("message = %#v, %v", m, err)
+	}
+	n := mustNode(t, s, b)
+	pending, err := s.Pending(n, true)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("pending = %#v, %v", pending, err)
+	}
+}

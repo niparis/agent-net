@@ -15,6 +15,7 @@ import (
 
 // Message states.
 const (
+	StateHeld       = "held"
 	StateStored     = "stored"
 	StateDispatched = "dispatched"
 	StateDelivered  = "delivered"

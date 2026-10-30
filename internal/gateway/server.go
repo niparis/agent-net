@@ -780,7 +780,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 			return nil, err
 		}
-		if created {
+		if created && m.State != protocol.StateHeld {
 			g.dispatch(ctx, m)
 		}
 		if cur, ok, _ := st.Message(m.ID); ok {
@@ -890,7 +890,20 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	}
 	// The gateway, and only the gateway, says whether the recipient is trusted.
 	m.RecipientTrust = false
-	if a, ok, err := g.store.Agent(m.To); err == nil && ok {
+	if m.Type == protocol.TypeRequest {
+		rule, err := g.store.RequestRule(m.From, m.To)
+		if err != nil {
+			g.logLine("error", "where", "request rule", "err", err)
+			return
+		}
+		if rule == "ask" {
+			if _, err := g.store.db.Exec(`UPDATE messages SET state='held' WHERE id=? AND state IN ('stored','dispatched')`, m.ID); err != nil {
+				g.logLine("error", "where", "hold message", "err", err)
+			}
+			return
+		}
+		m.RecipientTrust = rule == "auto"
+	} else if a, ok, err := g.store.Agent(m.To); err == nil && ok {
 		m.RecipientTrust = a.PeerTrust
 	}
 	// The relation from the sender's node to the recipient's node is graph

@@ -964,6 +964,21 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	default:
 		return msg, false, reject("unknown message_type %q", m.Type)
 	}
+	if m.Type == protocol.TypeRequest && !m.FromCTO {
+		var rule string
+		err := tx.QueryRow(`SELECT e.rule FROM graph_edges e
+			JOIN sessions src ON src.id=? JOIN sessions dst ON dst.id=?
+			LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
+			WHERE e.target=COALESCE(NULLIF(dst.repo_project,''),dp.project,'')
+			AND e.target<>'' AND (e.source=COALESCE(NULLIF(src.repo_project,''),sp.project,'') OR e.source='*')
+			ORDER BY CASE WHEN e.source='*' THEN 1 ELSE 0 END, e.kind LIMIT 1`, m.From, m.To).Scan(&rule)
+		if err != nil && err != sql.ErrNoRows {
+			return msg, false, err
+		}
+		if rule == "ask" {
+			m.State = protocol.StateHeld
+		}
+	}
 	if m.Hop > protocol.MaxHop {
 		return msg, false, reject("hop limit exceeded (%d)", protocol.MaxHop)
 	}
