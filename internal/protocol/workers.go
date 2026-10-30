@@ -84,6 +84,10 @@ type (
 		// machines, the gateway then prefers the caller's machine, or the one
 		// machine that has the harness.
 		CallerProject bool `json:"caller_project,omitempty"`
+		// CallerPath is the main working tree of the caller's own folder,
+		// set with CallerProject. The gateway matches it exactly on the
+		// caller's machine before it falls back to the name.
+		CallerPath string `json:"caller_path,omitempty"`
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {

@@ -123,11 +123,11 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		// No project given: use the caller's own (W17). The command line has no
 		// project of its own, so it must name one.
-		callerProject := false
+		callerProject, callerPath := false, ""
 		if strings.TrimSpace(p.Project) == "" {
 			if ls != nil {
 				d.mu.Lock()
-				p.Project = ls.info.Repo.Project
+				p.Project, callerPath = ls.info.Repo.Project, ls.info.Repo.Root
 				d.mu.Unlock()
 				callerProject = p.Project != ""
 			}
@@ -135,7 +135,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 				return nil, true, errors.New("no project: name one (agent_project_list), or start the worker from a session that runs in a project folder")
 			}
 		}
-		out, err := d.workerStartCall(ctx, sid, p, callerProject)
+		out, err := d.workerStartCall(ctx, sid, p, callerProject, callerPath)
 		return out, true, err
 
 	case protocol.OpWorkerHandback:
@@ -190,7 +190,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 // workerStartCall asks the gateway to start a worker, then sends the task as
 // a message from the caller.
-func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool) (*protocol.WorkerStartResult, error) {
+func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string) (*protocol.WorkerStartResult, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
 	if p.Project == "" || p.Harness == "" || p.Task == "" {
 		return nil, errors.New("worker_start needs project, harness and task")
@@ -202,7 +202,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return nil, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}
 	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
-	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject})
+	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath})
 	if err != nil {
 		return nil, tooOldGateway(err)
 	}
