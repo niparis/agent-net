@@ -397,3 +397,15 @@ func TestMapCompactBoxesKeepMaturityAndSessionCount(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestGoldenMapNavigation(t *testing.T) {
+	graph := protocol.GraphView{Nodes: []protocol.Node{{Name: "architect", Kind: "architect", Charter: protocol.Charter{Purpose: "Coordinate projects."}}, {Name: "a2a-ocs", Kind: "component"}, {Name: "cogforge", Kind: "component", Charter: protocol.Charter{Purpose: "Document and evidence API.", Maturity: "growing", Accepts: "Generic endpoints.", Refuses: "Client-specific work."}}, {Name: "tenebrae", Kind: "component", Charter: protocol.Charter{Maturity: "early"}}, {Name: "shop", Kind: "component", Charter: protocol.Charter{Maturity: "mature"}}}, Edges: []protocol.Edge{{From: "architect", To: "cogforge", Kind: "governs", Mode: "owner", Rule: "normal"}, {From: "tenebrae", To: "cogforge", Kind: "depends", Rule: "ask"}, {From: "cogforge", To: "shop", Kind: "depends", Rule: "auto"}}, Changes: []protocol.CharterChange{{Node: "cogforge", Attr: "purpose", NewValue: "Document and evidence API.", At: t0.UnixNano()}}}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := openMap(t, mapModel(size[0], size[1], graph))
+		golden(t, fmt.Sprintf("map_navigation_%dx%d", size[0], size[1]), m.View())
+		m.mp.selected = "a2a-ocs"
+		golden(t, fmt.Sprintf("map_isolated_%dx%d", size[0], size[1]), m.View())
+		m = keys(m, "/", "c", "o", "g")
+		golden(t, fmt.Sprintf("map_find_%dx%d", size[0], size[1]), m.View())
+	}
+}

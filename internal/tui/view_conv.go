@@ -140,7 +140,7 @@ func (m Model) hints() []hint {
 	case m.conv != nil:
 		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"left/right", "follow", 1}, {"up/down", "choose", 1}, {"z", "overview", 1}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 1}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -231,7 +231,7 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"4/M", "map: charters and edges (read only); z switches overview"},
-		{"map arrows", "left/right follow edges; up/down choose; enter sessions; c CTO"},
+		{"map arrows", "up/down projects; left/right edges; / find; enter sessions; c CTO"},
 		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
