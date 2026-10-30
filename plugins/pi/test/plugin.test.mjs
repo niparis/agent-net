@@ -35,6 +35,16 @@ const statuses = [];
 const textResults = [];
 const requests = []; // every request except hello
 const replies = {}; // method -> result the fake daemon answers with (default {})
+replies.nodes = { gateway_version: "v1", nodes: [
+  { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
+    harnesses: [{ name: "pi", path: "/u/pi", version: "1.4.0" }],
+    quotas: { providers: [
+      { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
+      { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
+      { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
+    ] } },
+  { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
+] };
 let conn;
 const server = createServer((c) => {
   conn = c;
@@ -268,6 +278,25 @@ await test("tool results end with the reminder until the session has announced",
   for (const name of ["agent_list", "agent_nodes"]) {
     const text = await run(name);
     if (text.includes("Reminder")) throw new Error(name + " after announce: " + JSON.stringify(text));
+  }
+  await p.fire("session_shutdown", {});
+});
+
+await test("agent_nodes lists machines with quotas", async () => {
+  const p = makePi();
+  extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const run = async (name, params = {}) => (await p.tools.get(name).execute("id", params)).content[0].text;
+  await run("agent_announce", { task: "checking quotas" });
+  const text = await run("agent_nodes");
+  for (const want of [
+    "mac (n_1, online, agent-net v0.4.0): pi 1.4.0 at /u/pi",
+    "quotas: claude 59%w · codex 90%w · cursor exhausted",
+    "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)",
+  ]) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
   }
   await p.fire("session_shutdown", {});
 });

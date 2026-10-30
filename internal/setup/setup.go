@@ -45,6 +45,7 @@ type Options struct {
 	PolicyHook   string // "" leave; PolicyHookYes or PolicyHookNo is a local answer
 	NeedsHook    string // "" leave; NeedsHookYes or NeedsHookNo is a local answer
 	WorkersMod   string // "" leave; WorkersModYes or WorkersModNo is a local answer
+	QuotaAXI     string // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
 	Out          io.Writer
 }
 
@@ -64,7 +65,7 @@ func home() string {
 type runner struct {
 	Options
 	failed error
-	// want is the answer for the six integrations. When it is set, the steps
+	// want is the answer for the seven integrations. When it is set, the steps
 	// apply it and turn an item off as well as on. When it is nil, the steps
 	// keep their old ask-once behavior.
 	want *protocol.Integrations

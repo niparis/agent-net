@@ -75,7 +75,12 @@ const server = createServer((conn) => {
         : line.method === "nodes"
           ? { gateway_version: "v1", nodes: [
               { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
-                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }] },
+                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }],
+                quotas: { providers: [
+                  { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
+                  { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
+                  { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
+                ] } },
               { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
             ] }
           : {};
@@ -296,6 +301,7 @@ await test("agent_nodes lists machines with their harnesses", async () => {
   if (!tool) throw new Error("agent_nodes is not registered");
   const out = (await tool.execute({}, { sessionID: "ses_n" })).content;
   for (const want of ["mac (n_1, online, agent-net v0.4.0): opencode v2 (2 models) at /u/opencode",
+                      "quotas: claude 59%w · codex 90%w · cursor exhausted",
                       "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }

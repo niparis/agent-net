@@ -23,6 +23,16 @@ const canned = {
   reply: { message_id: "m_0000000000000002", state: "stored" },
   messages: { messages: [] },
   message_status: { message_id: "m_0000000000000001", state: "delivered" },
+  nodes: { gateway_version: "v1", nodes: [
+    { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
+      harnesses: [{ name: "pi", path: "/u/pi", version: "1.4.0" }],
+      quotas: { providers: [
+        { provider: "claude", windows: [{ id: "seven_day", kind: "weekly", percent_used: 59 }] },
+        { provider: "codex", windows: [{ id: "weekly", kind: "weekly", percent_used: 90 }] },
+        { provider: "cursor", windows: [{ id: "included_usage", kind: "monthly", percent_used: 100, exhausted: true }] },
+      ] } },
+    { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
+  ] },
   delivered: {},
 };
 

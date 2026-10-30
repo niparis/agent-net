@@ -131,6 +131,11 @@ type Config struct {
 	// UsageReportInterval is how often the summary goes to the gateway.
 	// Default: 10 seconds.
 	UsageReportInterval time.Duration
+	// QuotaAXIPath is quota_axi from node.json. Empty means find it on PATH
+	// or in ~/.local/bin. Tests set a fake script here.
+	QuotaAXIPath string
+	// QuotaInterval is how often quota-axi is run. Default: 5 minutes.
+	QuotaInterval time.Duration
 	// TextTimeout is how long to wait for a plugin to hand over a session's
 	// conversation. Default: 8 seconds.
 	TextTimeout time.Duration
@@ -199,6 +204,8 @@ type Daemon struct {
 
 	// usage is the state of CPU and memory reporting (usage.go).
 	usage usageState
+	// quota holds the newest quota-axi reading (quota.go).
+	quota quotaState
 	// hints holds the rate limits and the session cache of hints (hint.go).
 	hints hintState
 	// policy caches the delegation policy per session (policy.go).

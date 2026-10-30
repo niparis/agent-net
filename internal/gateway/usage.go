@@ -63,6 +63,16 @@ func (u *usageTable) all() map[string]usageEntry {
 	return out
 }
 
+// nodeQuotas returns the newest quota reading of a machine, or nil when it
+// reported none, or the report is stale.
+func (g *Gateway) nodeQuotas(nodeID string) *protocol.Quotas {
+	e, ok := g.usage.all()[nodeID]
+	if !ok || g.store.now().Sub(e.at) > protocol.UsageStaleSeconds*time.Second {
+		return nil
+	}
+	return e.rep.Quotas
+}
+
 // cleanUsage bounds what a node may send: sizes and values.
 func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 	pct := func(v float64) float64 {
@@ -117,7 +127,39 @@ func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 		}
 		r.Workers = &cp
 	}
+	r.Quotas = cleanQuotas(r.Quotas)
 	return r
+}
+
+// cleanQuotas bounds a quota reading from a node: sizes, values and text.
+func cleanQuotas(q *protocol.Quotas) *protocol.Quotas {
+	if q == nil {
+		return nil
+	}
+	cp := *q
+	if len(cp.Providers) > 100 {
+		cp.Providers = cp.Providers[:100]
+	}
+	cp.Providers = append([]protocol.QuotaProvider(nil), cp.Providers...)
+	for i := range cp.Providers {
+		p := &cp.Providers[i]
+		p.Provider, p.Plan, p.Error = clip(p.Provider, 40), clip(p.Plan, 40), clip(p.Error, 300)
+		if len(p.Windows) > 50 {
+			p.Windows = p.Windows[:50]
+		}
+		p.Windows = append([]protocol.QuotaWindow(nil), p.Windows...)
+		for j := range p.Windows {
+			w := &p.Windows[j]
+			w.ID, w.Label, w.Kind, w.Pace = clip(w.ID, 80), clip(w.Label, 80), clip(w.Kind, 30), clip(w.Pace, 20)
+			if w.PercentUsed != w.PercentUsed || w.PercentUsed < 0 {
+				w.PercentUsed = 0
+			}
+			if w.PercentUsed > 100 {
+				w.PercentUsed = 100
+			}
+		}
+	}
+	return &cp
 }
 
 // handleUsage serves node.usage, query.usage and query.counts.
