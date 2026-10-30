@@ -516,3 +516,14 @@ func TestQuotaLongWindowNames(t *testing.T) {
 		}
 	}
 }
+
+func TestQuotaMachineErrorAtPanelFooter(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "active", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
+	m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "err", Hostname: "laptop", Usage: protocol.UsageReport{QuotaError: "exit status 2"}})
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if strings.Index(v, "active") > strings.Index(v, "laptop: exit status 2") {
+		t.Fatal(v)
+	}
+}

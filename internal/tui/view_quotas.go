@@ -43,11 +43,7 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sDim.Render(line))
 		}
 	}
-	for _, e := range errors {
-		for _, line := range wrap(e, w-2) {
-			subscription = append(subscription, sDim.Render(line))
-		}
-	}
+
 	var newest int64
 	var configured, unset []quotaRow
 	for _, r := range rows {
@@ -159,6 +155,11 @@ func (m Model) quotasView(w, h int) []string {
 			action = "s to hide"
 		}
 		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d providers not set up · %s", len(unset), action)))
+	}
+	for _, e := range errors {
+		for _, line := range wrap(e, w-4) {
+			subscription = append(subscription, sDim.Render(line))
+		}
 	}
 	title := "Subscriptions"
 	if reporting == 1 {
