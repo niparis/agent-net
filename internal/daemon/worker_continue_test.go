@@ -274,3 +274,48 @@ func TestContinueNeedsTheMachineOnline(t *testing.T) {
 		return err != nil && strings.Contains(err.Error(), "is offline, so worker "+old.SessionID+" cannot be continued")
 	})
 }
+
+func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
+	for _, harness := range []string{"opencode", "codex"} {
+		t.Run(harness, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			var w *workerNode
+			if harness == "codex" {
+				w = startCodexNode(t, g, shortSet)
+			} else {
+				w = startWorkerNode(t, g, shortSet, nil)
+			}
+			repo := newRepo(t, "shop")
+			w.register(t, repo)
+			res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: harness, Task: "FAKE:slow", Isolation: protocol.IsolationWorktree})
+			if harness == "codex" {
+				readCodex(t, res.Worktree, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+			} else {
+				w.replyTo(t, w.ownerID(), res.Task.ID)
+			}
+			if err := os.WriteFile(filepath.Join(res.Worktree, "half.txt"), []byte("half\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			w.d.Stop()
+			name := "opencode-password"
+			if harness == "codex" {
+				name = "token"
+			}
+			if err := os.Remove(filepath.Join(w.cfg.StateDir, "workers", workerIDOf(res), name)); err != nil {
+				t.Fatal(err)
+			}
+			w.node.restart()
+			w.cli = cliClient(t, w.node)
+			n := w.waitNotice(t, 1)[0]
+			for _, want := range []string{"status: lost after daemon restart", "unfinished changes were saved as a commit on branch " + res.Branch} {
+				if !strings.Contains(n.Body, want) {
+					t.Errorf("notice lacks %q: %s", want, n.Body)
+				}
+			}
+			if got := gitOutT(t, repo, "show", res.Branch+":half.txt"); got != "half" {
+				t.Errorf("saved file: %q", got)
+			}
+			eventually(t, "unrestorable worker ends", func() bool { return w.d.workerCount() == 0 })
+		})
+	}
+}

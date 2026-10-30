@@ -270,6 +270,14 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	if pw, _ := os.ReadFile(filepath.Join(w.cfg.StateDir, "daemon.db")); strings.Contains(string(pw), rec.Env["OPENCODE_SERVER_PASSWORD"]) {
 		t.Error("the server password is stored in daemon.db")
 	}
+	passwordFile := filepath.Join(w.cfg.StateDir, "workers", rec.Env["AGENT_NET_WORKER"], "opencode-password")
+	password, err := os.ReadFile(passwordFile)
+	if err != nil || string(password) != rec.Env["OPENCODE_SERVER_PASSWORD"] {
+		t.Fatalf("private password file: %v", err)
+	}
+	if info, err := os.Stat(passwordFile); err != nil || info.Mode().Perm() != 0600 {
+		t.Fatalf("private password file permissions: %v %v", info, err)
+	}
 
 	// The task is a normal message from the owner with the fixed preamble.
 	if res.Task.From != owner || res.Task.To != res.SessionID || res.Task.Type != protocol.TypeRequest {
@@ -1066,7 +1074,7 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	}
 	// The owner is told, with the status failed.
 	n := w.waitNotice(t, 1)[0]
-	if n.From != dying.SessionID || !strings.Contains(n.Body, "status: failed") || !strings.Contains(n.Body, "lost while the daemon was not running") {
+	if n.From != dying.SessionID || !strings.Contains(n.Body, "status: lost after daemon restart") || !strings.Contains(n.Body, "lost while the daemon was not running") {
 		t.Errorf("lost notice: %+v", n)
 	}
 	// The adopted worker can be stopped like any other: the process is the

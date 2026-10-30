@@ -719,7 +719,8 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		note += ": " + w.failure
 		d.wmu.Unlock()
 	}
-	sendNotice := !done && status != "" && sid != ""
+	// Lost workers are reported from their persisted row by reportWorkerEnds.
+	sendNotice := !done && status != "" && sid != "" && reason != protocol.StopLost
 	var stats workerStats
 	if sendNotice {
 		stats = d.workerStats(w)

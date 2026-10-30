@@ -283,19 +283,91 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	cc.thread = w.nativeID
+	// The in-flight turn belongs to the last recorded request. Restore it
+	// before subscribing: completion can arrive as soon as resume starts.
+	if w.taskMsg == "" || w.owner == "" {
+		cc.close()
+		return errors.New("the request for the Codex turn is gone")
+	}
+	cc.running = true
+	cc.cur = &codexJob{from: w.owner, msgID: w.taskMsg}
 	name, effort := splitCodexModel(w.model)
 	cc.effort, cc.model = effort, codexModelLabel(name, effort)
 	cc.sb = d.codexSandboxFor(ctx, w)
 	rparams := map[string]any{"threadId": w.nativeID}
 	cc.sb.threadParams(rparams)
-	if _, err := cc.call(ctx, "thread/resume", rparams); err != nil {
+	raw, err := cc.call(ctx, "thread/resume", rparams)
+	if err != nil {
 		cc.close()
 		return fmt.Errorf("codex does not know the thread any more: %w", err)
+	}
+	var resumed struct {
+		Thread struct {
+			Status struct {
+				Type string `json:"type"`
+			} `json:"status"`
+			Turns []struct {
+				Status string `json:"status"`
+				Error  *struct {
+					Message string `json:"message"`
+				} `json:"error"`
+				Items []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				} `json:"items"`
+			} `json:"turns"`
+		} `json:"thread"`
+	}
+	if err := json.Unmarshal(raw, &resumed); err != nil {
+		cc.close()
+		return fmt.Errorf("cannot read the resumed Codex thread: %w", err)
+	}
+	thread := resumed.Thread
+	if thread.Status.Type != "active" && thread.Status.Type != "idle" {
+		cc.close()
+		return fmt.Errorf("cannot restore the Codex turn: thread status %q", thread.Status.Type)
+	}
+	if thread.Status.Type == "idle" {
+		if len(thread.Turns) == 0 {
+			cc.close()
+			return errors.New("cannot restore the Codex turn: no turns in the resumed thread")
+		}
+		status := thread.Turns[len(thread.Turns)-1].Status
+		if status != "completed" && status != "failed" && status != "interrupted" {
+			cc.close()
+			return fmt.Errorf("cannot restore the Codex turn: turn status %q", status)
+		}
 	}
 	d.wmu.Lock()
 	w.codex = cc
 	d.wmu.Unlock()
-	return d.registerCodexSession(ctx, w, false)
+	if err := d.registerCodexSession(ctx, w, false); err != nil {
+		cc.close()
+		return err
+	}
+	if thread.Status.Type == "active" {
+		d.setCodexStatus(w, "busy")
+		return nil
+	}
+	turn := thread.Turns[len(thread.Turns)-1]
+	var final, errMsg string
+	for _, item := range turn.Items {
+		if item.Type == "agentMessage" && item.Text != "" {
+			final = item.Text
+		}
+	}
+	if turn.Error != nil {
+		errMsg = turn.Error.Message
+	}
+	cc.mu.Lock()
+	// A live completion can race the resume response. Do not overwrite it or
+	// hand back a second time if the notification already finished the turn.
+	if cc.cur != nil {
+		cc.final = final
+	}
+	cc.mu.Unlock()
+	cc.finishTurn(turn.Status, errMsg)
+	return nil
 }
 
 // end closes the connection and takes the session out of the registry.

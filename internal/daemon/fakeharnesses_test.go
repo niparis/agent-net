@@ -539,16 +539,17 @@ func fakePiModels() {
 // ---- Codex ----
 
 type fakeCodexRecord struct {
-	Args     []string          `json:"args"`
-	Cwd      string            `json:"cwd"`
-	Env      map[string]string `json:"env"`
-	Pid      int               `json:"pid"`
-	Pgid     int               `json:"pgid"`
-	ChildPid int               `json:"child_pid"`
-	Thread   map[string]any    `json:"thread"`
-	Turns    []string          `json:"turns"`
-	Answers  []any             `json:"answers"`
-	Resumed  int               `json:"resumed"`
+	Args             []string          `json:"args"`
+	Cwd              string            `json:"cwd"`
+	Env              map[string]string `json:"env"`
+	Pid              int               `json:"pid"`
+	Pgid             int               `json:"pgid"`
+	ChildPid         int               `json:"child_pid"`
+	Thread           map[string]any    `json:"thread"`
+	Turns            []string          `json:"turns"`
+	Answers          []any             `json:"answers"`
+	Resumed          int               `json:"resumed"`
+	CompletedOffline bool              `json:"completed_offline"`
 	// TurnParams are the params of each turn/start; ResumeParams those of the
 	// last thread/resume.
 	TurnParams   []map[string]any `json:"turn_params"`
@@ -650,9 +651,37 @@ func fakeCodex() {
 				mu.Lock()
 				rec.Resumed++
 				rec.ResumeParams = p
+				completed := rec.CompletedOffline
 				mu.Unlock()
 				save()
-				write(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]any{"id": thread}}})
+				status := "active"
+				turns := []any{}
+				if completed {
+					status = "idle"
+					turns = []any{
+						map[string]any{"id": "turn-previous", "status": "completed", "items": []any{map[string]any{"type": "agentMessage", "text": "old turn"}}},
+						map[string]any{"id": "turn-offline", "status": "completed", "items": []any{map[string]any{"type": "agentMessage", "text": "intermediate"}, map[string]any{"type": "agentMessage", "phase": "final_answer", "text": "finished while daemon was down"}}},
+					}
+				}
+				write(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]any{"id": thread, "status": map[string]any{"type": status}, "turns": turns}}})
+				if completed {
+					continue
+				}
+				// A surviving turn can complete after a new subscriber resumes it.
+				go func(thread string) {
+					for {
+						if _, err := os.Stat(filepath.Join(cwd, "fake-codex-finish")); err == nil {
+							write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "item": map[string]any{"type": "agentMessage", "phase": "final_answer", "text": "finished after restart"}}})
+							write(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": thread, "turn": map[string]any{"status": "completed"}}})
+							return
+						}
+						select {
+						case <-r.Context().Done():
+							return
+						case <-time.After(10 * time.Millisecond):
+						}
+					}
+				}(thread)
 			case "turn/start":
 				text := ""
 				if in, ok := p["input"].([]any); ok && len(in) > 0 {
@@ -667,6 +696,19 @@ func fakeCodex() {
 				write(map[string]any{"id": m.ID, "result": map[string]any{"turn": map[string]any{"id": turn, "status": "inProgress"}}})
 				go func() {
 					write(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": thread, "turn": map[string]any{"id": turn, "status": "inProgress"}}})
+					if strings.Contains(text, "FAKE:offline") {
+						// The server keeps working even when its subscriber goes away.
+						for {
+							if _, err := os.Stat(filepath.Join(cwd, "fake-codex-offline-finish")); err == nil {
+								mu.Lock()
+								rec.CompletedOffline = true
+								mu.Unlock()
+								save()
+								return
+							}
+							time.Sleep(10 * time.Millisecond)
+						}
+					}
 					if strings.Contains(text, "FAKE:slow") {
 						<-r.Context().Done()
 						return
