@@ -43,8 +43,14 @@ func TestWorkersOfOrdersAndNamesOwners(t *testing.T) {
 	for _, w := range ws {
 		got = append(got, w.SessionID)
 	}
-	if strings.Join(got, ",") != "s_b,s_a,s_old" {
+	if strings.Join(got, ",") != "s_b,s_a" {
 		t.Fatalf("order: %v", got)
+	}
+	// s_old is offline: a worker that ended is not listed.
+	for _, w := range ws {
+		if w.SessionID == "s_old" {
+			t.Error("an offline worker is listed")
+		}
 	}
 	if ws[1].OwnerName != "you (on mac)" || ws[0].OwnerName != "" {
 		t.Errorf("owner names: %+v", ws)

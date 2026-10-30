@@ -46,12 +46,19 @@ import (
 // user's other sessions from the shared database. The daemon also refuses any
 // connection for a worker's session that does not come from the worker's own
 // process group.
+//
+// A worker that handed back ends. A follow-up from its owner starts a new
+// private server on the same data and state folders, tells the plugin the same
+// session ID, and prompts that session again: the conversation is continued.
 
 // opencodeLauncher starts workers with `opencode serve`.
 type opencodeLauncher struct{}
 
+// opencodeAPI calls the worker's own server.
+type opencodeAPI func(method, path string, body any, headers ...string) ([]byte, int, error)
+
 func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
-	bin, err := d.harnessBinary("opencode")
+	api, err := d.serveOpenCode(ctx, w)
 	if err != nil {
 		return err
 	}
@@ -62,12 +69,93 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 			return fmt.Errorf("model %q must look like provider/model", w.model)
 		}
 	}
-	port, err := freePort()
+	// One session, with the model the caller chose.
+	req := map[string]any{"title": "agent-net worker " + w.id + ": " + w.project}
+	if model != "" {
+		req["model"] = map[string]string{"providerID": provider, "id": model}
+	}
+	body, code, err := api("POST", "/api/session", req)
+	if err != nil {
+		return fmt.Errorf("cannot create the worker session: %w", err)
+	}
+	if code != http.StatusOK && code != http.StatusCreated {
+		return fmt.Errorf("opencode refused the worker session (HTTP %d): %s", code, truncate(string(body), 200))
+	}
+	var created struct {
+		Data struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
+		return fmt.Errorf("opencode answered without a session ID: %s", truncate(string(body), 200))
+	}
+	if err := d.bindWorkerNative(w, created.Data.ID); err != nil {
+		return err
+	}
+	if err := writeWorkerSessionFile(w, created.Data.ID); err != nil {
+		return err
+	}
+	return d.loadOpenCodeProject(ctx, w, api)
+}
+
+// resume starts a new private server for the same session: the state folder
+// is the one the worker had, so the plugin opens the same conversation.
+func (opencodeLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
+	if w.nativeID == "" {
+		return errors.New("the OpenCode session of the worker is not known")
+	}
+	api, err := d.serveOpenCode(ctx, w)
 	if err != nil {
 		return err
 	}
+	if err := writeWorkerSessionFile(w, w.nativeID); err != nil {
+		return err
+	}
+	return d.loadOpenCodeProject(ctx, w, api)
+}
+
+// loadOpenCodeProject asks for the project folder, which is how OpenCode
+// loads its plugins. The plugin registers the session named in the worker's
+// session file, and the daemon waits until it has.
+func (d *Daemon) loadOpenCodeProject(ctx context.Context, w *worker, api opencodeAPI) error {
+	if _, code, err := api("GET", "/api/location", nil, "x-opencode-directory", strings.ReplaceAll(url.QueryEscape(w.path), "+", "%20")); err != nil || code != http.StatusOK {
+		return fmt.Errorf("cannot load the project in the worker (HTTP %d): %v", code, err)
+	}
+	// The plugin registers the session. If it does not, the plugin is not
+	// installed, and the worker could never answer.
+	select {
+	case <-w.ready:
+		return nil
+	case <-ctx.Done():
+		return errors.New("the agent-net plugin did not register the worker session in time: is the OpenCode plugin installed? Run `agent-net setup` on that machine")
+	}
+}
+
+// writeWorkerSessionFile tells the plugin which session is the worker's. It
+// cannot find it by itself: the session exists before the plugin instance.
+func writeWorkerSessionFile(w *worker, id string) error {
+	tmp := filepath.Join(w.dir, "session.tmp")
+	if err := os.WriteFile(tmp, []byte(id), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(w.dir, "session"))
+}
+
+// serveOpenCode starts the private server and waits until it answers.
+func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, error) {
+	bin, err := d.harnessBinary("opencode")
+	if err != nil {
+		return nil, err
+	}
+	port, err := freePort()
+	if err != nil {
+		return nil, err
+	}
 	password := protocol.NewToken()
 	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
 	env := workerEnv(os.Environ(), map[string]string{
 		"OPENCODE_SERVER_PASSWORD":      password,
 		"AGENT_NET_WORKER":              w.id,
@@ -78,7 +166,7 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	// Never a flag that turns permission checks off (decision 0002, W6).
 	args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}
 	if err := d.spawnWorker(w, bin, args, env); err != nil {
-		return err
+		return nil, err
 	}
 	base := "http://127.0.0.1:" + strconv.Itoa(port)
 	d.wmu.Lock()
@@ -110,69 +198,18 @@ func (opencodeLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 		return b, resp.StatusCode, nil
 	}
-
-	// Wait for the server.
 	for {
 		if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
-			break
+			return api, nil
 		}
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("opencode serve did not start in time")
+			return nil, fmt.Errorf("opencode serve did not start in time")
 		case <-time.After(100 * time.Millisecond):
 		}
 		if d.gone(w) {
-			return errors.New("opencode serve exited at start")
+			return nil, errors.New("opencode serve exited at start")
 		}
-	}
-
-	// One session, with the model the caller chose.
-	req := map[string]any{"title": "agent-net worker " + w.id + ": " + w.project}
-	if model != "" {
-		req["model"] = map[string]string{"providerID": provider, "id": model}
-	}
-	body, code, err := api("POST", "/api/session", req)
-	if err != nil {
-		return fmt.Errorf("cannot create the worker session: %w", err)
-	}
-	if code != http.StatusOK && code != http.StatusCreated {
-		return fmt.Errorf("opencode refused the worker session (HTTP %d): %s", code, truncate(string(body), 200))
-	}
-	var created struct {
-		Data struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if json.Unmarshal(body, &created) != nil || created.Data.ID == "" {
-		return fmt.Errorf("opencode answered without a session ID: %s", truncate(string(body), 200))
-	}
-	if err := d.bindWorkerNative(w, created.Data.ID); err != nil {
-		return err
-	}
-	// Tell the plugin of this process which session is its own. It cannot find
-	// it by itself: the session was created before the plugin instance existed.
-	tmp := filepath.Join(w.dir, "session.tmp")
-	if err := os.WriteFile(tmp, []byte(created.Data.ID), 0o600); err != nil {
-		return err
-	}
-	if err := os.Rename(tmp, filepath.Join(w.dir, "session")); err != nil {
-		return err
-	}
-	// OpenCode loads its plugins when a client first uses a project folder.
-	// Creating a session over the API does not count, so ask for the
-	// location of the folder, as every OpenCode client does. The plugin then
-	// reads the session file.
-	if _, code, err := api("GET", "/api/location", nil, "x-opencode-directory", strings.ReplaceAll(url.QueryEscape(w.path), "+", "%20")); err != nil || code != http.StatusOK {
-		return fmt.Errorf("cannot load the project in the worker (HTTP %d): %v", code, err)
-	}
-
-	// The plugin registers the session. If it does not, the plugin is not
-	// installed, and the worker could never answer.
-	select {
-	case <-w.ready:
-		return nil
-	case <-ctx.Done():
-		return errors.New("the agent-net plugin did not register the worker session in time: is the OpenCode plugin installed? Run `agent-net setup` on that machine")
 	}
 }
 

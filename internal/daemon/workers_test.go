@@ -328,14 +328,14 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 		t.Errorf("follow-up reply: %+v", r)
 	}
 
-	// Stop it: the group is gone, the session is offline, the end is recorded.
+	// Stop it: the group is gone, and an ended worker leaves the list.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the worker process is gone", func() bool { return !alive(rec.Pid) })
 	eventually(t, "the child in the group is gone", func() bool { return !alive(rec.ChildPid) })
 	if err := syscall.Kill(-rec.Pgid, 0); err != syscall.ESRCH {
 		t.Errorf("the process group is still there: %v", err)
 	}
-	eventually(t, "the session is offline", func() bool { return len(w.workers(t)) == 1 && !w.workers(t)[0].Online })
+	eventually(t, "the stopped worker leaves the list", func() bool { return len(w.workers(t)) == 0 })
 	w.workerStopped(t, g, protocol.StopRequested)
 	started, _ := g.gw.Store().Events("worker.started")
 	if len(started) != 1 || !strings.Contains(started[0], "project=shop") || !strings.Contains(started[0], "owner="+owner) {
@@ -354,8 +354,12 @@ func TestWorkerLifecycleStartReplyStop(t *testing.T) {
 	if w.d.workerCount() != 0 {
 		t.Errorf("the daemon still counts %d workers", w.d.workerCount())
 	}
-	if rows, _ := w.d.st.workers(); len(rows) != 0 {
-		t.Errorf("worker rows left in daemon.db: %+v", rows)
+	eventually(t, "the ended worker row is kept and reported", func() bool {
+		rows, _ := w.d.st.workers()
+		return len(rows) == 1 && rows[0].EndedReason == protocol.StopRequested && rows[0].Reported && !rows[0].Resumable
+	})
+	if rows, _ := w.d.st.workers(); len(rows) != 1 {
+		t.Errorf("worker rows in daemon.db: %+v", rows)
 	}
 	if _, err := os.Stat(filepath.Join(w.cfg.StateDir, "workers")); err == nil {
 		if ents, _ := os.ReadDir(filepath.Join(w.cfg.StateDir, "workers")); len(ents) != 0 {
@@ -900,9 +904,15 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	// same one, found again by its process ID and start time.
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: live.SessionID})
 	eventually(t, "the adopted worker is gone", func() bool { return !alive(recLive.Pid) && !alive(recLive.ChildPid) })
-	if rows, _ := w.d.st.workers(); len(rows) != 0 {
-		t.Errorf("rows left: %+v", rows)
-	}
+	eventually(t, "the adopted worker row is ended and reported", func() bool {
+		rows, _ := w.d.st.workers()
+		for _, r := range rows {
+			if r.EndedReason == protocol.StopRequested && r.Reported {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 // A process ID that was reused is not a worker: the start time differs.

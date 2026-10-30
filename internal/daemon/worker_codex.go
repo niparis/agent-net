@@ -50,34 +50,7 @@ import (
 type codexLauncher struct{}
 
 func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
-	bin, err := d.harnessBinary("codex")
-	if err != nil {
-		return err
-	}
-	port, err := freePort()
-	if err != nil {
-		return err
-	}
-	dir := d.setWorkerDir(w)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	token := protocol.NewToken()
-	tokenPath := filepath.Join(dir, "token")
-	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
-		return err
-	}
-	addr := "127.0.0.1:" + strconv.Itoa(port)
-	args := []string{"app-server", "--listen", "ws://" + addr, "--ws-auth", "capability-token", "--ws-token-file", tokenPath}
-	if err := d.spawnWorker(w, bin, args, os.Environ()); err != nil {
-		return err
-	}
-	d.wmu.Lock()
-	w.ref = addr
-	d.saveWorkerLocked(w)
-	d.wmu.Unlock()
-
-	cc, err := dialCodex(ctx, d, w, addr, token)
+	cc, err := d.startCodex(ctx, w)
 	if err != nil {
 		return err
 	}
@@ -111,6 +84,69 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	return d.registerCodexSession(ctx, w, true)
+}
+
+// resume starts a new private app server and reopens the worker's thread with
+// thread/resume. Codex keeps the thread on disk, so the conversation and its
+// folder continue.
+func (codexLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
+	if w.nativeID == "" {
+		return errors.New("the Codex thread of the worker is not known")
+	}
+	cc, err := d.startCodex(ctx, w)
+	if err != nil {
+		return err
+	}
+	raw, err := cc.call(ctx, "thread/resume", map[string]any{"threadId": w.nativeID})
+	if err != nil {
+		cc.close()
+		return fmt.Errorf("codex does not know the thread any more: %w", err)
+	}
+	var resumed struct {
+		Thread struct {
+			ID    string `json:"id"`
+			Model string `json:"model"`
+		} `json:"thread"`
+	}
+	if json.Unmarshal(raw, &resumed) == nil {
+		cc.model = firstNonEmpty(resumed.Thread.Model, w.model)
+	}
+	cc.thread = w.nativeID
+	d.wmu.Lock()
+	w.codex = cc
+	d.wmu.Unlock()
+	return d.registerCodexSession(ctx, w, true)
+}
+
+// startCodex starts the private app server and connects to it.
+func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) {
+	bin, err := d.harnessBinary("codex")
+	if err != nil {
+		return nil, err
+	}
+	port, err := freePort()
+	if err != nil {
+		return nil, err
+	}
+	dir := d.setWorkerDir(w)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	token := protocol.NewToken()
+	tokenPath := filepath.Join(dir, "token")
+	if err := os.WriteFile(tokenPath, []byte(token), 0o600); err != nil {
+		return nil, err
+	}
+	addr := "127.0.0.1:" + strconv.Itoa(port)
+	args := []string{"app-server", "--listen", "ws://" + addr, "--ws-auth", "capability-token", "--ws-token-file", tokenPath}
+	if err := d.spawnWorker(w, bin, args, os.Environ()); err != nil {
+		return nil, err
+	}
+	d.wmu.Lock()
+	w.ref = addr
+	d.saveWorkerLocked(w)
+	d.wmu.Unlock()
+	return dialCodex(ctx, d, w, addr, token)
 }
 
 // adopt connects again to the app server of a worker that survived a restart

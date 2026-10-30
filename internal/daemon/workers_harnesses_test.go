@@ -135,20 +135,31 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 	}
 	eventually(t, "the handback line", func() bool { return len(c.logs.lines("worker.handback", "status=done")) == 1 })
 
-	// A follow-up from the owner reaches the same session.
+	// A worker that hands back ends. The follow-up from its owner starts the
+	// same Claude session again with --resume, and it hands back again.
+	eventually(t, "the worker process is gone after its hand-back", func() bool {
+		return !alive(rec.Pid) && !alive(rec.ChildPid)
+	})
 	var sent protocol.MessageSent
-	mustJSON(t, c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "and again"}), &sent)
+	mustJSON(t, c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:handback and again"}), &sent)
 	c.waitNotice(t, 2)
-
-	// Stop: `claude stop <id>` is run, and nothing of the group is left.
-	c.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
-	eventually(t, "the session is gone", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
-	if got := c.stops(); len(got) != 1 || got[0] != rec.ID {
-		t.Errorf("claude stop calls: %v, want [%s]", got, rec.ID)
+	var rec2 fakeClaudeRecord
+	eventually(t, "the resumed Claude session", func() bool {
+		raw, err := os.ReadFile(filepath.Join(repo, "fake-claude.json"))
+		rec2 = fakeClaudeRecord{}
+		return err == nil && json.Unmarshal(raw, &rec2) == nil && rec2.Pid != rec.Pid && rec2.Pid != 0
+	})
+	if rec2.Session != rec.Session || argValue(rec2.Args, "--resume") != rec.Session {
+		t.Errorf("the follow-up did not resume session %s: %+v", rec.Session, rec2)
 	}
-	c.workerStopped(t, g, protocol.StopRequested)
-	eventually(t, "the session is offline", func() bool { return len(c.workers(t)) == 1 && !c.workers(t)[0].Online })
-	if rows, _ := c.d.st.workers(); len(rows) != 0 {
+	eventually(t, "the resumed worker ends too", func() bool { return !alive(rec2.Pid) && !alive(rec2.ChildPid) })
+	// `claude stop` ran for each run, and the ended worker keeps only its
+	// resumable record.
+	if got := c.stops(); len(got) != 2 || got[0] != rec.ID || got[1] != rec2.ID {
+		t.Errorf("claude stop calls: %v, want [%s %s]", got, rec.ID, rec2.ID)
+	}
+	c.workerStopped(t, g, protocol.StopHandback)
+	if rows, _ := c.d.st.workers(); len(rows) != 1 || !rows[0].Resumable {
 		t.Errorf("rows left: %+v", rows)
 	}
 }
@@ -219,13 +230,13 @@ func TestClaudeWorkerStartFails(t *testing.T) {
 
 // The daemon takes a Claude worker back after a restart: the session is the
 // same process, the adapter finds it again, and it is still flagged. It is
-// stopped by the id kept in the database.
+// ended by the id kept in the database when it hands back.
 func TestClaudeWorkerSurvivesADaemonRestart(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "x"})
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:ignore"})
 	rec := readClaude(t, repo)
 	owner := c.ownerID()
 
@@ -246,7 +257,8 @@ func TestClaudeWorkerSurvivesADaemonRestart(t *testing.T) {
 	mustJSON(t, c.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:handback still there?"}), &sent)
 	c.waitNotice(t, 1)
 
-	c.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
+	// Its hand-back ends it with `claude stop`, using the id kept in the
+	// database across the restart.
 	eventually(t, "the adopted session is gone", func() bool { return !alive(rec.Pid) })
 	if got := c.stops(); len(got) != 1 || got[0] != rec.ID {
 		t.Errorf("claude stop calls after the restart: %v, want [%s]", got, rec.ID)
@@ -552,30 +564,37 @@ func TestCodexWorkerLifecycle(t *testing.T) {
 			t.Errorf("notice lacks %q:\n%s", want, n.Body)
 		}
 	}
+	eventually(t, "the ended worker session is offline", func() bool {
+		a := w.agentOf(t, res.SessionID)
+		return a != nil && !a.Online
+	})
 	a := w.agentOf(t, res.SessionID)
-	if a == nil || a.Worker == nil || a.Worker.Owner != owner || a.Mode != protocol.ModeBackground || a.Harness != "codex" || !a.Online {
+	if a == nil || a.Worker == nil || a.Worker.Owner != owner || a.Mode != protocol.ModeBackground || a.Harness != "codex" {
 		t.Fatalf("worker view: %+v", a)
 	}
-	eventually(t, "the session is idle again", func() bool { a := w.agentOf(t, res.SessionID); return a != nil && a.Status == "idle" })
+	// The hand-back ends the worker: it leaves the list.
+	eventually(t, "the worker ends after its hand-back", func() bool {
+		return !alive(rec.Pid) && !alive(rec.ChildPid) && len(w.workers(t)) == 0
+	})
 
-	// A follow-up from the person is a turn, and its answer goes to the person.
+	// A follow-up from the person starts the same thread again and is a turn,
+	// and its answer goes to the person.
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "and run the tests"}), &sent)
 	got := w.replyTo(t, owner, sent.Message.ID)
 	if !strings.Contains(got.Body, "status: done") {
 		t.Errorf("follow-up answer: %s", got.Body)
 	}
-	rec = readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 2 })
-	if !strings.Contains(rec.Turns[1], "Message from your user, in person:") || !strings.Contains(rec.Turns[1], "and run the tests") {
-		t.Errorf("second turn: %q", rec.Turns[1])
+	rec = readCodex(t, repo, func(r fakeCodexRecord) bool { return r.Resumed == 1 && len(r.Turns) == 1 })
+	if !strings.Contains(rec.Turns[0], "Message from your user, in person:") || !strings.Contains(rec.Turns[0], "and run the tests") {
+		t.Errorf("the resumed turn: %q", rec.Turns[0])
 	}
-
-	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
-	eventually(t, "the process and its child are gone", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
-	w.workerStopped(t, g, protocol.StopRequested)
-	eventually(t, "the session is offline", func() bool { a := w.agentOf(t, res.SessionID); return a != nil && !a.Online })
-	if _, err := os.Stat(filepath.Dir(tokenFile)); err == nil {
-		t.Error("the worker folder (with the token) is still there")
+	eventually(t, "the resumed worker ends too", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
+	w.workerStopped(t, g, protocol.StopHandback)
+	// Its folder is kept with the record, so the owner can start it again
+	// while it is younger than the longest run time.
+	if _, err := os.Stat(filepath.Dir(tokenFile)); err != nil {
+		t.Errorf("the worker folder (with the token) is gone: %v", err)
 	}
 }
 
@@ -598,9 +617,7 @@ func TestCodexWorkerBlockedOnAnApproval(t *testing.T) {
 	if m, _ := rec.Answers[0].(map[string]any); m["decision"] != "decline" {
 		t.Errorf("the approval was answered %v", rec.Answers[0])
 	}
-	if w.d.workerCount() != 1 {
-		t.Error("a blocked worker ended")
-	}
+	eventually(t, "a blocked worker ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
 	_ = res
 }
 
@@ -663,9 +680,8 @@ func TestCodexWorkerSurvivesADaemonRestart(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
-	w.waitNotice(t, 1)
 	owner := w.ownerID()
 
 	w.d.Stop()
@@ -686,8 +702,7 @@ func TestCodexWorkerSurvivesADaemonRestart(t *testing.T) {
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "still there?"}), &sent)
 	w.replyTo(t, owner, sent.Message.ID)
 
-	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
-	eventually(t, "the adopted app server is gone", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
+	eventually(t, "the adopted app server ends after the hand-back", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
 }
 
 func TestCodexWorkerStartFails(t *testing.T) {

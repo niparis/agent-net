@@ -395,33 +395,58 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveWorker(ctx, nc, h, raw)
 			continue
 		}
-		data, err := g.handle(ctx, nc, h.Type, raw)
-		var reply []byte
-		var eerr error
-		if err != nil {
-			var rj Rejection
-			if !errors.As(err, &rj) {
-				g.logLine("error", "node", nc.id, "where", h.Type, "err", err)
-			}
-			reply, eerr = protocol.EncodeResult(h.ID, nil, err)
-		} else {
-			reply, eerr = protocol.EncodeResult(h.ID, data, nil)
-		}
-		if eerr != nil {
-			g.logLine("error", "where", "encode result", "err", eerr)
+		if h.Type == "msg.send" && g.msgSendMayResume(raw) {
+			// Starting an ended worker again asks this same node and waits for
+			// its answer, so it must not run in the read loop that reads it.
+			go g.answer(ctx, nc, h, raw)
 			continue
 		}
-		if nc.write(ctx, reply) != nil {
+		if g.answer(ctx, nc, h, raw) != nil {
 			return
 		}
-		if h.Type == "session.sync" && err == nil {
-			g.sendMCPSync(ctx, nc)
-			g.dispatchPending(ctx, nc.id, true)
-		}
-		if h.Type == "session.upsert" && err == nil {
-			g.dispatchPending(ctx, nc.id, false)
-		}
 	}
+}
+
+// msgSendMayResume tells whether a msg.send is addressed to an ended worker.
+// Only then can the gateway ask the machine to start the worker again.
+func (g *Gateway) msgSendMayResume(raw []byte) bool {
+	var p protocol.MsgSend
+	if json.Unmarshal(raw, &p) != nil || p.Recipient == "" {
+		return false
+	}
+	a, ok, err := g.store.Agent(p.Recipient)
+	return err == nil && ok && a.Worker != nil && !a.Online
+}
+
+// answer handles one frame and writes its result. A link error ends the loop.
+func (g *Gateway) answer(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) error {
+	data, err := g.handle(ctx, nc, h.Type, raw)
+	var reply []byte
+	var eerr error
+	if err != nil {
+		var rj Rejection
+		if !errors.As(err, &rj) {
+			g.logLine("error", "node", nc.id, "where", h.Type, "err", err)
+		}
+		reply, eerr = protocol.EncodeResult(h.ID, nil, err)
+	} else {
+		reply, eerr = protocol.EncodeResult(h.ID, data, nil)
+	}
+	if eerr != nil {
+		g.logLine("error", "where", "encode result", "err", eerr)
+		return nil
+	}
+	if nc.write(ctx, reply) != nil {
+		return errNodeGone
+	}
+	if h.Type == "session.sync" && err == nil {
+		g.sendMCPSync(ctx, nc)
+		g.dispatchPending(ctx, nc.id, true)
+	}
+	if h.Type == "session.upsert" && err == nil {
+		g.dispatchPending(ctx, nc.id, false)
+	}
+	return nil
 }
 
 func decode[T any](raw []byte) (T, error) {
@@ -670,6 +695,17 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "to", p.Recipient, "bytes", len(p.Body),
 				"reason", "sender session not on this node")
 			return nil, reject("sender session %q does not belong to this node", p.Sender)
+		}
+		// A message from its owner starts an ended worker again, before it is
+		// stored, so a refusal reaches the sender (W10).
+		if err := g.resumeEndedWorker(ctx, nc, p); err != nil {
+			var rj Rejection
+			if errors.As(err, &rj) {
+				st.Event("msg.refused", nc.id, p.Sender, "", err.Error())
+				g.logLine("msg.refused", "node", nc.id, "from", p.Sender, "to", p.Recipient, "bytes", len(p.Body),
+					"reason", err.Error())
+			}
+			return nil, err
 		}
 		m, created, err := st.StoreMessage(p)
 		if err != nil {

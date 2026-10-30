@@ -58,14 +58,23 @@ CREATE TABLE IF NOT EXISTS workers (
 			return nil, err
 		}
 	}
-	// task_text is the short task line shown for a worker. A table from an
-	// older version does not have it.
-	var hasTaskText int
-	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'task_text'`).Scan(&hasTaskText)
-	if hasTaskText == 0 {
-		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN task_text TEXT NOT NULL DEFAULT ''`); err != nil {
-			db.Close()
-			return nil, err
+	// task_text is the short task line shown for a worker. resumable is 1 for
+	// a worker that ended after its hand-back and whose harness session is
+	// kept, so a message from its owner can start it again. reported says the
+	// gateway has been told that it ended. A table from an older version does
+	// not have these columns.
+	for _, col := range []struct{ name, spec string }{
+		{"task_text", `task_text TEXT NOT NULL DEFAULT ''`},
+		{"resumable", `resumable INTEGER NOT NULL DEFAULT 0`},
+		{"reported", `reported INTEGER NOT NULL DEFAULT 0`},
+	} {
+		var has int
+		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)
+		if has == 0 {
+			if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN ` + col.spec); err != nil {
+				db.Close()
+				return nil, err
+			}
 		}
 	}
 	// Fix files that an older version made with the default mode.

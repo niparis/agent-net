@@ -292,6 +292,11 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 		if err = json.Unmarshal(raw, &p); err == nil {
 			err = d.stopWorkerSession(p.Session)
 		}
+	case "worker.resume":
+		var p protocol.WorkerResume
+		if err = json.Unmarshal(raw, &p); err == nil {
+			err = d.resumeWorkerSession(ctx, p.Session, p.Requester)
+		}
 	}
 	if res, eerr := protocol.EncodeResult(h.ID, data, err); eerr == nil {
 		l.write(ctx, res)
