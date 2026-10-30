@@ -556,9 +556,9 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string) error {
 // Graph returns explicit and implicit nodes and all edges.
 func (s *Store) Graph() (protocol.Graph, error) {
 	g := protocol.Graph{Nodes: []protocol.Node{}, Edges: []protocol.Edge{}}
-	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'' FROM graph_nodes
- UNION ALL SELECT name,'component',0,0,path FROM projects WHERE graph_excluded=0 AND name NOT IN (SELECT name FROM graph_nodes)
- UNION ALL SELECT repo_project,'component',0,0,repo_root FROM sessions WHERE graph_excluded=0 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
+	rows, err := s.db.Query(`SELECT name,kind,created_at,1,'',2 FROM graph_nodes
+ UNION ALL SELECT name,'component',0,0,path,graph_excluded FROM projects WHERE graph_excluded<>1 AND name NOT IN (SELECT name FROM graph_nodes)
+ UNION ALL SELECT repo_project,'component',0,0,repo_root,graph_excluded FROM sessions WHERE graph_excluded<>1 AND repo_project<>'' AND repo_project NOT IN (SELECT name FROM graph_nodes) ORDER BY 1`)
 	if err != nil {
 		return g, err
 	}
@@ -566,12 +566,12 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	for rows.Next() {
 		var n protocol.Node
 		var root string
-		var explicit int
-		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt, &explicit, &root); err != nil {
+		var explicit, checked int
+		if err = rows.Scan(&n.Name, &n.Kind, &n.CreatedAt, &explicit, &root, &checked); err != nil {
 			rows.Close()
 			return g, err
 		}
-		if explicit == 0 && !graphProjectRoot(root) {
+		if explicit == 0 && (root == "" || (checked == 0 && !graphProjectRoot(root))) {
 			continue
 		}
 		if seen[n.Name] {
@@ -691,4 +691,10 @@ func (s *Store) CTOLastGraphID() (int64, error) {
 	return id, err
 }
 
-func graphProjectRoot(root string) bool { return repoinfo.GraphProjectRoot(root) }
+func graphProjectRoot(root string) bool {
+	if !repoinfo.GraphProjectRoot(root) {
+		return false
+	}
+	parts := strings.Split(strings.Trim(root, "/"), "/")
+	return len(parts) != 2 || (parts[0] != "home" && parts[0] != "Users")
+}

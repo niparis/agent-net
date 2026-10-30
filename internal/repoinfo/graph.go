@@ -6,8 +6,7 @@ import (
 	"strings"
 )
 
-// graphProjectRoot rejects scratch roots while leaving paths on other machines
-// alone. Registered project paths have already been checked by their daemon.
+// GraphProjectRoot reports whether a local root can represent a graph component.
 func GraphProjectRoot(root string) bool {
 	if root == "" || !filepath.IsAbs(root) {
 		return false
@@ -24,10 +23,6 @@ func GraphProjectRoot(root string) bool {
 	}
 	home, _ := os.UserHomeDir()
 	if home != "" && root == filepath.Clean(home) {
-		return false
-	}
-	parts := strings.Split(strings.Trim(root, "/"), "/")
-	if len(parts) == 2 && (parts[0] == "home" || parts[0] == "Users") {
 		return false
 	}
 	return true

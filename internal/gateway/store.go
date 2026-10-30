@@ -517,7 +517,7 @@ func (s *Store) upsertSession(q interface {
 		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
-		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting, boolInt(in.GraphExcluded))
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting, graphExclusion(in.GraphExcluded, in.GraphChecked))
 	if err != nil {
 		return "", false, err
 	}
@@ -1486,4 +1486,15 @@ func (s *Store) expireMessage(id string, now int64) (bool, error) {
 		return false, err
 	}
 	return true, nil
+}
+
+// graphExclusion distinguishes older daemons from an eligible checked root.
+func graphExclusion(excluded, checked bool) int {
+	if excluded {
+		return 1
+	}
+	if checked {
+		return 2
+	}
+	return 0
 }

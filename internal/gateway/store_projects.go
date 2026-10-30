@@ -76,7 +76,7 @@ func (s *Store) AddProjects(nodeID string, in protocol.ProjectAdd) (protocol.Pro
 			res.Existing = append(res.Existing, e)
 			if !in.DryRun {
 				if _, err := tx.Exec(`UPDATE projects SET name = ?, remote = ?, default_branch = ?, checked_at = ?, graph_excluded = ?
-					WHERE node_id = ? AND path = ?`, e.Name, e.Remote, e.DefaultBranch, now, boolInt(e.GraphExcluded), nodeID, e.Path); err != nil {
+					WHERE node_id = ? AND path = ?`, e.Name, e.Remote, e.DefaultBranch, now, graphExclusion(e.GraphExcluded, e.GraphChecked), nodeID, e.Path); err != nil {
 					return res, err
 				}
 			}
@@ -86,7 +86,7 @@ func (s *Store) AddProjects(nodeID string, in protocol.ProjectAdd) (protocol.Pro
 		if !in.DryRun {
 			if _, err := tx.Exec(`INSERT INTO projects (node_id, path, name, remote, default_branch, added_by_session,
 				added_by_harness, added_at, checked_at, graph_excluded) VALUES (?,?,?,?,?,?,?,?,?,?)`, nodeID, e.Path, e.Name, e.Remote,
-				e.DefaultBranch, in.AddedBySession, in.AddedByHarness, now, now, boolInt(e.GraphExcluded)); err != nil {
+				e.DefaultBranch, in.AddedBySession, in.AddedByHarness, now, now, graphExclusion(e.GraphExcluded, e.GraphChecked)); err != nil {
 				return res, err
 			}
 		}

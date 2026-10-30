@@ -171,3 +171,26 @@ func TestGraphUsesReportingMachineExclusions(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphUsesRemoteEligibilityInsteadOfGatewayEnvironment(t *testing.T) {
+	s, _ := newTestStore(t)
+	t.Setenv("TMPDIR", "/remote/repo")
+	node, _, err := s.CreateNode("test", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "remote-eligible", Repo: protocol.RepoInfo{Root: "/remote/repo", Project: "remote-eligible"}, GraphChecked: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range g.Nodes {
+		if n.Name == "remote-eligible" {
+			return
+		}
+	}
+	t.Fatal("gateway temporary directory hid an eligible remote repository")
+}
