@@ -67,6 +67,7 @@ type CTOSettingsRequest struct {
 const OpCTOSettings = "cto_settings"
 
 const (
+	OpCTOEnter        = "cto_enter"
 	OpCTOSend         = "cto_send"
 	OpCTONew          = "cto_new"
 	OpCTOEvents       = "cto_events"

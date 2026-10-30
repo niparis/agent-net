@@ -264,3 +264,23 @@ func TestClaudeCTORequiresItsOwnSessionFile(t *testing.T) {
 		t.Fatal("rejected symlinked state directory")
 	}
 }
+
+func TestCTOEnterClaude(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.HarnessPaths = map[string]string{"claude": os.Args[0]}
+	}})
+	cli := cliClient(t, n)
+	harness := "claude"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	var plan protocol.EnterPlan
+	if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Argv) != 3 || plan.Argv[1] != "attach" || plan.Argv[2] != n.d.claudeCTO.ref {
+		t.Fatalf("plan: %+v", plan)
+	}
+}
