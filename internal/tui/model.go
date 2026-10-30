@@ -330,7 +330,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ctoSendMsg:
 		if m.cto != nil && m.cto.generation == msg.generation {
 			if msg.err != nil {
-				m.cto.err = sanitize(msg.err.Error())
+				line := "error: " + sanitize(msg.err.Error())
+				m.cto.local = append(m.cto.local, protocol.CTOAction{Text: line, At: m.now().UnixNano()})
+				m.cto.messages = append(m.cto.messages, line)
 			} else if !m.cto.polling {
 				m.cto.polling = true
 				return m, m.ctoPollCmd()

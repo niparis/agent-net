@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -286,5 +287,17 @@ func TestCTOOpenFullRequestsPlan(t *testing.T) {
 	}
 	if _, ok := cmd().(enterMsg); !ok {
 		t.Fatal("open full did not return an enter plan")
+	}
+}
+
+func TestCTOSendErrorSurvivesPoll(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	model, _ := New(src).startCTO()
+	m := model.(Model)
+	updated, _ := m.Update(ctoSendMsg{err: errors.New("send failed"), generation: m.cto.generation})
+	m = updated.(Model)
+	m.applyCTOPoll(ctoPollMsg{generation: m.cto.generation})
+	if !strings.Contains(strings.Join(m.cto.messages, "\n"), "error: send failed") {
+		t.Fatalf("error lost: %+v", m.cto.messages)
 	}
 }
