@@ -462,3 +462,12 @@ func TestCTOMultilineReplyPreserved(t *testing.T) {
 		t.Fatalf("lost line breaks: %s", got)
 	}
 }
+
+func TestCTOMarkdownReply(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{messages: []string{"cto: **bold** and `code`\n\n| attr | draft |\n| --- | --- |\n| one | two |", "you: **plain**"}}
+	got := ansi.Strip(strings.Join(m.ctoView(60, 15), "\n"))
+	if strings.Contains(got, "**bold**") || strings.Contains(got, "`code`") || !strings.Contains(got, "bold") || !strings.Contains(got, "one") || !strings.Contains(got, "**plain**") {
+		t.Fatalf("bad markdown rendering:\n%s", got)
+	}
+}

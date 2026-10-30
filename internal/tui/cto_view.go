@@ -1,6 +1,13 @@
 package tui
 
-import "strings"
+import (
+	"github.com/charmbracelet/glamour"
+	ga "github.com/charmbracelet/glamour/ansi"
+	"github.com/charmbracelet/glamour/styles"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
+	"strings"
+)
 
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
@@ -42,7 +49,7 @@ func (m Model) ctoView(w, h int) []string {
 	}
 	var lines []string
 	for _, v := range c.messages {
-		lines = append(lines, wrapCTOLine(v, w)...)
+		lines = append(lines, c.renderMessage(v, w)...)
 	}
 	if c.err != "" {
 		duplicate := false
@@ -96,4 +103,59 @@ func wrapCTOLine(text string, width int) []string {
 		parts[i] = "  " + parts[i]
 	}
 	return parts
+}
+
+type ctoRenderKey struct {
+	text    string
+	width   int
+	dark    bool
+	profile termenv.Profile
+}
+
+func (c *ctoState) renderMessage(text string, width int) []string {
+	if !strings.HasPrefix(text, "cto: ") {
+		return wrapCTOLine(text, width)
+	}
+	key := ctoRenderKey{text, width, lipgloss.HasDarkBackground(), lipgloss.ColorProfile()}
+	if lines, ok := c.renderCache[key]; ok {
+		return lines
+	}
+	style := styles.DarkStyleConfig
+	if !key.dark {
+		style = styles.LightStyleConfig
+	}
+	color := func(role lipgloss.TerminalColor) *string {
+		adaptive := role.(lipgloss.AdaptiveColor)
+		value := adaptive.Light
+		if key.dark {
+			value = adaptive.Dark
+		}
+		return &value
+	}
+	zero := uint(0)
+	yes := true
+	style.Document = ga.StyleBlock{StylePrimitive: ga.StylePrimitive{Color: color(roleText)}, Margin: &zero}
+	style.Heading.Color, style.Heading.Bold = color(roleText), &yes
+	style.Code.Color, style.CodeBlock.Color = color(roleAccent), color(roleAccent)
+	style.Link.Color, style.LinkText.Color = color(roleAccent), color(roleAccent)
+	style.BlockQuote.Color = color(roleDim)
+	renderer, err := glamour.NewTermRenderer(glamour.WithStyles(style), glamour.WithWordWrap(max(width, 1)), glamour.WithColorProfile(key.profile), glamour.WithPreservedNewLines())
+	if err != nil {
+		return wrapCTOLine(text, width)
+	}
+	rendered, err := renderer.Render(sanitizeBody(strings.TrimPrefix(text, "cto: ")))
+	if err != nil {
+		return wrapCTOLine(text, width)
+	}
+	lines := strings.Split(strings.Trim(rendered, "\n"), "\n")
+	label := lipgloss.NewStyle().Foreground(roleCTO).Render("cto:")
+	lines = append([]string{label}, lines...)
+	if c.renderCache == nil {
+		c.renderCache = make(map[ctoRenderKey][]string)
+	}
+	if len(c.renderCache) > 512 {
+		clear(c.renderCache)
+	}
+	c.renderCache[key] = lines
+	return lines
 }

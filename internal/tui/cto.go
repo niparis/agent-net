@@ -32,6 +32,7 @@ type ctoState struct {
 	confirming          bool
 	model, harness, err string
 	messages            []string
+	renderCache         map[ctoRenderKey][]string
 	history             []protocol.CTOGraphChange
 	local               []protocol.CTOAction
 	sendErrors          []ctoLocalError
