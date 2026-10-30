@@ -66,9 +66,23 @@ const (
 	OpWorkerHandback = "worker_handback" // takes WorkerHandbackRequest, answers WorkerHandbackResult
 )
 
+// Graph operator methods are available only to the owner.
+const (
+	OpGraphGet       = "graph_get"
+	OpCharterSet     = "charter_set"
+	OpCharterHistory = "charter_history"
+	OpNodeAdd        = "node_add"
+	OpNodeRemove     = "node_remove"
+	OpEdgeSet        = "edge_set"
+	OpEdgeRemove     = "edge_remove"
+	OpEdgeHistory    = "edge_history"
+	OpGraphUndo      = "graph_undo"
+)
+
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
 	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway

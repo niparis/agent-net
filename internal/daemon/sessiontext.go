@@ -35,6 +35,7 @@ var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
+	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -212,6 +213,22 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				}
 				d.Logf("node.rename node=%s name=%q", q.NodeID, out.DisplayName)
 			}
+		}
+	case protocol.OpGraphGet, protocol.OpCharterSet, protocol.OpCharterHistory, protocol.OpNodeAdd, protocol.OpNodeRemove, protocol.OpEdgeSet, protocol.OpEdgeRemove, protocol.OpEdgeHistory, protocol.OpGraphUndo:
+		// The gateway trusts enrolled daemons as with session.policy. The owner
+		// gate above must run before forwarding any graph operation.
+		frame := strings.ReplaceAll(method, "_", ".")
+		var params any = raw
+		if method == protocol.OpGraphUndo {
+			var q protocol.GraphUndoRequest
+			if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+				return nil, true, errors.New("bad graph_undo params")
+			}
+			params = protocol.GraphUndoFrame{HistoryID: q.ID}
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, frame, params); err == nil {
+			res = data
 		}
 	case protocol.OpSessionPolicy:
 		// The policy is owner text that goes into the model's context every
