@@ -32,6 +32,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0014](decisions/0014-delegation-policy.md): delegation policy (the owner sets, per session or project, whether a session does the coding itself or hands it to a native subagent or a worker; applied on every turn).
 - [0020](decisions/0020-worker-sandbox.md): unattended workers get a sandbox, not approval prompts (a level per project, Codex first). Amends 0002 W6.
 - [0021](decisions/0021-network-integrations.md): one setup integrations question, answered once for the whole network.
+- [0022](decisions/0022-component-graph-and-cto.md): draft. A graph of components with charters (maturity included), edges with modes, and a CTO agent in the TUI that changes it by conversation.
 - [0015](decisions/0015-machine-display-name.md): machine display name (the owner names a machine once, from the TUI; every machine shows it).
 - [0018](decisions/0018-admit-workers-by-machine-load.md): workers start by recent CPU and memory load, with a queue and a choice of machine by headroom.
 - [0019](decisions/0019-opencode-worker-logins.md): OpenCode workers get a private data folder and a copy of all the owner's OpenCode logins; the OAuth sign-out risk and when to revisit.
