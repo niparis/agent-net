@@ -55,3 +55,8 @@ func phoneAuth(s *Store, next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// PhoneHandler puts the owner identity check in front of all phone routes.
+func (g *Gateway) PhoneHandler(app http.Handler) http.Handler {
+	return phoneAuth(g.store, app)
+}

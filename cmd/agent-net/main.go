@@ -170,6 +170,7 @@ func defaultGatewayData() string {
 func cmdGateway(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("gateway", flag.ExitOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on")
+	phoneListen := fs.String("phone-listen", "", "phone HTTP listener on 127.0.0.1:port (disabled by default)")
 	data := fs.String("data", defaultGatewayData(), "data directory")
 	sans := fs.String("san", "", "extra host names or IPs for the TLS certificate, comma separated")
 	dist := fs.String("dist", setup.DefaultDist(), "directory with the agent-net-{os}-{arch} binaries served at /install/bin")
@@ -196,6 +197,13 @@ func cmdGateway(ctx context.Context, args []string) error {
 		return err
 	}
 	defer gw.Close()
+	if *phoneListen != "" {
+		phone, err := startPhoneListener(ctx, *phoneListen, gw.PhoneHandler(http.NotFoundHandler()))
+		if err != nil {
+			return err
+		}
+		defer phone.Close()
+	}
 	if err := gw.WriteAdminInfo(*listen); err != nil {
 		return err
 	}
