@@ -125,6 +125,10 @@ CREATE TABLE project_policies (
 CREATE TABLE model_failures (
 	node_id TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL, at INTEGER NOT NULL,
 	PRIMARY KEY (node_id, harness, model));
+`, `
+ALTER TABLE nodes ADD COLUMN reported_hostname TEXT NOT NULL DEFAULT '';
+ALTER TABLE nodes ADD COLUMN display_name TEXT NOT NULL DEFAULT '';
+UPDATE nodes SET reported_hostname = hostname;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -273,8 +277,8 @@ func (s *Store) ConsumeEnrollCode(code string) (bool, error) {
 func (s *Store) CreateNode(hostname, osName string) (nodeID, token string, err error) {
 	nodeID = protocol.NewID("n")
 	token = protocol.NewToken()
-	_, err = s.db.Exec(`INSERT INTO nodes (id, hostname, os, token_hash, created_at) VALUES (?,?,?,?,?)`,
-		nodeID, hostname, osName, hashHex(token), s.now().UnixNano())
+	_, err = s.db.Exec(`INSERT INTO nodes (id, hostname, reported_hostname, os, token_hash, created_at) VALUES (?,?,?,?,?,?)`,
+		nodeID, hostname, hostname, osName, hashHex(token), s.now().UnixNano())
 	if err == nil {
 		s.Event("node.enrolled", nodeID, "", "", hostname)
 	}
@@ -289,11 +293,15 @@ func (s *Store) NodeByToken(token string) (nodeID string, ok bool, err error) {
 	return nodeID, err == nil, err
 }
 
+// SetNodeHostname stores the host name a daemon reported. The column hostname
+// is the name every listing uses: it stays the owner's display name when one
+// is set (decision 0015), and follows the reported name otherwise.
 func (s *Store) SetNodeHostname(nodeID, hostname string) error {
 	if hostname == "" {
 		return nil
 	}
-	_, err := s.db.Exec(`UPDATE nodes SET hostname = ? WHERE id = ?`, hostname, nodeID)
+	_, err := s.db.Exec(`UPDATE nodes SET reported_hostname = ?,
+		hostname = CASE WHEN display_name != '' THEN display_name ELSE ? END WHERE id = ?`, hostname, hostname, nodeID)
 	return err
 }
 

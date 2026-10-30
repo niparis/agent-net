@@ -29,6 +29,7 @@ const (
 	modeConfirm           // asking y/n before stopping a worker
 	modeTrust             // asking y/n before trusting a session with peer requests
 	modePolicy            // the delegation policy form (policy.go)
+	modeRename            // typing a display name for the selected session's machine
 )
 
 // noticeTTL is how long a result line stays when no key clears it.
@@ -178,6 +179,76 @@ func (m Model) stopCmd(id, name string) tea.Cmd {
 			return actionMsg{err: fmt.Errorf("Not stopped: %s", explain(err))}
 		}
 		return actionMsg{text: "Stopped worker " + name + "."}
+	}
+}
+
+// ---- machine name ----
+
+// startRename opens the name prompt for the machine of the selected session
+// (decision 0015). The name is kept on the gateway, so every machine sees it.
+func (m Model) startRename() (Model, tea.Cmd) {
+	a, ok := m.selectedAgent()
+	if !ok {
+		m.fail("Nothing is selected: pick a session on the machine first.")
+		return m, nil
+	}
+	shown, set := a.Hostname, false
+	for _, n := range m.snap.Nodes {
+		if n.NodeID == a.NodeID {
+			shown, set = n.Hostname, n.DisplayName != ""
+		}
+	}
+	m.mode = modeRename
+	m.rename = textinput.New()
+	m.rename.Prompt = "name for " + sanitize(shown) + "> "
+	m.rename.CharLimit = protocol.MaxNodeName
+	m.rename.Cursor.SetMode(cursor.CursorHide)
+	m.rename.SetValue(sanitize(shown))
+	m.rename.CursorEnd()
+	m.renameNode, m.renameShown, m.renameSet = a.NodeID, shown, set
+	m.notice = notice{}
+	return m, m.rename.Focus()
+}
+
+func (m Model) renameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.Type {
+	case tea.KeyEsc:
+		m.mode = modeNormal
+		m.say("Machine name unchanged.")
+		return m, nil
+	case tea.KeyEnter:
+		name, err := protocol.CleanNodeName(m.rename.Value())
+		if err != nil {
+			m.fail(err.Error() + ".")
+			return m, nil
+		}
+		if name == m.renameShown && !m.renameSet || name == "" && !m.renameSet {
+			m.mode = modeNormal
+			m.say("Machine name unchanged.")
+			return m, nil
+		}
+		m.mode = modeNormal
+		m.say("Saving the machine name...")
+		return m, m.renameCmd(m.renameNode, name)
+	}
+	var cmd tea.Cmd
+	m.rename, cmd = m.rename.Update(k)
+	return m, cmd
+}
+
+func (m Model) renameCmd(id, name string) tea.Cmd {
+	src := m.src
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := src.RenameNode(ctx, id, name)
+		if err != nil {
+			return actionMsg{err: fmt.Errorf("Machine name not changed: %s", explain(err))}
+		}
+		if name == "" {
+			return actionMsg{text: "Machine name cleared: it is " + sanitize(res.Hostname) + " again, on every machine."}
+		}
+		return actionMsg{text: "Machine named " + sanitize(res.Hostname) + ". Every machine shows it."}
 	}
 }
 

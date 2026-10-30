@@ -9,6 +9,7 @@ Keys ─────────────────────────
   x                    stop the selected worker (asks y/n)
   t                    peer trust on/off: act on requests of other agents (y/n)
   p                    delegation policy: subagent or worker for code changes (…
+  N                    name the machine of the session (every machine sees it; …
   /                    filter (words match name, project, branch, model, ...)
   o                    show offline and dormant sessions
   d                    give the detail pane the room of the message feed
@@ -20,5 +21,4 @@ Keys ─────────────────────────
   G, end, f            back to the end and follow new entries
   esc                  back to the sessions
  Everywhere
-  ?                    this help
 esc close help  q quit

@@ -80,6 +80,10 @@ type Model struct {
 	confirmID   string // worker the stop question is about
 	confirmName string
 	pol         policyForm
+	rename      textinput.Model // the machine name prompt
+	renameNode  string          // node ID the name is for
+	renameShown string          // the name shown when the prompt opened
+	renameSet   bool            // that name is the owner's, not the reported one
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
 	// execProcess replaces tea.ExecProcess in tests.
@@ -382,6 +386,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.trustKey(k)
 	case modePolicy:
 		return m.policyKey(k)
+	case modeRename:
+		return m.renameKey(k)
 	}
 	if m.help {
 		switch k.String() {
@@ -452,6 +458,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startTrust()
 	case "p":
 		return m.startPolicy()
+	case "N":
+		return m.startRename()
 	case "?":
 		m.help = true
 	case "d":

@@ -47,6 +47,7 @@ const usage = `usage: agent-net <command>
   status     show the daemon's state and local sessions
   list       list agents on the network
   nodes      list machines with their agent-net version and installed harnesses
+             (nodes rename <node-id|name> [new name] sets a display name)
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
   tui        live terminal view of every agent session on the network; send as yourself, start and stop workers

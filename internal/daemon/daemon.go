@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/niparis/agent-net/internal/harnesses"
@@ -153,6 +154,10 @@ type Daemon struct {
 	log    *log.Logger
 	st     *state
 	client *http.Client
+
+	// shownHost is the name the gateway lists for this machine (the owner's
+	// display name, decision 0015). Empty until the gateway said.
+	shownHost atomic.Value // string
 
 	mu       sync.Mutex
 	sessions map[string]*localSession
@@ -713,4 +718,13 @@ func (d *Daemon) enqueue(laneKey string, fn func()) {
 			f()
 		}
 	}()
+}
+
+// hostName is the name of this machine as the gateway lists it: the owner's
+// display name when there is one, else the host name this daemon reports.
+func (d *Daemon) hostName() string {
+	if h, _ := d.shownHost.Load().(string); h != "" {
+		return h
+	}
+	return d.cfg.Hostname
 }

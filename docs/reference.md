@@ -17,6 +17,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net status` | Daemon connection, node ID and local sessions. `--json` for JSON. |
 | `agent-net list` | Agents on the network, with their PROJECT (found from the agent's folder). `--all` includes offline ones. `--dormant` includes dormant ones (reachable, but quiet for 24 hours; OpenCode only). `--json` shows them always. `--harness`, `--text` filter. `--wide` adds branch, remote, folder (the session's folder), node and worktree. MODE (`foreground`, `background`, `unknown`, or `-` from an older machine) and MODEL show how the session runs. TRUST is `yes` for a session with [peer trust](#peer-trust-and-hints) on. POLICY is the [delegation policy](#delegation-policy) (`native:deepseek/deepseek-v4.1-flash(project)`), or `-`. `--wide` adds EXPERTISE. `--json`. |
 | `agent-net nodes` | Machines with their agent-net version and installed harnesses (HARNESSES column). `--wide` lists each harness with version, path and model count, and one extra row for every other copy of a harness (marked "other copy"); the primary copy is marked when there is more than one. `--json` has everything, including the model lists. |
+| `agent-net nodes rename NODE [NAME]` | Give a machine a display name that every machine shows, or clear it (no `NAME`). `NODE` is a node ID or a name the machine is listed under. Same as the `N` key in the TUI. See [machine names](#machine-names). |
 | `agent-net projects` | Known projects, one per repository per machine: name, machine, path (the main working tree), git remote, SOURCE (`registered`, `seen` or `both`), which harnesses ran there, the linked worktrees where sessions ran, online sessions and last seen. `--name N` shows one project. `--json`. See [the project registry](#the-project-registry). |
 | `agent-net projects add PATH...` | Register repositories on this machine. `--dry-run` shows what would happen. `--json`. |
 | `agent-net projects scan DIR` | Register every repository under a folder on this machine. `--depth N` (default 3, at most 8), `--dry-run`, `--json`. |
@@ -61,7 +62,7 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | Linux logs | `journalctl --user -u agent-net-daemon` (and `-u agent-net-gateway`) | |
 | macOS logs | `~/Library/Logs/agent-net-daemon.log`, `agent-net-gateway.log` | |
 
-**Machine name.** The HOST column of `agent-net nodes` and `list` is the name the daemon reports on every start. If `node.json` has `"hostname": "mac-mini"`, that name is used. Otherwise, on macOS it is the first of these that is set, cut at the first dot: `scutil --get HostName`, `scutil --get LocalHostName` (System Settings, Sharing), then `os.Hostname()`. macOS changes `os.Hostname()` with the network (`Laptop-1.local`, `Laptop1`), so it is not used while a setting exists. To get a short name, set `"hostname": "laptop-1"` in `node.json`, or run once `sudo scutil --set HostName laptop-1` (macOS then uses it for `hostname` too). On Linux it is `os.Hostname()` as it is. The gateway takes the new name at the next daemon start, so an upgraded machine shows its short name after a restart. `enter_ssh_hosts` keys must match this name. The gateway's own TLS and URL host (`enroll --host`, `invite`) is a network address and still comes from `os.Hostname()`.
+**Machine name.** Each daemon reports a name for its machine on every start. If `node.json` has `"hostname": "mac-mini"`, that name is used. Otherwise, on macOS it is the first of these that is set, cut at the first dot: `scutil --get HostName`, `scutil --get LocalHostName` (System Settings, Sharing), then `os.Hostname()`. macOS changes `os.Hostname()` with the network (`Laptop-1.local`, `Laptop1`), so it is not used while a setting exists. On Linux it is `os.Hostname()` as it is. To show a shorter name, rename the machine once from the TUI (`N`) or with `agent-net nodes rename`: nothing needs to change on the machine itself (see [machine names](#machine-names)). `enter_ssh_hosts` keys match the name the machine is listed under. The gateway's own TLS and URL host (`enroll --host`, `invite`) is a network address and still comes from `os.Hostname()`.
 
 ## Gateway log format
 
@@ -144,6 +145,15 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 `setup --gateway` does not pass the `--keep-*` flags, so the gateway service uses the defaults. To change them, add the flags to the `ExecStart` line of the systemd unit (or to `ProgramArguments` in the launchd plist) and restart the service. Setup keeps your edit only until the next `setup` run, which rewrites the unit.
 
 `install.sh` takes `--gateway`, `--client`, `--binary-only`, `--accept-peer-messages`, `--no-accept-peer-messages` and `--version vX.Y.Z`. The last two peer-message flags are passed to `setup`. See [setup.md](setup.md).
+
+## Machine names
+
+The name of a machine is the host name its daemon reports in `hello`. On macOS that can be long (`Johns-MacBook-Pro-950`). To get a short name, give the machine a display name once, from any machine: press `N` in the TUI, or run `agent-net nodes rename NODE NAME`. Nothing needs to be done on the machine itself. The gateway keeps the display name in its database, apart from the reported host name, and a new `hello` does not change it. An empty name clears it, and the machine is listed under the reported host name again.
+
+- **Where it shows.** Wherever the gateway gives out the name of a machine: `list` and `nodes` (the HOST column and the `hostname` field; `nodes --json` also has `display_name` and `reported_hostname`), the TUI, worker start results and notices, the `hostname` of hints, enter plans, the events and the gateway log. Every daemon also learns its own display name at `hello` (and at once when it is renamed), so a machine uses the same name for itself.
+- **The rules.** 1 to 63 characters: letters, digits, `-`, `_` and `.`, starting with a letter or digit. Letter case is kept, but two machines cannot have names that differ only in case, and a name cannot be the name another machine is listed under.
+- **The operator method** is `node_rename` (`{"node_id": "...", "name": "laptop-1"}`, an empty `name` clears it). It answers `{"node_id", "hostname", "display_name", "reported_hostname"}`. It is served only to the owner's command line or TUI, like `session_policy`, and refused for an agent client and for a command line inside an agent session's process tree. No MCP, Pi or OpenCode tool sets it.
+- **`enter_ssh_hosts`.** Its keys are the names the gateway lists, so after a rename use the display name as the key (`{"laptop-1": "me@laptop-1.example"}`). Matching is exact. The name is also the ssh target when the entry is missing, which is why the rules above are those of a host name.
 
 ## What each machine reports
 
@@ -300,6 +310,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
 | `x` | Stop the selected worker, after a `y/n` question. Any other session is refused with a message. |
 | `t` | Turn [peer trust](#peer-trust-and-hints) on or off for the selected session. Turning it on asks `y/n`; turning it off is immediate. |
+| `N` | Name the machine of the selected session ([machine names](#machine-names)). A one-line prompt starts with the name shown now. Enter saves, an empty name clears it, Esc cancels. Every machine shows the new name. |
 | `p` | Set the [delegation policy](#delegation-policy) of the selected session or its project. A form takes Delegate (left and right: none, off, native, workers), Coder, Main and Scope (session, project). Each move to another field shows what the loose model names resolve to; Enter on Scope saves; Esc cancels. |
 | `e` | Enter the selected session: the TUI hands the terminal to it and comes back when you leave. See [Enter a session](#enter-a-session). |
 | `q`, ctrl+c | Quit. |
@@ -337,7 +348,7 @@ When the plan has nothing to run, the answer has only a note, and the TUI shows 
 "enter_ssh_hosts": {"build-box": "me@build-box.example"}
 ```
 
-`enter_ssh` is off by default. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh must already work without a prompt for anything but a key passphrase or a Tailscale SSH check. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
+`enter_ssh` is off by default. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh must already work without a prompt for anything but a key passphrase or a Tailscale SSH check. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
 
 ## Peer trust and hints
 

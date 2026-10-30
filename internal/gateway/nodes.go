@@ -18,6 +18,44 @@ func (s *Store) SetNodeHello(nodeID, hostname, version string) error {
 	return err
 }
 
+// ErrNodeName is a display name the owner may not use.
+type ErrNodeName struct{ Reason string }
+
+func (e ErrNodeName) Error() string { return e.Reason }
+
+// SetNodeDisplayName gives a node the owner's display name, or clears it with
+// an empty name (decision 0015). It returns the name now listed for the node.
+// The name is checked (protocol.CleanNodeName) and must not be the name of
+// another node, in any letter case. The reported host name stays stored.
+func (s *Store) SetNodeDisplayName(nodeID, name string) (protocol.NodeRenameResult, error) {
+	var res protocol.NodeRenameResult
+	clean, err := protocol.CleanNodeName(name)
+	if err != nil {
+		return res, ErrNodeName{err.Error()}
+	}
+	var reported string
+	if err := s.db.QueryRow(`SELECT reported_hostname FROM nodes WHERE id = ?`, nodeID).Scan(&reported); err != nil {
+		return res, ErrNodeName{"unknown machine " + nodeID}
+	}
+	if clean != "" {
+		var other string
+		err := s.db.QueryRow(`SELECT id FROM nodes WHERE id != ? AND lower(hostname) = lower(?) LIMIT 1`, nodeID, clean).Scan(&other)
+		if err == nil {
+			return res, ErrNodeName{"another machine is already called " + clean}
+		}
+	}
+	shown := clean
+	if shown == "" {
+		shown = reported
+	}
+	if _, err := s.db.Exec(`UPDATE nodes SET display_name = ?, hostname = ? WHERE id = ?`, clean, shown, nodeID); err != nil {
+		return res, err
+	}
+	s.Event("node.renamed", nodeID, "", "", shown)
+	s.logf("node.renamed", "node", nodeID, "name", clean, "reported", reported)
+	return protocol.NodeRenameResult{NodeID: nodeID, Hostname: shown, DisplayName: clean, Reported: reported}, nil
+}
+
 // SetNodeLaunch records whether a node accepts workers. Nil is "not reported"
 // and changes nothing.
 func (s *Store) SetNodeLaunch(nodeID string, launch *bool) error {
@@ -59,7 +97,7 @@ func (s *Store) NodeVersion(nodeID string) (string, error) {
 // Nodes lists every node that has connected at least once. Online is left
 // false; the gateway fills it from its live connections.
 func (s *Store) Nodes() ([]protocol.NodeView, error) {
-	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses, launch FROM nodes WHERE seen_at > 0 ORDER BY hostname, id`)
+	rows, err := s.db.Query(`SELECT id, hostname, os, version, seen_at, harnesses, launch, display_name, reported_hostname FROM nodes WHERE seen_at > 0 ORDER BY hostname, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +108,7 @@ func (s *Store) Nodes() ([]protocol.NodeView, error) {
 		var seen int64
 		var hs string
 		var launch int
-		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch); err != nil {
+		if err := rows.Scan(&n.NodeID, &n.Hostname, &n.OS, &n.Version, &seen, &hs, &launch, &n.DisplayName, &n.Reported); err != nil {
 			return nil, err
 		}
 		n.Launch = launchValue(launch)

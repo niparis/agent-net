@@ -132,6 +132,8 @@ type trustCall struct {
 	on bool
 }
 
+type renameCall struct{ id, name string }
+
 type fakeSource struct {
 	snap     Snapshot
 	snapErr  error
@@ -147,6 +149,8 @@ type fakeSource struct {
 	actErr           error
 	trusts           []trustCall
 	trustErr         error
+	renames          []renameCall
+	renameErr        error
 	policyFn         func(protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
 	policyErr        error
 
@@ -202,6 +206,11 @@ func (f *fakeSource) SetSessionPolicy(_ context.Context, q protocol.SessionPolic
 func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {
 	f.trusts = append(f.trusts, trustCall{id, on})
 	return f.trustErr
+}
+
+func (f *fakeSource) RenameNode(_ context.Context, id, name string) (protocol.NodeRenameResult, error) {
+	f.renames = append(f.renames, renameCall{id, name})
+	return protocol.NodeRenameResult{NodeID: id, Hostname: name, DisplayName: name}, f.renameErr
 }
 
 func (f *fakeSource) SessionEnter(_ context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {

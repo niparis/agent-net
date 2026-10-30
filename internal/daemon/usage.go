@@ -173,7 +173,7 @@ func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
 // and what the gateway holds for every machine. The gateway part is left out,
 // with the reason, when it cannot be asked.
 func (d *Daemon) localUsage(ctx context.Context) (any, error) {
-	out := map[string]any{"node_id": d.cfg.NodeID, "hostname": d.cfg.Hostname}
+	out := map[string]any{"node_id": d.cfg.NodeID, "hostname": d.hostName()}
 	if rep, ok := d.usageReport(); ok {
 		out["local"] = rep
 	}

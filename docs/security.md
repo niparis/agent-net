@@ -175,6 +175,14 @@ A timer deletes older data once at start and then every hour. A period of `0` ke
 
 **Back up the gateway data folder.** It is the only copy of the CA, the server key and the database. If you lose it, every node has to join again (new invites, one for each machine), and all message history is gone. Copy the whole folder (`~/.local/state/agent-net/gateway/`) while the gateway is stopped, or use `sqlite3 gateway.db ".backup ..."` for the database, and keep the copy private: it holds `ca.key` and `server-key.pem`.
 
+## Machine names
+
+The owner can give a machine a display name ([decision 0015](decisions/0015-machine-display-name.md), key `N` in the TUI, `agent-net nodes rename`). It is the name every machine, every agent and every hint sees for that machine, so who sets it and what it may hold matter.
+
+- **Only you can set it.** The method `node_rename` is behind the owner gate, like `session_policy`: your command line or the TUI, refused for an agent client and for a command line inside an agent session's process tree. No agent tool sets it. A machine that is enrolled can send the `node.rename` frame, so the gateway trusts the daemons of your machines here, as for every other frame.
+- **The limit.** 1 to 63 characters, letters, digits, `-`, `_` and `.`, starting with a letter or digit, checked at the gateway (and in the TUI and the command line before they send). No space, quote, bracket, `@`, `:`, slash or control character can get in, so the name is safe in a line of text for the model, in a log line and as an ssh target. A name must be unique among the machines, ignoring case, so a name cannot make two machines look like one.
+- **What it does not change.** The name is a label. Machine identity is the node ID and token. The reported host name stays stored, and a machine's own daemon cannot set a display name by saying a different host name in `hello`.
+
 ## What a node reports about its machine
 
 Each daemon sends the gateway an inventory of the machine, and every enrolled machine and every agent can read it (this is the same trust as for the agent list).

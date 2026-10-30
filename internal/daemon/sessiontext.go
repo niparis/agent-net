@@ -33,7 +33,7 @@ import (
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
-	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true,
+	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -182,6 +182,25 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		if _, err = d.call(ctx, "session.trust", protocol.SessionTrust{SessionID: q.SessionID, On: q.On}); err == nil {
 			res = protocol.SessionTrustResult{SessionID: q.SessionID, On: q.On}
 			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
+		}
+	case protocol.OpNodeRename:
+		// The name appears in every machine's lists, hints and plans: only the
+		// owner at the keyboard sets it (decision 0015). The gate above refuses
+		// agent sessions, and no agent tool exists for it.
+		var q protocol.NodeRenameRequest
+		if json.Unmarshal(raw, &q) != nil || q.NodeID == "" {
+			return nil, true, errors.New("node_rename needs node_id")
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, "node.rename", protocol.NodeRename{NodeID: q.NodeID, Name: q.Name}); err == nil {
+			var out protocol.NodeRenameResult
+			if err = json.Unmarshal(data, &out); err == nil {
+				res = out
+				if q.NodeID == d.cfg.NodeID && out.Hostname != "" {
+					d.shownHost.Store(out.Hostname)
+				}
+				d.Logf("node.rename node=%s name=%q", q.NodeID, out.DisplayName)
+			}
 		}
 	case protocol.OpSessionPolicy:
 		// The policy is owner text that goes into the model's context every

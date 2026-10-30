@@ -448,7 +448,30 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err := st.SetNodeLaunch(nc.id, p.Launch); err != nil {
 			return nil, err
 		}
-		return map[string]string{"node_id": nc.id}, nil
+		// The daemon uses the name the gateway lists (the owner's display name
+		// when there is one) where it compares host names.
+		return map[string]string{"node_id": nc.id, "hostname": st.hostname(nc.id)}, nil
+
+	case "node.rename":
+		p, err := decode[protocol.NodeRename](raw)
+		if err != nil || p.NodeID == "" {
+			return nil, reject("bad node.rename")
+		}
+		res, err := st.SetNodeDisplayName(p.NodeID, p.Name)
+		var bad ErrNodeName
+		if errors.As(err, &bad) {
+			return nil, reject("%s", bad.Reason)
+		}
+		if err != nil {
+			return nil, err
+		}
+		g.logLine("node.renamed", "by", nc.id, "node", p.NodeID, "name", res.DisplayName)
+		if c := g.conn(p.NodeID); c != nil {
+			if frame, err := protocol.EncodeRequest("node.name", protocol.NewID("d"), protocol.NodeName{Hostname: res.Hostname}); err == nil {
+				c.write(ctx, frame)
+			}
+		}
+		return res, nil
 
 	case "node.harnesses":
 		p, err := decode[protocol.NodeHarnesses](raw)

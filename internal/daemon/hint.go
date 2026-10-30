@@ -109,7 +109,7 @@ func (d *Daemon) hintFor(ctx context.Context, self *localSession, p protocol.Hin
 	}
 	h.mu.Unlock()
 	agents := d.hintAgents(ctx)
-	found := hint.Suggest(p.Text, hint.Self{SessionID: sid, Project: info.Repo.Project, Hostname: d.cfg.Hostname}, candidatesOf(agents))
+	found := hint.Suggest(p.Text, hint.Self{SessionID: sid, Project: info.Repo.Project, Hostname: d.hostName()}, candidatesOf(agents))
 	var keep []hint.Suggestion
 	h.mu.Lock()
 	defer h.mu.Unlock()

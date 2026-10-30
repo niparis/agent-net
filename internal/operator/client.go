@@ -251,6 +251,15 @@ func (s *Client) SetSessionPolicy(ctx context.Context, q protocol.SessionPolicyR
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) RenameNode(ctx context.Context, nodeID, name string) (protocol.NodeRenameResult, error) {
+	var out protocol.NodeRenameResult
+	raw, err := s.action(ctx, protocol.OpNodeRename, protocol.NodeRenameRequest{NodeID: nodeID, Name: name})
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 	var out protocol.SessionCounts
 	raw, err := s.action(ctx, protocol.OpCounts, nil)
