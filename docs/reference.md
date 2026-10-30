@@ -489,19 +489,26 @@ A provider without a row (for example `elevenlabs`) has no model provider in age
 
 ## Tools inventory
 
-`agent-net tools` shows the latest observed skills and MCP servers from each
-machine. The table lists the name, kind, harness, scope, project, machine and
-state. The daemon scans at startup, after reconnecting and every five minutes.
-The owner can request a refresh through the `inventory_scan` operator method;
-`inventory_get` returns the stored reports. These methods require the owner
-connection and cannot be called by an agent session.
+`agent-net tools` groups the latest observations by kind, name and content
+hash. Each row shows scope, harnesses, machines, the number of same-name
+variants and state. Scope lists global and registered project observations;
+unassigned identifies project locations that do not match the registry. Offline
+machines retain their last observations as stale. The daemon scans at startup,
+after reconnecting and every five minutes.
+
+The owner can request a refresh through `inventory_scan`. `inventory_get`
+returns report pages with an `offset` request field and a `next` cursor.
+`tools_items` returns item pages with optional `kind`, `harness`, `project`,
+`state` and `offset` filters. `tools_item` takes an `id` from that list and
+returns its locations and file-list differences against same-name variants.
+These methods require the owner connection and cannot be called by an agent
+session. A variant count includes all observed versions, even with filters.
 
 A failed scan leaves the previous observations marked stale. The inventory is
 read-only and does not execute skills or servers. MCP fingerprints omit
 sensitive descriptor values. Extension-provided MCP servers, package-managed skills, OpenCode custom config
 locations, Pi standalone Markdown skills and session-specific trust overrides need
-manual inspection. A row is
-an observation, not proof that a running session has loaded it.
+manual inspection. A row summarizes observations, not proof that a running session has loaded it.
 
 ## The project registry
 
