@@ -361,3 +361,8 @@ local process can connect to a loopback listener and forge this header; the
 check does not protect the gateway from other processes on its host. The host
 and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
+
+The experimental skill manifest hash helper bounds a bundle to 10,000 entries
+and 64 MiB of regular file data. It rejects special files, absolute or escaping
+symlinks, and files that change while being read. It is not yet connected to a
+scanner or exposed through the daemon.
