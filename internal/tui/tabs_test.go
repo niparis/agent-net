@@ -132,8 +132,8 @@ func TestQuotaEmptyAndMachineErrors(t *testing.T) {
 }
 
 func TestTabStyleAndTitleSeparator(t *testing.T) {
-	if !sActiveTab.GetBold() || !sActiveTab.GetUnderline() {
-		t.Fatal("active tab must be bold and underlined")
+	if !sActiveTab.GetBold() || sActiveTab.GetBackground() == nil {
+		t.Fatal("active tab must be bold with a background")
 	}
 	m := newModel(80, 24)
 	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Messages  3 Quotas │ ") {
@@ -288,6 +288,27 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 		line := ansi.Strip(m.helpLine(width))
 		if ansi.StringWidth(line) > width || strings.Contains(line, "…") {
 			t.Fatalf("%d: %q", width, line)
+		}
+	}
+}
+
+func TestCTOFrameOnEveryTab(t *testing.T) {
+	for _, key := range []string{"1", "2", "3", "M"} {
+		m := keys(newModel(80, 24), key)
+		if !strings.Contains(m.View(), "write to the CTO") {
+			t.Errorf("%s missing CTO", key)
+		}
+		m = keys(m, "tab")
+		if m.focus != focusCTO {
+			t.Errorf("%s did not focus CTO", key)
+		}
+		m = keys(m, "tab")
+		want := focusSessions
+		if key == "2" {
+			want = focusFeed
+		}
+		if m.focus != want {
+			t.Errorf("%s returned focus %v, want %v", key, m.focus, want)
 		}
 	}
 }

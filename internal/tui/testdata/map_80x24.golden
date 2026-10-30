@@ -1,3 +1,4 @@
+1 Sessions  2 Messages  3 Quotas │ 12 online · 1 busy         updated 14:05:00
 Map (read only)  6 nodes, 4 edges                                updated 14:05
   trading-architect       mature │ cogforge · component ────────────────────────
 >   cogforge       [owner] early │ Charter ─────────────────────────────────────
@@ -13,12 +14,11 @@ Architects without nodes ─────── │   consumers tenebrae, shop
                                  │   in   tenebrae -> cogforge
                                  │        depends, rule ask
                                  │   in   trading-architect -> cogforge
-                                 │        governs, owner, rule normal
-                                 │   out  cogforge -> shop
-                                 │        depends, rule auto
-                                 │ Last changes ────────────────────────────────
-                                 │ 12:05  you (on Mac)  maturity
-                                 │ 28 Oct  owner  purpose
-                                 │
-                                 │
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, ask about the network          │
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
 up/down select  M/esc sessions  r refresh  ? help  q quit

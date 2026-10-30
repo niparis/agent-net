@@ -1,7 +1,9 @@
 1 Sessions  2 Messages  3 Quotas
- ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?
- ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?
- ○ old-box    v0.3.2 offline
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                             │
+│ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                             │
+│ ○ old-box    v0.3.2 offline                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────
   strategies   claude   strategi… sonnet-5-5 idle   -         ?     ? backtest …
@@ -12,13 +14,11 @@
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
   scratch      pi       -         -          shell  -         ?     ?
 
-
-
-CTO ────────────────────────────────────────────────────────────────────────────
-
-
-
-
-write to the CTO: set charters, start workers, answer what the network is doing
-> write to the CTO...
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│write to the CTO: set charters, start workers, ask about the network          │
+│> write to the CTO...                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
 1/2/3 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
