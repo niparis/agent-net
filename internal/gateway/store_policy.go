@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -61,6 +62,27 @@ func (s *Store) SetDelegation(sessionID, scope string, p protocol.DelegationPoli
 		return false, errors.New("scope must be session or project")
 	}
 	return err == nil, err
+}
+
+// WorkerPermissions is the permission level of workers started in a project
+// on a machine (decision 0018): the owner's setting in the project policy, else
+// the default. Only the project policy counts: a session's own policy has no
+// workers level.
+func (s *Store) WorkerPermissions(nodeID, project string) (string, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT policy FROM project_policies WHERE node_id = ? AND project = ?`,
+		nodeID, strings.ToLower(strings.TrimSpace(project))).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.WorkersSandboxed, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	var p protocol.DelegationPolicy
+	if json.Unmarshal([]byte(raw), &p) != nil || !protocol.ValidWorkerPermissions(p.Workers) {
+		return protocol.WorkersSandboxed, nil
+	}
+	return p.Workers, nil
 }
 
 // projectPolicies loads every project default, keyed by node and project.

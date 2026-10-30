@@ -488,6 +488,8 @@ func TestPiWorkerNeedsAWorktree(t *testing.T) {
 func startCodexNode(t *testing.T, g *testGateway, set WorkerSettings) *workerNode {
 	t.Helper()
 	t.Setenv(envFakeCodex, "1")
+	// The user's Codex config is not read by tests: an empty one.
+	t.Setenv("CODEX_HOME", t.TempDir())
 	return startWorkerNode(t, g, set, func(c *Config) { c.HarnessPaths = map[string]string{"codex": os.Args[0]} })
 }
 
@@ -532,15 +534,13 @@ func TestCodexWorkerLifecycle(t *testing.T) {
 	if fi, _ := os.Stat(tokenFile); fi == nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf("the token file is not private: %v", fi)
 	}
-	// The thread has the folder and the model, and no approval policy or
-	// sandbox: those are the project's and the user's.
+	// The thread has the folder and the model, never asks for approval and
+	// runs in the sandbox of the project's level (decision 0018).
 	if rec.Thread["cwd"] != repo || rec.Thread["model"] != "gpt-fake" {
 		t.Errorf("thread/start: %v", rec.Thread)
 	}
-	for _, k := range []string{"approvalPolicy", "sandbox", "sandboxPolicy", "config"} {
-		if _, ok := rec.Thread[k]; ok {
-			t.Errorf("thread/start sets %s", k)
-		}
+	if rec.Thread["approvalPolicy"] != "never" || rec.Thread["sandbox"] != "workspace-write" {
+		t.Errorf("thread/start permissions: %v", rec.Thread)
 	}
 	// The brief for Codex does not name a tool that Codex does not have.
 	if !strings.HasPrefix(res.Task.Body, protocol.WorkerPreambleCodex) || strings.Contains(res.Task.Body, "agent_handback") {

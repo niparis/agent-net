@@ -504,6 +504,10 @@ type fakeCodexRecord struct {
 	Turns    []string          `json:"turns"`
 	Answers  []any             `json:"answers"`
 	Resumed  int               `json:"resumed"`
+	// TurnParams are the params of each turn/start; ResumeParams those of the
+	// last thread/resume.
+	TurnParams   []map[string]any `json:"turn_params"`
+	ResumeParams map[string]any   `json:"resume_params"`
 }
 
 // fakeCodex is `codex app-server --listen ws://...`: a WebSocket server with
@@ -592,6 +596,7 @@ func fakeCodex() {
 				thread, _ = p["threadId"].(string)
 				mu.Lock()
 				rec.Resumed++
+				rec.ResumeParams = p
 				mu.Unlock()
 				save()
 				write(map[string]any{"id": m.ID, "result": map[string]any{"thread": map[string]any{"id": thread}}})
@@ -602,6 +607,7 @@ func fakeCodex() {
 				}
 				mu.Lock()
 				rec.Turns = append(rec.Turns, text)
+				rec.TurnParams = append(rec.TurnParams, p)
 				mu.Unlock()
 				save()
 				turn := "turn-" + randHex(3)

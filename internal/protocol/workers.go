@@ -61,6 +61,9 @@ type WorkerInfo struct {
 	// Task is the first line of the task its owner gave it, cut to about 120
 	// characters. Empty when the machine that started it did not say.
 	Task string `json:"task,omitempty"`
+	// Permissions is the level the worker was started with (decision 0018):
+	// sandboxed, no-network or read-only. Only Codex workers apply it today.
+	Permissions string `json:"permissions,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -96,6 +99,8 @@ type (
 		// Worktree and Branch are set when the worker got its own worktree.
 		Worktree string `json:"worktree,omitempty"`
 		Branch   string `json:"branch,omitempty"`
+		// Permissions is the worker permission level of the project.
+		Permissions string `json:"permissions,omitempty"`
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
@@ -104,6 +109,8 @@ type (
 		Harness string `json:"harness"`
 		Model   string `json:"model,omitempty"`
 		Owner   string `json:"owner_session"`
+		// Permissions is the project's worker level ("" means sandboxed).
+		Permissions string `json:"permissions,omitempty"`
 		// Task is what the worker should do. The machine that starts it uses
 		// the first line as the worker's name in a status view.
 		Task string `json:"task,omitempty"`

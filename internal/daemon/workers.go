@@ -102,6 +102,8 @@ type worker struct {
 	// taskMsg is the last request from the owner; doneStatus the status of the
 	// last hand-back ("" if none); taskText is the short line of that request.
 	taskMsg, doneStatus, taskText string
+	// permissions is the level the worker was started with (decision 0018).
+	permissions string
 	// apiBase and apiPass reach the harness's own server, for its statistics.
 	// They are kept in memory only.
 	apiBase, apiPass string
@@ -167,7 +169,8 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	if w.info == nil {
-		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText}
+		w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(), Task: w.taskText,
+			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
 	}
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
@@ -313,7 +316,8 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref,
+		Permissions: w.permissions}
 }
 
 // ---- starting ----
@@ -350,7 +354,8 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		return refuse("a worker needs an owner")
 	}
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
-		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(l.Task)}
+		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(l.Task),
+		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions)}
 	w.lastActive = w.startedAt
 	d.wmu.Lock()
 	if len(d.workers) >= set.Max {
@@ -713,7 +718,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
-		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, ref: row.Ref,
+		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
@@ -1046,7 +1051,8 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref}
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref,
+			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions)}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()

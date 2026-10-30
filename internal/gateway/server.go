@@ -621,6 +621,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if p.Scope != protocol.ScopeSession && p.Scope != protocol.ScopeProject {
 			return nil, reject("scope must be %s or %s", protocol.ScopeSession, protocol.ScopeProject)
 		}
+		if clean.Workers != "" && p.Scope != protocol.ScopeProject {
+			return nil, reject("the workers level is set per project: use scope project")
+		}
 		view, ok, err := st.PolicyDryRun(p.SessionID, p.Scope, clean)
 		if err != nil {
 			return nil, err
@@ -648,10 +651,10 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				return nil, reject("unknown or unsuitable session %q", p.SessionID)
 			}
 			res.Saved = true
-			detail := "scope=" + p.Scope + " delegate=" + clean.Delegate + " coder=" + clean.CoderModel + " main=" + clean.MainModel
+			detail := "scope=" + p.Scope + " delegate=" + clean.Delegate + " coder=" + clean.CoderModel + " main=" + clean.MainModel + " workers=" + clean.Workers
 			st.Event("session.policy", nc.id, p.SessionID, "", detail)
 			g.logLine("session.policy", "node", nc.id, "session", p.SessionID, "scope", p.Scope,
-				"delegate", clean.Delegate, "coder", clean.CoderModel, "main", clean.MainModel)
+				"delegate", clean.Delegate, "coder", clean.CoderModel, "main", clean.MainModel, "workers", clean.Workers)
 		}
 		return res, nil
 

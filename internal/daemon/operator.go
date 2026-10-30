@@ -211,7 +211,8 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return nil, errors.New("the gateway answered without a worker session")
 	}
 	out := &protocol.WorkerStartResult{SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
-		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch}
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch,
+		Permissions: ans.Permissions}
 	// The task is a normal message from the caller, with the fixed preamble.
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
 		Body: protocol.WorkerTaskBodyFor(ans.Harness, p.Task, ans.Worktree, ans.Branch)})

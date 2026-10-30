@@ -81,6 +81,8 @@ func TestPolicyFormResolvesBeforeSavingAndSaves(t *testing.T) {
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Main
 	m = runPreviews(t, m, cmd)
 	m = typeText(m, "sol")
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Workers
+	m = runPreviews(t, m, cmd)
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Scope
 	m = runPreviews(t, m, cmd)
 	screen := strings.Join(lines(m.View()), "\n")
@@ -123,6 +125,7 @@ func TestPolicyFormShowsResolutionErrorsAndRefusesAnEmptyCoder(t *testing.T) {
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if m.pol.err != "Name the coder model." || len(saved) != 0 {
 		t.Fatalf("err %q saved %v", m.pol.err, saved)
@@ -146,6 +149,7 @@ func TestPolicyGatewayRefusalKeepsTheFormOpen(t *testing.T) {
 	m = selectID(m, "s_0000000000000003")
 	m, _ = press(m, keyP())
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRight}) // off needs no coder
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
@@ -227,4 +231,98 @@ func TestPolicyFormGolden(t *testing.T) {
 	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	m = runPreviews(t, m, cmd)
 	golden(t, "view_120x34_policy_form", m.View())
+}
+
+// The Workers line has the three levels and a default. Choosing one moves the
+// scope to project, and the level is saved with the policy.
+func TestPolicyFormWorkersLine(t *testing.T) {
+	m, src := workerModel(120, 40)
+	var saved []protocol.SessionPolicyRequest
+	src.policyFn = resolver(&saved)
+	m = selectID(m, "s_0000000000000003")
+	m, cmd := press(m, keyP())
+	m = runPreviews(t, m, cmd)
+	for i := 0; i < 3; i++ {
+		m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown}) // Delegate, Coder, Main -> Workers
+	}
+	if m.pol.cur != pfWorkers {
+		t.Fatalf("cursor on %v, want Workers", m.pol.cur)
+	}
+	if s := strings.Join(lines(m.View()), "\n"); !strings.Contains(s, "Workers") || !strings.Contains(s, "sandboxed (default)") {
+		t.Errorf("the Workers line shows no default:\n%s", s)
+	}
+	var seen []string
+	for i := 0; i < 4; i++ {
+		m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight})
+		m = runPreviews(t, m, cmd)
+		seen = append(seen, workersChoices[m.pol.workers])
+	}
+	if strings.Join(seen, ",") != "sandboxed,no-network,read-only," {
+		t.Errorf("choices: %v", seen)
+	}
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight}) // sandboxed
+	m = runPreviews(t, m, cmd)
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyRight}) // no-network
+	m = runPreviews(t, m, cmd)
+	if m.pol.scope != protocol.ScopeProject {
+		t.Errorf("scope %q: a workers level is per project", m.pol.scope)
+	}
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // to Scope
+	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	msg, ok := cmd().(policySavedMsg)
+	if !ok {
+		t.Fatalf("save gave %T", msg)
+	}
+	m = send(m, msg)
+	if len(saved) != 1 || saved[0].Policy.Workers != protocol.WorkersNoNetwork || saved[0].Scope != protocol.ScopeProject {
+		t.Errorf("saved %+v", saved)
+	}
+}
+
+// A level at session scope is refused in the form, before the gateway.
+func TestPolicyFormRefusesWorkersAtSessionScope(t *testing.T) {
+	m, src := workerModel(120, 40)
+	var saved []protocol.SessionPolicyRequest
+	src.policyFn = resolver(&saved)
+	m = selectID(m, "s_0000000000000003")
+	m, _ = press(m, keyP())
+	m.pol.workers = 3
+	m.pol.scope = protocol.ScopeSession
+	m.pol.cur = pfScope
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if !strings.Contains(m.pol.err, "per project") || len(saved) != 0 {
+		t.Errorf("err %q saved %v", m.pol.err, saved)
+	}
+}
+
+// The detail pane of a worker shows its permission level, and says when the
+// harness does not apply it yet.
+func TestDetailShowsWorkerPermissions(t *testing.T) {
+	m, src := workerModel(140, 50)
+	var worker protocol.AgentView
+	for _, a := range src.snap.Agents {
+		if a.Worker != nil {
+			worker = a
+		}
+	}
+	if worker.SessionID == "" {
+		t.Fatal("the fixture has no worker")
+	}
+	for _, harness := range []string{"codex", "opencode"} {
+		for i := range src.snap.Agents {
+			if src.snap.Agents[i].SessionID == worker.SessionID {
+				src.snap.Agents[i].Harness = harness
+				src.snap.Agents[i].Worker.Permissions = protocol.WorkersReadOnly
+			}
+		}
+		m = refresh(m, src)
+		m = selectID(m, worker.SessionID)
+		s := strings.Join(lines(m.View()), "\n")
+		if !strings.Contains(s, "sandbox") || !strings.Contains(s, "read-only") {
+			t.Errorf("%s: no permissions line:\n%s", harness, s)
+		}
+		if got := strings.Contains(s, "not enforced yet"); got != (harness != "codex") {
+			t.Errorf("%s: note shown = %v", harness, got)
+		}
+	}
 }

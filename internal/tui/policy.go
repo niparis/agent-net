@@ -24,15 +24,21 @@ const (
 	pfDelegate policyField = iota
 	pfCoder
 	pfMain
+	pfWorkers
 	pfScope
 	nPolicyFields
 )
 
-var policyLabels = [nPolicyFields]string{"Delegate", "Coder", "Main", "Scope"}
+var policyLabels = [nPolicyFields]string{"Delegate", "Coder", "Main", "Workers", "Scope"}
 
 // delegateChoices are the values of the Delegate field, in the order the
 // left and right keys cycle through them. "" clears the policy.
 var delegateChoices = []string{"", protocol.DelegateOff, protocol.DelegateNative, protocol.DelegateWorkers}
+
+// workersChoices are the values of the Workers field: the permission level of
+// unattended workers started in the project (decision 0018). "" is the
+// default, sandboxed.
+var workersChoices = append([]string{""}, protocol.WorkersLevels...)
 
 type policyForm struct {
 	sessionID string
@@ -40,6 +46,7 @@ type policyForm struct {
 	harness   string
 	project   string
 	delegate  int // index in delegateChoices
+	workers   int // index in workersChoices
 	scope     string
 	coder     textinput.Model
 	main      textinput.Model
@@ -77,7 +84,8 @@ func (f policyForm) delegateValue() string { return delegateChoices[f.delegate] 
 
 // policy builds the policy the form describes.
 func (f policyForm) policy() protocol.DelegationPolicy {
-	p := protocol.DelegationPolicy{Delegate: f.delegateValue(), MainModel: strings.TrimSpace(f.main.Value())}
+	p := protocol.DelegationPolicy{Delegate: f.delegateValue(), MainModel: strings.TrimSpace(f.main.Value()),
+		Workers: workersChoices[f.workers]}
 	if p.Delegate == protocol.DelegateNative || p.Delegate == protocol.DelegateWorkers {
 		p.CoderModel = strings.TrimSpace(f.coder.Value())
 	}
@@ -119,6 +127,11 @@ func (m Model) startPolicy() (Model, tea.Cmd) {
 		for i, c := range delegateChoices {
 			if c == d.Delegate {
 				f.delegate = i
+			}
+		}
+		for i, c := range workersChoices {
+			if c == d.Workers {
+				f.workers = i
 			}
 		}
 		f.coder.SetValue(d.CoderModel)
@@ -204,6 +217,12 @@ func (m Model) policyKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case pfDelegate:
 			f.delegate = (f.delegate + step + len(delegateChoices)) % len(delegateChoices)
 			changed = true
+		case pfWorkers:
+			f.workers = (f.workers + step + len(workersChoices)) % len(workersChoices)
+			if workersChoices[f.workers] != "" {
+				f.scope = protocol.ScopeProject // the level is a project setting
+			}
+			changed = true
 		case pfScope:
 			f.scope = map[string]string{protocol.ScopeSession: protocol.ScopeProject, protocol.ScopeProject: protocol.ScopeSession}[f.scope]
 			changed = true
@@ -213,7 +232,7 @@ func (m Model) policyKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.policyPreviewCmd()
 		}
 	}
-	if f.cur == pfDelegate || f.cur == pfScope {
+	if f.cur == pfDelegate || f.cur == pfWorkers || f.cur == pfScope {
 		if k.String() == " " {
 			return m.policyKey(tea.KeyMsg{Type: tea.KeyRight})
 		}
@@ -235,6 +254,10 @@ func (m Model) savePolicy() (tea.Model, tea.Cmd) {
 	if (pol.Delegate == protocol.DelegateNative || pol.Delegate == protocol.DelegateWorkers) && pol.CoderModel == "" {
 		m.pol.err = "Name the coder model."
 		return m, m.pol.focus(pfCoder)
+	}
+	if f.workers != 0 && f.scope != protocol.ScopeProject {
+		m.pol.err = "The workers level is set per project: use scope project."
+		return m, nil
 	}
 	if f.scope == protocol.ScopeProject && f.project == "" {
 		m.pol.err = "This session has no project: use scope session."
@@ -288,7 +311,9 @@ func policySummary(d *protocol.DelegationView) string {
 		return ""
 	}
 	s := d.Delegate
-	if s == "" {
+	if s == "" && d.Main() == "" && d.Workers != "" {
+		s = "none (workers " + d.Workers + ")"
+	} else if s == "" {
 		s = "main model only"
 	}
 	if d.Coder() != "" && d.Delegate != "" {
@@ -321,6 +346,15 @@ func (m Model) policyView(w, rows int) []string {
 			c := f.delegateValue()
 			if c == "" {
 				c = "none (no policy)"
+			}
+			if i == f.cur {
+				return "< " + c + " >"
+			}
+			return c
+		case pfWorkers:
+			c := workersChoices[f.workers]
+			if c == "" {
+				c = protocol.WorkersSandboxed + " (default)"
 			}
 			if i == f.cur {
 				return "< " + c + " >"
@@ -365,11 +399,23 @@ func (m Model) policyView(w, rows int) []string {
 	for _, s := range m.policySupport(a, f.preview) {
 		out = append(out, sDim.Render(clip("  note: "+s, w)))
 	}
+	out = append(out, sDim.Render(clip("  Workers: "+workersHelp(workersChoices[f.workers]), w)))
 	out = append(out, sDim.Render(clip("  left/right changes a choice. Enter on Scope saves. The policy is added to the session's context on every turn.", w)))
 	for len(out) < rows {
 		out = append(out, "")
 	}
 	return out[:rows]
+}
+
+// workersHelp says in plain words what a workers level lets a worker do.
+func workersHelp(level string) string {
+	switch level {
+	case protocol.WorkersNoNetwork:
+		return "no-network: writes only in its worktree, network off, no approval prompts (Codex only for now)"
+	case protocol.WorkersReadOnly:
+		return "read-only: no writes at all, network on (Codex only for now)"
+	}
+	return "sandboxed: writes only in its worktree, network on, no approval prompts (Codex only for now)"
 }
 
 // policyResolveLine says what a model field resolves to.

@@ -301,10 +301,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if target == nil {
 		return none, reject("machine %s is offline", pick.Hostname)
 	}
+	// The owner sets the permission level per project (decision 0018).
+	perms, err := g.store.WorkerPermissions(pick.NodeID, pick.Name)
+	if err != nil {
+		return none, err
+	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Permissions: perms})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -321,10 +326,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"isolation", p.Isolation, "branch", launched.Branch), " "))
 	g.logLine("worker.started", "node", pick.NodeID, "host", pick.Hostname, "session", launched.SessionID,
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
-		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "worktree", launched.Worktree, "branch", launched.Branch)
+		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
-		Worktree: launched.Worktree, Branch: launched.Branch}, nil
+		Worktree: launched.Worktree, Branch: launched.Branch, Permissions: perms}, nil
 }
 
 func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame) (map[string]any, error) {

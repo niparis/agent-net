@@ -137,6 +137,13 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if a.PeerTrust {
 		out = append(out, kv("trust", "acts on peer requests without asking (t: off)"))
 	}
+	if a.Worker != nil && a.Worker.Permissions != "" {
+		note := ""
+		if a.Harness != "codex" {
+			note = " (not enforced yet: Codex only)"
+		}
+		out = append(out, kv("sandbox", a.Worker.Permissions+note))
+	}
 	if a.Delegation != nil {
 		out = append(out, kv("policy", policySummary(a.Delegation)+"  (p: change)"))
 		if a.Delegation.Main() != "" {

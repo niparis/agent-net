@@ -19,6 +19,35 @@ const (
 	DelegateWorkers = "workers" // delegate code changes to a worker started with agent_start
 )
 
+// Permission levels of unattended workers (decision 0018). The owner sets one
+// per project; the default is WorkersSandboxed.
+const (
+	WorkersSandboxed = "sandboxed"  // writes only in the worktree, the temp folder and the main repository's git dir; network on
+	WorkersNoNetwork = "no-network" // the same writes, network off
+	WorkersReadOnly  = "read-only"  // no writes at all; network on
+)
+
+// WorkersLevels lists the levels in the order a form shows them.
+var WorkersLevels = []string{WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly}
+
+// ValidWorkerPermissions tells whether s is a level.
+func ValidWorkerPermissions(s string) bool {
+	for _, l := range WorkersLevels {
+		if l == s {
+			return true
+		}
+	}
+	return false
+}
+
+// WorkerPermissionsOrDefault maps "" (unset, or an older record) to the default.
+func WorkerPermissionsOrDefault(s string) string {
+	if s == "" {
+		return WorkersSandboxed
+	}
+	return s
+}
+
 // Scopes of a policy.
 const (
 	ScopeSession = "session" // only this session
@@ -44,12 +73,16 @@ type DelegationPolicy struct {
 	Delegate   string `json:"delegate"` // "" means no mode; else a Delegate* mode
 	CoderModel string `json:"coder_model,omitempty"`
 	MainModel  string `json:"main_model,omitempty"`
+	// Workers is the permission level of unattended workers started in the
+	// project (decision 0018). "" means the default, WorkersSandboxed. It is a
+	// project setting: the gateway refuses it at session scope.
+	Workers string `json:"workers,omitempty"`
 }
 
 // Clean trims the policy and checks it. The model names go into text the
 // model reads, so they take only the characters of model names.
 func (p DelegationPolicy) Clean() (DelegationPolicy, error) {
-	for _, v := range []string{p.Delegate, p.CoderModel, p.MainModel} {
+	for _, v := range []string{p.Delegate, p.CoderModel, p.MainModel, p.Workers} {
 		if strings.ContainsFunc(v, func(r rune) bool { return r < 0x20 || r == 0x7f }) {
 			return p, fmt.Errorf("a policy field holds a control character")
 		}
@@ -57,6 +90,10 @@ func (p DelegationPolicy) Clean() (DelegationPolicy, error) {
 	p.Delegate = strings.ToLower(strings.TrimSpace(p.Delegate))
 	p.CoderModel = strings.Join(strings.Fields(p.CoderModel), " ")
 	p.MainModel = strings.Join(strings.Fields(p.MainModel), " ")
+	p.Workers = strings.ToLower(strings.TrimSpace(p.Workers))
+	if p.Workers != "" && !ValidWorkerPermissions(p.Workers) {
+		return p, fmt.Errorf("workers must be %s, %s or %s", WorkersSandboxed, WorkersNoNetwork, WorkersReadOnly)
+	}
 	switch p.Delegate {
 	case "", DelegateOff, DelegateNative, DelegateWorkers:
 	default:

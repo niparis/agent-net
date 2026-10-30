@@ -208,3 +208,63 @@ func TestPolicyIsKeptWhenTheDaemonReportsTheSessionAgain(t *testing.T) {
 		t.Fatalf("lost on update: %+v", d)
 	}
 }
+
+// The workers level (decision 0018) lives in the project policy. It is
+// "sandboxed" until the owner sets another, it is per project and per
+// machine, and clearing the project policy brings the default back.
+func TestWorkerPermissionsAreAProjectSetting(t *testing.T) {
+	s, node, oc1, oc2, _ := policyFixture(t)
+	level := func(project string) string {
+		t.Helper()
+		l, err := s.WorkerPermissions(node, project)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	if got := level("cogforge"); got != protocol.WorkersSandboxed {
+		t.Fatalf("default level %q", got)
+	}
+	for _, l := range []string{protocol.WorkersNoNetwork, protocol.WorkersReadOnly, protocol.WorkersSandboxed} {
+		if ok, err := s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{Workers: l}); err != nil || !ok {
+			t.Fatalf("set %s: %v %v", l, ok, err)
+		}
+		if got := level("CogForge"); got != l {
+			t.Errorf("level %q, want %q", got, l)
+		}
+	}
+	// Another project and another machine keep the default.
+	s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{Workers: protocol.WorkersReadOnly})
+	if got := level("other"); got != protocol.WorkersSandboxed {
+		t.Errorf("another project got %q", got)
+	}
+	if got, _ := s.WorkerPermissions("n_elsewhere", "cogforge"); got != protocol.WorkersSandboxed {
+		t.Errorf("another machine got %q", got)
+	}
+	// The level is on the view of the project's sessions, next to the delegation.
+	s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{Delegate: protocol.DelegateOff, Workers: protocol.WorkersNoNetwork})
+	if d := agentOf(t, s, oc2).Delegation; d == nil || d.Workers != protocol.WorkersNoNetwork || d.Delegate != protocol.DelegateOff {
+		t.Errorf("view: %+v", d)
+	}
+	s.SetDelegation(oc1, protocol.ScopeProject, protocol.DelegationPolicy{})
+	if got := level("cogforge"); got != protocol.WorkersSandboxed {
+		t.Errorf("after clearing: %q", got)
+	}
+}
+
+func TestWorkersLevelMustBeKnown(t *testing.T) {
+	for _, bad := range []string{"full-access", "danger-full-access", "read only", "x\ny"} {
+		if _, err := (protocol.DelegationPolicy{Workers: bad}).Clean(); err == nil {
+			t.Errorf("accepted workers %q", bad)
+		}
+	}
+	for _, l := range []string{"", " Sandboxed ", "NO-NETWORK", "read-only"} {
+		if _, err := (protocol.DelegationPolicy{Workers: l}).Clean(); err != nil {
+			t.Errorf("refused workers %q: %v", l, err)
+		}
+	}
+	c, _ := (protocol.DelegationPolicy{Workers: " NO-NETWORK "}).Clean()
+	if c.Workers != protocol.WorkersNoNetwork {
+		t.Errorf("cleaned %q", c.Workers)
+	}
+}

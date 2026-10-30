@@ -67,6 +67,7 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"task_text", `task_text TEXT NOT NULL DEFAULT ''`},
 		{"resumable", `resumable INTEGER NOT NULL DEFAULT 0`},
 		{"reported", `reported INTEGER NOT NULL DEFAULT 0`},
+		{"permissions", `permissions TEXT NOT NULL DEFAULT ''`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)

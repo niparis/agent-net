@@ -45,8 +45,9 @@ import (
 // no agent_reply for questions in the middle of the work, and takes messages
 // from its owner and from the person only.
 //
-// The approval policy and the sandbox are the ones of the project and the
-// user's Codex config: the daemon sets neither (decision 0002, W6).
+// The approval policy is "never" and the sandbox is the permission level of the
+// project (worker_codex_sandbox.go, decision 0018, which amends 0002 W6). A
+// request for approval that still arrives is declined.
 type codexLauncher struct{}
 
 func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
@@ -58,6 +59,8 @@ func (codexLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 	if w.model != "" {
 		params["model"] = w.model
 	}
+	cc.sb = d.codexSandboxFor(ctx, w)
+	cc.sb.threadParams(params)
 	raw, err := cc.call(ctx, "thread/start", params)
 	if err != nil {
 		cc.close()
@@ -97,7 +100,10 @@ func (codexLauncher) resume(ctx context.Context, d *Daemon, w *worker) error {
 	if err != nil {
 		return err
 	}
-	raw, err := cc.call(ctx, "thread/resume", map[string]any{"threadId": w.nativeID})
+	cc.sb = d.codexSandboxFor(ctx, w)
+	rparams := map[string]any{"threadId": w.nativeID}
+	cc.sb.threadParams(rparams)
+	raw, err := cc.call(ctx, "thread/resume", rparams)
 	if err != nil {
 		cc.close()
 		return fmt.Errorf("codex does not know the thread any more: %w", err)
@@ -139,6 +145,11 @@ func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) 
 	}
 	addr := "127.0.0.1:" + strconv.Itoa(port)
 	args := []string{"app-server", "--listen", "ws://" + addr, "--ws-auth", "capability-token", "--ws-token-file", tokenPath}
+	if codexConfigDefinesAgentNet() {
+		// A worker has no use for the agent-net tools (its report is the end
+		// of its turn), and Codex would ask approval to call them.
+		args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
+	}
 	if err := d.spawnWorker(w, bin, args, os.Environ()); err != nil {
 		return nil, err
 	}
@@ -161,7 +172,10 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	cc.thread = w.nativeID
-	if _, err := cc.call(ctx, "thread/resume", map[string]any{"threadId": w.nativeID}); err != nil {
+	cc.sb = d.codexSandboxFor(ctx, w)
+	rparams := map[string]any{"threadId": w.nativeID}
+	cc.sb.threadParams(rparams)
+	if _, err := cc.call(ctx, "thread/resume", rparams); err != nil {
 		cc.close()
 		return fmt.Errorf("codex does not know the thread any more: %w", err)
 	}
@@ -293,6 +307,7 @@ type codexConn struct {
 	running bool
 	cur     *codexJob
 	queue   []codexJob
+	sb      codexSandbox // the permissions of the worker (decision 0018)
 	final   string
 	texts   []string
 	blocked []codexBlock
@@ -577,13 +592,17 @@ func (cc *codexConn) startTurn(j codexJob) {
 	cc.mu.Lock()
 	cc.cur = &j
 	cc.final, cc.texts, cc.blocked = "", nil, nil
-	thread := cc.thread
+	thread, sb := cc.thread, cc.sb
 	cc.mu.Unlock()
 	cc.d.setCodexStatus(cc.w, "busy")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err := cc.call(ctx, "turn/start", map[string]any{"threadId": thread,
-		"input": []map[string]any{{"type": "text", "text": j.text}}})
+	tparams := map[string]any{"threadId": thread, "approvalPolicy": "never",
+		"input": []map[string]any{{"type": "text", "text": j.text}}}
+	if sb.policy != nil {
+		tparams["sandboxPolicy"] = sb.policy
+	}
+	_, err := cc.call(ctx, "turn/start", tparams)
 	if err != nil {
 		cc.finishTurn("failed", "codex refused the turn: "+err.Error())
 	}
