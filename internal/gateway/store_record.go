@@ -356,6 +356,9 @@ const (
 	DefaultKeepMessages = 30 * 24 * time.Hour
 	DefaultKeepEvents   = 90 * 24 * time.Hour
 	DefaultKeepSessions = 30 * 24 * time.Hour
+	// DefaultKeepWorkerRuns is how long the model track record stays
+	// (decision 0022).
+	DefaultKeepWorkerRuns = protocol.TrackRecordDays * 24 * time.Hour
 )
 
 // Retention says how long the gateway keeps data. A zero period keeps it for ever.
@@ -367,20 +370,23 @@ type Retention struct {
 	// Sessions covers sessions that are offline: they go when they were last
 	// seen longer ago than this.
 	Sessions time.Duration
+	// WorkerRuns covers the worker runs behind the model track record.
+	WorkerRuns time.Duration
 }
 
 // DefaultRetention is what `agent-net gateway` uses.
 func DefaultRetention() Retention {
-	return Retention{Messages: DefaultKeepMessages, Events: DefaultKeepEvents, Sessions: DefaultKeepSessions}
+	return Retention{Messages: DefaultKeepMessages, Events: DefaultKeepEvents, Sessions: DefaultKeepSessions,
+		WorkerRuns: DefaultKeepWorkerRuns}
 }
 
 // PruneResult counts the rows a Prune deleted.
 type PruneResult struct {
-	Messages, Deliveries, Events, Sessions int
+	Messages, Deliveries, Events, Sessions, WorkerRuns int
 }
 
 func (r PruneResult) Any() bool {
-	return r.Messages+r.Deliveries+r.Events+r.Sessions > 0
+	return r.Messages+r.Deliveries+r.Events+r.Sessions+r.WorkerRuns > 0
 }
 
 // Prune deletes data older than the retention periods. It records a
@@ -420,12 +426,18 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 			return res, err
 		}
 	}
+	if r.WorkerRuns > 0 {
+		if err := del(&res.WorkerRuns, `DELETE FROM worker_runs WHERE ended_at < ?`,
+			now.Add(-r.WorkerRuns).Unix()); err != nil {
+			return res, err
+		}
+	}
 	if res.Any() {
 		detail := strings.TrimPrefix(pairs("messages", res.Messages, "deliveries", res.Deliveries,
-			"events", res.Events, "sessions", res.Sessions), " ")
+			"events", res.Events, "sessions", res.Sessions, "worker_runs", res.WorkerRuns), " ")
 		s.Event("retention", "", "", "", detail)
 		s.logf("retention", "messages", res.Messages, "deliveries", res.Deliveries,
-			"events", res.Events, "sessions", res.Sessions)
+			"events", res.Events, "sessions", res.Sessions, "worker_runs", res.WorkerRuns)
 	}
 	return res, nil
 }

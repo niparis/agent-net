@@ -416,6 +416,9 @@ type NodeView struct {
 	// host name the daemon reported in its hello.
 	DisplayName string `json:"display_name,omitempty"`
 	Reported    string `json:"reported_hostname,omitempty"`
+	// Tracks is the worker track record of this machine, one entry per
+	// harness and model (decision 0022).
+	Tracks []TrackRecord `json:"tracks,omitempty"`
 }
 
 // HarnessInfo is one agent harness found on a machine.

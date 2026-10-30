@@ -36,6 +36,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
+	protocol.OpPlaybookGet: true, protocol.OpPlaybookSet: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -229,6 +230,19 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 		var data json.RawMessage
 		if data, err = d.call(ctx, frame, params); err == nil {
 			res = data
+		}
+	case protocol.OpPlaybookGet, protocol.OpPlaybookSet:
+		// The note goes into every start result for that model: only the
+		// owner at the keyboard writes or reads it (decision 0022).
+		var q protocol.PlaybookSetRequest
+		if err := json.Unmarshal(raw, &q); err != nil || strings.TrimSpace(q.Model) == "" {
+			return nil, true, errors.New(method + " needs model")
+		}
+		frame := strings.ReplaceAll(method, "_", ".")
+		var data json.RawMessage
+		if data, err = d.call(ctx, frame, q); err == nil {
+			res = data
+			d.Logf("playbook.%s model=%s harness=%s", strings.TrimPrefix(method, "playbook_"), q.Model, q.Harness)
 		}
 	case protocol.OpSessionPolicy:
 		// The policy is owner text that goes into the model's context every

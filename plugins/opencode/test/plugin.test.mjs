@@ -63,19 +63,22 @@ const server = createServer((conn) => {
               { name: "old", hostname: "box", path: "/c/old", harnesses: ["pi"] },
             ] }
         : line.method === "worker_start"
-          ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac", permissions: "no-network" }
+          ? { session_id: "s_worker", harness: line.params.harness, model: line.params.model, project: line.params.project, hostname: "mac", permissions: "no-network",
+              track: { harness: line.params.harness, model: line.params.model, runs: 3, complete: 1, partial: 2, median_run_seconds: 60, resumable: true },
+              playbook: { model: line.params.model, note: "ask for the diff" } }
         : line.method === "hint"
           ? hintReply
         : line.method === "policy"
           ? policyReply
         : line.method === "worker_handback"
-          ? { status: line.params.status || "done" }
+          ? { status: line.params.status || "done", complete: line.params.complete !== false }
         : line.method === "worker_stop"
           ? { session: line.params.session, stopped: true }
         : line.method === "nodes"
           ? { gateway_version: "v1", nodes: [
               { node_id: "n_1", hostname: "mac", version: "v0.4.0", online: true,
-                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }] },
+                harnesses: [{ name: "opencode", path: "/u/opencode", version: "v2", models: ["a/x", "b/y"] }],
+                tracks: [{ harness: "opencode", model: "a/x", runs: 14, complete: 13, median_run_seconds: 1560, resumable: true }] },
               { node_id: "n_2", hostname: "old", version: "v0.3.2", online: false, harnesses: null },
             ] }
           : {};
@@ -296,7 +299,8 @@ await test("agent_nodes lists machines with their harnesses", async () => {
   if (!tool) throw new Error("agent_nodes is not registered");
   const out = (await tool.execute({}, { sessionID: "ses_n" })).content;
   for (const want of ["mac (n_1, online, agent-net v0.4.0): opencode v2 (2 models) at /u/opencode",
-                      "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)"]) {
+                      "old (n_2, offline, agent-net v0.3.2): harnesses not reported (older agent-net)",
+                      "a/x · opencode: 14 runs: 13 complete (median 26 min) · resumes"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   stop();
@@ -783,7 +787,8 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
   }
-  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now"]) {
+  for (const want of ["Started worker s_worker", "project alpha on mac", "agent_stop", "permissions: no-network (writes only in its worktree, network off)", "enforced for Codex only for now",
+                      "a/x · opencode: 3 runs: 1 complete, 2 partial (median 1 min) · resumes", "playbook: ask for the diff"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
   const gone = (await stopTool.execute({ session: "s_worker" }, { sessionID: "ses_w" })).content;
@@ -866,9 +871,10 @@ await test("agent_handback reaches the daemon; agent_start can ask for a worktre
     if (bad in hb.input.properties) throw new Error("agent_handback lets the worker pick a recipient: " + bad);
   }
   const before = calls.length;
-  const out = (await hb.execute({ report: "all done", status: "blocked" }, { sessionID: "ses_h" })).content;
+  if (!("complete" in hb.input.properties)) throw new Error("agent_handback has no complete");
+  const out = (await hb.execute({ report: "all done", status: "blocked", complete: false }, { sessionID: "ses_h" })).content;
   const [method, params] = calls[before];
-  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || !out.includes("Handed back (blocked)")) {
+  if (method !== "worker_handback" || params.report !== "all done" || params.status !== "blocked" || params.complete !== false || !out.includes("Handed back (blocked, partial)")) {
     throw new Error("handback: " + JSON.stringify(calls[before]) + " " + out);
   }
   const start = tools.find((t) => t.name === "agent_start");

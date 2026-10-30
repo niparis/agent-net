@@ -102,6 +102,13 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 		_, nodes[i].Online = g.conns[nodes[i].NodeID]
 	}
 	g.mu.Unlock()
+	for i := range nodes {
+		tracks, err := g.store.TrackRecords(nodes[i].NodeID, protocol.TrackRecordDays*24*time.Hour)
+		if err != nil {
+			return protocol.NodesInfo{}, err
+		}
+		nodes[i].Tracks = tracks
+	}
 	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes}, nil
 }
 

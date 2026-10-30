@@ -671,12 +671,18 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 	case strings.TrimSpace(report) == "":
 		report = "(Codex ended the turn with no message.)"
 	}
+	var complete *bool
+	if status == protocol.StatusDone {
+		if v, ok := codexReportComplete(report); ok {
+			complete = &v
+		}
+	}
 	go func() {
 		note := ""
 		if denied && (status == protocol.StatusBlocked || status == protocol.StatusFailed) {
 			note = "blocked by the sandbox (" + protocol.WorkerPermissionsOrDefault(cc.w.permissions) + ")"
 		}
-		_, err := cc.d.handbackToNote(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status}, j.from, j.msgID, note)
+		_, err := cc.d.handbackToNote(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}, j.from, j.msgID, note)
 		if err != nil {
 			cc.d.Logf("worker %s: hand-back: %v", cc.w.id, err)
 		}
@@ -702,6 +708,22 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 func sandboxDenial(s string) bool {
 	s = strings.ToLower(s)
 	return strings.Contains(s, "sandbox") && (strings.Contains(s, "denied") || strings.Contains(s, "not permitted") || strings.Contains(s, "violation"))
+}
+
+// codexReportComplete reads the line the Codex brief asks for at the end of a
+// report: "complete: yes" or "complete: no". The last such line wins. ok is
+// false when the report has none (the work then counts as complete).
+func codexReportComplete(report string) (complete, ok bool) {
+	complete = true
+	for _, line := range strings.Split(report, "\n") {
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "complete: no":
+			complete, ok = false, true
+		case "complete: yes":
+			complete, ok = true, true
+		}
+	}
+	return complete, ok
 }
 
 // blockedReport is the W15 report: what was tried, why it stopped, and where

@@ -358,13 +358,14 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	}
 	d.wmu.Lock()
 	w.doneStatus = req.Status
+	w.donePartial = !req.IsComplete()
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
-	d.Logf("worker.handback worker=%s session=%s status=%s", w.id, sessionID, req.Status)
+	d.Logf("worker.handback worker=%s session=%s status=%s complete=%t", w.id, sessionID, req.Status, req.IsComplete())
 	// Like a Claude Code subagent, a worker ends when it hands back (W10). Its
 	// harness session is kept, so the owner's next message starts it again.
 	go d.endWorker(w, protocol.StopHandback)
-	out := &protocol.WorkerHandbackResult{Status: req.Status}
+	out := &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete()}
 	var sent protocol.MessageSent
 	if json.Unmarshal(raw, &sent) == nil {
 		out.Sent, out.Queued = sent.Message, sent.Queued

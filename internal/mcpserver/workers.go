@@ -28,8 +28,9 @@ type startIn struct {
 }
 
 type handbackIn struct {
-	Report string `json:"report" jsonschema:"your final report: what you did, what you found, absolute paths. It is the message; do not write report files"`
-	Status string `json:"status,omitempty" jsonschema:"done (default), blocked (you need something you cannot get) or failed"`
+	Report   string `json:"report" jsonschema:"your final report: what you did, what you found, absolute paths. It is the message; do not write report files"`
+	Status   string `json:"status,omitempty" jsonschema:"done (default), blocked (you need something you cannot get) or failed"`
+	Complete *bool  `json:"complete,omitempty" jsonschema:"true when you did the whole task (the default). Set it to false when you hand back partial work, so the record shows it"`
 }
 
 type stopIn struct {
@@ -63,17 +64,28 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 				level, _ := m["permissions"].(string)
 				harness, _ := m["harness"].(string)
 				raw, _ := json.Marshal(out)
-				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(raw) + "\n" + protocol.WorkerPermissionsText(level, harness)}}}, out, nil
+				text := string(raw) + "\n" + protocol.WorkerPermissionsText(level, harness)
+				var res protocol.WorkerStartResult
+				if json.Unmarshal(raw, &res) == nil {
+					if res.Track != nil {
+						text += "\n" + res.Track.Line()
+					}
+					if res.Playbook != nil {
+						text += "\n" + res.Playbook.Line()
+					}
+				}
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, out, nil
 			}
 			return nil, out, nil
 		})
 	mcp.AddTool(s, tool("agent_handback",
 		"Only for a worker that agent-net started: hand your final report to the agent that started you, and mark your work done. "+
 			"Call it once when the task is finished, or with status blocked or failed when you cannot finish. "+
+			"Set complete:false when you hand back partial work. "+
 			"The caller receives the report with facts (status, run time, tokens, changes). Text you leave at the end of your run is not delivered. "+
 			"You stay available for follow-up messages. If you were not started through agent-net, this fails: answer with agent_reply."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in handbackIn) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: in.Report, Status: in.Status})
+			out, err := run(ctx, protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: in.Report, Status: in.Status, Complete: in.Complete})
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_stop",

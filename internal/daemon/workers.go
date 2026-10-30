@@ -130,6 +130,8 @@ type worker struct {
 	// taskMsg is the last request from the owner; doneStatus the status of the
 	// last hand-back ("" if none); taskText is the short line of that request.
 	taskMsg, doneStatus, taskText string
+	// donePartial is true when the last hand-back said complete:false.
+	donePartial bool
 	// taskFull is the full first task (at most 64 KiB), kept in the record so
 	// that a new worker can continue it.
 	taskFull string
@@ -381,8 +383,8 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 	return workerRow{ID: w.id, Harness: w.harness, Project: w.project, Path: w.path, Model: w.model,
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
-		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, Ref: w.ref, TaskFull: w.taskFull,
-		Permissions: w.permissions}
+		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
+		Ref: w.ref, TaskFull: w.taskFull, Permissions: w.permissions}
 }
 
 // ---- starting ----
@@ -765,8 +767,14 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			d.lostNotice(ctx, r)
 		}
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		var complete *bool
+		if r.DoneStatus != "" {
+			c := !r.DonePartial
+			complete = &c
+		}
 		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
-			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model})
+			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model,
+			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix()})
 		cancel()
 		var re RemoteError
 		switch {
@@ -1214,7 +1222,7 @@ func (d *Daemon) adoptWorkers() {
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
-			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, ref: r.Ref,
+			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, donePartial: r.DonePartial, ref: r.Ref,
 			taskFull:    r.TaskFull,
 			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions)}
 		w.logPath = filepath.Join(w.dir, "worker.log")

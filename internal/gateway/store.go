@@ -148,6 +148,16 @@ CREATE TABLE graph_charter (node TEXT NOT NULL, attr TEXT NOT NULL, value TEXT N
 CREATE TABLE graph_edges (source TEXT NOT NULL, target TEXT NOT NULL, kind TEXT NOT NULL, mode TEXT NOT NULL, rule TEXT NOT NULL, PRIMARY KEY(source, target, kind));
 CREATE TABLE graph_history (id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT NOT NULL, node TEXT NOT NULL, attr TEXT NOT NULL, old_value TEXT NOT NULL, new_value TEXT NOT NULL, at INTEGER NOT NULL, actor TEXT NOT NULL);
 CREATE INDEX graph_history_node ON graph_history(node, id);
+`, `
+CREATE TABLE worker_runs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL,
+  started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX worker_runs_node ON worker_runs (node_id, harness, model, ended_at);
+CREATE INDEX worker_runs_at ON worker_runs (ended_at);
+CREATE TABLE playbook_notes (
+  model TEXT NOT NULL, harness TEXT NOT NULL DEFAULT '', note TEXT NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY (model, harness));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

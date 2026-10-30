@@ -139,10 +139,28 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	mcp.AddTool(s, tool("agent_nodes",
 		"List the machines on the network with their agent-net version, whether they are online, and the agent harnesses installed on each "+
 			"(claude, opencode, pi, codex) with path and version. For opencode it also lists the models it can use. "+
+			"Each machine also shows its worker track record per harness and model, and the playbook notes for a model. "+
 			"A machine with harnesses null runs an older agent-net that does not report them."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "nodes", nil)
-			return nil, out, err
+			if err != nil {
+				return nil, nil, err
+			}
+			raw, _ := json.Marshal(out)
+			var ni protocol.NodesInfo
+			var lines []string
+			if json.Unmarshal(raw, &ni) == nil {
+				for _, n := range ni.Nodes {
+					for i := range n.Tracks {
+						lines = append(lines, n.Hostname+": "+n.Tracks[i].Line())
+					}
+				}
+			}
+			text := string(raw)
+			if len(lines) > 0 {
+				text += "\n" + strings.Join(lines, "\n")
+			}
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, out, nil
 		})
 	mcp.AddTool(s, tool("agent_get", "Show one agent session by session_id."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in getIn) (*mcp.CallToolResult, any, error) {

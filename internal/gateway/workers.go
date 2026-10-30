@@ -73,6 +73,33 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 				return nil, err
 			}
 		}
+		// The run feeds the model track record (decision 0022). An older
+		// machine sends no start, model or hand-back status: the session row
+		// has what it stored, and a hand-back without a status counts complete.
+		started, storedHarness, storedModel, _, err := g.store.WorkerSessionFacts(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if p.Harness == "" {
+			p.Harness = storedHarness
+		}
+		if p.Model == "" {
+			p.Model = storedModel
+		}
+		if p.StartedAt == 0 {
+			p.StartedAt = started
+		}
+		end := g.store.now().Unix()
+		runSeconds := int64(0)
+		if p.StartedAt > 0 && end > p.StartedAt {
+			runSeconds = end - p.StartedAt
+		}
+		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
+			Outcome: protocol.WorkerOutcome(p.Reason, p.Status, p.Complete), StartedAt: p.StartedAt, EndedAt: end,
+			RunSeconds: runSeconds}
+		if err := g.store.RecordWorkerRun(run); err != nil {
+			return nil, err
+		}
 		// The worker has ended: it leaves the worker list, and its record stays
 		// (offline) only for a follow-up that starts it again.
 		if err := g.store.SetSessionOffline(nc.id, p.SessionID); err != nil {
@@ -399,6 +426,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 		p.Model = resolved
 	}
+	track, book, err := g.choiceNotes(pick.NodeID, p.Harness, p.Model)
+	if err != nil {
+		return none, err
+	}
 
 	g.mu.Lock()
 	target := g.conns[pick.NodeID]
@@ -432,7 +463,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			"reason", launched.Reason)
 		return protocol.WorkerStartAnswer{NodeID: pick.NodeID, Hostname: pick.Hostname, Project: pick.Name, Path: pick.Path,
 			Harness: p.Harness, Model: p.Model, ModelNote: modelNote, Queued: true, QueueID: launched.QueueID,
-			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms}, nil
+			Position: launched.Position, Reason: launched.Reason, MachineNote: machineNote, Permissions: perms,
+			Track: track, Playbook: book}, nil
 	}
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
@@ -445,7 +477,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
-		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms}, nil
+		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
+		Track: track, Playbook: book}, nil
 }
 
 // workerContinue starts a new worker from an ended one. The gateway knows the
@@ -507,6 +540,11 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, reject("machine %s refused the worker: %v", old.Hostname, err)
 	}
 	c, err := decode[protocol.WorkerContinued](raw)
+	if err == nil {
+		if track, book, nerr := g.choiceNotes(old.NodeID, c.Harness, c.Model); nerr == nil {
+			c.Track, c.Playbook = track, book
+		}
+	}
 	if err == nil && c.Queued && c.QueueID != "" {
 		g.store.Event("worker.queued", old.NodeID, p.Owner, "",
 			strings.TrimPrefix(pairs("project", c.Project, "harness", c.Harness, "model", c.Model, "owner", p.Owner,
@@ -516,7 +554,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			"reason", c.Reason, "continues", old.SessionID)
 		return protocol.WorkerStartAnswer{NodeID: old.NodeID, Hostname: old.Hostname, Project: c.Project, Path: c.Path,
 			Harness: c.Harness, Model: c.Model, Queued: true, QueueID: c.QueueID, Position: c.Position, Reason: c.Reason,
-			Permissions: old.Worker.Permissions}, nil
+			Permissions: old.Worker.Permissions, Track: c.Track, Playbook: c.Playbook}, nil
 	}
 	if err != nil || c.SessionID == "" {
 		return none, reject("machine %s answered without a session", old.Hostname)
@@ -530,7 +568,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	return protocol.WorkerStartAnswer{SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
 		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model,
 		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task,
-		Permissions: old.Worker.Permissions}, nil
+		Permissions: old.Worker.Permissions, Track: c.Track, Playbook: c.Playbook}, nil
 }
 
 // mostHeadroom picks, among the machines that hold the project, the one with

@@ -610,6 +610,32 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "graph.get":
 		return st.Graph()
+	case "playbook.set":
+		p, err := decode[protocol.PlaybookSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad playbook.set")
+		}
+		model, harness, note, err := protocol.CleanPlaybook(p.Model, p.Harness, p.Note)
+		if err != nil {
+			return nil, reject("%v", err)
+		}
+		if err := st.SetPlaybook(model, harness, note); err != nil {
+			return nil, err
+		}
+		if note == "" {
+			return protocol.PlaybookGetResult{}, nil
+		}
+		return protocol.PlaybookGetResult{Note: &protocol.PlaybookNote{Model: model, Harness: harness, Note: note}}, nil
+	case "playbook.get":
+		p, err := decode[protocol.PlaybookGetRequest](raw)
+		if err != nil {
+			return nil, reject("bad playbook.get")
+		}
+		note, _, err := st.PlaybookFor(p.Model, p.Harness)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.PlaybookGetResult{Note: note}, nil
 	case "charter.set":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {

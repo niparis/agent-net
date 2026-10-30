@@ -557,6 +557,34 @@ function formatAgent(a: any): string {
   return line;
 }
 
+function formatTrack(t: any): string {
+  const model = t?.model || "default";
+  const runs = Number(t?.runs || 0);
+  const parts: string[] = [];
+  for (const [n, word] of [[t?.complete, "complete"], [t?.partial, "partial"], [t?.failed, "failed"], [t?.timed_out, "timed out"]] as [any, string][]) {
+    if (Number(n) > 0) parts.push(`${Number(n)} ${word}`);
+  }
+  let line = `${model} · ${t?.harness || "?"}: `;
+  if (!runs) {
+    line += "no runs yet";
+  } else {
+    line += `${runs} ${runs === 1 ? "run" : "runs"}`;
+    if (parts.length) line += `: ${parts.join(", ")}`;
+    const secs = Number(t?.median_run_seconds || 0);
+    if (secs > 0) {
+      const short = secs >= 3600 ? `${Math.round(secs / 3600)} h` : secs >= 60 ? `${Math.round(secs / 60)} min` : `${Math.round(secs)} s`;
+      line += ` (median ${short})`;
+    }
+  }
+  line += t?.resumable ? " · resumes" : " · cannot resume";
+  return line;
+}
+
+function formatPlaybook(p: any): string {
+  const note = String(p?.note || "").trim();
+  return note ? `playbook: ${note}` : "";
+}
+
 function formatNodes(r: any): string {
   const nodes: any[] = r.nodes ?? [];
   if (!nodes.length) return "No machines found.";
@@ -571,7 +599,9 @@ function formatNodes(r: any): string {
                 .map((h) => `${h.name} ${h.version || "?"}${h.models?.length ? ` (${h.models.length} models)` : ""} at ${h.path}`)
                 .join("; ")
             : "no harnesses installed";
-      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}`;
+      const tracks: any[] = n.tracks ?? [];
+      const extra = tracks.length ? "\n  " + tracks.map(formatTrack).join("\n  ") : "";
+      return `${n.hostname} (${n.node_id}, ${n.online ? "online" : "offline"}, agent-net ${n.version || "unknown"}): ${list}${extra}`;
     })
     .join("\n");
 }
@@ -614,12 +644,14 @@ function formatMessages(r: any): string {
 }
 
 function formatStarted(r: any): string {
+  const extra = [r.track ? formatTrack(r.track) : "", formatPlaybook(r.playbook)].filter(Boolean).join("\n");
   if (r.status === "queued") {
     return (
       `${r.queue_reason}\n` +
       `Queued start ${r.queue_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}: no worker exists yet. ` +
       `A worker notice arrives in this session when it starts, or when it cannot. Cancel it with agent_stop and the queue_id.\n${workerPermissions(r)}` +
-      (r.machine_note ? `\nmachine: ${r.machine_note}` : "")
+      (r.machine_note ? `\nmachine: ${r.machine_note}` : "") +
+      (extra ? `\n${extra}` : "")
     );
   }
   const note = r.queued
@@ -630,7 +662,8 @@ function formatStarted(r: any): string {
     `${workerPermissions(r)}\n` +
       (r.model_note ? `model: ${r.model_note}\n` : "") +
     (r.worktree ? `worktree: ${r.worktree} (branch ${r.branch})\n` : "") +
-    `${note} Stop it with agent_stop. It ends by itself after 60 minutes without messages or 4 hours.`
+    `${note} Stop it with agent_stop. It ends by itself after 60 minutes without messages or 4 hours.` +
+    (extra ? `\n${extra}` : "")
   );
 }
 
@@ -917,15 +950,17 @@ const TOOLS: ToolDef[] = [
     description:
       "Only for a worker that agent-net started: hand your final report to the agent that started you, and mark your work done. " +
       "Call it once when the task is finished, or with status blocked or failed when you cannot finish. " +
+      "Set complete: false when you hand back partial work. " +
       "The caller receives the report with facts (status, run time, tokens, changes). Text you leave at the end of your run is not delivered. " +
       "You stay available for follow-up messages. If you were not started through agent-net, this fails: answer with agent_reply.",
     properties: {
       report: str("Your final report: what you did, what you found, absolute paths. It is the message; do not write report files"),
       status: str("done (default), blocked (you need something you cannot get) or failed"),
+      complete: { type: "boolean", description: "true when you did the whole task (the default). Set it to false when you hand back partial work, so the record shows it" },
     },
     required: ["report"],
     method: "worker_handback",
-    format: (r) => `Handed back (${r.status}). The caller has your report and the facts. You can still receive follow-up messages.`,
+    format: (r) => `Handed back (${r.status}${r.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`,
   },
   {
     name: "agent_stop",
