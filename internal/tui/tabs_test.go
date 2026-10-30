@@ -579,3 +579,16 @@ func TestQuotaHintsShowScrollAndExpansion(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestQuotaSourcesAgreeAcrossPlans(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	providers := []protocol.QuotaProvider{{Provider: "codex", Plan: "a", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "codex", Plan: "b", Windows: []protocol.QuotaWindow{{ID: "week"}}}}
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: providers}
+	m.usage.raw.Gateway.Nodes = []protocol.UsageNode{{NodeID: "other", Hostname: "other", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{Providers: providers}}}}
+	for _, r := range m.quotaRows() {
+		if r.machine != "" {
+			t.Fatalf("agreed readings include machine: %+v", r)
+		}
+	}
+}

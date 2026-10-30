@@ -47,16 +47,13 @@ func (m Model) quotaRows() []quotaRow {
 			rows[key] = r
 		}
 	}
-	counts := map[string]int{}
-	for _, r := range rows {
-		counts[strings.ToLower(r.provider.Provider)]++
-	}
+
 	out := make([]quotaRow, 0, len(rows))
 	for _, r := range rows {
 		if m.tab == 2 && m.uiFilter != "" && !strings.Contains(strings.ToLower(r.provider.Provider+" "+r.provider.Plan+" "+r.machine), strings.ToLower(m.uiFilter)) {
 			continue
 		}
-		if counts[strings.ToLower(r.provider.Provider)] == 1 && r.readers > 1 && !r.disagree {
+		if r.readers > 1 && !r.disagree {
 			r.machine = ""
 		}
 		out = append(out, r)
