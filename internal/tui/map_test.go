@@ -409,3 +409,16 @@ func TestGoldenMapNavigation(t *testing.T) {
 		golden(t, fmt.Sprintf("map_find_%dx%d", size[0], size[1]), m.View())
 	}
 }
+
+func TestLargeOverviewNeverFallsBack(t *testing.T) {
+	g := fakeGraph()
+	for i := 0; i < 25; i++ {
+		g.Nodes = append(g.Nodes, protocol.Node{Name: fmt.Sprintf("project-%02d", i), Kind: "component"})
+	}
+	m := openMap(t, mapModel(80, 24, g))
+	m = keys(m, "z")
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "Overview") || strings.Contains(v, "overview does not fit") {
+		t.Fatal(v)
+	}
+}
