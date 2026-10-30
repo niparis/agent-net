@@ -158,3 +158,23 @@ Before building this, check:
 - that the bg id maps to the session file and transcript;
 - how `--bg` takes settings, `crossSessionInbound` and the prompt;
 - that `respawn` keeps the session ID.
+
+**Built: the key is `e`** (Enter and `c` already open the conversation). The TUI asks the daemon method `session_enter {session_id, tmux_socket}`, which answers `{argv, dir, env, host, note}`, and runs it with Bubble Tea's `ExecProcess`. It builds no command, so the phone can show the same plan (decision 0008). The method is owner-only through the same gate as `session_text`, and for a session on another machine it is relayed by the gateway (`query.session_enter` and `node.session_enter`) to the machine that holds it, which does the planning. A gateway from before this answers "unknown frame type", and the TUI says the gateway is too old. The Claude adapter exposes the session file's `kind` and `jobId` so the daemon knows which sessions are background ones.
+
+Facts checked on this machine with `--help` only (no session was started): `claude attach --help` ("Open the background session in this terminal. Left arrow returns to agent view, Ctrl+Z drops back to your shell"; "Part of the session name works in place of the id"); `opencode --help` (`--session`, `--server`, `--standalone`; the folder is a positional argument, so the command runs in the session's folder); `codex resume --help` (`codex resume [SESSION_ID]`, `--remote <ADDR>` with `ws://` addresses and `--remote-auth-token-env <ENV_VAR>`); `tmux 3.4` for `list-panes -a -F`, `switch-client -t` and `;` as a separate argument (run on a throwaway server socket). The pi CLI has no attach command.
+
+What each kind does:
+
+- **Claude background** (`kind` bg in the session file): `claude attach <id>`; the id is the worker's `ref`, else the file's `jobId`, else the first 8 characters of the session ID.
+- **Claude interactive and Pi:** tmux. The daemon finds the pane by listing panes of the tmux server named in the session's own `$TMUX` (read from `/proc` on Linux; the default server on macOS) and walking the parents of the session's process to a pane's shell. If the TUI runs in the same tmux server, the plan is `switch-client -t <pane>`; if not, `select-window`, `select-pane` and `attach-session` (under `env -u TMUX` when the TUI is in another tmux). The "switch" plan does not wait for the owner, so the TUI stays running in its own pane. With no pane: the note "open its window on <machine>".
+- **OpenCode:** `opencode --session <id>` in the session's folder, which talks to OpenCode's own background service. An OpenCode worker is in a private `opencode serve`, so its plan is `opencode --server <url> --session <id>` with `OPENCODE_SERVER_PASSWORD` in `env`.
+- **Codex:** agent-net only knows Codex sessions that it started, in a private app server. For those the plan is `codex resume <thread> --remote ws://<addr> --remote-auth-token-env AGENT_NET_CODEX_TOKEN`. Any other Codex session is not listed by agent-net and cannot be entered.
+- **Another machine:** the answer of that machine is wrapped as `ssh -t -- <target> "cd <dir> && exec <argv>"` only when `enter_ssh` is true in `node.json` (hand-edited, with optional `enter_ssh_hosts`; documented in `docs/reference.md`). The ssh target comes from the host name the gateway lists, never from the other machine's answer. Without opt-in the TUI shows the command to run there. Plans that need a private server password (OpenCode and Codex workers) are refused from another machine, so no secret crosses the gateway.
+
+Not verified, because it would start real sessions or touch the owner's servers: that OpenCode honours `OPENCODE_SERVER_PASSWORD` in the client with `--server`; that `codex resume --remote` against a worker's app server shows the thread while the daemon also drives it (and which client gets approval requests); the tmux attach path in a real terminal. The tests use fake executables and a fake `tmux` and check the exact argv.
+
+Open points:
+
+- Setup does not ask about SSH yet. `enter_ssh` is edited by hand.
+- A `--bg` session of another kind (`daemon`, `daemon-worker`) is not treated as attachable; only `bg` is.
+- macOS: there is no `$TMUX` lookup, so a pane on a non-default tmux server is not found.

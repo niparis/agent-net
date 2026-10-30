@@ -195,7 +195,7 @@ Each daemon samples its machine every 5 seconds, keeps 5 minutes, and reports a 
 - **Linux:** `/proc/<pid>/stat` (user, system and waited-for children time) and `/proc/stat`. CPU is the difference between two readings. The sampler costs about 5 ms per reading with 450 processes, about 0.1% of one core.
 - **macOS:** `ps -A -o pid=,ppid=,rss=,time=,comm=` for processes, `sysctl` for cores, memory size and load, `vm_stat` for memory in use (app + wired + compressed, like Activity Monitor). Load and memory are read every 4th sample. CPU time from `ps` has a resolution of 10 ms and misses processes that start and end between two readings, so tree CPU can read low for a tree that spawns many short jobs. Machine CPU is the sum of live processes' CPU time over the cores, with the same limit. This was written and tested against fixtures of the `ps`, `sysctl` and `vm_stat` output; it has not been run on a Mac.
 - **Top lists:** only on request, not in the report. Each process has its PID, short name, and the first 80 characters of its command line with tokens, `--password=`/`--token` values and `KEY=value` secrets masked.
-- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `session_text {session_id, limit, before, after, sidechain}`, `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.usage_top`, `query.session_text` (and `node.usage_top`, `node.session_text` to the machine that holds the session).
+- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket}` (answers `{argv, dir, env, host, note}`, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
 - **Counts:** `counts` returns `online`, `offline_24h` and `offline_total`. The gateway keeps offline sessions for 30 days, so a header that says "134 sessions, 12 online" is mostly old restarts. Show "12 online, 5 offline in the last 24 h".
 
 ## The project registry
@@ -252,7 +252,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 ## The TUI screen
 
-`agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top` and `session_text` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
+`agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top`, `session_text` and `session_enter` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
 - **Header.** `12 online · 5 offline today`, from `counts`. The total of old offline sessions is left out. An older gateway has no counts: the header then says `N sessions, M online`. Also the filter, and the time of the last refresh.
 - **Machines,** one line each: online state, name, agent-net version, CPU now with a bar and the 5 minute average in brackets, memory used and total with a bar, 1 minute load, and the installed harnesses when the line has room. This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
@@ -281,11 +281,36 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
 | `x` | Stop the selected worker, after a `y/n` question. Any other session is refused with a message. |
+| `e` | Enter the selected session: the TUI hands the terminal to it and comes back when you leave. See [Enter a session](#enter-a-session). |
 | `q`, ctrl+c | Quit. |
 
 A message body can only be shown for a message that involves a session on this machine. The gateway refuses it to other machines. Text from the network is stripped of control characters before it is drawn, so an agent name or a message cannot move the cursor or change the screen.
 
 **Event feed.** The screen reads the gateway's events through the local daemon method `events` (`{"after_id": N, "limit": N}`) and the gateway frame `query.events`. Any enrolled machine can ask. It returns the events of kinds `msg.*`, `session.*` and `node.*`, oldest first, as metadata: the event kind and time, the machine, the session, the message ID, and for messages the two session IDs, the type and the ID of the message it answers. Never a message body. Machine addresses are left out, details are cut to 200 characters, and MCP, enrollment and retention events are not included. With `after_id` 0 you get the newest `limit` events (default 100, at most 500). An older daemon or gateway answers that the method is unknown, and the screen then shows the sessions without the feed.
+
+### Enter a session
+
+`e` in the TUI asks the daemon (`session_enter`) how to take over the terminal for the selected session, runs the answer, and draws the TUI again when you leave. The daemon of the machine that holds the session works out the command. The TUI builds none. Your own input in the session counts as yours, so approvals you give are yours.
+
+| Session | What `e` runs |
+|---|---|
+| Claude Code background session (`kind` bg, which includes Claude workers) | `claude attach <id>`. The left arrow returns to the agent view, ctrl+z drops to the shell, the session keeps running. |
+| Claude Code interactive session | Cannot be attached twice. If its process runs in a tmux pane, the TUI switches its tmux client to that pane (when the TUI is in the same tmux server) or attaches a new client at that pane. Otherwise: "open its window on <machine>". |
+| Pi | The same tmux rule. A Pi worker has no screen, so there is nothing to enter. |
+| OpenCode | `opencode --session <id>`, in the session's folder, through OpenCode's own background service. |
+| OpenCode worker | `opencode --server <its private url> --session <id>`, with its password in `OPENCODE_SERVER_PASSWORD`. Only from the machine that runs it. |
+| Codex worker | `codex resume <thread> --remote ws://<its private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN`. Only from the machine that runs it. The daemon drives the same thread, so do not type while it works. Other Codex sessions are not known to agent-net and cannot be entered. |
+
+When the plan has nothing to run, the answer has only a note, and the TUI shows it in the result line.
+
+**A session on another machine.** The question goes through the gateway to that machine. By default the TUI shows the command to run there. To let `e` run it through `ssh -t`, set in `node.json` on the machine where you use the TUI, and restart the daemon:
+
+```json
+"enter_ssh": true,
+"enter_ssh_hosts": {"build-box": "me@build-box.example"}
+```
+
+`enter_ssh` is off by default. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh must already work without a prompt for anything but a key passphrase or a Tailscale SSH check. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
 
 ## What setup changes on your machine
 
