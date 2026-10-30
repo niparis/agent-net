@@ -41,14 +41,18 @@ func TestInboxStore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.AnswerInbox(idea.ID, "approve"); err == nil {
-		t.Fatal("approved non-approval")
+	if _, err := s.AnswerInbox(idea.ID, "approve"); err != nil {
+		t.Fatal(err)
 	}
-	if _, err := s.AnswerInbox(idea.ID, "good idea"); err != nil {
+	question, err := s.CreateInboxItem(protocol.InboxItem{Kind: "question", SessionID: "s_1", Text: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInbox(question.ID, "good idea"); err != nil {
 		t.Fatal(err)
 	}
 	rows, err = s.ListInbox()
-	if err != nil || len(rows) != 2 || rows[0].Status != "approved" || rows[1].Status != "answered" || rows[1].Answer != "good idea" {
+	if err != nil || len(rows) != 3 || rows[0].Status != "approved" || rows[1].Status != "approved" || rows[2].Status != "answered" || rows[2].Answer != "good idea" {
 		t.Fatalf("answered rows: %+v, %v", rows, err)
 	}
 }

@@ -89,9 +89,6 @@ func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
 	}
 	switch answer {
 	case "approve":
-		if item.Kind != "approval" {
-			return item, reject("only an approval can be approved")
-		}
 		item.Status = "approved"
 	case "refuse":
 		item.Status = "refused"
