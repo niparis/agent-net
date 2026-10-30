@@ -95,6 +95,15 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if n > 0 {
 			g.logLine("worker.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "workers", n)
 		}
+		if p.WorktreesDir != "" {
+			ghosts, err := g.store.CleanWorktreeSessions(nc.id, p.WorktreesDir)
+			if err != nil {
+				return nil, err
+			}
+			if ghosts > 0 {
+				g.logLine("worker.ghosts.cleaned", "node", nc.id, "host", g.store.hostname(nc.id), "sessions", ghosts)
+			}
+		}
 		return map[string]any{"cleaned": n}, nil
 	}
 	return nil, reject("unknown frame type %q", typ)

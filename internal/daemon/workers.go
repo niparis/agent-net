@@ -785,6 +785,7 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	// Retry reports that failed while the gateway was away, then drop the
 	// records that are past the longest run time.
 	d.reportWorkerEnds(ctx)
+	d.dropWorktreeSessions()
 	rows, err := d.st.workers()
 	if err != nil {
 		return
@@ -803,7 +804,7 @@ func (d *Daemon) cleanupWorkers(ctx context.Context) {
 	}
 	cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second)}); err != nil &&
+	if _, err := d.call(cctx, "worker.cleanup", protocol.WorkerCleanup{MaxAgeSeconds: int64(set.MaxAge / time.Second), WorktreesDir: d.worktreesDir()}); err != nil &&
 		!strings.Contains(err.Error(), "unknown frame type") { // an older gateway has no such frame
 		d.Logf("worker.cleanup: %v", err)
 	}
