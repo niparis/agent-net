@@ -53,19 +53,20 @@ var stateRank = map[string]int{
 // follows its events. Other events (a machine connecting, a refused send) are
 // items with no message.
 type feedItem struct {
-	EventID int64
-	At      time.Time
-	Kind    string // kind of the first event
-	MsgID   string // set for a message
-	From    string // sender session ID
-	To      string // recipient session ID
-	Type    string // request, reply or notification
-	Parent  string // the message this one answers
-	State   string
-	FromCTO bool
-	Detail  string
-	Host    string // machine of a node event
-	Session string // session of a session.new event
+	EventID        int64
+	At             time.Time
+	Kind           string // kind of the first event
+	MsgID          string // set for a message
+	From           string // sender session ID
+	To             string // recipient session ID
+	Type           string // request, reply or notification
+	ConversationID string // conversation containing the message
+	Parent         string // the message this one answers
+	State          string
+	FromCTO        bool
+	Detail         string
+	Host           string // machine of a node event
+	Session        string // session of a session.new event
 	// Snippet is the first line of the body, when this machine has a session
 	// in the conversation. Snip says whether it was fetched.
 	Snippet string
@@ -132,6 +133,9 @@ func (f *feed) applyMessage(e protocol.FeedEvent) {
 		it = &feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, MsgID: e.MessageID, Parent: e.Parent, State: state}
 		f.byMsg[e.MessageID] = it
 		f.add(it)
+	}
+	if e.ConversationID != "" {
+		it.ConversationID = e.ConversationID
 	}
 	it.FromCTO = it.FromCTO || e.FromCTO || (e.Kind == "msg.stored" && parseDetail(e.Detail)["by"] == "cto")
 	if it.Parent == "" {
@@ -267,6 +271,9 @@ func (m *Model) applySnippet(r snippetMsg) {
 	if r.err != nil {
 		it.Snip = snipFailed
 		return
+	}
+	if r.msg.ConversationID != "" {
+		it.ConversationID = r.msg.ConversationID
 	}
 	it.FromCTO = it.FromCTO || r.msg.FromCTO
 	it.Snippet = firstLine(r.msg.Body)
