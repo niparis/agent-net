@@ -1050,6 +1050,10 @@ func (m Model) messagesView(w, h int) []string {
 	if len(list) == 0 {
 		list = append(list, sDim.Render("No conversations"))
 	}
+	footer := fmt.Sprintf("%d system events · e to show", m.systemEventCount())
+	if m.messageShowEvents {
+		footer = fmt.Sprintf("%d system events · e to hide", m.systemEventCount())
+	}
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)
@@ -1058,7 +1062,8 @@ func (m Model) messagesView(w, h int) []string {
 	}
 	if w >= 100 {
 		height := max(h-3, 0)
-		list = messageFit(list, height, selected)
+		list = messageFit(list, max(height-1, 0), selected)
+		list = append(list, sDim.Render(clip(footer, listW)))
 		chat = messageFit(chat, height, 0)
 		left := panel("Messages · "+filter, list, listW+4, roleAccent)
 		right := panel("Conversation", chat, chatW+4, roleAccent)
@@ -1070,7 +1075,10 @@ func (m Model) messagesView(w, h int) []string {
 	available := max(h-5, 0)
 	listHeight := min(max(available/2, 1), len(list))
 	chatHeight := max(available-listHeight, 0)
-	list = messageFit(list, listHeight, selected)
+	list = messageFit(list, max(listHeight-1, 0), selected)
+	if listHeight > 0 {
+		list = append(list, sDim.Render(clip(footer, listW)))
+	}
 	chat = messageFit(chat, chatHeight, 0)
 	out = append(out, panel("Messages · "+filter, list, w, roleAccent)...)
 	out = append(out, panel("Conversation", chat, w, roleAccent)...)

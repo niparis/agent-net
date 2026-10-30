@@ -64,3 +64,20 @@ func TestMessageChatShowsBodyAndCollapsesWorkerNotice(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestMessageSystemEventsToggle(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "node.connected", Hostname: "build", Time: t0}}})
+	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
+	if !strings.Contains(v, "1 system events · e to show") || strings.Contains(v, "build connected") {
+		t.Fatal(v)
+	}
+	m = keys(m, "e")
+	v = ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
+	if !strings.Contains(v, "build connected") {
+		t.Fatal(v)
+	}
+}

@@ -59,6 +59,20 @@ func (m Model) messageConversations() []messageConversation {
 		}
 		out = append(out, *g)
 	}
+	if m.messageShowEvents {
+		for i, it := range m.feed.items {
+			if it.isMessage() {
+				continue
+			}
+			if m.events == eventsNone && (strings.HasPrefix(it.Kind, "worker.") || strings.HasPrefix(it.Kind, "session.")) {
+				continue
+			}
+			if firstNonEmpty(m.uiFilter, m.filter) != "" && !strings.Contains(strings.ToLower(m.infoText(it)), strings.ToLower(firstNonEmpty(m.uiFilter, m.filter))) {
+				continue
+			}
+			out = append(out, messageConversation{id: fmt.Sprintf("event-%d", i), items: []int{i}, at: it.At, event: true})
+		}
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].at.Equal(out[j].at) {
 			return out[i].items[len(out[i].items)-1] > out[j].items[len(out[j].items)-1]
@@ -79,6 +93,14 @@ func (m Model) conversationIndex(rows []messageConversation) int {
 	return 0
 }
 func (m Model) messageConversationLine(c messageConversation, w int, selected bool) string {
+	if c.event {
+		it := m.feed.items[c.items[0]]
+		line := sDim.Render(clip("  "+m.clock(it.At)+" "+m.infoText(it), w))
+		if selected {
+			line = selectedRow(line)
+		}
+		return line
+	}
 	first := m.feed.items[c.items[0]]
 	last := m.feed.items[c.items[len(c.items)-1]]
 	from := m.feedName(first.From)
@@ -158,6 +180,9 @@ func workerNoticeLine(body string) (string, bool) {
 }
 func (m Model) conversationChat(c messageConversation, w int) []string {
 	var out []string
+	if c.event {
+		return []string{sDim.Render("System event")}
+	}
 	for _, i := range c.items {
 		it := m.feed.items[i]
 		sender := m.feedName(it.From)
@@ -190,4 +215,22 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 		}
 	}
 	return out
+}
+
+func (m Model) selectedConversationItem() *feedItem {
+	rows := m.messageConversations()
+	if len(rows) == 0 {
+		return nil
+	}
+	row := rows[m.conversationIndex(rows)]
+	return m.feedItemAt(row.items[0])
+}
+func (m Model) systemEventCount() int {
+	n := 0
+	for _, it := range m.feed.items {
+		if !it.isMessage() {
+			n++
+		}
+	}
+	return n
 }

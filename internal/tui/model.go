@@ -55,10 +55,11 @@ type Model struct {
 	loc *time.Location
 	now func() time.Time
 
-	width, height  int
-	tab            int
-	quotaScroll    int
-	quotaShowUnset bool
+	width, height     int
+	tab               int
+	quotaScroll       int
+	quotaShowUnset    bool
+	messageShowEvents bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap     Snapshot
@@ -671,6 +672,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if i == 1 {
 				m.focus = focusFeed
 				m.feedCur = m.feedLastVisible()
+				if rows := m.messageConversations(); len(rows) > 0 {
+					m.feedCur = rows[0].items[0]
+				}
 			}
 			return m, nil
 		}
@@ -737,6 +741,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.startForm()
 	case "e":
+		if m.tab == 1 {
+			m.messageShowEvents = !m.messageShowEvents
+			return m, nil
+		}
 		return m.startEnter()
 	case "x":
 		return m.startConfirm()
@@ -793,7 +801,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.feedClamp()
 	case "v":
 		if m.focus == focusFeed {
-			if it := m.feedItemAt(m.feedCur); it != nil && it.isMessage() {
+			if it := m.selectedConversationItem(); it != nil && it.isMessage() {
 				m.open = &openMsg{id: it.MsgID, loading: true}
 				return m, m.bodyCmd(it.MsgID)
 			}
@@ -823,7 +831,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(1 << 20)
 	case "enter":
 		if m.focus == focusFeed {
-			it := m.feedItemAt(m.feedCur)
+			it := m.selectedConversationItem()
 			if it == nil || !it.isMessage() {
 				return m, nil
 			}
@@ -875,7 +883,7 @@ func (m *Model) move(delta int) {
 			if len(rows) > 0 {
 				pos := m.conversationIndex(rows)
 				pos = min(max(pos+delta, 0), len(rows)-1)
-				m.feedCur = rows[pos].items[len(rows[pos].items)-1]
+				m.feedCur = rows[pos].items[0]
 			}
 			return
 		}
