@@ -346,6 +346,24 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.mapCmd()
 		}
 		return m, nil
+	case ctoSettingsMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else {
+				m.cto.err = ""
+				m.cto.harness = msg.settings.Harness
+				m.cto.configuredModel = msg.settings.Model
+				m.cto.model = msg.settings.Model
+				if m.cto.harness == "" {
+					m.cto.harness = "opencode"
+				}
+				if m.cto.model == "" {
+					m.cto.model = "default"
+				}
+			}
+		}
+		return m, nil
 	case ctoSendMsg:
 		if m.cto != nil && m.cto.generation == msg.generation {
 			if msg.err != nil {

@@ -1,5 +1,7 @@
 package tui
 
+import "strings"
+
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := "CTO"
@@ -11,6 +13,27 @@ func (m Model) ctoView(w, h int) []string {
 		}
 	}
 	out := []string{section(title, w)}
+	if f := c.settingsForm; f != nil {
+		marker := ">"
+		other := " "
+		if f.modelFocus {
+			marker, other = " ", ">"
+		}
+		f.input.Width = max(w-12, 1)
+		out = append(out, clip(marker+" Harness: < "+f.harness+" >", w), clip(other+" Model:   "+f.input.View(), w))
+		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
+		if len(candidates) > 3 {
+			candidates = candidates[:3]
+		}
+		if len(candidates) > 0 {
+			out = append(out, clip("  Suggestions: "+strings.Join(candidates, ", "), w))
+		}
+		out = append(out, clip("  up/down select  left/right harness  tab complete  enter save  esc cancel", w))
+		for len(out) < h {
+			out = append(out, "")
+		}
+		return out[:min(len(out), h)]
+	}
 	var lines []string
 	for _, v := range c.messages {
 		lines = append(lines, wrap(sanitize(v), max(w-2, 8))...)

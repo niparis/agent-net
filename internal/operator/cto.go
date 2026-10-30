@@ -56,3 +56,13 @@ func (s *Client) CTOEnter(ctx context.Context) (protocol.EnterPlan, error) {
 	err = json.Unmarshal(b, &out)
 	return out, err
 }
+
+func (s *Client) SetCTOSettings(ctx context.Context, req protocol.CTOSettingsRequest) (protocol.CTOSettings, error) {
+	var out protocol.CTOSettings
+	b, err := s.action(ctx, protocol.OpCTOSettings, req)
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(b, &out)
+	return out, err
+}

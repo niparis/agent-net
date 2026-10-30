@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas │ 6 sessions, 5 online · 1 busy                                      updated 21:38:31
+ ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude 2.1.312  opencode 2.2.0  pi 1.4.0
+ ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi 1.4.0
+ ○ old-box    v0.3.2 offline
+  NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
+> strategies         claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
+  tenebrae-53        claude   tenebrae  opus-5-5   busy   -         ?     ?
+  web                opencode shop      sonnet-5   idle   -         ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net gpt-6      idle   -         ?     ?
+  scratch            pi       -         -          shell  -         ?     ?
+
+
+
+
+
+
+
+
+
+
+CTO (opencode · fake/m1) ───────────────────────────────────────────────────────────────────────────────────────────────
+> Harness: < opencode >
+  Model:   fake/m1
+  up/down select  left/right harness  tab complete  enter save  esc cancel
+
+
+
+
+
+
+
+tab focus  enter send  m model  o full screen  n new  u undo  esc back
