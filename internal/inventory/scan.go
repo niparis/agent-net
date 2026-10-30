@@ -420,6 +420,16 @@ func Scan(o Options) protocol.InventoryReport {
 			config("codex", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".codex/config.toml"), "mcp_servers", true)
 		}
 		if o.TrustedProjects[base] || piTrusted(base) {
+			extensions := filepath.Join(base, ".pi/extensions")
+			if safe(base, extensions) {
+				if _, err := os.Lstat(extensions); err == nil {
+					before := len(report.Items)
+					add("pi", protocol.InventoryMCP, protocol.InventoryProject, p.Name, base, extensions, "extensions", "", protocol.InventoryOK, "", "extension MCP requires manual inspection")
+					if len(report.Items) > before {
+						report.Items[len(report.Items)-1].Source = protocol.InventoryPlugin
+					}
+				}
+			}
 			piSettings(protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".pi/settings.json"))
 			config("pi", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".pi/mcp.json"), "mcpServers", false)
 		}

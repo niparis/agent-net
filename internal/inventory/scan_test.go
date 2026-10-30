@@ -483,3 +483,17 @@ func TestPiPackageSourceReportedManual(t *testing.T) {
 	}
 	t.Fatal("missing package warning")
 }
+
+func TestPiProjectExtensionsReportedManual(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(project, ".pi/extensions"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	report := Scan(Options{Home: home, Projects: []protocol.ProjectEntry{{Name: "p", Path: project}}, TrustedProjects: map[string]bool{project: true}})
+	for _, item := range report.Items {
+		if item.Harness == "pi" && item.Scope == protocol.InventoryProject && item.Source == protocol.InventoryPlugin && len(item.Unsupported) > 0 {
+			return
+		}
+	}
+	t.Fatal("missing project extension warning")
+}
