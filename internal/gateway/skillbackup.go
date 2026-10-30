@@ -68,7 +68,16 @@ func (g *Gateway) Backup(dest string) (err error) {
 			return err
 		}
 	}
-	return nil
+	snapshot, err := OpenStore(filepath.Join(dest, "gateway.db"))
+	if err != nil {
+		return err
+	}
+	err = validateSkillBackup(dest, snapshot)
+	closeErr := snapshot.Close()
+	if err != nil {
+		return err
+	}
+	return closeErr
 }
 
 func copyPrivateFile(src, dest string) error {

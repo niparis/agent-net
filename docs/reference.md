@@ -528,7 +528,7 @@ Pass `item` as the ID from `tools_items` and `location` as an object with
 online. The owner should inspect the skill files for secrets before importing.
 Import reads the selected directory and does not change it. The gateway rejects
 an import if its contents no longer match the observed hash. The packed bundle
-must be at most 2 MiB and may contain at most 10,000 entries. A larger skill can
+must be at most 2 MiB and may contain at most 2,048 entries. A larger skill can
 still appear in inventory but cannot currently be imported.
 
 `tools_versions` takes `item` and returns the saved hashes, Git commits, source

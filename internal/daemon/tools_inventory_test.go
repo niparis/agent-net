@@ -225,3 +225,23 @@ func TestToolsVersionsAndExport(t *testing.T) {
 		t.Fatalf("export %q %v", b, err)
 	}
 }
+
+func TestGatewayBackupOwnerGate(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	cli := cliClient(t, n)
+	target := filepath.Join(t.TempDir(), "backup")
+	if _, err := cli.call("gateway_backup", map[string]any{"path": target}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "gateway.db")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "skills.git", "HEAD")); err != nil {
+		t.Fatal(err)
+	}
+	pi, _ := helloPi(t, n, "pi-backup", "/work", true)
+	if _, err := pi.call("gateway_backup", map[string]any{"path": filepath.Join(t.TempDir(), "forbidden")}); err == nil {
+		t.Fatal("agent accessed gateway backup")
+	}
+}

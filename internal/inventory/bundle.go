@@ -16,6 +16,9 @@ import (
 // MaxBundleBytes bounds transfer through the local socket and gateway link.
 const MaxBundleBytes = 2 << 20
 
+// MaxBundleEntries also bounds archive extraction work.
+const MaxBundleEntries = 2048
+
 // PackSkill reads a bounded snapshot without following links out of root.
 func PackSkill(root string) ([]byte, error) {
 	info, err := os.Lstat(root)
@@ -42,7 +45,7 @@ func PackSkill(root string) ([]byte, error) {
 			return nil
 		}
 		count++
-		if count > maxFiles {
+		if count > MaxBundleEntries {
 			return errors.New("skill exceeds entry limit")
 		}
 		info, e := dir.Lstat(name)
@@ -147,7 +150,7 @@ func UnpackSkill(data []byte, dest string) error {
 			return errors.New("invalid skill path")
 		}
 		seen[name] = true
-		if len(seen) > maxFiles {
+		if len(seen) > MaxBundleEntries {
 			return errors.New("skill exceeds entry limit")
 		}
 		// Require parents to be real directories, never symlinks.

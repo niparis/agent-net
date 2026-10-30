@@ -196,7 +196,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case "tools_item":
 		res, err = d.call(ctx, "query.tools_item", json.RawMessage(raw))
 	case "tools_import":
-		res, err = d.call(ctx, "tools.import", json.RawMessage(raw))
+		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.import", json.RawMessage(raw))
 	case "tools_versions":
 		res, err = d.call(ctx, "tools.versions", json.RawMessage(raw))
 	case "tools_export":

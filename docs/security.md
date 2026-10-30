@@ -409,7 +409,7 @@ enrolled daemons, as it does for other operator requests. Before importing, the
 owner must review the source files for secrets. Import sends the skill contents
 to the gateway. It does not run them or modify their source. The gateway checks
 the observed hash and rejects traversal, escaping links, special files and
-bundles over 2 MiB or 10,000 entries. A source that changed since its scan is
+bundles over 2 MiB or 2,048 entries. A source that changed since its scan is
 rejected. Unknown and unsafe content is not made safe by hashing it.
 
 The gateway data directory contains `skills.git`, a private bare Git repository.

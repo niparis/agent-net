@@ -50,13 +50,27 @@ func TestBundleRejectsEscapingSymlinkAndLimits(t *testing.T) {
 	}
 	var raw bytes.Buffer
 	tw := tar.NewWriter(&raw)
-	for i := 0; i < maxFiles+1; i++ {
+	for i := 0; i < MaxBundleEntries+1; i++ {
 		if err := tw.WriteHeader(&tar.Header{Name: strings.Repeat("x", 1) + fmt.Sprint(i), Mode: 0600, Size: 0}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	_ = tw.Close()
+	if err := UnpackSkill(raw.Bytes(), t.TempDir()); err == nil || !strings.Contains(err.Error(), "entry limit") {
+		t.Fatalf("entry limit not enforced: %v", err)
+	}
+}
+
+func TestUnpackRejectsEscapingSymlink(t *testing.T) {
+	var raw bytes.Buffer
+	w := tar.NewWriter(&raw)
+	if err := w.WriteHeader(&tar.Header{Name: "escape", Typeflag: tar.TypeSymlink, Linkname: "../outside"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if err := UnpackSkill(raw.Bytes(), t.TempDir()); err == nil {
-		t.Fatal("accepted too many entries")
+		t.Fatal("accepted escaping archive symlink")
 	}
 }
