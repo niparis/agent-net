@@ -168,7 +168,7 @@ func (m Model) helpLine(w int) string {
 		if m.cto.editing {
 			return sDim.Render(clip("enter sends  esc closes", w))
 		}
-		return sDim.Render(clip("enter write  n new conversation  u undo  esc close", w))
+		return sDim.Render(clip("enter write  o open full  n new conversation  u undo  esc close", w))
 	}
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
@@ -225,7 +225,7 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"M", "map: charters, maturity, edges and history (read only)"},
-		{"C", "CTO: chat, new conversation and undo graph changes"},
+		{"C", "CTO: chat, open full UI, new conversation and undo"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},

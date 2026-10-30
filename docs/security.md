@@ -6,7 +6,7 @@ refuses agent sessions. Values are bounded: a threshold from 10 to 100 percent,
 a floor up to 10 million tokens, and cache windows up to one day. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
 that token is an owner credential and must not be shared with agents. The
-`cto_send`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
+`cto_send`, `cto_enter`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
 same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
 
@@ -345,3 +345,5 @@ The daemon accepts `inbox_list` and `inbox_answer` only through the owner operat
 An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that Nicolas approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
 
 Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
+
+The full CTO UI attaches as a client of the private OpenCode server or Claude background session. CTO tools still run in the CTO process tree and pass the same private-tool process checks.

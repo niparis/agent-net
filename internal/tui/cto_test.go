@@ -20,6 +20,9 @@ type fakeCTOSource struct {
 	undone  []int64
 }
 
+func (f *fakeCTOSource) CTOEnter(context.Context) (protocol.EnterPlan, error) {
+	return protocol.EnterPlan{Argv: []string{"fake"}}, nil
+}
 func (f *fakeCTOSource) CTOSend(_ context.Context, text string) error {
 	f.sent = append(f.sent, text)
 	return nil
@@ -269,5 +272,19 @@ func TestCTOMessageShowsHarnessFailure(t *testing.T) {
 		if got := ctoMessage(json.RawMessage(raw)); !strings.HasPrefix(got, "error: ") {
 			t.Errorf("failure hidden: %s -> %q", raw, got)
 		}
+	}
+}
+
+func TestCTOOpenFullRequestsPlan(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	m := New(src)
+	model, _ := m.startCTO()
+	m = model.(Model)
+	_, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("open full did not request a plan")
+	}
+	if _, ok := cmd().(enterMsg); !ok {
+		t.Fatal("open full did not return an enter plan")
 	}
 }

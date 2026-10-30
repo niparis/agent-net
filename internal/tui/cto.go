@@ -15,6 +15,7 @@ import (
 )
 
 type ctoSource interface {
+	CTOEnter(context.Context) (protocol.EnterPlan, error)
 	CTOSend(context.Context, string) error
 	CTONew(context.Context) error
 	CTOSettings(context.Context) (protocol.CTOSettings, error)
@@ -150,6 +151,14 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if !c.editing {
 		switch k.String() {
+		case "o":
+			src := m.src.(ctoSource)
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
+				defer cancel()
+				plan, err := src.CTOEnter(ctx)
+				return enterMsg{name: "CTO", plan: plan, err: err}
+			}
 		case "enter", "i":
 			c.editing = true
 			return m, c.input.Focus()
