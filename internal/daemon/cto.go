@@ -38,6 +38,32 @@ type ctoRuntime struct {
 	exited         chan struct{}
 	base, password string
 	model, session string
+	compact        ctoCompactState
+	compactLoop    sync.Once
+}
+
+// ctoCompactState keeps the auto-compaction clock for the one CTO
+// conversation. It is separate from mu so a slow compaction never blocks a
+// chat send.
+type ctoCompactState struct {
+	mu             sync.Mutex
+	sessionID      string
+	turn           bool
+	lastAssistant  string
+	idleSince      time.Time
+	compactedIdle  bool
+	pendingBefore  int64
+	settings       protocol.CTOSettings
+	settingsLoaded time.Time
+}
+
+func (s *ctoCompactState) reset(sessionID string) {
+	s.sessionID = sessionID
+	s.turn = false
+	s.lastAssistant = ""
+	s.idleSince = time.Time{}
+	s.compactedIdle = false
+	s.pendingBefore = 0
 }
 
 func (c *ctoRuntime) stopLocked() {
@@ -52,6 +78,9 @@ func (c *ctoRuntime) stopLocked() {
 	c.password = ""
 	c.model = ""
 	c.session = ""
+	c.compact.mu.Lock()
+	c.compact.reset("")
+	c.compact.mu.Unlock()
 }
 func (c *ctoRuntime) stop() { c.mu.Lock(); defer c.mu.Unlock(); c.stopLocked() }
 
@@ -152,6 +181,7 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 	defer cancel()
 	for {
 		if _, err = c.api(startup, "GET", "/api/info", nil); err == nil {
+			d.startCTOCompactionLoop()
 			return nil
 		}
 		select {
@@ -273,7 +303,20 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 		}
 		c.session, c.model = id, model
 	}
+	before := opencodeSessionContext(ctx, c.base, c.password, id)
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
+	if err == nil {
+		cs := &c.compact
+		cs.mu.Lock()
+		if cs.sessionID != id {
+			cs.reset(id)
+		}
+		cs.turn = true
+		cs.lastAssistant = before.AssistantID
+		cs.idleSince = time.Time{}
+		cs.compactedIdle = false
+		cs.mu.Unlock()
+	}
 	return map[string]string{"session_id": id}, err
 }
 func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
@@ -305,6 +348,9 @@ func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	c.session, c.model = "", ""
+	c.compact.mu.Lock()
+	c.compact.reset("")
+	c.compact.mu.Unlock()
 	return struct{}{}, nil
 }
 func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
@@ -379,6 +425,195 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 		out.Messages = messages[index:]
 	}
 	return out, nil
+}
+
+// startCTOCompactionLoop watches the CTO conversation while the daemon runs.
+// The tick itself does nothing until a private server and conversation exist.
+// Tests set ctoCompactEvery to zero and call ctoCompactOnce with a fake clock.
+func (d *Daemon) startCTOCompactionLoop() {
+	d.cto.compactLoop.Do(func() {
+		if d.ctoCompactEvery <= 0 {
+			return
+		}
+		ctx := d.ctoCtx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			ticker := time.NewTicker(d.ctoCompactEvery)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					if err := d.ctoCompactOnce(ctx); err != nil {
+						d.log.Printf("CTO compaction: %v", err)
+					}
+				}
+			}
+		}()
+	})
+}
+
+func (d *Daemon) ctoNowTime() time.Time {
+	if d.ctoNow != nil {
+		return d.ctoNow()
+	}
+	return time.Now()
+}
+
+// ctoCompactionSettings uses the cached owner settings for a minute; an
+// explicit cto_settings call refreshes the cache at once.
+func (d *Daemon) ctoCompactionSettings(ctx context.Context) protocol.CTOCompactionSettings {
+	cs := &d.cto.compact
+	cs.mu.Lock()
+	if !cs.settingsLoaded.IsZero() && d.ctoNowTime().Sub(cs.settingsLoaded) < time.Minute {
+		out := cs.settings.Compaction.Normalized()
+		cs.mu.Unlock()
+		return out
+	}
+	cached := cs.settings.Compaction.Normalized()
+	cs.mu.Unlock()
+	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
+	if err != nil {
+		return cached
+	}
+	d.cacheCTOSettings(settings)
+	return settings.Compaction.Normalized()
+}
+
+func (d *Daemon) cacheCTOSettings(settings protocol.CTOSettings) {
+	cs := &d.cto.compact
+	cs.mu.Lock()
+	cs.settings = settings
+	cs.settingsLoaded = d.ctoNowTime()
+	cs.mu.Unlock()
+}
+
+// ctoSessionBusy says whether OpenCode is running a turn for the conversation.
+// The second result is false when the answer is unknown, and the caller must
+// not compact on a guess.
+func ctoSessionBusy(ctx context.Context, base, password, session string) (bool, bool) {
+	req, err := http.NewRequestWithContext(ctx, "GET", base+"/api/session/active", nil)
+	if err != nil {
+		return false, false
+	}
+	req.SetBasicAuth("opencode", password)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, false
+	}
+	var page struct {
+		Data map[string]struct {
+			Type string `json:"type"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&page) != nil {
+		return false, false
+	}
+	return page.Data[session].Type == "running", true
+}
+
+// ctoCompactOnce applies the two rules: compact at once after a reply above
+// the threshold, and compact a large idle conversation shortly before the
+// provider's prompt cache expires. One compaction is allowed per idle period.
+func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
+	c := &d.cto
+	c.mu.Lock()
+	base, password, session := c.base, c.password, c.session
+	c.mu.Unlock()
+	if base == "" || session == "" {
+		return nil
+	}
+	busy, known := ctoSessionBusy(ctx, base, password, session)
+	if !known {
+		return nil
+	}
+	state := opencodeSessionContext(ctx, base, password, session)
+	settings := d.ctoCompactionSettings(ctx)
+	now := d.ctoNowTime()
+
+	cs := &c.compact
+	cs.mu.Lock()
+	if cs.sessionID != session {
+		cs.reset(session)
+	}
+	// A new assistant message ends a turn and also reports the context after a
+	// compaction. Both must happen on this transition: the owner can send the
+	// next message before the daemon reads the reply, and the chat still gets
+	// its one line per compaction.
+	var line string
+	newAssistant := state.AssistantID != "" && state.AssistantID != cs.lastAssistant
+	if newAssistant && !busy {
+		if cs.turn {
+			cs.turn = false
+			cs.idleSince = now
+			cs.compactedIdle = false
+		}
+		// A message that is still streaming has no tokens yet. Leave the
+		// transition open so the same message reports them on a later tick.
+		if state.Tokens > 0 {
+			if cs.pendingBefore > 0 {
+				line = fmt.Sprintf("compacted: %s -> %s tokens", protocol.CompactTokens(cs.pendingBefore), protocol.CompactTokens(state.Tokens))
+				cs.pendingBefore = 0
+			}
+			cs.lastAssistant = state.AssistantID
+		}
+	}
+	if !cs.turn && cs.idleSince.IsZero() {
+		if state.Tokens > 0 {
+			cs.lastAssistant = state.AssistantID
+			cs.idleSince = now
+		}
+	}
+
+	reason := ""
+	if !cs.turn && !busy && state.Tokens > 0 && !cs.compactedIdle {
+		if state.Limit > 0 && state.Tokens*100 >= state.Limit*int64(settings.ThresholdPercent) {
+			reason = "threshold"
+		} else if state.Tokens >= settings.FloorTokens && !cs.idleSince.IsZero() {
+			provider, _, _ := strings.Cut(state.Model, "/")
+			lead := settings.CacheWindow(provider) - 30*time.Second
+			if lead < 0 {
+				lead = 0
+			}
+			if !now.Before(cs.idleSince.Add(lead)) {
+				reason = "idle"
+			}
+		}
+	}
+	if reason != "" {
+		// One compaction per idle period, whether it is the threshold or the
+		// cache-expiry rule. A failed request is not retried in a loop.
+		cs.compactedIdle = true
+	}
+	cs.mu.Unlock()
+
+	if line != "" {
+		if err := d.recordCTOAction(line); err != nil {
+			return err
+		}
+	}
+	if reason == "" {
+		return nil
+	}
+	_, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(session)+"/compact", map[string]string{"delivery": "steer"})
+	cs.mu.Lock()
+	if err == nil {
+		cs.pendingBefore = state.Tokens
+	}
+	cs.mu.Unlock()
+	if err != nil {
+		return fmt.Errorf("compact: %w", err)
+	}
+	return nil
 }
 
 // isCTOPeer admits only a live descendant of the private OpenCode server.

@@ -176,6 +176,11 @@ type Daemon struct {
 	log           *log.Logger
 	st            *state
 	client        *http.Client
+	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
+	// no background loop.
+	ctoNow          func() time.Time
+	ctoCompactEvery time.Duration
+	ctoCtx          context.Context
 
 	// shownHost is the name the gateway lists for this machine (the owner's
 	// display name, decision 0015). Empty until the gateway said.
@@ -315,6 +320,8 @@ func New(cfg Config) (*Daemon, error) {
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
 		client: http.DefaultClient}
 	d.inSession = d.insideSession
+	d.ctoNow = time.Now
+	d.ctoCompactEvery = time.Second
 	d.repo = cfg.Repo
 	d.mcp = newMCPHost(d)
 	if len(cfg.CAPEM) > 0 {
@@ -342,6 +349,7 @@ func New(cfg Config) (*Daemon, error) {
 // the background.
 func (d *Daemon) Start(ctx context.Context) error {
 	ctx, d.cancel = context.WithCancel(ctx)
+	d.ctoCtx = ctx
 	if d.cfg.RefreshAgentFiles != nil {
 		d.cfg.RefreshAgentFiles(d.Logf)
 	}

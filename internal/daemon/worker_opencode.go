@@ -291,10 +291,55 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 	if r.Data.Model.ID != "" {
 		st.Model = r.Data.Model.ProviderID + "/" + r.Data.Model.ID
 	}
-	// The newest assistant message is the last step of the run. A session with
-	// no assistant message yet has no context figure.
+	context := opencodeSessionContext(ctx, w.apiBase, w.apiPass, w.nativeID)
+	st.ContextTokens, st.ContextLimit = context.Tokens, context.Limit
+	return st
+}
+
+// opencodeSessionContext reads the conversation's current context size and the
+// model's window. The newest assistant message is the last step of the run, so
+// a session with no assistant message yet has no context figure. GET /api/model
+// lists the models with limit.context; the session names the model it runs, so
+// only that entry matters.
+type opencodeContextState struct {
+	Tokens      int64
+	Limit       int64
+	Model       string
+	AssistantID string
+}
+
+func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) opencodeContextState {
+	out := opencodeContextState{}
+	get := func(path string, v any) bool {
+		req, err := http.NewRequestWithContext(ctx, "GET", base+path, nil)
+		if err != nil {
+			return false
+		}
+		req.SetBasicAuth("opencode", pass)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return false
+		}
+		defer resp.Body.Close()
+		return resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(v) == nil
+	}
+	var sess struct {
+		Data struct {
+			Model struct {
+				ProviderID string `json:"providerID"`
+				ID         string `json:"id"`
+			} `json:"model"`
+		} `json:"data"`
+	}
+	if !get("/api/session/"+nativeID, &sess) {
+		return out
+	}
+	if sess.Data.Model.ID != "" {
+		out.Model = sess.Data.Model.ProviderID + "/" + sess.Data.Model.ID
+	}
 	var msgs struct {
 		Data []struct {
+			ID     string `json:"id"`
 			Type   string `json:"type"`
 			Tokens struct {
 				Input, Output, Reasoning float64
@@ -302,18 +347,17 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 			} `json:"tokens"`
 		} `json:"data"`
 	}
-	if get("/api/session/"+w.nativeID+"/message", &msgs) {
+	if get("/api/session/"+nativeID+"/message", &msgs) {
 		for _, m := range msgs.Data {
 			if m.Type != "assistant" {
 				continue
 			}
-			st.ContextTokens = int64(m.Tokens.Input + m.Tokens.Cache.Read + m.Tokens.Cache.Write)
+			out.AssistantID = m.ID
+			out.Tokens = int64(m.Tokens.Input + m.Tokens.Cache.Read + m.Tokens.Cache.Write)
 			break
 		}
 	}
-	// GET /api/model lists the models with limit.context. The session names
-	// the model it runs, so only that entry matters.
-	if st.ContextTokens > 0 && r.Data.Model.ID != "" {
+	if out.Tokens > 0 && sess.Data.Model.ID != "" {
 		var models struct {
 			Data []struct {
 				ProviderID string `json:"providerID"`
@@ -326,14 +370,14 @@ func (opencodeLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerS
 		}
 		if get("/api/model", &models) {
 			for _, m := range models.Data {
-				if m.ProviderID == r.Data.Model.ProviderID && (m.ID == r.Data.Model.ID || m.ModelID == r.Data.Model.ID) {
-					st.ContextLimit = int64(m.Limit.Context)
+				if m.ProviderID == sess.Data.Model.ProviderID && (m.ID == sess.Data.Model.ID || m.ModelID == sess.Data.Model.ID) {
+					out.Limit = int64(m.Limit.Context)
 					break
 				}
 			}
 		}
 	}
-	return st
+	return out
 }
 
 // failure tells whether the worker's last run failed, and why. OpenCode 2.2

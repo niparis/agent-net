@@ -19,7 +19,9 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	}
 	method := http.MethodGet
 	var body io.Reader
-	if in.Model != nil || in.Harness != nil {
+	if in.Model != nil || in.Harness != nil || in.Compaction != nil {
+		// Read, change and write the whole settings: a gateway before 0.4.13
+		// replaces them all on every write.
 		current, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 		if err != nil {
 			return protocol.CTOSettings{}, err
@@ -29,6 +31,9 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 		}
 		if in.Harness != nil {
 			current.Harness = *in.Harness
+		}
+		if in.Compaction != nil {
+			current.Compaction = *in.Compaction
 		}
 		method = http.MethodPut
 		b, _ := json.Marshal(current)
@@ -58,6 +63,9 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
 	if out.Harness == "" {
 		out.Harness = "opencode"
+	}
+	if err == nil {
+		d.cacheCTOSettings(out)
 	}
 	return out, err
 }

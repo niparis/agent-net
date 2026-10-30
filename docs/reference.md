@@ -1,18 +1,44 @@
 # Reference
 
 The owner-only `cto_settings` operator method reads and saves the network-wide
-CTO harness and model. Pass `{"harness":"claude","model":"opus"}` for
-Claude Code, or `{"harness":"opencode","model":"provider/model"}` for
-OpenCode. The harness defaults to `opencode`; an empty model selects the
-default. Saving one field keeps the other. The gateway stores these preferences
-with the other owner settings. Saving them does not start a CTO runtime.
+CTO harness, model and conversation auto-compaction rules. Pass
+`{"harness":"claude","model":"opus"}` for Claude Code, or
+`{"harness":"opencode","model":"provider/model"}` for OpenCode. The harness
+defaults to `opencode`; an empty model selects the default. Pass a `compaction`
+object to change the rules. Saving one field keeps the others. The gateway
+stores all of it with the other owner settings. Saving them does not start a
+CTO runtime.
+
+```json
+{"compaction":{"threshold_percent":70,"floor_tokens":40000,
+ "cache_window_seconds":{"anthropic":300,"openai":300}}}
+```
+
+`threshold_percent` defaults to 70. After a CTO reply, when the conversation's
+context is at or above that share of the model's context window, the daemon
+compacts at once. `floor_tokens` defaults to 40000 and applies only to the idle
+rule. `cache_window_seconds` is per provider and defaults to 300 seconds when
+the provider is not listed. A `compaction` object replaces the previous rules:
+a field left out takes its default. The daemon compacts an idle conversation
+above the floor at the window minus 30 seconds, so the next message does not
+reread a large cold history. One compaction is allowed per idle period, and
+none runs while a turn is active. The model reports its context window through
+OpenCode; with no window known, only the idle floor rule applies. These rules
+apply to the OpenCode CTO. Claude Code manages its own automatic compaction.
+
+The daemon asks OpenCode 2.2.0 to compact with
+`POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the
+next step boundary. The conversation's messages report the context before a
+compaction. The first reply after it reports the context after. The CTO chat
+shows one line, for example `compacted: 182k -> 14k tokens`; it is stored with
+the other CTO action lines.
 
 The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
 harness on first use. OpenCode runs as a private server. Claude Code runs as a
 background session using the owner's Claude login, including a Claude Max plan
 when that login uses one. It uses the model name or alias in the setting, such
-as `opus` or `sonnet`; the default is `opus`. Claude Code manages its own
-automatic compaction. Its transcript stays in Claude's projects directory.
+as `opus` or `sonnet`; the default is `opus`. Its transcript stays in Claude's
+projects directory.
 
 Each harness keeps its own conversation ID in daemon state across restarts and
 harness switches. `cto_new` starts a fresh conversation for the selected

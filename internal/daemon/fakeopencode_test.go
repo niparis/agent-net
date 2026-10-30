@@ -158,6 +158,78 @@ func runFakeOpenCode() {
 		}
 		fmt.Fprint(w, `{"data":{"cost":0.0123,"tokens":{"input":1200,"output":340,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
 	})
+	mux.HandleFunc("GET /api/session/active", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		id := ""
+		if raw, err := os.ReadFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active")); err == nil {
+			id = strings.TrimSpace(string(raw))
+		}
+		if id == "" {
+			fmt.Fprint(w, `{"data":{}}`)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{id: map[string]any{"type": "running"}}})
+	})
+	mux.HandleFunc("POST /api/session/{id}/compact", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		var body struct {
+			ID       string `json:"id"`
+			Delivery string `json:"delivery"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if body.Delivery != "" && body.Delivery != "steer" && body.Delivery != "queue" {
+			http.Error(w, "bad delivery", 400)
+			return
+		}
+		path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")
+		mu.Lock()
+		defer mu.Unlock()
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		var items []map[string]any
+		if json.Unmarshal(raw, &items) != nil {
+			http.Error(w, "bad session", 500)
+			return
+		}
+		now := time.Now().UnixMilli()
+		items = append([]map[string]any{{"id": "msg_cmp_" + protocol.NewToken(), "type": "compaction", "status": "completed",
+			"reason": "manual", "summary": "summary", "time": map[string]any{"created": now}}}, items...)
+		raw, _ = json.Marshal(items)
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		record := map[string]any{"session_id": r.PathValue("id"), "delivery": body.Delivery, "at": now}
+		recPath := filepath.Join(cwd, "fake-compact.json")
+		var calls []map[string]any
+		if b, err := os.ReadFile(recPath); err == nil {
+			json.Unmarshal(b, &calls)
+		}
+		calls = append(calls, record)
+		b, _ := json.Marshal(calls)
+		os.WriteFile(recPath, b, 0o644)
+		delivery := body.Delivery
+		if delivery == "" {
+			delivery = "steer"
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"id": "msg_cmp_" + protocol.NewToken(), "sessionID": r.PathValue("id"),
+			"time": map[string]any{"created": now}, "type": "compaction", "payload": map[string]any{},
+			"delivery": delivery,
+		}})
+	})
 	mux.HandleFunc("GET /api/session/{id}/message", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
