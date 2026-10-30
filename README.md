@@ -126,7 +126,7 @@ The worker works with nobody watching, under the project's own permission settin
 
 | Agent | Status | How it connects | Tested with |
 |---|---|---|---|
-| Claude Code | live | A stdio MCP server per session (`agent-net mcp`) for the tools, and the session's own inbox socket for delivery | 2.1.312 |
+| Claude Code | live | A stdio MCP server per session (`agent-net mcp`) for the tools, and the session's own inbox socket for delivery. Setup also offers a plugin that shows the workers the session started above the prompt. | 2.1.312 |
 | Pi | live | An extension that talks to the local daemon socket | 1.4.x |
 | OpenCode | live | A plugin inside its v2 background service, one daemon connection per session | 2.2.0 |
 | Codex | live | A stdio MCP server per thread (`agent-net mcp --codex`) for the tools; the daemon finds open threads and queues messages through the shared Codex app server ([decision 0012](docs/decisions/0012-codex-peers.md)) | 0.163 |
@@ -267,6 +267,7 @@ go vet ./... && go test -race ./...
 | `internal/guidance` | the guidance text added to agent instruction files |
 | `plugins/pi` | the Pi extension |
 | `plugins/opencode` | the OpenCode v2 plugin |
+| `plugins/claude/agent-net-workers` | the Claude Code plugin that shows a session's workers |
 | `install.sh` | the one-line installer, published with each release |
 | `scripts/dist.sh` | builds Linux and macOS binaries from source |
 

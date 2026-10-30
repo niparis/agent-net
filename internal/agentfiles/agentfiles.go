@@ -91,7 +91,7 @@ func GuidanceFiles() []GuidanceFile {
 // folder must exist. A symlinked plugin file is left alone, and guidance
 // changes only the part between the markers.
 func Sync() []Result {
-	rs := []Result{SyncPi(), SyncOpencode()}
+	rs := []Result{SyncPi(), SyncOpencode(), SyncClaudeWorkers()}
 	return append(rs, SyncGuidance()...)
 }
 
