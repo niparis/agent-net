@@ -79,6 +79,25 @@ func TestCTOPaneSendAndPoll(t *testing.T) {
 	}
 }
 
+func TestCTOBoxBottomAlignsTheConversation(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}})
+	m.width, m.height = 80, 24
+	m.cto = &ctoState{messages: []string{"oldest", "newest"}}
+	out := m.ctoView(80, 10)
+	if len(out) != 10 {
+		t.Fatalf("ctoView gave %d lines", len(out))
+	}
+	if !strings.Contains(out[len(out)-2], "newest") {
+		t.Fatalf("newest line is not above the input:\n%s", strings.Join(out, "\n"))
+	}
+	if !strings.Contains(out[len(out)-3], "oldest") {
+		t.Fatalf("oldest line is not above newest:\n%s", strings.Join(out, "\n"))
+	}
+	if out[1] != "" {
+		t.Fatalf("conversation starts at the top of the box:\n%s", strings.Join(out, "\n"))
+	}
+}
+
 func TestCTOPaneNewConversationAndMap(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot(), graph: fakeGraph()}}
 	m := New(src)

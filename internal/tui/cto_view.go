@@ -32,11 +32,11 @@ func (m Model) ctoView(w, h int) []string {
 	if len(lines) > rows {
 		lines = lines[len(lines)-rows:]
 	}
+	for len(out) < h-1-len(lines) {
+		out = append(out, "")
+	}
 	for _, v := range lines {
 		out = append(out, clip(v, w))
-	}
-	for len(out) < h-1 {
-		out = append(out, "")
 	}
 	c.input.Width = max(w-4, 1)
 	input := c.input.View()
