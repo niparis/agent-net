@@ -123,3 +123,17 @@ func TestCTOTitleAndFocusedBorder(t *testing.T) {
 		t.Fatal("focused border did not change")
 	}
 }
+
+func TestMachineHarnessesAreNamesOnly(t *testing.T) {
+	m := newModel(160, 34)
+	for _, r := range m.machineRows() {
+		if r.nodeID == "n_mac" {
+			line := ansi.Strip(m.machineLine(r, 160, 12, 8))
+			if !strings.Contains(line, "claude  opencode  pi") || strings.Contains(line, "2.1.312") {
+				t.Fatal(line)
+			}
+			return
+		}
+	}
+	t.Fatal("missing machine")
+}

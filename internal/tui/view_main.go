@@ -432,6 +432,13 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 	if !r.online {
 		return clip(sDim.Render(ansi.Strip(line)), w)
 	}
+	if hl := harnessText(r.harnesses, false); hl != "" {
+		column := 13 + nameW + versionW + machineCPUW + machineMemW + machineLoadW + 4
+		gap := max(2, column-ansi.StringWidth(line))
+		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) <= w {
+			line += strings.Repeat(" ", gap) + sDim.Render(hl)
+		}
+	}
 	rest := w - ansi.StringWidth(line) - 2
 	// The shared OpenCode service belongs to the machine, not to any one
 	// session: a short note here, its process list in a session's detail.
@@ -454,14 +461,7 @@ func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
 			rest -= ansi.StringWidth(note) + 2
 		}
 	}
-	if rest >= 8 && r.harnesses != nil {
-		for _, withVersions := range []bool{true, false} {
-			if hl := harnessText(r.harnesses, withVersions); ansi.StringWidth(hl) <= rest {
-				line += "  " + sDim.Render(hl)
-				break
-			}
-		}
-	}
+
 	return clip(line, w)
 }
 
@@ -499,7 +499,7 @@ func (m Model) machineUsage(r machineRow, room int) string {
 	if mu.MemTotal > 0 {
 		memPct = float64(mu.MemUsed) / float64(mu.MemTotal) * 100
 	}
-	mem := "mem " + progressBar(memPct/100, 4, loadStyle(memPct).GetForeground()) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
+	mem := "mem " + progressBar(memPct/100, 4, roleAccent) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
 	load := sDim.Render("load ") + fmt.Sprintf("%.1f", mu.Load[0])
 	if room < unknownW {
 		return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) // no room for the load
