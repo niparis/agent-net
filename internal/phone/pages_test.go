@@ -94,3 +94,16 @@ func TestSessionsPreferRepositoryProjectAndWaitingIsNotEmpty(t *testing.T) {
 		t.Fatal(b.String())
 	}
 }
+
+func TestHeldActionRejectsCompoundValue(t *testing.T) {
+	f := &fakeOperator{}
+	v := url.Values{"kind": {"held"}, "id": {"m_1"}, "action": {"a|A"}}
+	r := httptest.NewRequest("POST", "http://example.test/action", strings.NewReader(v.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.Header.Set("Origin", "http://example.test")
+	w := httptest.NewRecorder()
+	New(f).ServeHTTP(w, r)
+	if w.Code != 400 || len(f.calls) != 0 {
+		t.Fatalf("invalid action: %d, %v", w.Code, f.calls)
+	}
+}

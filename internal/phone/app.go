@@ -10,7 +10,6 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/operator"
@@ -143,7 +142,7 @@ func (a *app) action(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	switch r.PostForm.Get("kind") {
 	case "held":
-		if !strings.Contains("|a|A|r|R|", "|"+act+"|") {
+		if act != "a" && act != "A" && act != "r" && act != "R" {
 			err = fmt.Errorf("invalid action")
 		} else {
 			err = a.src.AnswerHeld(ctx, protocol.HeldAnswer{MessageID: id, Action: act})
