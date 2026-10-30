@@ -4,6 +4,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCTOUIShowAndNotice(t *testing.T) {
@@ -61,5 +62,15 @@ func TestCTOMapFilterClearsWhenOwnerLeavesMap(t *testing.T) {
 	m = openMap(t, m)
 	if len(m.mapSelectable()) <= 1 {
 		t.Fatalf("filter remained after leaving map: %v", m.mapSelectable())
+	}
+}
+
+func TestCTOUISelectOverridesActiveFilter(t *testing.T) {
+	m := mapModel(120, 40, fakeGraph())
+	m.activeOnly = true
+	m.snap.Agents[1].LastSeen = t0.Add(-2 * time.Hour).Unix()
+	m = send(m, protocol.UIRequest{Tab: "sessions", Select: "strategies"})
+	if m.selected != "s_0000000000000002" {
+		t.Fatalf("selected %s while active filter set", m.selected)
 	}
 }

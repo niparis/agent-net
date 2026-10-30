@@ -1269,6 +1269,9 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		for _, a := range m.snap.Agents {
 			if strings.EqualFold(q.Select, a.SessionID) || q.Select != "" && (strings.EqualFold(q.Select, a.Profile.Name) || strings.EqualFold(q.Select, a.Repo.Project)) {
 				m.selected = a.SessionID
+				if m.idleLong(a) {
+					m.activeOnly = false
+				}
 				if !a.Online {
 					m.showOffline = true
 				}
