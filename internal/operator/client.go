@@ -129,6 +129,12 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 			snap.Held = held.Messages
 		}
 	}
+	if raw, err := s.Call(ctx, protocol.OpGraphGet, nil); err == nil {
+		var graph protocol.Graph
+		if json.Unmarshal(raw, &graph) == nil {
+			snap.Edges = graph.Edges
+		}
+	}
 	// Best effort, like the node list.
 	if raw, err := s.Call(ctx, protocol.OpProjects, protocol.QueryProjects{}); err == nil {
 		var pr protocol.ProjectsResult
@@ -306,5 +312,10 @@ func (s *Client) Close() {
 
 func (s *Client) AnswerHeld(ctx context.Context, q protocol.HeldAnswer) error {
 	_, err := s.action(ctx, protocol.OpHeldAnswer, q)
+	return err
+}
+
+func (s *Client) SetRequestRule(ctx context.Context, e protocol.Edge) error {
+	_, err := s.action(ctx, protocol.OpEdgeSet, e)
 	return err
 }

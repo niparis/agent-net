@@ -85,6 +85,7 @@ type Snapshot struct {
 	// Agents are the sessions, with the owner pseudo-sessions.
 	Agents []protocol.AgentView
 	Held   []protocol.Message
+	Edges  []protocol.Edge
 	// Projects is the project list (registered, seen or both). Empty when the
 	// gateway cannot list them; a screen then shows no project source.
 	Projects []protocol.ProjectView
