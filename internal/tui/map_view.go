@@ -15,26 +15,7 @@ import (
 // mapView draws the read-only graph map: the nodes on the left, the selected
 // node on the right. It never writes more than width columns.
 func (m Model) mapView(w, h int) []string {
-	out := []string{m.mapTitle(w)}
-	body := max(h-1, 0)
-	leftW, rightW := mapWidths(w)
-	left := m.mapLeftLines(leftW, body)
-	node, ok := m.mapNode(m.mp.selected)
-	right := m.mapDetailLines(node, ok, rightW, body)
-	for i := 0; i < body; i++ {
-		l, r := "", ""
-		if i < len(left) {
-			l = padStyled(left[i], leftW)
-		}
-		if i < len(right) {
-			r = right[i]
-		}
-		out = append(out, clip(l+sDim.Render(" │ ")+r, w))
-	}
-	if len(out) > h {
-		out = out[:h]
-	}
-	return out
+	return m.mapFocusView(w, h)
 }
 
 func (m Model) mapTitle(w int) string {
@@ -155,11 +136,13 @@ func (m Model) mapNodeLine(r mapRow, width int, selected bool) string {
 func mapLevelStyle(level string) lipgloss.Style {
 	switch level {
 	case "mature":
-		return sIdle
+		return sTitle
 	case "critical":
 		return sBad
 	case "growing":
 		return sBusy
+	case "early":
+		return sNeeds
 	}
 	return sDim
 }

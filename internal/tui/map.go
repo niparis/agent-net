@@ -34,6 +34,7 @@ type mapState struct {
 	loading  bool
 	err      string
 	selected string
+	choice   int
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a
@@ -94,10 +95,32 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mapOn, m.tab = false, 0
 	case "?":
 		m.help = true
+	case "left":
+		m.mapFollow("in")
+	case "right":
+		m.mapFollow("out")
 	case "up", "k":
-		m.mapMove(-1)
+		if len(m.mapLinks("above")) > 0 {
+			m.mapFollow("above")
+		} else {
+			m.mp.choice = max(m.mp.choice-1, 0)
+		}
 	case "down", "j":
-		m.mapMove(1)
+		m.mp.choice++
+	case "enter":
+		m.mapOn, m.tab, m.focus = false, 0, focusSessions
+		m.filter = m.mp.selected
+		m.input.SetValue(m.filter)
+		m.ensureSelection()
+		m.fixScroll()
+	case "c":
+		if m.cto != nil {
+			m.focus = focusCTO
+			m.cto.editing = true
+			m.cto.input.SetValue("about " + m.mp.selected + ": ")
+			m.cto.input.CursorEnd()
+			return m, m.cto.input.Focus()
+		}
 	case "pgup":
 		m.mapMove(-m.mapBodyRows())
 	case "pgdown":

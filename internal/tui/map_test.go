@@ -211,3 +211,22 @@ func TestMapIsFourthTab(t *testing.T) {
 		t.Fatal("2 did not leave Map")
 	}
 }
+
+func TestMapFocusNavigationAndActions(t *testing.T) {
+ m := openMap(t, mapModel(120, 34, fakeGraph()))
+ m.mp.selected = "cogforge"
+ v := m.View()
+ for _, want := range []string{"cogforge", "trading-architect", "tenebrae", "shop", "depends", "ask", "auto", "purpose", "accepts", "refuses"} {
+  if !strings.Contains(v, want) { t.Errorf("missing %q", want) }
+ }
+ m = keys(m, "left")
+ if m.mp.selected != "tenebrae" { t.Fatalf("left: %s", m.mp.selected) }
+ m.mp.selected = "cogforge"
+ m = keys(m, "right")
+ if m.mp.selected != "shop" { t.Fatalf("right: %s", m.mp.selected) }
+ m.mp.selected = "cogforge"
+ m = keys(m, "c")
+ if m.focus != focusCTO || m.cto.input.Value() != "about cogforge: " { t.Fatal("CTO prompt missing") }
+ m = keys(m, "tab", "enter")
+ if m.mapOn || m.tab != 0 || m.filter != "cogforge" { t.Fatal("project filter missing") }
+}
