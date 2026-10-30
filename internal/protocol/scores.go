@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -26,42 +27,85 @@ func EmbeddedModelScores() []ModelScore {
 	return scores
 }
 
-// LookupModelScore finds the most specific matching owner override, then the
-// bundled score. Exact IDs take precedence over provider-less IDs and names
-// without an effort suffix. Loose names match model tokens.
+// scoreName normalizes provider prefixes, effort, free and snapshot suffixes.
+var scoreSnapshot = regexp.MustCompile(`(?:[-:]\d{4,})$`)
+var scoreVersionDot = regexp.MustCompile(`(\d)\.(\d)`)
+
+func scoreName(model string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if i := strings.LastIndexByte(model, '/'); i >= 0 {
+		model = model[i+1:]
+	}
+	model, _ = SplitModelLevel(model)
+	model = strings.TrimSuffix(strings.TrimSuffix(model, ":free"), "-free")
+	model = scoreSnapshot.ReplaceAllString(model, "")
+	model = scoreVersionDot.ReplaceAllString(model, "${1}-${2}")
+	switch model {
+	case "opus":
+		return "claude-opus-5-5"
+	case "sonnet":
+		return "claude-sonnet-5-5"
+	case "haiku":
+		return "claude-haiku-5-5"
+	}
+	return model
+}
+
+// looseScoreMatch requires all pattern tokens and the same variant words.
+func looseScoreMatch(pattern, model string) bool {
+	if pattern == "" || model == "" {
+		return false
+	}
+	variants := []string{"fast", "pro", "ultrafast", "flash", "lite"}
+	words := func(s string) map[string]bool {
+		out := map[string]bool{}
+		for _, w := range modelTokens(s) {
+			out[w] = true
+		}
+		return out
+	}
+	p, m := words(pattern), words(model)
+	for _, v := range variants {
+		if p[v] != m[v] {
+			return false
+		}
+	}
+	for token := range p {
+		if !m[token] {
+			return false
+		}
+	}
+	return true
+}
+
+// LookupModelScore prefers owner overrides and preserves exact effort matches.
 func LookupModelScore(model string, overrides []ModelScore) (ModelScore, bool) {
 	lookup := func(scores []ModelScore) (ModelScore, bool) {
 		best := -1
 		var result ModelScore
-		base, _ := SplitModelLevel(model)
+		base, level := SplitModelLevel(model)
+		part := model
+		if i := strings.LastIndexByte(part, '/'); i >= 0 {
+			part = part[i+1:]
+		}
 		for _, s := range scores {
-			m := strings.TrimSpace(s.Match)
+			match := strings.TrimSpace(s.Match)
 			rank := -1
 			switch {
-			case strings.EqualFold(m, model):
+			case strings.EqualFold(match, model):
 				rank = 3
-			case strings.EqualFold(m, modelPart(model)):
+			case strings.EqualFold(match, part):
 				rank = 2
-			case strings.EqualFold(m, base), strings.EqualFold(m, modelPart(base)):
+			case strings.EqualFold(match, base):
 				rank = 1
 			default:
-				patternBase, level := SplitModelLevel(m)
-				_, modelLevel := SplitModelLevel(model)
-				if level != "" && !strings.EqualFold(level, modelLevel) {
+				_, wantLevel := SplitModelLevel(match)
+				if wantLevel != "" && !strings.EqualFold(wantLevel, level) {
 					continue
 				}
-				tokens := modelTokens(patternBase)
-				if len(tokens) == 0 {
-					continue
-				}
-				match := true
-				for _, token := range tokens {
-					if !hasToken(strings.ToLower(modelPart(base)), token) {
-						match = false
-						break
-					}
-				}
-				if match {
+				if scoreName(match) == scoreName(model) && scoreName(model) != "" {
+					rank = 0
+				} else if looseScoreMatch(scoreName(match), scoreName(model)) {
 					rank = 0
 				}
 			}
@@ -106,3 +150,14 @@ func DifficultyFit(score float64, level string, minimums map[string]float64) (st
 		return "denied", nil
 	}
 }
+
+// ScoreSetRequest changes one owner override; nil Score clears it.
+type ScoreSetRequest struct {
+	Model string   `json:"model"`
+	Score *float64 `json:"score,omitempty"`
+}
+
+const (
+	OpScoresGet = "scores_get"
+	OpScoresSet = "scores_set"
+)

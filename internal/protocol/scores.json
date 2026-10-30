@@ -1,1 +1,122 @@
-[{"match":"deepseek-v4.1-flash","score":32,"source":"owner"}]
+[
+  {
+    "match": "claude-opus-5-5",
+    "score": 58,
+    "source": "owner"
+  },
+  {
+    "match": "gpt-6-astra",
+    "score": 57,
+    "source": "owner"
+  },
+  {
+    "match": "gpt-6.1-sol",
+    "score": 55,
+    "source": "owner"
+  },
+  {
+    "match": "claude-sonnet-5-5",
+    "score": 54,
+    "source": "owner"
+  },
+  {
+    "match": "gpt-6.1-terra",
+    "score": 51,
+    "source": "owner"
+  },
+  {
+    "match": "claude-fable-5-1",
+    "score": 49,
+    "source": "owner"
+  },
+  {
+    "match": "kimi-k3.1-pro",
+    "score": 46,
+    "source": "owner"
+  },
+  {
+    "match": "claude-haiku-5-5",
+    "score": 36,
+    "source": "owner"
+  },
+  {
+    "match": "grok-4.7",
+    "score": 34,
+    "source": "owner"
+  },
+  {
+    "match": "qwen3.8-max",
+    "score": 34,
+    "source": "owner"
+  },
+  {
+    "match": "deepseek-v4.1-flash",
+    "score": 32,
+    "source": "owner"
+  },
+  {
+    "match": "glm-5.3",
+    "score": 32,
+    "source": "owner"
+  },
+  {
+    "match": "gemini-3.8-flash",
+    "score": 31,
+    "source": "owner"
+  },
+  {
+    "match": "mimo-v2.6-pro",
+    "score": 30,
+    "source": "owner"
+  },
+  {
+    "match": "ling-3.1-flash",
+    "score": 29,
+    "source": "owner"
+  },
+  {
+    "match": "minimax-m3.1-flash",
+    "score": 29,
+    "source": "owner"
+  },
+  {
+    "match": "step-5-preview",
+    "score": 29,
+    "source": "owner"
+  },
+  {
+    "match": "gpt-6-luna",
+    "score": 28,
+    "source": "owner"
+  },
+  {
+    "match": "mistral-large-4",
+    "score": 26,
+    "source": "owner"
+  },
+  {
+    "match": "muse-spark-open",
+    "score": 25,
+    "source": "owner"
+  },
+  {
+    "match": "qwen3.8-27b",
+    "score": 20,
+    "source": "owner"
+  },
+  {
+    "match": "beam",
+    "score": 18,
+    "source": "owner"
+  },
+  {
+    "match": "nemotron-3.5-super-vl",
+    "score": 14,
+    "source": "owner"
+  },
+  {
+    "match": "gemini-4-carbon",
+    "score": 59,
+    "source": "owner"
+  }
+]

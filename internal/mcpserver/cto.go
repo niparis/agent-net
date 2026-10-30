@@ -118,6 +118,13 @@ var ctoTools = map[string]ctoToolDef{
 			"body": {typ: "string", desc: "Message text, sent as a request from the owner's CTO."},
 		},
 	},
+	"score_set": {
+		desc: "Set or clear an owner model capability score when the owner asks. Scores range from 0 to 100 and override the bundled table.",
+		fields: map[string]ctoField{
+			"model": {typ: "string", desc: "Model ID or loose model pattern to score."},
+			"score": {typ: "number", desc: "Capability score from 0 to 100. Omit to clear the owner override."},
+		},
+	},
 	"worker_start": {
 		desc: "Start a worker in a project on one of the owner's machines. The worker gets its own git worktree by default, and its report comes back as a message. Only do this when the owner asks.",
 		fields: map[string]ctoField{

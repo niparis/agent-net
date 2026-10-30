@@ -139,6 +139,8 @@ func main() {
 		err = cmdGraph(ctx, os.Args[1], args)
 	case "send":
 		err = cmdSend(ctx, args)
+	case "scores":
+		err = cmdScores(ctx, args)
 	case "playbook":
 		err = cmdPlaybook(ctx, args)
 	case "hint": // hidden: the Claude Code hook (decision 0013)
