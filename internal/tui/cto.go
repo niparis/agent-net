@@ -33,6 +33,7 @@ type ctoState struct {
 	model, harness, err string
 	messages            []string
 	renderCache         map[ctoRenderKey][]string
+	scroll, pageRows    int
 	history             []protocol.CTOGraphChange
 	local               []protocol.CTOAction
 	sendErrors          []ctoLocalError
@@ -190,6 +191,14 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tab == 1 && !m.mapOn {
 			m.focus = focusFeed
 		}
+		return m, nil
+	}
+	switch k.Type {
+	case tea.KeyPgUp, tea.KeyCtrlU:
+		c.scroll += max(c.pageRows, 1)
+		return m, nil
+	case tea.KeyPgDown, tea.KeyCtrlD:
+		c.scroll = max(c.scroll-max(c.pageRows, 1), 0)
 		return m, nil
 	}
 	if c.confirming {

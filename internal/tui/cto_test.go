@@ -471,3 +471,27 @@ func TestCTOMarkdownReply(t *testing.T) {
 		t.Fatalf("bad markdown rendering:\n%s", got)
 	}
 }
+
+func TestCTOConversationScroll(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.focus = focusCTO
+	m.cto = &ctoState{messages: []string{"one", "two", "three", "four", "five", "six", "seven"}}
+	view := func() string { return ansi.Strip(strings.Join(m.ctoView(40, 6), "\n")) }
+	if got := view(); !strings.Contains(got, "seven") || !strings.Contains(got, "↑ more") {
+		t.Fatalf("initial view: %s", got)
+	}
+	next, _ := m.ctoKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = next.(Model)
+	next, _ = m.ctoKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	m = next.(Model)
+	if got := view(); strings.Contains(got, "seven") || !strings.Contains(got, "one") {
+		t.Fatalf("scrolled view: %s", got)
+	}
+	next, _ = m.ctoKey(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = next.(Model)
+	next, _ = m.ctoKey(tea.KeyMsg{Type: tea.KeyCtrlD})
+	m = next.(Model)
+	if got := view(); !strings.Contains(got, "seven") {
+		t.Fatalf("returned view: %s", got)
+	}
+}

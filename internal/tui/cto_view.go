@@ -75,8 +75,15 @@ func (m Model) ctoView(w, h int) []string {
 		lines = append(lines, "Start a new conversation? y/n")
 	}
 	rows := max(h-1, 0)
-	if len(lines) > rows {
-		lines = lines[len(lines)-rows:]
+	c.pageRows = max(rows-1, 1)
+	c.scroll = min(c.scroll, max(len(lines)-rows, 0))
+	end := len(lines) - c.scroll
+	start := max(end-rows, 0)
+	if start > 0 && rows > 0 {
+		start++
+		lines = append([]string{sDim.Render("↑ more")}, lines[start:end]...)
+	} else {
+		lines = lines[start:end]
 	}
 	for len(out) < h-1-len(lines) {
 		out = append(out, "")
