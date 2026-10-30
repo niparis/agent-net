@@ -60,6 +60,23 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found, after asking once whether Codex may call its tools without asking (see [codex.md](codex.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 
+### The Claude Code hook question
+
+Setup can add a Claude Code hook, `agent-net hint`, that runs after a failed tool call. If another online session may own the failing service, Claude gets one line telling it to ask that session. It asks once:
+
+```
+agent-net can add a Claude Code hook to ~/.claude/settings.json. After a failed
+tool call it checks the error text on this machine against your other online
+sessions (project, host, task, expertise). If one of them may own the failing
+service, Claude gets one line telling it to ask that session. No model is called.
+Add the hook? [y/N]
+```
+
+- The default is No. The answer is read from the terminal, like the question below. With no terminal nothing changes.
+- `--claude-hint-hook` adds it without a question, `--no-claude-hint-hook` skips it without a question.
+- It adds entries under `hooks` in `~/.claude/settings.json` and keeps everything else. `agent-net uninstall` removes only those entries. See [peer trust and hints](reference.md#peer-trust-and-hints).
+- The Pi extension and the OpenCode plugin do this without a setting; they come with the extension and the plugin.
+
 ### The Claude Code question
 
 Claude Code holds a message from another session for your review when the sender's permission mode class differs from the receiver's. agent-net messages go through that path, so a message to a session in a different mode waits until you approve it. Setup asks once:

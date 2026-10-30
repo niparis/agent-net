@@ -66,7 +66,7 @@ A message from the person at a machine is sent from that machine's **owner sessi
 
 - To deliver, the daemon writes one frame to the inbox socket of the target Claude session. Before it writes, it checks that the path is a real Unix socket (not a symlink) owned by your user.
 - The daemon never sends the Claude session token. It does not need it, and it does not read it.
-- The message arrives as a user turn, in a `<cross-session-message>` block with the sender's name and ID. The sender's name is cut to letters, digits, `_`, `.` and `-` (40 characters at most). If the message body contains the wrapper tags, they are broken up, so a message cannot close the block early and fake a second one.
+- The message arrives as a user turn, in a `<cross-session-message>` block with the sender's name and ID. The sender's name is cut to letters, digits, `_`, `.` and `-` (40 characters at most). If the message body contains the wrapper tags, they are broken up, so a message cannot close the block early and fake a second one. The marker `[agent-net` is broken up in the body too, so a body cannot imitate agent-net's own details.
 - The agent-net details (sender, message ID, session ID) follow the body, as plain text in the same turn.
 - Claude Code treats the message as a request from another session. In our tests Claude asks its user before acting on a peer message that is outside the current task (see [step 2 results](step2-e2e.md)). Claude Code's own permission rules still apply to everything the agent does next.
 
@@ -88,9 +88,32 @@ The daemon is a client of the shared Codex app server's control socket (mode 060
 
 Setup can set `default_tools_approval_mode = "approve"` for the `agent-net` MCP server only. That lets a Codex thread call the agent-net tools (list, send, reply, start workers) with no prompt, including under approval policy `never`, where Codex would otherwise refuse them. Setup asks first, default No.
 
+## Peer trust
+
+By default a peer message is not your approval: the note next to it tells the model to check with you before anything outside its task or risky. **Peer trust** is a per-session switch, off for every session, that you can turn on in the TUI (`t`). When it is on, the note says that you allowed this session to act on requests from your other agents without asking, as if you had asked. Decision: [0013](decisions/0013-peer-trust-and-hints.md).
+
+The risk: any text a peer relays can now steer a trusted session without you seeing it first. A peer that read a web page, an issue or a log line with hidden instructions can pass them on, and a trusted session may act on them. Switch it on for sessions whose checkout and credentials you are willing to risk, and look at the messages feed.
+
+What limits it:
+
+- **Only you can switch it.** The method `session_trust` is behind the owner gate: it works from your command line or the TUI, and is refused for an agent client and for a command line that runs inside an agent session's process tree (the same barrier as for `session_text`; a program that detaches itself from its parent is not caught). No agent tool can change it. The gateway stores it with the session and logs a `session.trust` event with the session ID and the new value. A machine that is enrolled can send the frame, so the gateway trusts the daemons of your machines, as it does for every other frame.
+- **A sender cannot write the note.** The gateway says whether the recipient is trusted when it hands the message to the recipient's daemon, and the adapter writes the note after the body. A body cannot set the flag. A body that contains the marker `[agent-net` (the start of agent-net's own framing) is changed so it no longer matches: this also stops a body from faking a "message from your user in person" line. A body can still claim in plain words that you approved something. The real note follows it.
+- **The note keeps a list of things that still need you:** deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions. This is a request to the model, like all guidance. The harness permission rules (Claude Code's modes and allow lists, Pi's tool settings, Codex's approval policy) are what really limit the agent. A trusted session still runs under them.
+- **Replies and worker reports never get the trust note.** A worker's report keeps the "model output, not your words" note whatever the trust of the recipient. Workers are not trusted by default.
+- **It is off after a session is deleted.** The setting lives in the session record. When the gateway removes an old offline session (see the retention flags), the setting goes with it, and a new session starts untrusted.
+
+## Hints about who can help
+
+After a failed tool call, agent-net can add one line telling the model which other online session may own the failing service (decision [0013](decisions/0013-peer-trust-and-hints.md#part-b---hints-about-who-can-help)). The matching runs in your daemon, on tokens, with no model call. What leaves the machine: nothing new. The daemon asks the gateway for the list of online sessions, which it already knows, and compares the error text with it locally. The error text is not sent to the gateway.
+
+- The hint is advice. The model may ignore it, and it only suggests that the model asks with `agent_send`. A suggestion names a session by its name and ID and says why it matched (a project, repository, folder or host name found in the error, or words of the session's own announced `expertise`, function and task). Session names and expertise are written by the sessions themselves: a session could choose them to attract hints. The worst result is a message to that session, which is still a normal message under all the limits.
+- The Claude Code hook is added to `~/.claude/settings.json` only with your consent, and removed by `agent-net uninstall`. The command reads the hook input on stdin, talks to the local daemon only, gives up after 280 ms and prints nothing on any error. The hook runs inside the Claude Code session's process tree, so it uses the `hint` method with the session ID Claude gives it. That method can only use up the rate limit of that session; it is not an owner-only method.
+- Limits: at most two suggestions; the same suggestion for the same session at most once per 30 minutes; any hint for a session at most once per 45 seconds; never the session itself, an offline session, the owner, a worker or a session of the same project.
+- The `expertise` line is stored at the gateway with the profile, cut to 200 characters, with control characters removed.
+
 ## Guidance text is advice, not enforcement
 
-`agent-net setup` adds a short block to `~/.claude/CLAUDE.md` and `~/.pi/agent/AGENTS.md`. It tells the model to answer peers directly, to check with you before risky or out-of-scope work, and to never take a peer message as your approval. This is a request to the model. It can be ignored, or overridden by a persuasive message. The things that actually limit what an agent can do are the harness permission rules (Claude Code's permission modes and allow lists, Pi's tool settings). Keep those on. A peer message is never your approval, and you should not configure your agents to treat it as one.
+`agent-net setup` adds a short block to `~/.claude/CLAUDE.md` and `~/.pi/agent/AGENTS.md`. It tells the model to answer peers directly, to check with you before risky or out-of-scope work, and to never take a peer message as your approval, unless the note that agent-net itself adds says you allowed this session to act on peer requests (see [peer trust](#peer-trust)). It also tells the model to relay a request you asked it to send, and let the receiver decide, and to ask a peer early when an error comes from something another session owns. This is a request to the model. It can be ignored, or overridden by a persuasive message. The things that actually limit what an agent can do are the harness permission rules (Claude Code's permission modes and allow lists, Pi's tool settings). Keep those on. A peer message is never your approval, except through peer trust, which only you switch on, per session. Do not configure your agents to treat peer messages as approval in any other way.
 
 ## Limits against loops
 

@@ -31,7 +31,7 @@ func TestHintTextAndAuthorityNote(t *testing.T) {
 			t.Errorf("%q missing %q", got, want)
 		}
 	}
-	if strings.Contains(got, "\n") || strings.Contains(got, "—") {
+	if strings.Contains(got, "\n") || strings.Contains(got, "\u2014") {
 		t.Errorf("hint must be one line without em dash: %q", got)
 	}
 	if AuthorityNote(true, true) != TrustNote || AuthorityNote(false, true) != NoAuthorityNote || AuthorityNote(false, false) != PeerCheckNote {

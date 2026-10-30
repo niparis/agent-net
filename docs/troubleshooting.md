@@ -65,7 +65,7 @@ sudo loginctl enable-linger $USER
 
 ## A peer message arrived but the agent did not act on it
 
-This is expected in some cases. Claude Code and Pi check with you before work that is outside the current task or risky, and a message from another agent is never your approval. Answer the agent in its own session. See [security.md](security.md).
+This is expected in some cases. Claude Code and Pi check with you before work that is outside the current task or risky, and a message from another agent is never your approval, unless you turned on peer trust for that session (press `t` on it in `agent-net tui`). Answer the agent in its own session, or turn trust on. See [security.md](security.md).
 
 ## A worker does not start
 

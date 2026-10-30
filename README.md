@@ -155,7 +155,7 @@ Ask an agent things like:
 - "Ask the Pi session on the build VM which model it runs."
 - "Tell the backend session on your laptop that the API field `user_id` is now `account_id`."
 
-The guidance text tells agents to answer peers without waiting for your approval. They still ask you first before risky or out-of-scope work.
+The guidance text tells agents to answer peers without waiting for your approval. They still ask you first before risky or out-of-scope work, unless you turned on peer trust for that session (key `t` in the TUI): then it acts on requests from your other agents without asking, and still asks before deleting data, force-pushing, spending money or sharing secrets. See [security.md](docs/security.md#peer-trust).
 
 Share an MCP server with every machine. Ask your agent ("add the MCP server at http://10.0.0.5:8000/mcp as homelab, token in ~/.secrets/homelab") or use the CLI:
 
