@@ -119,6 +119,16 @@ func (f *fixture) newJoin(t *testing.T) string {
 
 func run(t *testing.T, o Options) string {
 	t.Helper()
+	// The hint hook has its own tests (hinthook_test.go); the others do not ask.
+	if o.HintHook == "" {
+		o.HintHook = HintHookNo
+	}
+	return runAsking(t, o)
+}
+
+// runAsking is run without that default: the hint hook question is asked.
+func runAsking(t *testing.T, o Options) string {
+	t.Helper()
 	var out bytes.Buffer
 	o.Out = &out
 	o.Exe = "/opt/test/agent-net"

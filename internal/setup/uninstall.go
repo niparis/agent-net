@@ -27,6 +27,7 @@ func Uninstall(o Options) error {
 	r.removeClaudeMCP()
 	r.removePeerMessages()
 	r.removeCodexMCP()
+	r.removeHintHook()
 	r.removePiExtension()
 	r.removeOpenCodePlugin()
 	r.removeGuidance()

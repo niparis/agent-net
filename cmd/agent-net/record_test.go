@@ -39,7 +39,7 @@ func TestParseSince(t *testing.T) {
 
 func TestPrintAgentsShowsProject(t *testing.T) {
 	agents := []protocol.AgentView{
-		{SessionID: "s_1", Harness: "opencode", Hostname: "mac", NodeID: "n_1", Cwd: "/src/shop/web", Status: "idle", Online: true,
+		{SessionID: "s_1", Harness: "opencode", Hostname: "mac", NodeID: "n_1", Cwd: "/src/shop/web", Status: "idle", Online: true, PeerTrust: true,
 			Mode: "foreground", Model: "anthropic/claude-sonnet-5",
 			Profile: protocol.Profile{Name: "web", Function: "frontend"},
 			Repo:    protocol.RepoInfo{Root: "/src/shop", Project: "shop", Remote: "https://example.com/shop.git", Branch: "main"}},
@@ -55,7 +55,7 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	if len(lines) != 4 {
 		t.Fatalf("output:\n%s", b.String())
 	}
-	if f := strings.Fields(lines[0]); strings.Join(f, " ") != "SESSION NAME HARNESS HOST PROJECT STATUS MODE MODEL ONLINE FUNCTION" {
+	if f := strings.Fields(lines[0]); strings.Join(f, " ") != "SESSION NAME HARNESS HOST PROJECT STATUS MODE MODEL ONLINE TRUST FUNCTION" {
 		t.Fatalf("header: %q", lines[0])
 	}
 	if f := strings.Fields(lines[1]); f[4] != "shop" {
@@ -84,7 +84,7 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	b.Reset()
 	printAgents(&b, agents, true)
 	wide := strings.Split(strings.TrimSpace(b.String()), "\n")
-	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[7] != "MODE" || h[8] != "MODEL" || h[10] != "FUNCTION" || h[11] != "TASK" || h[12] != "REMOTE" || h[13] != "FOLDER" || h[14] != "NODE" || h[15] != "WORKTREE" {
+	if h := strings.Fields(wide[0]); h[5] != "BRANCH" || h[7] != "MODE" || h[8] != "MODEL" || h[10] != "TRUST" || h[11] != "FUNCTION" || h[12] != "EXPERTISE" || h[13] != "TASK" || h[14] != "REMOTE" || h[15] != "FOLDER" || h[16] != "NODE" || h[17] != "WORKTREE" {
 		t.Fatalf("wide header: %q", wide[0])
 	}
 	f := strings.Fields(wide[1])
@@ -98,13 +98,13 @@ func TestPrintAgentsShowsProject(t *testing.T) {
 	if f := strings.Fields(lines[3]); f[len(f)-1] != "-" {
 		t.Errorf("no description shows a dash: %q", lines[3])
 	}
-	if f := strings.Fields(wide[1]); f[10] != "frontend" || f[11] != "-" {
+	if f := strings.Fields(wide[1]); f[10] != "yes" || f[11] != "frontend" || f[12] != "-" || f[13] != "-" {
 		t.Errorf("wide function and empty task: %q", wide[1])
 	}
 	agents[0].Profile.Task = "fixing-login"
 	b.Reset()
 	printAgents(&b, agents, true)
-	if f := strings.Fields(strings.Split(strings.TrimSpace(b.String()), "\n")[1]); f[11] != "fixing-login" {
+	if f := strings.Fields(strings.Split(strings.TrimSpace(b.String()), "\n")[1]); f[13] != "fixing-login" {
 		t.Errorf("wide task: %q", b.String())
 	}
 }

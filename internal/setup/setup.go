@@ -40,6 +40,7 @@ type Options struct {
 	Exe          string // path of the agent-net binary; default: this binary
 	PeerMessages string // "" ask; PeerMessagesAccept or PeerMessagesNo choose without a prompt
 	CodexTools   string // "" ask; CodexToolsApprove or CodexToolsNo choose without a prompt
+	HintHook     string // "" ask; HintHookYes or HintHookNo choose without a prompt
 	Out          io.Writer
 }
 
@@ -114,6 +115,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.claudeMCP()
 	r.claudePeerMessages()
 	r.codexMCP()
+	r.claudeHintHook()
 	r.piExtension()
 	r.opencodePlugin()
 	r.guidance()

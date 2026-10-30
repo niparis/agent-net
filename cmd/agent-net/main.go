@@ -36,7 +36,7 @@ var version = "dev"
 const usage = `usage: agent-net <command>
 
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages, --[no-]accept-codex-tools
+  setup      set this machine up: --join S, --gateway, --no-service, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)
@@ -119,6 +119,8 @@ func main() {
 		err = cmdWorkers(ctx, args)
 	case "send":
 		err = cmdSend(ctx, args)
+	case "hint": // hidden: the Claude Code hook (decision 0012)
+		err = cmdHint(ctx, args)
 	case "version", "--version":
 		fmt.Println(version)
 	case "-h", "--help", "help":

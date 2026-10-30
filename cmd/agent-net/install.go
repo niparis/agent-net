@@ -24,15 +24,26 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noAccept := fs.Bool("no-accept-peer-messages", false, "do not set crossSessionInbound and do not ask")
 	acceptCodex := fs.Bool("accept-codex-tools", false, "let Codex call the agent-net tools without asking (sets default_tools_approval_mode for agent-net's own server)")
 	noAcceptCodex := fs.Bool("no-accept-codex-tools", false, "register the Codex server without that setting and do not ask")
+	hintHook := fs.Bool("claude-hint-hook", false, "add the Claude Code hook that suggests which session to ask after a failed tool call (only if not asked before)")
+	noHintHook := fs.Bool("no-claude-hint-hook", false, "do not add that hook and do not ask")
 	fs.Parse(args)
 	if *acceptCodex && *noAcceptCodex {
 		return errors.New("--accept-codex-tools and --no-accept-codex-tools cannot be used together")
+	}
+	if *hintHook && *noHintHook {
+		return errors.New("--claude-hint-hook and --no-claude-hint-hook cannot be used together")
 	}
 	codex := ""
 	if *acceptCodex {
 		codex = setup.CodexToolsApprove
 	} else if *noAcceptCodex {
 		codex = setup.CodexToolsNo
+	}
+	hint := ""
+	if *hintHook {
+		hint = setup.HintHookYes
+	} else if *noHintHook {
+		hint = setup.HintHookNo
 	}
 	if *accept && *noAccept {
 		return errors.New("--accept-peer-messages and --no-accept-peer-messages cannot be used together")
@@ -43,7 +54,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, HintHook: hint, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

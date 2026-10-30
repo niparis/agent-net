@@ -84,6 +84,11 @@ func readSettings(path string) (*settingsDoc, error) {
 	if err != nil {
 		return nil, err
 	}
+	return parseObject(b)
+}
+
+// parseObject reads a JSON object into ordered members.
+func parseObject(b []byte) (*settingsDoc, error) {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
 		return nil, errNotJSON
@@ -109,9 +114,11 @@ func readSettings(path string) (*settingsDoc, error) {
 	return doc, nil
 }
 
-func (d *settingsDoc) index() int {
+func (d *settingsDoc) index() int { return d.indexOf(settingKey) }
+
+func (d *settingsDoc) indexOf(key string) int {
 	for i, m := range d.members {
-		if m.key == settingKey {
+		if m.key == key {
 			return i
 		}
 	}
