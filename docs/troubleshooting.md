@@ -81,6 +81,12 @@ This is expected in some cases. Claude Code and Pi check with you before work th
 
 A worker that never answers may be waiting for a permission that nobody can give. It ends at the idle time with a `timed out` notice.
 
+## A Codex thread is not listed, or cannot send
+
+- Not listed: only threads that the shared Codex app server has loaded are listed, which means a window has the thread open (or closed it a short time ago). Check that the server runs: `codex app-server daemon version`. Look in the daemon log for `codex: connected to the shared app server`. If your Codex home is not `~/.codex`, the daemon service needs `CODEX_HOME` too.
+- Listed, but the agent has no agent-net tools: the thread started before `agent-net setup` wrote the server to `~/.codex/config.toml`. Start a new thread. If the tools exist but every call fails with "requires approval", run `agent-net setup --accept-codex-tools`.
+- A tool call says "peer check failed": the process that Codex started is not a child of the app server the daemon is connected to, for example a Codex that runs its own embedded server (`--no-daemon`). Only threads of the shared server are supported.
+
 ## A peer message is held for review in Claude Code
 
 Claude Code shows: `The sending session's permission mode class doesn't match this session's. Review it below, or set "crossSessionInbound" to "accept".` The message waits until you approve it in that session, and is dropped after a while if you do not.

@@ -8,7 +8,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 |---|---|
 | `agent-net gateway` | Run the gateway server. |
 | `agent-net daemon` | Run the per-machine daemon. |
-| `agent-net mcp` | Stdio MCP server for one Claude Code session. Claude Code starts it, you do not. |
+| `agent-net mcp` | Stdio MCP server for one Claude Code session. Claude Code starts it, you do not. `agent-net mcp --codex` is the same for Codex: Codex starts one per thread. |
 | `agent-net setup` | Set this machine up. See [what setup changes](#what-setup-changes-on-your-machine). |
 | `agent-net invite` | On the gateway machine: print the one-line installer for a new machine. |
 | `agent-net enroll` | On the gateway machine: print a raw one-time join string. |
@@ -92,6 +92,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_STATE_DIR` | daemon | Directory for `daemon.db`. |
 | `AGENT_NET_SOCKET` | daemon, CLI, `agent-net mcp`, Pi extension | Path of the daemon socket. |
 | `AGENT_NET_CLAUDE_SESSIONS_DIR` | daemon | Where to look for Claude Code session files. For tests. |
+| `CODEX_HOME` | daemon, setup | Codex's home folder (default `~/.codex`). The daemon looks for the shared Codex app server's control socket in it, and setup writes `config.toml` and `AGENTS.md` in it. Codex reads the same variable. |
 | `AGENT_NET_GATEWAY_DATA` | gateway, `invite`, `enroll`, `setup`, `install.sh` | Gateway data directory. |
 | `AGENT_NET_NO_SERVICE` | setup, `install.sh` | `1` means: write no service files and start nothing. Same as `--no-service`. |
 | `AGENT_NET_BASE_URL` | `install.sh` | Replaces the release download URL. For tests. |
@@ -299,7 +300,8 @@ A message body can only be shown for a message that involves a session on this m
 | Pi | The same herdr and tmux rules. A Pi worker has no screen, so there is nothing to enter. |
 | OpenCode | `opencode --session <id>`, in the session's folder, through OpenCode's own background service. |
 | OpenCode worker | `opencode --server <its private url> --session <id>`, with its password in `OPENCODE_SERVER_PASSWORD`. Only from the machine that runs it. |
-| Codex worker | `codex resume <thread> --remote ws://<its private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN`. Only from the machine that runs it. The daemon drives the same thread, so do not type while it works. Other Codex sessions are not known to agent-net and cannot be entered. |
+| Codex | `codex resume <thread>`, in the thread's folder. It joins the shared Codex app server, so you get the thread that is open there. With a `CODEX_HOME` other than `~/.codex` the plan is `env CODEX_HOME=<it> codex resume <thread>`. |
+| Codex worker | `codex resume <thread> --remote ws://<its private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN`. Only from the machine that runs it. The daemon drives the same thread, so do not type while it works. |
 
 **herdr.** A session whose process (or a parent) has `HERDR_ENV=1` and `HERDR_PANE_ID` in its environment is entered with `herdr agent attach <pane>`. The same plan is used when the TUI is outside herdr, inside the same herdr, or inside another one: herdr's `agent focus` does not move a client that is already open, so the TUI attaches instead. The daemon sends `HERDR_SOCKET_PATH` of the session's herdr in the command (`env -u HERDR_SESSION HERDR_SOCKET_PATH=<socket> herdr agent attach <pane>`), so it also works through `ssh -t`. If the pane moved or closed, the daemon looks for the pane that holds the process, and says so when none does. The herdr program is found from the pane's `HERDR_BIN_PATH`, `PATH`, then `~/.local/bin/herdr`.
 
@@ -333,9 +335,10 @@ When the plan has nothing to run, the answer has only a note, and the TUI shows 
 | Daemon state | Created by the daemon. | Keeps it. `--purge` deletes `~/.local/state/agent-net/daemon`. |
 | Claude Code | If `claude` is found, runs `claude mcp add -s user agent-net -- <binary> mcp`. This adds an entry to your user-level MCP servers in `~/.claude.json`. Skipped if the entry exists. | Runs `claude mcp remove -s user agent-net`. |
 | Claude Code peer messages | If `claude` is found and `crossSessionInbound` is not set in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`), asks on the terminal, or follows `--accept-peer-messages` / `--no-accept-peer-messages`. On yes it adds `"crossSessionInbound": "accept"` and keeps every other key (file rewritten with 2-space indent, through a temp file and a rename). Records the answer in `~/.config/agent-net/claude-peer-messages.json`. An existing value is never changed. A file that is not valid JSON is not touched. The daemon and upgrades never change it. | Removes the key, only if agent-net set it and the value is still `"accept"`. Deletes the record. |
+| Codex MCP server | If `codex` is found or `~/.codex` (`$CODEX_HOME`) exists, adds a block between `# agent-net:begin` and `# agent-net:end` at the end of `config.toml` in it: the server `agent-net` with `args = ["mcp", "--codex"]`. It asks once on the terminal whether Codex may call the agent-net tools without asking each time; yes adds `default_tools_approval_mode = "approve"` to that block (for this server only). `--accept-codex-tools` and `--no-accept-codex-tools` answer without a question; with no terminal the block has no approval line. The answer is kept in `~/.config/agent-net/codex-tools.json`. A `[mcp_servers.agent-net]` that is not ours is left alone. Codex threads started before this do not have the tools. | Removes the block and the record; the rest of `config.toml` is kept. |
 | OpenCode plugin | If `~/.config/opencode` (or `$XDG_CONFIG_HOME/opencode`) exists, writes `plugins/agent-net.ts` in it. A symlink there is left alone. | Deletes the file. A symlink is left alone. |
 | Pi extension | If `~/.pi` exists, writes `~/.pi/agent/extensions/agent-net.ts`. A symlink there is left alone. | Deletes the file. A symlink is left alone. |
-| Guidance text | Adds a block between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` to `~/.claude/CLAUDE.md` (if `~/.claude` exists) `~/.pi/agent/AGENTS.md` (if `~/.pi` exists) and `~/.config/opencode/AGENTS.md` (if `~/.config/opencode` exists). Text outside the markers is never changed. An older unmarked `## agent-net: working with other agents` section is replaced by the block. | Removes the block. |
+| Guidance text | Adds a block between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` to `~/.claude/CLAUDE.md` (if `~/.claude` exists) `~/.pi/agent/AGENTS.md` (if `~/.pi` exists) `~/.config/opencode/AGENTS.md` (if `~/.config/opencode` exists) and `~/.codex/AGENTS.md` (if the Codex home exists). Text outside the markers is never changed. An older unmarked `## agent-net: working with other agents` section is replaced by the block. | Removes the block. |
 
 The Pi extension, the OpenCode plugin and the guidance blocks are also written by the daemon, on every start, with the same rules as setup (the harness folder must exist, a symlink is left alone, guidance changes only between the markers). It rewrites a file only if it differs from the content embedded in the binary, and logs one line per file it changes (`agent files: pi extension updated`) in the daemon log. So these files follow the binary after an upgrade or a manual copy, without a setup run. See [upgrade.md](upgrade.md#agent-files-on-a-machine).
 

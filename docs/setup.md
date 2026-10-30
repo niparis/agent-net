@@ -57,7 +57,8 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - when `claude` is found and Claude Code's `crossSessionInbound` setting is not set, asks once whether Claude Code should accept agent-net messages without holding them (see below),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink is left alone; see [opencode.md](opencode.md)),
-- adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md` and `~/.config/opencode/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
+- registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found, after asking once whether Codex may call its tools without asking (see [codex.md](codex.md)),
+- adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 
 ### The Claude Code question
 
@@ -102,7 +103,7 @@ Machines accept workers (agent sessions that other sessions, or you, start there
 ## Remove a machine
 
 ```
-agent-net uninstall          # services, Claude MCP entry, the crossSessionInbound value agent-net set, Pi extension, guidance blocks
+agent-net uninstall          # services, Claude MCP entry, the crossSessionInbound value agent-net set, the Codex config block, Pi extension, guidance blocks
 agent-net uninstall --purge  # also ~/.config/agent-net and the daemon state
 ```
 
