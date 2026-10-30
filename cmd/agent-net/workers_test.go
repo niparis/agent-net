@@ -58,7 +58,8 @@ func (f *fakeOp) SessionEnter(context.Context, protocol.EnterRequest) (protocol.
 func (f *fakeOp) Counts(context.Context) (protocol.SessionCounts, error) {
 	return protocol.SessionCounts{}, nil
 }
-func (f *fakeOp) Close() {}
+func (f *fakeOp) SetPeerTrust(context.Context, string, bool) error { return nil }
+func (f *fakeOp) Close()                                           {}
 
 func TestStartCommand(t *testing.T) {
 	f := &fakeOp{result: protocol.WorkerStartResult{SessionID: "s_w", Harness: "opencode", Model: "a/b", Project: "shop", Hostname: "mac",

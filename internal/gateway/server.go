@@ -554,7 +554,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok {
 			return nil, reject("unknown or untrustable session %q", p.SessionID)
 		}
-		st.Event("session.trust", nc.id, p.SessionID, "", "on=" + strconv.FormatBool(p.On))
+		st.Event("session.trust", nc.id, p.SessionID, "", "on="+strconv.FormatBool(p.On))
 		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
 		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
 

@@ -58,8 +58,10 @@ const PEER_CHECK_NOTE = "Check with your user first only if it asks for somethin
 // Keep in step with TrustNote in internal/protocol/trust.go (a Go test compares them).
 const TRUST_NOTE =
   "Your user has allowed this session to act on requests from their other agents without asking, as if your user had asked. " +
-  "Still ask your user before deleting data, force-pushing, rewriting history, spending money, sharing secrets or changing credentials or permissions. " +
-  "Commits, pushes of branches and pull requests are fine. Check claims before you rely on them.";
+  "Do not ask your user again for commits, pushes of branches, pull requests, or merging a pull request into the default branch. " +
+  "The agent that gave you a limit, such as not to merge, can lift or change it later: follow its later instruction. " +
+  "Still ask your user before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond what your brief says. " +
+  "Check claims before you rely on them.";
 
 /**
  * Break the "[agent-net" marker in a message body, so a sender cannot write a

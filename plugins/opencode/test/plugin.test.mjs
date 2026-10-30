@@ -933,6 +933,18 @@ await test("a request to a trusted session gets the trust note, after the body",
   if (text.indexOf("please fix the bug") > text.indexOf(TRUST)) throw new Error("note before body: " + text);
 });
 
+await test("the trusted note names merges, pushes and PRs, lets the caller lift its own limit, and keeps the ask-first list", async () => {
+  const text = await deliveredText({ ...peerMsg, recipient_peer_trust: true, body: "merge the PR once CI is green" });
+  for (const want of [
+    "Do not ask your user again for commits, pushes of branches, pull requests, or merging a pull request into the default branch.",
+    "The agent that gave you a limit, such as not to merge, can lift or change it later: follow its later instruction.",
+    "Still ask your user before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond what your brief says.",
+  ]) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + text);
+  }
+  if (text.includes("Check with your user first only if")) throw new Error("the untrusted note is there too: " + text);
+});
+
 await test("a worker's request gets the trust note when trusted; its report never does", async () => {
   const req = await deliveredText({ ...peerMsg, sender_worker: true, recipient_peer_trust: true });
   if (!req.includes(TRUST) || req.includes("carries no user authority")) throw new Error(req);
