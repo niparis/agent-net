@@ -106,7 +106,8 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"workers": {
-		desc: "List the workers on the network, with machine, project, harness, model, owner, state and start time.",
+		desc:   "List workers, newest first. Use next_before for the next page.",
+		fields: map[string]ctoField{"limit": {typ: "integer", desc: "Page size, default 20, maximum 50."}, "before": {typ: "string", desc: "Cursor from next_before."}},
 	},
 	"needs_you": {
 		desc: "List the agent sessions that wait for you: questions, escalations, approvals and requests held by an ask rule.",
@@ -114,7 +115,8 @@ var ctoTools = map[string]ctoToolDef{
 	"feed": {
 		desc: "Read the network feed: recent events such as messages, worker starts, graph changes and approvals, newest first.",
 		fields: map[string]ctoField{
-			"limit": {typ: "integer", desc: "Maximum number of events, newest first."},
+			"limit":  {typ: "integer", desc: "Page size, default 20, maximum 50."},
+			"before": {typ: "integer", desc: "Cursor from next_before."},
 		},
 	},
 	"send": {

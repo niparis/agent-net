@@ -275,6 +275,10 @@ var feedKinds = []string{"msg", "session", "node", "worker"}
 // named by ID, both ends and type only. With afterID 0 it returns the newest
 // limit events; otherwise the first limit events after afterID.
 func (s *Store) FeedEvents(afterID int64, limit int) ([]protocol.FeedEvent, error) {
+	return s.feedEventsBefore(afterID, 0, limit)
+}
+
+func (s *Store) feedEventsBefore(afterID, beforeID int64, limit int) ([]protocol.FeedEvent, error) {
 	if limit <= 0 {
 		limit = DefaultFeedLimit
 	}
@@ -293,6 +297,10 @@ func (s *Store) FeedEvents(afterID int64, limit int) ([]protocol.FeedEvent, erro
 		where += ` AND e.id > ?`
 		args = append(args, afterID)
 		order = "ASC"
+	}
+	if beforeID > 0 {
+		where += ` AND e.id < ?`
+		args = append(args, beforeID)
 	}
 	args = append(args, limit)
 	rows, err := s.db.Query(`SELECT e.id, e.at, e.kind, e.node_id, COALESCE(n.hostname,''), e.session_id, e.message_id, e.detail,

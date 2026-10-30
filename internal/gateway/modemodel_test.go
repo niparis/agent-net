@@ -167,6 +167,10 @@ func TestFeedEventsCursorAndLimit(t *testing.T) {
 	if len(newest) != 5 || newest[4].SessionID != "s_l" || newest[0].SessionID != "s_h" {
 		t.Fatalf("newest five, oldest first: %+v", newest)
 	}
+	older, err := s.feedEventsBefore(0, newest[0].ID, 5)
+	if err != nil || len(older) != 5 || older[4].SessionID != "s_g" {
+		t.Fatalf("older page: %+v %v", older, err)
+	}
 	first, _ := s.FeedEvents(1, 3)
 	if len(first) != 3 || first[0].ID != 2 {
 		t.Fatalf("after 1: %+v", first)
