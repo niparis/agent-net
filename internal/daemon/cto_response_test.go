@@ -67,6 +67,10 @@ func TestCTODefaultPagesStaySmall(t *testing.T) {
 		workers = append(workers, protocol.WorkerView{SessionID: fmt.Sprintf("s-%d", i), Hostname: "box", Project: "project", Task: "work"})
 		events = append(events, protocol.FeedEvent{Event: protocol.Event{ID: int64(i + 1), Kind: "session.new", Detail: "started"}})
 	}
+	for name, v := range map[string]any{"projects": projects, "workers": workers, "feed": events} {
+		b, _ := json.Marshal(v)
+		t.Logf("%s before: %d bytes", name, len(b))
+	}
 	ps, _ := ctoPage(projects, 0, "", func(v protocol.ProjectView) string { return v.Name })
 	ws, _ := ctoPage(workers, 0, "", func(v protocol.WorkerView) string { return v.SessionID })
 	for name, v := range map[string]any{"projects": ps, "workers": ws, "feed": events[:ctoLimit(0)]} {
