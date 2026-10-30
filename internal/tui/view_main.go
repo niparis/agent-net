@@ -261,8 +261,12 @@ func (m Model) titleLine(w int) string {
 	}
 	left := strings.Join(tabs, "  ")
 	if m.tab == 0 {
-		if warning := m.quotaWarning(); warning != "" {
-			left += "  " + sBusy.Render(warning)
+		if warning, exhausted := m.quotaWarning(); warning != "" {
+			style := lipgloss.NewStyle().Foreground(roleWarning)
+			if exhausted {
+				style = sBad
+			}
+			left += "  " + style.Render(warning)
 		}
 	}
 

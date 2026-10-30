@@ -1,10 +1,11 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy  updated 14:05:00
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────╮
-│ PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS   │
-│ claude         max          5h       █████░░░░░  50%      behind    -        │
+│ PROVIDER    PLAN      WINDOW         USAGE                PACE      RESETS   │
+│ claude      max       5h             █████─────  50%      behind    -        │
 │   (read on Mac; stale reading)                                               │
-│ codex          pro          week     █████████░  92%      ahead     in 2h00  │
-│ cursor         business     month    ██████████ exhausted -         -        │
+│ codex       pro       week           █████████─  92%      ahead     in 2h00  │
+│   (read on Mac)                                                              │
+│ cursor      business  month          ██████████ exhausted -         -        │
 │   (read on Mac)                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 3 registered · scores: Artificial Analysis─────────────────────────╮
@@ -13,7 +14,6 @@
 │ sol    codex  gpt-6.1-sol:medi… 46.1/medium E E E G P  0 runs                │
 │ terra  codex  gpt-6.1-terra:hi… 42.3/high   E E E G P  0 runs                │
 │ workers now: none                                                            │
-╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-1 sessions  2 messages  ? help  q quit
+up/down scroll  s show not set up  tab CTO  1 sessions  ? help  q quit

@@ -16,14 +16,20 @@ func (m Model) quotasView(w, h int) []string {
 	rows := m.quotaRows()
 	nodes, ids := m.quotaNodes()
 	var errors []string
+	reporting := 0
+	singleMachine := ""
 	for _, id := range ids {
 		n := nodes[id]
+		if n.Usage.Quotas != nil {
+			reporting++
+			singleMachine = firstNonEmpty(n.Hostname, id)
+		}
 		if n.Usage.QuotaError != "" {
 			errors = append(errors, sanitize(firstNonEmpty(n.Hostname, id))+": "+sanitize(n.Usage.QuotaError))
 		}
 	}
 	if len(rows) > 0 {
-		subscription = append(subscription, sBold.Render("PROVIDER       PLAN         WINDOW   USAGE                PACE      RESETS"))
+		subscription = append(subscription, sBold.Render("PROVIDER    PLAN      WINDOW         USAGE                PACE      RESETS"))
 	}
 	if len(rows) == 0 && len(errors) == 0 {
 		empty := "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota)."
@@ -37,13 +43,23 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sDim.Render(line))
 		}
 	}
-	for _, e := range errors {
-		for _, line := range wrap(e, w-2) {
-			subscription = append(subscription, sDim.Render(line))
+
+	var newest int64
+	var configured, unset []quotaRow
+	for _, r := range rows {
+		if quotaNotSetUp(r.provider) {
+			unset = append(unset, r)
+		} else {
+			configured = append(configured, r)
+		}
+		if r.at > newest {
+			newest = r.at
 		}
 	}
-	var newest int64
-	for _, r := range rows {
+	if m.quotaShowUnset {
+		configured = append(configured, unset...)
+	}
+	for _, r := range configured {
 		if r.at > newest {
 			newest = r.at
 		}
@@ -81,7 +97,7 @@ func (m Model) quotasView(w, h int) []string {
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pctText = sBad.Render(pct)
 			}
-			usage := progressBar(window.PercentUsed/100, 10, color) + " " + pctText
+			usage := quotaBar(window.PercentUsed/100, 10, color) + " " + pctText
 			usage = padStyled(usage, 20)
 
 			paceStyle := sDim
@@ -109,19 +125,15 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("%-14s %-12s %-8s %s %s %s", cell(provider, 14), cell(plan, 12), cell(name, 8), usage, pace, reset)
+			line := fmt.Sprintf("%-11s %-9s %-14s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), usage, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}
 			subscription = append(subscription, clip(line, w-4))
 		}
 		var notes []string
-		if r.machine != "" {
-			if r.readers == 1 {
-				notes = append(notes, "read on "+sanitize(r.machine))
-			} else {
-				notes = append(notes, sanitize(r.machine))
-			}
+		if r.machine != "" && reporting > 1 {
+			notes = append(notes, "read on "+sanitize(r.machine))
 		}
 		if p.Stale {
 			notes = append(notes, "stale reading")
@@ -133,7 +145,22 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sDim.Render(clip("  ("+strings.Join(notes, "; ")+")", w-4)))
 		}
 	}
+	if len(unset) > 0 {
+		action := "s to show"
+		if m.quotaShowUnset {
+			action = "s to hide"
+		}
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d providers not set up · %s", len(unset), action)))
+	}
+	for _, e := range errors {
+		for _, line := range wrap(e, w-4) {
+			subscription = append(subscription, sDim.Render(line))
+		}
+	}
 	title := "Subscriptions"
+	if reporting == 1 {
+		title += " · read on " + sanitize(singleMachine)
+	}
 	if newest > 0 {
 		age := m.now().Sub(time.Unix(newest, 0))
 		if age < 0 {
@@ -167,15 +194,36 @@ func (m Model) quotasView(w, h int) []string {
 	workers = append(workers[:len(workers)-1], footer, workers[len(workers)-1])
 	out = append(out, workers...)
 	if len(out) > h {
-		header := out[:1]
-		body := out[1 : len(out)-2]
-		room := max(h-3, 0)
+		body := out[1:]
+		room := max(h-1, 0)
 		start := min(m.quotaScroll, max(len(body)-room, 0))
-		out = append(header, body[start:min(start+room, len(body))]...)
-		out = append(out, footer, workers[len(workers)-1])
+		end := min(start+room, len(body))
+		workerStart := len(body) - len(workers)
+		if start <= workerStart && end > workerStart && end-workerStart < 3 {
+			end = workerStart
+		}
+		out = append(out[:1], body[start:end]...)
 	}
+
 	for len(out) < h {
 		out = append(out, "")
 	}
 	return out
+}
+
+func quotaNotSetUp(p protocol.QuotaProvider) bool {
+	if len(p.Windows) > 0 {
+		return false
+	}
+	reason := strings.ToLower(strings.ReplaceAll(p.Error, "_", " "))
+	return strings.Contains(reason, "credential unavailable") || strings.Contains(reason, "sign-in required") || strings.Contains(reason, "sign in required") || strings.Contains(reason, "not running") || strings.Contains(reason, "cli unavailable")
+}
+
+func quotaBar(frac float64, n int, color lipgloss.TerminalColor) string {
+	n = max(n, 0)
+	filled := min(max(int(frac*float64(n)+0.5), 0), n)
+	if frac > 0 && n > 0 && filled == 0 {
+		filled = 1
+	}
+	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("─", n-filled))
 }

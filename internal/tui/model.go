@@ -55,9 +55,10 @@ type Model struct {
 	loc *time.Location
 	now func() time.Time
 
-	width, height int
-	tab           int
-	quotaScroll   int
+	width, height  int
+	tab            int
+	quotaScroll    int
+	quotaShowUnset bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap     Snapshot
@@ -676,6 +677,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == 2 {
 		switch k.String() {
+		case "s":
+			m.quotaShowUnset = !m.quotaShowUnset
+			m.quotaScroll = 0
 		case "q":
 			m.quitting = true
 			return m, tea.Quit

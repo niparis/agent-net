@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -14,6 +15,7 @@ type quotaRow struct {
 	at       int64
 	machine  string
 	readers  int
+	disagree bool
 }
 
 // quotaRows merges readings for the same provider and plan. A local report
@@ -33,6 +35,9 @@ func (m Model) quotaRows() []quotaRow {
 		for _, p := range q.Providers {
 			key := strings.ToLower(strings.TrimSpace(p.Provider)) + "\x00" + strings.ToLower(strings.TrimSpace(p.Plan))
 			r, ok := rows[key]
+			if ok && !reflect.DeepEqual(r.provider, p) {
+				r.disagree = true
+			}
 			r.readers++
 			if !ok || q.GeneratedAt > r.at {
 				r.provider = p
@@ -42,16 +47,13 @@ func (m Model) quotaRows() []quotaRow {
 			rows[key] = r
 		}
 	}
-	counts := map[string]int{}
-	for _, r := range rows {
-		counts[strings.ToLower(r.provider.Provider)]++
-	}
+
 	out := make([]quotaRow, 0, len(rows))
 	for _, r := range rows {
 		if m.tab == 2 && m.uiFilter != "" && !strings.Contains(strings.ToLower(r.provider.Provider+" "+r.provider.Plan+" "+r.machine), strings.ToLower(m.uiFilter)) {
 			continue
 		}
-		if counts[strings.ToLower(r.provider.Provider)] == 1 && r.readers > 1 {
+		if r.readers > 1 && !r.disagree {
 			r.machine = ""
 		}
 		out = append(out, r)
@@ -87,21 +89,34 @@ func (m Model) quotaNodes() (map[string]protocol.UsageNode, []string) {
 	return nodes, ids
 }
 
-func (m Model) quotaWarning() string {
+func (m Model) quotaWarning() (string, bool) {
+	relevant := map[string]bool{}
+	for _, p := range m.snap.WorkerProfiles {
+		if name := protocol.QuotaProviderForStart(p.Harness, p.Model); name != "" {
+			relevant[name] = true
+		}
+	}
+	for _, a := range m.snap.Agents {
+		if a.Online {
+			if name := protocol.QuotaProviderForStart(a.Harness, a.Model); name != "" {
+				relevant[name] = true
+			}
+		}
+	}
 	for _, r := range m.quotaRows() {
-		if r.provider.Stale || r.provider.Error != "" {
+		if !relevant[strings.ToLower(r.provider.Provider)] || r.provider.Stale || r.provider.Error != "" {
 			continue
 		}
 		for _, w := range r.provider.Windows {
 			if w.Exhausted || w.PercentUsed >= 100 {
-				return fmt.Sprintf("%s exhausted %s - see 3", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w)))
+				return fmt.Sprintf("%s exhausted %s · 3", sanitize(r.provider.Provider), sanitize(protocol.QuotaWindowName(w))), true
 			}
 			if w.PercentUsed > 80 {
-				return fmt.Sprintf("%s %.0f%% %s - see 3", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w)))
+				return fmt.Sprintf("%s %.0f%% %s · 3", sanitize(r.provider.Provider), w.PercentUsed, sanitize(protocol.QuotaWindowName(w))), false
 			}
 		}
 	}
-	return ""
+	return "", false
 }
 
 type quotaModel struct {

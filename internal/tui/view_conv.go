@@ -148,7 +148,7 @@ func (m Model) hints() []hint {
 	case m.tab == 1:
 		return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"v", "view", 2}, {"l", "events", 2}, {"tab", "CTO", 1}, {"1", "sessions", 3}, {"?", "help", 3}}
 	case m.tab == 2:
-		return []hint{{"1", "sessions", 1}, {"2", "messages", 1}, {"?", "help", 2}, {"q", "quit", 2}}
+		return []hint{{"up/down", "scroll", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
