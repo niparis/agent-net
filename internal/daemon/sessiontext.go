@@ -33,6 +33,7 @@ import (
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	protocol.OpSessionTrust: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -169,6 +170,18 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 			if data, err = d.call(ctx, "query.usage_top", p); err == nil {
 				res = data
 			}
+		}
+	case protocol.OpSessionTrust:
+		// Only the owner at the keyboard may change what a session does on a
+		// peer's request: the gate above refuses agent sessions, and no agent
+		// tool exists for it (decision 0012).
+		var q protocol.SessionTrustRequest
+		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
+			return nil, true, errors.New("session_trust needs session_id")
+		}
+		if _, err = d.call(ctx, "session.trust", protocol.SessionTrust{SessionID: q.SessionID, On: q.On}); err == nil {
+			res = protocol.SessionTrustResult{SessionID: q.SessionID, On: q.On}
+			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
 		}
 	case "session_enter":
 		var q protocol.EnterRequest

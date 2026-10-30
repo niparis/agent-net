@@ -113,6 +113,9 @@ ALTER TABLE sessions ADD COLUMN worker TEXT NOT NULL DEFAULT '';
 ALTER TABLE nodes ADD COLUMN launch INTEGER NOT NULL DEFAULT -1;
 `, `
 ALTER TABLE sessions ADD COLUMN repo_description TEXT NOT NULL DEFAULT '';
+`, `
+ALTER TABLE sessions ADD COLUMN peer_trust INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE profiles ADD COLUMN expertise TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -442,6 +445,22 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 	return out, nil
 }
 
+// SetPeerTrust turns peer trust on or off for a session (decision 0012). The
+// owner pseudo-session cannot be trusted: it is a person, not an agent. It
+// returns false when the session does not exist.
+func (s *Store) SetPeerTrust(sessionID string, on bool) (bool, error) {
+	v := 0
+	if on {
+		v = 1
+	}
+	res, err := s.db.Exec(`UPDATE sessions SET peer_trust = ? WHERE id = ? AND harness != ?`, v, sessionID, protocol.OwnerHarness)
+	if err != nil {
+		return false, err
+	}
+	n, _ := res.RowsAffected()
+	return n == 1, nil
+}
+
 func (s *Store) SessionNode(sessionID string) (string, error) {
 	var n string
 	err := s.db.QueryRow(`SELECT node_id FROM sessions WHERE id = ?`, sessionID).Scan(&n)
@@ -476,20 +495,22 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	}
 	p.Name = strings.TrimSpace(p.Name)
 	p.Task = strings.TrimSpace(p.Task)
+	p.Expertise = protocol.CleanExpertise(p.Expertise)
 	caps := "[]"
 	if p.Capabilities != nil {
 		b, _ := json.Marshal(p.Capabilities)
 		caps = string(b)
 	}
-	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at)
-		VALUES (?,?,'',?,?,?,?)
+	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise)
+		VALUES (?,?,'',?,?,?,?,?)
 		ON CONFLICT (session_id) DO UPDATE SET
 		name=CASE WHEN excluded.name='' THEN profiles.name ELSE excluded.name END,
 		project=CASE WHEN excluded.project='' THEN profiles.project ELSE excluded.project END,
 		capabilities=CASE WHEN ? THEN profiles.capabilities ELSE excluded.capabilities END,
 		task=CASE WHEN excluded.task='' THEN profiles.task ELSE excluded.task END,
+		expertise=CASE WHEN excluded.expertise='' THEN profiles.expertise ELSE excluded.expertise END,
 		updated_at=excluded.updated_at`,
-		p.SessionID, p.Name, p.Project, caps, p.Task, s.now().UnixNano(), p.Capabilities == nil)
+		p.SessionID, p.Name, p.Project, caps, p.Task, s.now().UnixNano(), p.Expertise, p.Capabilities == nil)
 	if err != nil {
 		return protocol.Profile{}, err
 	}
@@ -503,7 +524,8 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.status, s.online, s.last_seen,
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
-	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description
+	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
+	s.peer_trust, COALESCE(p.expertise,'')
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -511,12 +533,15 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	var online int
 	var lastSeen int64
 	var caps, worker string
+	var trust int
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
-		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description)
+		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
+		&trust, &a.Profile.Expertise)
 	if err != nil {
 		return a, err
 	}
+	a.PeerTrust = trust != 0
 	if worker != "" {
 		var w protocol.WorkerInfo
 		if json.Unmarshal([]byte(worker), &w) == nil {
@@ -577,7 +602,7 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		}
 		if text != "" {
 			hay := strings.ToLower(strings.Join(append([]string{a.Profile.Name, a.Profile.Function,
-				a.Profile.Project, a.Profile.Task, a.Cwd, a.Hostname, a.Repo.Project, a.Repo.Branch, a.Repo.Remote}, a.Profile.Capabilities...), " "))
+				a.Profile.Project, a.Profile.Task, a.Profile.Expertise, a.Cwd, a.Hostname, a.Repo.Project, a.Repo.Branch, a.Repo.Remote}, a.Profile.Capabilities...), " "))
 			if !strings.Contains(hay, text) {
 				continue
 			}

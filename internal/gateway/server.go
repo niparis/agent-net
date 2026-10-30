@@ -542,6 +542,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetSessionOffline(nc.id, p.SessionID)
 
+	case "session.trust":
+		p, err := decode[protocol.SessionTrust](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad session.trust")
+		}
+		ok, err := st.SetPeerTrust(p.SessionID, p.On)
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, reject("unknown or untrustable session %q", p.SessionID)
+		}
+		st.Event("session.trust", nc.id, p.SessionID, "", "on=" + strconv.FormatBool(p.On))
+		g.logLine("session.trust", "node", nc.id, "session", p.SessionID, "on", p.On)
+		return map[string]any{"session_id": p.SessionID, "on": p.On}, nil
+
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)
 		if err != nil {
@@ -685,6 +701,11 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	g.mu.Unlock()
 	if nc == nil {
 		return
+	}
+	// The gateway, and only the gateway, says whether the recipient is trusted.
+	m.RecipientTrust = false
+	if a, ok, err := g.store.Agent(m.To); err == nil && ok {
+		m.RecipientTrust = a.PeerTrust
 	}
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {

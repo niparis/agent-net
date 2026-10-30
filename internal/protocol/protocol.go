@@ -68,6 +68,11 @@ type Message struct {
 	// FromWorker is true when the sender is a worker (a session that agent-net
 	// started). A receiving adapter frames its text as model output.
 	FromWorker bool `json:"sender_worker,omitempty"`
+	// RecipientTrust is filled by the gateway when it hands the message to
+	// the recipient's daemon: true when the owner turned peer trust on for the
+	// recipient session (decision 0012). A sender cannot set it: it is not a
+	// field of MsgSend, and the gateway overwrites it on every delivery.
+	RecipientTrust bool `json:"recipient_peer_trust,omitempty"`
 }
 
 // SessionInfo is what a daemon reports about one local session.
@@ -184,6 +189,9 @@ type Profile struct {
 	Project      string   `json:"project"`
 	Capabilities []string `json:"capabilities"`
 	Task         string   `json:"task"`
+	// Expertise is what the session can answer about, in a short line the
+	// agent wrote ("cogforge API and its deployment; live logs of homelab").
+	Expertise string `json:"expertise,omitempty"`
 }
 
 // AgentView keeps what the daemon verified apart from what the agent claims.
@@ -207,6 +215,9 @@ type AgentView struct {
 	Worker *WorkerInfo `json:"worker,omitempty"`
 	// PID is the process ID of the session on its machine (0 when unknown).
 	PID int `json:"pid,omitempty"`
+	// PeerTrust is true when the owner allowed this session to act on
+	// requests from other agents without asking (decision 0012).
+	PeerTrust bool `json:"peer_trust,omitempty"`
 }
 
 // Header is shared by every gateway <-> daemon frame.
@@ -278,6 +289,13 @@ type (
 		Project      string   `json:"project"`
 		Capabilities []string `json:"capabilities"`
 		Task         string   `json:"task"`
+		Expertise    string   `json:"expertise,omitempty"`
+	}
+	// SessionTrust is the "session.trust" request: the owner turns peer trust
+	// on or off for one session.
+	SessionTrust struct {
+		SessionID string `json:"session_id"`
+		On        bool   `json:"on"`
 	}
 	MsgSend struct {
 		Sender         string `json:"sender_session_id"`

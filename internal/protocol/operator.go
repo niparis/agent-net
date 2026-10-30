@@ -30,6 +30,10 @@ const (
 	OpSessionText  = "session_text"  // takes TextQuery, answers TextPage
 	OpCounts       = "counts"        // takes nothing, answers SessionCounts
 	OpSessionEnter = "session_enter" // takes EnterRequest, answers EnterPlan
+	// OpSessionTrust turns peer trust on or off for a session (decision 0012).
+	// It changes what a session may do on a peer's request, so it is owner
+	// only and no agent tool calls it.
+	OpSessionTrust = "session_trust" // takes SessionTrustRequest, answers SessionTrustResult
 
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
@@ -45,7 +49,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSend, OpWorkerStart, OpWorkerStop}
+	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.
@@ -245,4 +249,16 @@ func WorkersOf(agents []AgentView) []WorkerView {
 		return out[i].StartedAt > out[j].StartedAt
 	})
 	return out
+}
+
+// SessionTrustRequest is OpSessionTrust.
+type SessionTrustRequest struct {
+	SessionID string `json:"session_id"`
+	On        bool   `json:"on"`
+}
+
+// SessionTrustResult answers OpSessionTrust.
+type SessionTrustResult struct {
+	SessionID string `json:"session_id"`
+	On        bool   `json:"on"`
 }
