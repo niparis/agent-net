@@ -155,7 +155,7 @@ func TestCTOMethodsOwnerGate(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
 	pi, _ := helloPi(t, n, "p1", "/w/p", false)
-	for _, method := range []string{"cto_send", "cto_new", "cto_events", "cto_settings"} {
+	for _, method := range []string{"cto_send", "cto_new", "cto_events", "cto_settings", "cto_enter"} {
 		if _, err := pi.call(method, map[string]any{"text": "x"}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
 			t.Errorf("%s: %v", method, err)
 		}
@@ -390,5 +390,43 @@ func TestCTOUndoBeforeFirstMessageIsKept(t *testing.T) {
 	cli.mustCall("cto_new", nil)
 	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &out); err != nil || len(out.Actions) != 0 {
 		t.Fatalf("new conversation retained old undo: %+v %v", out, err)
+	}
+}
+
+func TestCTOEventsIncludeAcceptedPromptFailure(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	cli.mustCall("cto_send", map[string]string{"text": "FAKE:ctofail"})
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &events); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(mustMarshalCTOEvents(t, events.Messages)), "unknown model") {
+		t.Fatalf("failure missing: %s", events.Messages)
+	}
+}
+
+func mustMarshalCTOEvents(t *testing.T, messages []json.RawMessage) []byte {
+	t.Helper()
+	b, err := json.Marshal(messages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func TestCTOEnterOpenCode(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	var plan protocol.EnterPlan
+	if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Argv) != 5 || plan.Argv[1] != "--server" || plan.Argv[3] != "--session" || plan.Env["OPENCODE_SERVER_PASSWORD"] == "" {
+		t.Fatalf("plan: %+v", plan)
 	}
 }

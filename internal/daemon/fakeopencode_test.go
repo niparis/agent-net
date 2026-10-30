@@ -394,6 +394,9 @@ func runFakeOpenCode() {
 		}
 		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text}
 		items = append([]map[string]any{item}, items...)
+		if prompt.Text == "FAKE:ctofail" {
+			items = append([]map[string]any{{"type": "idle", "outcome": "failed", "error": map[string]any{"message": "unknown model"}}}, items...)
+		}
 		raw, _ = json.Marshal(items)
 		if err := os.WriteFile(path, raw, 0o600); err != nil {
 			http.Error(w, err.Error(), 500)

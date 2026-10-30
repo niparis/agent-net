@@ -77,3 +77,61 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	}
 	return h.events(ctx, d, index)
 }
+
+func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
+	d.ctoDispatchMu.Lock()
+	defer d.ctoDispatchMu.Unlock()
+	h, err := d.selectedCTOHarness(ctx)
+	if err != nil {
+		return protocol.EnterPlan{}, err
+	}
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
+	bin, err := d.harnessBinary(h.name())
+	if err != nil {
+		return plan, err
+	}
+	if h.name() == "claude" {
+		settings, e := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
+		if e != nil {
+			return plan, e
+		}
+		model := settings.Model
+		if model == "" {
+			model = "opus"
+		}
+		id, e := d.claudeCTOSession()
+		if e != nil {
+			return plan, e
+		}
+		if e = d.startClaudeCTOLocked(ctx, id, model); e != nil {
+			return plan, e
+		}
+		id = d.claudeCTO.session
+		if _, e = d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); e != nil {
+			return plan, e
+		}
+		if _, e = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='claude'`, id); e != nil {
+			return plan, e
+		}
+		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
+	} else {
+		if err = d.startCTOLocked(ctx); err != nil {
+			return plan, err
+		}
+		id, e := d.ctoSession()
+		if e != nil {
+			return plan, e
+		}
+		if id == "" {
+			id, e = d.createCTOLocked(ctx)
+			if e != nil {
+				return plan, e
+			}
+		}
+		plan.Argv = []string{bin, "--server", d.cto.base, "--session", id}
+		plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": d.cto.password}
+	}
+	return plan, nil
+}

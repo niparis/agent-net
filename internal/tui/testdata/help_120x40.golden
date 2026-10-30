@@ -12,7 +12,7 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
   M                    map: charters, maturity, edges and history (read only)
-  C                    CTO: chat, new conversation and undo graph changes
+  C                    CTO: chat, open full UI, new conversation and undo
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support
   /                    filter (words match name, project, branch, model, ...)

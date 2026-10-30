@@ -16,7 +16,7 @@ func (m Model) ctoView(w, h int) []string {
 		lines = append(lines, wrap(sanitize(v), max(w-2, 8))...)
 	}
 	if c.err != "" {
-		lines = append(lines, "! "+c.err)
+		lines = append(lines, "error: "+c.err)
 	}
 	rows := max(h-2, 0)
 	if len(lines) > rows {

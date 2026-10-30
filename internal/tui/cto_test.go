@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +21,9 @@ type fakeCTOSource struct {
 	undone  []int64
 }
 
+func (f *fakeCTOSource) CTOEnter(context.Context) (protocol.EnterPlan, error) {
+	return protocol.EnterPlan{Argv: []string{"fake"}}, nil
+}
 func (f *fakeCTOSource) CTOSend(_ context.Context, text string) error {
 	f.sent = append(f.sent, text)
 	return nil
@@ -261,5 +265,39 @@ func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 	m := Model{cto: &ctoState{harness: "claude", model: "opus"}}
 	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO (claude · opus)") {
 		t.Fatalf("title: %s", got)
+	}
+}
+
+func TestCTOMessageShowsHarnessFailure(t *testing.T) {
+	for _, raw := range []string{`{"type":"idle","outcome":"failed","error":{"type":"provider.upstream","message":"unknown model"}}`, `{"type":"assistant","error":{"name":"APIError","data":{"message":"no credentials"}}}`} {
+		if got := ctoMessage(json.RawMessage(raw)); !strings.HasPrefix(got, "error: ") {
+			t.Errorf("failure hidden: %s -> %q", raw, got)
+		}
+	}
+}
+
+func TestCTOOpenFullRequestsPlan(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	m := New(src)
+	model, _ := m.startCTO()
+	m = model.(Model)
+	_, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd == nil {
+		t.Fatal("open full did not request a plan")
+	}
+	if _, ok := cmd().(enterMsg); !ok {
+		t.Fatal("open full did not return an enter plan")
+	}
+}
+
+func TestCTOSendErrorSurvivesPoll(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	model, _ := New(src).startCTO()
+	m := model.(Model)
+	updated, _ := m.Update(ctoSendMsg{err: errors.New("send failed"), generation: m.cto.generation})
+	m = updated.(Model)
+	m.applyCTOPoll(ctoPollMsg{generation: m.cto.generation})
+	if !strings.Contains(strings.Join(m.cto.messages, "\n"), "error: send failed") {
+		t.Fatalf("error lost: %+v", m.cto.messages)
 	}
 }

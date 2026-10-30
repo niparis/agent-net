@@ -46,3 +46,13 @@ func (s *Client) CTOUndo(ctx context.Context, id int64) error {
 	_, err := s.action(ctx, protocol.OpGraphUndo, protocol.GraphUndoRequest{ID: id, CTOChat: true})
 	return err
 }
+
+func (s *Client) CTOEnter(ctx context.Context) (protocol.EnterPlan, error) {
+	var out protocol.EnterPlan
+	b, err := s.action(ctx, protocol.OpCTOEnter, nil)
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(b, &out)
+	return out, err
+}
