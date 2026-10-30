@@ -858,6 +858,22 @@ const TOOLS: ToolDef[] = [
     format: (r) => `Announced task: ${r.profile?.task ?? "(none)"}.`,
   },
   {
+    name: "agent_request_approval",
+    description: "Ask the owner to approve one exact action with your recommendation.",
+    properties: { action: str("Exact action"), recommendation: str("Your recommendation") },
+    required: ["action", "recommendation"],
+    method: "request_approval",
+    format: () => "Approval request sent to the owner's inbox.",
+  },
+  {
+    name: "agent_propose_idea",
+    description: "Send a feature idea and your recommendation to the owner's inbox.",
+    properties: { text: str("Feature idea"), recommendation: str("Your recommendation") },
+    required: ["text", "recommendation"],
+    method: "propose_idea",
+    format: () => "Idea sent to the owner's inbox.",
+  },
+  {
     name: "agent_send",
     description:
       "Send a message to another agent session. 'to' is a session ID, or an exact agent name if it is unique. " +

@@ -159,6 +159,22 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			out, err := run(ctx, "announce", in)
 			return nil, out, err
 		})
+	mcp.AddTool(s, tool("agent_request_approval", "Ask the owner to approve one exact action, with your recommendation."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Action         string `json:"action" jsonschema:"the exact action"`
+			Recommendation string `json:"recommendation" jsonschema:"your recommendation"`
+		}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, "request_approval", in)
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_propose_idea", "Send a feature idea and your recommendation to the owner's inbox."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Text           string `json:"text" jsonschema:"the idea"`
+			Recommendation string `json:"recommendation" jsonschema:"your recommendation"`
+		}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, "propose_idea", in)
+			return nil, out, err
+		})
 	mcp.AddTool(s, tool("agent_send",
 		"Send a message to another agent session. It is delivered into that agent's running session. The reply comes back as a message in your own session. "+
 			AskPeerRule+" "+RelayRule+peerNote),

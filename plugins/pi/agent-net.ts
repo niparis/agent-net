@@ -811,6 +811,17 @@ export default function (pi: ExtensionAPI) {
   );
 
   defineTool(
+    "agent_request_approval", "Request approval", "Ask the owner to approve one exact action with your recommendation.",
+    Type.Object({ action: Type.String({ description: "Exact action" }), recommendation: Type.String({ description: "Your recommendation" }) }),
+    "request_approval", () => "Approval request sent to the owner's inbox.",
+  );
+  defineTool(
+    "agent_propose_idea", "Propose idea", "Send a feature idea and your recommendation to the owner's inbox.",
+    Type.Object({ text: Type.String({ description: "Feature idea" }), recommendation: Type.String({ description: "Your recommendation" }) }),
+    "propose_idea", () => "Idea sent to the owner's inbox.",
+  );
+
+  defineTool(
     "agent_send",
     "Send to agent",
     "Send a message to another agent session. 'to' is a session ID, or an exact agent name if it is unique. " +
