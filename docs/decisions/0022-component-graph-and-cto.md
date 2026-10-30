@@ -194,11 +194,12 @@ Workers spend the owner's subscriptions. agent-net reads how much is left and pl
 
 Which model and harness to use for which work, and the quirks of each project, are learned by trying. Today that knowledge stays in one session's memory. agent-net keeps it for every agent, in three layers.
 
-1. **Facts, collected automatically: the track record.** agent-net already records every worker's harness, model, run time, outcome and tokens. A worker also reports `complete: false` in `agent_handback` when it hands back partial work, so a lazy model is counted. Per harness and model:
+1. **Facts, collected automatically: the track record.** agent-net already records every worker's harness, model, run time, outcome and tokens. A worker also reports `complete: false` in `agent_handback` when it hands back partial work, so a lazy model is counted. A run that ended because its owner stopped it, the worker was lost at a daemon restart or its owner went away is counted as `stopped`, apart from success and failure: that says nothing about the model and must not make its record look bad. Per harness and model:
    ```
    terra · pi       4 runs: 1 complete, 3 partial (median 9 min) · cannot resume
    terra · codex    3 runs: 0 complete, 3 partial (median 3 min) · resumes
    deepseek-v4.1-flash · opencode   14 runs: 13 complete (median 26 min)
+   gpt-6-luna · codex   3 runs: 2 complete, 1 stopped (median 6 min) · resumes
    ```
 2. **Findings, reported by agents.** The agents that review workers' results notice things. A tool `agent_learn(subject, finding, evidence)` records one:
    ```
@@ -208,7 +209,7 @@ Which model and harness to use for which work, and the quirks of each project, a
    evidence: the worker sessions it saw
    ```
    A subject is a model, a harness, a model on a harness, a project ("cogforge tests need the TEI service up"), an MCP server or a machine. The worker notice's checklist ends with "Did you learn something about this model, harness or project? Report it with agent_learn", and the guidance says so. A finding is a proposal: it changes nothing until it is promoted.
-3. **The playbook, built automatically.** The owner wants to know what the network learned, not to decide on each finding. The gateway promotes a pattern to a playbook note on its own when it has enough support: at least 3 findings on the same subject from at least 2 different sessions within 30 days, or a clearly bad track record (at least 4 runs and under half complete). The note is the latest finding's text, its support count and the track record line, with no model call. A note whose support is all older than 60 days goes stale and is no longer shown. The owner (or the CTO on the owner's word) can write, pin or remove a note at any time; the owner never has to.
+3. **The playbook, built automatically.** The owner wants to know what the network learned, not to decide on each finding. The gateway promotes a pattern to a playbook note on its own when it has enough support: at least 3 findings on the same subject from at least 2 different sessions within 30 days, or a clearly bad track record (at least 4 decided runs, stopped runs aside, and under half complete). The note is the latest finding's text, its support count and the track record line, with no model call. A note whose support is all older than 60 days goes stale and is no longer shown. The owner (or the CTO on the owner's word) can write, pin or remove a note at any time; the owner never has to.
 
 **Quiet by design.** Knowledge must not become theater that interrupts the team:
 

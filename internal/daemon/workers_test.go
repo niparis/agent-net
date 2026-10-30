@@ -1072,6 +1072,12 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 1 || !strings.Contains(evs[0], "reason=lost") {
 		t.Errorf("worker.stopped events: %v", evs)
 	}
+	// A worker lost at a restart is not the model's fault, even though the
+	// owner's notice says failed: the track record counts it as stopped.
+	if tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "", protocol.TrackRecordDays*24*time.Hour); err != nil ||
+		!ok || tr.Stopped != 1 || tr.Failed != 0 {
+		t.Errorf("a lost run was counted against the model: %+v %v %v", tr, ok, err)
+	}
 	// The owner is told, with the status failed.
 	n := w.waitNotice(t, 1)[0]
 	if n.From != dying.SessionID || !strings.Contains(n.Body, "status: lost after daemon restart") || !strings.Contains(n.Body, "lost while the daemon was not running") {

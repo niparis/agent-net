@@ -15,12 +15,16 @@ import (
 // TrackRecordDays is how long the gateway keeps worker runs and counts them.
 const TrackRecordDays = 30
 
-// Outcomes of a worker run in the track record.
+// Outcomes of a worker run in the track record. Complete, partial, failed and
+// timed out decide how the model did. Stopped is neutral: a stop on request, a
+// worker lost at a daemon restart or an owner that went away says nothing about
+// the model, so it is counted apart and never as a failure.
 const (
 	OutcomeComplete = "complete"
 	OutcomePartial  = "partial"
 	OutcomeFailed   = "failed"
 	OutcomeTimedOut = "timed_out"
+	OutcomeStopped  = "stopped"
 )
 
 // WorkerRun is one ended worker as the gateway counts it.
@@ -46,6 +50,7 @@ type TrackRecord struct {
 	Partial          int    `json:"partial"`
 	Failed           int    `json:"failed"`
 	TimedOut         int    `json:"timed_out"`
+	Stopped          int    `json:"stopped"`
 	MedianRunSeconds int64  `json:"median_run_seconds,omitempty"`
 	// Resumable is true when a harness can open an ended session again.
 	Resumable bool `json:"resumable"`
@@ -54,8 +59,28 @@ type TrackRecord struct {
 // WorkerOutcome maps why a worker ended and its hand-back to an outcome. A
 // worker that says complete:false counts as partial, whatever its status.
 func WorkerOutcome(reason, status string, complete *bool) string {
-	if complete != nil && !*complete {
-		return OutcomePartial
+	// A hand-back carries the worker's own status and complete flag, so it
+	// decides the outcome before the reason does.
+	if complete != nil {
+		if !*complete {
+			return OutcomePartial
+		}
+		switch status {
+		case StatusDone:
+			return OutcomeComplete
+		case StatusBlocked, StatusFailed:
+			return OutcomeFailed
+		}
+	}
+	// These reasons say nothing about the model, whatever status the daemon
+	// put on the notice: the owner stopped it, the daemon lost it at a
+	// restart (the owner is told "failed"), the owner went away, or it never
+	// ran the task.
+	switch reason {
+	case StopRequested, StopLost, StopOwnerGone, StopStartFails:
+		return OutcomeStopped
+	case StopIdle, StopMaxAge:
+		return OutcomeTimedOut
 	}
 	switch status {
 	case StatusDone:
@@ -68,8 +93,6 @@ func WorkerOutcome(reason, status string, complete *bool) string {
 		// A daemon from before the complete field sends no status: its
 		// hand-back counted as complete.
 		return OutcomeComplete
-	case StopIdle, StopMaxAge:
-		return OutcomeTimedOut
 	}
 	return OutcomeFailed
 }
@@ -92,7 +115,7 @@ func (t *TrackRecord) Line() string {
 	for _, n := range []struct {
 		count int
 		word  string
-	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}} {
+	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"}} {
 		if n.count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))
 		}

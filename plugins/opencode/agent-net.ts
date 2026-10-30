@@ -577,7 +577,7 @@ function formatTrack(t: any): string {
   const model = t?.model || "default";
   const runs = Number(t?.runs || 0);
   const parts: string[] = [];
-  for (const [n, word] of [[t?.complete, "complete"], [t?.partial, "partial"], [t?.failed, "failed"], [t?.timed_out, "timed out"]] as [any, string][]) {
+  for (const [n, word] of [[t?.complete, "complete"], [t?.partial, "partial"], [t?.failed, "failed"], [t?.timed_out, "timed out"], [t?.stopped, "stopped"]] as [any, string][]) {
     if (Number(n) > 0) parts.push(`${Number(n)} ${word}`);
   }
   let line = `${model} · ${t?.harness || "?"}: `;

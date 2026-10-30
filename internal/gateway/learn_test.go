@@ -121,6 +121,24 @@ func TestBadTrackNeedsFourRunsAndUnderHalf(t *testing.T) {
 	}
 }
 
+// A stopped run is neutral: many stops do not make a bad track record on their
+// own, and only the runs that decided an outcome count toward "under half".
+func TestStoppedRunsDoNotMakeABadTrackRecord(t *testing.T) {
+	s, _ := newTestStore(t)
+	now := s.now()
+	for i := 0; i < 6; i++ {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: "n1", SessionID: "s_stop" + string(rune('a'+i)),
+			Harness: "opencode", Model: "terra", Outcome: protocol.OutcomeStopped,
+			StartedAt: now.Add(-time.Duration(i+1) * time.Hour).Unix(), EndedAt: now.Add(-time.Duration(i+1) * time.Hour).Unix(),
+			RunSeconds: 60}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if notes, err := s.PlaybookForChoice("terra", "opencode", "shop", "mac"); err != nil || len(notes) != 0 {
+		t.Fatalf("stops promoted a note: %+v %v", notes, err)
+	}
+}
+
 func TestPlaybookNoteGoesStaleAndPinnedStays(t *testing.T) {
 	s, c := newTestStore(t)
 	addFinding(t, s, protocol.SubjectProject, "shop", "tests need the TEI service", "s_a")
