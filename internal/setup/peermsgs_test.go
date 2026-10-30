@@ -55,15 +55,17 @@ func TestPeerMessagesPromptYes(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	answer(t, "y\n")
-	out := run(t, Options{Join: f.newJoin(t)})
-	for _, want := range []string{"Accept agent-net messages in Claude Code without holding them? [y/N]", "claude peer messages accept (set by agent-net)"} {
+	out := runAsking(t, Options{Join: f.newJoin(t)})
+	for _, want := range []string{"Turn all on? [Y/n/c]", "claude peer messages accept (set by agent-net)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
 	}
-	want := strings.Replace(otherKeys, "\n}\n", ",\n  \"crossSessionInbound\": \"accept\"\n}\n", 1)
-	if got := readSettingsFile(t, f); got != want {
-		t.Errorf("settings:\n%s\nwant:\n%s", got, want)
+	got := readSettingsFile(t, f)
+	for _, want := range []string{`"crossSessionInbound": "accept"`, `"model": "opus"`, `"Bash(ls)"`, `"verbose": true`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("settings lack %s:\n%s", want, got)
+		}
 	}
 }
 
@@ -72,8 +74,8 @@ func TestPeerMessagesPromptNo(t *testing.T) {
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
 	answer(t, "n\n")
-	out := run(t, Options{Join: f.newJoin(t)})
-	if !strings.Contains(out, "claude peer messages held for review (default)") {
+	out := runAsking(t, Options{Join: f.newJoin(t)})
+	if !strings.Contains(out, "claude peer messages off") {
 		t.Errorf("output:\n%s", out)
 	}
 	if got := readSettingsFile(t, f); got != otherKeys {
@@ -87,18 +89,16 @@ func TestPeerMessagesPromptNo(t *testing.T) {
 	}
 }
 
-func TestPeerMessagesPromptEmptyIsNo(t *testing.T) {
-	for _, in := range []string{"\n", ""} {
-		f := newFixture(t)
-		fakeClaude(t, f.home)
-		answer(t, in)
-		out := run(t, Options{Join: f.newJoin(t)})
-		if !strings.Contains(out, "held for review (default)") {
-			t.Errorf("input %q:\n%s", in, out)
-		}
-		if _, err := os.Stat(settingsFile(f)); err == nil {
-			t.Errorf("input %q: settings file created", in)
-		}
+func TestPeerMessagesQuestionEmptyIsAllOn(t *testing.T) {
+	f := newFixture(t)
+	fakeClaude(t, f.home)
+	answer(t, "\n")
+	out := runAsking(t, Options{Join: f.newJoin(t)})
+	if !strings.Contains(out, "claude peer messages accept (set by agent-net)") {
+		t.Errorf("output:\n%s", out)
+	}
+	if !strings.Contains(readSettingsFile(t, f), `"crossSessionInbound": "accept"`) {
+		t.Errorf("settings:\n%s", readSettingsFile(t, f))
 	}
 }
 
@@ -106,11 +106,9 @@ func TestPeerMessagesNoTTY(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
-	out := run(t, Options{Join: f.newJoin(t)})
-	for _, want := range []string{"held for review (default)", "agent-net setup --accept-peer-messages"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("lacks %q:\n%s", want, out)
-		}
+	out := runAsking(t, Options{Join: f.newJoin(t)})
+	if !strings.Contains(out, "claude peer messages off") {
+		t.Errorf("output:\n%s", out)
 	}
 	if readSettingsFile(t, f) != otherKeys {
 		t.Error("settings changed without a terminal")
@@ -129,7 +127,7 @@ func TestPeerMessagesFlags(t *testing.T) {
 	defer func() { openTTY = old }()
 
 	out := run(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if !strings.Contains(out, "held for review (default)") {
+	if !strings.Contains(out, "claude peer messages off") {
 		t.Errorf("no flag:\n%s", out)
 	}
 	if _, err := os.Stat(settingsFile(f)); err == nil {

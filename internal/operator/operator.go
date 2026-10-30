@@ -57,6 +57,11 @@ type Operator interface {
 	// RenameNode gives a machine a display name that every machine sees, or
 	// clears it with an empty name (decision 0015). Owner only.
 	RenameNode(ctx context.Context, nodeID, name string) (protocol.NodeRenameResult, error)
+	// Integrations reads the owner's setup answers for the whole network
+	// (decision 0021). Owner only.
+	Integrations(ctx context.Context) (protocol.IntegrationsResult, error)
+	// SetIntegrations stores the setup answers for every machine. Owner only.
+	SetIntegrations(ctx context.Context, in protocol.Integrations) (protocol.IntegrationsResult, error)
 	// Counts is how many sessions are online and offline. Owner only.
 	Counts(ctx context.Context) (protocol.SessionCounts, error)
 	Close()

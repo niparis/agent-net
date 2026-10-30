@@ -33,8 +33,8 @@ func TestCodexMCPPromptYes(t *testing.T) {
 	f, cfg := codexFixture(t)
 	os.WriteFile(cfg, []byte(codexMine), 0o600)
 	answer(t, "y\n")
-	out := run(t, Options{Join: f.newJoin(t)})
-	for _, want := range []string{"Let Codex call agent-net tools without asking each time? [y/N]", "codex mcp ok (calls need no approval)", "codex guidance ok"} {
+	out := runAsking(t, Options{Join: f.newJoin(t)})
+	for _, want := range []string{"Turn all on? [Y/n/c]", "codex mcp ok (calls need no approval)", "codex guidance ok"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("lacks %q:\n%s", want, out)
 		}
@@ -51,7 +51,7 @@ func TestCodexMCPPromptYes(t *testing.T) {
 	}
 	// A rerun asks nothing and changes nothing.
 	noTTY(t)
-	out = run(t, Options{Join: f.newJoin(t)})
+	out = runAsking(t, Options{})
 	if !strings.Contains(out, "codex mcp ok (unchanged; calls need no approval)") || readFile(t, cfg) != want {
 		t.Errorf("rerun:\n%s\n%s", out, readFile(t, cfg))
 	}
@@ -60,7 +60,7 @@ func TestCodexMCPPromptYes(t *testing.T) {
 func TestCodexMCPPromptNoAndNoTerminal(t *testing.T) {
 	f, cfg := codexFixture(t)
 	answer(t, "n\n")
-	out := run(t, Options{Join: f.newJoin(t)})
+	out := runAsking(t, Options{Join: f.newJoin(t)})
 	if !strings.Contains(out, "codex mcp ok (asks before each call)") {
 		t.Errorf("output:\n%s", out)
 	}
@@ -69,11 +69,11 @@ func TestCodexMCPPromptNoAndNoTerminal(t *testing.T) {
 		t.Errorf("config:\n%s", got)
 	}
 
-	// Another machine, no terminal: the server is registered, nothing is approved,
-	// and the hint names the flag.
+	// Another machine, no terminal, no network answer: the server is registered
+	// and nothing is approved.
 	f2, cfg2 := codexFixture(t)
-	out = run(t, Options{Join: f2.newJoin(t)})
-	if !strings.Contains(out, "agent-net setup --accept-codex-tools") || strings.Contains(readFile(t, cfg2), "default_tools_approval_mode") {
+	out = runAsking(t, Options{Join: f2.newJoin(t)})
+	if !strings.Contains(out, "codex mcp ok (asks before each call)") || strings.Contains(readFile(t, cfg2), "default_tools_approval_mode") {
 		t.Errorf("no terminal:\n%s\n%s", out, readFile(t, cfg2))
 	}
 }

@@ -159,6 +159,11 @@ type fakeSource struct {
 	renameErr        error
 	policyFn         func(protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
 	policyErr        error
+	intg             protocol.Integrations
+	intgSet          bool
+	intgGetErr       error
+	intgSetErr       error
+	intgSaved        []protocol.Integrations
 
 	// CPU, memory, counts, top lists and conversations. Nil means the daemon
 	// is older than the feature.
@@ -207,6 +212,19 @@ func (f *fakeSource) SetSessionPolicy(_ context.Context, q protocol.SessionPolic
 		return f.policyFn(q)
 	}
 	return protocol.SessionPolicyResult{SessionID: q.SessionID}, f.policyErr
+}
+
+func (f *fakeSource) Integrations(context.Context) (protocol.IntegrationsResult, error) {
+	return protocol.IntegrationsResult{Set: f.intgSet, Integrations: f.intg}, f.intgGetErr
+}
+
+func (f *fakeSource) SetIntegrations(_ context.Context, in protocol.Integrations) (protocol.IntegrationsResult, error) {
+	f.intgSaved = append(f.intgSaved, in)
+	if f.intgSetErr != nil {
+		return protocol.IntegrationsResult{}, f.intgSetErr
+	}
+	f.intg, f.intgSet = in, true
+	return protocol.IntegrationsResult{Set: true, Integrations: in}, nil
 }
 
 func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {

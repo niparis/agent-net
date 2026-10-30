@@ -39,7 +39,7 @@ func TestHintHookIsAskedAndAddedOnYes(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	answer(t, "y\n")
 	out := runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if !strings.Contains(out, "Add the hook? [y/N]") || !strings.Contains(out, "claude hint hook on") {
+	if !strings.Contains(out, "Turn all on? [Y/n/c]") || !strings.Contains(out, "claude hint hook on") {
 		t.Fatalf("output:\n%s", out)
 	}
 	h := hooksOfFile(t, f)
@@ -68,16 +68,16 @@ func TestHintHookIsAskedAndAddedOnYes(t *testing.T) {
 	}
 }
 
-func TestHintHookDefaultsToOffAndNeverAsksTwice(t *testing.T) {
+func TestHintHookOffAndNeverAsksTwice(t *testing.T) {
 	f := newFixture(t)
 	fakeClaude(t, f.home)
 	writeSettings(t, f, otherKeys)
-	answer(t, "\n")
+	answer(t, "n\n")
 	runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
 	if readSettingsFile(t, f) != otherKeys {
 		t.Fatalf("settings changed on a no:\n%s", readSettingsFile(t, f))
 	}
-	// Asked once: now even a "yes" on the terminal is not used.
+	// Answered once: now even a "yes" on the terminal is not used.
 	answer(t, "y\n")
 	runAsking(t, Options{PeerMessages: PeerMessagesNo})
 	if readSettingsFile(t, f) != otherKeys {
@@ -91,7 +91,7 @@ func TestHintHookWithoutTerminalAndFlags(t *testing.T) {
 	writeSettings(t, f, otherKeys)
 	noTTY(t)
 	out := runAsking(t, Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo})
-	if !strings.Contains(out, "agent-net setup --claude-hint-hook") || readSettingsFile(t, f) != otherKeys {
+	if !strings.Contains(out, "claude hint hook off") || readSettingsFile(t, f) != otherKeys {
 		t.Fatalf("no tty:\n%s", out)
 	}
 	runAsking(t, Options{PeerMessages: PeerMessagesNo, HintHook: HintHookYes})

@@ -20,6 +20,8 @@ func cmdSetup(ctx context.Context, args []string) error {
 	data := fs.String("data", defaultGatewayData(), "gateway data directory (with --gateway)")
 	dist := fs.String("dist", setup.DefaultDist(), "directory the gateway serves binaries from (with --gateway)")
 	port := fs.String("port", setup.GatewayPort, "gateway port (with --gateway)")
+	all := fs.Bool("all", false, "answer the one integrations question with all on, without asking")
+	none := fs.Bool("none", false, "answer the one integrations question with all off, without asking")
 	accept := fs.Bool("accept-peer-messages", false, "set Claude Code crossSessionInbound to accept without asking (only if unset)")
 	noAccept := fs.Bool("no-accept-peer-messages", false, "do not set crossSessionInbound and do not ask")
 	acceptCodex := fs.Bool("accept-codex-tools", false, "let Codex call the agent-net tools without asking (sets default_tools_approval_mode for agent-net's own server)")
@@ -33,6 +35,9 @@ func cmdSetup(ctx context.Context, args []string) error {
 	workersMod := fs.Bool("claude-workers-mod", false, "install the Claude Code plugin that shows this session's workers (only if not asked before)")
 	noWorkersMod := fs.Bool("no-claude-workers-mod", false, "do not install that plugin and do not ask")
 	fs.Parse(args)
+	if *all && *none {
+		return errors.New("--all and --none cannot be used together")
+	}
 	if *acceptCodex && *noAcceptCodex {
 		return errors.New("--accept-codex-tools and --no-accept-codex-tools cannot be used together")
 	}
@@ -47,6 +52,12 @@ func cmdSetup(ctx context.Context, args []string) error {
 	}
 	if *workersMod && *noWorkersMod {
 		return errors.New("--claude-workers-mod and --no-claude-workers-mod cannot be used together")
+	}
+	allAnswer := ""
+	if *all {
+		allAnswer = setup.AllYes
+	} else if *none {
+		allAnswer = setup.AllNo
 	}
 	needs := ""
 	if *needsHook {
@@ -87,7 +98,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {

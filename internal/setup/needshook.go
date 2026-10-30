@@ -78,6 +78,14 @@ func (r *runner) claudeNeedsHook() {
 		r.step(needsStepName, "skipped (claude not found)", nil)
 		return
 	}
+	if r.want != nil && !r.want.NeedsHook {
+		if !loadNeedsState().Installed {
+			r.step(needsStepName, "off", nil)
+			return
+		}
+		r.removeNeedsHook()
+		return
+	}
 	path := claudeSettingsPath()
 	doc, err := readSettings(path)
 	if err != nil {
@@ -91,6 +99,8 @@ func (r *runner) claudeNeedsHook() {
 	st := loadNeedsState()
 	install := false
 	switch {
+	case r.want != nil:
+		install = r.want.NeedsHook
 	case r.NeedsHook == NeedsHookYes:
 		install = true
 	case r.NeedsHook == NeedsHookNo:

@@ -210,6 +210,28 @@ func (r *runner) claudePeerMessages() {
 		return
 	}
 	path := claudeSettingsPath()
+	if r.want != nil && !r.want.PeerMessages {
+		doc, err := readSettings(path)
+		if err != nil {
+			if errors.Is(err, errNotJSON) {
+				r.step(peerStepName, "skipped ("+displayPath(path)+" is not valid JSON, left untouched)", nil)
+			} else {
+				r.step(peerStepName, "", err)
+			}
+			return
+		}
+		st := loadPeerState()
+		if cur, ok := doc.value(); ok {
+			if st.SetByUs && cur == "accept" {
+				r.removePeerMessages()
+				return
+			}
+			r.step(peerStepName, cur+" (your setting)", nil)
+			return
+		}
+		r.step(peerStepName, "off", nil)
+		return
+	}
 	doc, err := readSettings(path)
 	if err != nil {
 		if errors.Is(err, errNotJSON) {
@@ -234,6 +256,8 @@ func (r *runner) claudePeerMessages() {
 	}
 	accept := false
 	switch {
+	case r.want != nil:
+		accept = r.want.PeerMessages
 	case r.PeerMessages == PeerMessagesAccept:
 		accept = true
 	case r.PeerMessages == PeerMessagesNo:

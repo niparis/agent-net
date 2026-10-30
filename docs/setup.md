@@ -41,8 +41,9 @@ The script downloads the binary to `~/.local/bin/agent-net` and runs `agent-net 
 ```
 join                  ok (node n_...)
 daemon service        ok (restarted)
+integrations:         6 of 6 on (your network settings)
 claude code           ok
-claude peer messages  held for review (default)
+claude peer messages  accept (set by agent-net)
 claude workers mod    on (plugin agent-net-workers@agent-net, user scope)
 pi extension          ok
 claude guidance       updated
@@ -55,100 +56,47 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - joins the gateway (skipped if this machine already joined the same gateway),
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
-- when `claude` is found and Claude Code's `crossSessionInbound` setting is not set, asks once whether Claude Code should accept agent-net messages without holding them (see below),
-- when `claude` is found, asks once whether to install the `agent-net-workers` Claude Code plugin (see below),
+- asks one question for the six integrations, or applies the answers your network already has (see [Integrations](#integrations)),
+- registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found (see [codex.md](codex.md)),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink is left alone; see [opencode.md](opencode.md)),
-- registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found, after asking once whether Codex may call its tools without asking (see [codex.md](codex.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
 
-### The Claude Code hook question
+### Integrations
 
-Setup can add a Claude Code hook, `agent-net hint`, that runs after a failed tool call. If another online session may own the failing service, Claude gets one line telling it to ask that session. It asks once:
-
-```
-agent-net can add a Claude Code hook to ~/.claude/settings.json. After a failed
-tool call it checks the error text on this machine against your other online
-sessions (project, host, task, expertise). If one of them may own the failing
-service, Claude gets one line telling it to ask that session. No model is called.
-Add the hook? [y/N]
-```
-
-- The default is No. The answer is read from the terminal, like the question below. With no terminal nothing changes.
-- `--claude-hint-hook` adds it without a question, `--no-claude-hint-hook` skips it without a question.
-- It adds entries under `hooks` in `~/.claude/settings.json` and keeps everything else. `agent-net uninstall` removes only those entries. See [peer trust and hints](reference.md#peer-trust-and-hints).
-- The Pi extension and the OpenCode plugin do this without a setting; they come with the extension and the plugin.
-
-### The Claude Code policy hook
-
-A second hook, for the [delegation policy](reference.md#delegation-policy) you set in the TUI (key `p`). Setup asks once:
+Setup asks one short question for the six integrations:
 
 ```
-agent-net can add a second Claude Code hook to ~/.claude/settings.json. On each
-prompt it asks agent-net for the delegation policy that you set for the session
-in the TUI (for example: hand code changes to a subagent or a worker), and adds
-it as context. When you set a policy that names a subagent, agent-net also writes
-a marked file in ~/.claude/agents/. Uninstall removes both. No model is called.
-Add the hook? [y/N]
+Connect your agents fully? Recommended:
+  - Claude: accept messages from your other agents
+  - Codex: call agent-net tools without asking
+  - Claude: hint which session to ask after an error
+  - Claude: apply the delegation policy you set in the TUI
+  - Claude: show "Needs you" in the TUI
+  - Claude: show your workers above the prompt
+Details: docs/setup.md#integrations
+Turn all on? [Y/n/c]
 ```
 
-- The default is No. With no terminal nothing changes. `--claude-policy-hook` adds it without a question, `--no-claude-policy-hook` skips it without a question.
-- It adds one `UserPromptSubmit` entry under `hooks` and keeps everything else. `agent-net uninstall` removes only that entry and the `agent-net-coder-*.md` files it wrote.
-- Without the hook, a policy for a Claude Code session is stored but not applied; the TUI says so. The OpenCode plugin and the Pi extension apply it with no setting.
+Enter or `y` turns all six on. `n` turns all six off. `c` asks one line per item, `<item>? [Y/n]`. `--all` and `--none` answer without a question. The per-item flags below override one item and are a local answer for this machine.
 
-### The Claude Code needs hooks
+The first machine that answers stores the answers on the gateway as your network settings. Setup on any other machine applies them without asking and prints `integrations: 6 of 6 on (your network settings)`. A new or upgraded machine gets them with no step: its daemon applies them at start. A change made in the TUI reaches every machine at its next daemon start, or within a minute. `I` in the TUI opens "Integrations (all machines)": space toggles an item, Enter saves for every machine, Esc cancels.
 
-A third set of hooks, for the "Needs you" section of the TUI. They tell agent-net when a Claude Code session waits for you, and clear it when you type a prompt. Setup asks once:
+Each item, what it changes, and how to turn it off:
 
-```
-agent-net can add Claude Code hooks to ~/.claude/settings.json. They tell
-the agent-net TUI when Claude waits for your permission or input, so the
-session appears under "Needs you" with what it asks. A prompt clears that.
-Only the local daemon is called. No model is called.
-Add the hooks? [y/N]
-```
+**Claude: accept messages from your other agents.** Claude Code holds a message from another session for review when the sender's permission mode differs from yours. Accepting delivers messages from any agent on your network without review, even from a session in a looser mode. A peer message still never counts as your approval. It sets `"crossSessionInbound": "accept"` in `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`) and changes no other key. An existing value is never changed. `--accept-peer-messages` and `--no-accept-peer-messages` are the per-item flags. Uninstall removes the key only if agent-net set it and it is still `"accept"`.
 
-- The default is No. With no terminal nothing changes. `--claude-needs-hook` adds them without a question, `--no-claude-needs-hook` skips them without a question.
-- They add `PermissionRequest`, `Notification` (idle and elicitation waits), `PreToolUse` and `UserPromptSubmit` entries under `hooks` and keep everything else. `agent-net uninstall` removes only those entries.
-- The Pi extension and the OpenCode plugin do this without a setting; other harnesses use `agent_announce` with `waiting`. See [Needs you](reference.md#needs-you).
+**Codex: call agent-net tools without asking.** Codex asks before it calls an MCP tool, and refuses the call when its approval policy is "never". agent-net writes `default_tools_approval_mode = "approve"` for its own server only, in the marked block in `~/.codex/config.toml`, so Codex calls the agent-net tools (list, send, reply, start workers) without asking. Messages from other agents still never count as your approval. `--accept-codex-tools` and `--no-accept-codex-tools` are the per-item flags. Turning it off removes only the approval line and keeps the server. Uninstall removes the block.
 
-### The Claude Code workers plugin
+**Claude: hint which session to ask after an error.** Setup adds a Claude Code hook, `agent-net hint`, to `~/.claude/settings.json`. After a failed tool call it checks the error text on this machine against your other online sessions (project, host, task, expertise). If one of them may own the failing service, Claude gets one line telling it to ask that session. No model is called. It adds `PostToolUseFailure` and `PostToolUse` with matcher `Bash`, each with a 2 second timeout, and keeps every other hook. `--claude-hint-hook` and `--no-claude-hint-hook` are the per-item flags. Uninstall removes only our entries.
 
-Claude Code can show the agent-net workers that a session started: a band above the prompt with one row per worker, a status line entry, and a line when a worker ends. Setup installs the `agent-net-workers` plugin from a local marketplace. It asks once:
+**Claude: apply the delegation policy you set in the TUI.** A second hook, `agent-net policy-hook`, runs on each prompt. It asks agent-net for the delegation policy you set for the session in the TUI (for example: hand code changes to a subagent or a worker), and adds it as context. When you set a policy that names a subagent, agent-net also writes a marked file in `~/.claude/agents/`. No model is called. It adds one `UserPromptSubmit` entry with a 3 second timeout and keeps every other hook. `--claude-policy-hook` and `--no-claude-policy-hook` are the per-item flags. Uninstall removes the hook and the marked subagent files.
 
-```
-agent-net can install a Claude Code plugin, agent-net workers. In every
-Claude Code session on this machine it shows the workers that session started
-in a band above the prompt and on the status line, and a line when a worker
-ends. Setup registers a local marketplace at ~/.local/share/agent-net/claude-plugins.
-Install the plugin? [y/N]
-```
+**Claude: show "Needs you" in the TUI.** Hooks tell the local daemon when a Claude Code session waits for your permission or input, so it appears under "Needs you" with what it asks. A prompt clears that. They add `PermissionRequest`, `Notification` (idle, agent needs input and elicitation waits), `PreToolUse` and `UserPromptSubmit`, each with a 2 second timeout, and keep every other hook. Only the local daemon is called. No model is called. `--claude-needs-hook` and `--no-claude-needs-hook` are the per-item flags. Uninstall removes only our entries.
 
-- The default is No. With no terminal nothing changes, and setup prints the flag to use later. `--claude-workers-mod` installs it without a question, `--no-claude-workers-mod` skips it without a question.
-- On yes, setup writes `~/.local/share/agent-net/claude-plugins/.claude-plugin/marketplace.json` and the plugin folder `agent-net-workers/` beside it, from files inside the binary. It then runs `claude plugin marketplace add ~/.local/share/agent-net/claude-plugins` and `claude plugin install agent-net-workers@agent-net -s user`. The answer is kept in `~/.config/agent-net/claude-workers-mod.json`, so setup does not ask again.
-- Claude Code reads the plugin from that folder, not from a copy. A later setup run, the daemon at start, and an upgrade rewrite the folder when the files differ from the binary, so the plugin always matches the installed agent-net. Setup also runs `claude plugin marketplace update agent-net` and `claude plugin update agent-net-workers@agent-net -s user` when it changed the files. After an upgrade, sessions that were already open need `/reload-plugins`.
-- If the `claude` command is missing or fails, the step says `failed (...)` or `files written, not registered (...)`, and setup continues. Run `agent-net setup --claude-workers-mod` to try again.
-- `agent-net uninstall` runs `claude plugin uninstall agent-net-workers@agent-net -s user` and `claude plugin marketplace remove agent-net`, then deletes the folder.
+**Claude: show your workers above the prompt.** Setup installs the `agent-net-workers` Claude Code plugin from a local marketplace, `~/.local/share/agent-net/claude-plugins`. In every Claude Code session on this machine it shows the workers that session started in a band above the prompt and on the status line, and a line when a worker ends. Setup runs `claude plugin marketplace add` and `claude plugin install agent-net-workers@agent-net -s user`. A later setup run, the daemon at start, and an upgrade rewrite the folder when the files differ from the binary. After an upgrade, sessions that were already open need `/reload-plugins`. `--claude-workers-mod` and `--no-claude-workers-mod` are the per-item flags. If the `claude` command is missing or fails, the step says so and setup continues. Uninstall runs the matching `claude plugin` commands and deletes the folder.
 
-### The Claude Code question
-
-Claude Code holds a message from another session for your review when the sender's permission mode class differs from the receiver's. agent-net messages go through that path, so a message to a session in a different mode waits until you approve it. Setup asks once:
-
-```
-Claude Code holds messages from other sessions for review when the sender's
-permission mode differs from yours. Accepting delivers messages from any agent on
-your network without review, even from sessions in a looser mode. A peer message
-still never counts as your approval.
-Accept agent-net messages in Claude Code without holding them? [y/N]
-```
-
-- The default is No. Only `y` or `yes` turns it on. Yes sets `"crossSessionInbound": "accept"` in the Claude Code user settings file (`~/.claude/settings.json`, or `$CLAUDE_CONFIG_DIR/settings.json`). No other key is changed.
-- The answer is read from the terminal (`/dev/tty`), so it works under `curl ... | sh`. With no terminal, setup changes nothing and prints how to turn it on later.
-- `--accept-peer-messages` sets it without a prompt. `--no-accept-peer-messages` skips it without a prompt. Both work on `install.sh` and on the invite line, which pass them to setup: `curl -fsSL https://niparis.github.io/agent-net/install | sh -s -- --accept-peer-messages`, or add `-s -- --accept-peer-messages` after the `sh` of an invite line.
-- If `crossSessionInbound` already has any value, setup never changes it and does not ask. The summary line shows it: `claude peer messages hold (your setting)`.
-- After you answer once (yes or no), setup does not ask again. Run `agent-net setup --accept-peer-messages` later to change your mind.
-- If the settings file is not valid JSON, setup leaves it untouched and says so.
-- `agent-net uninstall` removes the key, but only if agent-net set it and the value is still `"accept"`.
+A per-item flag is remembered in `~/.config/agent-net/integrations-local.json` and wins over the network answer on this machine. `agent-net uninstall` still removes what this machine installed, whether the answer came from the network or from a local flag. An answer cannot turn off a value the owner set by hand: setup reports it and leaves it alone.
 
 ## 3. Update a machine
 

@@ -15,7 +15,7 @@ Codex windows run their threads on a shared local app server (feature `daemon_au
 
 ## Setup
 
-`agent-net setup` adds the server to `~/.codex/config.toml` (or `$CODEX_HOME`) as a marked block, and the guidance text to `~/.codex/AGENTS.md`. It asks once whether Codex may call the agent-net tools without asking each time (`default_tools_approval_mode = "approve"`, for this server only). Without it, Codex asks before every call, and refuses calls when its approval policy is `never`. Answer with `--accept-codex-tools` or `--no-accept-codex-tools`, or change the line in `config.toml` by hand. See [reference.md](reference.md#what-setup-changes-on-your-machine).
+`agent-net setup` adds the server to `~/.codex/config.toml` (or `$CODEX_HOME`) as a marked block, and the guidance text to `~/.codex/AGENTS.md`. It follows the answer to the one integrations question, or `--accept-codex-tools` / `--no-accept-codex-tools` (a local answer for that machine). The answer is whether Codex may call the agent-net tools without asking each time (`default_tools_approval_mode = "approve"`, for this server only). Without it, Codex asks before every call, and refuses calls when its approval policy is `never`. You can also change the line in `config.toml` by hand. See [reference.md](reference.md#what-setup-changes-on-your-machine).
 
 Codex reads its config when a thread starts: a thread that was open before setup does not have the tools until you start a new one. Receiving needs no setup.
 

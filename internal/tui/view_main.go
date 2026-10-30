@@ -175,6 +175,12 @@ func (m Model) mainView(w, h int) []string {
 		}
 		return out
 	}
+	if m.mode == modeIntegrations {
+		for _, s := range m.integrationsView(w, l.detail+l.feed+2) {
+			add(s)
+		}
+		return out
+	}
 	if m.open != nil {
 		for _, s := range m.messageView(w, l.detail+l.feed+2) {
 			add(s)

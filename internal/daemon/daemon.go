@@ -106,6 +106,13 @@ type Config struct {
 	// with this binary. It logs through the function it gets. Default: none
 	// (tests must not touch the home dir of the machine they run on).
 	RefreshAgentFiles func(logf func(format string, args ...any))
+	// ApplyIntegrations makes this machine follow the owner's setup answers
+	// for the network. It runs at start and when the answers change. Default:
+	// none (tests must not touch the home dir of the machine they run on).
+	ApplyIntegrations func(in protocol.Integrations, logf func(format string, args ...any)) error
+	// IntegrationsInterval is how often the daemon checks for new network
+	// answers. Default: 60 seconds.
+	IntegrationsInterval time.Duration
 	// MCPBackoffMin and MCPBackoffMax bound the restart delay of hosted MCP servers.
 	MCPBackoffMin, MCPBackoffMax time.Duration
 	// Repo finds the project of a session's folder. Default: repoinfo.New().
@@ -196,6 +203,12 @@ type Daemon struct {
 	hints hintState
 	// policy caches the delegation policy per session (policy.go).
 	policy policyState
+	// integrations holds the last network answers this daemon applied
+	// (integrations.go).
+	intgMu   sync.Mutex
+	intgSet  bool
+	intgLast protocol.Integrations
+	intgWake chan struct{}
 	// qmu guards worker admission: the queue, lastStart and qGone (queue.go).
 	// It is taken before wmu, never after.
 	qmu sync.Mutex
@@ -282,6 +295,7 @@ func New(cfg Config) (*Daemon, error) {
 		return nil, err
 	}
 	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, adopted: make(chan struct{}),
+		intgWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
 		adapters: map[string]Adapter{}, inflight: map[string]bool{}, lanes: map[string]*lane{}, cmdline: procCmdline, exe: procExe,
@@ -336,6 +350,10 @@ func (d *Daemon) Start(ctx context.Context) error {
 		ca.Start(ctx, d) // our own Codex adapter is not in cfg.Adapters
 	}
 	d.startUsage(ctx)
+	if d.cfg.ApplyIntegrations != nil {
+		d.wg.Add(1)
+		go func() { defer d.wg.Done(); d.integrationsLoop(ctx) }()
+	}
 	d.adoptWorkers()
 	close(d.adopted)
 	d.wg.Add(1)

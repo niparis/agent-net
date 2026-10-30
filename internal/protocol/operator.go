@@ -48,6 +48,12 @@ const (
 	// (decision 0015). Owner only, no agent tool.
 	OpNodeRename = "node_rename" // takes NodeRenameRequest, answers NodeRenameResult
 
+	// OpIntegrationsGet and OpIntegrationsSet read and write the owner's setup
+	// integrations for the whole network (decision 0021). Owner only, no agent
+	// tool: the answers decide what runs with the owner's consent.
+	OpIntegrationsGet = "integrations_get" // answers IntegrationsResult
+	OpIntegrationsSet = "integrations_set" // takes Integrations, answers IntegrationsResult
+
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
 	// the limits of decision 0002.
@@ -62,7 +68,8 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename, OpSend, OpWorkerStart, OpWorkerStop}
+	OpUsage, OpUsageTop, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpIntegrationsGet, OpIntegrationsSet, OpSend, OpWorkerStart, OpWorkerStop}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.
