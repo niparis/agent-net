@@ -21,7 +21,7 @@ import (
 const maxNeedsRows = 5
 
 // sNeeds is the warning colour of a wait.
-var sNeeds = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
+var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
 
 // needsRows is the sessions that wait for the owner, oldest wait first. It
 // follows the same filter and offline switch as the table.

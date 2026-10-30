@@ -21,14 +21,14 @@ import (
 
 var (
 	sBold   = lipgloss.NewStyle().Bold(true)
-	sDim    = lipgloss.NewStyle().Faint(true)
+	sDim    = lipgloss.NewStyle().Foreground(roleDim)
 	sSel    = lipgloss.NewStyle().Reverse(true)
-	sTitle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "81"})
-	sBusy   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
-	sIdle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "78"})
-	sShell  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "75"})
-	sBad    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
-	sBanner = lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
+	sTitle  = lipgloss.NewStyle().Bold(true).Foreground(roleAccent)
+	sBusy   = lipgloss.NewStyle().Foreground(roleGood)
+	sIdle   = lipgloss.NewStyle().Foreground(roleDim)
+	sShell  = lipgloss.NewStyle().Foreground(roleDim)
+	sBad    = lipgloss.NewStyle().Foreground(roleError)
+	sBanner = lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(roleError)
 )
 
 // ---- text helpers ----

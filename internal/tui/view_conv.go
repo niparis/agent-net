@@ -14,10 +14,10 @@ import (
 // (conv.go); this file only styles them.
 
 var (
-	sUser   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "25", Dark: "81"})
-	sReply  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "78"})
-	sTool   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "130", Dark: "214"})
-	sResult = lipgloss.NewStyle().Faint(true)
+	sUser   = lipgloss.NewStyle().Bold(true).Foreground(roleAccent)
+	sReply  = lipgloss.NewStyle().Foreground(roleGood)
+	sTool   = lipgloss.NewStyle().Foreground(roleWarning)
+	sResult = lipgloss.NewStyle().Foreground(roleDim)
 )
 
 // roleStyle and roleLabel give each role one look. The label also says it
