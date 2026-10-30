@@ -88,7 +88,10 @@ func (m Model) ctoView(w, h int) []string {
 
 // wrapCTOLine indents continuation rows while keeping their text in the box.
 func wrapCTOLine(text string, width int) []string {
-	parts := wrap(sanitize(text), max(width-2, 8))
+	var parts []string
+	for _, line := range strings.Split(sanitizeBody(text), "\n") {
+		parts = append(parts, wrap(line, max(width-2, 8))...)
+	}
 	for i := 1; i < len(parts); i++ {
 		parts[i] = "  " + parts[i]
 	}

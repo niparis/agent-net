@@ -453,3 +453,12 @@ func TestCTOPollFailureDoesNotRepeatSendFailure(t *testing.T) {
 		t.Fatalf("duplicate poll error:\n%s", got)
 	}
 }
+
+func TestCTOMultilineReplyPreserved(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"first\nsecond\n\nlast"}`)}}})
+	if got := strings.Join(m.ctoView(40, 10), "\n"); !strings.Contains(got, "first") || !strings.Contains(got, "second") || strings.Contains(got, "first second") {
+		t.Fatalf("lost line breaks: %s", got)
+	}
+}
