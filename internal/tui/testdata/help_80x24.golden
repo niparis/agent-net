@@ -20,5 +20,5 @@ Keys ─────────────────────────
   o, d                 show offline sessions; toggle selected session details
   a                    active only: hide sessions idle for over an hour
   tab, C               focus the CTO box; tab or esc returns to sessions
-  v, l                 v: open the body of the message; l: feed events (worker,…
+  Messages             up/down: conversation; left/right: message; v: body; e/l…
 esc close help  q quit

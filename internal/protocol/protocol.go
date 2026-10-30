@@ -508,8 +508,9 @@ type FeedEvent struct {
 	Type string `json:"message_type,omitempty"`
 	// Parent is the message this one answers. A stored reply marks its parent
 	// as replied, which has no event of its own.
-	Parent  string `json:"parent_message_id,omitempty"`
-	FromCTO bool   `json:"sender_cto,omitempty"`
+	Parent         string `json:"parent_message_id,omitempty"`
+	FromCTO        bool   `json:"sender_cto,omitempty"`
+	ConversationID string `json:"conversation_id,omitempty"`
 }
 
 // ProjectView is one project folder on one machine, built from stored sessions.

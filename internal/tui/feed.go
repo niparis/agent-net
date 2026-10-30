@@ -53,22 +53,25 @@ var stateRank = map[string]int{
 // follows its events. Other events (a machine connecting, a refused send) are
 // items with no message.
 type feedItem struct {
-	EventID int64
-	At      time.Time
-	Kind    string // kind of the first event
-	MsgID   string // set for a message
-	From    string // sender session ID
-	To      string // recipient session ID
-	Type    string // request, reply or notification
-	Parent  string // the message this one answers
-	State   string
-	FromCTO bool
-	Detail  string
-	Host    string // machine of a node event
-	Session string // session of a session.new event
+	EventID        int64
+	At             time.Time
+	Updated        time.Time
+	Kind           string // kind of the first event
+	MsgID          string // set for a message
+	From           string // sender session ID
+	To             string // recipient session ID
+	Type           string // request, reply or notification
+	ConversationID string // conversation containing the message
+	Parent         string // the message this one answers
+	State          string
+	FromCTO        bool
+	Detail         string
+	Host           string // machine of a node event
+	Session        string // session of a session.new event
 	// Snippet is the first line of the body, when this machine has a session
 	// in the conversation. Snip says whether it was fetched.
 	Snippet string
+	Body    string
 	Snip    snippetState
 }
 
@@ -103,7 +106,7 @@ func (f *feed) apply(evs []protocol.FeedEvent) {
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Host: e.Hostname, Detail: e.Detail})
 		case strings.HasPrefix(e.Kind, "worker."):
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Session: e.SessionID, Host: e.Hostname, Detail: e.Detail})
-		case e.Kind == "session.new":
+		case strings.HasPrefix(e.Kind, "session."):
 			f.add(&feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, Session: e.SessionID, Host: e.Hostname, Detail: e.Detail})
 		}
 	}
@@ -132,6 +135,12 @@ func (f *feed) applyMessage(e protocol.FeedEvent) {
 		it = &feedItem{EventID: e.ID, At: e.Time, Kind: e.Kind, MsgID: e.MessageID, Parent: e.Parent, State: state}
 		f.byMsg[e.MessageID] = it
 		f.add(it)
+	}
+	if e.Time.After(it.Updated) {
+		it.Updated = e.Time
+	}
+	if e.ConversationID != "" {
+		it.ConversationID = e.ConversationID
 	}
 	it.FromCTO = it.FromCTO || e.FromCTO || (e.Kind == "msg.stored" && parseDetail(e.Detail)["by"] == "cto")
 	if it.Parent == "" {
@@ -268,7 +277,11 @@ func (m *Model) applySnippet(r snippetMsg) {
 		it.Snip = snipFailed
 		return
 	}
+	if r.msg.ConversationID != "" {
+		it.ConversationID = r.msg.ConversationID
+	}
 	it.FromCTO = it.FromCTO || r.msg.FromCTO
+	it.Body = sanitizeBody(r.msg.Body)
 	it.Snippet = firstLine(r.msg.Body)
 	it.Snip = snipDone
 }

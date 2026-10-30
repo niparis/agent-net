@@ -1028,12 +1028,87 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	filter := "worker events"
+	filter := "conversations"
 	switch m.events {
 	case eventsAll:
 		filter = "all events"
 	case eventsNone:
 		filter = "no session/worker events"
 	}
-	return append(out, panel("Messages · "+filter, m.feedLines(max(w-4, 1), max(h-3, 0)), w, roleAccent)...)
+	rows := m.messageConversations()
+	selected := m.conversationIndex(rows)
+	list := []string{}
+	listW := w - 4
+	chatW := w - 4
+	if w >= 100 {
+		listW = max(w*2/5-4, 1)
+		chatW = max(w-(listW+4)-4, 1)
+	}
+	for i, r := range rows {
+		list = append(list, m.messageConversationLine(r, listW, i == selected && m.focus == focusFeed))
+	}
+	if len(list) == 0 {
+		empty := "No conversations"
+		if m.feed.unavailable != "" {
+			empty = m.feed.unavailable
+		}
+		for _, line := range wrap(empty, listW) {
+			list = append(list, sDim.Render(line))
+		}
+	}
+	footer := fmt.Sprintf("%d system events · e to show", m.systemEventCount())
+	if m.messageShowEvents {
+		footer = fmt.Sprintf("%d system events · e to hide", m.systemEventCount())
+	}
+	var chat []string
+	if len(rows) > 0 {
+		chat = m.conversationChat(rows[selected], chatW)
+	} else {
+		chat = []string{sDim.Render("Select a conversation")}
+	}
+	chatSelected := 0
+	for i, line := range chat {
+		if strings.HasPrefix(ansi.Strip(line), "▸ ") {
+			chatSelected = min(i+1, len(chat)-1)
+			break
+		}
+	}
+	if w >= 100 {
+		height := max(h-3, 0)
+		list = messageFit(list, max(height-1, 0), selected)
+		list = append(list, sDim.Render(clip(footer, listW)))
+		chat = messageFit(chat, height, chatSelected)
+		left := panel("Messages · "+filter, list, listW+4, roleAccent)
+		right := panel("Conversation", chat, chatW+4, roleAccent)
+		for i := range left {
+			out = append(out, left[i]+right[i])
+		}
+		return out
+	}
+	available := max(h-5, 0)
+	listHeight := min(max((available+2)/2, 1), len(list)+1)
+	chatHeight := max(available-listHeight, 0)
+	list = messageFit(list, max(listHeight-1, 0), selected)
+	if listHeight > 0 {
+		list = append(list, sDim.Render(clip(footer, listW)))
+	}
+	chat = messageFit(chat, chatHeight, chatSelected)
+	out = append(out, panel("Messages · "+filter, list, w, roleAccent)...)
+	out = append(out, panel("Conversation", chat, w, roleAccent)...)
+	return out
+}
+
+func messageFit(lines []string, height, selected int) []string {
+	height = max(height, 0)
+	start := 0
+	if selected >= height {
+		start = selected - height + 1
+	}
+	start = min(start, max(len(lines)-height, 0))
+	end := min(start+height, len(lines))
+	lines = append([]string(nil), lines[start:end]...)
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+	return lines
 }

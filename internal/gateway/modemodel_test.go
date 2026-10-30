@@ -207,7 +207,7 @@ func TestFeedNamesTheParentOfAReply(t *testing.T) {
 			got = e
 		}
 	}
-	if got.Parent != m.ID || got.Type != protocol.TypeReply || got.From != b || got.To != a {
+	if got.Parent != m.ID || got.Type != protocol.TypeReply || got.From != b || got.To != a || got.ConversationID != m.ConversationID {
 		t.Fatalf("reply event: %+v", got)
 	}
 }

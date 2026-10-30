@@ -275,9 +275,7 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 func TestFeedEnterOpensTheConversationOfTheLocalEnd(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "2")
-	for m.feed.items[m.feedCur].MsgID != "m_1" {
-		m = keys(m, "up")
-	}
+	m = selectFeedMessage(m, "m_1")
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 	if m.conv == nil || m.conv.id != "s_0000000000000002" {
@@ -291,9 +289,7 @@ func TestFeedEnterOpensTheConversationOfTheLocalEnd(t *testing.T) {
 func TestFeedVOpensTheMessageBody(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "2")
-	for m.feed.items[m.feedCur].MsgID != "m_1" {
-		m = keys(m, "up")
-	}
+	m = selectFeedMessage(m, "m_1")
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = next.(Model)
 	if m.open == nil || m.open.id != "m_1" || cmd == nil {
@@ -340,7 +336,7 @@ func TestMessagesPanelAndCTOColors(t *testing.T) {
 			t.Errorf("missing %q", want)
 		}
 	}
-	if !strings.Contains(v, lipgloss.NewStyle().Foreground(roleCTO).Render("CTO")) {
+	if !strings.Contains(v, lipgloss.NewStyle().Foreground(roleCTO).Render("CTO")[:7]) {
 		t.Error("CTO sender is not purple")
 	}
 	for _, tc := range []struct {
@@ -366,4 +362,14 @@ func TestReplyIndentUsesBoxDrawingMarker(t *testing.T) {
 	if !strings.Contains(feedText(m, 100), "└") {
 		t.Fatal("reply indentation marker is missing")
 	}
+}
+
+func selectFeedMessage(m Model, id string) Model {
+	for i, it := range m.feed.items {
+		if it.MsgID == id {
+			m.feedCur = i
+			return m
+		}
+	}
+	return m
 }

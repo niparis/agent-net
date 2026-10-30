@@ -146,7 +146,7 @@ func (m Model) hints() []hint {
 	case m.focus == focusCTO:
 		return []hint{{"tab", "focus", 1}, {"enter", "send", 1}, {"m", "model", 1}, {"o", "full screen", 2}, {"n", "new", 2}, {"u", "undo", 2}, {"esc", "back", 1}}
 	case m.tab == 1:
-		return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"v", "view", 2}, {"l", "events", 2}, {"tab", "CTO", 1}, {"1", "sessions", 3}, {"?", "help", 3}}
+		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "conversation", 1}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
 	case m.tab == 2:
 		return []hint{{"up/down", "scroll", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
 	}
@@ -236,7 +236,7 @@ func (m Model) helpView(w, h int) []string {
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
 		{"tab, C", "focus the CTO box; tab or esc returns to sessions"},
-		{"v, l", "v: open the body of the message; l: feed events (worker, all, none)"},
+		{"Messages", "up/down: conversation; left/right: message; v: body; e/l: events"},
 		{"r", "refresh now"},
 		{"", ""},
 		{"Conversation", ""},
