@@ -52,6 +52,11 @@ type (
 		// Owner is the caller's session ID. The gateway checks it belongs to
 		// the sending node.
 		Owner string `json:"owner_session"`
+		// CallerProject is true when the caller's daemon filled the project
+		// from the caller's own session. If the project is on several
+		// machines, the gateway then prefers the caller's machine, or the one
+		// machine that has the harness.
+		CallerProject bool `json:"caller_project,omitempty"`
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
@@ -62,6 +67,10 @@ type (
 		Path      string `json:"path"`
 		Harness   string `json:"harness"`
 		Model     string `json:"model,omitempty"`
+		// ModelNote says how a loose model name was resolved, for example
+		// "deepseek 4.1 -> opencode-go/deepseek-v4.1-flash". Empty when the
+		// name was used as it was.
+		ModelNote string `json:"model_note,omitempty"`
 		// Worktree and Branch are set when the worker got its own worktree.
 		Worktree string `json:"worktree,omitempty"`
 		Branch   string `json:"branch,omitempty"`
@@ -73,7 +82,8 @@ type (
 		Harness string `json:"harness"`
 		Model   string `json:"model,omitempty"`
 		Owner   string `json:"owner_session"`
-		// Isolation is "" or IsolationWorktree.
+		// Isolation is "" (a worktree if the folder is a repository),
+		// IsolationWorktree or IsolationNone.
 		Isolation string `json:"isolation,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch".
@@ -168,11 +178,16 @@ func WorkerTaskBodyFor(harness, task, worktree, branch string) string {
 	return b + "\n\nTask:\n" + strings.TrimSpace(task)
 }
 
-// Isolation modes of a worker.
-const IsolationWorktree = "worktree"
+// Isolation modes of a worker. Empty means the default: a worktree when the
+// project is a repository, the project folder when it is not (W17).
+// IsolationNone opts out, for a read-only or non-code task.
+const (
+	IsolationWorktree = "worktree"
+	IsolationNone     = "none"
+)
 
 // ValidIsolation tells whether s is an isolation a caller may ask for.
-func ValidIsolation(s string) bool { return s == "" || s == IsolationWorktree }
+func ValidIsolation(s string) bool { return s == "" || s == IsolationWorktree || s == IsolationNone }
 
 // WorktreeBranch is the branch of a worker's worktree.
 func WorktreeBranch(workerID string) string { return "agent-net/" + workerID }
@@ -245,5 +260,19 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	if strings.TrimSpace(report) != "" {
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")
 	}
+	b.WriteString("\n" + noticeChecklist(n.Worktree))
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// ChecklistMarker starts the checklist that agent-net adds at the end of every
+// notice (W17). It is agent-net's own text, not the worker's.
+const ChecklistMarker = "[agent-net checklist]"
+
+func noticeChecklist(worktree string) string {
+	where := "the changes in the project folder"
+	if worktree != "" {
+		where = "the diff in " + worktree
+	}
+	return ChecklistMarker + " Before you tell your user it is done: read " + where +
+		", run the project's tests there, then report what you checked. Merge only if your user asked."
 }

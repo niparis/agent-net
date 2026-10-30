@@ -78,7 +78,7 @@ func TestFormatWorkerNotice(t *testing.T) {
 	out := FormatWorkerNotice(n, "  the report  ")
 	want := "[agent-net worker notice]\nstatus: done\nworker: s_1 (opencode, a/b), project shop on mac\nrun time: 3m12s\n" +
 		"tokens: 10 in, 5 out\ncost: 0.0100\nworktree: /w (branch agent-net/w_1)\nchanges (git diff --stat):\n x.go | 2 ++\n 1 file changed, 2 insertions(+)\n\n" +
-		ReportMarker + "\nthe report"
+		ReportMarker + "\nthe report\n\n" + ChecklistMarker + " Before you tell your user it is done: read the diff in /w, run the project's tests there, then report what you checked. Merge only if your user asked."
 	if out != want {
 		t.Errorf("got:\n%s\nwant:\n%s", out, want)
 	}
@@ -88,7 +88,7 @@ func TestFormatWorkerNotice(t *testing.T) {
 		!strings.Contains(out, "status: timed out\nnote: no message for 1h0m0s\n") {
 		t.Errorf("a notice with no extras:\n%s", out)
 	}
-	if !ValidIsolation("") || !ValidIsolation("worktree") || ValidIsolation("docker") {
+	if !ValidIsolation("") || !ValidIsolation("worktree") || !ValidIsolation("none") || ValidIsolation("docker") {
 		t.Error("ValidIsolation")
 	}
 	if !ValidHandbackStatus("done") || !ValidHandbackStatus("blocked") || ValidHandbackStatus("timed out") {

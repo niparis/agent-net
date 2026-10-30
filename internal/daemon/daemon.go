@@ -125,6 +125,9 @@ type Config struct {
 	NoLaunch bool
 	// Workers are the worker limits and timeouts. Zero fields take the defaults.
 	Workers WorkerSettings
+	// ModelProviders is model_providers of node.json. It goes to the gateway
+	// with the harness inventory.
+	ModelProviders []string
 	// HarnessPaths overrides where a harness binary is, by harness name.
 	// Default: the path from the inventory. Tests use it.
 	HarnessPaths map[string]string

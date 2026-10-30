@@ -120,7 +120,21 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 				return nil, true, errors.New("a worker cannot start workers")
 			}
 		}
-		out, err := d.workerStartCall(ctx, sid, p)
+		// No project given: use the caller's own (W17). The command line has no
+		// project of its own, so it must name one.
+		callerProject := false
+		if strings.TrimSpace(p.Project) == "" {
+			if ls != nil {
+				d.mu.Lock()
+				p.Project = ls.info.Repo.Project
+				d.mu.Unlock()
+				callerProject = p.Project != ""
+			}
+			if p.Project == "" {
+				return nil, true, errors.New("no project: name one (agent_project_list), or start the worker from a session that runs in a project folder")
+			}
+		}
+		out, err := d.workerStartCall(ctx, sid, p, callerProject)
 		return out, true, err
 
 	case protocol.OpWorkerHandback:
@@ -169,19 +183,19 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 // workerStartCall asks the gateway to start a worker, then sends the task as
 // a message from the caller.
-func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest) (*protocol.WorkerStartResult, error) {
+func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool) (*protocol.WorkerStartResult, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
 	if p.Project == "" || p.Harness == "" || p.Task == "" {
 		return nil, errors.New("worker_start needs project, harness and task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
-		return nil, fmt.Errorf("isolation can be %q or empty, not %q", protocol.IsolationWorktree, p.Isolation)
+		return nil, fmt.Errorf("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
 	}
 	if len(protocol.WorkerTaskBody(p.Task, "/x", "b")) > protocol.MaxBodyBytes {
 		return nil, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
 	}
 	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
-	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller})
+	data, err := d.call(cctx, "worker.start", protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject})
 	if err != nil {
 		return nil, tooOldGateway(err)
 	}
@@ -190,7 +204,7 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 		return nil, errors.New("the gateway answered without a worker session")
 	}
 	out := &protocol.WorkerStartResult{SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
-		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, Worktree: ans.Worktree, Branch: ans.Branch}
+		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch}
 	// The task is a normal message from the caller, with the fixed preamble.
 	raw, err := d.send(ctx, protocol.MsgSend{Sender: caller, Recipient: ans.SessionID, Type: protocol.TypeRequest,
 		Body: protocol.WorkerTaskBodyFor(ans.Harness, p.Task, ans.Worktree, ans.Branch)})

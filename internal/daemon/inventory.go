@@ -34,6 +34,9 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		if list == nil {
 			list = []protocol.HarnessInfo{} // "none installed", not "not reported"
 		}
+		for i := range list {
+			list[i].ModelProviders = d.cfg.ModelProviders
+		}
 		d.hmu.Lock()
 		d.installed = list
 		d.hgen++

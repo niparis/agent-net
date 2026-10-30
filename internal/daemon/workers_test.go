@@ -112,7 +112,18 @@ func (w *workerNode) register(t *testing.T, repo string) {
 	}
 }
 
+// start asks for a worker that works in the project folder, unless the request
+// names an isolation: most tests read what the fake harness wrote there. The
+// default (a worktree in a repository) is tested with startDefault.
 func (w *workerNode) start(req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
+	if req.Isolation == "" {
+		req.Isolation = protocol.IsolationNone
+	}
+	return w.startDefault(req)
+}
+
+// startDefault sends the request as it is.
+func (w *workerNode) startDefault(req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
 	raw, err := w.cli.call("worker_start", req)
 	var res protocol.WorkerStartResult
 	if err == nil {
@@ -425,7 +436,7 @@ func TestWorkerEndsWhenItsOwnerIsGone(t *testing.T) {
 	w.register(t, repo)
 	// The owner is an agent session (Pi) that starts the worker itself.
 	pi, piID := helloPi(t, w.node, "owner-pi", "/work/pi", true)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
 	if res.Task == nil || res.Task.From != piID {
 		t.Fatalf("the task is not from the calling session: %+v", res.Task)
 	}
@@ -649,7 +660,7 @@ func TestWorkerRefusals(t *testing.T) {
 		{"unknown project", protocol.WorkerStartRequest{Project: "nope", Harness: "opencode", Task: "x"}, `no project named "nope" is known`},
 		{"harness the machine has not", protocol.WorkerStartRequest{Project: "bare", Harness: "opencode", Task: "x"}, "opencode is not installed on"},
 		{"unsupported harness", protocol.WorkerStartRequest{Project: "shop", Harness: "gemini", Task: "x"}, "workers can run these harnesses: opencode, claude, pi, codex"},
-		{"model not in the list", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/zzz", Task: "x"}, `model "fake/zzz" is not in the opencode model list`},
+		{"model not in the list", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/zzz", Task: "x"}, `no model in the list matches "fake/zzz"`},
 		{"machine that refuses workers", protocol.WorkerStartRequest{Project: "private", Harness: "opencode", Task: "x"}, "does not accept workers (it was set up with --no-launch)"},
 		{"wrong machine named", protocol.WorkerStartRequest{Project: "shop", Machine: "elsewhere", Harness: "opencode", Task: "x"}, `no project named "shop" on machine "elsewhere"`},
 		{"no task", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode"}, "worker_start needs project, harness and task"},

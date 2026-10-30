@@ -128,19 +128,24 @@ type OwnerSendRequest struct {
 
 // WorkerStartRequest is OpWorkerStart.
 type WorkerStartRequest struct {
-	// Project is the name of a registered or seen project.
+	// Project is the name of a registered or seen project. Empty means the
+	// project of the calling session.
 	Project string `json:"project"`
 	// Machine picks the machine (host name or node ID) when the project is on
 	// more than one. Optional.
 	Machine string `json:"machine,omitempty"`
 	// Harness is the agent harness to run: "opencode" (the others come later).
 	Harness string `json:"harness"`
-	// Model is "provider/model". Optional: empty means the harness default.
+	// Model is "provider/model", or a loose name such as "deepseek 4.1" that
+	// the gateway resolves against the machine's model list. Optional: empty
+	// means the harness default.
 	Model string `json:"model,omitempty"`
 	// Task is what the worker should do. It is sent as a message from the caller.
 	Task string `json:"task"`
-	// Isolation is "" (work in the project folder) or "worktree" (work in a
-	// new git worktree on the branch agent-net/<worker-id>).
+	// Isolation is "" (the default: a new worktree on the branch
+	// agent-net/<worker-id> when the project is a repository), "worktree"
+	// (the same, and an error when it is not a repository) or "none" (work in
+	// the project folder).
 	Isolation string `json:"isolation,omitempty"`
 }
 
@@ -155,6 +160,9 @@ type WorkerStartResult struct {
 	Path      string `json:"path"`
 	Harness   string `json:"harness"`
 	Model     string `json:"model,omitempty"`
+	// ModelNote says how a loose model name was resolved ("deepseek 4.1 ->
+	// opencode-go/deepseek-v4.1-flash"). Empty when the name was used as given.
+	ModelNote string `json:"model_note,omitempty"`
 	// Worktree and Branch are set when the worker got its own worktree.
 	Worktree string `json:"worktree,omitempty"`
 	Branch   string `json:"branch,omitempty"`

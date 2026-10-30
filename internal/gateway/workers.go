@@ -97,7 +97,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("a worker needs a task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
-		return none, reject("isolation can be %q or empty, not %q", protocol.IsolationWorktree, p.Isolation)
+		return none, reject("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
 	}
 	// The caller must be a session of the sending node, and not a worker.
 	owner, ok, err := g.store.Agent(p.Owner)
@@ -132,9 +132,59 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		}
 		return none, reject("no project named %q is known: register it with `agent-net projects add <path>` (see `agent-net projects`)", p.Project)
 	}
+	info, err := g.NodesInfo()
+	if err != nil {
+		return none, err
+	}
+	nodeByID := func(id string) *protocol.NodeView {
+		for i := range info.Nodes {
+			if info.Nodes[i].NodeID == id {
+				return &info.Nodes[i]
+			}
+		}
+		return nil
+	}
 	nodes := map[string]bool{}
 	for _, v := range cands {
 		nodes[v.NodeID] = true
+	}
+	if len(nodes) > 1 && p.CallerProject {
+		// The project came from the caller's own session: use the machine
+		// that holds it and has the harness. The caller's own machine wins.
+		hasHarness := func(id string) bool {
+			n := nodeByID(id)
+			if n == nil || !n.Online || n.Launch == nil || !*n.Launch {
+				return false
+			}
+			for _, h := range n.Harnesses {
+				if h.Name == p.Harness {
+					return true
+				}
+			}
+			return false
+		}
+		var keep []protocol.ProjectView
+		for _, v := range cands {
+			if hasHarness(v.NodeID) {
+				keep = append(keep, v)
+			}
+		}
+		own := keep[:0:0]
+		for _, v := range keep {
+			if v.NodeID == nc.id {
+				own = append(own, v)
+			}
+		}
+		if len(own) > 0 {
+			keep = own
+		}
+		if len(keep) > 0 {
+			cands = keep
+			nodes = map[string]bool{}
+			for _, v := range cands {
+				nodes[v.NodeID] = true
+			}
+		}
 	}
 	if len(nodes) > 1 {
 		var hosts []string
@@ -163,16 +213,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 
 	// The machine must be there, accept workers, and have the harness and model.
-	info, err := g.NodesInfo()
-	if err != nil {
-		return none, err
-	}
-	var node *protocol.NodeView
-	for i := range info.Nodes {
-		if info.Nodes[i].NodeID == pick.NodeID {
-			node = &info.Nodes[i]
-		}
-	}
+	node := nodeByID(pick.NodeID)
 	if node == nil || !node.Online {
 		return none, reject("machine %s is offline", pick.Hostname)
 	}
@@ -193,14 +234,23 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if hi == nil {
 		return none, reject("%s is not installed on %s", p.Harness, node.Hostname)
 	}
+	// A loose model name is resolved against the machine's own list (W17).
+	// Without a list (claude, or a harness that cannot list), it passes through.
+	var modelNote string
 	if p.Model != "" && len(hi.Models) > 0 {
-		found := false
-		for _, m := range hi.Models {
-			found = found || m == p.Model
+		usage, err := g.store.ModelUsage(pick.NodeID, p.Harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
+		if err != nil {
+			return none, err
 		}
-		if !found {
-			return none, reject("model %q is not in the %s model list of %s (%d models; see `agent-net nodes --wide`)", p.Model, p.Harness, node.Hostname, len(hi.Models))
+		asked := p.Model
+		resolved, err := protocol.ResolveModel(asked, hi.Models, usage, hi.ModelProviders)
+		if err != nil {
+			return none, reject("model on %s: %v", node.Hostname, err)
 		}
+		if resolved != asked {
+			modelNote = asked + " -> " + resolved
+		}
+		p.Model = resolved
 	}
 
 	g.mu.Lock()
@@ -231,7 +281,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "worktree", launched.Worktree, "branch", launched.Branch)
 	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
-		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model,
+		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
 		Worktree: launched.Worktree, Branch: launched.Branch}, nil
 }
 

@@ -33,8 +33,8 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 	project := fs.String("project", "", "project name (see `agent-net projects`)")
 	machine := fs.String("machine", "", "machine, when the project is on more than one")
 	harness := fs.String("harness", "opencode", "harness to run: "+strings.Join(protocol.WorkerHarnesses, ", "))
-	model := fs.String("model", "", "model, as the harness names it: provider/model for opencode, an alias like haiku for claude, a name for pi and codex (default: the harness default)")
-	isolation := fs.String("isolation", "", "worktree: the worker gets its own git worktree and branch")
+	model := fs.String("model", "", "model: a loose name such as \"deepseek 4.1\" is resolved against the machine's model list (opencode); an alias like haiku for claude; a name for pi and codex (default: the harness default)")
+	isolation := fs.String("isolation", "", "worktree (the default for a git repository: the worker gets its own worktree and branch) or none (work in the project folder)")
 	asJSON := fs.Bool("json", false, "print JSON")
 	words, err := parseInterspersed(fs, args)
 	if err != nil {
@@ -42,7 +42,7 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 	}
 	task := strings.TrimSpace(strings.Join(words, " "))
 	if *project == "" || task == "" {
-		return errors.New("usage: agent-net start --project <name> [--harness opencode|claude|pi|codex] [--model M] [--machine host] [--isolation worktree] \"<task>\"")
+		return errors.New("usage: agent-net start --project <name> [--harness opencode|claude|pi|codex] [--model M] [--machine host] [--isolation worktree|none] \"<task>\"")
 	}
 	cctx, cancel := context.WithTimeout(ctx, operator.StartTimeout)
 	defer cancel()
@@ -57,6 +57,9 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 		return nil
 	}
 	fmt.Fprintf(out, "started worker %s (%s%s, project %s on %s)\n", res.SessionID, res.Harness, modelSuffix(res.Model), res.Project, res.Hostname)
+	if res.ModelNote != "" {
+		fmt.Fprintf(out, "model: %s\n", res.ModelNote)
+	}
 	if res.Worktree != "" {
 		fmt.Fprintf(out, "worktree %s on branch %s\n", res.Worktree, res.Branch)
 	}

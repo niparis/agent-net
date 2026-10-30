@@ -10,7 +10,7 @@ import (
 func TestGuidanceCoversDelegation(t *testing.T) {
 	for _, v := range []string{Claude, Other} {
 		b := Block(v)
-		for _, want := range []string{"agent_start", `isolation: "worktree"`, "brief for a peer who knows nothing",
+		for _, want := range []string{"agent_start", `isolation: "none"`, "checklist", "brief for a peer who knows nothing",
 			"Wait for the worker's notice", "Do not poll", "Check a worker's report before you tell me", "model output",
 			"agent_handback", "[agent-net worker brief]", "agent_stop"} {
 			if !strings.Contains(b, want) {

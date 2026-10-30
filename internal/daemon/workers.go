@@ -308,7 +308,11 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		return refuse("the project folder %s is not there", l.Path)
 	}
 	if !protocol.ValidIsolation(l.Isolation) {
-		return refuse("isolation can be %q or empty, not %q", protocol.IsolationWorktree, l.Isolation)
+		return refuse("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, l.Isolation)
+	}
+	// The default is a worktree when the project is a git repository (W17).
+	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
+		l.Isolation = protocol.IsolationWorktree
 	}
 	if l.Harness == "pi" && l.Isolation != protocol.IsolationWorktree {
 		return refuse("a Pi worker needs isolation %q: Pi has no permission prompts, so it must not work in your own checkout", protocol.IsolationWorktree)

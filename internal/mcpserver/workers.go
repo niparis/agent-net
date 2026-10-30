@@ -15,12 +15,12 @@ const workerNote = "A worker is an agent session that agent-net starts for you w
 	"It ends on its own after 60 minutes without messages, after 4 hours, or when you end. Only start one when your user asks."
 
 type startIn struct {
-	Project   string `json:"project" jsonschema:"the name of a project from agent_project_list"`
+	Project   string `json:"project,omitempty" jsonschema:"The name of a project from agent_project_list. Leave it empty to use the project you are working in (on the machine that has the harness)"`
 	Task      string `json:"task" jsonschema:"what the worker should do, with everything it needs to know; it cannot ask you questions except by agent_reply"`
 	Harness   string `json:"harness,omitempty" jsonschema:"opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."`
-	Model     string `json:"model,omitempty" jsonschema:"The model, as the harness names it. opencode: provider/model, from the list in agent_nodes (the only harness with a checked list). claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."`
+	Model     string `json:"model,omitempty" jsonschema:"The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."`
 	Machine   string `json:"machine,omitempty" jsonschema:"the machine, only when the project is on more than one"`
-	Isolation string `json:"isolation,omitempty" jsonschema:"worktree: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. Use it for tasks that change code"`
+	Isolation string `json:"isolation,omitempty" jsonschema:"Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks"`
 }
 
 type handbackIn struct {
@@ -37,10 +37,11 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 
 	mcp.AddTool(s, tool("agent_start",
 		"Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. "+
-			"The project must be known (agent_project_list). The machine that holds it must have the harness, and an opencode model must be in its model list (agent_nodes). "+
+			"The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). "+
 			"The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. "+
 			workerNote+" A worker cannot start workers."+
-			" A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only."),
+			" A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. "+
+			"Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in startIn) (*mcp.CallToolResult, any, error) {
 			if in.Harness == "" {
 				in.Harness = "opencode"

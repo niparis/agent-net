@@ -432,3 +432,26 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// ModelUsage counts the sessions of a harness on a node that ran each model
+// and were seen within the last window. A resolved model name prefers the one
+// the machine uses most (protocol.ResolveModel).
+func (s *Store) ModelUsage(nodeID, harness string, window time.Duration) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT model, COUNT(*) FROM sessions
+		WHERE node_id = ? AND harness = ? AND model != '' AND last_seen >= ? GROUP BY model`,
+		nodeID, harness, s.now().Add(-window).UnixNano())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var m string
+		var n int
+		if err := rows.Scan(&m, &n); err != nil {
+			return nil, err
+		}
+		out[m] = n
+	}
+	return out, rows.Err()
+}

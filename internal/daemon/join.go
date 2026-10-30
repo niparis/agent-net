@@ -32,6 +32,10 @@ type NodeConfig struct {
 	// target to use for it (an alias or user@host). Both are edited by hand.
 	EnterSSH      bool              `json:"enter_ssh,omitempty"`
 	EnterSSHHosts map[string]string `json:"enter_ssh_hosts,omitempty"`
+	// ModelProviders lists the model providers to prefer, first is best, when
+	// a loose model name matches models of several providers (W17). For
+	// example ["opencode-go", "opencode"]. Edited by hand.
+	ModelProviders []string `json:"model_providers,omitempty"`
 	// Workers sets the worker limits and timeouts. Absent fields take the
 	// defaults of decision 0002.
 	Workers *NodeWorkers `json:"workers,omitempty"`

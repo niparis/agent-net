@@ -363,6 +363,10 @@ type HarnessInfo struct {
 	// Models lists the models the harness can use, as "provider/model". It is
 	// only filled for harnesses that have a command to list them (opencode).
 	Models []string `json:"models,omitempty"`
+	// ModelProviders is the owner's list of preferred model providers on this
+	// machine (model_providers in node.json), first is best. It breaks ties
+	// when a loose model name matches several models (ResolveModel).
+	ModelProviders []string `json:"model_providers,omitempty"`
 	// Primary is true when Path is the copy that comes first in the PATH of the
 	// user's login shell. When it is false, the daemon could not tell which copy
 	// the user runs. Absent in v0.3.5 and older.

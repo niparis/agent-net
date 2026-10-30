@@ -34,6 +34,13 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	return strings.TrimRight(out.String(), "\n"), nil
 }
 
+// isGitRepo tells whether dir is inside a git work tree with a commit, so that
+// a worktree can be made from it.
+func isGitRepo(ctx context.Context, dir string) bool {
+	_, err := gitOut(ctx, dir, "rev-parse", "--verify", "HEAD")
+	return err == nil
+}
+
 // createWorktree makes the worker's own worktree of its project, on a new
 // branch, in a folder the daemon manages (not in the user's checkout). The
 // worker then runs in it.

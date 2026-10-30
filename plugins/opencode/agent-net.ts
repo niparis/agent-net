@@ -567,6 +567,8 @@ function formatStarted(r: any): string {
     : "The task was sent as a message from you; the worker answers with agent_reply and its answer arrives in this session.";
   return (
     `Started worker ${r.session_id} (${r.harness}${r.model ? ", " + r.model : ""}) in project ${r.project} on ${r.hostname}.\n` +
+    (r.model_note ? `model: ${r.model_note}\n` : "") +
+    (r.worktree ? `worktree: ${r.worktree} (branch ${r.branch})\n` : "") +
     `${note} Stop it with agent_stop. It ends by itself after 60 minutes without messages or 4 hours.`
   );
 }
@@ -750,20 +752,21 @@ const TOOLS: ToolDef[] = [
     name: "agent_start",
     description:
       "Start a new agent session (a worker) in a project on one of your user's machines, and give it a task. " +
-      "The project must be known (agent_project_list). The machine that holds it must have the harness, and an opencode model must be in its model list (agent_nodes). " +
+      "The project must be known (agent_project_list). The machine that holds it must have the harness, and a model must be in its model list (agent_nodes). " +
       "The worker gets your task as a message from you and answers with agent_reply: its answer arrives as a message in your session. " +
       WORKER_NOTE +
       " A worker cannot start workers." +
-      " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only.",
+      " A codex worker has no agent-net tools: the last message of each of its turns is delivered to you as its report, and it takes messages from you and from your user only. " +
+      "Defaults: the worker gets its own git worktree when the project is a git repository (isolation none opts out), and its notice ends with an agent-net checklist that tells you to read the diff and run the tests before you report. A short request is enough, for example \"implement X with an opencode worker using deepseek 4.1\": leave project empty to use the project you work in, and pass the model as your user said it.",
     properties: {
-      project: str("The name of a project from agent_project_list"),
+      project: str("The name of a project from agent_project_list. Leave it empty to use the project you are working in (on the machine that has the harness)"),
       task: str("What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply"),
       harness: str("opencode (the default), claude, pi or codex. agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."),
-      model: str("The model, as the harness names it. opencode: provider/model, from the list in agent_nodes (the only harness with a checked list). claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."),
+      model: str("The model, as the harness names it. opencode: a loose name is enough, such as deepseek 4.1 or gpt 6.1; agent-net resolves it against the machine's model list and tells you the result (exact ids are provider/model, see agent_nodes). If several models match equally, the error lists them. claude: an alias such as haiku, sonnet or opus, or a full model name. pi: provider/id, with an optional :thinking level. codex: a model name. Empty means the harness default."),
       machine: str("The machine, only when the project is on more than one"),
-      isolation: str("worktree: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. Use it for tasks that change code"),
+      isolation: str("Default for a git repository: the worker gets its own git worktree on a new branch agent-net/<id>, so it never edits the user's checkout. none: it works in the project folder; use it for read-only or non-code tasks"),
     },
-    required: ["project", "task"],
+    required: ["task"],
     method: "worker_start",
     format: formatStarted,
   },
