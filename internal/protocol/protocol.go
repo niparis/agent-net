@@ -50,6 +50,7 @@ const (
 )
 
 type Message struct {
+	Overruled      bool      `json:"overruled,omitempty"`
 	ID             string    `json:"message_id"`
 	ConversationID string    `json:"conversation_id"`
 	ParentID       string    `json:"parent_message_id,omitempty"`
@@ -345,6 +346,7 @@ type (
 		On        bool   `json:"on"`
 	}
 	MsgSend struct {
+		ReplyOutcome
 		FromCTO        bool   `json:"sender_cto,omitempty"`
 		Sender         string `json:"sender_session_id"`
 		Recipient      string `json:"recipient_session_id"`

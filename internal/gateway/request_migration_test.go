@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"path/filepath"
+	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
 	"testing"
@@ -18,7 +19,19 @@ func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=(SELECT MAX(version) FROM schema_version)`); err != nil {
+	// The trust migration is no longer the last one: request outcomes follow
+	// it, and their tables cannot be replayed. Run the trust migration itself
+	// again, as a gateway that never applied it would.
+	trust := ""
+	for _, m := range migrations {
+		if strings.Contains(m, "INSERT OR IGNORE INTO graph_edges") {
+			trust = m
+		}
+	}
+	if trust == "" {
+		t.Fatal("no trust migration")
+	}
+	if _, err = s.db.Exec(trust); err != nil {
 		t.Fatal(err)
 	}
 	s.Close()

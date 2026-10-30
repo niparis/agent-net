@@ -56,6 +56,7 @@ interface DeliveredMessage {
   sender_worker?: boolean;
   sender_cto?: boolean;
   recipient_peer_trust?: boolean;
+  overruled?: boolean;
   owner_approved?: boolean;
   recipient_relation?: string;
   message_type?: string;
@@ -91,7 +92,8 @@ function authorityNote(m: DeliveredMessage): string {
 }
 
 function formatDelivery(m: DeliveredMessage): string {
-  const text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  const base = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  const text = m.overruled === true ? `${base}\n[agent-net] Nicolas overrules: do it.` : base;
   // A worker's report (a reply) is model output whatever the recipient's trust.
   return m.sender_worker && m.sender_harness !== "owner" && m.message_type === "reply" ? `${text}\n${WORKER_FOOTER}` : text;
 }
@@ -884,6 +886,10 @@ const TOOLS: ToolDef[] = [
     properties: {
       message_id: str("The message_id you are answering"),
       body: str("Reply text"),
+      outcome: str("accept, reject, redirect or escalate"),
+      reason: str("Required for reject, redirect and escalate"),
+      redirect_to: str("Node to redirect to"),
+      recommendation: str("Required for escalate"),
     },
     required: ["message_id", "body"],
     method: "reply",

@@ -81,6 +81,7 @@ type sendIn struct {
 }
 
 type replyIn struct {
+	protocol.ReplyOutcome
 	MessageID string `json:"message_id" jsonschema:"the message_id you are replying to"`
 	Body      string `json:"body" jsonschema:"the reply text"`
 }
