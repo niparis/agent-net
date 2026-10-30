@@ -75,9 +75,7 @@ func ParseMaturity(value string) (level, text string, err error) {
 
 // CleanCharterValue removes control characters other than newlines, then validates the value.
 func CleanCharterValue(attr, value string) (string, error) {
-	switch attr {
-	case "purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes":
-	default:
+	if _, ok := CharterGuideFor(attr); !ok {
 		return "", fmt.Errorf("unknown charter attribute")
 	}
 	value = strings.Map(func(r rune) rune {

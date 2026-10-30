@@ -111,6 +111,51 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	}
 }
 
+func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var charter *mcp.Tool
+	for _, tool := range list.Tools {
+		if tool.Name == "charter_set" {
+			charter = tool
+			break
+		}
+	}
+	if charter == nil {
+		t.Fatal("charter_set missing")
+	}
+	props, _ := ctoToolSchema(t, charter)
+	for name, description := range map[string]string{
+		"tool":  charter.Description,
+		"attr":  props["attr"]["description"].(string),
+		"value": props["value"]["description"].(string),
+	} {
+		for _, want := range []string{"accepts", "other agents ask", "Bug fixes in retrieval", "Bearer-authenticated", "200 characters", "AGENTS.md"} {
+			if !strings.Contains(description, want) {
+				t.Errorf("%s description misses %q: %s", name, want, description)
+			}
+		}
+	}
+	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "charter_set", Arguments: map[string]any{
+		"node": "cogforge", "attr": "needs", "value": "Read /home/project/private/config",
+	}})
+	if err != nil || out.IsError {
+		t.Fatalf("detailed value was refused: result=%+v err=%v", out, err)
+	}
+	text := ""
+	for _, content := range out.Content {
+		if item, ok := content.(*mcp.TextContent); ok {
+			text += item.Text
+		}
+	}
+	if !strings.Contains(text, "too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md") {
+		t.Fatalf("successful charter_set did not include the warning: %q", text)
+	}
+}
+
 func enumStrings(v any) []string {
 	list, _ := v.([]any)
 	out := make([]string, 0, len(list))
