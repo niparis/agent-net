@@ -34,6 +34,8 @@ type ctoState struct {
 	messages            []string
 	history             []protocol.CTOGraphChange
 	local               []protocol.CTOAction
+	sendErrors          []ctoLocalError
+	polledErrors        map[string]int
 	historyLoaded       bool
 	lastGraphID         int64
 	generation          int
@@ -57,7 +59,13 @@ type ctoPollMsg struct {
 	err             error
 	generation      int
 }
+type ctoLocalError struct {
+	text     string
+	at       int64
+	baseline int
+}
 type ctoSendMsg struct {
+	baseline   map[string]int
 	err        error
 	generation int
 }
@@ -247,10 +255,14 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		c.input.SetValue("")
 		src := m.src.(ctoSource)
 		g := c.generation
+		baseline := make(map[string]int, len(c.polledErrors))
+		for text, count := range c.polledErrors {
+			baseline[text] = count
+		}
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
 			defer cancel()
-			return ctoSendMsg{err: src.CTOSend(ctx, text), generation: g}
+			return ctoSendMsg{err: src.CTOSend(ctx, text), generation: g, baseline: baseline}
 		}
 	}
 	var cmd tea.Cmd
@@ -277,6 +289,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		text string
 	}
 	var lines []line
+	polledErrors := make(map[string]int)
 	for _, raw := range r.events.Messages {
 		if text := ctoMessage(raw); text != "" {
 			var v struct {
@@ -286,6 +299,9 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 			}
 			json.Unmarshal(raw, &v)
 			lines = append(lines, line{v.Time.Created * int64(1000000), text})
+			if strings.HasPrefix(text, "error: ") {
+				polledErrors[text]++
+			}
 		}
 	}
 	for _, h := range r.history {
@@ -320,6 +336,19 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		}
 	}
 	c.local = pending
+	c.polledErrors = polledErrors
+	var pendingErrors []ctoLocalError
+	matched := make(map[string]int)
+	for _, e := range c.sendErrors {
+		next := max(e.baseline, matched[e.text]) + 1
+		if next <= polledErrors[e.text] {
+			matched[e.text] = next
+			continue
+		}
+		pendingErrors = append(pendingErrors, e)
+		lines = append(lines, line{e.at, e.text})
+	}
+	c.sendErrors = pendingErrors
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
 	c.messages = nil
 	for _, v := range lines {

@@ -368,8 +368,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.cto != nil && m.cto.generation == msg.generation {
 			if msg.err != nil {
 				line := "error: " + ctoErrorHint(sanitize(msg.err.Error()))
-				m.cto.local = append(m.cto.local, protocol.CTOAction{Text: line, At: m.now().UnixNano()})
-				m.cto.messages = append(m.cto.messages, line)
+				baseline := msg.baseline[line]
+				if m.cto.polledErrors[line] <= baseline {
+					m.cto.sendErrors = append(m.cto.sendErrors, ctoLocalError{text: line, at: m.now().UnixNano(), baseline: baseline})
+					m.cto.messages = append(m.cto.messages, line)
+				}
 			} else if !m.cto.polling {
 				m.cto.polling = true
 				return m, m.ctoPollCmd()
@@ -383,6 +386,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cto.messages = nil
 				m.cto.local = nil
+				m.cto.sendErrors = nil
+				m.cto.polledErrors = nil
 				m.cto.history = nil
 				m.cto.historyLoaded = false
 				m.ctoGeneration++

@@ -361,3 +361,49 @@ func TestCTOProviderErrorsSuggestModelChange(t *testing.T) {
 		t.Fatal(m.cto.messages)
 	}
 }
+
+func TestCTOSendErrorReconcilesPolledMessages(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	model, _ := New(src).startCTO()
+	m := model.(Model)
+	g := m.cto.generation
+	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g})
+	m = next.(Model)
+	poll := ctoPollMsg{generation: g, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","error":{"message":"quota exceeded"}}`)}}}
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 1 {
+		t.Fatalf("duplicate error: %v", m.cto.messages)
+	}
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 1 {
+		t.Fatalf("duplicate after second poll: %v", m.cto.messages)
+	}
+}
+
+func TestCTOSendErrorKeepsRepeatedFailures(t *testing.T) {
+	model, _ := New(&fakeCTOSource{fakeSource: &fakeSource{}}).startCTO()
+	m := model.(Model)
+	g := m.cto.generation
+	raw := json.RawMessage(`{"error":{"message":"quota exceeded"}}`)
+	poll := ctoPollMsg{generation: g, events: protocol.CTOEvents{Messages: []json.RawMessage{raw}}}
+	m.applyCTOPoll(poll)
+	line := ctoMessage(raw)
+	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g, baseline: map[string]int{line: 1}})
+	m = next.(Model)
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 2 {
+		t.Fatalf("older failure hid a new one: %v", m.cto.messages)
+	}
+	poll.events.Messages = append(poll.events.Messages, raw)
+	m.applyCTOPoll(poll)
+	if len(m.cto.messages) != 2 {
+		t.Fatalf("repeated errors: %v", m.cto.messages)
+	}
+	// A poll can arrive before the send result.
+	m.applyCTOPoll(poll)
+	next, _ = m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g, baseline: map[string]int{line: 1}})
+	m = next.(Model)
+	if len(m.cto.messages) != 2 {
+		t.Fatalf("late send result duplicated error: %v", m.cto.messages)
+	}
+}
