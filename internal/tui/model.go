@@ -371,6 +371,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.formKey(k)
 	case modeConfirm:
 		return m.confirmKey(k)
+	case modeTrust:
+		return m.trustKey(k)
 	}
 	if m.help {
 		switch k.String() {
@@ -437,6 +439,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startEnter()
 	case "x":
 		return m.startConfirm()
+	case "t":
+		return m.startTrust()
 	case "?":
 		m.help = true
 	case "d":

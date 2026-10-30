@@ -2,18 +2,18 @@ agent-net tui  10 sessions, 9 online, 4 workers                                 
  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                            claude 2.1.312  opencode 2.2.0  pi 1.4.0
  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                            pi 1.4.0
  ○ old-box    v0.3.2 offline
-  NAME                             AGENT    PROJECT        BRANCH   MODEL      MODE STATUS   CPU   RAM PROC FUNCTION
+  NAME                            AGENT    PROJECT   BRANCH   MODEL      MODE STATUS TRUST   CPU   RAM PROC FUNCTION
  Mac (here) 7 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  strategies                       claude   strategies     feature… sonnet-5-5 bg   idle       ?     ?    ? trading str…
-  ├─ backtest-a                    opencode -              -        haiku-4-5  bg   idle       ?     ?    ? no AGENTS.md
-> ├─ backtest-b                    opencode -              -        haiku-4-5  bg   idle       ?     ?    ? no AGENTS.md
-  └─ backtest-on-a-remo… @build-vm opencode -              -        haiku-4-5  bg   idle       ?     ?    ? no AGENTS.md
-  ↳ tenebrae                       opencode tenebrae       main     haiku-4-5  bg   busy       ?     ?    ? no AGENTS.md
-  tenebrae-53                      claude   tenebrae       main     opus-5-5   fg   busy       ?     ?    ? research
-  web                              opencode shop           main     sonnet-5   ?    idle       ?     ?    ? no AGENTS.md
+  strategies                      claude   strategi… feature… sonnet-5-5 bg   idle   -         ?     ?    ? trading str…
+  ├─ backtest-a                   opencode -         -        haiku-4-5  bg   idle   -         ?     ?    ? no AGENTS.md
+> ├─ backtest-b                   opencode -         -        haiku-4-5  bg   idle   -         ?     ?    ? no AGENTS.md
+  └─ backtest-on-a-rem… @build-vm opencode -         -        haiku-4-5  bg   idle   -         ?     ?    ? no AGENTS.md
+  ↳ tenebrae                      opencode tenebrae  main     haiku-4-5  bg   busy   -         ?     ?    ? no AGENTS.md
+  tenebrae-53                     claude   tenebrae  main     opus-5-5   fg   busy   -         ?     ?    ? research
+  web                             opencode shop      main     sonnet-5   ?    idle   -         ?     ?    ? no AGENTS.md
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner                        pi       agent-net      main     gpt-6      bg   idle       ?     ?    ? runs the te…
-  scratch                          pi       -              -        -          fg   shell      ?     ?    ? no AGENTS.md
+  ci-runner                       pi       agent-net main     gpt-6      bg   idle   -         ?     ?    ? runs the te…
+  scratch                         pi       -         -        -          fg   shell  -         ?     ?    ? no AGENTS.md
 Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
   backtest-b  opencode  idle    CPU and memory need a newer daemon and gateway
   worker   started by strategies (Mac), 14:02, project strateg… │

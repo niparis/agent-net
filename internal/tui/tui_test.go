@@ -127,6 +127,11 @@ func fakeEvents() []protocol.FeedEvent {
 }
 
 // fakeSource answers from memory.
+type trustCall struct {
+	id string
+	on bool
+}
+
 type fakeSource struct {
 	snap     Snapshot
 	snapErr  error
@@ -140,6 +145,8 @@ type fakeSource struct {
 	started          *protocol.WorkerStartRequest
 	stopped          string
 	actErr           error
+	trusts           []trustCall
+	trustErr         error
 
 	// CPU, memory, counts, top lists and conversations. Nil means the daemon
 	// is older than the feature.
@@ -181,6 +188,11 @@ func (f *fakeSource) SessionText(_ context.Context, q protocol.TextQuery) (proto
 		return protocol.TextPage{}, errors.New("session_text is not available")
 	}
 	return f.textFn(q)
+}
+
+func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {
+	f.trusts = append(f.trusts, trustCall{id, on})
+	return f.trustErr
 }
 
 func (f *fakeSource) SessionEnter(_ context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {

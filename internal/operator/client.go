@@ -237,6 +237,11 @@ func (s *Client) SessionEnter(ctx context.Context, q protocol.EnterRequest) (pro
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) SetPeerTrust(ctx context.Context, session string, on bool) error {
+	_, err := s.action(ctx, protocol.OpSessionTrust, protocol.SessionTrustRequest{SessionID: session, On: on})
+	return err
+}
+
 func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 	var out protocol.SessionCounts
 	raw, err := s.action(ctx, protocol.OpCounts, nil)

@@ -27,6 +27,7 @@ const (
 	modeCompose           // typing a message to the selected session
 	modeForm              // the start-a-worker form
 	modeConfirm           // asking y/n before stopping a worker
+	modeTrust             // asking y/n before trusting a session with peer requests
 )
 
 // noticeTTL is how long a result line stays when no key clears it.
@@ -176,6 +177,60 @@ func (m Model) stopCmd(id, name string) tea.Cmd {
 			return actionMsg{err: fmt.Errorf("Not stopped: %s", explain(err))}
 		}
 		return actionMsg{text: "Stopped worker " + name + "."}
+	}
+}
+
+// ---- peer trust ----
+
+// startTrust toggles peer trust on the selected session (decision 0012). Turning
+// it off is immediate; turning it on asks first, because the session then acts
+// on requests from other agents without asking its user.
+func (m Model) startTrust() (Model, tea.Cmd) {
+	a, ok := m.selectedAgent()
+	switch {
+	case !ok:
+		m.fail("Nothing is selected: pick a session first.")
+		return m, nil
+	case protocol.IsOwner(a.Harness):
+		m.fail("That is you, not an agent session.")
+		return m, nil
+	}
+	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
+	if a.PeerTrust {
+		m.say("Turning peer trust off...")
+		return m, m.trustCmd(a.SessionID, name, false)
+	}
+	m.mode = modeTrust
+	m.confirmID, m.confirmName = a.SessionID, name
+	m.notice = notice{}
+	return m, nil
+}
+
+func (m Model) trustKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.String() {
+	case "y", "Y":
+		m.mode = modeNormal
+		m.say("Turning peer trust on...")
+		return m, m.trustCmd(m.confirmID, m.confirmName, true)
+	case "n", "N", "esc":
+		m.mode = modeNormal
+		m.say("Peer trust unchanged.")
+	}
+	return m, nil
+}
+
+func (m Model) trustCmd(id, name string, on bool) tea.Cmd {
+	src := m.src
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if err := src.SetPeerTrust(ctx, id, on); err != nil {
+			return actionMsg{err: fmt.Errorf("Peer trust not changed: %s", explain(err))}
+		}
+		if on {
+			return actionMsg{text: name + " now acts on requests from your other agents without asking. Press t on it to turn that off."}
+		}
+		return actionMsg{text: name + " asks you before acting on requests from other agents."}
 	}
 }
 

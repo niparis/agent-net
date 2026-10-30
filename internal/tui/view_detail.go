@@ -119,6 +119,12 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	if a.Profile.Task != "" {
 		out = append(out, kv("task", a.Profile.Task))
 	}
+	if a.Profile.Expertise != "" {
+		out = append(out, kv("expert", a.Profile.Expertise))
+	}
+	if a.PeerTrust {
+		out = append(out, kv("trust", "acts on peer requests without asking (t: off)"))
+	}
 	out = append(out, kv("remote", dashIfEmpty(a.Repo.Remote)))
 	// A linked git worktree (not the main working tree), or a folder inside
 	// one: say which.

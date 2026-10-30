@@ -359,7 +359,7 @@ type column struct {
 // NAME grows past 18 columns, up to 32, only as far as the longest name needs
 // (nameWant), so short names leave the room to the other columns. The usage
 // columns have a fixed width. When the terminal is narrow the least useful
-// columns go first: FUNCTION, BRANCH, MODE, MODEL, PROJECT.
+// columns go first: FUNCTION, TRUST (shown as [t] before the name), BRANCH, MODE, MODEL, PROJECT.
 func columns(avail, nameWant int) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
@@ -369,12 +369,13 @@ func columns(avail, nameWant int) []column {
 		{name: "MODEL", min: 10, max: 18},
 		{name: "MODE", min: 4, max: 4},
 		{name: "STATUS", min: 6, max: 6},
+		{name: "TRUST", min: 5, max: 5},
 		{name: "CPU", min: 5, max: 5, right: true},
 		{name: "RAM", min: 5, max: 5, right: true},
 		{name: "PROC", min: 4, max: 4, right: true},
 		{name: "FUNCTION", min: 12, max: 80},
 	}
-	for _, drop := range []string{"FUNCTION", "BRANCH", "MODE", "MODEL", "PROJECT"} {
+	for _, drop := range []string{"FUNCTION", "TRUST", "BRANCH", "MODE", "MODEL", "PROJECT"} {
 		if sumMin(cols) <= avail {
 			break
 		}
@@ -399,6 +400,15 @@ func columns(avail, nameWant int) []column {
 		}
 	}
 	return cols
+}
+
+func hasColumn(cols []column, name string) bool {
+	for _, c := range cols {
+		if c.name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func sumMin(cols []column) int {
@@ -562,6 +572,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		var v string
 		switch c.name {
 		case "NAME":
+			if a.PeerTrust && !hasColumn(cols, "TRUST") {
+				mk.prefix = "[t] " + mk.prefix // a narrow screen has no TRUST column
+			}
 			v = nameText(a, mk, c.width)
 		case "AGENT":
 			v = a.Harness
@@ -586,6 +599,10 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 			if !a.Online {
 				v = "off"
 			}
+		case "TRUST":
+			if a.PeerTrust {
+				v = "peer"
+			}
 		case "FUNCTION":
 			v = functionText(a)
 		}
@@ -599,6 +616,12 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 				v = statusStyle(a.Status).Render(v)
 			case "MODE", "BRANCH", "AGENT":
 				v = sDim.Render(v)
+			case "TRUST":
+				if a.PeerTrust {
+					v = sBusy.Render(v)
+				} else {
+					v = sDim.Render(v)
+				}
 			case "FUNCTION":
 				if v == "" || strings.HasPrefix(v, noAgentsMD) {
 					v = sDim.Render(v)

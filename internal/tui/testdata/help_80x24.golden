@@ -7,6 +7,7 @@ Keys ─────────────────────────
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
   x                    stop the selected worker (asks y/n)
+  t                    peer trust on/off: act on requests of other agents (y/n)
   /                    filter (words match name, project, branch, model, ...)
   o                    show offline and dormant sessions
   d                    give the detail pane the room of the message feed
@@ -20,5 +21,4 @@ Keys ─────────────────────────
  Everywhere
   ?                    this help
   q, ctrl+c            quit
- Reading the screen
 esc close help  q quit

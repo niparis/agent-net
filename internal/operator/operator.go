@@ -48,6 +48,9 @@ type Operator interface {
 	SessionText(ctx context.Context, q protocol.TextQuery) (protocol.TextPage, error)
 	// SessionEnter says how to take over the terminal for a session. Owner only.
 	SessionEnter(ctx context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error)
+	// SetPeerTrust turns peer trust on or off for a session: whether it may act
+	// on requests from other agents without asking (decision 0012). Owner only.
+	SetPeerTrust(ctx context.Context, session string, on bool) error
 	// Counts is how many sessions are online and offline. Owner only.
 	Counts(ctx context.Context) (protocol.SessionCounts, error)
 	Close()
