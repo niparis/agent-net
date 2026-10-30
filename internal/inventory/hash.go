@@ -7,10 +7,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 const maxFiles = 10000
@@ -35,12 +35,16 @@ func SkillHash(root string) (string, error) {
 		return "", err
 	}
 	defer dir.Close()
+	return skillHashRoot(dir)
+}
+
+func skillHashRoot(dir *os.Root) (string, error) {
 	var paths []string
-	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if path == root {
+		if path == "." {
 			return nil
 		}
 		if len(paths) >= maxFiles {
@@ -62,22 +66,18 @@ func SkillHash(root string) (string, error) {
 		h.Write(b)
 	}
 	for _, path := range paths {
-		rel, err := filepath.Rel(root, path)
+		info, err := dir.Lstat(path)
 		if err != nil {
 			return "", err
 		}
-		info, err := os.Lstat(path)
-		if err != nil {
-			return "", err
-		}
-		write([]byte(filepath.ToSlash(rel)))
+		write([]byte(path))
 		switch {
 		case info.Mode().IsRegular():
 			total += info.Size()
 			if total > maxBytes || info.Size() < 0 {
 				return "", fmt.Errorf("skill exceeds size limit")
 			}
-			f, err := dir.Open(rel)
+			f, err := dir.Open(path)
 			if err != nil {
 				return "", err
 			}
@@ -103,20 +103,15 @@ func SkillHash(root string) (string, error) {
 		case info.IsDir():
 			write([]byte("directory"))
 		case info.Mode()&os.ModeSymlink != 0:
-			target, err := os.Readlink(path)
+			target, err := dir.Readlink(path)
 			if err != nil {
 				return "", err
 			}
 			if filepath.IsAbs(target) {
 				return "", fmt.Errorf("absolute symlink")
 			}
-			resolved, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				return "", fmt.Errorf("invalid symlink")
-			}
-			relative, err := filepath.Rel(root, resolved)
-			if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
-				return "", fmt.Errorf("escaping symlink")
+			if _, err = dir.Stat(path); err != nil {
+				return "", fmt.Errorf("invalid or escaping symlink")
 			}
 			write([]byte("symlink"))
 			write([]byte(filepath.ToSlash(target)))

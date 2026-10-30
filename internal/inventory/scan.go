@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -30,6 +31,10 @@ func Scan(o Options) protocol.InventoryReport {
 	now := time.Now().UTC()
 	report := protocol.InventoryReport{Machine: o.Machine, ScannedAt: now, State: protocol.InventoryOK, Items: []protocol.InventoryItem{}}
 	add := func(h, k, scope, project, root, path, name, hash, state, reason string, unsupported ...string) {
+		if state == protocol.InventoryError {
+			report.State = protocol.InventoryError
+			report.Reason = "one or more sources could not be scanned"
+		}
 		report.Items = append(report.Items, protocol.InventoryItem{Harness: h, Kind: k, Scope: scope, Project: project, ProjectRoot: root, Location: path, Name: name, Source: protocol.InventoryNative, Hash: hash, ScannedAt: now, State: state, Reason: reason, Unsupported: unsupported})
 	}
 	// Never traverse links in a source path or skill root.
@@ -56,11 +61,36 @@ func Scan(o Options) protocol.InventoryReport {
 			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "source contains a symlink")
 			return
 		}
-		entries, err := os.ReadDir(path)
+		baseRoot, err := os.OpenRoot(base)
 		if errors.Is(err, os.ErrNotExist) {
 			return
 		}
 		if err != nil {
+			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "cannot open source root")
+			return
+		}
+		defer baseRoot.Close()
+		rel, err := filepath.Rel(base, path)
+		if err != nil {
+			return
+		}
+		sourceRoot, err := baseRoot.OpenRoot(rel)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if err != nil {
+			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
+			return
+		}
+		defer sourceRoot.Close()
+		source, err := sourceRoot.Open(".")
+		if err != nil {
+			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
+			return
+		}
+		entries, err := source.ReadDir(maxFiles + 1)
+		source.Close()
+		if err != nil && !errors.Is(err, io.EOF) {
 			add(h, protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
 			return
 		}
@@ -76,10 +106,18 @@ func Scan(o Options) protocol.InventoryReport {
 				}
 				continue
 			}
-			if info, err := os.Lstat(filepath.Join(p, "SKILL.md")); err != nil || !info.Mode().IsRegular() {
+			skillRoot, err := sourceRoot.OpenRoot(e.Name())
+			if err != nil {
+				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot open skill safely")
 				continue
 			}
-			hash, err := SkillHash(p)
+			info, err := skillRoot.Lstat("SKILL.md")
+			if err != nil || !info.Mode().IsRegular() {
+				skillRoot.Close()
+				continue
+			}
+			hash, err := skillHashRoot(skillRoot)
+			skillRoot.Close()
 			if err != nil {
 				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot hash skill safely")
 				continue
@@ -149,16 +187,13 @@ func Scan(o Options) protocol.InventoryReport {
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		for _, name := range names { // Only field names are included: arbitrary values can contain secrets.
-			fields := []string{}
-			if m, ok := servers[name].(map[string]any); ok {
-				for field := range m {
-					fields = append(fields, field)
-				}
+		for _, name := range names {
+			desc, ok := servers[name].(map[string]any)
+			if !ok {
+				add(h, protocol.InventoryMCP, scope, project, root, path, name, "", protocol.InventoryError, "invalid server descriptor")
+				continue
 			}
-			sort.Strings(fields)
-			sum := sha256.Sum256([]byte(strings.Join(fields, "\x00")))
-			add(h, protocol.InventoryMCP, scope, project, root, path, name, hex.EncodeToString(sum[:]), protocol.InventoryOK, "", "descriptor values redacted")
+			add(h, protocol.InventoryMCP, scope, project, root, path, name, fingerprint(name, desc), protocol.InventoryOK, "", "sensitive and unknown descriptor values redacted")
 		}
 	}
 	piSettings := func(scope, project, root, base, path string) {
@@ -325,4 +360,51 @@ func stripComments(b []byte) []byte {
 		}
 	}
 	return out
+}
+
+// fingerprint hashes only an allowlisted, redacted descriptor. Unknown argument
+// values, environment variables, headers, URL paths and query strings never
+// enter the hash.
+func fingerprint(name string, m map[string]any) string {
+	parts := []string{"mcp-v1", name}
+	command, _ := m["command"].(string)
+	if command == "" {
+		if a, ok := m["command"].([]any); ok && len(a) > 0 {
+			command, _ = a[0].(string)
+		}
+	}
+	if command != "" && !strings.ContainsAny(command, "?=#@ \t\n") {
+		parts = append(parts, "command", filepath.Base(command))
+	}
+	for _, field := range []string{"type", "transport"} {
+		if value, ok := m[field].(string); ok && (value == "stdio" || value == "http" || value == "sse" || value == "local" || value == "remote") {
+			parts = append(parts, field, value)
+		}
+	}
+	if raw, ok := m["url"].(string); ok {
+		if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" {
+			parts = append(parts, "url", u.Scheme, strings.ToLower(u.Hostname()))
+		}
+	}
+	for _, field := range []string{"args", "command"} {
+		if args, ok := m[field].([]any); ok {
+			for i, arg := range args {
+				if field == "command" && i == 0 {
+					continue
+				}
+				v, ok := arg.(string)
+				if !ok {
+					continue
+				}
+				if strings.HasPrefix(v, "--") && !strings.ContainsAny(v, "= /\\") && len(v) < 80 {
+					parts = append(parts, "flag", v)
+				} else {
+					parts = append(parts, "redacted")
+				}
+			}
+		}
+	}
+	data, _ := json.Marshal(parts)
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }

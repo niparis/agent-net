@@ -366,3 +366,7 @@ The experimental skill manifest hash helper bounds a bundle to 10,000 entries
 and 64 MiB of regular file data. It rejects special files, absolute or escaping
 symlinks, and files that change while being read. It is not yet connected to a
 scanner or exposed through the daemon.
+
+The inventory scanner draft limits each MCP or settings file to 1 MiB and
+refuses skill or configuration roots that escape the scan root. MCP fingerprints
+omit environment and header values, URL paths and queries, and argument values.

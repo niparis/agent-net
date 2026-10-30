@@ -137,3 +137,99 @@ func TestPiSettingsSkillPaths(t *testing.T) {
 	}
 	t.Fatal("missing configured skill path")
 }
+
+func TestDescriptorFingerprintDistinguishesNonsecretInputs(t *testing.T) {
+	a := map[string]any{"command": "node", "args": []any{"--port", "3000", "--token", "secret-one"}, "env": map[string]any{"TOKEN": "secret-one"}}
+	b := map[string]any{"command": "python", "args": []any{"--port", "3000", "--token", "secret-one"}, "env": map[string]any{"TOKEN": "secret-one"}}
+	c := map[string]any{"command": "node", "args": []any{"--port", "3000", "--token", "secret-two"}, "env": map[string]any{"TOKEN": "secret-two"}}
+	if fingerprint("server", a) == fingerprint("server", b) {
+		t.Fatal("command ignored")
+	}
+	if fingerprint("server", a) != fingerprint("server", c) {
+		t.Fatal("secret affected fingerprint")
+	}
+	if fingerprint("server", a) == fingerprint("other", a) {
+		t.Fatal("name ignored")
+	}
+}
+
+func TestEveryHarnessReportsInvalidConfigAndEscapedSkills(t *testing.T) {
+	cases := []struct{ h, config, skills string }{
+		{"claude", ".claude.json", ".claude/skills"},
+		{"codex", ".codex/config.toml", ".agents/skills"},
+		{"opencode", ".config/opencode/opencode.json", ".config/opencode/skills"},
+		{"pi", ".pi/agent/mcp.json", ".pi/agent/skills"},
+	}
+	for _, c := range cases {
+		t.Run(c.h, func(t *testing.T) {
+			home := t.TempDir()
+			cp := filepath.Join(home, c.config)
+			if err := os.MkdirAll(filepath.Dir(cp), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(cp, []byte("{invalid"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			sp := filepath.Join(home, c.skills)
+			if err := os.MkdirAll(filepath.Dir(sp), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(t.TempDir(), sp); err != nil {
+				t.Fatal(err)
+			}
+			report := Scan(Options{Home: home})
+			var configError, skillError bool
+			for _, item := range report.Items {
+				if item.Harness == c.h && item.State == protocol.InventoryError {
+					if item.Kind == protocol.InventoryMCP {
+						configError = true
+					}
+					if item.Kind == protocol.InventorySkill {
+						skillError = true
+					}
+				}
+			}
+			if !configError || !skillError {
+				t.Fatalf("missing errors: config %v skill %v", configError, skillError)
+			}
+		})
+	}
+}
+
+func TestScanFailureMarksReportError(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), []byte("bad"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if r := Scan(Options{Home: home}); r.State != protocol.InventoryError {
+		t.Fatalf("state = %q", r.State)
+	}
+}
+
+func TestEveryHarnessReportsOversizedConfig(t *testing.T) {
+	cases := []struct{ h, config string }{{"claude", ".claude.json"}, {"codex", ".codex/config.toml"}, {"opencode", ".config/opencode/opencode.json"}, {"pi", ".pi/agent/mcp.json"}}
+	for _, c := range cases {
+		t.Run(c.h, func(t *testing.T) {
+			home := t.TempDir()
+			path := filepath.Join(home, c.config)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			f, err := os.Create(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = f.Truncate(1<<20 + 1); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+			r := Scan(Options{Home: home})
+			for _, item := range r.Items {
+				if item.Harness == c.h && item.Kind == protocol.InventoryMCP && item.State == protocol.InventoryError {
+					return
+				}
+			}
+			t.Fatal("missing oversize error")
+		})
+	}
+}
