@@ -89,6 +89,14 @@ The daemon is a client of the shared Codex app server's control socket (mode 060
 
 Setup can set `default_tools_approval_mode = "approve"` for the `agent-net` MCP server only. That lets a Codex thread call the agent-net tools (list, send, reply, start workers) with no prompt, including under approval policy `never`, where Codex would otherwise refuse them. Setup follows the answer to the one integrations question, or `--accept-codex-tools` (a local answer for that machine).
 
+## Integrations answered once for all machines
+
+Your answers to the integrations question ([decision 0021](decisions/0021-network-integrations.md)) are stored at the gateway, and every daemon applies them: it adds or removes the Claude Code hooks and plugin, the Claude peer-message setting and the Codex tool approval on its own machine, at start and every minute.
+
+- **Only you can change them** from a command line or the TUI: `integrations_set` is behind the owner gate, like `session_trust` and `session_policy`.
+- **A machine you lose control of can change them for all machines.** The gateway takes the answers from any enrolled machine's token, the same trust as for trust and policy settings. A compromised machine could turn on, for example, accepted peer messages in Claude Code on your other machines. Remove a lost machine at the gateway at once (see [node tokens](#node-tokens)).
+- **A machine can say no for itself.** A local `--no-...` answer at `setup` wins over the network answer on that machine, and the daemon never undoes it.
+
 ## Delegation policy
 
 A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegation-policy.md)) is text that agent-net adds to a session's context on every turn: hand code changes to a subagent or a worker, or do them yourself. It is your standing instruction to the session, so who can set it matters.
