@@ -177,7 +177,7 @@ func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool)
 	info := protocol.SessionInfo{Harness: "codex", NativeID: native, PID: pid, Cwd: path,
 		Name: "codex worker " + project, Status: "idle", Delivery: "codex-app-server", Repo: d.repo.Refresh(path),
 		Mode: protocol.ModeBackground, Model: protocol.CleanModel(model), Worker: d.workerInfo(w)}
-	ls := &localSession{info: info}
+	ls := &localSession{info: info, owned: true}
 	d.mu.Lock()
 	d.sessions[key("codex", native)] = ls
 	d.mu.Unlock()
@@ -214,18 +214,10 @@ func (d *Daemon) setCodexStatus(w *worker, status string) {
 
 // ---- delivery ----
 
-// codexDelivery delivers messages to Codex workers. They are the only Codex
-// sessions this daemon has.
-type codexDelivery struct{ d *Daemon }
-
-func (codexDelivery) Harness() string                   { return "codex" }
-func (codexDelivery) Start(context.Context, Host) error { return nil }
-
-func (c codexDelivery) Deliver(ctx context.Context, target protocol.SessionInfo, m protocol.Message) Result {
-	w := c.d.workerByNative("codex", target.NativeID)
-	if w == nil {
-		return Result{Detail: "this Codex session is not a worker of this daemon"}
-	}
+// deliverWorker delivers a message to a Codex worker, which is driven turn by
+// turn in its private app server. The adapter (codex_peers.go) calls it for the
+// sessions that are workers.
+func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 	c.d.wmu.Lock()
 	cc, owner := w.codex, w.owner
 	c.d.wmu.Unlock()

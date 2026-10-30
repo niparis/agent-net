@@ -311,6 +311,9 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion(), "protocol": protocol.LocalProtocol}, nil
 
 	case "mcp":
+		if p.Harness == "codex" {
+			return lc.helloCodexMCP(p, pid)
+		}
 		if p.Harness != "claude" || p.NativeID == "" {
 			return nil, errors.New("mcp clients must say harness claude and a native_id")
 		}
@@ -415,6 +418,61 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 		return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 	}
 	return nil, fmt.Errorf("unknown client %q", p.Client)
+}
+
+// helloCodexMCP is the hello of `agent-net mcp --codex`. Codex starts one such
+// process per thread, as a child of the shared app server, and tells it nothing
+// about the thread. The shim learns the thread from the _meta of its first tool
+// call (set by Codex, not by the model) and says hello again with it
+// (decision 0011, C3). Two checks:
+//
+//   - the parent process is the app server that this daemon is connected to.
+//     The daemon reads that process ID from the control socket (the kernel
+//     knows who listens), so no process name is trusted;
+//   - the thread, if named, is one this daemon discovered.
+//
+// A hello with no thread is allowed after the first check; it can only make
+// calls that need no session.
+func (lc *localConn) helloCodexMCP(p helloParams, pid int) (any, error) {
+	d := lc.d
+	ca, _ := d.adapters["codex"].(*codexAdapter)
+	if ca == nil {
+		return nil, errors.New("this daemon has no Codex support")
+	}
+	srv := ca.serverPID()
+	if srv == 0 {
+		return nil, errors.New("peer check failed: this daemon is not connected to a Codex app server")
+	}
+	ppid, err := parentPID(pid)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read the parent process: %w", err)
+	}
+	if ppid != srv {
+		return nil, errors.New("peer check failed: the parent process is not the Codex app server that this daemon is connected to")
+	}
+	if p.NativeID == "" {
+		lc.mu.Lock()
+		lc.client = "mcp"
+		lc.peerPID = pid
+		lc.mu.Unlock()
+		return map[string]any{"node_id": d.cfg.NodeID, "version": d.helloVersion()}, nil
+	}
+	if !ca.isThread(p.NativeID) {
+		return nil, errors.New("the daemon has not discovered this Codex thread (is it open in a window?)")
+	}
+	d.mu.Lock()
+	ls := d.sessions[key("codex", p.NativeID)]
+	d.mu.Unlock()
+	if ls == nil {
+		return nil, errors.New("the daemon has not discovered this Codex thread")
+	}
+	lc.bind("mcp", ls)
+	lc.mu.Lock()
+	lc.peerPID = pid
+	lc.mu.Unlock()
+	d.noteMCPHello(p.NativeID)
+	d.Logf("mcp hello: codex thread %s pid %d runs agent-net %s, daemon runs %s", p.NativeID, pid, firstNonEmpty(p.Version, "(unknown version)"), d.helloVersion())
+	return map[string]any{"node_id": d.cfg.NodeID, "session_id": d.currentSessionID(ls), "version": d.helloVersion()}, nil
 }
 
 // checkPluginPeer checks that the process behind a plugin connection is the

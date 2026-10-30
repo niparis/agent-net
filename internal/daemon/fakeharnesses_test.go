@@ -59,6 +59,8 @@ func runFakeHarness() bool {
 	switch {
 	case os.Getenv(envFakeClaudeSession) != "":
 		fakeClaudeSession()
+	case os.Getenv(envFakeCodexShim) != "":
+		fakeCodexShim()
 	case os.Getenv(envFakeClaudeMCP) != "":
 		fakeClaudeMCP()
 	case os.Getenv(envFakeClaude) != "" && len(os.Args) > 1 && (os.Args[1] == "--bg" || os.Args[1] == "stop"):

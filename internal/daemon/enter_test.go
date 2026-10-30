@@ -232,10 +232,16 @@ func TestEnterCodexWorker(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	bins := fakeBin(t, "codex")
 	n, _, id := enterNode(t, g, "codex", protocol.SessionInfo{NativeID: "thr_1", PID: 1, Cwd: t.TempDir(), Name: "cx", Status: "idle"}, bins, nil)
-	// Not started by agent-net: there is no way in.
-	if p := enterOf(t, n, id, ""); len(p.Argv) != 0 || p.Note == "" {
+	// A thread of the shared app server: codex resume joins it.
+	if p := enterOf(t, n, id, ""); !reflect.DeepEqual(p.Argv, []string{bins["codex"], "resume", "thr_1"}) || len(p.Env) != 0 {
 		t.Fatalf("codex session without a worker: %+v", p)
 	}
+	// A thread found in another Codex home says which.
+	n.d.cfg.CodexHome = "/srv/codex-home"
+	if p := enterOf(t, n, id, ""); !reflect.DeepEqual(p.Argv, []string{"env", "CODEX_HOME=/srv/codex-home", bins["codex"], "resume", "thr_1"}) {
+		t.Fatalf("codex session in another home: %+v", p)
+	}
+	n.d.cfg.CodexHome = ""
 	w := &worker{id: "w_2", harness: "codex", sessionID: id, ref: "127.0.0.1:6000"}
 	n.d.wmu.Lock()
 	n.d.workers["w_2"] = w

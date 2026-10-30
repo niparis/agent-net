@@ -60,8 +60,15 @@ type Config struct {
 	SocketPath string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
-	Adapters          []Adapter
-	Logger            *log.Logger
+	// CodexHome is the Codex home folder (CODEX_HOME). When set, the daemon
+	// connects to the shared Codex app server whose control socket is in it, and
+	// the open Codex threads become sessions. Empty turns that off, which is
+	// what tests want: they must never reach the owner's Codex.
+	CodexHome string
+	// CodexInterval is how often the open Codex threads are listed (default 5 s).
+	CodexInterval time.Duration
+	Adapters      []Adapter
+	Logger        *log.Logger
 
 	BackoffMin, BackoffMax time.Duration
 	// PluginAckTimeout is how long to wait for a plugin to confirm a push.
@@ -131,6 +138,9 @@ type localSession struct {
 	info      protocol.SessionInfo
 	sessionID string
 	conn      *localConn // set for plugin sessions
+	// owned is set for a session the daemon registered itself (a Codex worker
+	// in its private server). Discovery of a harness never removes it.
+	owned bool
 }
 
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
@@ -255,7 +265,9 @@ func New(cfg Config) (*Daemon, error) {
 		d.adapters[a.Harness()] = a
 	}
 	if d.adapters["codex"] == nil {
-		d.adapters["codex"] = codexDelivery{d} // Codex workers are the only Codex sessions
+		// Codex workers, and the interactive threads of the shared Codex daemon
+		// when cfg.CodexHome is set (codex_peers.go).
+		d.adapters["codex"] = newCodexAdapter(d)
 	}
 	d.addOwnerSession()
 	return d, nil
@@ -282,6 +294,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 			d.Stop()
 			return fmt.Errorf("%s adapter: %w", a.Harness(), err)
 		}
+	}
+	if ca, ok := d.adapters["codex"].(*codexAdapter); ok {
+		ca.Start(ctx, d) // our own Codex adapter is not in cfg.Adapters
 	}
 	d.startUsage(ctx)
 	d.adoptWorkers()
@@ -360,7 +375,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 	}
 	for k, ls := range d.sessions {
-		if ls.info.Harness == harness && !ls.plugin() && !seen[k] {
+		if ls.info.Harness == harness && !ls.plugin() && !ls.owned && !seen[k] {
 			delete(d.sessions, k)
 			if ls.sessionID != "" {
 				gone = append(gone, ls.sessionID)

@@ -24,6 +24,7 @@ import (
 //	Claude Code, Pi in a terminal    its herdr pane (herdr agent attach), else
 //	                                 its tmux pane, when there is one
 //	OpenCode                         opencode --session <id> (in the folder)
+//	Codex (not a worker)             codex resume <thread>, on the shared app server
 //	a worker of OpenCode or Codex    their private server, with its password
 //	                                 in Env; only on the machine that has it
 //
@@ -199,10 +200,24 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		plan.Note = "OpenCode on the worker's private server. What you type here is your own input."
 		return plan, nil
 	case "codex":
-		// Codex has no adapter, so the only Codex sessions are workers, in a
-		// private app server (worker_codex.go).
-		if w == nil || w.ref == "" {
-			return no("Codex sessions can only be entered when agent-net started them")
+		if w == nil {
+			// A thread of the shared app server (codex_peers.go): `codex resume`
+			// joins that server, so the owner gets the same thread in a window.
+			bin, err := d.harnessBinary("codex")
+			if err != nil {
+				return no("%v", err)
+			}
+			plan.Argv = []string{bin, "resume", info.NativeID}
+			if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
+				// The thread was found in another Codex home, so say which.
+				plan.Argv = append([]string{"env", "CODEX_HOME=" + home}, plan.Argv...)
+			}
+			plan.Note = "Codex on the shared app server. The thread keeps running if you leave."
+			return plan, nil
+		}
+		// A worker is in a private app server (worker_codex.go).
+		if w.ref == "" {
+			return no("the Codex worker's app server is not ready")
 		}
 		if viaGateway {
 			return no("%s is a worker; its private app server can only be entered on its own machine, from agent-net tui there", name)
