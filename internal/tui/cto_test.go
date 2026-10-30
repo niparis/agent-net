@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -331,6 +332,7 @@ func TestCTOModelFormGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
 		m := New(src)
+		m.loc, m.now = time.UTC, func() time.Time { return t0 }
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refresh(m, src.fakeSource)
 		m.src = src
