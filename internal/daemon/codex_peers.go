@@ -242,7 +242,7 @@ func (a *codexAdapter) refresh(ctx context.Context, rpc *codexRPC) error {
 			th.Name = protocol.CleanModel(*t.Name)
 		}
 		if th.Name == "" {
-			th.Name = filepath.Base(t.Cwd)
+			th.Name = a.d.repo.Lookup(t.Cwd).Project
 		}
 		if t.Model != nil {
 			th.Model = protocol.CleanModel(*t.Model)

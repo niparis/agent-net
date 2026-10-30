@@ -25,6 +25,9 @@ type NodeConfig struct {
 	NodeID     string `json:"node_id"`
 	Token      string `json:"token"`
 	CASHA256   string `json:"ca_sha256"`
+	// Hostname pins the name this machine shows on the network. Edited by hand;
+	// without it the name is worked out by Hostname.
+	Hostname string `json:"hostname,omitempty"`
 	// NoLaunch makes this machine refuse workers (`agent-net setup --no-launch`).
 	NoLaunch bool `json:"no_launch,omitempty"`
 	// EnterSSH turns on entering a session on another machine through ssh from
@@ -171,7 +174,15 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 	if err != nil {
 		return NodeConfig{}, err
 	}
-	host, _ := os.Hostname()
+	// Joining again keeps this machine's own settings, including a host name
+	// set by hand.
+	var old NodeConfig
+	if raw, err := os.ReadFile(filepath.Join(dir, "node.json")); err == nil {
+		if json.Unmarshal(raw, &old) != nil {
+			old = NodeConfig{}
+		}
+	}
+	host := Hostname(old.Hostname)
 	body, _ := json.Marshal(map[string]string{"code": code, "hostname": host, "os": runtime.GOOS})
 	req, _ = http.NewRequestWithContext(ctx, "POST", url+"/v1/enroll", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
@@ -192,13 +203,7 @@ func Join(ctx context.Context, joinString, dir string) (NodeConfig, error) {
 		return NodeConfig{}, err
 	}
 	nc := NodeConfig{GatewayURL: url, NodeID: out.NodeID, Token: out.Token, CASHA256: fp}
-	// Joining again (a new gateway) keeps this machine's own settings.
-	if raw, err := os.ReadFile(filepath.Join(dir, "node.json")); err == nil {
-		var old NodeConfig
-		if json.Unmarshal(raw, &old) == nil {
-			nc.NoLaunch, nc.Workers = old.NoLaunch, old.Workers
-		}
-	}
+	nc.NoLaunch, nc.Workers, nc.Hostname = old.NoLaunch, old.Workers, old.Hostname
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nc, err
 	}

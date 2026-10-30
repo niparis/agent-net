@@ -264,7 +264,7 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	host, _ := os.Hostname()
+	host := daemon.Hostname(nc.Hostname)
 	logger := log.New(os.Stderr, "daemon: ", log.LstdFlags)
 	d, err := daemon.New(daemon.Config{
 		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
