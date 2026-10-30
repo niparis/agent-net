@@ -39,7 +39,17 @@ func (m Model) ctoView(w, h int) []string {
 		lines = append(lines, wrapCTOLine(v, w)...)
 	}
 	if c.err != "" {
-		lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
+		duplicate := false
+		pollError := "error: " + ctoErrorHint(sanitize(c.err))
+		for _, e := range c.sendErrors {
+			if e.text == pollError {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
+		}
 	}
 	if len(lines) == 0 {
 		hint := "write to the CTO: it can set charters, start workers, answer what the network is doing"

@@ -441,3 +441,15 @@ func TestCTOLongErrorGolden(t *testing.T) {
 	m.cto.err = "Provider request failed because the account has insufficient credits. Add credits or choose another model before retrying the request. The request was not completed."
 	golden(t, "cto_long_error_80x24", m.View())
 }
+
+func TestCTOPollFailureDoesNotRepeatSendFailure(t *testing.T) {
+	model, _ := New(&fakeCTOSource{fakeSource: &fakeSource{}}).startCTO()
+	m := model.(Model)
+	g := m.cto.generation
+	next, _ := m.Update(ctoSendMsg{err: errors.New("connection failed"), generation: g})
+	m = next.(Model)
+	m.applyCTOPoll(ctoPollMsg{err: errors.New("connection failed"), generation: g})
+	if got := strings.Join(m.ctoView(80, 8), "\n"); strings.Count(got, "error: connection failed") != 1 {
+		t.Fatalf("duplicate poll error:\n%s", got)
+	}
+}
