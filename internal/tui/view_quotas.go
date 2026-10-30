@@ -142,7 +142,7 @@ func (m Model) quotasView(w, h int) []string {
 		title += fmt.Sprintf(" · read %s ago", age.Truncate(time.Second))
 	}
 	out = append(out, panel(title, subscription, w, roleAccent)...)
-	out = append(out, m.quotaModelsView(w)...)
+
 	counts := map[string]int{}
 	for _, a := range m.snap.Agents {
 		if a.Online && a.Worker != nil {
@@ -161,18 +161,21 @@ func (m Model) quotasView(w, h int) []string {
 	if len(parts) == 0 {
 		parts = append(parts, "none")
 	}
-	bottom := "  workers now: " + strings.Join(parts, " · ")
-
-	if len(out) > h-1 {
-		headerRows := 1
-		header, body := out[:headerRows], out[headerRows:]
-		room := max(h-1-headerRows, 0)
+	bottom := "workers now: " + strings.Join(parts, " · ")
+	workers := m.quotaModelsView(w)
+	footer := panel("", []string{sDim.Render(bottom)}, w, roleAccent)[1]
+	workers = append(workers[:len(workers)-1], footer, workers[len(workers)-1])
+	out = append(out, workers...)
+	if len(out) > h {
+		header := out[:1]
+		body := out[1 : len(out)-2]
+		room := max(h-3, 0)
 		start := min(m.quotaScroll, max(len(body)-room, 0))
 		out = append(header, body[start:min(start+room, len(body))]...)
+		out = append(out, footer, workers[len(workers)-1])
 	}
-	for len(out) < h-1 {
+	for len(out) < h {
 		out = append(out, "")
 	}
-	out = append(out, sDim.Render(clip(bottom, w)))
 	return out
 }

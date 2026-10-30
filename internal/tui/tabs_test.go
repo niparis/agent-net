@@ -446,3 +446,18 @@ func TestWorkerPanelPicksAndTrackRecord(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestWorkersNowIsInsidePanel(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	for _, line := range strings.Split(v, "\n") {
+		if strings.Contains(line, "workers now:") {
+			if !strings.HasPrefix(line, "│ ") || !strings.HasSuffix(line, " │") {
+				t.Fatalf("footer outside panel: %q", line)
+			}
+			return
+		}
+	}
+	t.Fatal("footer missing")
+}
