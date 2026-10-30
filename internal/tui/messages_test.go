@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
@@ -97,5 +99,61 @@ func TestConversationWorkerNameAndActivity(t *testing.T) {
 	v := ansi.Strip(m.messageConversationLine(rows[0], 80, false))
 	if !strings.Contains(v, "worker 8") || strings.Contains(v, "shop worker") {
 		t.Fatal(v)
+	}
+}
+
+func TestMessageSelectBodyWithinConversation(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0}, ConversationID: "a"}, {Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0}, ConversationID: "a"}})
+	m.feedCur = 0
+	m = keys(m, "right")
+	next, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
+	m = next.(Model)
+	if m.open == nil || m.open.id != "two" {
+		t.Fatalf("opened %+v", m.open)
+	}
+}
+
+func TestConversationScreens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		snap := fakeSnapshot()
+		worker := snap.Agents[0]
+		worker.SessionID = "s_worker"
+		worker.Profile.Name = "build worker 8"
+		worker.Worker = &protocol.WorkerInfo{ID: "w_8"}
+		snap.Agents = append(snap.Agents, worker)
+		a, b := "s_0000000000000001", "s_0000000000000002"
+		events := []protocol.FeedEvent{
+			ev(1, -10*time.Minute, "node.connected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build" }),
+			ev(2, -9*time.Minute, "msg.stored", "m_a", a, "s_worker", "request", func(e *protocol.FeedEvent) { e.ConversationID = "c_a" }),
+			ev(3, -7*time.Minute, "msg.stored", "m_b", "s_worker", a, "reply", func(e *protocol.FeedEvent) { e.ConversationID = "c_a"; e.Parent = "m_a" }),
+			ev(4, -6*time.Minute, "msg.stored", "m_c", a, b, "notification", func(e *protocol.FeedEvent) { e.ConversationID = "c_b" }),
+			ev(5, -5*time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build" }),
+			ev(6, -3*time.Minute, "msg.stored", "m_d", a, "s_worker", "request", func(e *protocol.FeedEvent) { e.ConversationID = "c_c" }),
+			ev(7, -time.Minute, "msg.stored", "m_e", "s_worker", a, "reply", func(e *protocol.FeedEvent) { e.ConversationID = "c_c"; e.Parent = "m_d" }),
+		}
+		src := &fakeSource{snap: snap, events: events, messages: map[string]protocol.Message{
+			"m_a": {ID: "m_a", ConversationID: "c_a", Body: "Review the change\nCheck the tests."},
+			"m_b": {ID: "m_b", ConversationID: "c_a", Body: "[agent-net worker notice]\nstatus: done\nrun time: 1h5m\nchanges (git diff --stat):\n 15 files changed, 20 insertions(+)"},
+			"m_c": {ID: "m_c", ConversationID: "c_b", Body: "The deploy is ready."},
+			"m_d": {ID: "m_d", ConversationID: "c_c", Body: "Polish the sessions panel\nRun the checks."},
+			"m_e": {ID: "m_e", ConversationID: "c_c", Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\nchanges (git diff --stat):\n 3 files changed, 4 insertions(+)"},
+		}}
+		m := New(src)
+		m.loc, m.now = time.UTC, func() time.Time { return t0 }
+		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = refresh(m, src)
+		m = drainSnippets(t, m)
+		m = keys(m, "2")
+		v := m.View()
+		if !strings.Contains(ansi.Strip(v), "Polish") {
+			t.Fatal(v)
+		}
+		golden(t, fmt.Sprintf("messages_conversations_%dx%d", size[0], size[1]), v)
+		m = keys(m, "e")
+		golden(t, fmt.Sprintf("messages_events_%dx%d", size[0], size[1]), m.View())
 	}
 }

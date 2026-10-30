@@ -24,7 +24,7 @@ func TestScreens(t *testing.T) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	cmd := osexec.Command(os.Args[0], "-test.run", "^(TestQuotaViewGoldens|TestQuotaLiveFixtureGoldens|TestLayoutGoldens|TestCTOLongErrorGolden|TestViewGoldenNeeds|TestGoldenMainWithUsage|TestGoldenDetailWithTopProcesses|TestGoldenStaleUsage|TestGoldenOpenCodeSharedTree|TestGoldenHelp|TestGoldenFeedSnippets|TestGoldenMap|TestViewGolden80|TestViewGolden120|TestViewGoldenOfflineAndFilter|TestViewGoldenFeedFocusAndBody|TestDaemonDownBanner|TestGatewayOfflineBanner|TestPolicyFormGolden|TestActionScreensGolden|TestGoldenConversation|TestTreeGolden)$", "-screens", dir)
+	cmd := osexec.Command(os.Args[0], "-test.run", "^(TestQuotaViewGoldens|TestConversationScreens|TestQuotaLiveFixtureGoldens|TestLayoutGoldens|TestCTOLongErrorGolden|TestViewGoldenNeeds|TestGoldenMainWithUsage|TestGoldenDetailWithTopProcesses|TestGoldenStaleUsage|TestGoldenOpenCodeSharedTree|TestGoldenHelp|TestGoldenFeedSnippets|TestGoldenMap|TestViewGolden80|TestViewGolden120|TestViewGoldenOfflineAndFilter|TestViewGoldenFeedFocusAndBody|TestDaemonDownBanner|TestGatewayOfflineBanner|TestPolicyFormGolden|TestActionScreensGolden|TestGoldenConversation|TestTreeGolden)$", "-screens", dir)
 	cmd.Env = append(os.Environ(), "AGENT_NET_SCREEN_CHILD=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {

@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map
+╭─Messages · conversations─────────────────────────────────────────────────────╮
+│ ▸ tenebrae-53 ↔ worker 8 · Polish the sessions panel                  1m ago │
+│   tenebrae-53 ↔ strategies · The deploy is ready.                     6m ago │
+│   tenebrae-53 ↔ worker 8 · Review the change                          7m ago │
+│ 2 system events · e to show                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ ▸ 14:02 tenebrae-53                                                          │
+│ Polish the sessions panel                                                    │
+│ Run the checks.                                                              │
+│   14:04 worker 8                                                             │
+│ ✓ done · 12m · 3 files                                                       │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  left/right message  enter conversation  v body  tab CTO

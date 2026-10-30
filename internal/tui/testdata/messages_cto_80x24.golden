@@ -1,16 +1,16 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy  updated 14:05:00
-╭─Messages · worker events─────────────────────────────────────────────────────╮
-│   13:55  build-vm connected                                                  │
-│ ▸ 13:56  CTO -> strategies  request       "Please check the deployment."   ↩ │
-│    └ 13:57  strategies -> tenebrae-53  reply                               ✓ │
-│   14:01  ci-runner -> tenebrae-53  request                                 ✓ │
-│   14:02  tenebrae-53 -> ci-runner  notification                            ✗ │
-│   14:04  tenebrae-53 -> s_00000000  request                                … │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+╭─Messages · conversations─────────────────────────────────────────────────────╮
+│   tenebrae-53 ↔ s_00000000 · …                                        1m ago │
+│   tenebrae-53 ↔ ci-runner · …                                         2m ago │
+│   ci-runner ↔ tenebrae-53 · …                                         3m ago │
+│ ▸ CTO ↔ strategies · Please check the deployment.                     8m ago │
+│ 1 system events · e to show                                                  │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ ▸ 13:56 CTO                                                                  │
+│ …                                                                            │
+│   13:57 strategies                                                           │
+│ …                                                                            │
 │                                                                              │
 │                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter conversation  v view  l events  tab CTO  1 sessions
+up/down select  left/right message  enter conversation  v body  tab CTO

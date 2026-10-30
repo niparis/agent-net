@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued  updated 14:05:00
+╭─Messages · conversations─────────────────────╮╭─Conversation─────────────────────────────────────────────────────────╮
+│ ▸ tenebrae-53 ↔ worker 8 · Polish th… 1m ago ││ ▸ 14:02 tenebrae-53                                                  │
+│   tenebrae-53 ↔ strategies · The dep… 6m ago ││ Polish the sessions panel                                            │
+│   tenebrae-53 ↔ worker 8 · Review th… 7m ago ││ Run the checks.                                                      │
+│                                              ││   14:04 worker 8                                                     │
+│                                              ││ ✓ done · 12m · 3 files                                               │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│                                              ││                                                                      │
+│ 2 system events · e to show                  ││                                                                      │
+╰──────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down select  left/right message  enter conversation  v body  e events  l filter  tab CTO  ? help
