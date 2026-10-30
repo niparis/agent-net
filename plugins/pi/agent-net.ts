@@ -53,6 +53,7 @@ interface DeliveredMessage {
   sender_worker?: boolean;
   recipient_peer_trust?: boolean;
   overruled?: boolean;
+  recipient_relation?: string;
   message_type?: string;
   parent_message_id?: string;
   body: string;
@@ -114,7 +115,8 @@ function formatDeliveryBase(m: DeliveredMessage): string {
   return (
     `${m.body}\n\n` +
     `[agent-net] message ${m.message_id} from ${who} (session ${m.sender_session_id ?? "unknown"})${conv}.\n` +
-    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}`
+    `This is from another agent working on your user's machines. Answer it directly with the agent_reply tool (message_id="${m.message_id}") if you can help. ${authorityNote(m)}` +
+    (m.recipient_relation ? ` ${m.recipient_relation}` : "")
   );
 }
 
@@ -639,7 +641,7 @@ export default function (pi: ExtensionAPI) {
   // native subagents, so the daemon sends the workers wording for "native" too.
   // The last answer is kept, so a daemon that is slow for a moment does not
   // drop the policy.
-  let lastPolicy: { text?: string; main?: string } | undefined;
+  let lastPolicy: { text?: string; charter?: string; main?: string } | undefined;
   let mainApplied = "";
   async function fetchPolicy() {
     if (!connected) return lastPolicy;
@@ -668,6 +670,7 @@ export default function (pi: ExtensionAPI) {
     if (!systemPrompt.includes(ANNOUNCE_RULE)) systemPrompt = `${systemPrompt}\n\nagent-net: ${ANNOUNCE_RULE}`;
     const pol = await fetchPolicy();
     if (pol?.text && !systemPrompt.includes(pol.text)) systemPrompt = `${systemPrompt}\n\n${pol.text}`;
+    if (pol?.charter && !systemPrompt.includes(pol.charter)) systemPrompt = `${systemPrompt}\n\n${pol.charter}`;
     await applyMain(pol?.main);
     return systemPrompt === event.systemPrompt ? undefined : { systemPrompt };
   });

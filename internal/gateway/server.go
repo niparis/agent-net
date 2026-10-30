@@ -550,6 +550,8 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 
 	case "query.graph":
 		return g.handleGraphView(raw)
+	case "graph.read":
+		return g.handleGraphRead(raw)
 
 	case "query.events":
 		p, err := decode[protocol.QueryEvents](raw)
@@ -725,7 +727,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if !ok || a.NodeID != nc.id {
 			return nil, reject("session %q does not belong to this node", p.SessionID)
 		}
-		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation}, nil
+		return protocol.PolicyGot{Harness: a.Harness, Delegation: a.Delegation, Project: projectOfSession(a)}, nil
 
 	case "profile.announce":
 		p, err := decode[protocol.ProfileAnnounce](raw)
@@ -912,6 +914,9 @@ func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Mes
 	if a, ok, err := g.store.Agent(m.To); err == nil && ok {
 		m.RecipientTrust = a.PeerTrust
 	}
+	// The relation from the sender's node to the recipient's node is graph
+	// data, computed here and never set by a sender (decision 0022).
+	m.RecipientRelation = g.relationForDelivery(m)
 	frame, err := protocol.EncodeRequest("msg.deliver", protocol.NewID("d"), protocol.MsgDeliver{Message: m})
 	if err != nil {
 		return

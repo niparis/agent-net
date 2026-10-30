@@ -364,5 +364,10 @@ func codexFrame(m protocol.Message) string {
 	if m.Type == protocol.TypeReply && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		foot += "\n" + protocol.NoAuthorityNote
 	}
+	// The gateway computes the graph relation from the sender's node to this
+	// node (decision 0022). It is agent-net's own text, after the body.
+	if m.Type == protocol.TypeRequest && m.RecipientRelation != "" {
+		foot += " " + m.RecipientRelation
+	}
 	return strings.TrimRight(protocol.NeutralizeMarkers(m.Body), "\n") + "\n\n" + foot
 }

@@ -67,6 +67,11 @@ func (d *Daemon) policyOf(ctx context.Context, sid string) (protocol.PolicyGot, 
 	if err == nil {
 		err = json.Unmarshal(raw, &got)
 	}
+	if err == nil {
+		// The node's charter travels with the policy answer, so a harness hook
+		// asks once per turn (decision 0022).
+		got.Charter = d.charterContext(ctx, got.Project)
+	}
 	if err != nil {
 		if have && now.Sub(e.at) < policyStale {
 			return e.got, true
@@ -108,21 +113,23 @@ func validName(s string) bool {
 // policyResult turns the gateway's answer into what the adapter needs. The
 // adapter of a harness without native subagents gets the workers text.
 func (d *Daemon) policyResult(harness string, got protocol.PolicyGot) protocol.PolicyResult {
+	res := protocol.PolicyResult{Charter: got.Charter}
 	v := got.Delegation
 	if v == nil || !protocol.SupportFor(harness).Applied {
-		return protocol.PolicyResult{}
+		return res
 	}
 	if _, err := v.DelegationPolicy.Clean(); err != nil || (v.CoderResolved != "" && !validName(v.CoderResolved)) ||
 		(v.MainResolved != "" && !validName(v.MainResolved)) {
-		return protocol.PolicyResult{} // bad data from the gateway: say nothing
+		return res // bad data from the gateway: say nothing about the policy
 	}
 	view := *v
 	if view.Delegate == "" {
 		// Only a main model is set.
-		return protocol.PolicyResult{Main: mainFor(harness, view)}
+		res.Main = mainFor(harness, view)
+		return res
 	}
 	mode := protocol.EffectiveMode(harness, view.Delegate)
-	res := protocol.PolicyResult{Mode: mode, Main: mainFor(harness, view)}
+	res.Mode, res.Main = mode, mainFor(harness, view)
 	if mode == protocol.DelegateNative {
 		res.Coder = view.Coder()
 		res.AgentID = protocol.CoderAgentID(res.Coder)

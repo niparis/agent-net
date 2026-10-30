@@ -203,6 +203,8 @@ type Daemon struct {
 	hints hintState
 	// policy caches the delegation policy per session (policy.go).
 	policy policyState
+	// graph caches the graph of each node for its charter (graphread.go).
+	graph graphState
 	// integrations holds the last network answers this daemon applied
 	// (integrations.go).
 	intgMu   sync.Mutex
