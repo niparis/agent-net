@@ -545,6 +545,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return g.importSkill(ctx, p)
 
+	case "tools.versions":
+		p, err := decode[protocol.ToolVersionRequest](raw)
+		if err != nil || p.Item == "" {
+			return nil, reject("versions needs an item")
+		}
+		return g.skillVersions(p.Item)
+	case "tools.export":
+		p, err := decode[protocol.ToolVersionRequest](raw)
+		if err != nil || p.Item == "" || p.Version == "" {
+			return nil, reject("export needs an item and version")
+		}
+		return g.exportSkill(p.Item, p.Version)
+
 	case "query.inventory":
 		p, err := decode[struct {
 			Offset int `json:"offset"`

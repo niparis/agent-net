@@ -191,3 +191,68 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 	}
 	return v, nil
 }
+
+func (g *Gateway) skillVersions(item string) (any, error) {
+	rows, err := g.store.db.Query(`SELECT item,hash,commit_id,node_id,location,imported_at FROM skill_versions WHERE item=? ORDER BY imported_at,hash`, item)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	versions := []skillVersion{}
+	for rows.Next() {
+		var v skillVersion
+		if err = rows.Scan(&v.Item, &v.Hash, &v.Commit, &v.NodeID, &v.Location, &v.ImportedAt); err != nil {
+			return nil, err
+		}
+		versions = append(versions, v)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return map[string]any{"versions": versions}, nil
+}
+
+func (s *skillStore) read(item, hash string) ([]byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var commit string
+	if err := s.db.db.QueryRow(`SELECT commit_id FROM skill_versions WHERE item=? AND hash=?`, item, hash).Scan(&commit); err != nil {
+		return nil, errors.New("skill version not found")
+	}
+	if len(commit) != 40 {
+		return nil, errors.New("invalid skill commit")
+	}
+	if _, err := hex.DecodeString(commit); err != nil {
+		return nil, errors.New("invalid skill commit")
+	}
+	cmd := exec.Command("git", "--git-dir", s.path, "cat-file", "blob", commit+":"+skillPath(item))
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + s.path, "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_TERMINAL_PROMPT=0"}
+	out, err := cmd.Output()
+	if err != nil || len(out) > inventory.MaxBundleBytes {
+		return nil, errors.New("cannot read skill version")
+	}
+	dir, err := os.MkdirTemp("", "agent-net-skill-check-")
+	if err != nil {
+		return nil, errors.New("cannot verify skill version")
+	}
+	defer os.RemoveAll(dir)
+	if inventory.UnpackSkill(out, dir) != nil {
+		return nil, errors.New("invalid stored skill bundle")
+	}
+	got, err := inventory.SkillHash(dir)
+	if err != nil || got != hash {
+		return nil, errors.New("stored skill hash mismatch")
+	}
+	return out, nil
+}
+func (g *Gateway) exportSkill(item, hash string) (protocol.SkillBundle, error) {
+	repo, err := g.skillRepository()
+	if err != nil {
+		return protocol.SkillBundle{}, errors.New("cannot open skill store")
+	}
+	b, err := repo.read(item, hash)
+	if err != nil {
+		return protocol.SkillBundle{}, err
+	}
+	return protocol.SkillBundle{Data: b}, nil
+}

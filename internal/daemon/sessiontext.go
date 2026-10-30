@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true, "tools_import": true,
+	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true, "tools_import": true, "tools_versions": true, "tools_export": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
@@ -197,6 +197,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "query.tools_item", json.RawMessage(raw))
 	case "tools_import":
 		res, err = d.call(ctx, "tools.import", json.RawMessage(raw))
+	case "tools_versions":
+		res, err = d.call(ctx, "tools.versions", json.RawMessage(raw))
+	case "tools_export":
+		res, err = d.call(ctx, "tools.export", json.RawMessage(raw))
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":

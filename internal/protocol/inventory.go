@@ -112,3 +112,9 @@ type SkillBundleRequest struct {
 type SkillBundle struct {
 	Data []byte `json:"data"`
 }
+
+// ToolVersionRequest selects a stored skill and optional content-hash version.
+type ToolVersionRequest struct {
+	Item    string `json:"item"`
+	Version string `json:"version,omitempty"`
+}
