@@ -69,7 +69,7 @@ func runFakeOpenCode() {
 	cwd, _ := os.Getwd()
 	rec := fakeOCRecord{Args: os.Args[1:], Cwd: cwd, Pid: os.Getpid(), Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
-	for _, k := range []string{"AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
+	for _, k := range []string{"AGENT_NET_CTO", "AGENT_NET_WORKER", "AGENT_NET_WORKER_SESSION_FILE", "AGENT_NET_SOCKET", "XDG_STATE_HOME", "XDG_DATA_HOME", "OPENCODE_SERVER_PASSWORD"} {
 		rec.Env[k] = os.Getenv(k)
 	}
 	child := exec.Command("sleep", "600")
@@ -135,7 +135,7 @@ func runFakeOpenCode() {
 			}
 		}
 		write()
-		if id != "" && os.Getenv("FAKE_OC_NOPLUGIN") == "" {
+		if id != "" && os.Getenv("FAKE_OC_NOPLUGIN") == "" && os.Getenv("AGENT_NET_CTO") != "1" {
 			hello := id
 			if os.Getenv("FAKE_OC_WRONG_SESSION") != "" {
 				hello = "ses_other"
@@ -158,6 +158,22 @@ func runFakeOpenCode() {
 	mux.HandleFunc("GET /api/session/{id}/message", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
+			return
+		}
+		if os.Getenv("AGENT_NET_CTO") == "1" {
+			mu.Lock()
+			defer mu.Unlock()
+			data, err := os.ReadFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json"))
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+			var items []map[string]any
+			if json.Unmarshal(data, &items) != nil {
+				http.Error(w, "bad session", 500)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": items})
 			return
 		}
 		items := []map[string]any{
@@ -184,11 +200,57 @@ func runFakeOpenCode() {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		id := "ses_fake_" + strconv.Itoa(os.Getpid())
+		if os.Getenv("AGENT_NET_CTO") == "1" {
+			id = "ses_" + protocol.NewToken()
+			if err := os.MkdirAll(os.Getenv("XDG_DATA_HOME"), 0o700); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			if err := os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+id+".json"), []byte("[]"), 0o600); err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+		}
 		mu.Lock()
 		rec.SessionID, rec.SessionBody = id, body
 		mu.Unlock()
 		write()
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
+	})
+	mux.HandleFunc("POST /api/session/{id}/prompt", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var prompt struct {
+			Text     string `json:"text"`
+			Delivery string `json:"delivery"`
+		}
+		if json.NewDecoder(r.Body).Decode(&prompt) != nil || prompt.Text == "" {
+			http.Error(w, "invalid prompt", 400)
+			return
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		var items []map[string]any
+		if json.Unmarshal(raw, &items) != nil {
+			http.Error(w, "bad session", 500)
+			return
+		}
+		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text}
+		items = append([]map[string]any{item}, items...)
+		raw, _ = json.Marshal(items)
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": item})
 	})
 	if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
 		fmt.Fprintln(os.Stderr, "fake opencode:", err)
