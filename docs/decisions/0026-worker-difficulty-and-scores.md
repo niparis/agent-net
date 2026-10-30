@@ -7,3 +7,5 @@ The embedded table records scores from [Artificial Analysis](https://artificiala
 The chooser skips exhausted windows and windows above 90 percent used. It compares elapsed share minus used share and subtracts five points for each running worker on the provider. Stale readings do not decide a choice. Equal choices rotate when usable readings are absent. The start result explains the selection. An empty model and difficulty use the harness default when none of the available models has a score. An explicit model keeps the existing resolution rules.
 
 The Quotas view shows model scores and fit, recent use and current picks. It credits Artificial Analysis when its scores appear.
+
+Automatic choices use the owner's worker provider allowlist, or subscription and quota-reading defaults when unset; equal-fit and equal-room choices prefer a recent successful worker.
