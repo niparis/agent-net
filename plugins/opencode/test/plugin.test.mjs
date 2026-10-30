@@ -186,6 +186,20 @@ function freshHub() {
   delete globalThis[Symbol.for("agent-net.opencode.hub.v1")];
 }
 
+await test("CTO mode does not initialize network behavior", async () => {
+  freshHub();
+  process.env.AGENT_NET_CTO = "1";
+  let accesses = 0;
+  const context = new Proxy({}, { get() { accesses++; throw new Error("context accessed"); } });
+  try {
+    const stop = await plugin.setup(context);
+    if (typeof stop === "function") stop();
+    if (accesses !== 0) throw new Error("context was accessed");
+  } finally {
+    delete process.env.AGENT_NET_CTO;
+  }
+});
+
 await test("session.created registers a session before any prompt", async () => {
   freshHub();
   const sessions = new Map();

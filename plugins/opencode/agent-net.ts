@@ -997,6 +997,8 @@ function hub(): Hub {
 export default {
   id: "agent-net",
   async setup(ctx: Context) {
+    // The private CTO server must never join the agent-net network.
+    if (process.env.AGENT_NET_CTO === "1") return () => {};
     const h = hub();
     const me = Symbol("instance");
     const events = new AbortController();
