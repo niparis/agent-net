@@ -143,19 +143,20 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "select", 1}, {"M/esc", "sessions", 1}, {"r", "refresh", 3}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
+	case m.focus == focusCTO:
+		return []hint{{"tab", "focus", 1}, {"enter", "send", 1}, {"o", "full screen", 2}, {"n", "new", 2}, {"u", "undo", 2}, {"esc", "back", 1}}
 	case m.tab == 1:
-		return []hint{{"1/2", "tabs", 1}, {"up/down", "scroll", 1}, {"r", "refresh", 2}, {"?", "help", 1}, {"q", "quit", 1}}
-	case m.focus == focusFeed:
-		return []hint{{"up/down", "move", 1}, {"enter", "conversation", 1}, {"v", "body", 2}, {"m", "msg", 1}, {"l", "events", 3},
-			{"1/2", "tabs", 1}, {"tab", "sessions", 2}, {"/", "filter", 3}, {"o", "offline", 4}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"up/down", "select", 1}, {"enter", "conversation", 1}, {"v", "view", 2}, {"l", "events", 2}, {"1", "sessions", 3}, {"?", "help", 3}}
+	case m.tab == 2:
+		return []hint{{"1", "sessions", 1}, {"2", "messages", 1}, {"?", "help", 2}, {"q", "quit", 2}}
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
-			return []hint{{"c", "recipient", 1}, {"C", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+			return []hint{{"c", "recipient", 1}, {"R", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"1/2", "tabs", 1}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
-		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "feed", 4}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 1}}
+	return []hint{{"1/2/3", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
@@ -166,15 +167,7 @@ func (m Model) helpLine(w int) string {
 		}
 		return sDim.Render(clip("up/down select  enter details  a approve  r refuse  t answer  esc back", w))
 	}
-	if m.focus == focusCTO {
-		return sDim.Render(clip("tab focus  enter send  o full screen  n new  u undo  esc back", w))
-	}
-	if m.tab == 1 {
-		return sDim.Render(clip("up/down select  enter conversation  v view  l events  1 sessions  ? help", w))
-	}
-	if m.tab == 2 {
-		return sDim.Render(clip("1 sessions  2 messages  ? help  q quit", w))
-	}
+
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
 	}
@@ -219,7 +212,7 @@ func (m Model) helpLine(w int) string {
 func (m Model) helpView(w, h int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
-		{"1/2", "switch between Sessions and Quotas"},
+		{"1/2/3", "switch between Sessions, Messages and Quotas"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
 		{"enter or c", "open the conversation of the session"},
@@ -231,13 +224,12 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"M", "map: charters, maturity, edges and history (read only)"},
-		{"C", "CTO: chat, open full UI, new conversation and undo"},
+		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
-		{"o", "show offline and dormant sessions"},
+		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
-		{"1/2/3", "sessions, messages and quotas"},
 		{"tab, C", "focus the CTO box; tab or esc returns to sessions"},
 		{"v, l", "v: open the body of the message; l: feed events (worker, all, none)"},
 		{"r", "refresh now"},

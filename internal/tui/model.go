@@ -571,8 +571,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == focusCTO && m.cto != nil {
 		return m.ctoKey(k)
 	}
-	if k.String() == "C" && !m.filtering && m.open == nil && m.conv == nil && !m.outcomeSelected() {
+	if k.String() == "C" && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
+		m.open, m.conv = nil, nil
 		if m.cto == nil {
 			return m.startCTO()
 		}
@@ -716,7 +717,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 	case "c":
 		return m, m.openConv()
-	case "C":
+	case "R":
 		for _, e := range m.snap.Outcomes {
 			if m.selected == "outcome:"+e.ReplyID {
 				return m, m.openConvFor(e.Sender)

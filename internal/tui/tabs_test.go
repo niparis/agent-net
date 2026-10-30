@@ -266,3 +266,28 @@ func TestLayoutGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("messages_%dx%d", size[0], size[1]), v)
 	}
 }
+
+func TestCTOFocusFromConversationAndBody(t *testing.T) {
+	m := newModel(80, 24)
+	m.conv = &convState{id: "session"}
+	m = keys(m, "C")
+	if m.focus != focusCTO || m.conv != nil || m.tab != 0 {
+		t.Fatal("C did not leave conversation for CTO")
+	}
+	m = keys(m, "esc", "2")
+	m.open = &openMsg{id: "message"}
+	m = keys(m, "C")
+	if m.focus != focusCTO || m.open != nil || m.tab != 0 {
+		t.Fatal("C did not leave message body for CTO")
+	}
+}
+
+func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
+	m := keys(newModel(80, 24), "C")
+	for _, width := range []int{40, 60, 80, 120} {
+		line := ansi.Strip(m.helpLine(width))
+		if ansi.StringWidth(line) > width || strings.Contains(line, "…") {
+			t.Fatalf("%d: %q", width, line)
+		}
+	}
+}

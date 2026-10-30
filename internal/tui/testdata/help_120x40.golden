@@ -1,6 +1,6 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
  Sessions
-  1/2                  switch between Sessions and Quotas
+  1/2/3                switch between Sessions, Messages and Quotas
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
   enter or c           open the conversation of the session
@@ -12,13 +12,12 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
   M                    map: charters, maturity, edges and history (read only)
-  C                    CTO: chat, open full UI, new conversation and undo
+  C                    focus CTO chat; o opens full UI, n starts new, u undoes
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support
   /                    filter (words match name, project, branch, model, ...)
-  o                    show offline and dormant sessions
+  o, d                 show offline sessions; toggle selected session details
   a                    active only: hide sessions idle for over an hour
-  1/2/3                sessions, messages and quotas
   tab, C               focus the CTO box; tab or esc returns to sessions
   v, l                 v: open the body of the message; l: feed events (worker, all, none)
   r                    refresh now
@@ -37,4 +36,5 @@ Keys ─────────────────────────
   dim row              offline, or idle for more than an hour
   ?                    a figure that is missing or older than 45 seconds
   … ✓ ↩ ✗              message state: pending, delivered, replied, failed
+  ↳                    a reply, under the message it answers
 esc close help  q quit
