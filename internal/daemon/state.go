@@ -113,6 +113,24 @@ CREATE TABLE IF NOT EXISTS workers (
 			return nil, err
 		}
 	}
+	for _, col := range []struct{ table, name, spec string }{
+		{"cto", "claude_session_id", "claude_session_id TEXT NOT NULL DEFAULT ''"},
+		{"cto", "claude_graph_after", "claude_graph_after INTEGER NOT NULL DEFAULT 0"},
+		{"cto", "active_harness", "active_harness TEXT NOT NULL DEFAULT 'opencode'"},
+		{"cto_actions", "harness", "harness TEXT NOT NULL DEFAULT 'opencode'"},
+	} {
+		var has int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?`, col.table, col.name).Scan(&has); err != nil {
+			db.Close()
+			return nil, err
+		}
+		if has == 0 {
+			if _, err := db.Exec(`ALTER TABLE ` + col.table + ` ADD COLUMN ` + col.spec); err != nil {
+				db.Close()
+				return nil, err
+			}
+		}
+	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
 		db.Close()

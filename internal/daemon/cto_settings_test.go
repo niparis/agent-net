@@ -25,3 +25,27 @@ func TestCTOSettingsOwnerGate(t *testing.T) {
 		t.Fatalf("settings: %+v %v", out, err)
 	}
 }
+
+func TestCTOHarnessSettings(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	cli := cliClient(t, n)
+	var out protocol.CTOSettings
+	raw := cli.mustCall(protocol.OpCTOSettings, nil)
+	if err := json.Unmarshal(raw, &out); err != nil || out.Harness != "opencode" {
+		t.Fatalf("default: %+v %v", out, err)
+	}
+	model := "opus"
+	cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Model: &model})
+	harness := "claude"
+	cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Harness: &harness})
+	raw = cli.mustCall(protocol.OpCTOSettings, nil)
+	if err := json.Unmarshal(raw, &out); err != nil || out.Harness != harness || out.Model != model {
+		t.Fatalf("settings: %+v %v", out, err)
+	}
+	bad := "other"
+	if _, err := cli.call(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Harness: &bad}); err == nil {
+		t.Fatal("accepted unknown harness")
+	}
+}

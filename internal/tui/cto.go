@@ -23,20 +23,21 @@ type ctoSource interface {
 	CTOUndo(context.Context, int64) error
 }
 type ctoState struct {
-	input            textinput.Model
-	editing, polling bool
-	model, err       string
-	messages         []string
-	history          []protocol.CTOGraphChange
-	local            []protocol.CTOAction
-	historyLoaded    bool
-	lastGraphID      int64
-	generation       int
+	input               textinput.Model
+	editing, polling    bool
+	model, harness, err string
+	messages            []string
+	history             []protocol.CTOGraphChange
+	local               []protocol.CTOAction
+	historyLoaded       bool
+	lastGraphID         int64
+	generation          int
 }
 type ctoPollMsg struct {
 	events     protocol.CTOEvents
 	history    []protocol.CTOGraphChange
 	model      string
+	harness    string
 	err        error
 	generation int
 }
@@ -88,7 +89,11 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		if model == "" {
 			model = "default"
 		}
-		return ctoPollMsg{events: events, history: history, model: model, err: err, generation: generation}
+		harness := settings.Harness
+		if harness == "" {
+			harness = "opencode"
+		}
+		return ctoPollMsg{events: events, history: history, model: model, harness: harness, err: err, generation: generation}
 	}
 }
 func ctoMessage(raw json.RawMessage) string {
@@ -194,6 +199,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 	c.err = ""
 	c.model = r.model
+	c.harness = r.harness
 	c.history = r.history
 	type line struct {
 		at   int64

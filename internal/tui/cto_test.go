@@ -256,3 +256,10 @@ func TestMapRefreshesWhenCTOPaneClosed(t *testing.T) {
 		t.Fatal("open map did not refresh while CTO pane was closed")
 	}
 }
+
+func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
+	m := Model{cto: &ctoState{harness: "claude", model: "opus"}}
+	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO (claude · opus)") {
+		t.Fatalf("title: %s", got)
+	}
+}

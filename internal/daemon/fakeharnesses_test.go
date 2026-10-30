@@ -424,6 +424,10 @@ func (a *fsClaudeAdapter) Deliver(ctx context.Context, target protocol.SessionIn
 	return Result{Detail: "no such Claude session"}
 }
 
+func (a *fsClaudeAdapter) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) Result {
+	return a.Deliver(ctx, target, protocol.Message{ID: id, Body: text})
+}
+
 // useFakeClaude points a test at the fake Claude and returns the folders it
 // uses: the session files and the log of `claude stop`.
 func useFakeClaude(t *testing.T) (sessions, stopLog string) {

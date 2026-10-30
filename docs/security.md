@@ -1,21 +1,30 @@
 # Security
 
-The network-wide CTO model preference is an owner setting. The daemon's
-`cto_settings` method uses the owner gate and refuses agent sessions. Like the
-integration settings, the gateway endpoint requires an enrolled node token;
-that token is an owner credential and must not be shared with agents. The
-`cto_send`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
+The network-wide CTO harness and model preferences are owner settings. The
+daemon's `cto_settings` method uses the owner gate and refuses agent sessions.
+Like the integration settings, the gateway endpoint requires an enrolled node
+token; that token is an owner credential and must not be shared with agents.
+The `cto_send`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
 same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
-The CTO server binds only to localhost and requires a random password. Its
-OpenCode data, state, configuration and cache are private to the daemon. The
-OpenCode agent-net plugin is disabled in that process, so its conversation
-never registers with the gateway and cannot receive peer messages. Its private
-MCP server can read and change the graph, read agents, workers, Needs you and
-the feed, send messages, and start workers as the owner. The daemon accepts its
-channel only from the CTO server's process tree and checks the peer on every
-call. It exposes no other owner methods on that channel. The owner gate also
-checks the CTO process tree, so a command it runs cannot use the owner CLI.
+
+The OpenCode CTO server binds only to localhost and requires a random password.
+Its data, state, configuration and cache are private to the daemon. The OpenCode
+agent-net plugin is disabled in that process. The Claude Code CTO uses the
+owner's Claude login and a background session in a private working directory.
+Its session receives `--strict-mcp-config` and a private MCP configuration that
+contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The
+daemon excludes this working directory from Claude session discovery, so the
+CTO is not registered with the gateway and cannot receive peer messages.
+
+The private MCP server can read and change the graph, read agents, workers,
+Needs you and the feed, send messages, and start workers as the owner. The
+daemon accepts its channel only from the active CTO runtime's process tree and
+checks the peer on every call. For Claude, it identifies the background session
+from Claude's session file, including its job, name, private working directory
+and PID file name. It checks the root process start token as well as its ancestry. It exposes no other owner methods on that channel. The owner
+gate also checks the CTO process tree, so a command it runs cannot use the
+owner CLI. Switching harnesses stops the old runtime and revokes its channel.
 
 The gateway trusts enrolled daemons to attribute CTO graph writes and sends.
 Those writes and sends are marked `by=cto`. A CTO write or send checks that

@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -168,11 +169,13 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	cto    ctoRuntime
-	cfg    Config
-	log    *log.Logger
-	st     *state
-	client *http.Client
+	ctoDispatchMu sync.Mutex
+	cto           ctoRuntime
+	claudeCTO     claudeCTOState
+	cfg           Config
+	log           *log.Logger
+	st            *state
+	client        *http.Client
 
 	// shownHost is the name the gateway lists for this machine (the owner's
 	// display name, decision 0015). Empty until the gateway said.
@@ -386,7 +389,10 @@ func (d *Daemon) Stop() {
 	if d.ln != nil {
 		d.ln.close()
 	}
-	d.cto.stop()
+	d.cto.mu.Lock()
+	d.stopClaudeCTOLocked()
+	d.cto.stopLocked()
+	d.cto.mu.Unlock()
 	d.mcp.stop()
 	d.wg.Wait()
 	d.st.close()
@@ -406,6 +412,16 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	}
 	d.mu.Unlock()
 	infos = append([]protocol.SessionInfo(nil), infos...)
+	if harness == "claude" {
+		privateDir := filepath.Join(d.cfg.StateDir, "cto", "claude")
+		kept := infos[:0]
+		for _, in := range infos {
+			if !sameCTODir(in.Cwd, privateDir) {
+				kept = append(kept, in)
+			}
+		}
+		infos = kept
+	}
 	for i := range infos {
 		infos[i].Harness = harness
 		// A session that agent-net started as a worker carries the worker flag,

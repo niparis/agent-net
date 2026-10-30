@@ -228,7 +228,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if _, err = tx.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID); err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id=''`, created.Data.ID); err != nil {
+	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='opencode'`, created.Data.ID); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {
@@ -237,7 +237,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	d.cto.model, d.cto.session = model, created.Data.ID
 	return created.Data.ID, nil
 }
-func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
+func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -276,7 +276,7 @@ func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
 	return map[string]string{"session_id": id}, err
 }
-func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
+func (d *Daemon) openCodeCTONew(ctx context.Context) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -295,7 +295,7 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	defer tx.Rollback()
-	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id=''`); err != nil {
+	if _, err = tx.Exec(`DELETE FROM cto_actions WHERE session_id='' AND harness='opencode'`); err != nil {
 		return nil, err
 	}
 	if _, err = tx.Exec(`INSERT INTO cto(id,session_id,graph_after) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET session_id='',graph_after=excluded.graph_after`, latest.ID); err != nil {
@@ -307,7 +307,7 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	c.session, c.model = "", ""
 	return struct{}{}, nil
 }
-func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
+func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
 	c := &d.cto
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -322,7 +322,7 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	if err != nil {
 		return out, err
 	}
-	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? ORDER BY id`, id)
+	rows, err := d.st.db.Query(`SELECT id,text,at FROM cto_actions WHERE session_id=? AND harness='opencode' ORDER BY id`, id)
 	if err != nil {
 		return out, err
 	}
@@ -383,13 +383,18 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 
 // isCTOPeer admits only a live descendant of the private OpenCode server.
 func (d *Daemon) isCTOPeer(pid int) bool {
-	root := int(d.cto.pid.Load())
-	if root <= 1 || pid <= 1 {
+	if pid <= 1 {
 		return false
 	}
+	openRoot := int(d.cto.pid.Load())
+	claudeRoot := d.claudeCTO.root.Load()
 	for i := 0; i < 64 && pid > 1; i++ {
-		if pid == root {
-			return int(d.cto.pid.Load()) == root
+		if openRoot > 1 && pid == openRoot {
+			return int(d.cto.pid.Load()) == openRoot
+		}
+		if claudeRoot != nil && pid == claudeRoot.pid {
+			token, alive := procToken(pid)
+			return alive && token == claudeRoot.token && d.claudeCTO.root.Load() == claudeRoot
 		}
 		p, err := parentPID(pid)
 		if err != nil || p == pid {
