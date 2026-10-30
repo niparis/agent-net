@@ -23,7 +23,7 @@ OpenCode runs one background service (`opencode serve --service`) that hosts eve
 
 ## Install
 
-`agent-net setup` does both steps when `~/.config/opencode` exists, and prints a hint about restarting the OpenCode service. It never restarts it, since the service hosts all your sessions. `agent-net uninstall` removes the plugin file and the guidance block. A symlinked plugin file is left alone.
+`agent-net setup` does both steps when `~/.config/opencode` exists, and prints a hint about restarting the OpenCode service. It never restarts it, since the service hosts all your sessions. `agent-net uninstall` removes the plugin file and the guidance block. A symlink to a file agent-net did not write is left alone. A symlink to an older agent-net copy is replaced with the current file by setup or the daemon; uninstall removes a symlink to an agent-net copy and keeps its target.
 
 ## How to test
 

@@ -93,7 +93,15 @@ func (r *runner) removePiExtension() {
 	case err != nil:
 		r.step("pi extension", "skipped (not installed)", nil)
 	case st.Mode()&os.ModeSymlink != 0:
-		r.step("pi extension", "skipped (symlink, left as is)", nil)
+		if !agentfiles.SymlinkTargetIsAgentNet(path) {
+			r.step("pi extension", "skipped (symlink, left as is)", nil)
+			return
+		}
+		if err := os.Remove(path); err != nil {
+			r.step("pi extension", "", err)
+			return
+		}
+		r.step("pi extension", "ok (removed an agent-net symlink)", nil)
 	default:
 		if err := os.Remove(path); err != nil {
 			r.step("pi extension", "", err)
@@ -110,7 +118,15 @@ func (r *runner) removeOpenCodePlugin() {
 	case err != nil:
 		r.step("opencode plugin", "skipped (not installed)", nil)
 	case st.Mode()&os.ModeSymlink != 0:
-		r.step("opencode plugin", "skipped (symlink, left as is)", nil)
+		if !agentfiles.SymlinkTargetIsAgentNet(path) {
+			r.step("opencode plugin", "skipped (symlink, left as is)", nil)
+			return
+		}
+		if err := os.Remove(path); err != nil {
+			r.step("opencode plugin", "", err)
+			return
+		}
+		r.step("opencode plugin", "ok (removed an agent-net symlink)", nil)
 	default:
 		if err := os.Remove(path); err != nil {
 			r.step("opencode plugin", "", err)

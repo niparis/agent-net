@@ -48,6 +48,23 @@ func read(t *testing.T, path string) string {
 	return string(b)
 }
 
+func symlink(t *testing.T, target, path string) {
+	t.Helper()
+	mkdirs(t, filepath.Dir(path))
+	if err := os.Symlink(target, path); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func isSymlink(t *testing.T, path string) bool {
+	t.Helper()
+	st, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.Mode()&os.ModeSymlink != 0
+}
+
 func byName(rs []Result) map[string]Result {
 	m := map[string]Result{}
 	for _, r := range rs {
@@ -132,6 +149,128 @@ func TestSyncLeavesSymlinksAlone(t *testing.T) {
 	}
 }
 
+// A symlink to an older agent-net plugin file is replaced with a real file
+// holding the current version. The old target is left alone and its path is
+// kept in the result text.
+func TestSyncReplacesStaleAgentNetSymlinks(t *testing.T) {
+	h := fakeHome(t)
+	dev := filepath.Join(h, "dev")
+	cases := []struct {
+		name   string
+		path   string
+		target string
+		old    string
+		want   []byte
+	}{
+		{
+			name:   "pi extension",
+			path:   PiExtensionPath(),
+			target: filepath.Join(dev, "pi.ts"),
+			old:    "// agent-net extension for Pi. An old copy.\nconst old = true;\n",
+			want:   pi.Extension,
+		},
+		{
+			name:   "opencode plugin",
+			path:   OpencodePluginPath(),
+			target: filepath.Join(dev, "oc.ts"),
+			old:    "// agent-net plugin for OpenCode v2. An old copy.\nconst old = true;\n",
+			want:   opencode.Plugin,
+		},
+	}
+	for _, c := range cases {
+		write(t, c.target, c.old)
+		symlink(t, c.target, c.path)
+	}
+	rs := byName(Sync())
+	for _, c := range cases {
+		r := rs[c.name]
+		if !r.Changed || r.Symlink || r.Err != nil {
+			t.Errorf("%s: %+v", c.name, r)
+		}
+		if want := "replaced an old symlink to " + c.target + " with the current file"; r.Text != want {
+			t.Errorf("%s text = %q, want %q", c.name, r.Text, want)
+		}
+		if isSymlink(t, c.path) {
+			t.Errorf("%s is still a symlink", c.name)
+		}
+		if got := read(t, c.path); !bytes.Equal([]byte(got), c.want) {
+			t.Errorf("%s is not the embedded current file", c.name)
+		}
+	}
+	// The old targets keep their content.
+	for _, c := range cases {
+		if got := read(t, c.target); got != c.old {
+			t.Errorf("%s target changed to %q", c.name, got)
+		}
+	}
+	// A second run changes nothing now that the files are real.
+	for _, c := range cases {
+		if r := byName(Sync())[c.name]; r.Changed || r.Err != nil {
+			t.Errorf("%s second run: %+v", c.name, r)
+		}
+	}
+}
+
+// A symlink to a copy that already holds the current version is kept.
+func TestSyncKeepsCurrentAgentNetSymlink(t *testing.T) {
+	h := fakeHome(t)
+	dev := filepath.Join(h, "dev")
+	cases := []struct {
+		name   string
+		path   string
+		target string
+		data   []byte
+	}{
+		{"pi extension", PiExtensionPath(), filepath.Join(dev, "pi.ts"), pi.Extension},
+		{"opencode plugin", OpencodePluginPath(), filepath.Join(dev, "oc.ts"), opencode.Plugin},
+	}
+	for _, c := range cases {
+		write(t, c.target, string(c.data))
+		symlink(t, c.target, c.path)
+	}
+	rs := byName(Sync())
+	for _, c := range cases {
+		r := rs[c.name]
+		if r.Changed || !r.Symlink || r.Err != nil {
+			t.Errorf("%s: %+v", c.name, r)
+		}
+		if !isSymlink(t, c.path) {
+			t.Errorf("%s is no longer a symlink", c.name)
+		}
+		if got := read(t, c.target); !bytes.Equal([]byte(got), c.data) {
+			t.Errorf("%s target changed", c.name)
+		}
+	}
+}
+
+// A symlink to a file that agent-net did not write is left alone, even when
+// its content differs from the current version.
+func TestSyncLeavesForeignSymlinksAlone(t *testing.T) {
+	h := fakeHome(t)
+	dev := filepath.Join(h, "dev")
+	write(t, filepath.Join(dev, "pi.ts"), "// my own extension\n")
+	write(t, filepath.Join(dev, "oc.ts"), "// my own plugin\n")
+	symlink(t, filepath.Join(dev, "pi.ts"), PiExtensionPath())
+	symlink(t, filepath.Join(dev, "oc.ts"), OpencodePluginPath())
+	rs := byName(Sync())
+	for _, n := range []string{"pi extension", "opencode plugin"} {
+		if rs[n].Symlink != true || rs[n].Changed || rs[n].Err != nil {
+			t.Errorf("%s: %+v", n, rs[n])
+		}
+	}
+	for _, c := range []struct{ path, target, want string }{
+		{PiExtensionPath(), filepath.Join(dev, "pi.ts"), "// my own extension\n"},
+		{OpencodePluginPath(), filepath.Join(dev, "oc.ts"), "// my own plugin\n"},
+	} {
+		if !isSymlink(t, c.path) {
+			t.Errorf("%s is no longer a symlink", c.path)
+		}
+		if got := read(t, c.target); got != c.want {
+			t.Errorf("%s target changed to %q", c.target, got)
+		}
+	}
+}
+
 // Only the harnesses that exist get files, and a guidance file that is not
 // there yet is created only when its folder exists.
 func TestSyncOnlyDetectedHarnesses(t *testing.T) {
@@ -176,4 +315,22 @@ func TestSyncAndLog(t *testing.T) {
 	if len(lines) != 1 || !strings.Contains(lines[0], "left alone (symlink)") {
 		t.Fatalf("second run logged %q, want only the symlink line", lines)
 	}
+}
+
+// Replacing an old symlink is logged with the old target path.
+func TestSyncAndLogReplacedSymlink(t *testing.T) {
+	h := fakeHome(t)
+	write(t, filepath.Join(h, ".pi", "agent", "AGENTS.md"), guidance.Block(guidance.Other))
+	target := filepath.Join(h, "old-agent-net.ts")
+	write(t, target, "// agent-net extension for Pi. old\n")
+	symlink(t, target, PiExtensionPath())
+	var lines []string
+	SyncAndLog(func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) })
+	want := "agent files: pi extension replaced an old symlink to " + target + " with the current file: ~/.pi/agent/extensions/agent-net.ts"
+	for _, l := range lines {
+		if l == want {
+			return
+		}
+	}
+	t.Fatalf("log lines %q, want one %q", lines, want)
 }
