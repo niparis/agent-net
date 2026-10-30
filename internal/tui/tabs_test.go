@@ -321,3 +321,10 @@ func TestCTOFrameOnEveryTab(t *testing.T) {
 		}
 	}
 }
+
+func TestMessagesHintShowsCTOFocus(t *testing.T) {
+	m := keys(newModel(120, 34), "2")
+	if !strings.Contains(ansi.Strip(m.helpLine(120)), "tab CTO") {
+		t.Fatal("Messages help omits CTO focus")
+	}
+}

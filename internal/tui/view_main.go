@@ -1017,12 +1017,12 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	filter := "messages + workers"
+	filter := "worker events"
 	switch m.events {
 	case eventsAll:
 		filter = "all events"
 	case eventsNone:
-		filter = "messages only"
+		filter = "no session/worker events"
 	}
 	return append(out, panel("Messages · "+filter, m.feedLines(max(w-4, 1), max(h-3, 0)), w, roleAccent)...)
 }
