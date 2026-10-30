@@ -521,3 +521,16 @@ func TestPiCompatibleAndNestedSkillRoots(t *testing.T) {
 		}
 	}
 }
+
+func TestMCPFingerprintIncludesURLPathAndEnvironmentNames(t *testing.T) {
+	base := map[string]any{"url": "https://example.invalid/first?token=secret-one", "env": map[string]any{"API_KEY": "secret-one"}}
+	otherPath := map[string]any{"url": "https://example.invalid/second?token=secret-two", "env": map[string]any{"API_KEY": "secret-two"}}
+	otherEnv := map[string]any{"url": "https://example.invalid/first?token=secret-two", "env": map[string]any{"OTHER_KEY": "secret-two"}}
+	same := map[string]any{"url": "https://example.invalid/first?token=secret-two", "env": map[string]any{"API_KEY": "secret-two"}}
+	if fingerprint("server", base) == fingerprint("server", otherPath) || fingerprint("server", base) == fingerprint("server", otherEnv) {
+		t.Fatal("URL path or environment variable names omitted from fingerprint")
+	}
+	if fingerprint("server", base) != fingerprint("server", same) {
+		t.Fatal("secret values changed fingerprint")
+	}
+}

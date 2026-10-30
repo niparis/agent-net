@@ -530,7 +530,7 @@ func stripComments(b []byte) []byte {
 }
 
 // fingerprint hashes only an allowlisted, redacted descriptor. Unknown argument
-// values, environment variables, headers, URL paths and query strings never
+// values, environment variable values, headers and URL query strings never
 // enter the hash.
 func fingerprint(name string, m map[string]any) string {
 	parts := []string{"mcp-v1", name}
@@ -550,7 +550,17 @@ func fingerprint(name string, m map[string]any) string {
 	}
 	if raw, ok := m["url"].(string); ok {
 		if u, err := url.Parse(raw); err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != "" {
-			parts = append(parts, "url", u.Scheme, strings.ToLower(u.Hostname()))
+			parts = append(parts, "url", u.Scheme, strings.ToLower(u.Host), u.EscapedPath())
+		}
+	}
+	if env, ok := m["env"].(map[string]any); ok {
+		names := make([]string, 0, len(env))
+		for name := range env {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		for _, name := range names {
+			parts = append(parts, "env", name)
 		}
 	}
 	for _, field := range []string{"args", "command"} {
