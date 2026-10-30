@@ -464,8 +464,32 @@ func (c *codexAdapter) deliverWorker(w *worker, m protocol.Message) Result {
 		return Result{Detail: "a Codex worker takes messages from the session that started it, and from the person at the machine, not from other agents"}
 	}
 	text := codexWorkerText(m)
-	cc.submit(codexJob{from: m.From, msgID: m.ID, text: text})
-	return Result{Delivered: true}
+	j := codexJob{from: m.From, msgID: m.ID, text: text}
+	for {
+		cc.mu.Lock()
+		ending := cc.ending
+		cc.mu.Unlock()
+		if ending == nil {
+			if cc.submit(j) {
+				return Result{Delivered: true}
+			}
+			continue
+		}
+		<-ending
+		if err := c.d.resumeWorkerSession(context.Background(), m.To, owner); err != nil {
+			return Result{Detail: err.Error()}
+		}
+		w = c.d.workerBySession(m.To)
+		if w == nil {
+			return Result{Detail: "the Codex worker could not be resumed"}
+		}
+		c.d.wmu.Lock()
+		cc = w.codex
+		c.d.wmu.Unlock()
+		if cc == nil {
+			return Result{Detail: "the Codex worker is not connected"}
+		}
+	}
 }
 
 func codexWorkerText(m protocol.Message) string {
@@ -517,6 +541,7 @@ type codexConn struct {
 	// model context window in thread/tokenUsage/updated.
 	contextTokens, contextLimit int64
 	closed                      bool
+	ending                      chan struct{}
 }
 
 type codexAnswer struct {
@@ -809,16 +834,21 @@ func (cc *codexConn) stats() workerStats {
 }
 
 // submit runs a message as a turn, or queues it behind the running one.
-func (cc *codexConn) submit(j codexJob) {
+func (cc *codexConn) submit(j codexJob) bool {
 	cc.mu.Lock()
+	if cc.ending != nil {
+		cc.mu.Unlock()
+		return false
+	}
 	if cc.running {
 		cc.queue = append(cc.queue, j)
 		cc.mu.Unlock()
-		return
+		return true
 	}
 	cc.running = true
 	cc.mu.Unlock()
 	go cc.startTurn(j)
+	return true
 }
 
 func (cc *codexConn) startTurn(j codexJob) {
@@ -886,7 +916,7 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		if denied && (status == protocol.StatusBlocked || status == protocol.StatusFailed) {
 			note = "blocked by the sandbox (" + protocol.WorkerPermissionsOrDefault(cc.w.permissions) + ")"
 		}
-		_, err := cc.d.handbackToNote(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}, j.from, j.msgID, note)
+		_, err := cc.d.handbackToNote(context.Background(), cc.w, protocol.WorkerHandbackRequest{Report: report, Status: status, Complete: complete}, j.from, j.msgID, note, false)
 		if err != nil {
 			cc.d.Logf("worker %s: hand-back: %v", cc.w.id, err)
 		}
@@ -897,14 +927,20 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 			cc.queue = cc.queue[1:]
 			next = &n
 		} else {
-			cc.running = false
+			cc.ending = make(chan struct{})
 		}
 		cc.mu.Unlock()
 		if next != nil {
+			cc.d.wmu.Lock()
+			cc.w.doneStatus = ""
+			cc.w.donePartial = false
+			cc.d.saveWorkerLocked(cc.w)
+			cc.d.wmu.Unlock()
 			cc.startTurn(*next)
 			return
 		}
-		cc.d.setCodexStatus(cc.w, "idle")
+		cc.d.endWorker(cc.w, protocol.StopHandback)
+		close(cc.ending)
 	}()
 }
 

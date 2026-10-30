@@ -684,13 +684,16 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if p.Name != nil && ls.info.Worker == nil {
 			ls.info.Name = d.pluginTitle(*p.Name, ls.info.Cwd)
 		}
-		cwd := ls.info.Cwd
+		cwd, statusSession := ls.info.Cwd, ls.sessionID
 		d.mu.Unlock()
 		repo := d.repo.Refresh(cwd)
 		d.mu.Lock()
 		ls.info.Repo = repo
 		d.mu.Unlock()
 		d.pushSession(ls)
+		if p.Status == "idle" {
+			d.openCodeTurnIdle(statusSession)
+		}
 		return nil, nil
 
 	case "request_approval", "propose_idea":

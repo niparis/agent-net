@@ -666,6 +666,41 @@ func TestCodexWorkerLifecycle(t *testing.T) {
 	}
 }
 
+func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	owner := w.ownerID()
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:wait"})
+	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "second turn FAKE:wait-second"}), &sent)
+	eventually(t, "second message queued", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
+	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	first := w.replyTo(t, owner, res.Task.ID)
+	if !strings.Contains(first.Body, "codex done") || !strings.Contains(first.Body, "queued messages before ending") {
+		t.Fatalf("first report: %s", first.Body)
+	}
+	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 2 })
+	if !strings.Contains(rec.Turns[1], "second turn") {
+		t.Fatalf("second turn: %q", rec.Turns[1])
+	}
+	if w.d.workerCount() != 1 {
+		t.Fatal("worker ended before the queued turn reported")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-codex-finish-second"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	second := w.replyTo(t, owner, sent.Message.ID)
+	if !strings.Contains(second.Body, "codex done") {
+		t.Fatalf("second report: %s", second.Body)
+	}
+	eventually(t, "worker ends after the second report", func() bool { return w.d.workerCount() == 0 })
+}
+
 // An approval is never given: Codex gets "decline", and the hand-back says
 // blocked, with what was asked and where to approve it (W6, W15).
 func TestCodexWorkerBlockedOnAnApproval(t *testing.T) {

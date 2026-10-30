@@ -530,6 +530,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 	sc.Buffer(make([]byte, 0, 1<<16), 1<<20)
 	results := map[string]chan string{}
 	var rmu sync.Mutex
+	waitTurn := make(chan struct{})
 	for sc.Scan() {
 		var m struct {
 			ID     json.RawMessage `json:"id"`
@@ -567,6 +568,41 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		if location.Load() <= previous && location.Load() != 1<<60 {
 			continue
 		}
+		if strings.Contains(body, "FAKE:wait-handback") {
+			send("status", map[string]any{"status": "busy"})
+			turn(body)
+			go func() {
+				for {
+					if _, err := os.Stat(filepath.Join(cwd, "fake-opencode-finish")); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				id := nextID()
+				ch := make(chan string, 1)
+				rmu.Lock()
+				results[id] = ch
+				rmu.Unlock()
+				b, _ := json.Marshal(map[string]any{"id": id, "method": "worker_handback", "params": map[string]any{"report": "first report"}})
+				wmu.Lock()
+				c.Write(append(b, '\n'))
+				wmu.Unlock()
+				<-ch
+				send("status", map[string]any{"status": "idle"})
+				close(waitTurn)
+			}()
+			continue
+		}
+		if strings.Contains(body, "FAKE:queued-handback") {
+			go func() {
+				<-waitTurn
+				send("status", map[string]any{"status": "busy"})
+				turn(body)
+				send("worker_handback", map[string]any{"report": "second report"})
+			}()
+			continue
+		}
+		send("status", map[string]any{"status": "busy"})
 		turn(body)
 		switch {
 		case strings.Contains(body, "FAKE:ignore"):
@@ -615,6 +651,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		default:
 			send("reply", map[string]any{"message_id": msg.ID, "body": "ok from worker (task was " + strconv.Itoa(len(body)) + " bytes)"})
 		}
+		send("status", map[string]any{"status": "idle"})
 	}
 	return generation
 }

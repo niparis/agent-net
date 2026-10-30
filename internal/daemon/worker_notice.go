@@ -355,10 +355,10 @@ func (d *Daemon) handback(ctx context.Context, sessionID string, req protocol.Wo
 
 // handbackTo is handback to another session than the owner (see sendNoticeTo).
 func (d *Daemon) handbackTo(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo string) (*protocol.WorkerHandbackResult, error) {
-	return d.handbackToNote(ctx, w, req, to, replyTo, "")
+	return d.handbackToNote(ctx, w, req, to, replyTo, "", true)
 }
 
-func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string) (*protocol.WorkerHandbackResult, error) {
+func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.WorkerHandbackRequest, to, replyTo, sandboxNote string, end bool) (*protocol.WorkerHandbackResult, error) {
 	d.wmu.Lock()
 	sessionID, stopping := w.sessionID, w.stopping
 	d.wmu.Unlock()
@@ -375,8 +375,18 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
 	st := d.workerStats(w)
+	d.wmu.Lock()
+	pending, cc := len(w.turnQueue) > 0, w.codex
+	d.wmu.Unlock()
+	if cc != nil {
+		cc.mu.Lock()
+		pending = pending || len(cc.queue) > 0
+		cc.mu.Unlock()
+	}
 	note := "the worker ended after its hand-back; a message from you starts it again"
-	if _, canResume := d.launchers[w.harness].(resumer); !canResume {
+	if pending {
+		note = "the worker will run its queued messages before ending"
+	} else if _, canResume := d.launchers[w.harness].(resumer); !canResume {
 		note = "the worker ended after its hand-back; this harness cannot be started again (" + cannotResumeReason(w.harness) + ")"
 	}
 	if sandboxNote != "" {
@@ -388,14 +398,26 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		return nil, err
 	}
 	d.wmu.Lock()
-	w.doneStatus = req.Status
-	w.donePartial = !req.IsComplete()
-	d.saveWorkerLocked(w)
+	var next *protocol.Message
+	if w.harness == "opencode" && len(w.turnQueue) > 0 {
+		m := w.turnQueue[0]
+		w.turnQueue = w.turnQueue[1:]
+		w.turnHandbackIdle = true
+		next = &m
+	} else {
+		w.doneStatus = req.Status
+		w.donePartial = !req.IsComplete()
+		d.saveWorkerLocked(w)
+	}
 	d.wmu.Unlock()
 	d.Logf("worker.handback worker=%s session=%s status=%s complete=%t", w.id, sessionID, req.Status, req.IsComplete())
 	// Like a Claude Code subagent, a worker ends when it hands back (W10). Its
 	// harness session is kept, so the owner's next message starts it again.
-	go d.endWorker(w, protocol.StopHandback)
+	if next != nil {
+		go d.deliverQueuedWorkerTurn(*next)
+	} else if end {
+		go d.endWorker(w, protocol.StopHandback)
+	}
 	out := &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete()}
 	var sent protocol.MessageSent
 	if json.Unmarshal(raw, &sent) == nil {
@@ -523,4 +545,64 @@ func (d *Daemon) inWorktreesDir(cwd string) bool {
 		return false
 	}
 	return p == root || strings.HasPrefix(p, root+string(filepath.Separator))
+}
+
+// queueOpenCodeTurn keeps later prompts in the daemon until the current turn
+// hands back or becomes idle. This keeps them out of a process being ended.
+func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry bool) {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	if d.workers[w.id] != w || w.stopping || w.doneStatus != "" {
+		return false, true
+	}
+	if w.harness != "opencode" {
+		return false, false
+	}
+	if !w.turnActive {
+		w.turnActive = true
+		return false, false
+	}
+	w.turnQueue = append(w.turnQueue, m)
+	return true, false
+}
+
+func (d *Daemon) deliverQueuedWorkerTurn(m protocol.Message) {
+	ls := d.sessionByID(m.To)
+	if ls == nil {
+		d.sendUpdate(context.Background(), m.ID, protocol.StateFailed, "worker session is gone")
+		return
+	}
+	d.noteAsk(m)
+	res := d.deliverTo(context.Background(), ls, m)
+	if !res.Delivered {
+		d.sendUpdate(context.Background(), m.ID, protocol.StateFailed, res.Detail)
+	}
+}
+
+// An OpenCode turn that did not hand back can finish normally. Let the next
+// queued prompt run, or mark the worker ready for the next message.
+func (d *Daemon) openCodeTurnIdle(session string) {
+	d.wmu.Lock()
+	var next *protocol.Message
+	for _, w := range d.workers {
+		if w.sessionID != session || w.harness != "opencode" || w.stopping || w.doneStatus != "" {
+			continue
+		}
+		if w.turnHandbackIdle {
+			w.turnHandbackIdle = false
+			break
+		}
+		if len(w.turnQueue) == 0 {
+			w.turnActive = false
+		} else {
+			m := w.turnQueue[0]
+			w.turnQueue = w.turnQueue[1:]
+			next = &m
+		}
+		break
+	}
+	d.wmu.Unlock()
+	if next != nil {
+		go d.deliverQueuedWorkerTurn(*next)
+	}
 }
