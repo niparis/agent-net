@@ -167,7 +167,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 			return no("cannot attach to %s: %v", name, firstNonNil(err, errors.New("no background id")))
 		}
 		plan.Argv = []string{bin, "attach", id}
-		plan.Note = "Attached to the background session. The left arrow returns to the agent view; ctrl+z drops to the shell. It keeps running."
+		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 		return plan, nil
 	case "opencode":
 		if w == nil { // a TUI the owner started in a herdr pane is the screen to show
@@ -181,7 +181,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		}
 		if w == nil {
 			plan.Argv = []string{bin, "--session", info.NativeID}
-			plan.Note = "OpenCode on the session, through its background service."
+			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 			return plan, nil
 		}
 		// A worker lives in its own private server, with a password that the
@@ -197,7 +197,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		}
 		plan.Argv = []string{bin, "--server", base, "--session", info.NativeID}
 		plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": pass}
-		plan.Note = "OpenCode on the worker's private server. What you type here is your own input."
+		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. What you type here is your own input.", name)
 		return plan, nil
 	case "codex":
 		if w == nil {
@@ -212,7 +212,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 				// The thread was found in another Codex home, so say which.
 				plan.Argv = append([]string{"env", "CODEX_HOME=" + home}, plan.Argv...)
 			}
-			plan.Note = "Codex on the shared app server. The thread keeps running if you leave."
+			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 			return plan, nil
 		}
 		// A worker is in a private app server (worker_codex.go).
@@ -229,7 +229,7 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		}
 		plan.Argv = []string{bin, "resume", info.NativeID, "--remote", "ws://" + w.ref, "--remote-auth-token-env", "AGENT_NET_CODEX_TOKEN"}
 		plan.Env = map[string]string{"AGENT_NET_CODEX_TOKEN": strings.TrimSpace(string(tok))}
-		plan.Note = "Codex on the worker's app server. The daemon also drives this thread."
+		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. The daemon also drives this thread.", name)
 		return plan, nil
 	case "pi":
 		return d.terminalPlan(info, q, plan, name, viaGateway)
@@ -277,7 +277,7 @@ func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, pl
 	if q.TmuxSocket != "" { // allow an attach from inside tmux
 		out.Argv = append([]string{"env", "-u", "TMUX"}, out.Argv...)
 	}
-	out.Note = fmt.Sprintf("Attached to tmux session %s at the pane of %s. Detach (prefix d) to come back.", pane.session, name)
+	out.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 	return out, nil
 }
 

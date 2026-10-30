@@ -126,7 +126,7 @@ func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 		t.Errorf("footer: %q", lines(m.View())[29])
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
-	if !strings.Contains(m.View(), "enter the session") {
+	if !strings.Contains(m.View(), "enter the session (ctrl+] to return)") {
 		t.Errorf("help does not list e:\n%s", m.View())
 	}
 }

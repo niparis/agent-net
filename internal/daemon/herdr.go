@@ -237,15 +237,8 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	default:
 		return note("%s runs in herdr pane %s, which cannot be attached: open its window on %s", name, pane.PaneID, where)
 	}
-	detach := "ctrl+b q"
-	switch {
-	case viaGateway:
-		detach = "ctrl+b q (ctrl+b ctrl+b q if your terminal is itself in herdr)"
-	case q.HerdrSocket != "":
-		detach = "ctrl+b ctrl+b q (the first ctrl+b goes to the herdr this terminal runs in)"
-	}
 	return protocol.EnterPlan{
 		Argv: argv, Host: plan.Host,
-		Note: fmt.Sprintf("Attached to the herdr pane of %s. Press %s to come back here; it keeps running. If herdr says the terminal already has an attached client, close that other attach first.", name, detach),
+		Note: fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. If herdr says the terminal already has an attached client, close that other attach first.", name),
 	}, true
 }
