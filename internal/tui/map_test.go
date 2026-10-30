@@ -314,3 +314,18 @@ func TestOverviewRoutesEachDependencyInItsOwnLane(t *testing.T) {
 		}
 	}
 }
+
+func TestMapListMovesFromIsolatedNode(t *testing.T) {
+	g := fakeGraph()
+	g.Nodes = append(g.Nodes, protocol.Node{Name: "a2a-ocs", Kind: "component"})
+	m := openMap(t, mapModel(120, 34, g))
+	m.mp.selected = "a2a-ocs"
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "▸ a2a-ocs") || !strings.Contains(v, "cogforge") {
+		t.Fatal(v)
+	}
+	m = keys(m, "down")
+	if m.mp.selected != "cogforge" {
+		t.Fatalf("down from isolated selected %q", m.mp.selected)
+	}
+}

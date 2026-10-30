@@ -102,17 +102,9 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "right":
 		m.mapFollow("out")
 	case "up", "k":
-		if m.mp.choice > 0 {
-			m.mp.choice--
-		} else if len(m.mapLinks("above")) > 0 {
-			m.mapFollow("above")
-		}
+		m.mapMove(-1)
 	case "down", "j":
-		if len(m.mapLinks("below")) > 0 {
-			m.mapFollow("below")
-		} else {
-			m.mp.choice++
-		}
+		m.mapMove(1)
 	case "z":
 		m.mp.overview = !m.mp.overview
 	case "enter":
@@ -239,14 +231,28 @@ func (m Model) mapRows() []mapRow {
 
 // mapSelectable is the order the selection keys move through. A component that
 // two architects govern appears under both but is selected once.
+func (m Model) mapProjectNodes() []protocol.Node {
+	nodes := append([]protocol.Node(nil), m.mp.nodes...)
+	sort.SliceStable(nodes, func(i, j int) bool {
+		ai := nodes[i].Kind == "architect"
+		aj := nodes[j].Kind == "architect"
+		if ai != aj {
+			return ai
+		}
+		return strings.ToLower(nodes[i].Name) < strings.ToLower(nodes[j].Name)
+	})
+	var out []protocol.Node
+	for _, n := range nodes {
+		if m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter)) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
 func (m Model) mapSelectable() []string {
 	var out []string
-	seen := map[string]bool{}
-	for _, r := range m.mapRows() {
-		if r.node != "" && !seen[r.node] {
-			seen[r.node] = true
-			out = append(out, r.node)
-		}
+	for _, n := range m.mapProjectNodes() {
+		out = append(out, n.Name)
 	}
 	return out
 }

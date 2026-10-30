@@ -19,7 +19,7 @@ func (m Model) mapView(w, h int) []string {
 		if out, ok := m.mapOverviewView(w, h); ok {
 			return out
 		}
-		out := m.mapFocusView(w, h)
+		out := m.mapFocusWithList(w, h)
 		if len(out) > 0 {
 			out = append([]string{sDim.Render("overview does not fit")}, out...)
 			if len(out) > h {
@@ -28,7 +28,7 @@ func (m Model) mapView(w, h int) []string {
 		}
 		return out
 	}
-	return m.mapFocusView(w, h)
+	return m.mapFocusWithList(w, h)
 }
 
 func (m Model) mapTitle(w int) string {
@@ -308,6 +308,56 @@ func (m Model) mapChangeLines(node string, width int) []string {
 		for _, l := range wrap(text, max(width, 8)) {
 			out = append(out, l)
 		}
+	}
+	return out
+}
+
+// mapFocusWithList keeps every project reachable even when it has no edges.
+func (m Model) mapFocusWithList(w, h int) []string {
+	if w < 38 {
+		return m.mapFocusView(w, h)
+	}
+	left := min(max(w/4, 17), 23)
+	right := max(w-left-1, 1)
+	nodes := m.mapProjectNodes()
+	selected := 0
+	for i, n := range nodes {
+		if n.Name == m.mp.selected {
+			selected = i
+			break
+		}
+	}
+	top := max(selected-h+1, 0)
+	out := make([]string, 0, h)
+	drawing := m.mapFocusView(right, h)
+	for row := 0; row < h; row++ {
+		line := ""
+		i := top + row
+		if i < len(nodes) {
+			n := nodes[i]
+			count := 0
+			for _, a := range m.snap.Agents {
+				if a.Online && firstNonEmpty(a.Repo.Project, a.Profile.Project) == n.Name {
+					count++
+				}
+			}
+			lead := "  "
+			if n.Name == m.mp.selected {
+				lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸ ")
+			}
+			countText := fmt.Sprintf("%d", count)
+			nameW := max(left-ansi.StringWidth(lead)-len(countText)-1, 1)
+			name := clip(sanitize(n.Name), nameW)
+			if n.Charter == (protocol.Charter{}) {
+				name = sDim.Render(name)
+			}
+			line = lead + padStyled(name, nameW) + " " + sDim.Render(countText)
+		}
+		diagram := ""
+		if row < len(drawing) {
+			diagram = drawing[row]
+		}
+		out = append(out, padStyled(line, left)+sDim.Render("│")+clip(diagram, right))
 	}
 	return out
 }
