@@ -3,6 +3,7 @@ module github.com/niparis/agent-net
 go 1.27
 
 require (
+	github.com/pelletier/go-toml/v2 v2.2.4
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0

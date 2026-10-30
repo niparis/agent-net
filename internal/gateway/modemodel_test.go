@@ -74,7 +74,7 @@ func TestOlderDaemonSendsNoModeOrModel(t *testing.T) {
 
 func TestMigrationForModeAndModelKeepsExistingData(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gw.db")
-	// A database as the build before this one left it: every migration but the last.
+	// A database just before the mode and model migration.
 	db, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatal(err)
@@ -82,7 +82,17 @@ func TestMigrationForModeAndModelKeepsExistingData(t *testing.T) {
 	if _, err := db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < len(migrations)-1; i++ {
+	oldCount := 0
+	for i, migration := range migrations {
+		if strings.Contains(migration, "ALTER TABLE sessions ADD COLUMN mode ") {
+			oldCount = i
+			break
+		}
+	}
+	if oldCount == 0 {
+		t.Fatal("missing mode migration")
+	}
+	for i := 0; i < oldCount; i++ {
 		if _, err := db.Exec(migrations[i]); err != nil {
 			t.Fatal(err)
 		}
