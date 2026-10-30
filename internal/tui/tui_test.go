@@ -25,6 +25,7 @@ var update = flag.Bool("update", false, "rewrite the golden files")
 func TestMain(m *testing.M) {
 	// Plain text in tests: the golden files hold no colour codes.
 	lipgloss.SetColorProfile(termenv.Ascii)
+	initScreenColors()
 	os.Exit(m.Run())
 }
 
@@ -361,6 +362,11 @@ func lines(s string) []string { return strings.Split(s, "\n") }
 
 func golden(t *testing.T, name, got string) {
 	t.Helper()
+	writeScreen(t, name, got)
+	if os.Getenv("AGENT_NET_SCREEN_CHILD") != "" {
+		return
+	}
+	got = ansi.Strip(got)
 	path := filepath.Join("testdata", name+".golden")
 	// Trailing spaces are not part of the picture.
 	var ls []string
@@ -1023,6 +1029,7 @@ func TestColourOutputIsWellFormed(t *testing.T) {
 	plain := m.View()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(termenv.Ascii)
+	initScreenColors()
 	coloured := m.View()
 	if coloured == plain {
 		t.Skip("this terminal profile draws no colour")
