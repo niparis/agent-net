@@ -470,7 +470,19 @@ func runFakeOpenCode() {
 		}
 		json.NewEncoder(w).Encode(out)
 	})
-	if err := http.ListenAndServe(net.JoinHostPort(host, port), mux); err != nil {
+	var err error
+	if os.Getenv("FAKE_OC_LISTENER_FD") == "3" {
+		f := os.NewFile(3, "fake-listener")
+		var ln net.Listener
+		ln, err = net.FileListener(f)
+		f.Close()
+		if err == nil {
+			err = http.Serve(ln, mux)
+		}
+	} else {
+		err = http.ListenAndServe(net.JoinHostPort(host, port), mux)
+	}
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "fake opencode:", err)
 		os.Exit(1)
 	}
