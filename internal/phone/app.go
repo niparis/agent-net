@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/operator"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -28,7 +29,10 @@ type source interface {
 	SendAsOwner(context.Context, string, string) (protocol.MessageSent, error)
 	Call(context.Context, string, any) (json.RawMessage, error)
 }
-type app struct{ src source }
+type app struct {
+	src      source
+	interval time.Duration
+}
 type page struct {
 	Snapshot operator.Snapshot
 	Inbox    []protocol.InboxItem
