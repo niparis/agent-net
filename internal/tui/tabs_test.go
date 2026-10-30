@@ -427,3 +427,22 @@ func TestSubscriptionPanelAndUsageRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkerPanelPicksAndTrackRecord(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a"}}}
+	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "fake/a", Runs: 12, Complete: 10, Failed: 2}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}}
+	m.snap.WorkerProviders = []string{"codex"}
+	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "artificialanalysis"}}
+	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	for _, s := range []string{"Workers · 1 registered · scores: Artificial Analysis", "◀", "12 runs", "10 done", "2 failed"} {
+		if !strings.Contains(v, s) {
+			t.Errorf("missing %q in %s", s, v)
+		}
+	}
+	if strings.Contains(v, "now:") || strings.Contains(v, "E*") {
+		t.Fatal(v)
+	}
+}
