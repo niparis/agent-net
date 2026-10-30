@@ -194,3 +194,31 @@ func TestGraphUsesRemoteEligibilityInsteadOfGatewayEnvironment(t *testing.T) {
 	}
 	t.Fatal("gateway temporary directory hid an eligible remote repository")
 }
+
+func TestGraphKeepsManagedEdgeEndpointsWithoutEligibleRoots(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("test", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "scratch", Repo: protocol.RepoInfo{Project: "scratch"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddArchitect("architect", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetEdge(protocol.Edge{From: "architect", To: "scratch", Kind: "governs", Mode: "advisor"}, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	g, err := s.Graph()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range g.Nodes {
+		if n.Name == "scratch" {
+			return
+		}
+	}
+	t.Fatal("managed edge endpoint is missing")
+}
