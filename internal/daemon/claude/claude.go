@@ -253,6 +253,11 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 	if m.Type == "reply" && m.FromWorker && m.FromHarness != protocol.OwnerHarness {
 		details += " " + protocol.NoAuthorityNote
 	}
+	// The gateway computes the graph relation from the sender's node to this
+	// node (decision 0022). It is agent-net's own text, after the body.
+	if m.Type == "request" && m.RecipientRelation != "" {
+		details += " " + m.RecipientRelation
+	}
 	var attrs []string
 	if from != "" {
 		attrs = append(attrs, fmt.Sprintf(`from="%s"`, from))
