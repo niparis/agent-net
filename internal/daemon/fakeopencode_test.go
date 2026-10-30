@@ -173,7 +173,25 @@ func runFakeOpenCode() {
 				http.Error(w, "bad session", 500)
 				return
 			}
-			json.NewEncoder(w).Encode(map[string]any{"data": items})
+			if r.URL.Query().Get("order") == "asc" || r.URL.Query().Get("cursor") != "" {
+				for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+					items[i], items[j] = items[j], items[i]
+				}
+			}
+			start, _ := strconv.Atoi(r.URL.Query().Get("cursor"))
+			if start > len(items) {
+				http.Error(w, "invalid cursor", 400)
+				return
+			}
+			end := start + 2
+			if end > len(items) {
+				end = len(items)
+			}
+			next := ""
+			if end < len(items) {
+				next = strconv.Itoa(end)
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": items[start:end], "cursor": map[string]any{"next": next}})
 			return
 		}
 		items := []map[string]any{
@@ -217,6 +235,32 @@ func runFakeOpenCode() {
 		write()
 		fmt.Fprintf(w, `{"data":{"id":%q}}`, id)
 	})
+	mux.HandleFunc("POST /api/session/{id}/model", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		var body struct {
+			Model map[string]any `json:"model"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || body.Model["providerID"] == nil || body.Model["id"] == nil {
+			http.Error(w, "invalid model", 400)
+			return
+		}
+		if _, err := os.Stat(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")); err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		if rec.SessionBody == nil {
+			rec.SessionBody = map[string]any{}
+		}
+		rec.SessionBody["model"] = body.Model
+		rec.SessionID = r.PathValue("id")
+		mu.Unlock()
+		write()
+		w.WriteHeader(http.StatusNoContent)
+	})
 	mux.HandleFunc("POST /api/session/{id}/prompt", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, "unauthorized", 401)
@@ -230,6 +274,10 @@ func runFakeOpenCode() {
 			http.Error(w, "invalid prompt", 400)
 			return
 		}
+		mu.Lock()
+		rec.SessionID = r.PathValue("id")
+		mu.Unlock()
+		write()
 		mu.Lock()
 		defer mu.Unlock()
 		path := filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-session-"+r.PathValue("id")+".json")

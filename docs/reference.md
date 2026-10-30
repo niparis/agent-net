@@ -5,6 +5,22 @@ preference. Pass `{"model":"provider/model"}` to save a preference, or an empty
 model to clear it. The gateway stores it with the other owner settings. This
 setting alone does not start a CTO runtime.
 
+The owner-only `cto_send` method takes `{"text":"..."}`. It starts a private
+OpenCode server on first use and sends to its conversation. `cto_new` starts a
+fresh conversation. `cto_events` takes `{"index":0}` and returns messages in
+chronological order and a `next` index for the next poll. The conversation ID
+and OpenCode data stay in the daemon state directory across restarts. The
+server runs until the daemon stops and restarts on the next request if it exits.
+The CTO is not a worker or a network session.
+
+The configured model is resolved against the local OpenCode inventory. With no
+preference, the daemon tries GPT 6.1, Opus 5.5, then DeepSeek v4 Pro using the
+model resolver. If none is available, it uses the first model in the inventory.
+A changed setting takes effect on the next send. The CTO server uses private
+XDG data, state, config and cache directories under `cto` in the daemon state
+directory. OpenCode credentials are copied with its auth export and import
+commands when the server starts.
+
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
 ## Commands

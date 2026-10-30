@@ -3,7 +3,14 @@
 The network-wide CTO model preference is an owner setting. The daemon's
 `cto_settings` method uses the owner gate and refuses agent sessions. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
-that token is an owner credential and must not be shared with agents.
+that token is an owner credential and must not be shared with agents. The
+`cto_send`, `cto_new`, and `cto_events` methods use the same gate.
+The CTO server binds only to localhost and requires a random password. Its
+OpenCode data, state, configuration and cache are private to the daemon. The
+OpenCode agent-net plugin is disabled in that process, so its conversation
+never registers with the gateway and cannot receive peer messages. This layer
+does not give it private agent-net tools. The owner gate also checks the CTO
+process tree, so a command it runs cannot use the owner CLI.
 
 This page says what agent-net trusts, how it checks it, and what it does not protect against. Every statement here was checked against the code. Where a check is weak, the page says so.
 

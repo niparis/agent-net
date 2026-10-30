@@ -35,7 +35,7 @@ var operatorMethods = map[string]bool{
 	"usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
-	protocol.OpCTOSettings: true,
+	protocol.OpCTOSettings: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true,
 }
 
 // The owner as a sender (owner_send, and the command line's worker calls) uses
@@ -137,6 +137,13 @@ func (d *Daemon) insideSession(pid int) bool {
 		}
 	}
 	d.wmu.Unlock()
+	// The private CTO is also an agent process, even though it is not a
+	// registered session or worker. Its children cannot use the owner CLI.
+	d.cto.mu.Lock()
+	if d.cto.cmd != nil && d.cto.cmd.Process.Pid > 1 {
+		sess[d.cto.cmd.Process.Pid] = true
+	}
+	d.cto.mu.Unlock()
 	if len(sess) == 0 {
 		return false
 	}
@@ -233,6 +240,20 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 				}
 			}
 		}
+	case protocol.OpCTOSend:
+		var q protocol.CTOSendRequest
+		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {
+			return nil, true, errors.New("cto_send needs text")
+		}
+		res, err = d.ctoSend(ctx, q.Text)
+	case protocol.OpCTONew:
+		res, err = d.ctoNew(ctx)
+	case protocol.OpCTOEvents:
+		var q protocol.CTOEventsRequest
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil || q.Index < 0 {
+			return nil, true, errors.New("cto_events needs a non-negative index")
+		}
+		res, err = d.ctoEvents(ctx, q.Index)
 	case protocol.OpCTOSettings:
 		var q protocol.CTOSettingsRequest
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {

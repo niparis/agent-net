@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -34,6 +35,14 @@ func TestMain(m *testing.M) {
 	if len(os.Args) > 2 && os.Args[1] == "auth" {
 		if os.Args[2] == "export" {
 			os.Stdout.WriteString("[]")
+		} else if os.Args[2] == "import" && os.Getenv("FAKE_OC_AUTH_RECORD") == "1" {
+			data, _ := io.ReadAll(os.Stdin)
+			if string(data) != "[]" {
+				os.Exit(1)
+			}
+			if err := os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-imported-auth"), data, 0o600); err != nil {
+				os.Exit(1)
+			}
 		}
 		return
 	}
