@@ -370,3 +370,5 @@ scanner or exposed through the daemon.
 The inventory scanner draft limits each MCP or settings file to 1 MiB and
 refuses skill or configuration roots that escape the scan root. MCP fingerprints
 omit environment and header values, URL paths and queries, and argument values.
+Inventory reports are bounded to 10,000 entries and 256 KiB of field text;
+oversized reports and fields fail the scan rather than silently truncating it.

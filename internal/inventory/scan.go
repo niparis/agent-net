@@ -30,7 +30,18 @@ type Options struct {
 func Scan(o Options) protocol.InventoryReport {
 	now := time.Now().UTC()
 	report := protocol.InventoryReport{Machine: o.Machine, ScannedAt: now, State: protocol.InventoryOK, Items: []protocol.InventoryItem{}}
+	totalFields := 0
 	add := func(h, k, scope, project, root, path, name, hash, state, reason string, unsupported ...string) {
+		total := len(h) + len(k) + len(scope) + len(project) + len(root) + len(path) + len(name) + len(hash) + len(reason)
+		for _, flag := range unsupported {
+			total += len(flag)
+		}
+		if len(name) > 4096 || len(path) > 4096 || len(root) > 4096 || len(project) > 4096 || len(report.Items) >= 10000 || totalFields+total > 256<<10 {
+			report.State = protocol.InventoryError
+			report.Reason = "inventory exceeds report limit"
+			return
+		}
+		totalFields += total
 		if state == protocol.InventoryError {
 			report.State = protocol.InventoryError
 			report.Reason = "one or more sources could not be scanned"
@@ -244,6 +255,32 @@ func Scan(o Options) protocol.InventoryReport {
 				add("pi", protocol.InventorySkill, scope, project, root, path, "", "", protocol.InventoryError, "configured skill path is outside allowed root or contains a symlink", "manual")
 				continue
 			}
+			if filepath.Base(source) == "SKILL.md" {
+				relDir, err := filepath.Rel(base, filepath.Dir(source))
+				if err != nil {
+					continue
+				}
+				skillRoot, err := dir.OpenRoot(relDir)
+				if err != nil {
+					add("pi", protocol.InventorySkill, scope, project, root, source, "", "", protocol.InventoryError, "cannot open skill safely")
+					continue
+				}
+				info, err := skillRoot.Lstat("SKILL.md")
+				if err != nil || !info.Mode().IsRegular() {
+					skillRoot.Close()
+					add("pi", protocol.InventorySkill, scope, project, root, source, "", "", protocol.InventoryError, "cannot read skill file")
+					continue
+				}
+				hash, err := skillHashRoot(skillRoot)
+				skillRoot.Close()
+				name := filepath.Base(filepath.Dir(source))
+				if err != nil {
+					add("pi", protocol.InventorySkill, scope, project, root, source, name, "", protocol.InventoryError, "cannot hash skill safely")
+				} else {
+					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
+				}
+				continue
+			}
 			skills("pi", scope, project, root, base, source)
 		}
 	}
@@ -256,6 +293,14 @@ func Scan(o Options) protocol.InventoryReport {
 		skills(x[0], protocol.InventoryUser, "", "", home, filepath.Join(home, x[1]))
 	}
 	skills("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "skills"))
+	for _, source := range []struct{ base, path string }{{codex, filepath.Join(codex, "skills/.system")}, {home, filepath.Join(home, ".agents/skills/.system")}} {
+		start := len(report.Items)
+		skills("codex", protocol.InventoryUser, "", "", source.base, source.path)
+		for i := start; i < len(report.Items); i++ {
+			report.Items[i].Source = protocol.InventorySystem
+			report.Items[i].Unsupported = append(report.Items[i].Unsupported, "system managed")
+		}
+	}
 	config("claude", protocol.InventoryUser, "", "", home, filepath.Join(home, ".claude.json"), "mcpServers", false)
 	config("codex", protocol.InventoryUser, "", "", codex, filepath.Join(codex, "config.toml"), "mcp_servers", true)
 	for _, f := range []string{"opencode.json", "opencode.jsonc"} {
@@ -263,8 +308,11 @@ func Scan(o Options) protocol.InventoryReport {
 	}
 	extensions := filepath.Join(home, ".pi/agent/extensions")
 	if _, err := os.Lstat(extensions); err == nil {
+		before := len(report.Items)
 		add("pi", protocol.InventoryMCP, protocol.InventoryUser, "", "", extensions, "extensions", "", protocol.InventoryOK, "", "extension MCP requires manual inspection")
-		report.Items[len(report.Items)-1].Source = protocol.InventoryPlugin
+		if len(report.Items) > before {
+			report.Items[len(report.Items)-1].Source = protocol.InventoryPlugin
+		}
 	}
 	piSettings(protocol.InventoryUser, "", "", home, filepath.Join(home, ".pi/agent/settings.json"))
 	config("pi", protocol.InventoryUser, "", "", home, filepath.Join(home, ".pi/agent/mcp.json"), "mcpServers", false)

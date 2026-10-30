@@ -276,3 +276,94 @@ func TestHarnessProjectTrust(t *testing.T) {
 		t.Fatalf("missing trusted project MCP: %+v", report.Items)
 	}
 }
+
+func TestProjectSkillAndMCPRoots(t *testing.T) {
+	home, project := t.TempDir(), t.TempDir()
+	files := map[string]string{
+		".claude/skills/a/SKILL.md": "a", ".agents/skills/b/SKILL.md": "b", ".opencode/skills/c/SKILL.md": "c", ".pi/skills/d/SKILL.md": "d",
+		".mcp.json":          `{"mcpServers":{"claude-local":{"command":"node"}}}`,
+		".codex/config.toml": "[mcp_servers.codex-local]\ncommand='node'\n",
+		"opencode.jsonc":     `{"mcp":{"open-local":{"command":["node"]}}}`,
+		".pi/mcp.json":       `{"mcpServers":{"pi-local":{"command":"node"}}}`,
+	}
+	for name, data := range files {
+		path := filepath.Join(project, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := Scan(Options{Home: home, Projects: []protocol.ProjectEntry{{Name: "p", Path: project}}, TrustedProjects: map[string]bool{project: true}})
+	found := map[string]bool{}
+	for _, v := range r.Items {
+		if v.Scope == protocol.InventoryProject && v.Project == "p" {
+			found[v.Harness+":"+v.Name] = true
+		}
+	}
+	for _, key := range []string{"claude:a", "codex:b", "opencode:c", "pi:d", "claude:claude-local", "codex:codex-local", "opencode:open-local", "pi:pi-local"} {
+		if !found[key] {
+			t.Errorf("missing %s", key)
+		}
+	}
+}
+
+func TestCodexSystemSkillProvenance(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".codex/skills/.system/standard")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("system"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range Scan(Options{Home: home}).Items {
+		if item.Harness == "codex" && item.Name == "standard" && item.Source == protocol.InventorySystem {
+			return
+		}
+	}
+	t.Fatal("missing system skill")
+}
+
+func TestPiSettingsSingleSkillFile(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, ".pi/agent/extra/one")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("one"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".pi/agent/settings.json"), []byte(`{"skills":["extra/one/SKILL.md"]}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	report := Scan(Options{Home: home})
+	for _, item := range report.Items {
+		if item.Harness == "pi" && item.Name == "one" && item.State == protocol.InventoryOK {
+			return
+		}
+	}
+	t.Fatalf("missing skill: %+v", report.Items)
+}
+
+func TestInventoryLimitsOversizedNames(t *testing.T) {
+	home := t.TempDir()
+	doc := map[string]any{"mcpServers": map[string]any{strings.Repeat("x", 5000): map[string]any{"command": "node"}}}
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".claude.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	r := Scan(Options{Home: home})
+	if r.State != protocol.InventoryError {
+		t.Fatal("oversized name accepted")
+	}
+	for _, item := range r.Items {
+		if len(item.Name) > 4096 {
+			t.Fatal("oversized name reported")
+		}
+	}
+}
