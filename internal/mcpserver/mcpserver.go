@@ -64,7 +64,6 @@ type getIn struct {
 
 type announceIn struct {
 	Task         string   `json:"task" jsonschema:"your current task, in one short line"`
-	Name         string   `json:"name,omitempty" jsonschema:"only to rename this session on purpose; leave out otherwise"`
 	Function     string   `json:"function,omitempty" jsonschema:"ignored: the function is read from the project's AGENTS.md"`
 	Project      string   `json:"project,omitempty" jsonschema:"the project you work on"`
 	Capabilities []string `json:"capabilities,omitempty" jsonschema:"short capability tags others can search for"`
@@ -186,7 +185,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 		"Tell the network what you are working on now, so other agents can find you with agent_list. "+
 			"REQUIRED: "+AnnounceRule+" The task shows in agent_list and agent_get. "+
 			"Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. "+
-			"Do not pass name unless you mean to rename this session; function is ignored."),
+			"Function is ignored."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in announceIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "announce", in)
 			return nil, out, err

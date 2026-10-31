@@ -347,7 +347,7 @@ func TestAnnounceAndList(t *testing.T) {
 		Agents []protocol.AgentView `json:"agents"`
 	}
 	json.Unmarshal(raw, &r)
-	if len(r.Agents) != 1 || r.Agents[0].SessionID != bobID || r.Agents[0].Profile.Name != "builder" ||
+	if len(r.Agents) != 1 || r.Agents[0].SessionID != bobID || r.Agents[0].Profile.Name != "bob" ||
 		r.Agents[0].Harness != "pi" || r.Agents[0].Hostname == "" {
 		t.Fatalf("unexpected list: %s", raw)
 	}

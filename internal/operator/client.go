@@ -352,6 +352,15 @@ func (s *Client) RenameNode(ctx context.Context, nodeID, name string) (protocol.
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) RenameSession(ctx context.Context, sessionID, name string) (protocol.SessionRenameResult, error) {
+	var out protocol.SessionRenameResult
+	raw, err := s.action(ctx, protocol.OpSessionRename, protocol.SessionRenameRequest{SessionID: sessionID, Name: name})
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Integrations(ctx context.Context) (protocol.IntegrationsResult, error) {
 	var out protocol.IntegrationsResult
 	raw, err := s.action(ctx, protocol.OpIntegrationsGet, nil)

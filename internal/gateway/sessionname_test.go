@@ -1,6 +1,10 @@
 package gateway
 
 import (
+	"database/sql"
+	"encoding/json"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -177,9 +181,10 @@ func TestHarnessTitleIsNotTheName(t *testing.T) {
 	}
 }
 
-// A name set by hand still wins over the automatic name. The harness title
+// An announce from an older client still carries a name. The gateway ignores
+// it: only the owner renames a session (decision 0032). The harness title
 // stays apart.
-func TestAnnouncedNameWinsOverTheAutomaticName(t *testing.T) {
+func TestAnnounceIgnoresAnOlderClientsName(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
 	in := protocol.SessionInfo{
@@ -190,10 +195,26 @@ func TestAnnouncedNameWinsOverTheAutomaticName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Name: "reviewer"}); err != nil {
+	// The frame an older daemon sends, name and all.
+	var old protocol.ProfileAnnounce
+	payload := `{"session_id":"` + id + `","name":"x","task":"second"}`
+	if err := json.Unmarshal([]byte(payload), &old); err != nil {
 		t.Fatal(err)
 	}
-	// A later report, and another session in the same project, do not change it.
+	if _, err := s.Announce(node, old); err != nil {
+		t.Fatal(err)
+	}
+	a := agentOf(t, s, id)
+	if a.Profile.Name != "shop" {
+		t.Fatalf("an announce renamed the session to %q", a.Profile.Name)
+	}
+	if a.Profile.Task != "second" {
+		t.Fatalf("task %q", a.Profile.Task)
+	}
+	if a.Title != "tenebrae-53" {
+		t.Fatalf("title %q", a.Title)
+	}
+	// A later report and another session in the same project keep the name.
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
@@ -201,24 +222,60 @@ func TestAnnouncedNameWinsOverTheAutomaticName(t *testing.T) {
 		Repo: protocol.RepoInfo{Root: "/code/shop", Project: "shop"}}); err != nil {
 		t.Fatal(err)
 	}
-	a := agentOf(t, s, id)
-	if a.Profile.Name != "reviewer" {
-		t.Fatalf("the announced name was replaced by %q", a.Profile.Name)
+	if got := agentOf(t, s, id).Profile.Name; got != "shop" {
+		t.Fatalf("name after a report %q", got)
 	}
-	if a.Title != "tenebrae-53" {
-		t.Fatalf("title %q", a.Title)
-	}
-	// The automatic name is not reserved twice: the other session got "shop".
-	ag, err := s.Agents(protocol.QueryAgents{})
+}
+
+// An older gateway stored the name an agent announced. The migration clears
+// those names, so every session shows its automatic project name again at its
+// next report (decision 0032).
+func TestMigrationClearsAnnounceNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gw.db")
+	db, err := sql.Open("sqlite", "file:"+path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := map[string]bool{}
-	for _, v := range ag {
-		seen[v.Profile.Name] = true
+	db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`)
+	clear := -1
+	for i, m := range migrations {
+		if strings.Contains(m, "UPDATE profiles SET name") {
+			clear = i
+			break
+		}
 	}
-	if !seen["shop"] || !seen["reviewer"] {
-		t.Fatalf("names %v", seen)
+	if clear < 0 {
+		t.Fatal("no migration clears announce names")
+	}
+	for i := 0; i < clear; i++ {
+		if _, err := db.Exec(migrations[i]); err != nil {
+			t.Fatal(err)
+		}
+		db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1)
+	}
+	db.Exec(`INSERT INTO nodes (id, hostname, os, token_hash, created_at) VALUES ('n_1','old','linux','h',1)`)
+	db.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, last_seen, online) VALUES ('s_1','n_1','claude','x','shop','/code/shop',5,1)`)
+	db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at) VALUES ('s_1','reviewer','','','[]','t',1)`)
+	db.Close()
+
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := agentOf(t, s, "s_1")
+	if a.Profile.Name != "shop" {
+		t.Fatalf("the announced name survived the migration: %q", a.Profile.Name)
+	}
+	if a.Profile.Task != "t" {
+		t.Fatalf("the migration erased the task: %+v", a.Profile)
+	}
+	// A later report keeps the automatic name.
+	if _, err := s.UpsertSession("n_1", protocol.SessionInfo{Harness: "claude", NativeID: "x", Cwd: "/code/shop"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentOf(t, s, "s_1").Profile.Name; got != "shop" {
+		t.Fatalf("name after a report: %q", got)
 	}
 }
 

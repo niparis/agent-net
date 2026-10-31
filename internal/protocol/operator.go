@@ -46,6 +46,11 @@ const (
 	// (decision 0014). Owner only, no agent tool.
 	OpSessionPolicy = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
 
+	// OpSessionRename gives a session a name the owner chose, or with an empty
+	// name returns it to the automatic project name (decision 0032). Owner
+	// only: no agent tool sets it.
+	OpSessionRename = "session_rename" // takes SessionRenameRequest, answers SessionRenameResult
+
 	// Project display names are set and read by the owner.
 	OpProjectDisplayGet = "project_display_get"
 	OpProjectDisplaySet = "project_display_set"
@@ -108,7 +113,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
+	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
@@ -422,6 +427,19 @@ type SessionTrustRequest struct {
 type SessionTrustResult struct {
 	SessionID string `json:"session_id"`
 	On        bool   `json:"on"`
+}
+
+// SessionRenameRequest is OpSessionRename. An empty Name returns the session
+// to its automatic project name.
+type SessionRenameRequest struct {
+	SessionID string `json:"session_id"`
+	Name      string `json:"name"`
+}
+
+// SessionRenameResult answers OpSessionRename with the name now listed.
+type SessionRenameResult struct {
+	SessionID string `json:"session_id"`
+	Name      string `json:"name"`
 }
 
 // NodeRenameRequest is OpNodeRename. An empty Name clears the display name.

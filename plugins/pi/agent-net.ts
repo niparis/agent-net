@@ -861,10 +861,9 @@ export default function (pi: ExtensionAPI) {
     "Announce your task",
     `Tell the network what you are working on now, so other agents can find you with agent_list. REQUIRED: ${ANNOUNCE_RULE} ` +
       "The task shows in agent_list and agent_get. Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
-      "Do not pass name unless you mean to rename this session; function is ignored.",
+      "Function is ignored.",
     Type.Object({
       task: Type.String({ description: "Your current task, in one short line" }),
-      name: Type.Optional(Type.String({ description: "Only to rename this session on purpose; leave out otherwise" })),
       function: Type.Optional(Type.String({ description: "Ignored: the function is read from the project's AGENTS.md" })),
       project: Type.Optional(Type.String({ description: "Project this agent works on" })),
       capabilities: Type.Optional(Type.Array(Type.String(), { description: "List of capabilities" })),

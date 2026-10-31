@@ -85,28 +85,27 @@ func TestNoDescriptionMeansNoFunction(t *testing.T) {
 	}
 }
 
-// Announce renames the session only when it carries a name. Later announces
-// without a name or other fields keep what is there.
-func TestAnnounceRenamesOnlyWithAName(t *testing.T) {
+// An announce keeps what is there. It never changes the session's name.
+func TestAnnounceKeepsWhatIsThere(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, id := sessionWithDescription(t, s, "d")
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "first task"}); err != nil {
 		t.Fatal(err)
 	}
 	if a := agentOf(t, s, id); a.Profile.Name != "p" {
-		t.Fatalf("announce without a name renamed the session to %q", a.Profile.Name)
+		t.Fatalf("announce renamed the session to %q", a.Profile.Name)
 	}
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Name: "builder", Project: "p9", Capabilities: []string{"go"}, Task: "second"}); err != nil {
+	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Project: "p9", Capabilities: []string{"go"}, Task: "second"}); err != nil {
 		t.Fatal(err)
 	}
-	if a := agentOf(t, s, id); a.Profile.Name != "builder" || a.Profile.Project != "p9" || a.Profile.Task != "second" {
-		t.Fatalf("explicit name: %+v", a.Profile)
+	if a := agentOf(t, s, id); a.Profile.Name != "p" || a.Profile.Project != "p9" || a.Profile.Task != "second" {
+		t.Fatalf("explicit fields: %+v", a.Profile)
 	}
 	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Task: "third"}); err != nil {
 		t.Fatal(err)
 	}
 	a := agentOf(t, s, id)
-	if a.Profile.Name != "builder" || a.Profile.Project != "p9" || a.Profile.Task != "third" || strings.Join(a.Profile.Capabilities, ",") != "go" {
+	if a.Profile.Name != "p" || a.Profile.Project != "p9" || a.Profile.Task != "third" || strings.Join(a.Profile.Capabilities, ",") != "go" {
 		t.Fatalf("a later announce erased fields: %+v", a.Profile)
 	}
 	// Capabilities can still be cleared with an empty list.
@@ -174,7 +173,7 @@ func TestMigration8AddsDescription(t *testing.T) {
 		db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1)
 	}
 	db.Exec(`INSERT INTO nodes (id, hostname, os, token_hash, created_at) VALUES ('n_1','old','linux','h',1)`)
-	db.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, cwd, last_seen, online) VALUES ('s_1','n_1','claude','x','/w/p',5,0)`)
+	db.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, last_seen, online) VALUES ('s_1','n_1','claude','x','n','/w/p',5,0)`)
 	db.Exec(`INSERT INTO profiles (session_id, name, function, task, updated_at) VALUES ('s_1','n','model text','t',1)`)
 	db.Close()
 

@@ -10,7 +10,7 @@ import (
 
 // FUNCTION is read from the AGENTS.md of the project by the daemon, travels to
 // the gateway with the session, follows the file when it changes, and cannot
-// be set by announce. Announce sets the task and renames only with a name.
+// be set by announce. Announce sets the task only (decision 0032).
 func TestFunctionComesFromAgentsMd(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
@@ -39,16 +39,12 @@ func TestFunctionComesFromAgentsMd(t *testing.T) {
 	}
 	name := a.Profile.Name
 
-	// Announce sets the task. The model's function text is ignored, and the name stays.
-	pi.mustCall("announce", map[string]any{"function": "repository maintenance and verification", "task": "adding the orders endpoint"})
+	// Announce sets the task. The model's function text and an older client's
+	// name are ignored, and the name stays.
+	pi.mustCall("announce", map[string]any{"name": "orders-dev", "function": "repository maintenance and verification", "task": "adding the orders endpoint"})
 	a = agentByID(t, pi, id)
 	if a.Profile.Function != want || a.Profile.Task != "adding the orders endpoint" || a.Profile.Name != name {
 		t.Fatalf("after announce: %+v", a.Profile)
-	}
-	// A name is taken only when it is given on purpose.
-	pi.mustCall("announce", map[string]any{"name": "orders-dev", "task": "adding the orders endpoint"})
-	if got := agentByID(t, pi, id).Profile.Name; got != "orders-dev" {
-		t.Fatalf("name %q", got)
 	}
 
 	// The file changes. The next update of the session carries the new text.
@@ -78,7 +74,7 @@ func TestAnnounceNeedsATask(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
 	pi, _ := helloPi(t, n, "nb", "/work/bob", true)
-	for _, params := range []map[string]any{{}, {"task": "  "}, {"function": "only a function"}} {
+	for _, params := range []map[string]any{{}, {"task": "  "}, {"function": "only a function"}, {"name": "only a name"}} {
 		_, err := pi.call("announce", params)
 		if err == nil || !strings.Contains(err.Error(), "needs a task") {
 			t.Errorf("announce %v: %v", params, err)

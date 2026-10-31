@@ -37,7 +37,6 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 			"Call it again whenever your task changes.",
 			"AGENTS.md automatically",
 			"When you stop to wait for my decision or answer, call `agent_ask_owner` with the question in one line",
-			"Do not pass a name unless I ask you to rename the session.",
 		} {
 			if !strings.Contains(b, want) {
 				t.Errorf("%s block lacks %q", v, want)
@@ -45,6 +44,10 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 		}
 		if strings.Contains(b, "once you know what you are working on") {
 			t.Errorf("%s block still has the old optional wording", v)
+		}
+		// Only the owner names a session (decision 0032).
+		if strings.Contains(b, "Do not pass a name") || strings.Contains(b, "rename the session") {
+			t.Errorf("%s block still tells the agent to rename its session", v)
 		}
 	}
 }

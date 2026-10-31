@@ -331,6 +331,9 @@ await test("agent_announce asks for a task and says so; no name or function is r
   for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {
     if (!tool.description.includes(want)) throw new Error("description misses " + JSON.stringify(want) + ": " + tool.description);
   }
+  // Only the owner renames a session (decision 0032).
+  if ("name" in tool.parameters.properties) throw new Error("agent_announce still takes a name");
+  if (/rename/i.test(tool.description)) throw new Error("agent_announce still mentions renaming: " + tool.description);
 });
 
 await test("tool results end with the reminder until the session has announced", async () => {

@@ -78,9 +78,6 @@ func TestFormatLineQuotesAndDropsEmpty(t *testing.T) {
 func TestMessageLogLines(t *testing.T) {
 	s, c, lc := newLoggedStore(t)
 	a, b := twoSessions(t, s)
-	if _, err := s.Announce(mustNode(t, s, a), protocol.ProfileAnnounce{SessionID: a, Name: "alice the agent"}); err != nil {
-		t.Fatal(err)
-	}
 	c.t = c.t.Add(time.Second)
 	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "TOP-SECRET-BODY-TEXT", IdempotencyKey: "k1"})
 	if err != nil {
@@ -93,7 +90,7 @@ func TestMessageLogLines(t *testing.T) {
 	line := stored[0]
 	for _, want := range []string{
 		"ts=2026-10-28T12:00:01.000Z", "msg=" + m.ID, "conv=" + m.ConversationID, "type=request",
-		"from=" + a, `from_name="alice the agent"`, "from_harness=claude", "from_host=h1",
+		"from=" + a, "from_name=alice", "from_harness=claude", "from_host=h1",
 		"to=" + b, "to_name=bob", "to_harness=pi", "to_host=h2", "bytes=20",
 	} {
 		if !strings.Contains(line, want) {
@@ -405,7 +402,6 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 	s.Event("custom.old", "", "", "", "")
 	// An offline session last seen long ago, with a profile.
 	gone, _ := s.UpsertSession(nodeA, protocol.SessionInfo{Harness: "claude", NativeID: "gone", Name: "gone"})
-	s.Announce(nodeA, protocol.ProfileAnnounce{SessionID: gone, Name: "gone"})
 	s.SetSessionOffline(nodeA, gone)
 
 	c.t = c.t.Add(40 * day)
