@@ -304,3 +304,45 @@ func TestSetupOpenQuestionSkipsTTYWhenNonInteractive(t *testing.T) {
 		t.Fatalf("non-interactive instruction: %q", out.String())
 	}
 }
+
+// The projects call lists a folder per machine, so it also carries worker
+// worktrees, Claude Code worktrees and temporary test folders. The Map line
+// must count project identities, as the Map tab does, not folders.
+func TestMapPointCountsProjectIdentitiesNotFolders(t *testing.T) {
+	summary := setupSummary{
+		projectsKnown: true,
+		projects: []protocol.ProjectView{
+			{Name: "agent-net", Path: "/home/owner/code/agent-net"},
+			{Name: "w_4846e4b5b1eadf29", Path: "/home/owner/.local/state/agent-net/daemon/worktrees/w_4846e4b5b1eadf29"},
+			{Name: "w_2f1c8a7d3b4e5f60", Path: "/home/owner/.local/state/agent-net/daemon/worktrees/w_2f1c8a7d3b4e5f60"},
+			{Name: "w_9d0e1f2a3b4c5d6e", Path: "/home/owner/.local/state/agent-net/daemon/worktrees/w_9d0e1f2a3b4c5d6e"},
+			{Name: "tmp123456", Path: "/tmp/tmp123456"},
+		},
+		graphKnown: true,
+		graph: protocol.Graph{Nodes: []protocol.Node{
+			{Name: "agent-net", Kind: "component", Charter: protocol.Charter{Purpose: "The agent network."}},
+		}},
+	}
+	point := (&runner{}).mapPoint(summary)
+	if point.first != "1 project seen. All have charters." {
+		t.Fatalf("Map line %q, want one project", point.first)
+	}
+}
+
+// A graph with no visible nodes has no projects, even when the projects call
+// still lists temporary folders or old worktrees.
+func TestMapPointSaysNoProjectsWhenTheGraphIsEmpty(t *testing.T) {
+	summary := setupSummary{
+		projectsKnown: true,
+		projects: []protocol.ProjectView{
+			{Name: "tmp123456", Path: "/tmp/tmp123456"},
+			{Name: "w_4846e4b5b1eadf29", Path: "/home/owner/.local/state/agent-net/daemon/worktrees/w_4846e4b5b1eadf29"},
+		},
+		graphKnown: true,
+		graph:      protocol.Graph{},
+	}
+	point := (&runner{}).mapPoint(summary)
+	if point.first != "No projects yet. Each project you work in becomes one." {
+		t.Fatalf("Map line %q, want no projects", point.first)
+	}
+}

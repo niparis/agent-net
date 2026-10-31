@@ -308,10 +308,29 @@ func (r *runner) otherHosts(summary setupSummary) []string {
 }
 
 func (r *runner) mapPoint(summary setupSummary) setupPoint {
+	// The projects call lists a folder per machine, so it also carries worker
+	// worktrees, Claude Code worktrees and temporary test folders under their
+	// own names. The Map tab counts graph nodes, which are project identities:
+	// worktrees share their main tree's identity and junk roots are hidden.
+	// Use the same graph here, and keep the project list only for gateways
+	// that cannot answer graph_get.
 	projects := map[string]bool{}
-	for _, project := range summary.projects {
-		if project.Name != "" {
-			projects[project.Name] = true
+	chartered := map[string]bool{}
+	if summary.graphKnown {
+		for _, node := range summary.graph.Nodes {
+			if node.Name == "" || node.Name == "*" || node.Kind == "architect" {
+				continue
+			}
+			projects[node.Name] = true
+			if hasCharter(node.Charter) {
+				chartered[node.Name] = true
+			}
+		}
+	} else {
+		for _, project := range summary.projects {
+			if project.Name != "" {
+				projects[project.Name] = true
+			}
 		}
 	}
 	if len(projects) == 0 {
@@ -319,12 +338,6 @@ func (r *runner) mapPoint(summary setupSummary) setupPoint {
 	}
 	if !summary.graphKnown {
 		return setupPoint{label: "4 Map", first: fmt.Sprintf("%d projects seen.", len(projects))}
-	}
-	chartered := map[string]bool{}
-	for _, node := range summary.graph.Nodes {
-		if projects[node.Name] && hasCharter(node.Charter) {
-			chartered[node.Name] = true
-		}
 	}
 	missing := len(projects) - len(chartered)
 	switch {

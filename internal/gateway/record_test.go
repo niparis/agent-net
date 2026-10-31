@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -782,5 +783,49 @@ func TestProjectsGroupWorktrees(t *testing.T) {
 		if p.Hostname == "box" && len(p.Worktrees) != 0 {
 			t.Fatalf("a main tree has no linked worktrees: %+v", p)
 		}
+	}
+}
+
+// Worker worktrees share the main tree's project identity, and a temporary
+// test folder is not a graph project. The projects call still lists the temp
+// folder (it is a folder where a session ran), but the graph, which the Map
+// and the setup Map line count, keeps one node for the repository.
+func TestProjectsGroupWorkerWorktreesAndHideTemporaryFolders(t *testing.T) {
+	s, _ := newTestStore(t)
+	n, _, _ := s.CreateNode("box", "linux")
+	repo := func(worktree, branch string) protocol.RepoInfo {
+		return protocol.RepoInfo{Root: "/home/owner/code/agent-net", Worktree: worktree,
+			Project: "agent-net", Remote: "https://example.com/team/agent-net.git", Branch: branch}
+	}
+	s.UpsertSession(n, protocol.SessionInfo{Harness: "claude", NativeID: "main", Cwd: "/home/owner/code/agent-net", Repo: repo("/home/owner/code/agent-net", "main")})
+	for i := 0; i < 3; i++ {
+		wt := fmt.Sprintf("/home/owner/.local/state/agent-net/daemon/worktrees/w_%d", i)
+		s.UpsertSession(n, protocol.SessionInfo{Harness: "opencode", NativeID: fmt.Sprintf("worker-%d", i), Cwd: wt, Repo: repo(wt, fmt.Sprintf("agent-net/w_%d", i))})
+	}
+	s.UpsertSession(n, protocol.SessionInfo{Harness: "claude", NativeID: "temp", Cwd: "/tmp/tmp123456",
+		Repo: protocol.RepoInfo{Root: "/tmp/tmp123456", Project: "tmp123456"}})
+
+	ps, err := s.Projects("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ps) != 2 {
+		t.Fatalf("projects: %+v, want the repository and the temp folder", ps)
+	}
+	var project protocol.ProjectView
+	for _, p := range ps {
+		if p.Name == "agent-net" {
+			project = p
+		}
+	}
+	if project.Path != "/home/owner/code/agent-net" || project.Sessions != 4 || len(project.Worktrees) != 3 {
+		t.Fatalf("project row: %+v", project)
+	}
+	g, err := s.visibleGraph(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Nodes) != 1 || g.Nodes[0].Name != "agent-net" {
+		t.Fatalf("graph nodes: %+v, want only agent-net", g.Nodes)
 	}
 }
