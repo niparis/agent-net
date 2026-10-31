@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	udiff "github.com/aymanbagabas/go-udiff"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -35,18 +36,21 @@ var (
 
 // toolsModal is the plan (or the project picker, or the result) on screen.
 type toolsModal struct {
-	id         int
-	title      string
-	lines      []string
-	paths      []string
-	pathsTitle string
-	showPaths  bool
-	scroll     int
-	loading    bool
-	done       bool
-	actions    map[string]func(Model) (Model, tea.Cmd)
-	foot       []string // key and label pairs
-	picker     *projPicker
+	id           int
+	title        string
+	lines        []string
+	paths        []string
+	pathsTitle   string
+	showPaths    bool
+	scroll       int
+	loading      bool
+	done         bool
+	actions      map[string]func(Model) (Model, tea.Cmd)
+	foot         []string // key and label pairs
+	compareFiles []string
+	compareIndex int
+	back         *toolsModal
+	picker       *projPicker
 }
 
 // toolsModalMsg changes the open modal when a background call ends.
@@ -85,6 +89,16 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.pickerKey(k)
 	}
 	switch {
+	case key == "esc" && md.back != nil:
+		m.tl.modal = md.back
+		return m, nil
+	case (key == "n" || key == "p") && len(md.compareFiles) > 0:
+		step := 1
+		if key == "p" {
+			step = -1
+		}
+		md.compareIndex = (md.compareIndex + step + len(md.compareFiles)) % len(md.compareFiles)
+		return m, nil
 	case key == "esc" || (md.done && key == "enter"):
 		m.tl.modal = nil
 		return m, nil
@@ -1084,9 +1098,33 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		}
 		letter := string(rune('a' + i))
 		c := c
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+c.Version()+")")
+		who := sanitize(c.Machine)
+		if len(act.Copies) == 2 && act.Copies[0].Machine == act.Copies[1].Machine && c.Harness != "" {
+			who += " (" + sanitize(c.Harness) + ")"
+		}
+		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+who)
+		if summary := copySummary(c, act.Copies, m.now()); summary != "" {
+			md.lines = append(md.lines, "     "+summary)
+		}
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
-		md.foot = append(md.foot, letter, "keep "+c.Version())
+		label := sanitize(c.Machine)
+		sameMachine, sameHarness := 0, 0
+		for j, other := range act.Copies {
+			if j != i && other.Machine == c.Machine {
+				sameMachine++
+				if other.Harness == c.Harness {
+					sameHarness++
+				}
+			}
+		}
+		if sameMachine > 0 {
+			if c.Harness != "" && sameHarness == 0 {
+				label = sanitize(c.Harness) + "'s copy"
+			} else {
+				label = fmt.Sprintf("copy %d", i+1)
+			}
+		}
+		md.foot = append(md.foot, letter, "keep "+label)
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
 			notes := comparisonNotes(act.Copies, c)
@@ -1101,13 +1139,186 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 			return model.(Model), cmd
 		}
 	}
+	if len(act.Copies) == 2 {
+		md.lines = append(md.lines, chooseComparison(act.Copies[0], act.Copies[1])...)
+		_, _, changed, ok := toolsdiff.CompareFiles(act.Copies[0], act.Copies[1])
+		if ok && len(changed) > 0 {
+			md.compareFiles = changed
+			md.foot = append(md.foot, "n/p", "select file", "v", "view diff")
+			md.actions["v"] = func(m Model) (Model, tea.Cmd) { return m.openSkillDiff(act.Copies[0], act.Copies[1]) }
+		}
+	}
 	if title == "Keep the newer one in both places" && len(act.Copies) == 2 {
 		md.actions["enter"] = md.actions["a"]
 		md.foot = append([]string{"enter", "keep newer"}, md.foot...)
 	}
-	md.lines = append(md.lines, tsDim.Render("  the one you keep goes into agent-net and to every machine"))
+	destination := "  the one you keep goes into agent-net and to every machine"
+	if len(act.Copies) == 2 && act.Copies[0].NodeID != "" && act.Copies[0].NodeID == act.Copies[1].NodeID && len(m.tl.cat.Machines) > 1 {
+		destination = "  the one you keep goes into agent-net and to " + sanitize(act.Copies[0].Machine)
+	}
+	md.lines = append(md.lines, tsDim.Render(destination))
 	md.foot = append(md.foot, "d", "exact folders", "esc", "cancel")
 	return m, nil
+}
+
+type skillFileReader interface {
+	ToolsReadFile(context.Context, protocol.SkillTextRequest) (string, error)
+}
+
+func (m Model) openSkillDiff(a, b toolsdiff.Copy) (Model, tea.Cmd) {
+	previous := m.tl.modal
+	path := previous.compareFiles[previous.compareIndex]
+	reader, ok := m.src.(skillFileReader)
+	if !ok {
+		m.toolsToast("file preview is unavailable")
+		return m, nil
+	}
+	md := m.openModal("Diff: " + sanitize(path))
+	md.back = previous
+	md.loading = true
+	md.foot = []string{"up/down", "scroll", "esc", "back"}
+	id := md.id
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*Timeout)
+		defer cancel()
+		read := func(c toolsdiff.Copy) (string, error) {
+			return reader.ToolsReadFile(ctx, protocol.SkillTextRequest{Item: c.Item, Location: protocol.ToolImportLocation{NodeID: c.NodeID, Location: c.Location}, Path: path})
+		}
+		before, err := read(a)
+		var after string
+		if err == nil {
+			after, err = read(b)
+		}
+		var lines []string
+		if err != nil {
+			lines = []string{tsErr.Render("! " + sanitize(err.Error()))}
+		} else {
+			diff := unifiedSkillDiff(sanitize(a.Machine)+"/"+sanitize(path), sanitize(b.Machine)+"/"+sanitize(path), before, after)
+			for _, line := range strings.Split(strings.TrimSuffix(diff, "\n"), "\n") {
+				lines = append(lines, sanitize(line))
+			}
+			if diff == "" {
+				lines = []string{"no text differences"}
+			}
+		}
+		return toolsModalMsg{id: id, update: func(md *toolsModal) { md.loading = false; md.lines = lines }}
+	}
+}
+
+// unifiedSkillDiff avoids quadratic diff work on larger previews while still
+// showing a valid unified replacement of both files.
+func unifiedSkillDiff(a, b, before, after string) string {
+	if before == after {
+		return ""
+	}
+	if len(before)+len(after) <= 8192 {
+		return udiff.Unified(a, b, before, after)
+	}
+	count := func(s string) int {
+		n := strings.Count(s, "\n")
+		if len(s) > 0 && !strings.HasSuffix(s, "\n") {
+			n++
+		}
+		return n
+	}
+	var out strings.Builder
+	fmt.Fprintf(&out, "--- %s\n+++ %s\n@@ -%d,%d +%d,%d @@\n", a, b, min(1, count(before)), count(before), min(1, count(after)), count(after))
+	write := func(prefix string, s string) {
+		if s == "" {
+			return
+		}
+		for _, line := range strings.SplitAfter(s, "\n") {
+			if line == "" {
+				continue
+			}
+			out.WriteString(prefix)
+			out.WriteString(line)
+			if !strings.HasSuffix(line, "\n") {
+				out.WriteString("\n\\ No newline at end of file\n")
+			}
+		}
+	}
+	write("-", before)
+	write("+", after)
+	return out.String()
+}
+
+// copySummary describes what was observed, without treating absent manifests as empty.
+func copySummary(c toolsdiff.Copy, copies []toolsdiff.Copy, now time.Time) string {
+	m := c.Manifest
+	if m == nil || m.TooLarge {
+		return ""
+	}
+	var size int64
+	for _, f := range m.Files {
+		size += f.Size
+	}
+	detail := fmt.Sprintf("%s, %d B", nounCount(len(m.Files), "file", "files"), size)
+	if !m.Newest.IsZero() {
+		age := now.Sub(m.Newest)
+		when := "just now"
+		if age >= 24*time.Hour {
+			when = nounCount(int(age.Hours()/24), "day", "days") + " ago"
+		} else if age >= time.Hour {
+			when = nounCount(int(age.Hours()), "hour", "hours") + " ago"
+		} else if age >= time.Minute {
+			when = nounCount(int(age.Minutes()), "minute", "minutes") + " ago"
+		}
+		detail += ", changed " + when + " (" + m.Newest.Format("2 Jan") + ")"
+		if len(copies) == 2 && copies[0].Manifest != nil && copies[1].Manifest != nil && !copies[0].Manifest.TooLarge && !copies[1].Manifest.TooLarge && !copies[0].Manifest.Newest.IsZero() && !copies[1].Manifest.Newest.IsZero() {
+			other := copies[0].Manifest.Newest
+			if m == copies[0].Manifest {
+				other = copies[1].Manifest.Newest
+			}
+			if m.Newest.After(other) {
+				detail += " (newer)"
+			}
+		}
+	}
+	return detail
+}
+
+func chooseComparison(a, b toolsdiff.Copy) []string {
+	label := func(c toolsdiff.Copy) string {
+		if a.Machine == b.Machine && a.Harness != "" && b.Harness != "" && a.Harness != b.Harness {
+			return sanitize(c.Harness)
+		}
+		return sanitize(c.Machine)
+	}
+	added, removed, changed, ok := toolsdiff.CompareFiles(a, b)
+	if !ok {
+		if (a.Manifest != nil && a.Manifest.TooLarge) || (b.Manifest != nil && b.Manifest.TooLarge) {
+			return []string{tsDim.Render("  a copy is too large to compare")}
+		}
+		return []string{tsDim.Render("  no file details from these machines yet")}
+	}
+	var parts []string
+	for _, p := range changed {
+		parts = append(parts, sanitize(p)+" changed")
+	}
+	for _, p := range added {
+		parts = append(parts, sanitize(p)+" only on "+label(b))
+	}
+	for _, p := range removed {
+		parts = append(parts, sanitize(p)+" only on "+label(a))
+	}
+	lines := []string{fmt.Sprintf("  %s differ:", nounCount(len(parts), "file", "files"))}
+	for _, part := range parts[:min(len(parts), 5)] {
+		lines = append(lines, "    "+part)
+	}
+	if len(parts) > 5 {
+		lines = append(lines, fmt.Sprintf("    and %d more", len(parts)-5))
+	}
+	if !a.Manifest.Newest.IsZero() && !b.Manifest.Newest.IsZero() {
+		switch {
+		case a.Manifest.Newest.After(b.Manifest.Newest) && len(added) == 0:
+			return append(lines, "  suggest: keep "+label(a)+"'s copy (newer, has every file)")
+		case b.Manifest.Newest.After(a.Manifest.Newest) && len(removed) == 0:
+			return append(lines, "  suggest: keep "+label(b)+"'s copy (newer, has every file)")
+		}
+	}
+	lines = append(lines, fmt.Sprintf("  %s lacks %s; %s lacks %s", label(a), nounCount(len(added), "file", "files"), label(b), nounCount(len(removed), "file", "files")))
+	return lines
 }
 
 const time10min = 10 * time.Minute

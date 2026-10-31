@@ -445,7 +445,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" {
+		if h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -687,6 +687,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]any{"events": events}, nil
+	case "tools.read_file":
+		p, err := decode[protocol.SkillTextRequest](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.readSkillText(ctx, p)
 	case "tools.import":
 		p, err := decode[protocol.ToolImport](raw)
 		if err != nil {

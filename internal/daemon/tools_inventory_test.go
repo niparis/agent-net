@@ -245,3 +245,59 @@ func TestGatewayBackupOwnerGate(t *testing.T) {
 		t.Fatal("agent accessed gateway backup")
 	}
 }
+
+func TestToolsReadFileOwnerAndPaths(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/read-me")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("hello\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var item protocol.ToolItem
+	eventually(t, "inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "skill"})
+		if err != nil {
+			return false
+		}
+		var page protocol.ToolsPage
+		if json.Unmarshal(raw, &page) != nil {
+			return false
+		}
+		for _, v := range page.Items {
+			if v.Name == "read-me" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	loc := item.Locations[0]
+	req := map[string]any{"item": item.ID, "location": map[string]string{"node_id": loc.NodeID, "location": loc.Location}, "path": "SKILL.md"}
+	raw, err := cli.call("tools_read_file", req)
+	if err != nil || !strings.Contains(string(raw), "hello") {
+		t.Fatalf("read: %s %v", raw, err)
+	}
+	pi, _ := helloPi(t, n, "pi-read", "/work", true)
+	if _, err := pi.call("tools_read_file", req); err == nil {
+		t.Fatal("agent read file")
+	}
+	for _, path := range []string{"../SKILL.md", "/etc/passwd", "missing"} {
+		req["path"] = path
+		if _, err := cli.call("tools_read_file", req); err == nil {
+			t.Fatalf("read %s", path)
+		}
+	}
+	req["path"] = "SKILL.md"
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("changed after scan"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.call("tools_read_file", req); err == nil {
+		t.Fatal("read changed file from stale manifest")
+	}
+
+}

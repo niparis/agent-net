@@ -137,6 +137,9 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 		case "node.mcp_native_edit":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onMCPNativeEdit(ctx, l, h, raw) }()
+		case "node.skill_text":
+			d.wg.Add(1)
+			go func() { defer d.wg.Done(); d.onSkillText(ctx, l, h, raw) }()
 		case "node.skill_bundle":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onSkillBundle(ctx, l, h, raw) }()
