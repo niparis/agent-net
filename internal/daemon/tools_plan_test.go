@@ -244,3 +244,32 @@ func TestToolApplyRejectsChangedDestination(t *testing.T) {
 		t.Fatalf("expected stale plan: %v", err)
 	}
 }
+
+func TestToolDestinationFingerprintDetectsSameMetadataContentChange(t *testing.T) {
+	home := t.TempDir()
+	dest := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dest, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dest, "SKILL.md")
+	if err := os.WriteFile(file, []byte("one"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home}}
+	req := protocol.ToolPlanProbe{Name: "demo", Harness: "claude"}
+	a := d.probeToolDestination(req)
+	if err = os.WriteFile(file, []byte("two"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Chtimes(file, info.ModTime(), info.ModTime()); err != nil {
+		t.Fatal(err)
+	}
+	b := d.probeToolDestination(req)
+	if a.Fingerprint == b.Fingerprint {
+		t.Fatal("content change with restored metadata was missed")
+	}
+}

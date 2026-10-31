@@ -2,10 +2,13 @@ package daemon
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -15,7 +18,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// probeToolDestination inspects only paths, never skill contents.
+// probeToolDestination checks paths and fingerprints existing destinations.
 func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPlanProbeResult {
 	bad := func(s string) protocol.ToolPlanProbeResult { return protocol.ToolPlanProbeResult{Conflict: s} }
 	if p.Name == "" || p.Name == "." || p.Name == ".." || filepath.Base(p.Name) != p.Name || strings.ContainsAny(p.Name, "/\\\x00") {
@@ -81,11 +84,17 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			out.Conflict = "destination contains a symlink"
+			fingerprint, e := d.destinationFingerprint(cur)
+			if e != nil {
+				out.Conflict = "cannot inspect destination"
+			} else {
+				out.Fingerprint = fingerprint
+			}
 			return out
 		}
 		if cur == dest {
 			out.Conflict = "destination already exists and is not owned"
-			fingerprint, err := destinationFingerprint(dest)
+			fingerprint, err := d.destinationFingerprint(dest)
 			if err != nil {
 				out.Conflict = "cannot inspect destination"
 			} else {
@@ -95,6 +104,12 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		}
 		if !info.IsDir() {
 			out.Conflict = "destination parent is not a directory"
+			fingerprint, e := d.destinationFingerprint(cur)
+			if e != nil {
+				out.Conflict = "cannot inspect destination"
+			} else {
+				out.Fingerprint = fingerprint
+			}
 			return out
 		}
 		rel, _ := filepath.Rel(cur, dest)
@@ -114,8 +129,12 @@ func (d *Daemon) onToolPlanProbe(ctx context.Context, l *link, h protocol.Header
 	}
 }
 
-func destinationFingerprint(root string) (string, error) {
-	h := sha256.New()
+func (d *Daemon) destinationFingerprint(root string) (string, error) {
+	d.toolsPlanKeyOnce.Do(func() { _, d.toolsPlanKeyErr = rand.Read(d.toolsPlanKey[:]) })
+	if d.toolsPlanKeyErr != nil {
+		return "", d.toolsPlanKeyErr
+	}
+	h := hmac.New(sha256.New, d.toolsPlanKey[:])
 	count := 0
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -138,6 +157,49 @@ func destinationFingerprint(root string) (string, error) {
 	})
 	if err != nil {
 		return "", err
+	}
+	info, err := os.Lstat(root)
+	if err != nil {
+		return "", err
+	}
+	if info.IsDir() {
+		digest, err := inventory.SkillHash(root)
+		if err != nil {
+			return "", err
+		}
+		h.Write([]byte(digest))
+	} else if info.Mode().IsRegular() {
+		if info.Size() > 64<<20 {
+			return "", fmt.Errorf("destination exceeds inspection limit")
+		}
+		file, err := os.Open(root)
+		if err != nil {
+			return "", err
+		}
+		opened, err := file.Stat()
+		if err != nil || !os.SameFile(info, opened) {
+			file.Close()
+			return "", fmt.Errorf("destination changed during inspection")
+		}
+		n, err := io.Copy(h, io.LimitReader(file, (64<<20)+1))
+		closeErr := file.Close()
+		if err != nil {
+			return "", err
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+		if n != info.Size() {
+			return "", fmt.Errorf("destination changed during inspection")
+		}
+	} else if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(root)
+		if err != nil {
+			return "", err
+		}
+		h.Write([]byte(target))
+	} else {
+		return "", fmt.Errorf("unsupported destination type")
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
