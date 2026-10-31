@@ -142,3 +142,18 @@ func TestPluginReconnectKeepsWaiting(t *testing.T) {
 		return w != nil && w.Text == "which branch?"
 	})
 }
+
+func TestWaitingClearsWhenOwnerMessageDelivered(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fa := &fakeAdapter{harness: "fake"}
+	n := startNode(t, g, nodeOpts{adapter: fa})
+	fa.setSessions(fakeSession("na", "alice"))
+	eventually(t, "session", func() bool { return fa.host.SessionID("fake", "na") != "" })
+	id := fa.host.SessionID("fake", "na")
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	cli.mustCall("waiting", map[string]any{"harness": "fake", "native_id": "na", "kind": "question", "text": "Merge?"})
+	eventually(t, "waiting", func() bool { return waitingOf(t, n, id) != nil })
+	cli.mustCall("owner_send", protocol.OwnerSendRequest{To: id, Body: "Yes"})
+	eventually(t, "owner answer clears waiting", func() bool { return waitingOf(t, n, id) == nil })
+}

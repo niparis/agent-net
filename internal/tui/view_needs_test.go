@@ -155,3 +155,16 @@ func TestNeedsRowsShowKindAndRightAlignedAge(t *testing.T) {
 		t.Fatalf("ages: %q", rows)
 	}
 }
+
+func TestNeedsEnterPrefillsAnswer(t *testing.T) {
+	m := needsModel(100, 30)
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == "s_0000000000000002" {
+			m.snap.Agents[i].Waiting.Options = []string{"Yes", "No"}
+		}
+	}
+	m = keys(m, "g", "enter")
+	if m.mode != modeCompose || m.compose.Value() != "Yes" {
+		t.Fatalf("answer mode=%v value=%q", m.mode, m.compose.Value())
+	}
+}

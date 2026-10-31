@@ -488,7 +488,10 @@ export default function (pi: ExtensionAPI) {
     if (connected) request("status", { model: model ?? "" }).catch(() => {});
   });
 
-  pi.on("agent_start", async () => sendStatus("busy"));
+  pi.on("agent_start", async () => {
+    if (connected) await request("waiting", { clear: true }).catch(() => {});
+    sendStatus("busy");
+  });
   pi.on("agent_settled", async () => sendStatus("idle"));
 
   pi.on("session_shutdown", async () => {

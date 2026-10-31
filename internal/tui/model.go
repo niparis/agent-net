@@ -1043,6 +1043,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.open = &openMsg{id: it.MsgID, loading: true}
 			return m, m.bodyCmd(it.MsgID)
 		}
+		if a, ok := m.selectedAgent(); ok && a.Waiting != nil && protocol.ValidWaitingKind(a.Waiting.Kind) {
+			var cmd tea.Cmd
+			m, cmd = m.startCompose()
+			if m.mode == modeCompose && len(a.Waiting.Options) > 0 {
+				m.compose.SetValue(a.Waiting.Options[0])
+				m.compose.CursorEnd()
+			}
+			return m, cmd
+		}
 		return m, m.openConv()
 	}
 	return m, nil
