@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -139,7 +140,38 @@ func TestGoldenLearnedMapAndNeeds(t *testing.T) {
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", NewValue: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true, DecidedAt: t0.UnixNano(), Evidence: []protocol.LearnedEvidence{{ID: "m1", Excerpt: "ops owns backups"}}}}
 	golden(t, "map_learned_120x34", m.View())
 	n := needsModel(100, 30)
-	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", NewValue: "deploys", Status: "pending", Severity: "major"}}
+	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", Kind: "add", NewValue: "deploys", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops refuses deploys"}}, Status: "pending", Severity: "major"}}
 	n.selected = "learned:7"
 	golden(t, "view_needs_learned_100x30", n.View())
+}
+
+func TestLearnedMajorWording(t *testing.T) {
+	cases := []struct {
+		name string
+		s    protocol.LearnedSuggestion
+		want string
+	}{
+		{"add owner words", protocol.LearnedSuggestion{Node: "ops", Field: "refuses", Kind: "add", Phrase: "deployment work", RawPhrase: "deploys", Origin: "owner", Evidence: []protocol.LearnedEvidence{{Excerpt: "owner said deploys"}}}, "ops: add «deploys» to refuses? because owner said deploys  a accept · r reject"},
+		{"remove", protocol.LearnedSuggestion{Node: "app", Field: "accepts", Kind: "remove", Phrase: "backups", Evidence: []protocol.LearnedEvidence{{Excerpt: "moved to ops"}}}, "app: remove «backups» from accepts? because moved to ops  a accept · r reject"},
+		{"edge", protocol.LearnedSuggestion{Node: "ops", Field: "edge", EdgeKind: "deploys", Kind: "add", Phrase: "app", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops deploys app"}}}, "ops: add a deploys edge ops → app? because ops deploys app  a accept · r reject"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m := needsModel(160, 30)
+			tc.s.ID = 7
+			tc.s.Status = "pending"
+			tc.s.Severity = "major"
+			m.snap.Learned = []protocol.LearnedSuggestion{tc.s}
+			m.selected = "learned:7"
+			var got string
+			for _, line := range m.needsLines(160) {
+				if strings.Contains(line, "a accept") {
+					got = ansi.Strip(line)
+				}
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("want %q in %q", tc.want, got)
+			}
+		})
+	}
 }

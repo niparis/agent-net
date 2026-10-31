@@ -31,7 +31,7 @@ func (m Model) needsRows() []protocol.AgentView {
 		if v.Status != "pending" || v.Severity != "major" {
 			continue
 		}
-		text := fmt.Sprintf("%s: %s -> %s  [a accept, r reject]", v.Field, dashIfEmpty(v.OldValue), dashIfEmpty(v.NewValue))
+		text := learnedQuestion(v)
 		out = append(out, protocol.AgentView{SessionID: fmt.Sprintf("learned:%d", v.ID), NodeID: m.snap.NodeID, Harness: "learned", Online: true, Profile: protocol.Profile{Name: v.Node}, Waiting: &protocol.Waiting{Kind: "learned", Text: text, Since: v.CreatedAt / 1e9}})
 	}
 	for _, e := range m.snap.Outcomes {
@@ -117,6 +117,35 @@ func (m Model) needsRows() []protocol.AgentView {
 	return out
 }
 
+// learnedQuestion describes the change in the words the owner can recognize.
+func learnedQuestion(v protocol.LearnedSuggestion) string {
+	phrase := v.Phrase
+	if v.Origin == "owner" && v.RawPhrase != "" {
+		phrase = v.RawPhrase
+	}
+	var question string
+	if v.Field == "edge" {
+		verb := "add"
+		if v.Kind == "remove" {
+			verb = "remove"
+		}
+		question = fmt.Sprintf("%s: %s a %s edge %s → %s?", v.Node, verb, v.EdgeKind, v.Node, v.Phrase)
+	} else {
+		switch v.Kind {
+		case "remove":
+			question = fmt.Sprintf("%s: remove «%s» from %s?", v.Node, phrase, v.Field)
+		case "narrow":
+			question = fmt.Sprintf("%s: change %s to «%s»?", v.Node, v.Field, phrase)
+		default:
+			question = fmt.Sprintf("%s: add «%s» to %s?", v.Node, phrase, v.Field)
+		}
+	}
+	if len(v.Evidence) > 0 && v.Evidence[0].Excerpt != "" {
+		question += " because " + v.Evidence[0].Excerpt
+	}
+	return sanitize(question)
+}
+
 // needsHeight is the rows the section takes, heading and overflow included.
 func (m Model) needsHeight() int {
 	n := len(m.needsRows())
@@ -200,6 +229,14 @@ func (m Model) needsLines(w int) []string {
 		marker := "  "
 		if m.focus == focusSessions && a.SessionID == m.selected {
 			marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
+		}
+		if a.Waiting.Kind == "learned" {
+			prefix := sNeeds.Render("▍") + marker
+			actions := "  a accept · r reject"
+			room := max(w-ansi.StringWidth(prefix)-ansi.StringWidth(actions), 0)
+			text := clip(sanitize(a.Waiting.Text), room)
+			out = append(out, clip(prefix+text+actions, w))
+			continue
 		}
 		prefix := sNeeds.Render("▍") + marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)
 		if hostW > 0 {

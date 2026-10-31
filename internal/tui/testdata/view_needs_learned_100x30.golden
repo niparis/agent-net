@@ -2,7 +2,7 @@
 Needs you (3) ──────────────────────────────────────────────────────────────────────────────────────
 ▍  strategies claude           question: "Merge tenebrae-nexus/truenas-stacks #817?"             12m
 ▍  ci-runner  pi      build-vm permission: Bash(git push origin main)                             3m
-▍▸ ops        learned          input: refuses: - -> deploys  [a accept, r reject]                now
+▍▸ ops: add «deploys» to refuses? because ops refuses deploys  a accept · r reject
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G    claude  opencode  pi       │
 │  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi                │
