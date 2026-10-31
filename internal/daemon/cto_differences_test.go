@@ -94,6 +94,7 @@ func TestCTOToolsDifferencesCapsTheAnswerAndReadsEveryPage(t *testing.T) {
 		Differences []struct{ Kind string } `json:"differences"`
 		ToLookAt    int                     `json:"to_look_at"`
 		NotListed   int                     `json:"not_listed"`
+		Next        int                     `json:"next"`
 	}
 	eventually(t, "the pairs are found", func() bool {
 		v, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{}`))
@@ -101,14 +102,33 @@ func TestCTOToolsDifferencesCapsTheAnswerAndReadsEveryPage(t *testing.T) {
 			t.Fatal(err)
 		}
 		b, _ := json.Marshal(v)
+		t.Logf("default difference page: %d bytes", len(b))
 		r.Differences, r.ToLookAt, r.NotListed = nil, 0, 0
 		if err = json.Unmarshal(b, &r); err != nil {
 			t.Fatal(err)
 		}
 		return r.ToLookAt >= pairs
 	})
-	if len(r.Differences) != maxCTODifferences || r.NotListed != r.ToLookAt-maxCTODifferences || r.NotListed < 10 {
+	if len(r.Differences) != 20 || r.Next != 20 || r.NotListed != r.ToLookAt-20 {
 		t.Fatalf("listed %d, not listed %d, to look at %d", len(r.Differences), r.NotListed, r.ToLookAt)
+	}
+	v, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{"offset":20,"limit":60}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := n.d.runCTOToolRaw(context.Background(), "tools_differences", json.RawMessage(`{"limit":60}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	allJSON, _ := json.Marshal(all)
+	t.Logf("60 difference page: %d bytes", len(allJSON))
+	var rest struct {
+		Differences []json.RawMessage `json:"differences"`
+		Next        int               `json:"next"`
+	}
+	b, _ := json.Marshal(v)
+	if err := json.Unmarshal(b, &rest); err != nil || len(rest.Differences) != pairs-20 || rest.Next != 0 {
+		t.Fatalf("second page: %+v %v", rest, err)
 	}
 	var page protocol.ToolsPage
 	if err := json.Unmarshal(cli.mustCall("tools_items", protocol.ToolsFilter{}), &page); err != nil {

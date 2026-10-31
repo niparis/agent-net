@@ -97,6 +97,8 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	schema, _ := json.Marshal(listed.Tools)
+	t.Logf("MEASURE brief=%d schema=%d tools=%d", len(ctoBrief), len(schema), len(listed.Tools))
 	seen := map[string]bool{}
 	for _, tool := range listed.Tools {
 		if actions[tool.Name] {
@@ -171,6 +173,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			t.Logf("MEASURE %s %d bytes", tool.Name, len(b))
 			if len(b) >= 20000 {
 				t.Errorf("result is %d bytes", len(b))
 			}

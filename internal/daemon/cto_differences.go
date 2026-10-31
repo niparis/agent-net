@@ -8,8 +8,7 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-// maxCTODifferences keeps the answer small for a large network. The rest is
-// counted, not listed.
+// maxCTODifferences bounds a page.
 const maxCTODifferences = 60
 
 type ctoDifference struct {
@@ -41,7 +40,7 @@ func (d *Daemon) allToolItems(ctx context.Context) ([]protocol.ToolItem, error) 
 // toolDifferences is the CTO read tool tools_differences: the same differences
 // the Tools tab shows on its first screen, each with one suggested fix. It
 // changes nothing.
-func (d *Daemon) toolDifferences(ctx context.Context) (any, error) {
+func (d *Daemon) toolDifferences(ctx context.Context, offset, limit int) (any, error) {
 	items, err := d.allToolItems(ctx)
 	if err != nil {
 		return nil, err
@@ -63,17 +62,33 @@ func (d *Daemon) toolDifferences(ctx context.Context) (any, error) {
 		}
 	}
 	diffs := toolsdiff.Differences(items, machines)
-	out := make([]ctoDifference, 0, len(diffs))
-	for _, df := range diffs {
-		if len(out) == maxCTODifferences {
-			break
-		}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > maxCTODifferences {
+		limit = maxCTODifferences
+	}
+	if offset > len(diffs) {
+		offset = len(diffs)
+	}
+	end := offset + limit
+	if end > len(diffs) {
+		end = len(diffs)
+	}
+	out := make([]ctoDifference, 0, end-offset)
+	for _, df := range diffs[offset:end] {
 		out = append(out, ctoDifference{Difference: df, Accepted: accepted[df.Key]})
 	}
+	next := 0
+	if end < len(diffs) {
+		next = end
+	}
+
 	return map[string]any{
 		"differences": out,
 		"to_look_at":  toolsdiff.Counts(diffs, accepted),
-		"not_listed":  len(diffs) - len(out),
+		"not_listed":  len(diffs) - end,
+		"next":        next,
 		"note":        "Each difference has one suggested fix. Show the plan with tools_plan or mcp_import and wait for the owner before any apply.",
 	}, nil
 }

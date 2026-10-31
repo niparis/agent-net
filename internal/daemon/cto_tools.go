@@ -119,7 +119,17 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		}
 		return map[string]any{"items": page.Items, "next": page.Next, "unmet_needs": advisory}, nil
 	case "tools_differences":
-		return d.toolDifferences(ctx)
+		var p struct {
+			Offset int `json:"offset"`
+			Limit  int `json:"limit"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad pagination")
+		}
+		if p.Offset < 0 {
+			return nil, errors.New("bad pagination")
+		}
+		return d.toolDifferences(ctx, p.Offset, p.Limit)
 	case "ui_show", "ui_notice":
 		var q protocol.UIRequest
 		if json.Unmarshal(raw, &q) != nil {
