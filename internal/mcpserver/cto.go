@@ -41,139 +41,139 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
-	"notification_settings": {desc: "Read or set desktop notifications on this machine when the owner asks.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "True turns notifications off; false turns them on. Omit to read."}}},
-	"charter_suggestions":   {desc: "Read suggested charter diffs, pending major changes, and their evidence. Show pending major changes to the owner for approval.", fields: map[string]ctoField{}},
+	"notification_settings": {desc: "Read or set notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true; omit to read."}}},
+	"charter_suggestions":   {desc: "Read charter suggestions.", fields: map[string]ctoField{}},
 	"graph_get": {
-		desc:   "Read the component graph with charters and edges. Read it at the start of a conversation and before any graph change.",
-		fields: map[string]ctoField{"all": {typ: "boolean", desc: "Include inactive empty projects."}},
+		desc:   "Read graph and charters.",
+		fields: map[string]ctoField{"all": {typ: "boolean", desc: "Include empty projects."}},
 	},
 	"charter_set": {
-		desc: "Set one charter attribute of a node. An empty value clears the attribute. Show the change as a short diff and offer undo.",
+		desc: "Set a charter attribute.",
 		fields: map[string]ctoField{
-			"node":  {typ: "string", desc: "Name of the node, as graph_get returns it."},
-			"attr":  {typ: "string", desc: "Charter attribute to set. maturity holds a level and a short sentence; the other attributes hold free text.", enum: ctoCharterAttrs},
-			"value": {typ: "string", desc: "New text for the attribute (at most 2 KiB). An empty string clears it. For maturity, start with early, growing, mature or critical and then add a sentence."},
+			"node":  {typ: "string", desc: "Node."},
+			"attr":  {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
+			"value": {typ: "string", desc: "2 KiB max; empty clears; budget 1200 characters per charter, at most 6 items in accepts, refuses and escalate, and 40 characters of accepts and refuses visible to neighbors."},
 		},
 	},
 	"charter_history": {
-		desc: "Read the change history of one node's charter, newest first. Each row has the old and new value, who changed it and when.",
+		desc: "Read charter history.",
 		fields: map[string]ctoField{
-			"node":  {typ: "string", desc: "Node whose charter history to read."},
-			"limit": {typ: "integer", desc: "Maximum number of changes, newest first. Default 1000, at most 1000."},
+			"node":  {typ: "string", desc: "Node."},
+			"limit": {typ: "integer", desc: "Limit; default/max 1000."},
 		},
 	},
 	"node_add": {
-		desc: "Add an architect node: a node with no code of its own that can govern components. Show the change as a short diff and offer undo.",
+		desc: "Add an architect node.",
 		fields: map[string]ctoField{
-			"name": {typ: "string", desc: "Name of the new architect node."},
+			"name": {typ: "string", desc: "Name."},
 		},
 	},
 	"node_remove": {
-		desc: "Remove an architect node. It must have no edges; its settings are removed with it. Show the change as a short diff and offer undo.",
+		desc: "Remove an edgeless architect.",
 		fields: map[string]ctoField{
-			"name": {typ: "string", desc: "Name of the architect node to remove."},
+			"name": {typ: "string", desc: "Name."},
 		},
 	},
 	"edge_set": {
-		desc: "Add or replace a directed edge between two nodes. The kind decides the direction and meaning, and the rule decides what happens to a request from the from-node to the to-node. Show the change as a short diff and offer undo.",
+		desc: "Set a directed edge.",
 		fields: map[string]ctoField{
-			"from": {typ: "string", desc: "Source node: the consumer for depends, the architect for governs, the deployer for deploys."},
-			"to":   {typ: "string", desc: "Target node: the provider for depends, the component for governs, the app it deploys for deploys."},
-			"kind": {typ: "string", desc: "Edge kind. depends runs from a consumer to its provider. governs runs from an architect to a component, with a mode. deploys runs from a deployer to each app it deploys.", enum: ctoEdgeKinds},
-			"mode": {typ: "string", desc: "Only for governs. advisor: the architect's opinion goes with the request and the component decides. arbiter: it settles a dispute between the nodes it governs. owner: its decision stands and the component follows it.", enum: []string{"advisor", "arbiter", "owner"}},
-			"rule": {typ: "string", desc: "Request rule for requests from the from-node to the to-node. normal: deliver them and the receiver judges by its charter. auto: act on them as if the owner asked, with the owner's limits. ask: hold them until the owner decides. never: refuse them.", enum: []string{"normal", "auto", "ask", "never"}},
+			"from": {typ: "string", desc: "Source."},
+			"to":   {typ: "string", desc: "Target."},
+			"kind": {typ: "string", desc: "Consumer to provider, architect to component, or deployer to app.", enum: ctoEdgeKinds},
+			"mode": {typ: "string", desc: "Governs: advise, arbitrate, or decide.", enum: []string{"advisor", "arbiter", "owner"}},
+			"rule": {typ: "string", desc: "Deliver, act as owner, hold, or refuse.", enum: []string{"normal", "auto", "ask", "never"}},
 		},
 	},
 	"edge_remove": {
-		desc: "Remove an edge between two nodes. Show the change as a short diff and offer undo.",
+		desc: "Remove a graph edge.",
 		fields: map[string]ctoField{
-			"from": {typ: "string", desc: "Source node of the edge: the consumer, the architect or the deployer."},
-			"to":   {typ: "string", desc: "Target node of the edge: the provider, the component or the deployed app."},
-			"kind": {typ: "string", desc: "Edge kind: depends (consumer to provider), governs (architect to component) or deploys (deployer to app).", enum: ctoEdgeKinds},
+			"from": {typ: "string", desc: "Source."},
+			"to":   {typ: "string", desc: "Target."},
+			"kind": {typ: "string", desc: "Kind and direction.", enum: ctoEdgeKinds},
 		},
 	},
 	"edge_history": {
-		desc: "Read the change history of edges, newest first. Give a node to see only the changes that involve it, or leave the node empty for every edge.",
+		desc: "Read edge history.",
 		fields: map[string]ctoField{
-			"node":  {typ: "string", desc: "Node whose edge changes to read. An empty string returns all edges."},
-			"limit": {typ: "integer", desc: "Maximum number of changes, newest first. Default 1000, at most 1000."},
+			"node":  {typ: "string", desc: "Node; empty means all."},
+			"limit": {typ: "integer", desc: "Limit; default/max 1000."},
 		},
 	},
 	"graph_undo": {
-		desc: "Undo a graph change by its history row, or undo the latest change when id is omitted. Undo is recorded as another change and refuses a stale value.",
+		desc: "Undo a graph change.",
 		fields: map[string]ctoField{
-			"id": {typ: "integer", desc: "History row to undo. Omit it to undo the latest change."},
+			"id": {typ: "integer", desc: "ID; omit for latest."},
 		},
 	},
 	"agents": {
-		desc: "List compact agent session summaries with project, machine, folder, harness, model, status and task.",
+		desc: "List agent sessions.",
 		fields: map[string]ctoField{
-			"text":           {typ: "string", desc: "Only agents whose name, function or task matches this text."},
-			"harness":        {typ: "string", desc: "Only agents on this harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
-			"capability":     {typ: "string", desc: "Only agents with this announced capability."},
-			"online_only":    {typ: "boolean", desc: "Only online agents when true."},
-			"include_owners": {typ: "boolean", desc: "Include owner sessions."},
-			"project":        {typ: "string", desc: "Only agents in this project."},
+			"text":           {typ: "string", desc: "Name or task."},
+			"harness":        {typ: "string", desc: "Harness.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"capability":     {typ: "string", desc: "Capability."},
+			"online_only":    {typ: "boolean", desc: "Online only."},
+			"include_owners": {typ: "boolean", desc: "Include owners."},
+			"project":        {typ: "string", desc: "Project."},
 		},
 	},
 	"workers": {
-		desc:   "List workers, newest first. Use next_before for the next page.",
-		fields: map[string]ctoField{"limit": {typ: "integer", desc: "Page size, default 20, maximum 50."}, "before": {typ: "string", desc: "Cursor from next_before."}},
+		desc:   "List workers, newest first.",
+		fields: map[string]ctoField{"limit": {typ: "integer", desc: "Default 20; max 50."}, "before": {typ: "string", desc: "Cursor."}},
 	},
 	"needs_you": {
-		desc: "List the agent sessions that wait for you: questions, escalations, approvals and requests held by an ask rule.",
+		desc: "List waiting sessions.",
 	},
 	"feed": {
-		desc: "Read the network feed: recent events such as messages, worker starts, graph changes and approvals, newest first.",
+		desc: "Read network feed.",
 		fields: map[string]ctoField{
-			"limit":  {typ: "integer", desc: "Page size, default 20, maximum 50."},
-			"before": {typ: "integer", desc: "Cursor from next_before."},
+			"limit":  {typ: "integer", desc: "Default 20; max 50."},
+			"before": {typ: "integer", desc: "Cursor."},
 		},
 	},
 	"send": {
-		desc: "Send a message to an agent session as the owner's CTO. Receivers treat it as the owner's word within their own charter's limits, and it carries a note only agent-net can write.",
+		desc: "Send a CTO request.",
 		fields: map[string]ctoField{
-			"to":   {typ: "string", desc: "Session ID, or an exact agent name that is unique."},
-			"body": {typ: "string", desc: "Message text, sent as a request from the owner's CTO."},
+			"to":   {typ: "string", desc: "Session ID or unique name."},
+			"body": {typ: "string", desc: "Request."},
 		},
 	},
 	"session_rename": {
-		desc: "Rename one agent session on the owner's instruction. Only the owner names a session, and a name another live session holds is refused. An empty name returns the session to its automatic project name.",
+		desc: "Rename a session for the owner.",
 		fields: map[string]ctoField{
-			"session_id": {typ: "string", desc: "Session ID of the session to rename."},
-			"name":       {typ: "string", desc: "New name for the session. Empty returns it to the automatic project name."},
+			"session_id": {typ: "string", desc: "Session ID."},
+			"name":       {typ: "string", desc: "Name; empty resets."},
 		},
 	},
-	"worker_profile_list": {desc: "List all registered worker profiles, with per-machine model resolution, closest alternatives, harness, model, effort, creator and time."},
-	"worker_profile_add": {desc: "Register a worker profile only when the owner asks; model names resolve against installed harness model lists. Using an existing profile name replaces its model or effort in one call.", fields: map[string]ctoField{
-		"name": {typ: "string", desc: "Optional profile name; use an existing name to replace that profile's model or effort. Defaults to the harness and resolved model."}, "harness": {typ: "string", desc: "Installed worker harness."}, "model": {typ: "string", desc: "Model ID or loose model name."}, "effort": {typ: "string", desc: "Optional reasoning or thinking effort."},
+	"worker_profile_list": {desc: "List worker profiles."},
+	"worker_profile_add": {desc: "Set a worker profile.", fields: map[string]ctoField{
+		"name": {typ: "string", desc: "An existing name replaces it."}, "harness": {typ: "string", desc: "Harness."}, "model": {typ: "string", desc: "Model ID or name."}, "effort": {typ: "string", desc: "Effort."},
 	}},
-	"worker_profile_remove":   {desc: "Remove a registered worker profile by name only when the owner asks for that removal.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name of the registered profile to remove."}}},
-	"protected_providers_get": {desc: "Read the protected providers and their reason."},
-	"protected_providers_set": {desc: "Set protected providers and the reason. Ask the owner before changing this setting.", fields: map[string]ctoField{"protected_providers": {typ: "array", desc: "Provider IDs reserved for the orchestrator."}, "reason": {typ: "string", desc: "Why these providers are protected."}}},
+	"worker_profile_remove":   {desc: "Remove a worker profile.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name."}}},
+	"protected_providers_get": {desc: "Read protected providers."},
+	"protected_providers_set": {desc: "Set providers; ask the owner.", fields: map[string]ctoField{"protected_providers": {typ: "array", desc: "Provider IDs."}, "reason": {typ: "string", desc: "Reason."}}},
 	"worker_providers_set": {
-		desc:   "Set the network worker provider allowlist only when the owner asks. Pass provider IDs as an array; omit providers to restore the defaults.",
-		fields: map[string]ctoField{"providers": {typ: "array", desc: "Provider IDs to allow. Omit this field to restore the subscription defaults."}},
+		desc:   "Set worker providers.",
+		fields: map[string]ctoField{"providers": {typ: "array", desc: "IDs; omit for defaults."}},
 	},
 	"score_set": {
-		desc: "Set or clear an owner model capability score when the owner asks. Scores range from 0 to 100 and override the bundled table.",
+		desc: "Set a model score.",
 		fields: map[string]ctoField{
-			"model": {typ: "string", desc: "Model ID or loose model pattern to score."},
-			"score": {typ: "number", desc: "Capability score from 0 to 100. Omit to clear the owner override."},
+			"model": {typ: "string", desc: "Model or pattern."},
+			"score": {typ: "number", desc: "0-100; omit to clear."},
 		},
 	},
 	"worker_start": {
-		desc: "Start a worker in a project on one of the owner's machines. The worker gets its own git worktree by default, and its report comes back as a message. Only do this when the owner asks.",
+		desc: "Start a worker.",
 		fields: map[string]ctoField{
-			"project":    {typ: "string", desc: "Known project name or absolute path. Empty uses the CTO's own project."},
-			"harness":    {typ: "string", desc: "Harness for the worker. Empty lets automatic model selection choose one.", enum: []string{"opencode", "claude", "pi", "codex"}},
-			"model":      {typ: "string", desc: "Model as the harness names it, or a loose name such as deepseek 4.1. Empty or auto selects by difficulty and quota."},
-			"difficulty": {typ: "string", desc: "Task difficulty for automatic model selection; defaults to normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
-			"base":       {typ: "string", desc: "Existing branch to base the worker worktree on."},
-			"continue":   {typ: "string", desc: "Session or worker ID of an ended worker to continue."},
-			"task":       {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
-			"machine":    {typ: "string", desc: "Machine that holds the project, when more than one does."},
-			"isolation":  {typ: "string", desc: "worktree gives the worker its own git worktree (the default in a git repository). none works in the project folder, for read-only tasks.", enum: []string{"worktree", "none"}},
+			"project":    {typ: "string", desc: "Project; empty uses CTO project."},
+			"harness":    {typ: "string", desc: "Harness; empty is auto.", enum: []string{"opencode", "claude", "pi", "codex"}},
+			"model":      {typ: "string", desc: "Model; empty is auto."},
+			"difficulty": {typ: "string", desc: "Default normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
+			"base":       {typ: "string", desc: "Branch."},
+			"continue":   {typ: "string", desc: "Worker ID."},
+			"task":       {typ: "string", desc: "Task brief and limits."},
+			"machine":    {typ: "string", desc: "Machine."},
+			"isolation":  {typ: "string", desc: "None is read-only; default worktree.", enum: []string{"worktree", "none"}},
 		},
 	},
 }
@@ -186,10 +186,7 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			description := f.desc
-			if name == "charter_set" && (k == "attr" || k == "value") {
-				description += "\nPer-attribute charter guide:\n" + protocol.CharterGuideText() +
-					"\nBudget about 1200 characters for the whole charter. Never include secrets, IPs, tokens or paths; put detail in AGENTS.md."
-			}
+
 			prop := map[string]any{"type": f.typ, "description": description}
 			if f.properties != nil {
 				prop["properties"] = f.properties
@@ -208,9 +205,6 @@ func NewCTO(call Caller, version string) *mcp.Server {
 			props[k] = prop
 		}
 		toolDescription := spec.desc
-		if name == "charter_set" {
-			toolDescription += "\nCharters are short rules for other agents, read on every turn. Budget about 1200 characters for the whole charter; never include secrets, IPs, tokens or paths.\nPer-attribute charter guide:\n" + protocol.CharterGuideText()
-		}
 		tool := &mcp.Tool{Name: name, Description: toolDescription, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
