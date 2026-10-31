@@ -35,6 +35,9 @@ func RemoveSkillState(state string) error {
 	if err = os.RemoveAll(filepath.Join(state, "skill-journal")); err != nil {
 		return err
 	}
+	if err = os.RemoveAll(filepath.Join(state, mcpBackupDir)); err != nil {
+		return err
+	}
 	return os.RemoveAll(filepath.Join(state, "skill-backups"))
 }
 

@@ -34,7 +34,14 @@ func skillBackupTime(name string) (time.Time, bool) {
 // pruneSkillBackups keeps the newest 20 backups of each item and none older
 // than 30 days. A backup that an unfinished journal record names stays.
 func (d *Daemon) pruneSkillBackups() {
-	root := filepath.Join(d.cfg.StateDir, "skill-backups")
+	d.pruneBackups("skill-backups")
+	d.pruneBackups(mcpBackupDir)
+}
+
+// pruneBackups applies the retention rule to one backup folder of the state
+// directory. Native MCP config backups follow the same rule as skill backups.
+func (d *Daemon) pruneBackups(folder string) {
+	root := filepath.Join(d.cfg.StateDir, folder)
 	items, err := os.ReadDir(root)
 	if err != nil {
 		return
