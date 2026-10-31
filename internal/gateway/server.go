@@ -613,6 +613,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 		}
 		return needs, nil
+	case "query.tools_accepted":
+		keys, err := st.ToolsAccepted()
+		if err != nil {
+			return nil, err
+		}
+		return keys, nil
+	case "tools.accept":
+		p, err := decode[struct {
+			protocol.ToolAccept
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if p.Key == "" || len(p.Key) > 512 {
+			return nil, reject("accept needs a key")
+		}
+		return nil, st.SetToolAccepted(p.Key, p.Accepted)
 	case "tools.history":
 		p, err := decode[struct {
 			protocol.ToolHistoryRequest
