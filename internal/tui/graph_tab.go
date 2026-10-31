@@ -46,21 +46,37 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		action = graphview.ZoomIn{}
 	case "-":
 		action = graphview.ZoomOut{}
-	case "left", "h":
+	case "left", "right", "up", "down":
+		w, h := m.graphSize()
+		d := graphview.SelectDirection{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
+		switch k.String() {
+		case "left":
+			d.DX = -1
+		case "right":
+			d.DX = 1
+		case "up":
+			d.DY = -1
+		case "down":
+			d.DY = 1
+		}
+		action = d
+	case "shift+left", "h":
 		action = graphview.Pan{DX: -4}
-	case "right", "l":
+	case "shift+right", "l":
 		action = graphview.Pan{DX: 4}
-	case "up", "k":
+	case "shift+up", "k":
 		action = graphview.Pan{DY: -2}
-	case "down", "j":
+	case "shift+down", "j":
 		action = graphview.Pan{DY: 2}
 	case "0":
 		w, h := m.graphSize()
 		action = graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "[":
-		action = graphview.SelectPrev{}
+		w, h := m.graphSize()
+		action = graphview.SelectPrev{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "]":
-		action = graphview.SelectNext{}
+		w, h := m.graphSize()
+		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "t":
 		action = graphview.ToggleTalk{}
 	case "o":
@@ -88,7 +104,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows/hjkl pan  0 fit  [ ] select  o orbit"), sDim.Render("  t talk  enter Map  space pause  ? close  tab CTO"))
+		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  t talk  enter Map  space pause  ? close  tab CTO"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
@@ -112,7 +128,7 @@ func (m Model) graphView(w, h int) []string {
 		feed = append(feed, "no messages yet")
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
-	out = append(out, sDim.Render(clip("  pink: talked, no rule set", w)))
+	out = append(out, sDim.Render(clip("  ● charter  ○ no charter  ·  pink: talked, no rule set", w)))
 	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
 	return out
 }
@@ -144,7 +160,7 @@ func (m Model) graphTalkCmd() tea.Cmd {
 
 // graphHintLine drops whole hints, starting with the least important.
 func graphHintLine(w int, paused bool) string {
-	hs := []hint{{"+ -", "zoom", 0}, {"hjkl", "pan", 0}, {"0", "fit", 1}, {"[ ]", "select", 0}, {"o", "orbit", 0}, {"t", "talk", -1}, {"enter", "Map", 2}, {"space", "pause", 3}, {"?", "keys", -2}}
+	hs := []hint{{"+ -", "zoom", 0}, {"hjkl", "pan", 0}, {"0", "fit", 1}, {"arrows", "select", 0}, {"[ ]", "neighbours", 0}, {"o", "orbit", 0}, {"t", "talk", -1}, {"enter", "Map", 2}, {"space", "pause", 3}, {"?", "keys", -2}}
 	if paused {
 		hs = append([]hint{{"paused", "·", 0}}, hs...)
 	}

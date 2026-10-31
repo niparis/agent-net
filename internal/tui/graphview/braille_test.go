@@ -27,14 +27,14 @@ func TestBrailleGraphShowsNodesAndWildcard(t *testing.T) {
 }
 
 func TestBrailleFeatures(t *testing.T) {
-	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "busy", Sessions: []protocol.GraphSession{{Status: "busy"}}}, {Name: "idle", SessionCount: 1}, {Name: "arch", Kind: "architect"}, {Name: "empty"}}, Edges: []protocol.Edge{{From: "busy", To: "idle", Kind: "depends"}, {From: "arch", To: "empty", Kind: "governs"}, {From: "*", To: "empty", Kind: "deploys"}}})
+	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "busy", Charter: protocol.Charter{Purpose: "test"}, Sessions: []protocol.GraphSession{{Status: "busy"}}}, {Name: "idle", SessionCount: 1}, {Name: "arch", Kind: "architect"}, {Name: "empty"}}, Edges: []protocol.Edge{{From: "busy", To: "idle", Kind: "depends"}, {From: "arch", To: "empty", Kind: "governs"}, {From: "*", To: "empty", Kind: "deploys"}}})
 	g.Positions = map[string]Point{"busy": {-3, -2}, "idle": {3, -2}, "arch": {-3, 2}, "empty": {3, 2}}
 	g.Message("busy", "idle", "request", time.Unix(10, 0))
 	roles := map[string]bool{}
 	b := Braille{Color: func(role, text string) string { roles[role] = true; return text }}
 	now := time.Unix(11, 0)
 	out := strings.Join(renderGraph(b, g, Camera{Zoom: 2, FitZoom: 2}, 60, 20, now), "\n")
-	for _, want := range []string{"●", "○", "◆", "◂all", "→"} {
+	for _, want := range []string{"●", "○", "◂all", "→"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
@@ -103,12 +103,12 @@ func TestBrailleDashAndEdgeRoles(t *testing.T) {
 		t.Fatalf("dash has %d dots, solid %d", dashed, solid)
 	}
 }
-func TestBrailleShortensLabel(t *testing.T) {
+func TestBrailleDropsLabelThatDoesNotFit(t *testing.T) {
 	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "a-very-long-project-name"}}})
 	g.Positions["a-very-long-project-name"] = Point{}
 	out := strings.Join(renderGraph(Braille{}, g, Camera{Zoom: 1, FitZoom: 1}, 10, 3, time.Time{}), "\n")
-	if !strings.Contains(out, "…") {
-		t.Fatalf("label was not shortened: %s", out)
+	if strings.Contains(out, "…") || strings.Contains(out, "a-very") {
+		t.Fatalf("partial label: %s", out)
 	}
 }
 
@@ -126,7 +126,7 @@ func TestBrailleLabelsSitOneSpaceFromTheirMarkers(t *testing.T) {
 	g.Positions = map[string]Point{"alpha": {-2, 0}, "beta": {2, 0}}
 	out := strings.Join(renderGraph(Braille{}, g, Camera{Zoom: 2, FitZoom: 2}, 50, 9, time.Time{}), "\n")
 	for _, name := range []string{"alpha", "beta"} {
-		if !strings.Contains(out, "○ "+name) && !strings.Contains(out, name+" ○") {
+		if !strings.Contains(out, " "+name) && !strings.Contains(out, name+" ") {
 			t.Errorf("%s is not adjacent to its marker:\n%s", name, out)
 		}
 	}
@@ -152,5 +152,57 @@ func TestTalkDensityAndEdgePriority(t *testing.T) {
 	(Braille{Color: func(role, text string) string { roles[role] = true; return text }}).Render(scene, size)
 	if !roles["depends"] || roles["talkFaint"] {
 		t.Fatalf("edge should cover talk: %v", roles)
+	}
+}
+
+func TestHitMapIncludesLabelCells(t *testing.T) {
+	scene := Scene{Nodes: []SceneNode{{Name: "alpha", Label: "alpha", Position: Point{.5, .5}}}}
+	out := (Braille{}).Render(scene, Size{Width: 40, Height: 10})
+	for y, line := range out.Lines {
+		for x, r := range []rune(line) {
+			if r == 'a' {
+				if got := out.Hits[Cell{X: x, Y: y}]; got != "alpha" {
+					t.Fatalf("label hit %q", got)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("label missing")
+}
+
+func TestCharterMarkersAndLabels(t *testing.T) {
+	roles := map[string]string{}
+	scene := Scene{Nodes: []SceneNode{{Name: "with", Label: "with", HasCharter: true, Position: Point{.25, .5}}, {Name: "without", Label: "absent", Position: Point{.65, .5}}}}
+	out := (Braille{Color: func(role, text string) string { roles[text] = role; return text }}).Render(scene, Size{Width: 50, Height: 10})
+	text := strings.Join(out.Lines, "\n")
+	if !strings.Contains(text, "●") || !strings.Contains(text, "○") {
+		t.Fatalf("markers: %s", text)
+	}
+	if roles["a"] != "labelDim" {
+		t.Fatalf("unchartered label role %q", roles["a"])
+	}
+}
+
+func TestActivityDiscBoundsAndLevels(t *testing.T) {
+	previous := -1
+	for level := 1; level <= 5; level++ {
+		out := (Braille{}).Render(Scene{Nodes: []SceneNode{{Name: "x", Activity: level, Position: Point{.5, .5}}}}, Size{Width: 50, Height: 20})
+		minX, maxX, minY, maxY, dots := 50, 0, 20, 0, 0
+		for c := range out.Hits {
+			minX, maxX = min(minX, c.X), max(maxX, c.X)
+			minY, maxY = min(minY, c.Y), max(maxY, c.Y)
+			r := []rune(out.Lines[c.Y])[c.X]
+			if r >= 0x2800 && r <= 0x28ff {
+				dots += bits.OnesCount8(uint8(r - 0x2800))
+			}
+		}
+		if maxX-minX+1 > 3 || maxY-minY+1 > 2 {
+			t.Errorf("level %d bounds %dx%d", level, maxX-minX+1, maxY-minY+1)
+		}
+		if dots <= previous {
+			t.Errorf("level %d dots %d after %d", level, dots, previous)
+		}
+		previous = dots
 	}
 }

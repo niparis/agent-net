@@ -44,7 +44,11 @@ type Renderer interface {
 	Render(Scene, Size) Output
 }
 type Size struct{ Width, Height int }
-type Output struct{ Lines []string }
+type Cell struct{ X, Y int }
+type Output struct {
+	Lines []string
+	Hits  map[Cell]string
+}
 
 type Graph struct {
 	Nodes     []protocol.Node
@@ -82,7 +86,7 @@ func NewWithoutLayout(view protocol.GraphView) *Graph {
 	return g
 }
 func (g *Graph) Selected() string {
-	if len(g.Nodes) == 0 {
+	if g.selected < 0 || g.selected >= len(g.Nodes) {
 		return ""
 	}
 	return g.Nodes[g.selected].Name

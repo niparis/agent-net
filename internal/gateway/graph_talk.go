@@ -26,24 +26,31 @@ func (s *Store) GraphTalkSnapshot() (protocol.GraphTalkResult, error) {
 		return result, err
 	}
 	now := s.now()
-	rows, err := tx.Query(`SELECT COALESCE(NULLIF(src.repo_project,''),sp.project,''), COALESCE(NULLIF(dst.repo_project,''),dp.project,''), COUNT(*)
+	rows, err := tx.Query(`SELECT COALESCE(NULLIF(src.repo_project,''),sp.project,''), COALESCE(NULLIF(dst.repo_project,''),dp.project,''), src.harness, dst.harness, COUNT(*)
  FROM messages m JOIN sessions src ON src.id=m.sender JOIN sessions dst ON dst.id=m.recipient
  LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
- WHERE m.created_at>=? AND m.created_at<=? AND src.harness<>'owner' AND dst.harness<>'owner'
- GROUP BY 1,2`, now.Add(-7*24*time.Hour).UnixNano(), now.UnixNano())
+ WHERE m.created_at>=? AND m.created_at<=?
+ GROUP BY 1,2,3,4`, now.Add(-7*24*time.Hour).UnixNano(), now.UnixNano())
 	if err != nil {
 		return result, err
 	}
 	counts := map[[2]string]int{}
+	result.Activity = map[string]int{}
 	for rows.Next() {
-		var a, b string
+		var a, b, ah, bh string
 		var n int
-		if err := rows.Scan(&a, &b, &n); err != nil {
+		if err := rows.Scan(&a, &b, &ah, &bh, &n); err != nil {
 			rows.Close()
 			return result, err
 		}
 		a, b = strings.TrimSpace(a), strings.TrimSpace(b)
-		if a == "" || b == "" || a == b {
+		if ah != "owner" && a != "" {
+			result.Activity[a] += n
+		}
+		if bh != "owner" && b != "" && (a != b || ah == "owner") {
+			result.Activity[b] += n
+		}
+		if ah == "owner" || bh == "owner" || a == "" || b == "" || a == b {
 			continue
 		}
 		if a > b {

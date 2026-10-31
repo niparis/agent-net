@@ -3,6 +3,7 @@ package graphview
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -27,6 +28,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		return Output{}
 	}
 	cells := make([]cell, width*height)
+	hits := make(map[Cell]string)
 	put := func(x, y int, r rune, role string) bool {
 		if x < 0 || y < 0 || x >= width || y >= height {
 			return false
@@ -147,9 +149,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 	for _, n := range scene.Nodes {
 		x, y := point(n.Position)
 		marker := '○'
-		if n.Architect {
-			marker = '◆'
-		} else if n.HasSessions {
+		if n.HasCharter {
 			marker = '●'
 		}
 		role := "node"
@@ -162,7 +162,34 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if n.Flashing {
 			role = "flash"
 		}
-		put(x/2, y/4, marker, role)
+		if put(x/2, y/4, marker, role) {
+			hits[Cell{x / 2, y / 4}] = n.Name
+		}
+	}
+	// Reserve each disc's cells before labels are placed. Earlier discs win
+	// where nodes overlap, and marker cells always remain visible.
+	for _, n := range scene.Nodes {
+		x, y := point(n.Position)
+		cx, cy := x/2, y/4
+		touched := map[Cell]bool{}
+		// Fill a compact two-row halo in sub-cell steps around the marker.
+		offsets := [][2]int{{-1, 0}, {1, 0}, {0, -1}, {-1, -1}, {1, -1}}
+		for i := 0; i < max(1, min(n.Activity, 5))-1; i++ {
+			px, py := cx+offsets[i][0], cy+offsets[i][1]
+			if px < 0 || py < 0 || px >= width || py >= height || cells[py*width+px].occupied {
+				continue
+			}
+			for d := 0; d < 4; d++ {
+				dot(px*2+d%2, py*4+1+d/2, "node")
+			}
+			touched[Cell{px, py}] = true
+		}
+		for c := range touched {
+			cell := &cells[c.Y*width+c.X]
+			cell.text = rune(0x2800 + int(cell.dots))
+			cell.occupied = true
+			hits[c] = n.Name
+		}
 	}
 	for _, n := range scene.Nodes {
 		if !n.Selected {
@@ -170,23 +197,50 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		x, y := point(n.Position)
 		cx, cy := x/2, y/4
-		if !put(cx-1, cy, '▸', "selected") {
-			put(cx, cy-1, '▾', "selected")
+		if !put(cx-2, cy, '▸', "selected") {
+			put(cx, cy-2, '▾', "selected")
 		}
 	}
 
-	for _, n := range scene.Nodes {
+	labelNodes := append([]SceneNode(nil), scene.Nodes...)
+	sort.SliceStable(labelNodes, func(i, j int) bool { return labelNodes[i].Selected && !labelNodes[j].Selected })
+	for _, n := range labelNodes {
 		x, y := point(n.Position)
 		cx, cy := x/2, y/4
 		label := n.Label
+		if label == "" {
+			continue
+		}
 		if scene.Level == "cards" {
 			label = "[" + label + "]"
 		}
 		if n.Wildcard {
 			label += " ◂all"
 		}
+		labelRole := "labelDim"
+		if n.HasCharter {
+			labelRole = "label"
+		}
 		rs := []rune(label)
-		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
+		left, right, top := 0, 0, 0
+		if n.Activity >= 2 {
+			left = 1
+		}
+		if n.Activity >= 3 {
+			right = 1
+		}
+		if n.Activity >= 4 {
+			top = 1
+		}
+		candidates := [][2]int{{cx + right + 2, cy}, {cx - len(rs) - left - 1, cy}, {cx - len(rs)/2, cy - top - 1}, {cx - len(rs)/2, cy + 1}}
+		// A selected node gets another chance in any free row of the viewport.
+		if n.Selected {
+			for row := 0; row < height; row++ {
+				for col := 0; col+len(rs) <= width; col++ {
+					candidates = append(candidates, [2]int{col, row})
+				}
+			}
+		}
 		placed := false
 		labelX, labelY := 0, 0
 		for _, pos := range candidates {
@@ -204,16 +258,18 @@ func (b Braille) Render(scene Scene, size Size) Output {
 				continue
 			}
 			for i, r := range rs {
-				put(pos[0]+i, pos[1], r, "label")
+				if put(pos[0]+i, pos[1], r, labelRole) {
+					hits[Cell{pos[0] + i, pos[1]}] = n.Name
+				}
 			}
 			// Keep the cell between a marker and a label on its row blank,
 			// even when an edge or arrow passes through it.
 			if pos[1] == cy {
-				gap := cx + 1
+				gap := pos[0] - 1
 				if pos[0] < cx {
-					gap = cx - 1
+					gap = pos[0] + len(rs)
 				}
-				if gap >= 0 && gap < width {
+				if gap >= 0 && gap < width && !cells[cy*width+gap].occupied {
 					cells[cy*width+gap] = cell{text: ' ', role: "label", occupied: true}
 				}
 			}
@@ -221,32 +277,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			labelX, labelY = pos[0], pos[1]
 			break
 		}
-		if !placed {
-			for length := len(rs) - 1; length >= 2 && !placed; length-- {
-				short := append(append([]rune(nil), rs[:length-1]...), '…')
-				for _, pos := range [][2]int{{cx + 1, cy}, {cx - length, cy}, {cx - length/2, cy - 1}, {cx - length/2, cy + 1}} {
-					if pos[0] < 0 || pos[1] < 0 || pos[0]+length > width || pos[1] >= height {
-						continue
-					}
-					free := true
-					for i := range short {
-						if cells[pos[1]*width+pos[0]+i].occupied {
-							free = false
-							break
-						}
-					}
-					if !free {
-						continue
-					}
-					for i, r := range short {
-						put(pos[0]+i, pos[1], r, "label")
-					}
-					placed = true
-					labelX, labelY = pos[0], pos[1]
-					break
-				}
-			}
-		}
+
 		if placed && scene.Level == "cards" {
 			count := n.Card.Sessions
 			detail := fmt.Sprintf("%d sessions", count)
@@ -318,7 +349,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		out[y] = s.String()
 	}
-	return Output{Lines: out}
+	return Output{Lines: out, Hits: hits}
 }
 func abs(n int) int {
 	if n < 0 {

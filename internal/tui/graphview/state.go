@@ -2,6 +2,7 @@ package graphview
 
 import (
 	"math"
+	"sort"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -9,13 +10,15 @@ import (
 
 // State holds graph interaction and animation state. Times are supplied by the caller.
 type State struct {
-	Graph                        *Graph
-	Talk                         []protocol.GraphTalkCount
-	TalkReady                    bool
-	HideTalk                     bool
-	Camera                       Camera
-	Orbit, Paused, ReducedMotion bool
-	Now, PausedAt                time.Time
+	Graph                          *Graph
+	neighbourAnchor, neighbourLast string
+	Talk                           []protocol.GraphTalkCount
+	Activity                       map[string]int
+	TalkReady                      bool
+	HideTalk                       bool
+	Camera                         Camera
+	Orbit, Paused, ReducedMotion   bool
+	Now, PausedAt                  time.Time
 }
 
 // Action is a user intent or an external event.
@@ -24,15 +27,23 @@ type ZoomIn struct{}
 type ZoomOut struct{}
 type Pan struct{ DX, DY float64 }
 type Fit struct{ Viewport Viewport }
-type SelectNext struct{}
-type SelectPrev struct{}
+type SelectNode struct{ Name string }
+type SelectDirection struct {
+	DX, DY   float64
+	Viewport Viewport
+}
+type SelectNext struct{ Viewport Viewport }
+type SelectPrev struct{ Viewport Viewport }
 type ToggleOrbit struct{}
 type ToggleTalk struct{}
 type TogglePause struct{}
 type OpenSelected struct{}
 type Tick struct{ Now time.Time }
 type GraphChanged struct{ Graph protocol.GraphView }
-type TalkLoaded struct{ Counts []protocol.GraphTalkCount }
+type TalkLoaded struct {
+	Counts   []protocol.GraphTalkCount
+	Activity map[string]int
+}
 type MessageEvent struct{ Message Message }
 type FeedEvents struct {
 	Events     []protocol.FeedEvent
@@ -43,21 +54,23 @@ type FeedEvents struct {
 	CountsOnly bool
 }
 
-func (ZoomIn) graphAction()       {}
-func (ZoomOut) graphAction()      {}
-func (Pan) graphAction()          {}
-func (Fit) graphAction()          {}
-func (SelectNext) graphAction()   {}
-func (SelectPrev) graphAction()   {}
-func (ToggleTalk) graphAction()   {}
-func (ToggleOrbit) graphAction()  {}
-func (TogglePause) graphAction()  {}
-func (OpenSelected) graphAction() {}
-func (Tick) graphAction()         {}
-func (GraphChanged) graphAction() {}
-func (TalkLoaded) graphAction()   {}
-func (MessageEvent) graphAction() {}
-func (FeedEvents) graphAction()   {}
+func (ZoomIn) graphAction()          {}
+func (ZoomOut) graphAction()         {}
+func (Pan) graphAction()             {}
+func (Fit) graphAction()             {}
+func (SelectNode) graphAction()      {}
+func (SelectDirection) graphAction() {}
+func (SelectNext) graphAction()      {}
+func (SelectPrev) graphAction()      {}
+func (ToggleTalk) graphAction()      {}
+func (ToggleOrbit) graphAction()     {}
+func (TogglePause) graphAction()     {}
+func (OpenSelected) graphAction()    {}
+func (Tick) graphAction()            {}
+func (GraphChanged) graphAction()    {}
+func (TalkLoaded) graphAction()      {}
+func (MessageEvent) graphAction()    {}
+func (FeedEvents) graphAction()      {}
 
 // Effect describes work for the host UI to perform.
 type Effect struct {
@@ -79,6 +92,13 @@ func Update(s State, action Action) (State, Effect) {
 		s.Graph = &graph
 	}
 	s.Talk = append([]protocol.GraphTalkCount(nil), s.Talk...)
+	if s.Activity != nil {
+		copied := make(map[string]int, len(s.Activity))
+		for k, v := range s.Activity {
+			copied[k] = v
+		}
+		s.Activity = copied
+	}
 	var effect Effect
 	switch a := action.(type) {
 	case ZoomIn:
@@ -94,14 +114,67 @@ func Update(s State, action Action) (State, Effect) {
 		if s.Graph != nil {
 			s.Camera = s.Graph.Fit(int(a.Viewport.Width), int(a.Viewport.Height))
 		}
+	case SelectNode:
+		if s.Graph != nil {
+			for i, n := range s.Graph.Nodes {
+				if n.Name == a.Name {
+					s.Graph.selected = i
+					s.neighbourAnchor = ""
+					s.neighbourLast = ""
+					break
+				}
+			}
+		}
+	case SelectDirection:
+		if s.Graph != nil {
+			scene := BuildScene(s, a.Viewport)
+			var origin Point
+			found := false
+			for _, n := range scene.Nodes {
+				if n.Selected {
+					origin = n.Position
+					found = true
+					break
+				}
+			}
+			best, bestScore := -1, math.Inf(1)
+			for i, n := range scene.Nodes {
+				if n.Selected {
+					continue
+				}
+				dx, dy := (n.Position.X-origin.X)*a.Viewport.Width, (n.Position.Y-origin.Y)*a.Viewport.Height
+				forward := dx*a.DX + dy*a.DY
+				if !found {
+					dx = (n.Position.X - 0.5) * a.Viewport.Width
+					dy = (n.Position.Y - 0.5) * a.Viewport.Height
+					forward = 1
+				}
+				if forward <= 0 {
+					continue
+				}
+				distance := math.Hypot(dx, dy)
+				score := distance
+				if found {
+					score = distance * distance / forward
+				}
+				if score < bestScore {
+					best, bestScore = i, score
+				}
+			}
+			if best >= 0 {
+				name := scene.Nodes[best].Name
+				for i, n := range s.Graph.Nodes {
+					if n.Name == name {
+						s.Graph.selected = i
+						break
+					}
+				}
+			}
+		}
 	case SelectNext:
-		if s.Graph != nil {
-			s.Graph.Select(1)
-		}
+		s = selectNeighbour(s, a.Viewport, 1)
 	case SelectPrev:
-		if s.Graph != nil {
-			s.Graph.Select(-1)
-		}
+		s = selectNeighbour(s, a.Viewport, -1)
 	case ToggleTalk:
 		s.HideTalk = !s.HideTalk
 	case ToggleOrbit:
@@ -131,6 +204,13 @@ func Update(s State, action Action) (State, Effect) {
 		}
 	case TalkLoaded:
 		s.Talk = append([]protocol.GraphTalkCount(nil), a.Counts...)
+		s.Activity = a.Activity
+		if a.Activity != nil {
+			s.Activity = make(map[string]int, len(a.Activity))
+			for k, v := range a.Activity {
+				s.Activity[k] = v
+			}
+		}
 		s.TalkReady = true
 	case FeedEvents:
 		{
@@ -151,6 +231,14 @@ func Update(s State, action Action) (State, Effect) {
 				}
 				if s.TalkReady && event.ID > a.CountAfter && !event.Time.IsZero() && !event.Time.Before(a.Now.Add(-7*24*time.Hour)) && !event.Time.After(a.Now) {
 					from, to := projects[event.From], projects[event.To]
+					if s.Activity != nil {
+						if from != "" {
+							s.Activity[from]++
+						}
+						if to != "" && to != from {
+							s.Activity[to]++
+						}
+					}
 					if from != "" && to != "" && from != to {
 						if from > to {
 							from, to = to, from
@@ -193,4 +281,111 @@ func Update(s State, action Action) (State, Effect) {
 		}
 	}
 	return s, effect
+}
+
+// selectNeighbour keeps an anchor while stepping through its angular neighbours.
+func selectNeighbour(s State, viewport Viewport, direction int) State {
+	if s.Graph == nil {
+		return s
+	}
+	if viewport.Width <= 0 || viewport.Height <= 0 {
+		viewport = Viewport{80, 20}
+	}
+	scene := BuildScene(s, viewport)
+	current := s.Graph.Selected()
+	if current == "" {
+		best, dist := "", math.Inf(1)
+		for _, n := range scene.Nodes {
+			d := math.Hypot((n.Position.X-.5)*viewport.Width, (n.Position.Y-.5)*viewport.Height)
+			if d < dist {
+				best, dist = n.Name, d
+			}
+		}
+		for i, n := range s.Graph.Nodes {
+			if n.Name == best {
+				s.Graph.selected = i
+				break
+			}
+		}
+		s.neighbourAnchor, s.neighbourLast = "", ""
+		return s
+	}
+	if current != s.neighbourLast {
+		s.neighbourAnchor = current
+	}
+	anchor := s.neighbourAnchor
+	linked := map[string]bool{}
+	for _, e := range s.Graph.Edges {
+		if e.From == anchor {
+			linked[e.To] = true
+		}
+		if e.To == anchor {
+			linked[e.From] = true
+		}
+	}
+	for _, e := range s.Talk {
+		if e.Count <= 0 {
+			continue
+		}
+		if e.From == anchor {
+			linked[e.To] = true
+		}
+		if e.To == anchor {
+			linked[e.From] = true
+		}
+	}
+	var origin Point
+	for _, n := range scene.Nodes {
+		if n.Name == anchor {
+			origin = n.Position
+			break
+		}
+	}
+	type neighbour struct {
+		name  string
+		angle float64
+	}
+	var ns []neighbour
+	for _, n := range scene.Nodes {
+		if linked[n.Name] && n.Name != anchor {
+			angle := math.Atan2((n.Position.Y-origin.Y)*viewport.Height, (n.Position.X-origin.X)*viewport.Width)
+			if angle < 0 {
+				angle += 2 * math.Pi
+			}
+			ns = append(ns, neighbour{n.Name, angle})
+		}
+	}
+	sort.Slice(ns, func(i, j int) bool {
+		if ns[i].angle == ns[j].angle {
+			return ns[i].name < ns[j].name
+		}
+		return ns[i].angle < ns[j].angle
+	})
+	if len(ns) == 0 {
+		return s
+	}
+	idx := -1
+	for i, n := range ns {
+		if n.name == current {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		if direction > 0 {
+			idx = 0
+		} else {
+			idx = len(ns) - 1
+		}
+	} else {
+		idx = (idx + direction + len(ns)) % len(ns)
+	}
+	for i, n := range s.Graph.Nodes {
+		if n.Name == ns[idx].name {
+			s.Graph.selected = i
+			s.neighbourLast = n.Name
+			break
+		}
+	}
+	return s
 }

@@ -29,6 +29,7 @@ type GraphTalkCount struct {
 
 // GraphTalkResult identifies the feed position included in the snapshot.
 type GraphTalkResult struct {
-	Counts []GraphTalkCount `json:"counts"`
-	LastID int64            `json:"last_id"`
+	Counts   []GraphTalkCount `json:"counts"`
+	Activity map[string]int   `json:"activity"`
+	LastID   int64            `json:"last_id"`
 }

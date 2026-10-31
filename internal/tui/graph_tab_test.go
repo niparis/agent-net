@@ -2,7 +2,7 @@ package tui
 
 import (
 	"fmt"
-	"math"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -88,6 +88,15 @@ func TestGraphGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := graphModel(size[0], size[1])
 		got := m.View()
+		plain := ansi.Strip(got)
+		if strings.Contains(plain, "…") {
+			t.Fatalf("truncated graph label: %s", plain)
+		}
+		for _, name := range regexp.MustCompile(`project-[[:alnum:]-]*`).FindAllString(plain, -1) {
+			if !regexp.MustCompile(`^project-[0-9]{2}$`).MatchString(name) {
+				t.Errorf("partial project label %q", name)
+			}
+		}
 		if strings.Count(got, "•") < 2 {
 			t.Fatalf("two comets must be visible at %dx%d:\n%s", size[0], size[1], got)
 		}
@@ -129,26 +138,24 @@ func TestGraphConnectedNodesSpanRows(t *testing.T) {
 func TestGraphFixtureLabelsStayWithTheirMarkers(t *testing.T) {
 	m := graphModel(120, 34)
 	w, h := m.graphSize()
-	lines := (graphview.Braille{}).Render(graphview.BuildScene(graphview.State{Graph: m.graphState.Graph, Camera: m.graphState.Camera, Now: t0}, graphview.Viewport{Width: float64(w), Height: float64(h)}), graphview.Size{Width: w, Height: h}).Lines
+	out := (graphview.Braille{}).Render(graphview.BuildScene(graphview.State{Graph: m.graphState.Graph, Camera: m.graphState.Camera, Now: t0}, graphview.Viewport{Width: float64(w), Height: float64(h)}), graphview.Size{Width: w, Height: h})
 	for _, node := range m.graphState.Graph.Nodes {
-		x, y := m.graphState.Camera.Project(m.graphState.Graph.Positions[node.Name], w, h)
-		cx := int(math.Round(x*2)) / 2
-		cy := int(math.Round(y*4)) / 4
 		found := false
-		for row, line := range lines {
+		for y, line := range out.Lines {
 			i := strings.Index(line, node.Name)
 			if i < 0 {
 				continue
 			}
 			start := len([]rune(line[:i]))
 			end := start + len([]rune(node.Name))
-			if row == cy && (start == cx+2 || end == cx-1) || absGraph(row-cy) == 1 && start <= cx && end > cx {
-				found = true
-				break
+			for _, x := range []int{start - 2, end + 1} {
+				if x >= 0 && x < w && out.Hits[graphview.Cell{X: x, Y: y}] == node.Name {
+					found = true
+				}
 			}
 		}
 		if !found {
-			t.Errorf("label %q is not adjacent to marker at %d,%d", node.Name, cx, cy)
+			t.Errorf("label %q is not one space from its disc", node.Name)
 		}
 	}
 }
@@ -193,7 +200,7 @@ func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
 		if !strings.HasSuffix(line, "? keys") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
 			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
 		}
-		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") == paused || !strings.Contains(line, "0 fit") {
+		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") || !strings.Contains(line, "arrows select") {
 			t.Fatalf("paused=%v: incorrect hint priority %q", paused, line)
 		}
 	}
@@ -204,8 +211,8 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"enter Map", "0 fit", "t talk", "? keys"}, []string{"space pause"}},
-		{70, []string{"0 fit", "t talk", "? keys"}, []string{"space pause", "enter Map"}},
+		{80, []string{"arrows select", "t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+		{70, []string{"arrows select", "t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
 		{60, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
 		{40, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
 	} {
@@ -223,5 +230,79 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 				t.Errorf("width %d has %q: %q", tc.width, h, line)
 			}
 		}
+	}
+}
+
+func TestGraphHelpDescribesNavigation(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphHelp = true
+	text := strings.Join(m.graphView(120, 20), " ")
+	for _, want := range []string{"arrows select", "shift+arrows", "[ ] neighbours"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("help missing %q: %s", want, text)
+		}
+	}
+}
+
+func TestGraphMouseSelectsLabelAndIgnoresEmpty(t *testing.T) {
+	m := graphModel(120, 34)
+	w, h := m.graphSize()
+	scene := graphview.BuildScene(m.graphState, graphview.Viewport{Width: float64(w), Height: float64(h)})
+	for i := range scene.Nodes {
+		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
+	}
+	out := (graphview.Braille{}).Render(scene, graphview.Size{Width: w, Height: h})
+	var cell graphview.Cell
+	target := ""
+	for p, id := range out.Hits {
+		if id != m.graphState.Graph.Selected() && strings.ContainsRune("abcdefghijklmnopqrstuvwxyz0123456789", []rune(out.Lines[p.Y])[p.X]) {
+			cell, target = p, id
+			break
+		}
+	}
+	if target == "" {
+		t.Fatal("no label cell")
+	}
+	next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = next.(Model)
+	if m.graphState.Graph.Selected() != target {
+		t.Fatalf("selected %q, want %q", m.graphState.Graph.Selected(), target)
+	}
+	next, _ = m.Update(tea.MouseMsg{X: 0, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if next.(Model).graphState.Graph.Selected() != target {
+		t.Fatal("empty click changed selection")
+	}
+}
+
+func TestGraphMouseDisabledWhenLeavingOrFocusingCTO(t *testing.T) {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'1'}}, {Type: tea.KeyTab}} {
+		m := graphModel(120, 34)
+		_, cmd := m.Update(key)
+		if cmd == nil {
+			t.Fatal("missing mouse command")
+		}
+		msg := cmd()
+		batch, _ := msg.(tea.BatchMsg)
+		found := fmt.Sprintf("%T", msg) == fmt.Sprintf("%T", tea.DisableMouse())
+		for _, c := range batch {
+			if fmt.Sprintf("%T", c()) == fmt.Sprintf("%T", tea.DisableMouse()) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s did not disable mouse", key.String())
+		}
+	}
+}
+
+func TestGraphQuitDisablesMouseBeforeQuit(t *testing.T) {
+	m := graphModel(120, 34)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("no quit command")
+	}
+	// A sequence preserves ordering between disabling mouse and stopping Bubble Tea.
+	if fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.Sequence(tea.DisableMouse, tea.Quit)()) {
+		t.Fatal("quit must disable mouse first")
 	}
 }
