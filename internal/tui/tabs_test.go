@@ -519,6 +519,29 @@ func TestWorkersPanelRedesign(t *testing.T) {
 	}
 }
 
+func TestWorkersPanelKeyAndLinesFitResponsiveWidths(t *testing.T) {
+	const compactKey = "T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now"
+	const fullKey = "T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now"
+	for _, width := range []int{80, 100, 120} {
+		m := newModel(width, 34)
+		m.tab = 2
+		view := strings.Join(m.quotaModelsView(width), "\n")
+		plain := ansi.Strip(view)
+		for _, line := range strings.Split(view, "\n") {
+			if got := ansi.StringWidth(line); got > width {
+				t.Errorf("Workers line at width %d is %d columns: %q", width, got, ansi.Strip(line))
+			}
+		}
+		wantKey := fullKey
+		if width < 110 {
+			wantKey = compactKey
+		}
+		if !strings.Contains(plain, wantKey) {
+			t.Errorf("Workers key at width %d is missing %q:\n%s", width, wantKey, plain)
+		}
+	}
+}
+
 func TestWorkerDisplayModelDropsOnlyUnambiguousProviders(t *testing.T) {
 	cases := []struct{ harness, model, want string }{
 		{"opencode", "opencode-go/deepseek-v4.1-flash", "deepseek-v4.1-flash"},

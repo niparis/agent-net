@@ -14,7 +14,7 @@
 │   model gone - ask the CTO to fix                                            │
 │ sol                codex    gpt-6.1-sol:medium        46.1/medium  E E E G P │
 │ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P │
-│ T trivial S simple N normal H hard V very complex · E strong G ok P weak - … │
+│ T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
