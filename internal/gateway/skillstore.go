@@ -281,3 +281,28 @@ func (g *Gateway) exportSkill(item, hash string) (protocol.SkillBundle, error) {
 	}
 	return protocol.SkillBundle{Data: b}, nil
 }
+
+func (g *Gateway) readSkillText(ctx context.Context, p protocol.SkillTextRequest) (any, error) {
+	if p.Item == "" || p.Location.NodeID == "" || p.Location.Location == "" || p.Path == "" {
+		return nil, reject("file request is incomplete")
+	}
+	err := g.store.db.QueryRow(`SELECT i.name,i.hash FROM tool_identities i JOIN tool_locations l ON l.identity_id=i.id WHERE i.id=? AND i.kind='skill' AND l.node_id=? AND json_extract(l.observation,'$.location')=? AND json_extract(l.observation,'$.state')='ok' LIMIT 1`, p.Item, p.Location.NodeID, p.Location.Location).Scan(&p.Name, &p.Hash)
+	if err != nil || p.Hash == "" {
+		return nil, reject("skill location is not a current observation")
+	}
+	host := g.conn(p.Location.NodeID)
+	if host == nil {
+		return nil, reject("skill location is offline")
+	}
+	raw, err := host.request(ctx, "node.skill_text", p, 60*time.Second)
+	if err != nil {
+		return nil, reject("cannot read skill file")
+	}
+	var result struct {
+		Text string `json:"text"`
+	}
+	if json.Unmarshal(raw, &result) != nil || len(result.Text) > inventory.MaxSkillTextBytes {
+		return nil, reject("invalid skill file")
+	}
+	return result, nil
+}

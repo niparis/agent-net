@@ -80,7 +80,7 @@ func TestToolsTabOpensWithKey5AndDifferencesFirst(t *testing.T) {
 		t.Fatalf("tab %d screen %d loaded %v", m.tab, m.tl.screen, m.tl.loaded)
 	}
 	v := plain(m)
-	for _, want := range []string{"1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools", "What differs", "code-review differs", "design-taste-frontend has 2 different copies on research", "fix: "} {
+	for _, want := range []string{"1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools", "What differs", "code-review differs", "design-taste-frontend: Claude's copy", "fix: "} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in\n%s", want, v)
 		}
@@ -130,11 +130,11 @@ func TestToolsDifferencesAreOrderedAndAcceptedLeaveTheList(t *testing.T) {
 	if len(m.shownDiffs()) != len(ds)-1 {
 		t.Fatalf("accepted difference must leave the list")
 	}
-	if strings.Contains(plain(m), "design-taste-frontend has") {
+	if strings.Contains(plain(m), "design-taste-frontend: Claude's copy") {
 		t.Errorf("accepted line still shown:\n%s", plain(m))
 	}
 	m = pressKey(m, ".")
-	if v := plain(m); !strings.Contains(v, "(accepted)") || !strings.Contains(v, "design-taste-frontend has") {
+	if v := plain(m); !strings.Contains(v, "(accepted)") || !strings.Contains(v, "design-taste-frontend: Claude's copy") {
 		t.Errorf(". must show accepted ones:\n%s", v)
 	}
 	// x again takes the mark off
@@ -601,5 +601,92 @@ func TestChooseExplainsMissingFilesWithoutRecommendation(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestChooseCopyHintsAndMissingManifest(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	a := toolsdiff.Copy{Machine: "host", Harness: "pi"}
+	b := toolsdiff.Copy{Machine: "host", Harness: "claude"}
+	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
+	v := plain(model.(Model))
+	for _, want := range []string{"a keep pi's copy", "b keep claude's copy", "no file details from these machines yet"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q: %s", want, v)
+		}
+	}
+	if strings.Count(v, "no file details from these machines yet") != 1 {
+		t.Fatal(v)
+	}
+}
+
+func TestChooseViewsSelectedFileDiff(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	a := toolsdiff.Copy{Item: "old", Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "a"}, {Path: "other.md", Fingerprint: "a"}}}}
+	b := toolsdiff.Copy{Item: "new", Machine: "beta", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "b"}, {Path: "other.md", Fingerprint: "b"}}}}
+	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
+	m = model.(Model)
+	m = pressKey(m, "n")
+	if !strings.Contains(plain(m), "other.md") {
+		t.Fatal(plain(m))
+	}
+	m = pressKey(m, "v")
+	for _, want := range []string{"other.md", "---", "+++", "-old text", "+new text"} {
+		if !strings.Contains(plain(m), want) {
+			t.Errorf("missing %q: %s", want, plain(m))
+		}
+	}
+	m = pressKey(m, "down")
+	if m.tl.modal.scroll != 1 {
+		t.Fatal("diff does not scroll")
+	}
+	m = pressKey(m, "esc")
+	if !strings.Contains(plain(m), "keep the copy") {
+		t.Fatal(plain(m))
+	}
+}
+
+func TestChooseWrapsWordsAt80Columns(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Newest: m.now().Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}}}}
+	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: m.now().Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "scripts/run.sh", Fingerprint: "new"}}}}
+	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
+	v := plain(model.(Model))
+	for _, word := range []string{"SKILL.md", "scripts/run.sh", "suggest:", "newer", "file"} {
+		if !strings.Contains(v, word) {
+			t.Errorf("word %q split or missing: %s", word, v)
+		}
+	}
+	for _, line := range strings.Split(v, "\n") {
+		if ansi.StringWidth(line) > 80 {
+			t.Errorf("line exceeds 80: %q", line)
+		}
+	}
+}
+
+func TestLargeSkillDiffUsesBoundedWork(t *testing.T) {
+	before := strings.Repeat("old line\n", 6000)
+	after := strings.Repeat("new line\n", 6000)
+	diff := unifiedSkillDiff("alpha", "beta", before, after)
+	if !strings.Contains(diff, "-old line") || !strings.Contains(diff, "+new line") {
+		t.Fatal("missing changes")
+	}
+}
+
+func TestChooseHintsRemainDistinctWithFourCopies(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	copies := []toolsdiff.Copy{{Machine: "host", Harness: "pi"}, {Machine: "host", Harness: "claude"}, {Machine: "host", Harness: "pi"}, {Machine: "host", Harness: "claude"}}
+	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: copies})
+	v := plain(model.(Model))
+	if strings.Count(v, "keep claude's copy") > 1 {
+		t.Fatal(v)
+	}
+}
+
+func TestChooseReportsOversizedManifest(t *testing.T) {
+	a := toolsdiff.Copy{Manifest: &protocol.SkillManifest{TooLarge: true}}
+	b := toolsdiff.Copy{Manifest: &protocol.SkillManifest{}}
+	if got := strings.Join(chooseComparison(a, b), " "); !strings.Contains(got, "too large") {
+		t.Fatal(got)
 	}
 }

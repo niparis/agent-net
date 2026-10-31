@@ -655,6 +655,9 @@ func (m Model) modalBox(w, h int) []string {
 		for _, l := range md.lines {
 			body = append(body, wrapStyled(l, bw-4)...)
 		}
+		if len(md.compareFiles) > 0 {
+			body = append(body, tsDim.Render("  selected file: "+sanitize(md.compareFiles[md.compareIndex])))
+		}
 		if md.loading && len(md.lines) == 0 {
 			body = append(body, tsDim.Render("planning..."))
 		}

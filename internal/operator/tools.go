@@ -115,3 +115,11 @@ func (s *Client) MCPNativeRemovePlan(ctx context.Context, candidate string) (pro
 func (s *Client) MCPNativeRemoveApply(ctx context.Context, planID string) (protocol.MCPNativeRemoveResult, error) {
 	return decodeCall[protocol.MCPNativeRemoveResult](s.action(ctx, "mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: planID}))
 }
+
+// ToolsReadFile reads one observed skill file for an owner preview.
+func (s *Client) ToolsReadFile(ctx context.Context, req protocol.SkillTextRequest) (string, error) {
+	result, err := decodeCall[struct {
+		Text string `json:"text"`
+	}](s.action(ctx, "tools_read_file", req))
+	return result.Text, err
+}
