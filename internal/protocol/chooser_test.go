@@ -112,3 +112,24 @@ func TestChooseWorkerModelQuotaPaceBeforeScore(t *testing.T) {
 		})
 	}
 }
+
+func TestChooseWorkerModelTrackRecord(t *testing.T) {
+	scores := []ModelScore{{Match: "cheap", Score: 32.5}, {Match: "strong", Score: 42.3}}
+	for _, tt := range []struct {
+		name                      string
+		complete, partial, failed int
+		want                      string
+	}{
+		{"poor record", 2, 2, 1, "strong"},
+		{"too few runs", 1, 2, 1, "cheap"},
+		{"half complete", 3, 2, 1, "cheap"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := []WorkerModelCandidate{{Model: "cheap", Track: TrackRecord{Complete: tt.complete, Partial: tt.partial, Failed: tt.failed}}, {Model: "strong"}}
+			got, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, 0)
+			if err != nil || got.Model != tt.want {
+				t.Fatalf("got %+v: %v", got, err)
+			}
+		})
+	}
+}

@@ -17,6 +17,7 @@ type WorkerModelCandidate struct {
 	DefaultEffort string
 	Failed        bool
 	Succeeded     bool
+	Track         TrackRecord
 }
 
 // WorkerModelChoice explains an automatic worker model selection.
@@ -82,11 +83,17 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if a.fit != b.fit {
 			return a.fit < b.fit
 		}
+		if poorTrack(a.choice.Track) != poorTrack(b.choice.Track) {
+			return !poorTrack(a.choice.Track)
+		}
 		if measured && a.room != b.room {
 			return a.room > b.room
 		}
 		if a.choice.Score != b.choice.Score {
 			return a.choice.Score < b.choice.Score
+		}
+		if strongTrack(a.choice.Track) != strongTrack(b.choice.Track) {
+			return strongTrack(a.choice.Track)
 		}
 		if a.choice.Failed != b.choice.Failed {
 			return !a.choice.Failed
@@ -100,7 +107,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	ties := 1
 	for ties < len(eligible) {
 		r := eligible[ties]
-		if r.fit != best.fit || r.choice.Score != best.choice.Score || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
+		if r.fit != best.fit || poorTrack(r.choice.Track) != poorTrack(best.choice.Track) || strongTrack(r.choice.Track) != strongTrack(best.choice.Track) || r.choice.Score != best.choice.Score || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
 			break
 		}
 		ties++
@@ -153,4 +160,16 @@ func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
 		}
 	}
 	return room, note, measured, false
+}
+
+// Only finished outcomes that describe task quality count; stopped and timed-out
+// runs can reflect circumstances unrelated to the model.
+func poorTrack(t TrackRecord) bool {
+	n := t.Complete + t.Partial + t.Failed
+	return n >= 5 && 2*t.Complete < n
+}
+
+func strongTrack(t TrackRecord) bool {
+	n := t.Complete + t.Partial + t.Failed
+	return n >= 5 && 2*t.Complete >= n
 }

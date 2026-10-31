@@ -447,6 +447,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			p.Model = ""
 			automaticNote = "no registered workers; add one with the CTO or agent_worker_profile_add"
 		} else {
+			tracks, err := g.store.TrackRecords(pick.NodeID, 0)
+			if err != nil {
+				return none, err
+			}
+			trackByModel := make(map[string]protocol.TrackRecord, len(tracks))
+			for _, track := range tracks {
+				trackByModel[track.Harness+"\x00"+track.Model] = track
+			}
 			var candidates []protocol.WorkerModelCandidate
 			var skippedProfiles []string
 			resolutionNotes := map[string]string{}
@@ -484,7 +492,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 					if profile.Effort != "" {
 						model += ":" + profile.Effort
 					}
-					candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+					candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
 					if resolved != profile.Model {
 						resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
 					}
