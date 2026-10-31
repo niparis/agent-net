@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -127,5 +128,133 @@ func TestGatewayToolPlanRequiresOwnerSession(t *testing.T) {
 	raw := []byte(`{"item":"x","target":{"scope":"global"},"actor":"owner"}`)
 	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "tools.plan", raw); err == nil || !strings.Contains(err.Error(), "owner authority") {
 		t.Fatalf("gateway accepted unauthenticated owner: %v", err)
+	}
+}
+
+func TestApplyReportsStaleWhenItemDisappears(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	p, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: id, Target: protocol.ToolAssignment{Scope: "global"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.applyTool(context.Background(), p.ID, "owner"); err == nil || !strings.Contains(err.Error(), "plan out of date") {
+		t.Fatalf("expected stale plan: %v", err)
+	}
+}
+
+func TestGatewayToolHistoryRequiresOwnerSession(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "tools.history", []byte(`{"item":"x"}`)); err == nil {
+		t.Fatal("gateway accepted unauthenticated history")
+	}
+}
+
+func TestRejectedToolPlanIsAudited(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	if _, err = g.planTool(context.Background(), protocol.ToolPlanRequest{Item: id, Target: protocol.ToolAssignment{Scope: "invalid"}}, "owner"); err == nil {
+		t.Fatal("invalid plan accepted")
+	}
+	history, err := g.store.ToolHistory(id)
+	if err != nil || len(history) != 1 || history[0].Action != "plan" || history[0].Result != "refused" {
+		t.Fatalf("history: %+v %v", history, err)
+	}
+}
+
+func TestToolPlanReportsIncompleteScan(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "error"}); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: `["skill","demo","abc"]`, Target: protocol.ToolAssignment{Scope: "uninstalled"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(plan)
+	if !strings.Contains(string(b), "inventory scan incomplete") {
+		t.Fatalf("incomplete scan not reported: %s", b)
+	}
+}
+
+func TestPlanAuditRecordsBaseRevision(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	if _, err = s.AssignTool(id, protocol.ToolAssignment{Scope: "global"}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "uninstalled"}, nil, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.ToolHistory(id)
+	if err != nil || plan.BaseRevision != 1 || len(events) != 1 || events[0].Revision != 1 {
+		t.Fatalf("revision missing: %+v %+v %v", plan, events, err)
+	}
+}
+
+func TestManagedToolRemainsListedWithoutLocations(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	if _, err = s.AssignTool(id, protocol.ToolAssignment{Scope: "uninstalled"}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{}}); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return false })
+	if err != nil || len(items) != 1 || items[0].ID != id || items[0].Desired == nil {
+		t.Fatalf("stored item missing: %+v %v", items, err)
 	}
 }

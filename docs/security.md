@@ -441,8 +441,9 @@ gateway trusts its enrolled daemons.
 Plans contain observed source and destination paths, target machines and
 conflicts. They do not copy or remove files. The gateway binds each plan to the
 observed inventory, project registry, item versions and desired revisions. It
-rechecks the target paths and refuses a changed plan. Offline paths cannot be
-inspected and are reported as unresolved. A successful apply records desired
+rechecks the target paths and refuses a changed plan. Destination checks use
+bounded filesystem metadata and do not read foreign file contents. Incomplete
+scans, opaque sources and offline paths are reported as unresolved conflicts. A successful apply records desired
 state as pending; it does not claim that any target was changed. Subsequent
 reconciliation must revalidate paths and hashes before file operations.
 

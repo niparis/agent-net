@@ -2,7 +2,11 @@ package daemon
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -81,6 +85,12 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		}
 		if cur == dest {
 			out.Conflict = "destination already exists and is not owned"
+			fingerprint, err := destinationFingerprint(dest)
+			if err != nil {
+				out.Conflict = "cannot inspect destination"
+			} else {
+				out.Fingerprint = fingerprint
+			}
 			return out
 		}
 		if !info.IsDir() {
@@ -102,4 +112,32 @@ func (d *Daemon) onToolPlanProbe(ctx context.Context, l *link, h protocol.Header
 	if b, err := protocol.EncodeResult(h.ID, result, nil); err == nil {
 		_ = l.write(ctx, b)
 	}
+}
+
+func destinationFingerprint(root string) (string, error) {
+	h := sha256.New()
+	count := 0
+	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		count++
+		if count > 10000 {
+			return fmt.Errorf("destination exceeds inspection limit")
+		}
+		info, err := os.Lstat(path)
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(h, "%d:%s:%d:%d:%d\x00", len(rel), rel, info.Mode(), info.Size(), info.ModTime().UnixNano())
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

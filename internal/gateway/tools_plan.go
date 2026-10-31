@@ -93,6 +93,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 								t.Conflict = "invalid destination inspection"
 							} else {
 								t.Destination = r.Destination
+								t.Fingerprint = r.Fingerprint
 								t.Conflict = r.Conflict
 								if r.Conflict != "" {
 									t.State = "conflict"
@@ -106,7 +107,14 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		}
 	}
 	for _, report := range reports {
+		if report.State != protocol.InventoryOK {
+			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: "inventory scan incomplete"})
+		}
 		for _, obs := range report.Items {
+			if obs.Kind == kind && len(obs.Unsupported) > 0 && (obs.Source == protocol.InventoryPlugin || obs.Source == protocol.InventoryPackage || obs.Source == protocol.InventorySystem) {
+				targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Harness: obs.Harness, Project: obs.Project, Checkout: obs.ProjectRoot, Source: obs.Location, Action: "inspect", State: "conflict", Conflict: "opaque source may shadow this item"})
+			}
+
 			if obs.Kind != kind || obs.Name != name {
 				continue
 			}
@@ -147,22 +155,29 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	})
 	return targets, nil
 }
-func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, actor string) (protocol.ToolPlan, error) {
-	var zero protocol.ToolPlan
+func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, actor string) (out protocol.ToolPlan, err error) {
+	defer func() {
+		if err != nil && (actor == "owner" || actor == "cto") {
+			if e := g.store.recordRefusedToolPlan(p.Item, actor); e != nil {
+				err = e
+			}
+		}
+	}()
 	a, err := normalizeAssignment(p.Target)
 	if err != nil {
-		return zero, err
+		return out, err
 	}
 	snap, err := g.store.ToolSnapshot()
 	if err != nil {
-		return zero, err
+		return out, err
 	}
 	targets, err := g.toolTargets(ctx, p.Item, a)
 	if err != nil {
-		return zero, err
+		return out, err
 	}
 	return g.store.saveToolPlan(p.Item, a, targets, actor, snap)
 }
+
 func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.ToolRevision, err error) {
 	checked := false
 	defer func() {
@@ -172,9 +187,16 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 			}
 		}
 	}()
-	var raw string
-	if err = g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE id=?`, id).Scan(&raw); err != nil {
+	var raw, snapshot string
+	if err = g.store.db.QueryRow(`SELECT plan,snapshot FROM tool_plans WHERE id=?`, id).Scan(&raw, &snapshot); err != nil {
 		return r, errors.New("plan not found")
+	}
+	current, e := g.store.ToolSnapshot()
+	if e != nil {
+		return r, e
+	}
+	if snapshot != current {
+		return r, errors.New("plan out of date")
 	}
 	var p protocol.ToolPlan
 	if json.Unmarshal([]byte(raw), &p) != nil {
@@ -182,6 +204,9 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 	}
 	targets, e := g.toolTargets(ctx, p.Item, p.Assignment)
 	if e != nil {
+		if e.Error() == "tool item not found" {
+			return r, errors.New("plan out of date")
+		}
 		return r, e
 	}
 	if !reflect.DeepEqual(targets, p.Targets) {

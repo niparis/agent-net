@@ -548,6 +548,7 @@ unmanaged destination are conflicts. Review the plan before applying it.
 registered projects, item version, assignments or inspected paths have changed.
 Applying records a new desired revision and does not copy or remove files.
 `tools_items` and the CLI show desired state separately from pending application.
+A stored item with no remaining observed locations stays listed as `unobserved`.
 `tools_history` takes `item` and returns plans and apply attempts with their
 actors, targets and results. These methods require an owner connection.
 

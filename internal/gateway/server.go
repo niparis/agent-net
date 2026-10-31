@@ -589,8 +589,14 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return needs, nil
 	case "tools.history":
-		p, err := decode[protocol.ToolHistoryRequest](raw)
-		if err != nil || p.Item == "" {
+		p, err := decode[struct {
+			protocol.ToolHistoryRequest
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if p.Item == "" {
 			return nil, reject("history needs an item")
 		}
 		events, err := st.ToolHistory(p.Item)

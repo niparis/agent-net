@@ -178,6 +178,10 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 			return p, errors.New("project is not registered")
 		}
 	}
+	var baseRevision int64
+	if err = tx.QueryRow(`SELECT COALESCE(MAX(revision),0) FROM tool_revisions WHERE item=?`, item).Scan(&baseRevision); err != nil {
+		return p, err
+	}
 	snapshot, err := toolSnapshot(tx)
 	if err != nil {
 		return p, err
@@ -188,7 +192,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if targets == nil {
 		targets = []protocol.ToolPlanTarget{}
 	}
-	p = protocol.ToolPlan{ID: protocol.NewID("plan"), Item: item, Version: version, Assignment: a, Targets: targets, Conflicts: []string{}, State: "pending", Actor: actor, At: s.now().UnixNano()}
+	p = protocol.ToolPlan{ID: protocol.NewID("plan"), Item: item, Version: version, BaseRevision: baseRevision, Assignment: a, Targets: targets, Conflicts: []string{}, State: "pending", Actor: actor, At: s.now().UnixNano()}
 	for _, target := range targets {
 		if target.Conflict != "" {
 			p.Conflicts = append(p.Conflicts, target.Conflict)
@@ -204,7 +208,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan) VALUES(?,?,?,?)`, p.ID, item, snapshot, string(raw)); err != nil {
 		return p, err
 	}
-	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, 0, p.Targets, "proposed", p.At); err != nil {
+	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, p.BaseRevision, p.Targets, "proposed", p.At); err != nil {
 		return p, err
 	}
 	return p, tx.Commit()
@@ -289,7 +293,7 @@ func (s *Store) recordRefusedToolApply(id, actor string) error {
 	if actor != "owner" && actor != "cto" {
 		return errors.New("owner authority required")
 	}
-	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) SELECT item,id,'apply',?,0,json_extract(plan,'$.targets'),'refused',? FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
+	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',? FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
 	return err
 }
 func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
@@ -300,4 +304,9 @@ func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 		}
 	}
 	return r, err
+}
+
+func (s *Store) recordRefusedToolPlan(item, actor string) error {
+	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) SELECT id,'','plan',?,COALESCE((SELECT MAX(revision) FROM tool_revisions WHERE item=tool_identities.id),0),'[]','refused',? FROM tool_identities WHERE id=?`, actor, s.now().UnixNano(), item)
+	return err
 }

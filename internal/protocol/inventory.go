@@ -148,17 +148,19 @@ type ToolPlanTarget struct {
 	Action      string `json:"action"`
 	State       string `json:"state"`
 	Conflict    string `json:"conflict,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 type ToolPlan struct {
-	ID         string           `json:"id"`
-	Item       string           `json:"item"`
-	Version    string           `json:"version"`
-	Assignment ToolAssignment   `json:"assignment"`
-	Targets    []ToolPlanTarget `json:"targets"`
-	Conflicts  []string         `json:"conflicts"`
-	State      string           `json:"state"`
-	Actor      string           `json:"actor"`
-	At         int64            `json:"at"`
+	ID           string           `json:"id"`
+	Item         string           `json:"item"`
+	Version      string           `json:"version"`
+	BaseRevision int64            `json:"base_revision"`
+	Assignment   ToolAssignment   `json:"assignment"`
+	Targets      []ToolPlanTarget `json:"targets"`
+	Conflicts    []string         `json:"conflicts"`
+	State        string           `json:"state"`
+	Actor        string           `json:"actor"`
+	At           int64            `json:"at"`
 }
 type ToolPlanRequest struct {
 	Item   string         `json:"item"`
@@ -178,6 +180,7 @@ type ToolPlanProbe struct {
 type ToolPlanProbeResult struct {
 	Destination string `json:"destination,omitempty"`
 	Conflict    string `json:"conflict,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
 }
 
 type ToolAuditEvent struct {

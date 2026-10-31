@@ -236,7 +236,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &p) != nil || p.Item == "" {
 			return nil, true, errors.New("tools_history needs item")
 		}
-		res, err = d.call(ctx, "tools.history", p)
+		res, err = d.call(ctx, "tools.history", struct {
+			protocol.ToolHistoryRequest
+			Owner string `json:"owner"`
+		}{p, d.ownerSessionID()})
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":
