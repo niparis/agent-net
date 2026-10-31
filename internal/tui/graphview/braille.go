@@ -3,12 +3,15 @@ package graphview
 import (
 	"math"
 	"strings"
+	"time"
 )
 
 // Braille renders a graph in terminal cells. Color, when provided, styles a
 // cell according to its semantic role.
 type Braille struct {
-	Color func(role, text string) string
+	Color         func(role, text string) string
+	Now           time.Time
+	ReducedMotion bool
 }
 type cell struct {
 	dots     byte
@@ -49,11 +52,24 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 		x, y := cam.Project(p, width, height)
 		return int(math.Round(x * 2)), int(math.Round(y * 4)), ok
 	}
+	type arrow struct {
+		x, y int
+		r    rune
+		role string
+	}
+	var arrows []arrow
 	for _, e := range g.Edges {
 		x0, y0, ok := point(e.From)
 		x1, y1, ok2 := point(e.To)
 		if !ok || !ok2 {
 			continue
+		}
+		ax, ay := x1-x0, y1-y0
+		if ax != 0 || ay != 0 {
+			angle := math.Atan2(float64(ay)/4, float64(ax)/2)
+			dirs := []rune{'→', '↘', '↓', '↙', '←', '↖', '↑', '↗'}
+			idx := (int(math.Round(angle/(math.Pi/4))) + 8) % 8
+			arrows = append(arrows, arrow{int(math.Round(float64(x0)*0.2+float64(x1)*0.8)) / 2, int(math.Round(float64(y0)*0.2+float64(y1)*0.8)) / 4, dirs[idx], e.Kind})
 		}
 		dx := abs(x1 - x0)
 		dy := -abs(y1 - y0)
@@ -96,12 +112,42 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 		} else if n.SessionCount > 0 || len(n.Sessions) > 0 {
 			marker = '●'
 		}
-		put(cx, cy, marker, "node")
+		role := "node"
+		for _, sess := range n.Sessions {
+			if sess.Status == "busy" {
+				role = "busy"
+				if !b.ReducedMotion && b.Now.UnixMilli()%1000 >= 500 {
+					role = "busyPulse"
+				}
+				break
+			}
+		}
+		put(cx, cy, marker, role)
+	}
+	for _, a := range arrows {
+		put(a.x, a.y, a.r, a.role)
+	}
+	for _, c := range func() []Comet { cs, _ := g.Traffic(b.Now); return cs }() {
+		a := g.Positions[c.From]
+		target := g.Positions[c.To]
+		for i := 3; i >= 1; i-- {
+			u := c.Progress - float64(i)*0.035
+			if u < 0 {
+				continue
+			}
+			x, y := cam.Project(Point{a.X + (target.X-a.X)*u, a.Y + (target.Y-a.Y)*u}, width, height)
+			dot(int(x*2), int(y*4), "trail")
+		}
+		x, y := cam.Project(c.Position, width, height)
+		put(int(x), int(y), '•', "comet")
 	}
 	for _, n := range g.Nodes {
 		x, y, _ := point(n.Name)
 		cx, cy := x/2, y/4
 		label := n.Name
+		if cam.Level() == "cards" {
+			label = "[" + label + "]"
+		}
 		for _, e := range g.Edges {
 			if e.From == "*" && e.To == n.Name {
 				label += " ◂all"
@@ -131,7 +177,31 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			placed = true
 			break
 		}
-		_ = placed
+		if !placed {
+			for length := len(rs) - 1; length >= 2 && !placed; length-- {
+				short := append(append([]rune(nil), rs[:length-1]...), '…')
+				for _, pos := range [][2]int{{cx + 2, cy}, {cx - length - 1, cy}, {cx - length/2, cy - 1}, {cx - length/2, cy + 1}} {
+					if pos[0] < 0 || pos[1] < 0 || pos[0]+length > width || pos[1] >= height {
+						continue
+					}
+					free := true
+					for i := range short {
+						if cells[pos[1]*width+pos[0]+i].occupied {
+							free = false
+							break
+						}
+					}
+					if !free {
+						continue
+					}
+					for i, r := range short {
+						put(pos[0]+i, pos[1], r, "label")
+					}
+					placed = true
+					break
+				}
+			}
+		}
 	}
 	out := make([]string, height)
 	for y := 0; y < height; y++ {
