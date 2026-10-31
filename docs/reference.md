@@ -555,7 +555,8 @@ For project assignments it also copies into registered Git checkouts. The plan
 uses shared compatibility roots where harnesses can read the same copy. A
 combination that would expose the name twice, or an existing shadowing source,
 is a conflict. Non-Git checkouts stay pending until the owner chooses an ignore
-mechanism. Removals remain pending; applying does not remove files.
+mechanism. Removals move the verified source to the daemon's local backup
+directory before removing it from the skill location.
 
 Before a project copy, the daemon checks for tracked files and Git ignore rules.
 It locks and adds the exact managed directory to the path returned by
@@ -567,8 +568,9 @@ Daemons report each target as applied, pending, conflict, manual or failed.
 `tools_items` and `tools_item` show the desired revision and reported results.
 A missing report stays pending, including while a machine is offline. The
 daemon records installed paths, hashes and revisions in its owner-only
-`skill-manifest.json` in the daemon state directory. Uninstall removes this
-manifest but does not remove installed skills.
+`skill-manifest.json` in the daemon state directory. Backups are in
+`skill-backups` under that directory. Uninstall removes the manifest, backups,
+and owned Git exclude lines but does not remove installed skills.
 A stored item with no remaining observed locations stays listed as `unobserved`.
 `tools_history` takes `item` and returns plans and apply attempts with their
 actors, targets and results. These methods require an owner connection.

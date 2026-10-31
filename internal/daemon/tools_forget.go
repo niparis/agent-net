@@ -8,6 +8,32 @@ import (
 	"path/filepath"
 )
 
+// RemoveSkillState releases owned exclude lines and deletes local skill backups.
+// Call only after the daemon has stopped.
+func RemoveSkillState(state string) error {
+	manifest := filepath.Join(state, "skill-manifest.json")
+	b, err := os.ReadFile(manifest)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err == nil {
+		var entries []skillManifestEntry
+		if err = json.Unmarshal(b, &entries); err != nil {
+			return err
+		}
+		d := &Daemon{cfg: Config{StateDir: state}}
+		for _, e := range entries {
+			if err = d.forgetSkill(e.Path); err != nil {
+				return err
+			}
+		}
+		if err = os.Remove(manifest); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	return os.RemoveAll(filepath.Join(state, "skill-backups"))
+}
+
 // forgetSkill drops a manifest reference and the last owned exclude line.
 func (d *Daemon) forgetSkill(path string) error {
 	manifest := filepath.Join(d.cfg.StateDir, "skill-manifest.json")
