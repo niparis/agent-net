@@ -22,9 +22,18 @@ const (
 	toolNodeM = "n_mbp"
 )
 
+// toolLoc is one copy. A project copy is committed (tracked) unless a test
+// says it is local.
 func toolLoc(node, machine, path, scope, project, harness string) protocol.ToolLocation {
 	return protocol.ToolLocation{NodeID: node, Machine: machine, GraphNode: project, InventoryItem: protocol.InventoryItem{
-		Harness: harness, Kind: "skill", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok"}}
+		Harness: harness, Kind: "skill", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok", Tracked: scope == "project"}}
+}
+
+// toolLocal is a project copy that is not committed.
+func toolLocal(node, machine, path, project, harness string) protocol.ToolLocation {
+	l := toolLoc(node, machine, path, "project", project, harness)
+	l.Tracked = false
+	return l
 }
 
 func toolSkill(name, hash string, locs ...protocol.ToolLocation) protocol.ToolItem {
@@ -96,6 +105,8 @@ func toolFixtureItems() []protocol.ToolItem {
 	items = append(items,
 		toolSkill("deploy-test-server", "sha256:6666666aaaa", toolLoc(toolNodeR, "research", "/src/sovl-clone/.claude/skills/deploy-test-server", "project", "sovl-clone", "claude")),
 		toolSkill("estate-runbook", "sha256:7777777aaaa", toolLoc(toolNodeR, "research", "/src/homelab/.claude/skills/estate-runbook", "project", "homelab", "claude")))
+	// a local copy: in a project folder, not committed
+	items = append(items, toolSkill("scratch-notes", "sha256:8888888aaaa", toolLocal(toolNodeR, "research", "/src/homelab/.claude/skills/scratch-notes", "homelab", "claude")))
 	// unmanaged skills: 4 on both machines, the rest only on research
 	for i := 0; i < 26; i++ {
 		name := fmt.Sprintf("found-skill-%02d", i)

@@ -284,17 +284,29 @@ func skillDiffs(g group, ms []Machine) []Difference {
 					continue
 				}
 				p := projectOf(l)
-				if p == "" || seen[p] {
+				mark := p + "\x00" + fmt.Sprint(l.Tracked)
+				if p == "" || seen[mark] {
 					continue
 				}
-				seen[p] = true
+				seen[mark] = true
 				var cs []Copy
 				for _, w := range g.variants {
 					for _, m := range w.Locations {
-						if m.Scope == protocol.InventoryProject && projectOf(m) == p && !userHashes[w.Hash] {
+						if m.Scope == protocol.InventoryProject && projectOf(m) == p && m.Tracked == l.Tracked && !userHashes[w.Hash] {
 							cs = append(cs, copyOf(g, w, m))
 						}
 					}
+				}
+				if !l.Tracked {
+					// Not committed, so there is no repo change to plan: it is
+					// a copy on one machine.
+					out = append(out, Difference{
+						Key: "hidden-local:" + g.name + ":" + p, Kind: KindHidden, Severity: SevWarn, Name: g.name, Projects: []string{p},
+						Title:  fmt.Sprintf("%s has its own local copy of %s; it hides yours", p, g.name),
+						Fix:    "turn the local copy off on its row in All tools",
+						Action: Action{Kind: ActNone, Name: g.name, Project: p, Copies: cs},
+					})
+					continue
 				}
 				out = append(out, Difference{
 					Key: "hidden:" + g.name + ":" + p, Kind: KindHidden, Severity: SevWarn, Name: g.name, Projects: []string{p},

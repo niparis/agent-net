@@ -10,7 +10,8 @@ import (
 var machines = []Machine{{ID: "n_r", Name: "research", Online: true}, {ID: "n_m", Name: "mac", Online: false}}
 
 func loc(node, machine, path, scope, project string) protocol.ToolLocation {
-	return protocol.ToolLocation{NodeID: node, Machine: machine, GraphNode: project, InventoryItem: protocol.InventoryItem{Harness: "claude", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok"}}
+	// A project copy in these tests is committed, unless a test says otherwise.
+	return protocol.ToolLocation{NodeID: node, Machine: machine, GraphNode: project, InventoryItem: protocol.InventoryItem{Harness: "claude", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok", Tracked: scope == "project"}}
 }
 
 func skill(name, hash string, locs ...protocol.ToolLocation) protocol.ToolItem {

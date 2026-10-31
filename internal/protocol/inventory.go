@@ -44,6 +44,9 @@ type InventoryItem struct {
 	Reason      string    `json:"reason,omitempty"`
 	Unsupported []string  `json:"unsupported,omitempty"`
 	Files       []string  `json:"files,omitempty"`
+	// Tracked is set for a project skill when the repository lists files under
+	// it: it is part of the repo. An untracked project skill is a local copy.
+	Tracked bool `json:"tracked,omitempty"`
 	// Import says whether a native MCP entry can move into the federation. It
 	// is set only for native MCP entries and holds names, never values.
 	Import *MCPImportInfo `json:"import,omitempty"`

@@ -26,6 +26,7 @@ func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
 		}
 	}
 	report := inventory.Scan(inventory.Options{Home: d.cfg.InventoryHome, CodexHome: d.cfg.CodexHome, Machine: d.cfg.Hostname, Projects: projects})
+	markTrackedSkills(&report)
 	if data, listErr := d.call(ctx, "mcp.list", struct{}{}); listErr == nil {
 		var list struct {
 			Servers []protocol.MCPServer `json:"servers"`

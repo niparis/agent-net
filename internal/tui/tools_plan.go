@@ -157,7 +157,7 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 		return m.openProjectPicker(r, on)
 	}
 	cell := r.Cells[col]
-	if on && cell.State == toolsdiff.CellOn && r.Origin != toolsdiff.OriginMachines {
+	if on && cell.State == toolsdiff.CellOn && r.Origin != toolsdiff.OriginMachines && r.Origin != toolsdiff.OriginLocal {
 		m.toolsToast(r.Name + " is already on for " + ms[col].Name)
 		return m, nil
 	}
@@ -188,7 +188,9 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 // imported first.
 func (m Model) jobFor(r toolsdiff.Row, target protocol.ToolAssignment) (assignJob, string) {
 	j := assignJob{name: r.Name, target: target}
-	if r.Origin == toolsdiff.OriginMachines {
+	// A local copy (in a project folder, not committed) is handled like a copy
+	// found on a machine: import it first, then plan.
+	if r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal {
 		c, ok := firstCopy(r)
 		if !ok {
 			return j, "no copy of " + r.Name + " is online to import"
@@ -203,6 +205,12 @@ func (m Model) jobFor(r toolsdiff.Row, target protocol.ToolAssignment) (assignJo
 func firstCopy(r toolsdiff.Row) (toolsdiff.Copy, bool) {
 	for _, v := range r.Variants {
 		for _, l := range v.Locations {
+			if r.Origin == toolsdiff.OriginLocal {
+				if l.Scope == protocol.InventoryProject && !l.Tracked && l.State == protocol.InventoryOK && (l.GraphNode == r.Repo || l.Project == r.Repo) {
+					return toolsdiff.Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name}, true
+				}
+				continue
+			}
 			if l.Scope == protocol.InventoryUser && l.State == protocol.InventoryOK {
 				return toolsdiff.Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name}, true
 			}

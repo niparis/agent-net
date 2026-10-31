@@ -21,7 +21,8 @@ import (
 const (
 	OriginStore    = "store"    // agent-net store, with a version
 	OriginMachines = "machines" // found on the machines, not managed
-	OriginRepo     = "repo"     // inside a project's files, not put there by agent-net
+	OriginRepo     = "repo"     // committed in a project's files, not put there by agent-net
+	OriginLocal    = "local"    // in a project's folder but not committed: a copy on one machine
 	OriginGateway  = "gateway"  // an MCP server reached through the gateway
 )
 
@@ -56,6 +57,7 @@ const (
 	ProjPending = "pending"
 	ProjHidden  = "hidden" // the project's own copy hides the managed one
 	ProjRepo    = "repo"
+	ProjLocal   = "local" // a copy in the project folder that is not committed
 )
 
 // ProjectState is the state of a tool for one project.
@@ -250,9 +252,12 @@ func rowsOf(g group, ms []Machine) []Row {
 		}
 	}
 	copies := userCopies(g)
-	// Copies inside project files that agent-net did not put there.
+	// Copies inside project folders that agent-net did not put there. A copy
+	// the repository tracks is a repo copy. One it does not track is local to
+	// the machine that holds it.
 	repoByProject := map[string]*Row{}
-	var repoOrder []string
+	localByProject := map[string]*Row{}
+	var repoOrder, localOrder []string
 	for _, v := range g.variants {
 		if managedHash[v.Hash] || v.Federated {
 			continue
@@ -264,6 +269,16 @@ func rowsOf(g group, ms []Machine) []Row {
 			p := projectOf(l)
 			if p == "" {
 				p = "(project)"
+			}
+			if !l.Tracked {
+				if localByProject[p] == nil {
+					localOrder = append(localOrder, p)
+					localByProject[p] = &Row{Name: g.name, Kind: g.kind, Origin: OriginLocal, From: "local " + p, Repo: p, Cells: make([]Cell, len(ms)), Projects: []ProjectState{{Name: p, State: ProjLocal}}, Item: v, Variants: g.variants}
+				}
+				if i := machineIndex(ms, l.NodeID, l.Machine); i >= 0 {
+					localByProject[p].Cells[i] = Cell{State: CellFound}
+				}
+				continue
 			}
 			if repoByProject[p] == nil {
 				repoOrder = append(repoOrder, p)
@@ -306,6 +321,16 @@ func rowsOf(g group, ms []Machine) []Row {
 			}
 		}
 		r.Detail = "committed in the " + p + " project files. Sessions in that project get it on every machine."
+		rows = append(rows, r)
+	}
+	for _, p := range localOrder {
+		r := *localByProject[p]
+		for _, o := range rows {
+			if o.Origin != OriginRepo && o.Origin != OriginLocal && hasCopyOrManaged(o) {
+				r.Note = "hides your copy here"
+			}
+		}
+		r.Detail = "a copy in the " + p + " project folder that is not committed, found on: " + strings.Join(foundNames(ms, r.Cells), ", ") + ". a imports it and turns it on where you choose; u turns it off."
 		rows = append(rows, r)
 	}
 	return rows
@@ -540,6 +565,16 @@ func projectList(ps []ProjectState) string {
 	return strings.Join(out, ", ")
 }
 
+func foundNames(ms []Machine, cells []Cell) []string {
+	var out []string
+	for i, c := range cells {
+		if c.State == CellFound {
+			out = append(out, ms[i].Name)
+		}
+	}
+	return out
+}
+
 func onNames(ms []Machine, cells []Cell) []string {
 	var out []string
 	for i, c := range cells {
@@ -561,6 +596,9 @@ func (r Row) ProjectSummary() (text string, warn bool) {
 	}
 	if r.Origin == OriginRepo {
 		return "⌂ " + r.Repo, false
+	}
+	if r.Origin == OriginLocal {
+		return r.Repo + " (local)", false
 	}
 	pend, hid := 0, 0
 	for _, p := range r.Projects {
