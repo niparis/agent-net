@@ -136,7 +136,7 @@ func TestGraphFixtureLabelsStayWithTheirMarkers(t *testing.T) {
 			}
 			start := len([]rune(line[:i]))
 			end := start + len([]rune(node.Name))
-			if row == cy && (start == cx+1 || end == cx) || absGraph(row-cy) == 1 && start <= cx && end > cx {
+			if row == cy && (start == cx+2 || end == cx-1) || absGraph(row-cy) == 1 && start <= cx && end > cx {
 				found = true
 				break
 			}

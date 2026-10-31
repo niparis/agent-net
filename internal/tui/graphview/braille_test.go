@@ -115,12 +115,12 @@ func TestBrailleCardIncludesDetails(t *testing.T) {
 	}
 }
 
-func TestBrailleLabelsTouchTheirMarkers(t *testing.T) {
+func TestBrailleLabelsSitOneSpaceFromTheirMarkers(t *testing.T) {
 	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "alpha"}, {Name: "beta"}}})
 	g.Positions = map[string]Point{"alpha": {-2, 0}, "beta": {2, 0}}
 	out := strings.Join((Braille{}).Render(g, Camera{Zoom: 2, FitZoom: 2}, 50, 9), "\n")
 	for _, name := range []string{"alpha", "beta"} {
-		if !strings.Contains(out, "○"+name) && !strings.Contains(out, name+"○") {
+		if !strings.Contains(out, "○ "+name) && !strings.Contains(out, name+" ○") {
 			t.Errorf("%s is not adjacent to its marker:\n%s", name, out)
 		}
 	}

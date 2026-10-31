@@ -154,7 +154,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			}
 		}
 		rs := []rune(label)
-		candidates := [][2]int{{cx + 1, cy}, {cx - len(rs), cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
+		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
 		placed := false
 		labelX, labelY := 0, 0
 		for _, pos := range candidates {
@@ -173,6 +173,17 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			}
 			for i, r := range rs {
 				put(pos[0]+i, pos[1], r, "label")
+			}
+			// Keep the cell between a marker and a label on its row blank,
+			// even when an edge or arrow passes through it.
+			if pos[1] == cy {
+				gap := cx + 1
+				if pos[0] < cx {
+					gap = cx - 1
+				}
+				if gap >= 0 && gap < width {
+					cells[cy*width+gap] = cell{text: ' ', role: "label", occupied: true}
+				}
 			}
 			placed = true
 			labelX, labelY = pos[0], pos[1]
