@@ -60,3 +60,21 @@ func TestWorkerProvidersOwnerGate(t *testing.T) {
 		t.Fatalf("got %s %v", raw, err)
 	}
 }
+
+func TestProtectedProvidersOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi"})
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	q := protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"}
+	if _, err := pi.call(protocol.OpProtectedProvidersSet, q); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("gate: %v", err)
+	}
+	cli := cliClient(t, n)
+	cli.mustCall(protocol.OpProtectedProvidersSet, q)
+	raw := cli.mustCall(protocol.OpProtectedProvidersGet, nil)
+	var out protocol.ProtectedProviders
+	if err := json.Unmarshal(raw, &out); err != nil || len(out.Providers) != 1 || out.Providers[0] != "anthropic" || out.Reason != q.Reason {
+		t.Fatalf("got %s %v", raw, err)
+	}
+}

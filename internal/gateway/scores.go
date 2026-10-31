@@ -180,3 +180,59 @@ func (g *Gateway) handleWorkerProviders(w http.ResponseWriter, r *http.Request) 
 	}
 	writeJSON(w, in, err)
 }
+
+const protectedProvidersKey = "protected_providers"
+
+func (s *Store) protectedProviders() (protocol.ProtectedProviders, error) {
+	var raw string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, protectedProvidersKey).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.ProtectedProviders{}, nil
+	}
+	if err != nil {
+		return protocol.ProtectedProviders{}, err
+	}
+	var out protocol.ProtectedProviders
+	err = json.Unmarshal([]byte(raw), &out)
+	return out, err
+}
+
+func (g *Gateway) handleProtectedProviders(w http.ResponseWriter, r *http.Request) {
+	node, ok := g.nodeAuthed(r)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	if r.Method == http.MethodGet {
+		out, err := g.store.protectedProviders()
+		writeJSON(w, out, err)
+		return
+	}
+	var in protocol.ProtectedProviders
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(&in) != nil || len(in.Providers) > 128 || len(in.Reason) > 4096 {
+		http.Error(w, "bad protected providers", 400)
+		return
+	}
+	seen := map[string]bool{}
+	for i, p := range in.Providers {
+		p = strings.ToLower(strings.TrimSpace(p))
+		if p == "" || len(p) > 64 || strings.IndexFunc(p, func(r rune) bool {
+			return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.')
+		}) >= 0 || seen[p] {
+			http.Error(w, "bad provider", 400)
+			return
+		}
+		seen[p] = true
+		in.Providers[i] = p
+	}
+	raw, err := json.Marshal(in)
+	if err != nil {
+		writeJSON(w, nil, err)
+		return
+	}
+	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, protectedProvidersKey, string(raw), g.store.now().UnixNano())
+	if err == nil {
+		g.store.Event("protected_providers.set", node, "", "", "")
+	}
+	writeJSON(w, in, err)
+}
