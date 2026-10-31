@@ -31,7 +31,11 @@ type ctoState struct {
 	editing, polling    bool
 	confirming          bool
 	model, harness, err string
+	polledHarness       string
 	messages            []string
+	archived            []string
+	currentAll          []string
+	seen                map[string]map[string]int
 	renderCache         map[ctoRenderKey][]string
 	scroll, pageRows    int
 	history             []protocol.CTOGraphChange
@@ -296,9 +300,22 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		return
 	}
 	c.err = ""
+	if c.polledHarness != "" && r.harness != "" && c.polledHarness != r.harness {
+		c.archived = append(c.archived, c.messages[len(c.archived):]...)
+		if c.seen == nil {
+			c.seen = make(map[string]map[string]int)
+		}
+		counts := make(map[string]int)
+		for _, line := range c.currentAll {
+			counts[line]++
+		}
+		c.seen[c.polledHarness] = counts
+		c.archived = append(c.archived, fmt.Sprintf("switched to %s · %s", r.harness, r.model))
+	}
 	c.configuredModel = r.configuredModel
 	c.model = r.model
 	c.harness = r.harness
+	c.polledHarness = r.harness
 	c.history = r.history
 	type line struct {
 		at   int64
@@ -352,7 +369,9 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 	c.sendErrors = pendingErrors
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
-	c.messages = nil
+	c.messages = append([]string(nil), c.archived...)
+	c.currentAll = nil
+	skipped := make(map[string]int)
 	for i := 0; i < len(lines); i++ {
 		v := lines[i]
 		node, _, ok := strings.Cut(strings.TrimPrefix(v.text, "charter "), ": ")
@@ -365,6 +384,11 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 				v.text = fmt.Sprintf("charter %s: %d fields updated · u to undo", node, j-i)
 				i = j - 1
 			}
+		}
+		c.currentAll = append(c.currentAll, v.text)
+		if skipped[v.text] < c.seen[c.polledHarness][v.text] {
+			skipped[v.text]++
+			continue
 		}
 		c.messages = append(c.messages, v.text)
 	}

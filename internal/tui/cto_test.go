@@ -525,3 +525,19 @@ func TestCTOGroupsCharterActions(t *testing.T) {
 		t.Fatalf("charter group: %v", m.cto.messages)
 	}
 }
+
+func TestCTOSwitchKeepsHistoryAndDivider(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "old", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message"}`)}}})
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "claude", model: "opus", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"new message"}`)}}})
+	joined := strings.Join(m.cto.messages, "|")
+	if !strings.Contains(joined, "old message") || !strings.Contains(joined, "switched to claude · opus") || !strings.Contains(joined, "new message") {
+		t.Fatal(joined)
+	}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "old", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message"}`), json.RawMessage(`{"type":"assistant","text":"later"}`)}}})
+	joined = strings.Join(m.cto.messages, "|")
+	if strings.Count(joined, "old message") != 1 || !strings.Contains(joined, "later") {
+		t.Fatal(joined)
+	}
+}
