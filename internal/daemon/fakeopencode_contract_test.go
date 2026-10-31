@@ -4,30 +4,39 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func TestFakeOpenCodePromptContract(t *testing.T) {
 	dir := t.TempDir()
-	port, err := freePort()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(os.Args[0], "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
+	t.Cleanup(func() { ln.Close() })
+	file, err := ln.(*net.TCPListener).File()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { file.Close() })
+	cmd := exec.Command(os.Args[0], "serve", "--hostname", "127.0.0.1", "--port", "0")
+	cmd.ExtraFiles = []*os.File{file}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Dir = dir
-	cmd.Env = workerEnv(os.Environ(), map[string]string{"OPENCODE_SERVER_PASSWORD": "test-password", "AGENT_NET_CTO": "1", "XDG_DATA_HOME": filepath.Join(dir, "data")})
+	cmd.Env = workerEnv(os.Environ(), map[string]string{"FAKE_OC_LISTENER_FD": "3", "OPENCODE_SERVER_PASSWORD": "test-password", "AGENT_NET_CTO": "1", "XDG_DATA_HOME": filepath.Join(dir, "data")})
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL); cmd.Wait() })
-	base := fmt.Sprintf("http://127.0.0.1:%d", port)
+	base := fmt.Sprintf("http://%s", ln.Addr())
+	client := &http.Client{Timeout: time.Second}
 	call := func(method, path, body string) (*http.Response, error) {
 		req, err := http.NewRequest(method, base+path, bytes.NewBufferString(body))
 		if err != nil {
@@ -35,7 +44,7 @@ func TestFakeOpenCodePromptContract(t *testing.T) {
 		}
 		req.SetBasicAuth("opencode", "test-password")
 		req.Header.Set("Content-Type", "application/json")
-		return http.DefaultClient.Do(req)
+		return client.Do(req)
 	}
 	eventually(t, "fake server", func() bool {
 		r, e := call("GET", "/api/info", "")

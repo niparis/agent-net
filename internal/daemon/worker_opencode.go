@@ -173,10 +173,6 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	if err != nil {
 		return nil, err
 	}
-	port, err := freePort()
-	if err != nil {
-		return nil, err
-	}
 	password := protocol.NewToken()
 	dir := filepath.Join(d.cfg.StateDir, "workers", w.id)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -197,31 +193,40 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 		"AGENT_NET_SOCKET":              d.cfg.SocketPath,
 		"XDG_STATE_HOME":                state,
 	})
-	// Never a flag that turns permission checks off (decision 0002, W6).
-	args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}
-	if err := d.spawnWorker(w, bin, args, env); err != nil {
-		return nil, err
+	// A child can lose the race for an ephemeral port after it is selected.
+	// Retry when it exits during startup, choosing a new port each time.
+	for attempt := 0; attempt < 3; attempt++ {
+		port, err := d.workerFreePort()
+		if err != nil {
+			return nil, err
+		}
+		args := []string{"serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port)}
+		if err := d.spawnWorker(w, bin, args, env); err != nil {
+			return nil, err
+		}
+		base := "http://127.0.0.1:" + strconv.Itoa(port)
+		d.wmu.Lock()
+		w.apiBase, w.apiPass = base, password
+		w.ref = "127.0.0.1:" + strconv.Itoa(port)
+		d.saveWorkerLocked(w)
+		d.wmu.Unlock()
+		api := openCodeWorkerAPI(ctx, base, password)
+		for {
+			if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
+				return api, nil
+			}
+			select {
+			case <-ctx.Done():
+				return nil, fmt.Errorf("opencode serve did not start in time")
+			case <-time.After(100 * time.Millisecond):
+			}
+			if d.gone(w) {
+				d.killGroup(w)
+				break
+			}
+		}
 	}
-	base := "http://127.0.0.1:" + strconv.Itoa(port)
-	d.wmu.Lock()
-	w.apiBase, w.apiPass = base, password
-	w.ref = "127.0.0.1:" + strconv.Itoa(port)
-	d.saveWorkerLocked(w)
-	d.wmu.Unlock()
-	api := openCodeWorkerAPI(ctx, base, password)
-	for {
-		if _, code, err := api("GET", "/api/info", nil); err == nil && code == http.StatusOK {
-			return api, nil
-		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("opencode serve did not start in time")
-		case <-time.After(100 * time.Millisecond):
-		}
-		if d.gone(w) {
-			return nil, errors.New("opencode serve exited at start")
-		}
-	}
+	return nil, errors.New("opencode serve exited at start")
 }
 
 func openCodeWorkerAPI(ctx context.Context, base, password string) opencodeAPI {
@@ -530,6 +535,13 @@ func workerEnv(env []string, set map[string]string) []string {
 		out = append(out, k+"="+v)
 	}
 	return out
+}
+
+func (d *Daemon) workerFreePort() (int, error) {
+	if d.cfg.testFreePort != nil {
+		return d.cfg.testFreePort()
+	}
+	return freePort()
 }
 
 func freePort() (int, error) {

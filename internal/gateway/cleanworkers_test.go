@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 	"time"
@@ -66,5 +67,41 @@ func TestUpsertSessionKeepsTheRequestedIDForANewRecord(t *testing.T) {
 	id3, _ := s.UpsertSession(n2, protocol.SessionInfo{SessionID: "bad id!", Harness: "pi", NativeID: "z"})
 	if !strings.HasPrefix(id3, "s_") || id3 == "bad id!" {
 		t.Fatalf("id3 %q", id3)
+	}
+}
+
+// cleanupOnInsert simulates cleanup deleting a session after its lookup but
+// before the upsert inserts it again.
+type cleanupOnInsert struct {
+	*sql.DB
+	id string
+}
+
+func (q *cleanupOnInsert) Exec(query string, args ...any) (sql.Result, error) {
+	if strings.HasPrefix(strings.TrimSpace(query), "INSERT INTO sessions ") {
+		if _, err := q.DB.Exec("DELETE FROM sessions WHERE id = ?", q.id); err != nil {
+			return nil, err
+		}
+	}
+	return q.DB.Exec(query, args...)
+}
+
+func TestUpsertKeepsKnownIDWhenCleanupRacesInsert(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("test", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := protocol.SessionInfo{Harness: "opencode", NativeID: "native", Worker: &protocol.WorkerInfo{ID: "w_test"}}
+	id, err := s.UpsertSession(node, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.upsertSession(&cleanupOnInsert{DB: s.db, id: id}, node, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != id {
+		t.Fatalf("session ID = %q, want %q", got, id)
 	}
 }

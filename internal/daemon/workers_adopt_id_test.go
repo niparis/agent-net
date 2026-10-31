@@ -64,3 +64,47 @@ func TestAdoptedWorkerKeepsItsSessionID(t *testing.T) {
 		t.Fatal("cleanup deleted the record of a running worker")
 	}
 }
+
+// Re-registering a known session must ask the gateway for its existing ID,
+// including when a status update races gateway record cleanup.
+func TestSessionReportsKnownID(t *testing.T) {
+	d := &Daemon{sessions: make(map[string]*localSession)}
+	ls := &localSession{sessionID: "s_existing", info: protocol.SessionInfo{Harness: "opencode", NativeID: "native"}}
+	d.sessions[key("opencode", "native")] = ls
+	if got := d.infoOf(ls).SessionID; got != ls.sessionID {
+		t.Errorf("upsert ID = %q, want %q", got, ls.sessionID)
+	}
+	if got := d.snapshot()[0].SessionID; got != ls.sessionID {
+		t.Errorf("sync ID = %q, want %q", got, ls.sessionID)
+	}
+}
+
+func TestAdoptedCodexKeepsItsSessionIDAfterRecordCleanup(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+	w.d.Stop()
+	st := g.gw.Store()
+	if err := st.SetSessionOffline(w.d.NodeID(), res.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := st.Agent(res.SessionID); err != nil || ok {
+		t.Fatalf("worker record remains: exists=%v err=%v", ok, err)
+	}
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	eventually(t, "adopted Codex keeps its session ID", func() bool {
+		for _, v := range w.workers(t) {
+			if v.SessionID == res.SessionID && v.Online {
+				return true
+			}
+		}
+		return false
+	})
+}

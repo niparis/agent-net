@@ -503,7 +503,12 @@ func (s *Store) upsertSession(q interface {
 	}
 	// A new record gets the ID the daemon asks for when that ID looks right
 	// and nobody uses it: a worker whose record was lost keeps its ID.
-	newID := protocol.NewID("s")
+	// Cleanup may delete a known row between the lookup and the insert.
+	// Reuse its ID even if the insert no longer hits the uniqueness conflict.
+	newID := knownID
+	if !known {
+		newID = protocol.NewID("s")
+	}
 	if !known && validSessionID(in.SessionID) {
 		var used int
 		if err := q.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, in.SessionID).Scan(&used); err != nil {

@@ -23,7 +23,7 @@ func startWorkerNodeWithDetect(t *testing.T, g *testGateway, set WorkerSettings,
 				cfg(c)
 			}
 		}})
-	t.Cleanup(func() { killAllWorkers(n.d) })
+	t.Cleanup(func() { killAllWorkers(t, n.d) })
 	w := &workerNode{node: n, cli: cliClient(t, n), logs: logs}
 	eventually(t, "the gateway has the inventory and the owner session", func() bool {
 		return inventoryOf(t, w.cli, n) && w.ownerID() != ""

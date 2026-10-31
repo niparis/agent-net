@@ -159,48 +159,52 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 	if err = os.WriteFile(filepath.Join(dir, "opencode.json"), configData, 0600); err != nil {
 		return err
 	}
-	port, err := freePort()
-	if err != nil {
-		return err
-	}
 	pass := protocol.NewToken()
-	cmd := exec.Command(bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
-	cmd.Dir = dir
-	cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "OPENCODE_CONFIG": "", "OPENCODE_CONFIG_CONTENT": "", "OPENCODE_CONFIG_DIR": "", "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
 	logf, err := os.OpenFile(filepath.Join(dir, "opencode.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 	if err != nil {
 		return err
 	}
 	defer logf.Close()
-	cmd.Stdout = logf
-	cmd.Stderr = logf
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	if err = cmd.Start(); err != nil {
-		return fmt.Errorf("start CTO OpenCode: %w", err)
-	}
-	c.cmd = cmd
-	c.pid.Store(int64(cmd.Process.Pid))
-	c.exited = make(chan struct{})
-	c.base = "http://127.0.0.1:" + strconv.Itoa(port)
-	c.password = pass
-	go func() { cmd.Wait(); c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0); close(c.exited) }()
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	for {
-		if _, err = c.api(startup, "GET", "/api/info", nil); err == nil {
-			d.startCTOCompactionLoop()
-			return nil
+	for attempt := 0; attempt < 3; attempt++ {
+		port, err := d.workerFreePort()
+		if err != nil {
+			return err
 		}
-		select {
-		case <-c.exited:
-			c.stopLocked()
-			return errors.New("CTO OpenCode exited at start")
-		case <-startup.Done():
-			c.stopLocked()
-			return fmt.Errorf("CTO OpenCode did not start: %w", startup.Err())
-		case <-time.After(100 * time.Millisecond):
+		cmd := exec.Command(bin, "serve", "--hostname", "127.0.0.1", "--port", strconv.Itoa(port))
+		cmd.Dir = dir
+		cmd.Env = workerEnv(os.Environ(), map[string]string{"XDG_DATA_HOME": data, "XDG_STATE_HOME": state, "XDG_CONFIG_HOME": config, "OPENCODE_CONFIG": "", "OPENCODE_CONFIG_CONTENT": "", "OPENCODE_CONFIG_DIR": "", "XDG_CACHE_HOME": cache, "OPENCODE_SERVER_PASSWORD": pass, "AGENT_NET_CTO": "1", "AGENT_NET_WORKER": "", "AGENT_NET_WORKER_SESSION_FILE": "", "AGENT_NET_SOCKET": ""})
+		cmd.Stdout, cmd.Stderr = logf, logf
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+		if err = cmd.Start(); err != nil {
+			return fmt.Errorf("start CTO OpenCode: %w", err)
 		}
+		c.cmd = cmd
+		c.pid.Store(int64(cmd.Process.Pid))
+		c.exited = make(chan struct{})
+		c.base = "http://127.0.0.1:" + strconv.Itoa(port)
+		c.password = pass
+		exited := c.exited
+		go func() { cmd.Wait(); c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0); close(exited) }()
+		for {
+			if _, err = c.api(startup, "GET", "/api/info", nil); err == nil {
+				d.startCTOCompactionLoop()
+				return nil
+			}
+			select {
+			case <-exited:
+				c.stopLocked()
+				goto retry
+			case <-startup.Done():
+				c.stopLocked()
+				return fmt.Errorf("CTO OpenCode did not start: %w", startup.Err())
+			case <-time.After(100 * time.Millisecond):
+			}
+		}
+	retry:
 	}
+	return errors.New("CTO OpenCode exited at start")
 }
 
 func (d *Daemon) ctoConfigData(config string) ([]byte, error) {

@@ -45,7 +45,7 @@ func startWorkerNode(t *testing.T, g *testGateway, set WorkerSettings, cfg func(
 				cfg(c)
 			}
 		}})
-	t.Cleanup(func() { killAllWorkers(n.d) })
+	t.Cleanup(func() { killAllWorkers(t, n.d) })
 	w := &workerNode{node: n, cli: cliClient(t, n), logs: logs}
 	eventually(t, "the gateway has the inventory and the owner session", func() bool {
 		return inventoryOf(t, w.cli, n) && w.ownerID() != ""
@@ -54,12 +54,34 @@ func startWorkerNode(t *testing.T, g *testGateway, set WorkerSettings, cfg func(
 }
 
 // killAllWorkers is the test cleanup: no worker outlives its test.
-func killAllWorkers(d *Daemon) {
+func killAllWorkers(t *testing.T, d *Daemon) {
+	t.Helper()
 	d.wmu.Lock()
-	defer d.wmu.Unlock()
+	var children []*worker
 	for _, w := range d.workers {
-		if w.pgid > 0 {
-			syscall.Kill(-w.pgid, syscall.SIGKILL)
+		children = append(children, w)
+	}
+	d.wmu.Unlock()
+	for _, w := range children {
+		d.wmu.Lock()
+		pgid, exited := w.pgid, w.exited
+		d.wmu.Unlock()
+		if exited != nil {
+			select {
+			case <-exited:
+				continue
+			default:
+			}
+		}
+		if pgid > 0 {
+			syscall.Kill(-pgid, syscall.SIGKILL)
+		}
+		if exited != nil {
+			select {
+			case <-exited:
+			case <-time.After(5 * time.Second):
+				t.Errorf("worker process group %d did not exit", pgid)
+			}
 		}
 	}
 }
@@ -107,6 +129,7 @@ func newRepo(t *testing.T, name string) string {
 
 func (w *workerNode) register(t *testing.T, repo string) {
 	t.Helper()
+	t.Cleanup(func() { w.d.Stop(); killAllWorkers(t, w.d) })
 	var out protocol.ProjectAddOutcome
 	json.Unmarshal(w.cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{repo}}), &out)
 	if len(out.Added) != 1 {
