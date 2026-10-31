@@ -280,6 +280,9 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if _, err = tx.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID); err != nil {
 		return "", err
 	}
+	if _, err = tx.Exec(`UPDATE cto SET opencode_model=? WHERE id=1`, model); err != nil {
+		return "", err
+	}
 	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='opencode'`, created.Data.ID); err != nil {
 		return "", err
 	}
@@ -289,6 +292,54 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	d.cto.model, d.cto.session = model, created.Data.ID
 	return created.Data.ID, nil
 }
+
+func (d *Daemon) ctoOpenCodeLastModel() (string, error) {
+	var model string
+	err := d.st.db.QueryRow(`SELECT opencode_model FROM cto WHERE id=1`).Scan(&model)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return model, err
+}
+
+func (d *Daemon) saveCTOOpenCodeLastModel(model string) error {
+	_, err := d.st.db.Exec(`UPDATE cto SET opencode_model=? WHERE id=1`, model)
+	return err
+}
+
+func modelRef(providerID, id, modelID string) string {
+	if id == "" {
+		id = modelID
+	}
+	if providerID == "" || id == "" {
+		return ""
+	}
+	return providerID + "/" + id
+}
+
+// openCodeCTOSessionSelection reads the model and agent selected in the live
+// OpenCode session.
+func (d *Daemon) openCodeCTOSessionSelection(ctx context.Context, id string) (string, string, error) {
+	b, err := d.cto.api(ctx, "GET", "/api/session/"+url.PathEscape(id), nil)
+	if err != nil {
+		return "", "", err
+	}
+	var session struct {
+		Data struct {
+			Model struct {
+				ProviderID string `json:"providerID"`
+				ID         string `json:"id"`
+				ModelID    string `json:"modelID"`
+			} `json:"model"`
+			Agent string `json:"agent"`
+		} `json:"data"`
+	}
+	if err = json.Unmarshal(b, &session); err != nil {
+		return "", "", err
+	}
+	return modelRef(session.Data.Model.ProviderID, session.Data.Model.ID, session.Data.Model.ModelID), session.Data.Agent, nil
+}
+
 func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
@@ -310,21 +361,46 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 	if err != nil {
 		return nil, err
 	}
-	if c.session != id {
+	currentModel, currentAgent, err := d.openCodeCTOSessionSelection(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("read CTO OpenCode session: %w", err)
+	}
+	lastApplied, err := d.ctoOpenCodeLastModel()
+	if err != nil {
+		return nil, err
+	}
+	if lastApplied == "" && c.session == id && c.model != "" {
+		lastApplied = c.model
+	}
+	if currentModel != "" && currentModel != model && currentModel != lastApplied {
+		model = currentModel
+		if _, err = d.ctoSettings(ctx, protocol.CTOSettingsRequest{Model: &model}); err != nil {
+			return nil, err
+		}
+		if err = d.recordCTOAction("model set to " + model + " (picked in the full screen)"); err != nil {
+			return nil, err
+		}
+	}
+	if currentAgent != "cto" {
 		if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/agent", map[string]string{"agent": "cto"}); err != nil {
 			return nil, err
 		}
 	}
-	if c.session != id || c.model != model {
+	if model != lastApplied {
 		provider, name, ok := strings.Cut(model, "/")
 		if !ok || provider == "" || name == "" {
 			return nil, fmt.Errorf("invalid OpenCode model %q", model)
 		}
-		if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/model", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
+		if currentModel != model {
+			if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/model", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
+				return nil, err
+			}
+		}
+		if err = d.saveCTOOpenCodeLastModel(model); err != nil {
 			return nil, err
 		}
-		c.session, c.model = id, model
 	}
+	c.session, c.model = id, model
 	before := opencodeSessionContext(ctx, c.base, c.password, id)
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
 	if err == nil {
@@ -413,6 +489,9 @@ func (d *Daemon) openCodeCTOEvents(ctx context.Context, index int) (protocol.CTO
 	}
 	if err = d.startCTOLocked(ctx); err != nil {
 		return out, err
+	}
+	if model, _, e := d.openCodeCTOSessionSelection(ctx, id); e == nil && model != "" {
+		out.Model = model
 	}
 	path := "/api/session/" + url.PathEscape(id) + "/message"
 	query := "?order=asc"

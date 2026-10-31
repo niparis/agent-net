@@ -58,6 +58,8 @@ type fakeOCRecord struct {
 	ChildPid    int               `json:"child_pid"`
 	SessionID   string            `json:"session_id"`
 	SessionBody map[string]any    `json:"session_body"`
+	AgentCalls  int               `json:"agent_calls"`
+	ModelCalls  int               `json:"model_calls"`
 	LocationDir string            `json:"location_dir"`
 	Turns       []string          `json:"turns"`
 }
@@ -173,7 +175,13 @@ func runFakeOpenCode() {
 			fmt.Fprint(w, `{"data":{"outcome":"failed","cost":0,"tokens":{"input":0,"output":0,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
 			return
 		}
-		fmt.Fprint(w, `{"data":{"cost":0.0123,"tokens":{"input":1200,"output":340,"reasoning":0,"cache":{"read":0,"write":0}},"model":{"providerID":"fake","id":"m1"}}}`)
+		mu.Lock()
+		model, agent := rec.SessionBody["model"], rec.SessionBody["agent"]
+		mu.Unlock()
+		if model == nil {
+			model = map[string]string{"providerID": "fake", "id": "m1"}
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"cost": 0.0123, "tokens": map[string]any{"input": 1200, "output": 340, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0}}, "model": model, "agent": agent}})
 	})
 	mux.HandleFunc("GET /api/session/active", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
@@ -335,7 +343,7 @@ func runFakeOpenCode() {
 		var p struct {
 			Agent string `json:"agent"`
 		}
-		if json.NewDecoder(r.Body).Decode(&p) != nil || p.Agent != "cto" {
+		if json.NewDecoder(r.Body).Decode(&p) != nil || p.Agent == "" {
 			http.Error(w, "bad agent", 400)
 			return
 		}
@@ -348,6 +356,7 @@ func runFakeOpenCode() {
 			rec.SessionBody = map[string]any{}
 		}
 		rec.SessionBody["agent"] = p.Agent
+		rec.AgentCalls++
 		rec.SessionID = r.PathValue("id")
 		mu.Unlock()
 		write()
@@ -374,6 +383,7 @@ func runFakeOpenCode() {
 			rec.SessionBody = map[string]any{}
 		}
 		rec.SessionBody["model"] = body.Model
+		rec.ModelCalls++
 		rec.SessionID = r.PathValue("id")
 		mu.Unlock()
 		write()
