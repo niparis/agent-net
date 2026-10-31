@@ -104,7 +104,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  t talk  enter Map  space pause  ? close  tab CTO"))
+		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  o orbit  t talk  enter Map  space pause  ? close  tab CTO  q quit"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
@@ -165,11 +165,14 @@ func (m Model) graphTalkCmd() tea.Cmd {
 	}
 }
 
-// graphHintLine drops whole hints, starting with the least important.
+// graphHintLine drops whole hints, starting with the least important. It holds
+// the keys used most on the graph; the full list is in the graph help panel.
 func graphHintLine(w int, paused bool) string {
-	hs := []hint{{"+ -", "zoom", 0}, {"hjkl", "pan", 0}, {"0", "fit", 1}, {"arrows", "select", 0}, {"[ ]", "neighbours", 0}, {"o", "orbit", 0}, {"t", "talk", -1}, {"enter", "Map", 2}, {"space", "pause", 3}, {"?", "keys", -2}}
+	hs := []hint{{"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"o", "orbit", 2}, {"t", "talk", 1}, {"enter", "Map", 2}, {"?", "help", 0}}
 	if paused {
-		hs = append([]hint{{"paused", "·", 0}}, hs...)
+		// The paused marker takes the place of the least used hint, so the
+		// line never grows past seven.
+		hs = []hint{{"paused", "·", 0}, {"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"t", "talk", 1}, {"enter", "Map", 2}, {"?", "help", 0}}
 	}
 	text := func() string {
 		parts := make([]string, 0, len(hs))

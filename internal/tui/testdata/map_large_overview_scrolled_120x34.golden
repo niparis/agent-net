@@ -31,4 +31,4 @@ isolated-09, isolated-10, isolated-11, isolated-12
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-D name  up/down select/scroll  left/right select  pgup/pgdn scroll  enter focus  h hide  H hidden  ? help
+up/down select  left/right select  enter focus  z back  ? help  q quit

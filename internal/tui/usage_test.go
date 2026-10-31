@@ -148,10 +148,11 @@ func TestHeaderQuotaWarning(t *testing.T) {
 }
 
 func TestGoldenHelp(t *testing.T) {
-	v := keys(newModel(100, 40), "?").View()
-	for _, want := range []string{"map:", "charters", "u undo"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("the help lacks %q:\n%s", want, v)
+	m := keys(newModel(100, 40), "?")
+	help := ansi.Strip(strings.Join(m.helpContent(100), "\n"))
+	for _, want := range []string{"toggle the overview", "scroll the charter", "undo the selected one"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("the help lacks %q:\n%s", want, help)
 		}
 	}
 	golden(t, "help_80x24", keys(newModel(80, 24), "?").View())
@@ -483,12 +484,18 @@ func TestEverySizeFitsWithUsage(t *testing.T) {
 
 func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 	m := newModel(140, 30)
-	if l := m.helpLine(160); !strings.Contains(l, "d detail") || !strings.Contains(l, "? help") || !strings.Contains(l, "enter open session") {
-		t.Fatalf("wide key line %q", l)
+	l := ansi.Strip(m.helpLine(160))
+	for _, want := range []string{"up/down select", "enter open", "m msg", "? help", "q quit"} {
+		if !strings.Contains(l, want) {
+			t.Errorf("wide key line missing %q: %q", want, l)
+		}
 	}
-	l := m.helpLine(60)
+	l = ansi.Strip(m.helpLine(60))
 	if ansi.StringWidth(l) > 60 || !strings.Contains(l, "q quit") || strings.Contains(l, "d detail") || !strings.Contains(l, "m msg") {
 		t.Fatalf("narrow key line %q", l)
+	}
+	if strings.Contains(l, "…") {
+		t.Fatalf("narrow key line cuts a word: %q", l)
 	}
 }
 

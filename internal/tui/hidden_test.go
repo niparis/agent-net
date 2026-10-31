@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -86,9 +87,14 @@ func TestHideSessionKeyDoesNotTakeTheWorkerStopKey(t *testing.T) {
 		}
 	}
 	for _, width := range []int{80, 120} {
-		line := newModel(width, 34).helpLine(width)
-		if !strings.Contains(line, "h/H hide/show") || !strings.Contains(line, "x stop") {
-			t.Errorf("session key hints at width %d: %s", width, line)
+		w, _ := workerModel(width, 34)
+		w = selectID(w, workerID)
+		line := ansi.Strip(w.helpLine(width))
+		if !strings.Contains(line, "x stop") {
+			t.Errorf("worker row at width %d does not show x stop: %s", width, line)
+		}
+		if hints := strings.Split(line, "  "); len(hints) > 7 {
+			t.Errorf("worker row at width %d has too many hints: %s", width, line)
 		}
 	}
 }

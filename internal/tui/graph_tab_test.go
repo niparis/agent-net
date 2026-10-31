@@ -197,11 +197,17 @@ func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
 		m.graphState.Paused = paused
 		lines := m.graphView(80, 16)
 		line := ansi.Strip(lines[len(lines)-1])
-		if !strings.HasSuffix(line, "? keys") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
+		if !strings.HasSuffix(line, "? help") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
 			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
 		}
-		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") || !strings.Contains(line, "arrows select") {
-			t.Fatalf("paused=%v: incorrect hint priority %q", paused, line)
+		if strings.Contains(line, "space pause") || !strings.Contains(line, "arrows select") {
+			t.Fatalf("paused=%v: incorrect hint line %q", paused, line)
+		}
+		if paused && (!strings.Contains(line, "paused ·") || strings.Contains(line, "o orbit")) {
+			t.Fatalf("paused=%v: wrong paused line %q", paused, line)
+		}
+		if !paused && !strings.Contains(line, "o orbit") {
+			t.Fatalf("running line has no orbit hint %q", line)
 		}
 	}
 }
@@ -211,13 +217,12 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"arrows select", "t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
-		{70, []string{"arrows select", "t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
-		{60, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
-		{40, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+		{80, []string{"arrows select", "+ - zoom", "0 fit", "o orbit", "t talk", "enter Map", "? help"}, []string{"space pause"}},
+		{60, []string{"arrows select", "0 fit", "o orbit", "t talk", "? help"}, []string{"enter Map"}},
+		{40, []string{"arrows select", "? help"}, []string{"t talk", "0 fit", "o orbit", "enter Map"}},
 	} {
 		line := graphHintLine(tc.width, false)
-		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? keys") {
+		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {
 			t.Fatalf("width %d: %q", tc.width, line)
 		}
 		for _, h := range tc.present {
