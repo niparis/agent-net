@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -45,6 +46,7 @@ func startFake(t *testing.T, h func(method string, params json.RawMessage) (any,
 			}
 			go func() {
 				defer c.Close()
+				var writeMu sync.Mutex
 				sc := bufio.NewScanner(c)
 				for sc.Scan() {
 					var req struct {
@@ -59,15 +61,19 @@ func startFake(t *testing.T, h func(method string, params json.RawMessage) (any,
 					d.calls = append(d.calls, req.Method)
 					d.params[req.Method] = req.Params
 					d.mu.Unlock()
-					res, e := h(req.Method, req.Params)
-					resp := map[string]any{"id": req.ID}
-					if e != "" {
-						resp["error"] = e
-					} else {
-						resp["result"] = res
-					}
-					b, _ := json.Marshal(resp)
-					c.Write(append(b, '\n'))
+					go func() {
+						res, e := h(req.Method, req.Params)
+						resp := map[string]any{"id": req.ID}
+						if e != "" {
+							resp["error"] = e
+						} else {
+							resp["result"] = res
+						}
+						b, _ := json.Marshal(resp)
+						writeMu.Lock()
+						c.Write(append(b, '\n'))
+						writeMu.Unlock()
+					}()
 				}
 			}()
 		}
@@ -194,5 +200,34 @@ func TestSnapshotIncludesOwnersAndWorkers(t *testing.T) {
 	snap, err := c.Snapshot(context.Background())
 	if err != nil || snap.OwnerSession != "s_o" || snap.Hostname != "mac" || !snap.Launch || len(snap.Workers()) != 1 {
 		t.Fatalf("snapshot: %+v %v", snap, err)
+	}
+}
+
+func TestSnapshotSlowBestEffort(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	_, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
+		switch method {
+		case protocol.OpInfo:
+			return protocol.OperatorInfo{Connected: true}, ""
+		case protocol.OpWorkerProfiles, protocol.OpScoresGet:
+			return []any{}, ""
+		case protocol.OpNodes:
+			<-release
+			return protocol.NodesInfo{}, ""
+		case protocol.OpAgents:
+			return protocol.AgentsResult{Agents: []protocol.AgentView{{}}}, ""
+		default:
+			return map[string]any{}, ""
+		}
+	})
+	c := New(path)
+	defer c.Close()
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	snap, err := c.Snapshot(ctx)
+	if err != nil || len(snap.Agents) != 1 || time.Since(start) > 4*time.Second || len(snap.FailedCalls) != 1 || snap.FailedCalls[0] != protocol.OpNodes {
+		t.Fatalf("snapshot after %s: %+v, %v", time.Since(start), snap, err)
 	}
 }

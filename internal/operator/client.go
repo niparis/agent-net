@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -120,73 +121,99 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	if !info.Connected {
 		return snap, nil
 	}
-	// The machine list is a nicety: without it the machines come from the agents.
-	if raw, err := s.Call(ctx, protocol.OpNodes, nil); err == nil {
-		var ni protocol.NodesInfo
-		if json.Unmarshal(raw, &ni) == nil {
-			snap.Nodes = ni.Nodes
+	// The independent calls share a connection but have separate deadlines.
+	type request struct {
+		method   string
+		params   any
+		required bool
+		raw      json.RawMessage
+		err      error
+	}
+	calls := []request{
+		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
+		{method: protocol.OpNodes}, {method: protocol.OpWorkerProfiles},
+		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet},
+		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: "outcome_inbox"},
+		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
+		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
+	}
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i := range calls {
+		wg.Add(1)
+		go func(c *request) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				c.err = ctx.Err()
+				return
+			}
+			defer func() { <-sem }()
+			callCtx := ctx
+			cancel := func() {}
+			if !c.required {
+				callCtx, cancel = context.WithTimeout(ctx, 3*time.Second)
+			}
+			defer cancel()
+			c.raw, c.err = s.Call(callCtx, c.method, c.params)
+		}(&calls[i])
+	}
+	wg.Wait()
+	for _, c := range calls {
+		var err = c.err
+		if err == nil {
+			switch c.method {
+			case protocol.OpAgents:
+				var v protocol.AgentsResult
+				err = json.Unmarshal(c.raw, &v)
+				snap.Agents = v.Agents
+			case protocol.OpNodes:
+				var v protocol.NodesInfo
+				err = json.Unmarshal(c.raw, &v)
+				snap.Nodes = v.Nodes
+			case protocol.OpWorkerProfiles:
+				err = json.Unmarshal(c.raw, &snap.WorkerProfiles)
+			case protocol.OpWorkerProvidersGet:
+				var v protocol.WorkerProviders
+				err = json.Unmarshal(c.raw, &v)
+				snap.WorkerProviders = v.Providers
+			case protocol.OpProtectedProvidersGet:
+				err = json.Unmarshal(c.raw, &snap.ProtectedProviders)
+			case protocol.OpScoresGet:
+				err = json.Unmarshal(c.raw, &snap.Scores)
+			case "difficulty_get":
+				err = json.Unmarshal(c.raw, &snap.DifficultyMinimums)
+			case "outcome_inbox":
+				var v struct {
+					Entries []protocol.OutcomeInboxEntry `json:"entries"`
+				}
+				err = json.Unmarshal(c.raw, &v)
+				snap.Outcomes = v.Entries
+			case protocol.OpHeldList:
+				var v struct {
+					Messages []protocol.Message `json:"messages"`
+				}
+				err = json.Unmarshal(c.raw, &v)
+				snap.Held = v.Messages
+			case protocol.OpGraphGet:
+				var v protocol.Graph
+				err = json.Unmarshal(c.raw, &v)
+				snap.Edges = v.Edges
+			case protocol.OpProjects:
+				var v protocol.ProjectsResult
+				err = json.Unmarshal(c.raw, &v)
+				snap.Projects = v.Projects
+			}
 		}
-	} else if errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
-		return snap, err
-	}
-	if raw, err := s.Call(ctx, protocol.OpWorkerProfiles, nil); err == nil {
-		_ = json.Unmarshal(raw, &snap.WorkerProfiles)
-	}
-	if raw, err := s.Call(ctx, protocol.OpWorkerProvidersGet, nil); err == nil {
-		var providers protocol.WorkerProviders
-		if json.Unmarshal(raw, &providers) == nil {
-			snap.WorkerProviders = providers.Providers
+		if err != nil {
+			if c.required {
+				return snap, err
+			}
+			snap.FailedCalls = append(snap.FailedCalls, c.method)
 		}
 	}
-	if raw, err := s.Call(ctx, protocol.OpProtectedProvidersGet, nil); err == nil {
-		_ = json.Unmarshal(raw, &snap.ProtectedProviders)
-	}
-	if raw, err := s.Call(ctx, protocol.OpScoresGet, nil); err == nil {
-		_ = json.Unmarshal(raw, &snap.Scores)
-	}
-	if raw, err := s.Call(ctx, "difficulty_get", nil); err == nil {
-		_ = json.Unmarshal(raw, &snap.DifficultyMinimums)
-	}
-	raw, err = s.Call(ctx, protocol.OpAgents, protocol.QueryAgents{IncludeOwners: true})
-	if err != nil {
-		return snap, err
-	}
-	var r protocol.AgentsResult
-	if err := json.Unmarshal(raw, &r); err != nil {
-		return snap, err
-	}
-	snap.Agents = r.Agents
-	if raw, err := s.Call(ctx, "outcome_inbox", nil); err == nil {
-		var in struct {
-			Entries []protocol.OutcomeInboxEntry `json:"entries"`
-		}
-		if json.Unmarshal(raw, &in) == nil {
-			snap.Outcomes = in.Entries
-		}
-	}
-	if raw, err := s.Call(ctx, protocol.OpHeldList, nil); err == nil {
-		var held struct {
-			Messages []protocol.Message `json:"messages"`
-		}
-		if json.Unmarshal(raw, &held) == nil {
-			snap.Held = held.Messages
-		}
-	}
-	if raw, err := s.Call(ctx, protocol.OpGraphGet, nil); err == nil {
-		var graph protocol.Graph
-		if json.Unmarshal(raw, &graph) == nil {
-			snap.Edges = graph.Edges
-		}
-	}
-	// Best effort, like the node list.
-	if raw, err := s.Call(ctx, protocol.OpProjects, protocol.QueryProjects{}); err == nil {
-		var pr protocol.ProjectsResult
-		if json.Unmarshal(raw, &pr) == nil {
-			snap.Projects = pr.Projects
-		}
-	} else if errors.Is(err, ErrDaemonDown) || errors.Is(err, ErrGatewayDown) {
-		return snap, err
-	}
+
 	return snap, nil
 }
 

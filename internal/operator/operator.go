@@ -76,6 +76,8 @@ type Operator interface {
 
 // Snapshot is the state of the network as one daemon sees it.
 type Snapshot struct {
+	// FailedCalls lists best-effort methods that could not be loaded.
+	FailedCalls []string
 	// Connected tells whether the daemon has a link to the gateway.
 	Connected bool
 	NodeID    string // the machine the operator runs on
