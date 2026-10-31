@@ -194,6 +194,41 @@ func TestContinueAfterHandback(t *testing.T) {
 	}
 }
 
+func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	owner := w.ownerID()
+	originalTask := "implement the original Codex task"
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationNone, Task: originalTask})
+	firstNotice := w.waitNotice(t, 1)[0]
+	if !strings.Contains(firstNotice.Body, "status: done") {
+		t.Fatalf("first hand-back: %s", firstNotice.Body)
+	}
+	eventually(t, "the first Codex worker ends", func() bool { return w.d.workerCount() == 0 })
+
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: old.SessionID, Body: "continue the same task"}), &sent)
+	if reply := w.replyTo(t, owner, sent.Message.ID); !strings.Contains(reply.Body, "status: done") {
+		t.Fatalf("resumed Codex reply: %s", reply.Body)
+	}
+	secondNotice := w.waitNotice(t, 1)[0]
+	if !strings.Contains(secondNotice.Body, "status: done") {
+		t.Fatalf("second hand-back: %s", secondNotice.Body)
+	}
+	eventually(t, "the resumed Codex worker ends", func() bool { return w.d.workerCount() == 0 })
+
+	continued, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID})
+	if err != nil {
+		t.Fatalf("continue after Codex resume: %v", err)
+	}
+	if continued.Task == nil || !strings.Contains(continued.Task.Body, originalTask) {
+		t.Fatalf("continued task does not contain original task %q: %+v", originalTask, continued.Task)
+	}
+	w.waitNotice(t, 1)
+}
+
 // A continued start goes through admission like any start: with no room it is
 // queued, keeps its base and its task, and starts when there is room.
 func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
