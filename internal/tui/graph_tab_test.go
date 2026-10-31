@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -180,5 +181,47 @@ func TestGraphTalkSnapshotReplaysOnlyNewerFeed(t *testing.T) {
 	got := next.(Model).graphState.Talk
 	if len(got) != 1 || got[0].Count != 5 {
 		t.Fatalf("snapshot replay: %+v", got)
+	}
+}
+
+func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
+	for _, paused := range []bool{false, true} {
+		m := graphModel(80, 24)
+		m.graphState.Paused = paused
+		lines := m.graphView(80, 16)
+		line := ansi.Strip(lines[len(lines)-1])
+		if !strings.HasSuffix(line, "? keys") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
+			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
+		}
+		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") == paused || !strings.Contains(line, "0 fit") {
+			t.Fatalf("paused=%v: incorrect hint priority %q", paused, line)
+		}
+	}
+}
+
+func TestGraphHintsDropInPriorityOrder(t *testing.T) {
+	for _, tc := range []struct {
+		width           int
+		present, absent []string
+	}{
+		{80, []string{"enter Map", "0 fit", "t talk", "? keys"}, []string{"space pause"}},
+		{70, []string{"0 fit", "t talk", "? keys"}, []string{"space pause", "enter Map"}},
+		{60, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+		{40, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+	} {
+		line := graphHintLine(tc.width, false)
+		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? keys") {
+			t.Fatalf("width %d: %q", tc.width, line)
+		}
+		for _, h := range tc.present {
+			if !strings.Contains(line, h) {
+				t.Errorf("width %d missing %q: %q", tc.width, h, line)
+			}
+		}
+		for _, h := range tc.absent {
+			if strings.Contains(line, h) {
+				t.Errorf("width %d has %q: %q", tc.width, h, line)
+			}
+		}
 	}
 }

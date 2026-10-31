@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
@@ -108,11 +109,7 @@ func (m Model) graphView(w, h int) []string {
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
 	out = append(out, sDim.Render(clip("  pink: talked, no rule set", w)))
-	hint := "  + - zoom  hjkl pan  0 fit  [ ] select  o orbit  t talk  enter Map  space pause  ? keys"
-	if scene.Paused {
-		hint = "  paused · " + strings.TrimSpace(hint)
-	}
-	out = append(out, sDim.Render(clip(hint, w)))
+	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
 	return out
 }
 
@@ -139,4 +136,32 @@ func (m Model) graphTalkCmd() tea.Cmd {
 		result, err := s.GraphTalk(ctx)
 		return graphTalkMsg{result: result, at: at, err: err}
 	}
+}
+
+// graphHintLine drops whole hints, starting with the least important.
+func graphHintLine(w int, paused bool) string {
+	hs := []hint{{"+ -", "zoom", 0}, {"hjkl", "pan", 0}, {"0", "fit", 1}, {"[ ]", "select", 0}, {"o", "orbit", 0}, {"t", "talk", -1}, {"enter", "Map", 2}, {"space", "pause", 3}, {"?", "keys", -2}}
+	if paused {
+		hs = append([]hint{{"paused", "·", 0}}, hs...)
+	}
+	text := func() string {
+		parts := make([]string, 0, len(hs))
+		for _, h := range hs {
+			parts = append(parts, h.key+" "+h.label)
+		}
+		if len(parts) == 0 {
+			return ""
+		}
+		return "  " + strings.Join(parts, "  ")
+	}
+	for ansi.StringWidth(text()) > w && len(hs) > 0 {
+		worst := 0
+		for i, h := range hs {
+			if h.prio >= hs[worst].prio {
+				worst = i
+			}
+		}
+		hs = append(hs[:worst:worst], hs[worst+1:]...)
+	}
+	return text()
 }
