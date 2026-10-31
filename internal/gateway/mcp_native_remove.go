@@ -29,7 +29,7 @@ func (s *Store) auditNative(item, plan, action, actor string, c protocol.MCPImpo
 	defer tx.Rollback()
 	t := []protocol.ToolPlanTarget{{NodeID: c.NodeID, Machine: c.Machine, Harness: c.Harness, Project: c.Project,
 		Source: c.Location, Action: "native_remove", State: state, Conflict: conflict}}
-	if err = auditToolTx(tx, item, plan, action, actor, 0, t, result, s.now().UnixNano()); err != nil {
+	if err = auditToolTx(tx, item, plan, action, actor, 0, t, result, s.now().UnixNano(), nil); err != nil {
 		return err
 	}
 	return tx.Commit()

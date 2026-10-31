@@ -21,7 +21,8 @@ import (
 const (
 	OriginStore    = "store"    // agent-net store, with a version
 	OriginMachines = "machines" // found on the machines, not managed
-	OriginRepo     = "repo"     // inside a project's files, not put there by agent-net
+	OriginRepo     = "repo"     // committed in a project's files, not put there by agent-net
+	OriginLocal    = "local"    // in a project's folder but not committed: a copy on one machine
 	OriginGateway  = "gateway"  // an MCP server reached through the gateway
 )
 
@@ -56,6 +57,7 @@ const (
 	ProjPending = "pending"
 	ProjHidden  = "hidden" // the project's own copy hides the managed one
 	ProjRepo    = "repo"
+	ProjLocal   = "local" // a copy in the project folder that is not committed
 )
 
 // ProjectState is the state of a tool for one project.
@@ -100,6 +102,26 @@ func Short(hash string) string {
 		hash = hash[:6]
 	}
 	return hash
+}
+
+// Changed is the label of a copy whose content is not any stored version: it
+// was edited outside agent-net.
+const Changed = "changed"
+
+// Label names a content for the owner. A stored version reads "v3". When the
+// skill has stored versions but this content is none of them, it reads
+// "changed". A skill with no stored version has nothing to count from, so the
+// content shows as a short hash.
+func (g group) label(versionNo int, hash string) string {
+	if versionNo > 0 {
+		return "v" + strconv.Itoa(versionNo)
+	}
+	for _, v := range g.variants {
+		if v.VersionNo > 0 {
+			return Changed
+		}
+	}
+	return Short(hash)
 }
 
 func managed(it protocol.ToolItem) bool {
@@ -230,9 +252,12 @@ func rowsOf(g group, ms []Machine) []Row {
 		}
 	}
 	copies := userCopies(g)
-	// Copies inside project files that agent-net did not put there.
+	// Copies inside project folders that agent-net did not put there. A copy
+	// the repository tracks is a repo copy. One it does not track is local to
+	// the machine that holds it.
 	repoByProject := map[string]*Row{}
-	var repoOrder []string
+	localByProject := map[string]*Row{}
+	var repoOrder, localOrder []string
 	for _, v := range g.variants {
 		if managedHash[v.Hash] || v.Federated {
 			continue
@@ -244,6 +269,16 @@ func rowsOf(g group, ms []Machine) []Row {
 			p := projectOf(l)
 			if p == "" {
 				p = "(project)"
+			}
+			if !l.Tracked {
+				if localByProject[p] == nil {
+					localOrder = append(localOrder, p)
+					localByProject[p] = &Row{Name: g.name, Kind: g.kind, Origin: OriginLocal, From: "local " + p, Repo: p, Cells: make([]Cell, len(ms)), Projects: []ProjectState{{Name: p, State: ProjLocal}}, Item: v, Variants: g.variants}
+				}
+				if i := machineIndex(ms, l.NodeID, l.Machine); i >= 0 {
+					localByProject[p].Cells[i] = Cell{State: CellFound}
+				}
+				continue
 			}
 			if repoByProject[p] == nil {
 				repoOrder = append(repoOrder, p)
@@ -268,9 +303,9 @@ func rowsOf(g group, ms []Machine) []Row {
 			fillFederated(&r, *mg, ms)
 		case mg != nil:
 			r.Origin = OriginStore
-			r.Version = Short(mg.Hash)
+			r.Version = g.label(mg.VersionNo, mg.Hash)
 			r.From = "agent-net " + r.Version
-			fillManaged(&r, *mg, copies, ms, repoByProject)
+			fillManaged(&r, g, *mg, copies, ms, repoByProject)
 		default:
 			r.Origin = OriginMachines
 			r.From = "your machines"
@@ -286,6 +321,16 @@ func rowsOf(g group, ms []Machine) []Row {
 			}
 		}
 		r.Detail = "committed in the " + p + " project files. Sessions in that project get it on every machine."
+		rows = append(rows, r)
+	}
+	for _, p := range localOrder {
+		r := *localByProject[p]
+		for _, o := range rows {
+			if o.Origin != OriginRepo && o.Origin != OriginLocal && hasCopyOrManaged(o) {
+				r.Note = "hides your copy here"
+			}
+		}
+		r.Detail = "a copy in the " + p + " project folder that is not committed, found on: " + strings.Join(foundNames(ms, r.Cells), ", ") + ". a imports it and turns it on where you choose; u turns it off."
 		rows = append(rows, r)
 	}
 	return rows
@@ -368,7 +413,7 @@ func importInfo(copies []protocol.ToolLocation) *protocol.MCPImportInfo {
 	return nil
 }
 
-func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, ms []Machine, repos map[string]*Row) {
+func fillManaged(r *Row, g group, mg protocol.ToolItem, copies []protocol.ToolLocation, ms []Machine, repos map[string]*Row) {
 	scope := "global"
 	if mg.Desired != nil {
 		scope = mg.Desired.Assignment.Scope
@@ -384,6 +429,8 @@ func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, m
 		}
 	}
 	limit := ""
+	// A machine the desired state does not name is not waiting for anything.
+	inScope := func(m Machine) bool { return mg.Desired == nil || mg.Desired.Assignment.OnMachine(m.ID) }
 	for i, m := range ms {
 		var cell Cell
 		hasManaged, other := false, ""
@@ -400,7 +447,7 @@ func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, m
 					}
 				}
 			} else if other == "" {
-				other = Short(l.Hash)
+				other = g.label(l.VersionNo, l.Hash)
 			}
 		}
 		switch {
@@ -412,7 +459,7 @@ func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, m
 			cell.State = CellOn
 		case other != "":
 			cell.State, cell.Label = CellOther, other
-		case scope == "global":
+		case scope == "global" && inScope(m):
 			cell.State, cell.Note = CellPartial, "pending"
 			if !m.Online {
 				cell.Note = "pending: machine offline"
@@ -447,13 +494,32 @@ func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, m
 			r.Projects = append(r.Projects, ProjectState{Name: p, State: st})
 		}
 	}
+	only := ""
+	if mg.Desired != nil {
+		only = machineNames(ms, mg.Desired.Assignment.Machines)
+	}
+	keep := ""
+	if only != "" {
+		keep = " Other machines keep what they have."
+	}
 	switch scope {
 	case "projects":
-		r.Detail = "agent-net " + r.Version + " on for: " + projectList(r.Projects) + ". Every machine gets it for those projects."
+		who := "Every machine gets it"
+		if only != "" {
+			who = only + " only gets it"
+		}
+		r.Detail = "agent-net " + r.Version + " on for: " + projectList(r.Projects) + ". " + who + " for those projects." + keep
 	case "uninstalled":
-		r.Detail = "agent-net " + r.Version + " is kept in the store and turned off everywhere."
+		where := "everywhere"
+		if only != "" {
+			where = "on " + only
+		}
+		r.Detail = "agent-net " + r.Version + " is kept in the store and turned off " + where + "." + keep
 	default:
 		r.Detail = "agent-net " + r.Version + " on every project on: " + strings.Join(onNames(ms, r.Cells), ", ") + ". agent-net handles where each harness reads skills."
+		if only != "" {
+			r.Detail = "agent-net " + r.Version + " on every project, set for " + only + " only: " + strings.Join(onNames(ms, r.Cells), ", ") + "." + keep
+		}
 	}
 	if limit != "" {
 		r.Detail = "agent-net " + r.Version + ": " + limit
@@ -461,6 +527,20 @@ func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, m
 	if failReason != "" {
 		r.Detail += " Last problem: " + failReason
 	}
+}
+
+// machineNames returns the names of the machines with these IDs, comma
+// separated, or "" when no machine is named.
+func machineNames(ms []Machine, ids []string) string {
+	var out []string
+	for _, id := range ids {
+		if i := machineIndex(ms, id, ""); i >= 0 {
+			out = append(out, ms[i].Name)
+		} else {
+			out = append(out, id)
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 func orDash(s string) string {
@@ -485,6 +565,16 @@ func projectList(ps []ProjectState) string {
 	return strings.Join(out, ", ")
 }
 
+func foundNames(ms []Machine, cells []Cell) []string {
+	var out []string
+	for i, c := range cells {
+		if c.State == CellFound {
+			out = append(out, ms[i].Name)
+		}
+	}
+	return out
+}
+
 func onNames(ms []Machine, cells []Cell) []string {
 	var out []string
 	for i, c := range cells {
@@ -506,6 +596,9 @@ func (r Row) ProjectSummary() (text string, warn bool) {
 	}
 	if r.Origin == OriginRepo {
 		return "⌂ " + r.Repo, false
+	}
+	if r.Origin == OriginLocal {
+		return r.Repo + " (local)", false
 	}
 	pend, hid := 0, 0
 	for _, p := range r.Projects {

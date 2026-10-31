@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,11 +22,21 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		return nil, errors.New("tool item not found")
 	}
 	if kind == protocol.InventoryMCP && isFederatedHash(hash) {
+		if len(a.Machines) > 0 {
+			return nil, errors.New("a gateway server runs on its host: it cannot be assigned to chosen machines")
+		}
 		return g.federatedTargets(name)
 	}
-	nodes, err := g.store.toolPlanNodes()
+	allNodes, err := g.store.toolPlanNodes()
 	if err != nil {
 		return nil, err
+	}
+	// A machine the assignment does not name gets no target at all.
+	nodes := allNodes[:0:0]
+	for _, n := range allNodes {
+		if a.OnMachine(n.NodeID) {
+			nodes = append(nodes, n)
+		}
 	}
 	projects, err := g.store.Projects("")
 	if err != nil {
@@ -172,6 +183,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		}
 	}
 	for _, report := range reports {
+		if !a.OnMachine(report.NodeID) {
+			continue
+		}
 		if report.State != protocol.InventoryOK {
 			targets = append(targets, protocol.ToolPlanTarget{NodeID: report.NodeID, Machine: report.Machine, Action: "inspect", State: "conflict", Conflict: "inventory scan incomplete"})
 		}
@@ -229,6 +243,13 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 		}
 	}()
 	a, err := normalizeAssignment(p.Target)
+	if err != nil {
+		return out, err
+	}
+	if a.Machines, err = g.store.resolveMachines(a.Machines); err != nil {
+		return out, err
+	}
+	a, err = normalizeAssignment(a)
 	if err != nil {
 		return out, err
 	}
@@ -351,6 +372,40 @@ func (g *Gateway) validToolOwner(nc *nodeConn, id string) bool {
 	}
 	a, ok, err := g.store.Agent(id)
 	return err == nil && ok && a.NodeID == nc.id && a.Harness == protocol.OwnerHarness && a.Online
+}
+
+// resolveMachines turns machine names or node IDs into node IDs. A name must
+// match one enrolled machine; an ID is used as it is.
+func (s *Store) resolveMachines(names []string) ([]string, error) {
+	if len(names) == 0 {
+		return nil, nil
+	}
+	nodes, err := s.toolPlanNodes()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(names))
+	for _, want := range names {
+		var found []string
+		for _, n := range nodes {
+			if n.NodeID == want {
+				found = []string{n.NodeID}
+				break
+			}
+			if n.Hostname == want || strings.EqualFold(n.Hostname, want) {
+				found = append(found, n.NodeID)
+			}
+		}
+		switch len(found) {
+		case 1:
+			out = append(out, found[0])
+		case 0:
+			return nil, errors.New("machine " + want + " is not enrolled")
+		default:
+			return nil, errors.New("machine name " + want + " matches more than one machine: use its ID")
+		}
+	}
+	return out, nil
 }
 
 // toolPlanNodes also includes enrolled nodes that have never reported a hello.

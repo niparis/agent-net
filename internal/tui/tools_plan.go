@@ -106,12 +106,24 @@ func (m Model) assignTarget(on bool) protocol.ToolAssignment {
 	return protocol.ToolAssignment{Scope: "uninstalled"}
 }
 
+// machineTarget is assignTarget for one machine. With a single machine there
+// is nothing to limit, so the assignment stays "every machine".
+func (m Model) machineTarget(on bool, machine toolsdiff.Machine) protocol.ToolAssignment {
+	a := m.assignTarget(on)
+	if len(m.tl.cat.Machines) > 1 {
+		a.Machines = []string{machine.ID}
+	}
+	return a
+}
+
 // assignJob is one skill to change: import first when it is not in the store.
 type assignJob struct {
 	name   string
 	item   string
 	imp    *toolsdiff.Copy
 	target protocol.ToolAssignment
+	// where names the machine the change is limited to, or "" for every machine.
+	where string
 }
 
 func (j assignJob) off() bool { return j.target.Scope == "uninstalled" }
@@ -145,7 +157,7 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 		return m.openProjectPicker(r, on)
 	}
 	cell := r.Cells[col]
-	if on && cell.State == toolsdiff.CellOn && r.Origin != toolsdiff.OriginMachines {
+	if on && cell.State == toolsdiff.CellOn && r.Origin != toolsdiff.OriginMachines && r.Origin != toolsdiff.OriginLocal {
 		m.toolsToast(r.Name + " is already on for " + ms[col].Name)
 		return m, nil
 	}
@@ -153,7 +165,7 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 		m.toolsToast(r.Name + " is already off for " + ms[col].Name)
 		return m, nil
 	}
-	job, err := m.jobFor(r, m.assignTarget(on))
+	job, err := m.jobFor(r, m.machineTarget(on, ms[col]))
 	if err != "" {
 		m.toolsToast(err)
 		return m, nil
@@ -164,9 +176,10 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 		verb = "turn off"
 		title = "Turn off " + r.Name + " on " + ms[col].Name
 	}
-	note := "agent-net has no switch for one machine yet: this applies to every machine"
-	if len(ms) < 2 {
-		note = ""
+	note := ""
+	if len(job.target.Machines) > 0 {
+		job.where = ms[col].Name
+		note = "only on " + ms[col].Name + ": other machines are not changed"
 	}
 	return m.openAssign(title, verb, []assignJob{job}, []string{note})
 }
@@ -175,7 +188,9 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 // imported first.
 func (m Model) jobFor(r toolsdiff.Row, target protocol.ToolAssignment) (assignJob, string) {
 	j := assignJob{name: r.Name, target: target}
-	if r.Origin == toolsdiff.OriginMachines {
+	// A local copy (in a project folder, not committed) is handled like a copy
+	// found on a machine: import it first, then plan.
+	if r.Origin == toolsdiff.OriginMachines || r.Origin == toolsdiff.OriginLocal {
 		c, ok := firstCopy(r)
 		if !ok {
 			return j, "no copy of " + r.Name + " is online to import"
@@ -190,6 +205,12 @@ func (m Model) jobFor(r toolsdiff.Row, target protocol.ToolAssignment) (assignJo
 func firstCopy(r toolsdiff.Row) (toolsdiff.Copy, bool) {
 	for _, v := range r.Variants {
 		for _, l := range v.Locations {
+			if r.Origin == toolsdiff.OriginLocal {
+				if l.Scope == protocol.InventoryProject && !l.Tracked && l.State == protocol.InventoryOK && (l.GraphNode == r.Repo || l.Project == r.Repo) {
+					return toolsdiff.Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name}, true
+				}
+				continue
+			}
 			if l.Scope == protocol.InventoryUser && l.State == protocol.InventoryOK {
 				return toolsdiff.Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name}, true
 			}
@@ -274,8 +295,15 @@ func jobLines(jobs []assignJob) []string {
 	if t := jobs[0].target; t.Scope == "projects" {
 		scope = "for " + strings.Join(t.Projects, ", ")
 	}
+	if w := jobs[0].where; w != "" {
+		scope = "on " + w + " only"
+	}
 	if off {
-		out = append(out, tsErr.Render("- ")+listNames(names, 6)+" turned off everywhere (backed up first, removed only if unchanged)")
+		where := "everywhere"
+		if w := jobs[0].where; w != "" {
+			where = "on " + w + " only"
+		}
+		out = append(out, tsErr.Render("- ")+listNames(names, 6)+" turned off "+where+" (backed up first, removed only if unchanged)")
 	} else {
 		out = append(out, tsGood.Render("+ ")+listNames(names, 6)+" "+scope)
 	}
@@ -930,12 +958,12 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		}
 		letter := string(rune('a' + i))
 		c := c
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+toolsdiff.Short(c.Hash)+")")
+		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+c.Version()+")")
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
-		md.foot = append(md.foot, letter, "keep "+toolsdiff.Short(c.Hash))
+		md.foot = append(md.foot, letter, "keep "+c.Version())
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
-			model, cmd := m.openAssign("Keep "+act.Name+" "+toolsdiff.Short(c.Hash), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, []string{"a different copy in the way shows as a conflict in the result"})
+			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, []string{"a different copy in the way shows as a conflict in the result"})
 			return model.(Model), cmd
 		}
 	}

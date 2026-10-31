@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -166,13 +167,24 @@ func TestInventoryNativeSecretsStayOutOfStoreAndJSON(t *testing.T) {
 	}
 }
 
+// backfillMigrationsBack is how many migrations to roll back so the one that
+// creates tool_identities runs again.
+func backfillMigrationsBack() int {
+	for i, m := range migrations {
+		if strings.Contains(m, "CREATE TABLE tool_identities") {
+			return len(migrations) - (i + 1)
+		}
+	}
+	return 0
+}
+
 func TestInventoryMigrationBackfillsReports(t *testing.T) {
 	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-9 FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
+	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-` + strconv.Itoa(backfillMigrationsBack()) + ` FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.migrate(); err != nil {

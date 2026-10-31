@@ -77,7 +77,7 @@ func runTools(ctx context.Context, c toolsClient, out io.Writer, args []string) 
 	if len(args) == 0 {
 		return readTools(ctx, c, out)
 	}
-	const usage = "usage: agent-net tools [plan ITEM global|uninstalled|PROJECT... | apply PLAN_ID | history ITEM]"
+	const usage = "usage: agent-net tools [plan ITEM global|uninstalled|PROJECT... [--on MACHINE]... | apply PLAN_ID | history ITEM]"
 	var method string
 	var params any
 	switch args[0] {
@@ -86,6 +86,23 @@ func runTools(ctx context.Context, c toolsClient, out io.Writer, args []string) 
 			return errors.New(usage)
 		}
 		target := protocol.ToolAssignment{}
+		// --on MACHINE (repeatable) limits the change to chosen machines.
+		rest := []string{args[0], args[1]}
+		for i := 2; i < len(args); i++ {
+			if args[i] == "--on" {
+				if i+1 >= len(args) || args[i+1] == "" {
+					return errors.New(usage)
+				}
+				target.Machines = append(target.Machines, args[i+1])
+				i++
+				continue
+			}
+			rest = append(rest, args[i])
+		}
+		args = rest
+		if len(args) < 3 {
+			return errors.New(usage)
+		}
 		switch args[2] {
 		case "global", "uninstalled":
 			if len(args) != 3 {

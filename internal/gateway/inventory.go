@@ -245,6 +245,29 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err != nil {
 		return nil, err
 	}
+	numbers, err := s.db.Query(`SELECT item,number FROM skill_versions WHERE number>0`)
+	if err != nil {
+		return nil, err
+	}
+	for numbers.Next() {
+		var id string
+		var n int
+		if err = numbers.Scan(&id, &n); err != nil {
+			numbers.Close()
+			return nil, err
+		}
+		if item := all[id]; item != nil {
+			item.VersionNo = n
+			for i := range item.Locations {
+				item.Locations[i].VersionNo = n
+			}
+		}
+	}
+	err = numbers.Err()
+	numbers.Close()
+	if err != nil {
+		return nil, err
+	}
 	revisions, err := s.db.Query(`SELECT r.item,r.revision,r.assignment,r.version,r.actor,r.source,r.at FROM tool_revisions r WHERE r.revision=(SELECT MAX(t.revision) FROM tool_revisions t WHERE t.item=r.item)`)
 	if err != nil {
 		return nil, err

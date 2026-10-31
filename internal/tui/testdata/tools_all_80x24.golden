@@ -2,17 +2,17 @@
  Differences   All tools   By project   [ ] switch   / search
 ╭─All tools · on or off per machine, or for chosen projects────────────────────╮
 │   NAME               FROM              Nicolas-MBP  research PROJECTS        │
-│ ▸ clean-architectur… agent-net 555555 [●]           ●        -               │
-│   code-review        agent-net 333333  111111       ●        -               │
+│ ▸ clean-architectur… agent-net v1     [●]           ●        -               │
+│   code-review        agent-net v3      v1           ●        -               │
 │   ⌂ deploy-test-ser… repo sovl-clone   ·            ·        ⌂ sovl-clone    │
 │   design-taste-fron… your machines     ·            ○        -               │
-│   diagnosing-bugs    agent-net 111111  ◐            ●        -               │
+│   diagnosing-bugs    agent-net v1      ◐            ●        -               │
 │   ⌂ estate-runbook   repo homelab      ·            ·        ⌂ homelab       │
-│ 1-6 of 40                                                                    │
+│ 1-6 of 41                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Details · clean-architecture-python──────────────────────────────────────────╮
-│ agent-net 555555 on every project on: Nicolas-MBP, research. agent-net       │
-│ handles where each harness reads skills.                                     │
+│ agent-net v1 on every project on: Nicolas-MBP, research. agent-net handles   │
+│ where each harness reads skills.                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

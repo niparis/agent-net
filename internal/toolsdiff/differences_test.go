@@ -10,7 +10,8 @@ import (
 var machines = []Machine{{ID: "n_r", Name: "research", Online: true}, {ID: "n_m", Name: "mac", Online: false}}
 
 func loc(node, machine, path, scope, project string) protocol.ToolLocation {
-	return protocol.ToolLocation{NodeID: node, Machine: machine, GraphNode: project, InventoryItem: protocol.InventoryItem{Harness: "claude", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok"}}
+	// A project copy in these tests is committed, unless a test says otherwise.
+	return protocol.ToolLocation{NodeID: node, Machine: machine, GraphNode: project, InventoryItem: protocol.InventoryItem{Harness: "claude", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok", Tracked: scope == "project"}}
 }
 
 func skill(name, hash string, locs ...protocol.ToolLocation) protocol.ToolItem {
@@ -42,7 +43,7 @@ func TestDriftBetweenMachinesSuggestsManagedVersion(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no drift in %+v", ds)
 	}
-	if !strings.Contains(d.Title, "aaaaaa on research") || !strings.Contains(d.Title, "bbbbbb on mac") {
+	if !strings.Contains(d.Title, "research on aaaaaa") || !strings.Contains(d.Title, "mac on bbbbbb") {
 		t.Errorf("title %q", d.Title)
 	}
 	if d.Fix != "make every machine use aaaaaa" || d.Action.Kind != ActAssign || d.Action.Item != a.ID {
