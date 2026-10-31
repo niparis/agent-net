@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -53,5 +54,15 @@ func TestQuotaSelectionMapsProfileProvider(t *testing.T) {
 	m = keys(m, "p")
 	if m.quotaConfirm != "google" {
 		t.Fatalf("got provider %q, want google", m.quotaConfirm)
+	}
+}
+
+func TestQuotaProtectedSummarySanitizesProvider(t *testing.T) {
+	m := newModel(80, 24)
+	m.snap.ProtectedProviders.Providers = []string{"bad\x1b[31m"}
+	for _, line := range m.quotasView(80, 24) {
+		if strings.Contains(line, "bad\x1b") {
+			t.Fatal("raw escape in protected provider")
+		}
 	}
 }

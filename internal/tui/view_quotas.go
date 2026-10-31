@@ -16,7 +16,7 @@ func (m Model) quotasView(w, h int) []string {
 	if len(protected.Providers) == 0 {
 		subscription = append(subscription, sDim.Render("no provider protected · select a subscription and press p"))
 	} else {
-		summary := "protected: " + strings.Join(protected.Providers, ", ")
+		summary := "protected: " + sanitize(strings.Join(protected.Providers, ", "))
 		if protected.Reason != "" {
 			summary += " · " + sanitize(protected.Reason)
 		}
