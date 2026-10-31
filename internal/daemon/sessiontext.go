@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -155,20 +156,34 @@ func (d *Daemon) insideSession(pid int) bool {
 		sess[d.cto.cmd.Process.Pid] = true
 	}
 	d.cto.mu.Unlock()
-	if len(sess) == 0 {
-		return false
+	// Interactive Codex threads share the control socket's server process.
+	if a, ok := d.adapters["codex"].(*codexAdapter); ok {
+		if root := a.serverPID(); root > 1 {
+			sess[root] = true
+		}
 	}
 	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
-		if sess[p] {
+		if sess[p] || sessionHostCommand(processArgs(p)) {
 			return true
 		}
-		parent, err := parentPID(p)
+		parent, err := processParentPID(p)
 		if err != nil {
 			return false
 		}
 		p = parent
 	}
 	return false
+}
+
+// Also catch servers before the adapter connects, and shared OpenCode services
+// whose session PID does not identify the process hosting shell commands.
+func sessionHostCommand(args []string) bool {
+	if len(args) < 2 {
+		return false
+	}
+	name := filepath.Base(args[0])
+	return (name == "codex" && args[1] == "app-server") ||
+		(name == "opencode" && args[1] == "serve")
 }
 
 // dispatchOperator serves the owner-only methods. ok is false for any other method.
