@@ -68,6 +68,9 @@ func (f *fakeOp) SetPeerTrust(context.Context, string, bool) error { return nil 
 func (f *fakeOp) SetSessionPolicy(context.Context, protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error) {
 	return protocol.SessionPolicyResult{}, nil
 }
+func (f *fakeOp) RenameSession(context.Context, string, string) (protocol.SessionRenameResult, error) {
+	return protocol.SessionRenameResult{}, nil
+}
 func (f *fakeOp) RenameNode(context.Context, string, string) (protocol.NodeRenameResult, error) {
 	return protocol.NodeRenameResult{}, nil
 }

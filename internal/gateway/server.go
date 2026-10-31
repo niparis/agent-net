@@ -860,6 +860,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetSessionOffline(nc.id, p.SessionID)
 
+	case "session.rename":
+		p, err := decode[protocol.SessionRenameRequest](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad session.rename")
+		}
+		res, err := st.RenameSession(p.SessionID, p.Name)
+		var bad ErrSessionName
+		if errors.As(err, &bad) {
+			return nil, reject("%s", bad.Reason)
+		}
+		if err != nil {
+			return nil, err
+		}
+		g.logLine("session.renamed", "by", nc.id, "session", p.SessionID, "name", res.Name)
+		return res, nil
+
 	case "session.trust":
 		p, err := decode[protocol.SessionTrust](raw)
 		if err != nil || p.SessionID == "" {

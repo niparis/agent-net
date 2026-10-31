@@ -290,6 +290,29 @@ func TestProtectedProvidersTools(t *testing.T) {
 	}
 }
 
+// The owner renames a session through the CTO (decision 0032). An empty name
+// returns to the automatic project name.
+func TestCTOSessionRenameTool(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name == "session_rename" {
+			props, _ := ctoToolSchema(t, tool)
+			if props["session_id"] == nil || props["name"] == nil {
+				t.Fatalf("properties %v", props)
+			}
+			if !strings.Contains(strings.ToLower(tool.Description), "owner") {
+				t.Fatalf("description does not say it is the owner's: %s", tool.Description)
+			}
+			return
+		}
+	}
+	t.Fatal("session_rename missing")
+}
+
 func TestCTOProjectDisplayTool(t *testing.T) {
 	cs := ctoTestSession(t)
 	list, err := cs.ListTools(context.Background(), nil)

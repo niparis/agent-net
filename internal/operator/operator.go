@@ -60,6 +60,10 @@ type Operator interface {
 	// RenameNode gives a machine a display name that every machine sees, or
 	// clears it with an empty name (decision 0015). Owner only.
 	RenameNode(ctx context.Context, nodeID, name string) (protocol.NodeRenameResult, error)
+	// RenameSession gives a session a name the owner chose, or with an empty
+	// name returns it to its automatic project name (decision 0032). Owner
+	// only.
+	RenameSession(ctx context.Context, sessionID, name string) (protocol.SessionRenameResult, error)
 	ProjectDisplayName(ctx context.Context, project string) (protocol.ProjectDisplayResult, error)
 	SetProjectDisplayName(ctx context.Context, project, name string) (protocol.ProjectDisplayResult, error)
 	// Integrations reads the owner's setup answers for the whole network

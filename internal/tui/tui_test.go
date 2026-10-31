@@ -259,6 +259,9 @@ func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {
 	return f.trustErr
 }
 
+func (f *fakeSource) RenameSession(_ context.Context, id, name string) (protocol.SessionRenameResult, error) {
+	return protocol.SessionRenameResult{SessionID: id, Name: name}, nil
+}
 func (f *fakeSource) RenameNode(_ context.Context, id, name string) (protocol.NodeRenameResult, error) {
 	f.renames = append(f.renames, renameCall{id, name})
 	return protocol.NodeRenameResult{NodeID: id, Hostname: name, DisplayName: name}, f.renameErr
