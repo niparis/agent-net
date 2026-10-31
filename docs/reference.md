@@ -1351,3 +1351,8 @@ A rejection or escalation of another agent's request appears as a separate Needs
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when the worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
 The owner-only `cto_enter` method starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO pane, press `o` to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing.
+
+The daemon service records the login shell's PATH in its environment, so tools
+installed outside the system directories are available to workers. If the shell
+cannot supply it, setup adds common Homebrew and local binary directories to the
+current PATH. A daemon upgrade adds PATH to older service files.

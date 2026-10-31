@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/loginpath"
 	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
@@ -58,7 +59,7 @@ func SystemdUnit(s Service, exe string) string {
 	}
 	var environment strings.Builder
 	if s.Name == "daemon" {
-		for _, item := range quotaaxi.ServiceEnvironment(os.Getenv("HOME")) {
+		for _, item := range append(quotaaxi.ServiceEnvironment(os.Getenv("HOME")), "PATH="+loginpath.Path()) {
 			fmt.Fprintf(&environment, "Environment=%s\n", systemdQuote(item))
 		}
 	}
@@ -116,7 +117,7 @@ func LaunchdPlist(s Service, exe, home string) string {
 	var environment strings.Builder
 	if s.Name == "daemon" {
 		environment.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
-		for _, item := range quotaaxi.ServiceEnvironment(home) {
+		for _, item := range append(quotaaxi.ServiceEnvironment(home), "PATH="+loginpath.Path()) {
 			key, value, _ := strings.Cut(item, "=")
 			fmt.Fprintf(&environment, "    <key>%s</key>\n    <string>%s</string>\n", xmlEscape(key), xmlEscape(value))
 		}
@@ -144,4 +145,41 @@ func LaunchdPlist(s Service, exe, home string) string {
 </dict>
 </plist>
 `, s.Label(), args.String(), abandon+environment.String(), log, log)
+}
+
+// EnsureDaemonServicePath adds PATH to an older service without replacing other settings.
+func EnsureDaemonServicePath(path string, plist bool, value string) (bool, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return false, nil
+	}
+	text := string(raw)
+	if plist {
+		if strings.Contains(text, "<key>PATH</key>") {
+			return false, nil
+		}
+		entry := "    <key>PATH</key>\n    <string>" + xmlEscape(value) + "</string>\n"
+		if strings.Contains(text, "<key>EnvironmentVariables</key>") {
+			start := strings.Index(text, "<key>EnvironmentVariables</key>")
+			i := strings.Index(text[start:], "<dict>")
+			if i < 0 {
+				return false, nil
+			}
+			i += start + len("<dict>")
+			text = text[:i] + "\n" + entry + text[i:]
+		} else if strings.Contains(text, "</dict>") {
+			text = strings.Replace(text, "</dict>", "  <key>EnvironmentVariables</key>\n  <dict>\n"+entry+"  </dict>\n</dict>", 1)
+		} else {
+			return false, nil
+		}
+	} else {
+		if strings.Contains(text, "Environment=PATH=") || strings.Contains(text, "Environment=\"PATH=") {
+			return false, nil
+		}
+		if !strings.Contains(text, "\nExecStart=") {
+			return false, nil
+		}
+		text = strings.Replace(text, "\nExecStart=", "\nEnvironment="+systemdQuote("PATH="+value)+"\nExecStart=", 1)
+	}
+	return true, os.WriteFile(path, []byte(text), 0644)
 }

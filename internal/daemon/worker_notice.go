@@ -10,7 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/niparis/agent-net/internal/loginpath"
 
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -21,12 +24,44 @@ import (
 
 // ---- worktrees ----
 
+var gitPathOnce sync.Once
+var gitSearchPath string
+
+func worktreeGitPath() string {
+	gitPathOnce.Do(func() {
+		login := loginpath.Path()
+		var dirs []string
+		for _, name := range []string{"git", "git-lfs"} {
+			for _, dir := range filepath.SplitList(login) {
+				if dir == "" {
+					continue
+				}
+				if fi, err := os.Stat(filepath.Join(dir, name)); err == nil && !fi.IsDir() && fi.Mode()&0111 != 0 {
+					dirs = append(dirs, dir)
+					break
+				}
+			}
+		}
+		gitSearchPath = strings.Join(append(dirs, login), string(os.PathListSeparator))
+	})
+	return gitSearchPath
+}
+
 // git runs a git command in dir and returns its output.
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	path := worktreeGitPath()
+	git := "git"
+	for _, dir := range filepath.SplitList(path) {
+		candidate := filepath.Join(dir, "git")
+		if fi, err := os.Stat(candidate); err == nil && !fi.IsDir() && fi.Mode()&0111 != 0 {
+			git = candidate
+			break
+		}
+	}
+	cmd := exec.CommandContext(ctx, git, append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "PATH="+path, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
