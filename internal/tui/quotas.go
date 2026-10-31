@@ -89,7 +89,7 @@ func (m Model) quotaNodes() (map[string]protocol.UsageNode, []string) {
 	return nodes, ids
 }
 
-func (m Model) quotaWarning() (string, bool) {
+func (m Model) quotaRelevantProviders() map[string]bool {
 	relevant := map[string]bool{}
 	for _, p := range m.snap.WorkerProfiles {
 		if name := protocol.QuotaProviderForStart(p.Harness, p.Model); name != "" {
@@ -103,6 +103,11 @@ func (m Model) quotaWarning() (string, bool) {
 			}
 		}
 	}
+	return relevant
+}
+
+func (m Model) quotaWarning() (string, bool) {
+	relevant := m.quotaRelevantProviders()
 	for _, r := range m.quotaRows() {
 		if !relevant[strings.ToLower(r.provider.Provider)] || r.provider.Stale || r.provider.Error != "" {
 			continue
@@ -199,11 +204,12 @@ func (m Model) quotaModelsView(w int) []string {
 	rows := m.quotaModels()
 	title := fmt.Sprintf("Workers · %d registered · scores: Artificial Analysis", len(rows))
 	var out []string
-	nameWidth, harnessWidth, modelWidth := 6, 6, 17
-	if w >= 100 {
-		nameWidth, harnessWidth, modelWidth = 10, 8, 22
+	nameWidth, harnessWidth, modelWidth := 18, 8, 26
+	header := fmt.Sprintf("%-*s %-*s %-*s %-11s T S N H V  USED", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", "SCORE")
+	if w < 100 {
+		header = fmt.Sprintf("%-18s %-8s %-26s %-5s T S N H V", "NAME", "HARNESS", "MODEL", "SCORE")
 	}
-	out = append(out, sDim.Render(fmt.Sprintf("%-*s %-*s %-*s %-11s T S N H V  USED", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", "SCORE")))
+	out = append(out, sDim.Render(header))
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	levelNames := []string{"T", "S", "N", "H", "V"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
@@ -267,10 +273,22 @@ func (m Model) quotaModelsView(w int) []string {
 		usage := fmt.Sprintf("%d runs", r.used)
 		if w >= 100 {
 			usage += " " + sBusy.Render(fmt.Sprintf("%d done", r.done)) + " " + sBad.Render(fmt.Sprintf("%d failed", r.failedRuns))
+			usage = padStyled(usage, 24)
 		}
 		line := fmt.Sprintf("%-*s %-*s %-*s %-11s %s  %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(r.model), modelWidth), cell(score, 11), strings.Join(fits, " "), usage)
+		if w < 100 {
+			shortScore := "-"
+			if r.scored {
+				shortScore = fmt.Sprintf("%g", r.score.Score)
+			}
+			line = fmt.Sprintf("%-18s %-8s %-26s %-5s %s", cell(sanitize(r.name), 18), cell(r.harness, 8), cell(sanitize(r.model), 26), cell(shortScore, 5), strings.Join(fits, " "))
+		}
 		if len(chosen) > 0 {
-			line += "  " + lipgloss.NewStyle().Foreground(roleAccent).Render("◀ "+strings.Join(chosen, ","))
+			marker := "◀ " + strings.Join(chosen, ",")
+			if w < 100 {
+				marker = "◀"
+			}
+			line += "  " + lipgloss.NewStyle().Foreground(roleAccent).Render(marker)
 		}
 		if !r.available || !r.allowed {
 			line = sDim.Render(stripStyles(line))
@@ -282,9 +300,6 @@ func (m Model) quotaModelsView(w int) []string {
 				reason = "not a worker provider"
 			}
 			out = append(out, sDim.Render("  ("+reason+")"))
-		}
-		if w >= 100 && (len(r.name) > nameWidth || len(r.model) > modelWidth) {
-			out = append(out, sDim.Render(clip("  "+sanitize(r.name)+" · "+sanitize(r.model), w-4)))
 		}
 	}
 	return panel(title, out, w, roleAccent)

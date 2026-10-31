@@ -5,16 +5,16 @@
 │   (read on Mac; stale reading)                                                                                       │
 │ codex       pro       week           █████████─  92%      ahead     in 2h00                                          │
 │   (read on Mac)                                                                                                      │
-│ cursor      business  month          ██████████ exhausted -         -                                                │
-│   (read on Mac)                                                                                                      │
+│ 1 more subscriptions (not used by your agents) · s to show                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 3 registered · scores: Artificial Analysis─────────────────────────────────────────────────────────────────╮
-│ NAME       HARNESS  MODEL                  SCORE       T S N H V  USED                                               │
-│ opus       claude   claude-opus-5-5:high   51.7/high   E E E E G  12 runs 10 done 2 failed  ◀ T,S,N,H,V              │
-│ sol        codex    gpt-6.1-sol:medium     46.1/medium E E E G P  0 runs 0 done 0 failed                             │
-│ terra      codex    gpt-6.1-terra:high     42.3/high   E E E G P  0 runs 0 done 0 failed                             │
+│ NAME               HARNESS  MODEL                      SCORE       T S N H V  USED                                   │
+│ opus               claude   claude-opus-5-5:high       51.7/high   E E E E G  12 runs 10 done 2 failed  ◀ T,S,N,H,V  │
+│ sol                codex    gpt-6.1-sol:medium         46.1/medium E E E G P  0 runs 0 done 0 failed                 │
+│ terra              codex    gpt-6.1-terra:high         42.3/high   E E E G P  0 runs 0 done 0 failed                 │
 │ workers now: none                                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
 
 
 

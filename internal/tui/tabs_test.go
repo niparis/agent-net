@@ -83,7 +83,7 @@ func TestQuotaViewGoldens(t *testing.T) {
 				}
 			}
 		}
-		if !strings.Contains(ansi.Strip(view), "exhausted") {
+		if !strings.Contains(ansi.Strip(view), "not used by your agents") {
 			t.Fatal(view)
 		}
 		golden(t, fmt.Sprintf("quotas_%dx%d", size[0], size[1]), view)
@@ -118,6 +118,7 @@ func TestQuotaViewScrolls(t *testing.T) {
 		q.Providers = append(q.Providers, protocol.QuotaProvider{Provider: fmt.Sprintf("p%02d", i), Windows: []protocol.QuotaWindow{{ID: "week"}}})
 	}
 	m.usage.raw.Local.Quotas = q
+	m = keys(m, "s")
 	if strings.Contains(ansi.Strip(m.View()), "p29") {
 		t.Fatal("last row visible before scroll")
 	}
@@ -369,7 +370,7 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "b          codex    fake/b                 51          E E E E G  0 runs 0 done 0 failed  ◀ T,S,N,H,V") {
+	if !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed    ◀ T,S,N,H,V") {
 		t.Fatalf("choice ignored failed run:\n%s", v)
 	}
 }
@@ -392,7 +393,7 @@ func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "b          codex    fake/b                 51          E E E E G  0 runs 0 done 0 failed  ◀ T,S,N,H,V") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed    ◀ T,S,N,H,V") {
 		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }
@@ -422,6 +423,7 @@ func TestMessagesHintShowsCTOFocus(t *testing.T) {
 
 func TestSubscriptionPanelAndUsageRoles(t *testing.T) {
 	m := newModel(120, 34)
+	m.quotaShowUnset = true
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{ID: "low", PercentUsed: 30, Pace: protocol.QuotaPaceBehind}, {ID: "mid", PercentUsed: 70, Pace: protocol.QuotaPaceAhead}, {ID: "high", PercentUsed: 90}}}}}
 	v := strings.Join(m.quotasView(120, 40), "\n")
@@ -483,6 +485,7 @@ func TestQuotaUnconfiguredFold(t *testing.T) {
 
 func TestQuotaReadingSourceLabels(t *testing.T) {
 	m := newModel(120, 34)
+	m.quotaShowUnset = true
 	m.tab = 2
 	m.usage.raw.Hostname = "research"
 	m.usage.raw.Gateway.Nodes = nil
@@ -500,6 +503,7 @@ func TestQuotaReadingSourceLabels(t *testing.T) {
 
 func TestQuotaEmptyTrack(t *testing.T) {
 	m := newModel(120, 34)
+	m.quotaShowUnset = true
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
@@ -510,6 +514,7 @@ func TestQuotaEmptyTrack(t *testing.T) {
 
 func TestQuotaLongWindowNames(t *testing.T) {
 	m := newModel(80, 24)
+	m.quotaShowUnset = true
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{Label: "Fable week"}, {Label: "completions"}, {Label: "premium interactions"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(80, 40), "\n"))
@@ -590,5 +595,29 @@ func TestQuotaSourcesAgreeAcrossPlans(t *testing.T) {
 		if r.machine != "" {
 			t.Fatalf("agreed readings include machine: %+v", r)
 		}
+	}
+}
+
+func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6"}}
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "copilot", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 more subscriptions (not used by your agents) · s to show") {
+		t.Fatal(v)
+	}
+	m = keys(m, "s")
+	if v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")); !strings.Contains(v, "copilot") {
+		t.Fatal(v)
+	}
+}
+
+func TestWorkerColumnsKeepNamesAndModels(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "eighteen-char-name", Harness: "codex", Model: "12345678901234567890", Effort: "high"}}
+	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	if !strings.Contains(v, "eighteen-char-name") || !strings.Contains(v, "12345678901234567890:high") || strings.Contains(v, " · 12345678901234567890") {
+		t.Fatal(v)
 	}
 }

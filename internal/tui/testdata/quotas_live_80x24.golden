@@ -5,15 +5,15 @@
 │                       week           ██████────  60%      -         -        │
 │                       Fable week     █─────────   5%      -         -        │
 │ codex       prolite   week           █████████─  92%      -         -        │
-│ copilot               chat           ──────────   0%      -         -        │
-│                       completions    ──────────   0%      -         -        │
-│                       premium inter… ██████████ exhausted -         -        │
-│ other                 month          ██────────  15%      -         -        │
 │ 17 providers not set up · s to show                                          │
+│ 2 more subscriptions (not used by your agents) · s to show                   │
 │ laptop: exit status 2                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
-
+╭─Workers · 1 registered · scores: Artificial Analysis─────────────────────────╮
+│ NAME               HARNESS  MODEL                      SCORE T S N H V       │
+│ terra              codex    gpt-6.1-terra:high         42.3  E E E G P       │
+│ workers now: none                                                            │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

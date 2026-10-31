@@ -45,10 +45,13 @@ func (m Model) quotasView(w, h int) []string {
 	}
 
 	var newest int64
-	var configured, unset []quotaRow
+	var configured, unset, unused []quotaRow
+	relevant := m.quotaRelevantProviders()
 	for _, r := range rows {
 		if quotaNotSetUp(r.provider) {
 			unset = append(unset, r)
+		} else if !relevant[strings.ToLower(r.provider.Provider)] {
+			unused = append(unused, r)
 		} else {
 			configured = append(configured, r)
 		}
@@ -58,6 +61,7 @@ func (m Model) quotasView(w, h int) []string {
 	}
 	if m.quotaShowUnset {
 		configured = append(configured, unset...)
+		configured = append(configured, unused...)
 	}
 	for _, r := range configured {
 		if r.at > newest {
@@ -151,6 +155,13 @@ func (m Model) quotasView(w, h int) []string {
 			action = "s to hide"
 		}
 		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d providers not set up · %s", len(unset), action)))
+	}
+	if len(unused) > 0 {
+		action := "s to show"
+		if m.quotaShowUnset {
+			action = "s to hide"
+		}
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d more subscriptions (not used by your agents) · %s", len(unused), action)))
 	}
 	for _, e := range errors {
 		for _, line := range wrap(e, w-4) {
