@@ -18,3 +18,11 @@ type GraphView struct {
 	Edges   []Edge          `json:"edges"`
 	Changes []CharterChange `json:"changes"`
 }
+
+// GraphTalkCount summarizes messages between two projects in the past week.
+type GraphTalkCount struct {
+	From    string `json:"from"`
+	To      string `json:"to"`
+	Count   int    `json:"count"`
+	HasEdge bool   `json:"has_edge"`
+}
