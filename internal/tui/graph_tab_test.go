@@ -37,34 +37,34 @@ func graphModel(w, h int) Model {
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
 	m.tab = 5
 	gw, gh := m.graphSize()
-	m.graphCamera = m.graph.Fit(gw, gh)
-	m.graph.Message("project-01", "project-02", "request", t0.Add(-time.Second))
-	m.graph.Message("project-04", "project-05", "reply", t0.Add(-2*time.Second))
+	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
+	m.graphState.Graph.Message("project-01", "project-02", "request", t0.Add(-time.Second))
+	m.graphState.Graph.Message("project-04", "project-05", "reply", t0.Add(-2*time.Second))
 	return m
 }
 func TestGraphTabKeys(t *testing.T) {
 	m := graphModel(120, 34)
-	start := m.graph.Selected()
+	start := m.graphState.Graph.Selected()
 	m = keys(m, "]")
-	if m.graph.Selected() == start {
+	if m.graphState.Graph.Selected() == start {
 		t.Fatal("selection did not move")
 	}
-	chosen := m.graph.Selected()
-	old := m.graphCamera
+	chosen := m.graphState.Graph.Selected()
+	old := m.graphState.Camera
 	m = keys(m, "+", "h")
-	if m.graphCamera.Zoom <= old.Zoom || m.graphCamera.Center.X >= old.Center.X {
+	if m.graphState.Camera.Zoom <= old.Zoom || m.graphState.Camera.Center.X >= old.Center.X {
 		t.Fatal("zoom or pan failed")
 	}
 	m = keys(m, "0")
-	if m.graphCamera.Zoom != old.Zoom {
+	if m.graphState.Camera.Zoom != old.Zoom {
 		t.Fatal("fit failed")
 	}
 	m = keys(m, "o")
-	if !m.graphOrbit {
+	if !m.graphState.Orbit {
 		t.Fatal("orbit failed")
 	}
 	m = keys(m, " ")
-	if !m.graphPaused {
+	if !m.graphState.Paused {
 		t.Fatal("pause failed")
 	}
 	m = keys(m, "enter")
@@ -110,7 +110,7 @@ func TestGraphConnectedNodesSpanRows(t *testing.T) {
 	w, h := m.graphSize()
 	low, high := h, 0
 	for _, n := range []string{"architect", "project-01", "project-02", "project-03", "project-04", "project-05"} {
-		_, y := m.graphCamera.Project(m.graph.Positions[n], w, h)
+		_, y := m.graphState.Camera.Project(m.graphState.Graph.Positions[n], w, h)
 		row := int(y)
 		low = min(low, row)
 		high = max(high, row)
@@ -123,9 +123,9 @@ func TestGraphConnectedNodesSpanRows(t *testing.T) {
 func TestGraphFixtureLabelsStayWithTheirMarkers(t *testing.T) {
 	m := graphModel(120, 34)
 	w, h := m.graphSize()
-	lines := (graphview.Braille{Now: t0}).Render(m.graph, m.graphCamera, w, h)
-	for _, node := range m.graph.Nodes {
-		x, y := m.graphCamera.Project(m.graph.Positions[node.Name], w, h)
+	lines := (graphview.Braille{}).Render(graphview.BuildScene(graphview.State{Graph: m.graphState.Graph, Camera: m.graphState.Camera, Now: t0}, graphview.Viewport{Width: float64(w), Height: float64(h)}), graphview.Size{Width: w, Height: h}).Lines
+	for _, node := range m.graphState.Graph.Nodes {
+		x, y := m.graphState.Camera.Project(m.graphState.Graph.Positions[node.Name], w, h)
 		cx := int(math.Round(x*2)) / 2
 		cy := int(math.Round(y*4)) / 4
 		found := false
@@ -151,4 +151,14 @@ func absGraph(n int) int {
 		return -n
 	}
 	return n
+}
+
+func TestGraphEnterOpensEmptyMap(t *testing.T) {
+	m := mapModel(80, 24, protocol.GraphView{})
+	m.applyMap(mapMsg{view: protocol.GraphView{}, at: t0})
+	m.tab = 5
+	m = keys(m, "enter")
+	if !m.mapOn {
+		t.Fatal("enter should open the map even without a selected node")
+	}
 }

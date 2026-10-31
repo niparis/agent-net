@@ -2,12 +2,10 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
@@ -33,101 +31,72 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
-	if m.graph == nil {
+	if m.graphState.Graph == nil {
 		if k.String() == "?" {
 			m.graphHelp = true
 		}
 		return m, nil
 	}
+	var action graphview.Action
 	switch k.String() {
 	case "+", "=":
-		m.graphCamera.Zoom = math.Min(m.graphCamera.Zoom*1.25, m.graphCamera.FitZoom*8)
+		action = graphview.ZoomIn{}
 	case "-":
-		m.graphCamera.Zoom = math.Max(m.graphCamera.Zoom/1.25, m.graphCamera.FitZoom*0.3)
+		action = graphview.ZoomOut{}
 	case "left", "h":
-		m.graphCamera.Center.X -= 4 / m.graphCamera.Zoom
+		action = graphview.Pan{DX: -4}
 	case "right", "l":
-		m.graphCamera.Center.X += 4 / m.graphCamera.Zoom
+		action = graphview.Pan{DX: 4}
 	case "up", "k":
-		m.graphCamera.Center.Y -= 2 / m.graphCamera.Zoom
+		action = graphview.Pan{DY: -2}
 	case "down", "j":
-		m.graphCamera.Center.Y += 2 / m.graphCamera.Zoom
+		action = graphview.Pan{DY: 2}
 	case "0":
 		w, h := m.graphSize()
-		m.graphCamera = m.graph.Fit(w, h)
+		action = graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "[":
-		m.graph.Select(-1)
+		action = graphview.SelectPrev{}
 	case "]":
-		m.graph.Select(1)
+		action = graphview.SelectNext{}
 	case "o":
-		m.graphOrbit = !m.graphOrbit
+		action = graphview.ToggleOrbit{}
 	case " ":
-		if m.graphPaused {
-			m.graph.ShiftTraffic(m.graphPausedAt, m.now())
-			m.graphPaused = false
-		} else {
-			m.graphPaused = true
-			m.graphPausedAt = m.now()
-		}
+		action = graphview.TogglePause{}
 	case "?":
 		m.graphHelp = true
 	case "enter":
-		m.mp.selected = m.graph.Selected()
-		m.mp.overview = false
-		return m.startMap()
+		action = graphview.OpenSelected{}
+	}
+	if action != nil {
+		m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
+		var effect graphview.Effect
+		m.graphState, effect = graphview.Update(m.graphState, action)
+		if effect.Open {
+			m.mp.selected = effect.OpenMap
+			m.mp.overview = false
+			return m.startMap()
+		}
 	}
 	return m, nil
 }
+
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
 		return append(out, sDim.Render("  + - zoom  arrows/hjkl pan  0 fit  [ ] select  o orbit"), sDim.Render("  enter Map  space pause  ? close  tab CTO"))
 	}
-	if m.graph == nil {
+	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
 	gw, gh := max(w-4, 1), max(h-4, 1)
-	cam := m.graphCamera
-	if cam.Zoom <= 0 {
-		cam = m.graph.Fit(gw, gh)
-	}
-	g := m.graph
-	if m.graphOrbit {
-		copyGraph := *g
-		copyGraph.Positions = graphOrbitPositions(g)
-		g = &copyGraph
-	}
-	now := m.now()
-	if m.graphPaused {
-		now = m.graphPausedAt
-	}
-	renderer := graphview.Braille{Now: now, Color: func(role, text string) string {
-		color := roleDim
-		switch role {
-		case "depends":
-			color = roleAccent
-		case "governs":
-			color = roleCTO
-		case "deploys":
-			color = roleWarning
-		case "node", "label", "card":
-			color = roleText
-		case "busy", "comet":
-			color = roleGood
-		case "selected", "flash":
-			color = roleWarning
-		case "busyPulse":
-			color = roleWarning
-		case "trail":
-			color = roleAccent
-		}
-		return lipgloss.NewStyle().Foreground(color).Render(text)
-	}}
-	for _, line := range renderer.Render(g, cam, gw, gh) {
+	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
+	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
+	renderer := graphview.Braille{Styled: true}
+	for _, line := range renderer.Render(scene, graphview.Size{Width: gw, Height: gh}).Lines {
 		out = append(out, "  "+line)
 	}
 	feed := []string{}
-	for _, msg := range m.graph.Recent() {
+	for _, msg := range scene.Feed {
 		feed = append(feed, fmt.Sprintf("%s → %s %s", sanitize(msg.From), sanitize(msg.To), sanitize(msg.Kind)))
 	}
 	if len(feed) == 0 {
@@ -135,54 +104,9 @@ func (m Model) graphView(w, h int) []string {
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
 	hint := "  + - zoom  hjkl pan  0 fit  [ ] select  o orbit  enter Map  space pause  ? keys"
-	if m.graphPaused {
+	if scene.Paused {
 		hint = "  paused · " + strings.TrimSpace(hint)
 	}
 	out = append(out, sDim.Render(clip(hint, w)))
-	return out
-}
-func graphOrbitPositions(g *graphview.Graph) map[string]graphview.Point {
-	sel := g.Selected()
-	dist := map[string]int{sel: 0}
-	q := []string{sel}
-	for len(q) > 0 {
-		n := q[0]
-		q = q[1:]
-		for _, e := range g.Edges {
-			other := ""
-			if e.From == n {
-				other = e.To
-			} else if e.To == n {
-				other = e.From
-			}
-			if other == "" || other == "*" {
-				continue
-			}
-			if _, ok := g.Positions[other]; !ok {
-				continue
-			}
-			if _, ok := dist[other]; !ok {
-				dist[other] = dist[n] + 1
-				q = append(q, other)
-			}
-		}
-	}
-	rings := map[int][]string{}
-	for _, n := range g.Nodes {
-		d, ok := dist[n.Name]
-		if !ok || d > 3 {
-			d = 3
-		}
-		rings[d] = append(rings[d], n.Name)
-	}
-	center := g.Positions[sel]
-	out := map[string]graphview.Point{}
-	for d, names := range rings {
-		for i, name := range names {
-			a := 2*math.Pi*float64(i)/float64(len(names)) - math.Pi/2
-			radius := float64(d) * 0.65
-			out[name] = graphview.Point{X: center.X + radius*math.Cos(a), Y: center.Y + radius*math.Sin(a)}
-		}
-	}
 	return out
 }

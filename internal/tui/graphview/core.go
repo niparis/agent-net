@@ -37,10 +37,14 @@ func (c Camera) Level() string {
 	return "labels"
 }
 
-// Renderer accepts a graph and viewport without coupling graph state to a UI toolkit.
+// Renderer converts a semantic scene to an output at a given size. A kitty
+// renderer can instead draw the scene to an image and transmit it using the
+// kitty graphics protocol.
 type Renderer interface {
-	Render(*Graph, Camera, int, int) []string
+	Render(Scene, Size) Output
 }
+type Size struct{ Width, Height int }
+type Output struct{ Lines []string }
 
 type Graph struct {
 	Nodes     []protocol.Node
