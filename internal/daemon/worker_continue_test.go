@@ -354,3 +354,42 @@ func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
 		})
 	}
 }
+
+func TestContinueChainKeepsEarlierCommits(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	a := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "write work", Isolation: protocol.IsolationWorktree})
+	if err := os.WriteFile(filepath.Join(a.Worktree, "chain.txt"), []byte("work\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: a.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	b, err := w.startDefault(protocol.WorkerStartRequest{Continue: a.SessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: b.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	// Main can advance after B ends. C must still start from B's original tip.
+	gitOutT(t, repo, "merge", "--ff-only", a.Branch)
+	if err := os.WriteFile(filepath.Join(repo, "later.txt"), []byte("later\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitOutT(t, repo, "add", "later.txt")
+	gitOutT(t, repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "later main change")
+	c, err := w.startDefault(protocol.WorkerStartRequest{Continue: b.SessionID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := gitOutT(t, c.Worktree, "rev-parse", "HEAD"), gitOutT(t, repo, "rev-parse", a.Branch); got != want {
+		t.Errorf("continued from %s, want earlier worker commit %s", got, want)
+	}
+	if strings.Contains(c.Task.Body, "left no changes") {
+		t.Errorf("incorrect brief: %s", c.Task.Body)
+	}
+	if _, err := os.Stat(filepath.Join(c.Worktree, "chain.txt")); err != nil {
+		t.Errorf("missing earlier work: %v", err)
+	}
+}

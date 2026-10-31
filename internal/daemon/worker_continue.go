@@ -62,6 +62,24 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree}, r.EndedReason)
 		// The branch is kept when the old worker left changes. If it is gone,
 		// the new worker starts from the project's current commit.
+		// Cleanup removes an unchanged worker branch, even when its starting
+		// commit contains work inherited from an earlier worker. Restore it
+		// when another worker branch points there, or its commit is outside
+		// main HEAD. This also works if main has since incorporated that work.
+		if r.Branch != "" && r.Base != "" {
+			if _, err := gitOut(ctx, path, "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}"); err != nil {
+				parents, err := gitOut(ctx, path, "for-each-ref", "--format=%(refname)", "--points-at", r.Base, "refs/heads/agent-net/")
+				if err != nil {
+					return none, fmt.Errorf("cannot find worker branches at %s: %w", r.Base, err)
+				}
+				_, ancestorErr := gitOut(ctx, path, "merge-base", "--is-ancestor", r.Base, "HEAD")
+				if parents != "" || ancestorErr != nil {
+					if _, err := gitOut(ctx, path, "branch", r.Branch, r.Base); err != nil {
+						return none, fmt.Errorf("cannot restore worker branch %s: %w", r.Branch, err)
+					}
+				}
+			}
+		}
 		if _, err := gitOut(ctx, path, "rev-parse", "--verify", "refs/heads/"+r.Branch+"^{commit}"); err == nil {
 			l.Base = r.Branch
 			where = "branch"
