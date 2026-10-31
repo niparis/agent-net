@@ -68,10 +68,11 @@ type NodeWorkers struct {
 	// long a start may wait in the queue (default 2h). StartGap is the least
 	// time between two worker starts (default 6s; "0s" or a negative duration
 	// turns it off).
-	CPUTarget    float64 `json:"cpu_target,omitempty"`
-	MemReserve   string  `json:"mem_reserve,omitempty"`
-	QueueTimeout string  `json:"queue_timeout,omitempty"`
-	StartGap     string  `json:"start_gap,omitempty"`
+	CPUTarget              float64 `json:"cpu_target,omitempty"`
+	MemReserve             string  `json:"mem_reserve,omitempty"`
+	QueueTimeout           string  `json:"queue_timeout,omitempty"`
+	BackgroundStartTimeout string  `json:"background_start_timeout,omitempty"`
+	StartGap               string  `json:"start_gap,omitempty"`
 }
 
 // parseSize reads a size such as "2GB", "1536MB" or "1.5GiB" into bytes.
@@ -119,7 +120,7 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 		in   string
 		out  *time.Duration
 	}{{"idle", nc.Workers.Idle, &s.Idle}, {"idle_notice", nc.Workers.IdleNotice, &s.IdleNotice}, {"max_age", nc.Workers.MaxAge, &s.MaxAge}, {"owner_grace", nc.Workers.OwnerGrace, &s.OwnerGrace},
-		{"queue_timeout", nc.Workers.QueueTimeout, &s.QueueTimeout}} {
+		{"queue_timeout", nc.Workers.QueueTimeout, &s.QueueTimeout}, {"background_start_timeout", nc.Workers.BackgroundStartTimeout, &s.BackgroundStartTimeout}} {
 		if f.in == "" {
 			continue
 		}

@@ -280,6 +280,10 @@ func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.
 	out := &protocol.WorkerStartResult{Status: "started", MachineNote: ans.MachineNote, SessionID: ans.SessionID, NodeID: ans.NodeID, Hostname: ans.Hostname,
 		Project: ans.Project, Path: ans.Path, Harness: ans.Harness, Model: ans.Model, ModelNote: ans.ModelNote, Worktree: ans.Worktree, Branch: ans.Branch,
 		Permissions: ans.Permissions, Track: ans.Track, Playbooks: ans.Playbooks}
+	if ans.Starting {
+		out.Status = "starting"
+		return out, nil
+	}
 	// The task is a normal message from the caller, with the fixed preamble.
 	task := p.Task
 	if ans.Task != "" {

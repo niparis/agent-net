@@ -209,3 +209,14 @@ func (f *fakeOp) ProjectDisplayName(context.Context, string) (protocol.ProjectDi
 func (f *fakeOp) SetProjectDisplayName(context.Context, string, string) (protocol.ProjectDisplayResult, error) {
 	return protocol.ProjectDisplayResult{}, nil
 }
+
+func TestStartCommandReportsStarting(t *testing.T) {
+	f := &fakeOp{result: protocol.WorkerStartResult{Status: "starting", SessionID: "s_w", Harness: "opencode", Project: "shop", Hostname: "mac", Worktree: "/wt", Branch: "agent-net/w_1"}}
+	var out bytes.Buffer
+	if err := runStart(context.Background(), f, &out, []string{"--project", "shop", "work"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "starting worker s_w") || !strings.Contains(out.String(), "notice") {
+		t.Fatalf("output: %s", out.String())
+	}
+}

@@ -116,6 +116,14 @@ func TestOpenCodeNameAndDormantStatus(t *testing.T) {
 		SessionID string `json:"session_id"`
 	}
 	json.Unmarshal(res, &r)
+	eventually(t, "the new session appears in the cached list", func() bool {
+		for _, a := range onlineAgents(t, cli) {
+			if a.SessionID == r.SessionID {
+				return true
+			}
+		}
+		return false
+	})
 	if a := agentByID(t, cli, r.SessionID); a.Profile.Name != "strategies" || a.Title != "fix the risk model" {
 		t.Fatalf("name from hello %q title %q", a.Profile.Name, a.Title)
 	}

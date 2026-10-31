@@ -63,9 +63,10 @@ func TestHandbackEndsTheWorkerAndOwnerFollowUpResumesIt(t *testing.T) {
 	if len(w.logs.lines("worker.resumed", "session="+res.SessionID)) != 1 {
 		t.Errorf("no worker.resumed line: %v", w.logs.lines("worker.resumed"))
 	}
-	if len(w.workers(t)) != 1 || w.workers(t)[0].SessionID != res.SessionID {
-		t.Errorf("the resumed worker is not listed: %+v", w.workers(t))
-	}
+	eventually(t, "the resumed worker is listed", func() bool {
+		workers := w.workers(t)
+		return len(workers) == 1 && workers[0].SessionID == res.SessionID
+	})
 }
 
 func TestOpenCodeWorkerQueuedTurnAfterHandback(t *testing.T) {

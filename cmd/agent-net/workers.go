@@ -66,7 +66,11 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 		fmt.Fprintf(out, "cancel it with: agent-net stop %s\n", res.QueueID)
 		return nil
 	}
-	fmt.Fprintf(out, "started worker %s (%s%s, project %s on %s)\n", res.SessionID, res.Harness, modelSuffix(res.Model), res.Project, res.Hostname)
+	verb := "started"
+	if res.Status == "starting" {
+		verb = "starting"
+	}
+	fmt.Fprintf(out, "%s worker %s (%s%s, project %s on %s)\n", verb, res.SessionID, res.Harness, modelSuffix(res.Model), res.Project, res.Hostname)
 	if res.MachineNote != "" {
 		fmt.Fprintf(out, "machine: %s\n", res.MachineNote)
 	}
@@ -77,12 +81,16 @@ func runStart(ctx context.Context, op operator.Operator, out io.Writer, args []s
 		fmt.Fprintf(out, "worktree %s on branch %s\n", res.Worktree, res.Branch)
 	}
 	switch {
+	case res.Status == "starting":
+		fmt.Fprintln(out, "checkout and launch are in progress; a notice follows when the worker starts or fails")
 	case res.Queued:
 		fmt.Fprintln(out, "the task is queued: the gateway link dropped, and it is sent when the link is back")
 	case res.Task != nil:
 		fmt.Fprintf(out, "task sent as %s. The reply comes to you: see `agent-net tui` or `agent-net messages`\n", res.Task.ID)
 	}
-	fmt.Fprintf(out, "stop it with: agent-net stop %s\n", res.SessionID)
+	if res.Status != "starting" {
+		fmt.Fprintf(out, "stop it with: agent-net stop %s\n", res.SessionID)
+	}
 	return nil
 }
 

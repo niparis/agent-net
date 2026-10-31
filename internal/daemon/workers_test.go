@@ -154,7 +154,41 @@ func (w *workerNode) startDefault(req protocol.WorkerStartRequest) (protocol.Wor
 	if err == nil {
 		json.Unmarshal(raw, &res)
 	}
-	return res, err
+	if err != nil || res.Status != "starting" {
+		return res, err
+	}
+	// Most lifecycle tests need a fully launched worker. The start-deadline
+	// tests exercise the immediate starting result directly.
+	deadline := time.Now().Add(scaled(20 * time.Second))
+	for time.Now().Before(deadline) {
+		for _, m := range w.messagesOf(w.t, w.ownerID()) {
+			if m.To == res.SessionID && m.Type == protocol.TypeRequest {
+				if wk := w.d.workerBySession(res.SessionID); wk != nil {
+					w.d.wmu.Lock()
+					done := wk.startDone
+					w.d.wmu.Unlock()
+					if done != nil {
+						select {
+						case <-done:
+						default:
+							continue
+						}
+					}
+				}
+				res.Task = &m
+				res.Status = "started"
+				return res, nil
+			}
+		}
+		if w.d.workerBySession(res.SessionID) == nil {
+			lines := w.logs.lines("worker.refused", "project="+res.Project)
+			if len(lines) > 0 {
+				return res, fmt.Errorf("%s", lines[len(lines)-1])
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return res, fmt.Errorf("timed out waiting for worker %s to receive its task", res.SessionID)
 }
 
 func (w *workerNode) mustStart(t *testing.T, req protocol.WorkerStartRequest) protocol.WorkerStartResult {
@@ -985,9 +1019,19 @@ func TestAgentStopsOnlyItsOwnWorkers(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	mine, _ := helloPi(t, w.node, "pi-a", "/work/a", true)
+	mine, mineID := helloPi(t, w.node, "pi-a", "/work/a", true)
 	other, _ := helloPi(t, w.node, "pi-b", "/work/b", true)
 	res := mustWorker(t, mine.mustCall("worker_start", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}))
+	if res.Status == "starting" {
+		eventually(t, "the worker receives its task", func() bool {
+			for _, m := range w.messagesOf(t, mineID) {
+				if m.To == res.SessionID && m.Type == protocol.TypeRequest {
+					return true
+				}
+			}
+			return false
+		})
+	}
 	if _, err := other.call("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID}); err == nil ||
 		!strings.Contains(err.Error(), "only the worker's owner") {
 		t.Fatalf("another agent stopped the worker: %v", err)

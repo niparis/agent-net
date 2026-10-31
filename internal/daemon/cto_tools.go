@@ -436,8 +436,8 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 			text = fmt.Sprintf("sent to %s", a.To)
 		case "worker_start":
 			verb := "started"
-			if r, ok := result.(*protocol.WorkerStartResult); ok && r.Status == "queued" {
-				verb = "queued"
+			if r, ok := result.(*protocol.WorkerStartResult); ok && (r.Status == "queued" || r.Status == "starting") {
+				verb = r.Status
 			}
 			text = fmt.Sprintf("worker %s: %s", verb, a.Project)
 		}

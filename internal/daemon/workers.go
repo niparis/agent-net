@@ -57,6 +57,8 @@ type WorkerSettings struct {
 	Tick time.Duration
 	// StartTimeout is how long a start may take. Default 45 s.
 	StartTimeout time.Duration
+	// BackgroundStartTimeout bounds checkout and launch after the reply.
+	BackgroundStartTimeout time.Duration
 	// KillGrace is how long a worker gets after SIGTERM before SIGKILL.
 	// Default 3 s.
 	KillGrace time.Duration
@@ -104,6 +106,9 @@ func (s WorkerSettings) filled() WorkerSettings {
 	}
 	if s.StartTimeout <= 0 {
 		s.StartTimeout = 45 * time.Second
+	}
+	if s.BackgroundStartTimeout <= 0 {
+		s.BackgroundStartTimeout = 10 * time.Minute
 	}
 	if s.KillGrace <= 0 {
 		s.KillGrace = 3 * time.Second
@@ -178,11 +183,13 @@ type worker struct {
 	codex *codexConn
 	// piLimit is the context window of the Pi model the session file names.
 	// It is read from `pi --list-models` once and kept for the worker.
-	piLimitModel string
-	piLimit      int64
-	exited       chan struct{} // closed when an own child is reaped; nil if adopted
-	ready        chan struct{} // closed when the session has a gateway ID
-	readyOnce    sync.Once
+	piLimitModel    string
+	piLimit         int64
+	exited          chan struct{} // closed when an own child is reaped; nil if adopted
+	backgroundStart bool          // a start whose response was sent before launch
+	startDone       chan struct{} // closed after deferred task delivery
+	ready           chan struct{} // closed when the session has a gateway ID
+	readyOnce       sync.Once
 }
 
 // launcher starts one kind of harness for a worker.
@@ -412,8 +419,8 @@ func (d *Daemon) touchWorker(sessionIDs ...string) {
 
 func (d *Daemon) saveWorkerLocked(w *worker) {
 	w.savedAt = time.Now()
-	if w.pid == 0 {
-		return // still starting
+	if w.pid == 0 || w.stopping {
+		return // still starting, or its final record is being saved
 	}
 	if err := d.st.saveWorker(d.rowLocked(w, "")); err != nil {
 		d.Logf("worker %s: save: %v", w.id, err)
@@ -500,7 +507,7 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 		}
 		return *q, nil
 	}
-	out, err = d.runWorkerStartChecked(ctx, l, set)
+	out, err = d.runWorkerStartChecked(ctx, l, set, true)
 	if err != nil {
 		d.clearStartReservation()
 	}
@@ -514,10 +521,13 @@ func (d *Daemon) runWorkerStart(ctx context.Context, l protocol.WorkerLaunch) (p
 	if l.Isolation == "" && isGitRepo(ctx, l.Path) {
 		l.Isolation = protocol.IsolationWorktree
 	}
-	return d.runWorkerStartChecked(ctx, l, set)
+	if l.Isolation == protocol.IsolationWorktree {
+		set.StartTimeout = set.BackgroundStartTimeout
+	}
+	return d.runWorkerStartChecked(ctx, l, set, false)
 }
 
-func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings) (out protocol.WorkerLaunched, err error) {
+func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool) (out protocol.WorkerLaunched, err error) {
 	refuse := func(format string, a ...any) (protocol.WorkerLaunched, error) {
 		err := fmt.Errorf(format, a...)
 		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
@@ -549,6 +559,50 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	d.workers[w.id] = w
 	d.wmu.Unlock()
 
+	if async && l.Isolation == protocol.IsolationWorktree {
+		d.wmu.Lock()
+		w.sessionID = protocol.NewID("s")
+		w.backgroundStart = true
+		w.startDone = make(chan struct{})
+		sid := w.sessionID
+		d.wmu.Unlock()
+		d.wg.Add(1)
+		go func() {
+			defer d.wg.Done()
+			defer close(w.startDone)
+			backgroundSet := set
+			backgroundSet.StartTimeout = set.BackgroundStartTimeout
+			out, err := d.finishWorkerStart(d.ctoCtx, l, backgroundSet, w, rules)
+			if err == nil && out.SessionID != sid {
+				err = fmt.Errorf("the gateway did not reserve worker session %s", sid)
+				d.endWorker(w, protocol.StopStartFails)
+			}
+			e := queuedStart{Owner: l.Owner, Project: l.Project, Harness: l.Harness, Model: l.Model, Task: l.Task, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: w.startedAt}
+			if err != nil {
+				d.clearStartReservation()
+				d.notStarted(d.ctoCtx, e, err.Error())
+				return
+			}
+			cctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
+			_, err = d.call(cctx, "worker.queued_start", protocol.WorkerQueuedStart{Owner: l.Owner, SessionID: out.SessionID, Harness: l.Harness, Project: l.Project, Task: l.Task, Worktree: out.Worktree, Branch: out.Branch, ProjectRules: out.ProjectRules, Permissions: l.Permissions, FromCTO: l.FromCTO})
+			cancel()
+			if err != nil {
+				d.endWorker(w, protocol.StopStartFails)
+				d.notStarted(d.ctoCtx, e, "the worker started, but its task could not be sent: "+err.Error())
+				return
+			}
+			body := protocol.WorkerStartedText(out.SessionID, l.Harness, l.Model, l.Project, d.hostName(), time.Since(w.startedAt)) + protocol.WorkerPermissionsText(l.Permissions, l.Harness) + "\n"
+			if _, err := d.send(d.ctoCtx, protocol.MsgSend{Sender: out.SessionID, Recipient: l.Owner, Type: protocol.TypeNotification, Body: body}); err != nil {
+				d.Logf("worker %s: started notice: %v", w.id, err)
+			}
+		}()
+		return protocol.WorkerLaunched{Starting: true, SessionID: sid, WorkerID: w.id, Worktree: worktree, Branch: branch, ProjectRules: rules}, nil
+	}
+	return d.finishWorkerStart(ctx, l, set, w, rules)
+}
+
+func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, w *worker, rules string) (protocol.WorkerLaunched, error) {
+	ln := d.launchers[l.Harness]
 	cctx, cancel := context.WithTimeout(ctx, set.StartTimeout)
 	defer cancel()
 	var err2 error
@@ -561,10 +615,10 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	if err := err2; err != nil {
 		tail := d.workerLogTail(w)
 		d.endWorker(w, protocol.StopStartFails)
-		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
 		if tail != "" {
 			err = fmt.Errorf("%w (harness output: %s)", err, tail)
 		}
+		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
 		return protocol.WorkerLaunched{}, err
 	}
 	d.wmu.Lock()
@@ -764,7 +818,7 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 	d.wmu.Lock()
 	row := d.rowLocked(w, reason)
 	row.Resumable = resumable
-	if w.pid != 0 {
+	if w.pid != 0 || (reason == protocol.StopStartFails && w.backgroundStart) {
 		// Kept until the gateway has been told (and, for a hand-back, until it
 		// is too old to resume).
 		if err := d.st.saveWorker(row); err != nil {

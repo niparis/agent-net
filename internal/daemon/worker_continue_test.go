@@ -242,6 +242,22 @@ func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
 	if old.SessionID == "" {
 		t.Fatalf("%+v", old)
 	}
+	if old.Status == "starting" {
+		for {
+			m := pi.nextPush()
+			if m.From == old.SessionID && strings.Contains(m.Body, "status: started") {
+				break
+			}
+		}
+		eventually(t, "the first worker receives its task", func() bool {
+			for _, m := range w.messagesOf(t, piID) {
+				if m.To == old.SessionID && m.Type == protocol.TypeRequest {
+					return true
+				}
+			}
+			return false
+		})
+	}
 	if err := os.WriteFile(filepath.Join(old.Worktree, "half.txt"), []byte("half\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

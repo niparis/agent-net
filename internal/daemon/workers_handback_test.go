@@ -19,7 +19,7 @@ func (w *workerNode) notices(t *testing.T) []protocol.Message {
 	var out []protocol.Message
 	ms := w.messagesOf(t, w.ownerID())
 	for i := len(ms) - 1; i >= 0; i-- { // messages come newest first
-		if ms[i].To == w.ownerID() && strings.HasPrefix(ms[i].Body, "[agent-net worker notice]") {
+		if ms[i].To == w.ownerID() && strings.HasPrefix(ms[i].Body, "[agent-net worker notice]") && !strings.Contains(ms[i].Body, "\nstatus: started\n") {
 			out = append(out, ms[i])
 		}
 	}

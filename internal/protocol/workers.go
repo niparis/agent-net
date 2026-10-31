@@ -80,6 +80,7 @@ type WorkerResume struct {
 // WorkerContinue is "worker.continue", gateway to the machine: start a new
 // worker from an ended one. Only the owner of the old worker may ask.
 type WorkerContinue struct {
+	FromCTO bool `json:"sender_cto,omitempty"`
 	// Session is the old worker's session ID.
 	Session   string `json:"session"`
 	Requester string `json:"requester_session"`
@@ -209,6 +210,7 @@ type (
 	}
 	// WorkerStartAnswer is the gateway's answer to "worker.start".
 	WorkerStartAnswer struct {
+		Starting  bool   `json:"starting,omitempty"`
 		SessionID string `json:"session_id"`
 		NodeID    string `json:"node_id"`
 		Hostname  string `json:"hostname"`
@@ -271,6 +273,7 @@ type (
 	// WorkerLaunched answers "worker.launch". When the machine queued the
 	// start, Queued is true and SessionID is empty.
 	WorkerLaunched struct {
+		Starting  bool   `json:"starting,omitempty"`
 		SessionID string `json:"session_id"`
 		WorkerID  string `json:"worker_id"`
 		Worktree  string `json:"worktree,omitempty"`
