@@ -46,13 +46,27 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		action = graphview.ZoomIn{}
 	case "-":
 		action = graphview.ZoomOut{}
-	case "left", "h":
+	case "left", "right", "up", "down":
+		w, h := m.graphSize()
+		d := graphview.SelectDirection{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
+		switch k.String() {
+		case "left":
+			d.DX = -1
+		case "right":
+			d.DX = 1
+		case "up":
+			d.DY = -1
+		case "down":
+			d.DY = 1
+		}
+		action = d
+	case "shift+left", "h":
 		action = graphview.Pan{DX: -4}
-	case "right", "l":
+	case "shift+right", "l":
 		action = graphview.Pan{DX: 4}
-	case "up", "k":
+	case "shift+up", "k":
 		action = graphview.Pan{DY: -2}
-	case "down", "j":
+	case "shift+down", "j":
 		action = graphview.Pan{DY: 2}
 	case "0":
 		w, h := m.graphSize()

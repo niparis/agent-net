@@ -132,3 +132,13 @@ func TestTalkFeedBeforeGraphAndWatermark(t *testing.T) {
 		t.Fatalf("counts: %+v", s.Talk)
 	}
 }
+
+func TestSpatialSelectionUsesScreenPositions(t *testing.T) {
+	g := New(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}, {Name: "c"}}})
+	g.Positions = map[string]Point{"a": {0, 0}, "b": {-1, 0}, "c": {1, 0}}
+	s := State{Graph: g, Camera: Camera{Zoom: 1, FitZoom: 1}}
+	next, _ := Update(s, SelectDirection{DX: 1, Viewport: Viewport{Width: 80, Height: 20}})
+	if got := next.Graph.Selected(); got != "c" {
+		t.Fatalf("right selected %q, want c", got)
+	}
+}

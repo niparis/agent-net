@@ -24,6 +24,10 @@ type ZoomIn struct{}
 type ZoomOut struct{}
 type Pan struct{ DX, DY float64 }
 type Fit struct{ Viewport Viewport }
+type SelectDirection struct {
+	DX, DY   float64
+	Viewport Viewport
+}
 type SelectNext struct{}
 type SelectPrev struct{}
 type ToggleOrbit struct{}
@@ -43,21 +47,22 @@ type FeedEvents struct {
 	CountsOnly bool
 }
 
-func (ZoomIn) graphAction()       {}
-func (ZoomOut) graphAction()      {}
-func (Pan) graphAction()          {}
-func (Fit) graphAction()          {}
-func (SelectNext) graphAction()   {}
-func (SelectPrev) graphAction()   {}
-func (ToggleTalk) graphAction()   {}
-func (ToggleOrbit) graphAction()  {}
-func (TogglePause) graphAction()  {}
-func (OpenSelected) graphAction() {}
-func (Tick) graphAction()         {}
-func (GraphChanged) graphAction() {}
-func (TalkLoaded) graphAction()   {}
-func (MessageEvent) graphAction() {}
-func (FeedEvents) graphAction()   {}
+func (ZoomIn) graphAction()          {}
+func (ZoomOut) graphAction()         {}
+func (Pan) graphAction()             {}
+func (Fit) graphAction()             {}
+func (SelectDirection) graphAction() {}
+func (SelectNext) graphAction()      {}
+func (SelectPrev) graphAction()      {}
+func (ToggleTalk) graphAction()      {}
+func (ToggleOrbit) graphAction()     {}
+func (TogglePause) graphAction()     {}
+func (OpenSelected) graphAction()    {}
+func (Tick) graphAction()            {}
+func (GraphChanged) graphAction()    {}
+func (TalkLoaded) graphAction()      {}
+func (MessageEvent) graphAction()    {}
+func (FeedEvents) graphAction()      {}
 
 // Effect describes work for the host UI to perform.
 type Effect struct {
@@ -93,6 +98,52 @@ func Update(s State, action Action) (State, Effect) {
 	case Fit:
 		if s.Graph != nil {
 			s.Camera = s.Graph.Fit(int(a.Viewport.Width), int(a.Viewport.Height))
+		}
+	case SelectDirection:
+		if s.Graph != nil {
+			scene := BuildScene(s, a.Viewport)
+			var origin Point
+			found := false
+			for _, n := range scene.Nodes {
+				if n.Selected {
+					origin = n.Position
+					found = true
+					break
+				}
+			}
+			best, bestScore := -1, math.Inf(1)
+			for i, n := range scene.Nodes {
+				if n.Selected {
+					continue
+				}
+				dx, dy := (n.Position.X-origin.X)*a.Viewport.Width, (n.Position.Y-origin.Y)*a.Viewport.Height
+				forward := dx*a.DX + dy*a.DY
+				if !found {
+					dx = (n.Position.X - 0.5) * a.Viewport.Width
+					dy = (n.Position.Y - 0.5) * a.Viewport.Height
+					forward = 1
+				}
+				if forward <= 0 {
+					continue
+				}
+				distance := math.Hypot(dx, dy)
+				score := distance
+				if found {
+					score = distance * distance / forward
+				}
+				if score < bestScore {
+					best, bestScore = i, score
+				}
+			}
+			if best >= 0 {
+				name := scene.Nodes[best].Name
+				for i, n := range s.Graph.Nodes {
+					if n.Name == name {
+						s.Graph.selected = i
+						break
+					}
+				}
+			}
 		}
 	case SelectNext:
 		if s.Graph != nil {
