@@ -1309,15 +1309,7 @@ func chooseComparison(a, b toolsdiff.Copy) []string {
 	if len(parts) > 5 {
 		lines = append(lines, fmt.Sprintf("    and %d more", len(parts)-5))
 	}
-	if !a.Manifest.Newest.IsZero() && !b.Manifest.Newest.IsZero() {
-		switch {
-		case a.Manifest.Newest.After(b.Manifest.Newest) && len(added) == 0:
-			return append(lines, "  suggest: keep "+label(a)+"'s copy (newer, has every file)")
-		case b.Manifest.Newest.After(a.Manifest.Newest) && len(removed) == 0:
-			return append(lines, "  suggest: keep "+label(b)+"'s copy (newer, has every file)")
-		}
-	}
-	lines = append(lines, fmt.Sprintf("  %s lacks %s; %s lacks %s", label(a), nounCount(len(added), "file", "files"), label(b), nounCount(len(removed), "file", "files")))
+	lines = append(lines, "  no clear winner: read the comparison")
 	return lines
 }
 

@@ -579,6 +579,15 @@ func TestToolsPlanCanScrollLongComparison(t *testing.T) {
 	}
 }
 
+func TestChooseDoesNotRecommendByFileDate(t *testing.T) {
+	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Newest: time.Now().Add(-time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "a"}}}}
+	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: time.Now(), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "b"}}}}
+	got := strings.Join(chooseComparison(a, b), "\n")
+	if strings.Contains(got, "suggest: keep") || !strings.Contains(got, "no clear winner") {
+		t.Fatalf("file dates alone cannot establish a winner: %s", got)
+	}
+}
+
 func TestChooseShowsManifestDecision(t *testing.T) {
 	m, _ := toolsAtScreen(80, 24, 0)
 	now := m.now()
@@ -586,7 +595,7 @@ func TestChooseShowsManifestDecision(t *testing.T) {
 	newer := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: now.Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 20, Fingerprint: "new"}, {Path: "scripts/run.sh", Size: 5, Fingerprint: "x"}}}}
 	model, _ := m.openChoose("Compare, then keep one", toolsdiff.Action{Copies: []toolsdiff.Copy{old, newer}})
 	v := plain(model.(Model))
-	for _, want := range []string{"3 days ago", now.Add(-72 * time.Hour).Format("2 Jan"), "newer", "2 files", "25 B", "SKILL.md changed", "scripts/run.sh only on beta", "suggest: keep beta's copy"} {
+	for _, want := range []string{"3 days ago", now.Add(-72 * time.Hour).Format("2 Jan"), "newer", "2 files", "25 B", "SKILL.md changed", "scripts/run.sh only on beta", "no clear winner"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}
@@ -597,7 +606,7 @@ func TestChooseExplainsMissingFilesWithoutRecommendation(t *testing.T) {
 	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "a"}}}}
 	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "b"}}}}
 	got := strings.Join(chooseComparison(a, b), "\n")
-	for _, want := range []string{"alpha lacks 1 file", "beta lacks 1 file"} {
+	for _, want := range []string{"a only on alpha", "b only on beta", "no clear winner"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q: %s", want, got)
 		}
@@ -652,7 +661,7 @@ func TestChooseWrapsWordsAt80Columns(t *testing.T) {
 	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: m.now().Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "scripts/run.sh", Fingerprint: "new"}}}}
 	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
 	v := plain(model.(Model))
-	for _, word := range []string{"SKILL.md", "scripts/run.sh", "suggest:", "newer", "file"} {
+	for _, word := range []string{"SKILL.md", "scripts/run.sh", "no clear winner", "newer", "file"} {
 		if !strings.Contains(v, word) {
 			t.Errorf("word %q split or missing: %s", word, v)
 		}
