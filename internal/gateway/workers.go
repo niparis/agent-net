@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1015,8 +1016,11 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 // an offline session. The machine decides whether its harness can resume.
 func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protocol.MsgSend) error {
 	a, ok, err := g.store.Agent(p.Recipient)
-	if err != nil || !ok || a.Worker == nil || a.Online {
+	if err != nil || !ok || a.Worker == nil {
 		return err
+	}
+	if a.Online && a.Worker.Owner != p.Sender {
+		return nil
 	}
 	if a.Worker.Owner != p.Sender {
 		return reject("worker %s has ended, and only the session that started it can start it again", p.Recipient)
@@ -1038,6 +1042,34 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	}
 	g.logLine("worker.resumed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "owner", p.Sender)
 	return nil
+}
+
+// notifyResumeRefusal reports a failed restart even when the original send
+// was queued while its sender was disconnected from the gateway.
+func (g *Gateway) notifyResumeRefusal(ctx context.Context, p protocol.MsgSend, reason error) {
+	a, ok, err := g.store.Agent(p.Recipient)
+	if err != nil || !ok || a.Worker == nil || a.Worker.Owner != p.Sender {
+		return
+	}
+	body := fmt.Sprintf("[agent-net] Your message could not be delivered because %v. Retry the message or start a new worker.\n\nMessage: ", reason)
+	remaining := protocol.MaxBodyBytes - len(body)
+	if remaining < 0 {
+		return
+	}
+	if len(p.Body) <= remaining {
+		body += p.Body
+	} else {
+		body += strings.ToValidUTF8(p.Body[:remaining], "")
+	}
+	key := fmt.Sprintf("resume-refusal-%x", sha256.Sum256([]byte(p.Sender+"\x00"+p.IdempotencyKey)))
+	m, created, err := g.store.StoreMessage(protocol.MsgSend{Sender: p.Recipient, Recipient: p.Sender, Type: protocol.TypeNotification, Body: body, IdempotencyKey: key})
+	if err != nil {
+		g.logLine("worker.resume_notice_failed", "session", p.Recipient, "reason", err)
+		return
+	}
+	if created {
+		g.dispatch(ctx, m)
+	}
 }
 
 // workerChoiceNote leaves the parenthesis open for resolution and protection notes.
