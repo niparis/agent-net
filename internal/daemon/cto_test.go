@@ -468,3 +468,15 @@ func TestCTOEnterOpenCode(t *testing.T) {
 		t.Fatalf("plan: %+v", plan)
 	}
 }
+
+func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
+	for _, want := range []string{
+		"To learn about a project, find it with the projects and agents tools or its graph node (machine, folder, live sessions).",
+		"You can read files only on your own machine; for a project elsewhere, or to draft its charter, send its live session a request and use its answer.",
+		"Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.",
+	} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("CTO brief missing %q", want)
+		}
+	}
+}
