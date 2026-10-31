@@ -179,6 +179,12 @@ func defaultGatewayData() string {
 }
 
 func cmdGateway(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "backup" {
+		return cmdGatewayBackup(ctx, args[1:])
+	}
+	if len(args) > 0 && args[0] == "restore" {
+		return cmdGatewayRestore(args[1:])
+	}
 	fs := flag.NewFlagSet("gateway", flag.ExitOnError)
 	listen := fs.String("listen", "0.0.0.0:7420", "address to listen on")
 	phoneListen := fs.String("phone-listen", "", "phone HTTP listener on 127.0.0.1:port (disabled by default)")

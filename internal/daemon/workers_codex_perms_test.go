@@ -229,6 +229,9 @@ func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
 	if m, _ := rec.Answers[0].(map[string]any); m["decision"] != "decline" {
 		t.Errorf("answer: %v", rec.Answers[0])
 	}
+	// The fake process and its cleanup can still write in the temporary repo
+	// after recording the answer. Wait before TempDir removes that repo.
+	eventually(t, "worker cleanup", func() bool { return w.d.workerCount() == 0 })
 }
 
 // Only the owner sets the level: an agent session is refused, and a session

@@ -44,13 +44,15 @@ type Options struct {
 }
 
 type Gateway struct {
-	opts   Options
-	store  *Store
-	ca     *authority
-	cert   tls.Certificate
-	fp     string
-	pin    string
-	logger *log.Logger
+	opts     Options
+	store    *Store
+	skillsMu sync.Mutex
+	skills   *skillStore
+	ca       *authority
+	cert     tls.Certificate
+	fp       string
+	pin      string
+	logger   *log.Logger
 	// adminToken guards /v1/admin. It is new on every start and is written
 	// to admin.json in the data dir, which only the local user can read.
 	adminToken string
@@ -187,6 +189,12 @@ func New(opts Options) (*Gateway, error) {
 	}
 	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+	skills, err := openSkillStore(opts.DataDir, store)
+	if err != nil {
+		store.Close()
+		return nil, err
+	}
+	g.skills = skills
 	store.logf = g.logLine
 	if store.graphJunkMigrated {
 		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
@@ -405,6 +413,10 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
+		if h.Type == "tools.import" || h.Type == "gateway.backup" {
+			go g.answer(ctx, nc, h, raw)
+			continue
+		}
 		if strings.HasPrefix(h.Type, "mcp.") {
 			go g.serveMCP(ctx, nc, h, raw)
 			continue
@@ -531,6 +543,38 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("bad node.inventory")
 		}
 		return nil, st.SetInventory(nc.id, p)
+
+	case "gateway.backup":
+		p, err := decode[struct {
+			Path string `json:"path"`
+		}](raw)
+		if err != nil || p.Path == "" {
+			return nil, reject("backup needs a path")
+		}
+		if err = g.Backup(p.Path); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
+
+	case "tools.import":
+		p, err := decode[protocol.ToolImport](raw)
+		if err != nil {
+			return nil, reject("invalid skill import")
+		}
+		return g.importSkill(ctx, p)
+
+	case "tools.versions":
+		p, err := decode[protocol.ToolVersionRequest](raw)
+		if err != nil || p.Item == "" {
+			return nil, reject("versions needs an item")
+		}
+		return g.skillVersions(p.Item)
+	case "tools.export":
+		p, err := decode[protocol.ToolVersionRequest](raw)
+		if err != nil || p.Item == "" || p.Version == "" {
+			return nil, reject("export needs an item and version")
+		}
+		return g.exportSkill(p.Item, p.Version)
 
 	case "query.inventory":
 		p, err := decode[struct {

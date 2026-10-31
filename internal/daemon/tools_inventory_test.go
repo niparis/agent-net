@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -119,4 +121,127 @@ func TestProjectRegistrationRefreshesTools(t *testing.T) {
 		raw, err := cli.call("tools_items", map[string]any{"project": "demo"})
 		return err == nil && strings.Contains(string(raw), `"name":"example"`)
 	})
+}
+
+func TestToolsImportFromOwnerPreservesSource(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/import-me")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(dir, "SKILL.md")
+	if err := os.WriteFile(src, []byte("fixture skill"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var item protocol.ToolItem
+	eventually(t, "tool inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "skill", "harness": "claude"})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "import-me" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	loc := item.Locations[0]
+	req := map[string]any{"item": item.ID, "location": map[string]string{"node_id": loc.NodeID, "location": loc.Location}}
+	if _, err := cli.call("tools_import", req); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(src); err != nil || string(got) != "fixture skill" {
+		t.Fatalf("source changed: %q %v", got, err)
+	}
+	pi, _ := helloPi(t, n, "pi-import", "/work", true)
+	if _, err := pi.call("tools_import", req); err == nil {
+		t.Fatal("agent imported skill")
+	}
+}
+
+func TestToolsVersionsAndExport(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/versioned")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("version contents"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var item protocol.ToolItem
+	eventually(t, "inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "skill", "harness": "claude"})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "versioned" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	loc := item.Locations[0]
+	req := map[string]any{"item": item.ID, "location": map[string]string{"node_id": loc.NodeID, "location": loc.Location}}
+	cli.mustCall("tools_import", req)
+	cli.mustCall("tools_import", req)
+	raw := cli.mustCall("tools_versions", map[string]any{"item": item.ID})
+	var versions struct {
+		Versions []struct {
+			Hash string `json:"hash"`
+		} `json:"versions"`
+	}
+	if err := json.Unmarshal(raw, &versions); err != nil || len(versions.Versions) != 1 {
+		t.Fatalf("versions: %s %v", raw, err)
+	}
+	raw = cli.mustCall("tools_export", map[string]any{"item": item.ID, "version": versions.Versions[0].Hash})
+	var bundle protocol.SkillBundle
+	if err := json.Unmarshal(raw, &bundle); err != nil {
+		t.Fatal(err)
+	}
+	out := t.TempDir()
+	if err := inventory.UnpackSkill(bundle.Data, out); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(out, "SKILL.md"))
+	if err != nil || string(b) != "version contents" {
+		t.Fatalf("export %q %v", b, err)
+	}
+}
+
+func TestGatewayBackupOwnerGate(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	cli := cliClient(t, n)
+	target := filepath.Join(t.TempDir(), "backup")
+	if _, err := cli.call("gateway_backup", map[string]any{"path": target}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "gateway.db")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "skills.git", "HEAD")); err != nil {
+		t.Fatal(err)
+	}
+	pi, _ := helloPi(t, n, "pi-backup", "/work", true)
+	if _, err := pi.call("gateway_backup", map[string]any{"path": filepath.Join(t.TempDir(), "forbidden")}); err == nil {
+		t.Fatal("agent accessed gateway backup")
+	}
 }

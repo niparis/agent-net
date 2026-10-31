@@ -94,3 +94,27 @@ type ToolDetail struct {
 	Item         ToolItem          `json:"item"`
 	VariantDiffs []ToolVariantDiff `json:"variant_diffs"`
 }
+
+// ToolImportLocation selects one observed copy by machine and path.
+type ToolImportLocation struct {
+	NodeID   string `json:"node_id"`
+	Location string `json:"location"`
+}
+type ToolImport struct {
+	Item     string             `json:"item"`
+	Location ToolImportLocation `json:"location"`
+}
+type SkillBundleRequest struct {
+	Name     string `json:"name"`
+	Hash     string `json:"hash"`
+	Location string `json:"location"`
+}
+type SkillBundle struct {
+	Data []byte `json:"data"`
+}
+
+// ToolVersionRequest selects a stored skill and optional content-hash version.
+type ToolVersionRequest struct {
+	Item    string `json:"item"`
+	Version string `json:"version,omitempty"`
+}
