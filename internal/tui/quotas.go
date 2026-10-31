@@ -130,6 +130,7 @@ type quotaModel struct {
 	used, done, failedRuns                        int
 	last                                          int64
 	failed, allowed, scored, succeeded, available bool
+	stale                                         bool
 }
 
 // quotaModels lists only registered profiles, including unavailable profiles.
@@ -141,7 +142,7 @@ func (m Model) quotaModels() []quotaModel {
 		if p.Effort != "" {
 			model += ":" + p.Effort
 		}
-		row := quotaModel{name: p.Name, harness: p.Harness, model: model, failed: true}
+		row := quotaModel{name: p.Name, harness: p.Harness, model: model, failed: true, stale: p.Available != nil && !*p.Available}
 		found := false
 		for _, n := range m.snap.Nodes {
 			for _, track := range n.Tracks {
@@ -186,6 +187,9 @@ func (m Model) quotaModels() []quotaModel {
 			}
 		}
 		row.score, row.scored = protocol.LookupModelScoreWithDefaultEffort(model, row.defaultEffort, m.snap.Scores)
+		if row.stale {
+			row.available = false
+		}
 		for _, a := range m.snap.Agents {
 			if a.Harness == p.Harness && a.Model == model {
 				if a.LastSeen > row.last {
@@ -240,7 +244,7 @@ func (m Model) quotaModelsView(w int) []string {
 		for i, level := range levels {
 			letter := "-"
 			color := roleFaint
-			if r.scored {
+			if r.scored && !r.stale {
 				fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
 				switch fit {
 				case "excellent":
@@ -264,10 +268,10 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 		score := "-"
-		if r.scored {
+		if r.scored && !r.stale {
 			score = fmt.Sprintf("%g", r.score.Score)
 		}
-		if r.score.Effort != "" {
+		if r.score.Effort != "" && !r.stale {
 			score += "/" + r.score.Effort
 		}
 		usage := fmt.Sprintf("%d runs", r.used)
@@ -278,7 +282,7 @@ func (m Model) quotaModelsView(w int) []string {
 		line := fmt.Sprintf("%-*s %-*s %-*s %-11s %s  %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(r.model), modelWidth), cell(score, 11), strings.Join(fits, " "), usage)
 		if w < 100 {
 			shortScore := "-"
-			if r.scored {
+			if r.scored && !r.stale {
 				shortScore = fmt.Sprintf("%g", r.score.Score)
 			}
 			line = fmt.Sprintf("%-18s %-8s %-26s %-5s %s", cell(sanitize(r.name), 18), cell(r.harness, 8), cell(sanitize(r.model), 26), cell(shortScore, 5), strings.Join(fits, " "))
@@ -294,7 +298,9 @@ func (m Model) quotaModelsView(w int) []string {
 			line = sDim.Render(stripStyles(line))
 		}
 		out = append(out, clip(line, w-4))
-		if !r.available || !r.allowed {
+		if r.stale {
+			out = append(out, sDim.Render("  model gone - ask the CTO to fix"))
+		} else if !r.available || !r.allowed {
 			reason := "not available on an online machine"
 			if r.available {
 				reason = "not a worker provider"
