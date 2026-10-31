@@ -451,6 +451,7 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 		m := w.turnQueue[0]
 		w.turnQueue = w.turnQueue[1:]
 		w.turnHandbackIdle = true
+		w.turnAwaitingStart = true
 		next = &m
 	} else {
 		w.doneStatus = req.Status
@@ -629,15 +630,21 @@ func (d *Daemon) deliverQueuedWorkerTurn(m protocol.Message) {
 
 // An OpenCode turn that did not hand back can finish normally. Let the next
 // queued prompt run, or mark the worker ready for the next message.
-func (d *Daemon) openCodeTurnIdle(session string) {
+func (d *Daemon) openCodeTurnIdle(session string) bool {
 	d.wmu.Lock()
 	var next *protocol.Message
+	pending := false
 	for _, w := range d.workers {
 		if w.sessionID != session || w.harness != "opencode" || w.stopping || w.doneStatus != "" {
 			continue
 		}
 		if w.turnHandbackIdle {
 			w.turnHandbackIdle = false
+			pending = true
+			break
+		}
+		if w.turnAwaitingStart {
+			pending = true
 			break
 		}
 		if len(w.turnQueue) == 0 {
@@ -645,6 +652,8 @@ func (d *Daemon) openCodeTurnIdle(session string) {
 		} else {
 			m := w.turnQueue[0]
 			w.turnQueue = w.turnQueue[1:]
+			w.turnAwaitingStart = true
+			pending = true
 			next = &m
 		}
 		break
@@ -653,4 +662,5 @@ func (d *Daemon) openCodeTurnIdle(session string) {
 	if next != nil {
 		go d.deliverQueuedWorkerTurn(*next)
 	}
+	return pending
 }

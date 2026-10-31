@@ -559,3 +559,197 @@ func truncate(s string, n int) string {
 	}
 	return s
 }
+
+// reconcileOpenCode refreshes session status against their own server. The
+// response may arrive after another status event, so it must not override it.
+func (d *Daemon) reconcileOpenCode(ctx context.Context) {
+	d.reconcileSharedOpenCode(ctx)
+	d.wmu.Lock()
+	workers := make([]*worker, 0, len(d.workers))
+	for _, w := range d.workers {
+		if w.harness == "opencode" && w.apiBase != "" && w.nativeID != "" && !w.stopping {
+			workers = append(workers, w)
+		}
+	}
+	d.wmu.Unlock()
+	for _, w := range workers {
+		d.wmu.Lock()
+		base, pass, native := w.apiBase, w.apiPass, w.nativeID
+		d.wmu.Unlock()
+		d.mu.Lock()
+		ls := d.sessions[key("opencode", native)]
+		if ls == nil {
+			d.mu.Unlock()
+			continue
+		}
+		rev, status := ls.statusRevision, ls.info.Status
+		d.mu.Unlock()
+		check, cancel := context.WithTimeout(ctx, time.Second)
+		busy, known := openCodeSessionBusy(check, base, pass, native)
+		cancel()
+		if !known {
+			continue
+		}
+		if busy {
+			d.wmu.Lock()
+			d.mu.Lock()
+			changed := d.workers[w.id] == w && !w.stopping && d.sessions[key("opencode", native)] == ls && ls.statusRevision == rev && ls.info.Status == status && status != "busy"
+			if d.workers[w.id] == w && !w.stopping && !w.turnHandbackIdle && ls.statusRevision == rev {
+				w.turnAwaitingStart = false
+			}
+			if changed {
+				ls.info.Status = "busy"
+				ls.info.Waiting = nil
+			}
+			d.mu.Unlock()
+			d.wmu.Unlock()
+			if changed {
+				go d.pushSession(ls)
+			}
+			continue
+		}
+		if status != "busy" {
+			continue
+		}
+
+		d.wmu.Lock()
+		d.mu.Lock()
+		if d.workers[w.id] != w || w.stopping || w.doneStatus != "" || (w.turnAwaitingStart && !w.turnHandbackIdle) || d.sessions[key("opencode", native)] != ls || ls.statusRevision != rev || ls.info.Status != "busy" {
+			d.mu.Unlock()
+			d.wmu.Unlock()
+			continue
+		}
+		var next *protocol.Message
+		if w.turnHandbackIdle {
+			w.turnHandbackIdle = false
+		} else if len(w.turnQueue) > 0 {
+			m := w.turnQueue[0]
+			w.turnQueue = w.turnQueue[1:]
+			w.turnAwaitingStart = true
+			next = &m
+		} else {
+			w.turnActive = false
+			ls.info.Status = "idle"
+		}
+		changed := ls.info.Status == "idle"
+		d.mu.Unlock()
+		d.wmu.Unlock()
+		if next != nil {
+			go d.deliverQueuedWorkerTurn(*next)
+		}
+		if changed {
+			go d.pushSession(ls)
+		}
+	}
+}
+
+// reconcileSharedOpenCode checks sessions belonging to OpenCode's shared local
+// service. Confirm the session belongs to that server before trusting absence
+// from its active map: other OpenCode servers may have their own sessions.
+func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
+	d.mu.Lock()
+	var sessions []*localSession
+	for _, ls := range d.sessions {
+		if ls.info.Harness == "opencode" && ls.info.Worker == nil {
+			sessions = append(sessions, ls)
+		}
+	}
+	d.mu.Unlock()
+	if len(sessions) == 0 {
+		return
+	}
+	state := os.Getenv("XDG_STATE_HOME")
+	if state == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return
+		}
+		state = filepath.Join(home, ".local", "state")
+	}
+	data, err := os.ReadFile(filepath.Join(state, "opencode", "service.json"))
+	if err != nil || len(data) > 16384 {
+		return
+	}
+	var service struct {
+		URL      string `json:"url"`
+		Password string `json:"password"`
+	}
+	if json.Unmarshal(data, &service) != nil {
+		return
+	}
+	u, err := url.Parse(service.URL)
+	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
+		return
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip == nil || !ip.IsLoopback() {
+		return
+	}
+	base := strings.TrimRight(service.URL, "/")
+	for _, ls := range sessions {
+		d.mu.Lock()
+		native, rev, status := ls.info.NativeID, ls.statusRevision, ls.info.Status
+		d.mu.Unlock()
+		if d.workerByNative("opencode", native) != nil {
+			continue
+		}
+		check, cancel := context.WithTimeout(ctx, time.Second)
+		busy, known := openCodeSessionBusy(check, base, service.Password, native)
+		if !known {
+			cancel()
+			return
+		}
+		if busy {
+			cancel()
+			d.mu.Lock()
+			changed := d.sessions[key("opencode", native)] == ls && ls.info.Status == status && ls.statusRevision == rev && status != "busy"
+			if changed {
+				ls.info.Status = "busy"
+				ls.info.Waiting = nil
+			}
+			d.mu.Unlock()
+			if changed {
+				go d.pushSession(ls)
+			}
+			continue
+		}
+		if status != "busy" {
+			cancel()
+			continue
+		}
+		req, err := http.NewRequestWithContext(check, "GET", base+"/api/session/"+url.PathEscape(native), nil)
+		if err != nil {
+			cancel()
+			continue
+		}
+		if service.Password != "" {
+			req.SetBasicAuth("opencode", service.Password)
+		}
+		client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		resp, err := client.Do(req)
+		if err != nil {
+			cancel()
+			return
+		}
+		var body struct {
+			Data struct {
+				ID string `json:"id"`
+			} `json:"data"`
+		}
+		ok := resp.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&body) == nil && body.Data.ID == native
+		resp.Body.Close()
+		cancel()
+		if !ok {
+			continue
+		}
+		d.mu.Lock()
+		changed := d.sessions[key("opencode", native)] == ls && ls.info.Status == "busy" && ls.statusRevision == rev
+		if changed {
+			ls.info.Status = "idle"
+		}
+		d.mu.Unlock()
+		if changed {
+			go d.pushSession(ls)
+		}
+	}
+}

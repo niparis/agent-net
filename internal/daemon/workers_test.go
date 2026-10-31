@@ -512,6 +512,17 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 		return false
 	})
 	// The harness says the session is busy: it is in the middle of a turn.
+	w.d.wmu.Lock()
+	var activeFile string
+	for _, worker := range w.d.workers {
+		if worker.sessionID == res.SessionID {
+			activeFile = filepath.Join(worker.dir, "data", "fake-active")
+		}
+	}
+	w.d.wmu.Unlock()
+	if err := os.WriteFile(activeFile, []byte(native), 0600); err != nil {
+		t.Fatal(err)
+	}
 	w.d.mu.Lock()
 	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
 		ls.info.Status = "busy"
@@ -522,6 +533,9 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 		t.Fatalf("a busy worker was ended as idle: %d running", n)
 	}
 	// When it goes idle and stays quiet, the idle limit applies again.
+	if err := os.Remove(activeFile); err != nil {
+		t.Fatal(err)
+	}
 	w.d.mu.Lock()
 	if ls := w.d.sessions[key("opencode", native)]; ls != nil {
 		ls.info.Status = "idle"

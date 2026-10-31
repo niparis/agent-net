@@ -296,3 +296,66 @@ func addLeftoverWorkerOf(t *testing.T, g *testGateway, w *workerNode, owner, har
 	}
 	return id
 }
+
+func TestOpenCodeWorkerIdleAfterMissedEndEvent(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:missed-idle"})
+	eventually(t, "worker is busy", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "busy" })
+	if err := os.WriteFile(filepath.Join(repo, "fake-end-turn"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "worker is idle after missed event", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "idle" })
+}
+
+func TestOpenCodeWorkerQueueAfterMissedEndEvent(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:missed-idle"})
+	eventually(t, "worker is busy", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "busy" })
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-missed-idle"}), &sent)
+	eventually(t, "turn queued", func() bool {
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		for _, worker := range w.d.workers {
+			if worker.sessionID == res.SessionID {
+				return len(worker.turnQueue) == 1
+			}
+		}
+		return false
+	})
+	if err := os.WriteFile(filepath.Join(repo, "fake-end-turn"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "queued turn delivered", func() bool { _, err := os.Stat(filepath.Join(repo, "fake-queued-delivered")); return err == nil })
+	time.Sleep(300 * time.Millisecond)
+	if got := w.d.infoOf(w.d.sessionByID(res.SessionID)).Status; got != "busy" {
+		t.Fatalf("status while queued turn has not started: %s", got)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "fake-run-queued"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "queued turn starts", func() bool {
+		_, err := os.Stat(filepath.Join(repo, "fake-queued-started"))
+		if err != nil {
+			return false
+		}
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		for _, worker := range w.d.workers {
+			if worker.sessionID == res.SessionID {
+				return !worker.turnAwaitingStart
+			}
+		}
+		return false
+	})
+	if err := os.WriteFile(filepath.Join(repo, "fake-end-queued"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "queued turn finishes", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "idle" })
+}

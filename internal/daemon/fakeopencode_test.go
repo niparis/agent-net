@@ -650,7 +650,48 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		if location.Load() <= previous && location.Load() != 1<<60 {
 			continue
 		}
+		if strings.Contains(body, "FAKE:missed-idle") {
+			os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"), []byte(sessionID), 0600)
+			send("status", map[string]any{"status": "busy"})
+			turn(body)
+			go func() {
+				for {
+					if _, err := os.Stat(filepath.Join(cwd, "fake-end-turn")); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				os.Remove(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"))
+				close(waitTurn) // deliberately omit the idle event
+			}()
+			continue
+		}
+		if strings.Contains(body, "FAKE:queued-missed-idle") {
+			go func() {
+				<-waitTurn
+				os.WriteFile(filepath.Join(cwd, "fake-queued-delivered"), nil, 0600)
+				for {
+					if _, err := os.Stat(filepath.Join(cwd, "fake-run-queued")); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"), []byte(sessionID), 0600)
+				turn(body)
+				os.WriteFile(filepath.Join(cwd, "fake-queued-started"), nil, 0600)
+				for {
+					if _, err := os.Stat(filepath.Join(cwd, "fake-end-queued")); err == nil {
+						break
+					}
+					time.Sleep(10 * time.Millisecond)
+				}
+				os.Remove(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"))
+				send("status", map[string]any{"status": "idle"})
+			}()
+			continue
+		}
 		if strings.Contains(body, "FAKE:wait-handback") {
+			os.WriteFile(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"), []byte(sessionID), 0600)
 			send("status", map[string]any{"status": "busy"})
 			turn(body)
 			go func() {
@@ -670,6 +711,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 				c.Write(append(b, '\n'))
 				wmu.Unlock()
 				<-ch
+				os.Remove(filepath.Join(os.Getenv("XDG_DATA_HOME"), "fake-active"))
 				send("status", map[string]any{"status": "idle"})
 				close(waitTurn)
 			}()
