@@ -123,7 +123,7 @@ func TestGraphConnectedNodesSpanRows(t *testing.T) {
 func TestGraphFixtureLabelsStayWithTheirMarkers(t *testing.T) {
 	m := graphModel(120, 34)
 	w, h := m.graphSize()
-	lines := (graphview.Braille{Now: t0}).Render(m.graph, m.graphCamera, w, h)
+	lines := (graphview.Braille{}).Render(graphview.BuildScene(graphview.State{Graph: m.graph, Camera: m.graphCamera, Now: t0}, graphview.Viewport{Width: float64(w), Height: float64(h)}), graphview.Size{Width: w, Height: h}).Lines
 	for _, node := range m.graph.Nodes {
 		x, y := m.graphCamera.Project(m.graph.Positions[node.Name], w, h)
 		cx := int(math.Round(x*2)) / 2

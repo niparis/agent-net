@@ -7,7 +7,6 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
@@ -101,29 +100,9 @@ func (m Model) graphView(w, h int) []string {
 	if m.graphPaused {
 		now = m.graphPausedAt
 	}
-	renderer := graphview.Braille{Now: now, Color: func(role, text string) string {
-		color := roleDim
-		switch role {
-		case "depends":
-			color = roleAccent
-		case "governs":
-			color = roleCTO
-		case "deploys":
-			color = roleWarning
-		case "node", "label", "card":
-			color = roleText
-		case "busy", "comet":
-			color = roleGood
-		case "selected", "flash":
-			color = roleWarning
-		case "busyPulse":
-			color = roleWarning
-		case "trail":
-			color = roleAccent
-		}
-		return lipgloss.NewStyle().Foreground(color).Render(text)
-	}}
-	for _, line := range renderer.Render(g, cam, gw, gh) {
+	scene := graphview.BuildScene(graphview.State{Graph: g, Camera: cam, Now: now}, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
+	renderer := graphview.Braille{Styled: true}
+	for _, line := range renderer.Render(scene, graphview.Size{Width: gw, Height: gh}).Lines {
 		out = append(out, "  "+line)
 	}
 	feed := []string{}
