@@ -23,6 +23,8 @@ func TestReapFakesKillsALeakedFake(t *testing.T) {
 	defer cmd.Process.Kill()
 	pid := cmd.Process.Pid
 	os.WriteFile(filepath.Join(dir, strconv.Itoa(pid)), nil, 0o600)
+	// reapFakes reads the child's environment, which is empty until exec ends.
+	waitProcessEnv(t, pid, envFakePids+"="+dir)
 	got := reapFakes(dir)
 	if len(got) != 1 || got[0] != pid {
 		t.Fatalf("reapFakes = %v, want [%d]", got, pid)

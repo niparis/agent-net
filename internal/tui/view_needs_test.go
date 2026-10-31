@@ -165,13 +165,18 @@ func TestWaitingRowsUseTheSameSessionActions(t *testing.T) {
 				t.Fatalf("details for the %s row show a different session:\n%s", row, got)
 			}
 
-			conv, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			answer, _ := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			if answer.mode != modeCompose || answer.composeTo != cogforgeMaintenanceID {
+				t.Fatalf("enter on the %s row answered %q in mode %v", row, answer.composeTo, answer.mode)
+			}
+
+			conv, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
 			if cmd == nil || conv.conv == nil || conv.conv.id != cogforgeMaintenanceID {
 				var got string
 				if conv.conv != nil {
 					got = conv.conv.id
 				}
-				t.Fatalf("enter opened conversation for %q, command %t", got, cmd != nil)
+				t.Fatalf("c opened conversation for %q, command %t", got, cmd != nil)
 			}
 
 			m, src = waitingTableModel()

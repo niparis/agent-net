@@ -39,6 +39,16 @@ func hideRealHerdr() {
 		}
 		return out
 	}
+	// The server fallback reads command lines up the process tree. Hide a
+	// real herdr server too, unless its binary is under the temporary folder.
+	rawArgs := osProcessArgs
+	processArgs = func(pid int) []string {
+		args := rawArgs(pid)
+		if len(args) > 0 && filepath.Base(args[0]) == "herdr" && !strings.HasPrefix(args[0], os.TempDir()) {
+			return nil
+		}
+		return args
+	}
 }
 
 type fakeHerdr struct {
