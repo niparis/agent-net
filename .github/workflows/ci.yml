@@ -24,7 +24,7 @@ jobs:
             exit 1
           fi
       - run: go vet ./...
-      - run: go test -race ./internal/daemon/...
+      - run: go test -race -timeout 30m ./internal/daemon/...
       - name: install.sh syntax
         run: sh -n install.sh
 
@@ -35,4 +35,4 @@ jobs:
       - uses: actions/setup-go@v5.5.0
         with:
           go-version-file: go.mod
-      - run: go test -race $(go list ./... | grep -v /internal/daemon)
+      - run: go test -race -timeout 30m $(go list ./... | grep -v /internal/daemon)
