@@ -203,6 +203,13 @@ type ToolAuditEvent struct {
 	Result   string           `json:"result"`
 	At       int64            `json:"at"`
 }
+
+// ToolBackup describes one local backup of an item. It never carries content.
+type ToolBackup struct {
+	Time   int64  `json:"time"`
+	Size   int64  `json:"size"`
+	Source string `json:"source"`
+}
 type ToolHistoryRequest struct {
 	Item string `json:"item"`
 }

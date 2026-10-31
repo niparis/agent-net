@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -243,15 +242,8 @@ func (d *Daemon) backupAndForget(j *skillJournal, anchored, source, item, versio
 		}
 		return fail("conflict", "changed since plan")
 	}
-	entries, err := os.ReadDir(backups)
-	if err == nil {
-		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() > entries[j].Name() })
-		for i, e := range entries {
-			if i >= 20 && e.IsDir() {
-				_ = os.RemoveAll(filepath.Join(backups, e.Name()))
-			}
-		}
-	}
+	lockdownSkillBackup(stamp)
+	d.pruneSkillBackups()
 	if err = d.forgetSkill(source); err != nil {
 		return fail("failed", "cannot update skill manifest or Git exclude")
 	}
@@ -329,4 +321,24 @@ func (d *Daemon) skillRootFor(t protocol.ToolTarget, source string) string {
 		}
 	}
 	return root
+}
+
+// lockdownSkillBackup makes a backup readable by the owner only: folders 0700
+// and files 0600 (0700 when the file was executable). Backups can hold secrets.
+func lockdownSkillBackup(root string) {
+	_ = filepath.WalkDir(root, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+		if e.IsDir() {
+			_ = os.Chmod(p, 0700)
+		} else if info, err := e.Info(); err == nil {
+			if info.Mode().Perm()&0100 != 0 {
+				_ = os.Chmod(p, 0700)
+			} else {
+				_ = os.Chmod(p, 0600)
+			}
+		}
+		return nil
+	})
 }

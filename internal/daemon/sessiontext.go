@@ -261,6 +261,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			protocol.ToolHistoryRequest
 			Owner string `json:"owner"`
 		}{p, d.ownerSessionID()})
+		if err == nil {
+			res = d.withLocalBackups(res, p.Item)
+		}
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":
