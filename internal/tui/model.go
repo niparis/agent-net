@@ -764,9 +764,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tab, m.mapOn, m.focus = 5, false, focusSessions
 			m.graphGeneration++
 			animation := graphTick(m.graphGeneration)
-			m.graphTalkLoading = true
-			m.graphTalkPending = nil
-			talk := m.graphTalkCmd()
+			var talk tea.Cmd
+			if !m.graphTalkLoading {
+				m.graphTalkLoading = true
+				m.graphTalkPending = nil
+				talk = m.graphTalkCmd()
+			}
 			if m.mp.loading {
 				return m, tea.Batch(animation, talk)
 			}

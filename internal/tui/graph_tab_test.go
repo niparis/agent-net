@@ -36,6 +36,7 @@ func graphModel(w, h int) Model {
 	m := mapModel(w, h, graphFixture())
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
 	m.tab = 5
+	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true}, {From: "project-07", To: "project-11", Count: 23}}})
 	gw, gh := m.graphSize()
 	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
 	m.graphState.Graph.Message("project-01", "project-02", "request", t0.Add(-time.Second))
@@ -58,6 +59,10 @@ func TestGraphTabKeys(t *testing.T) {
 	m = keys(m, "0")
 	if m.graphState.Camera.Zoom != old.Zoom {
 		t.Fatal("fit failed")
+	}
+	m = keys(m, "t")
+	if !m.graphState.HideTalk {
+		t.Fatal("talk toggle failed")
 	}
 	m = keys(m, "o")
 	if !m.graphState.Orbit {

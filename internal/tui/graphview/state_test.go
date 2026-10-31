@@ -119,3 +119,16 @@ func TestTalkCountsAndLiveEvents(t *testing.T) {
 		t.Fatalf("talk: %+v", s.Talk)
 	}
 }
+
+func TestTalkFeedBeforeGraphAndWatermark(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	s, _ := Update(State{}, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "a", To: "b", Count: 2}}})
+	s, _ = Update(s, FeedEvents{Now: now, CountAfter: 5, Projects: map[string]string{"one": "a", "two": "b", "owner": ""}, Events: []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 5, Kind: "msg.stored", Time: now}, From: "one", To: "two"},
+		{Event: protocol.Event{ID: 6, Kind: "msg.stored", Time: now}, From: "two", To: "one"},
+		{Event: protocol.Event{ID: 7, Kind: "msg.stored", Time: now}, From: "owner", To: "one"},
+	}})
+	if len(s.Talk) != 1 || s.Talk[0].Count != 3 {
+		t.Fatalf("counts: %+v", s.Talk)
+	}
+}

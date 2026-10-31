@@ -60,6 +60,8 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		action = graphview.SelectPrev{}
 	case "]":
 		action = graphview.SelectNext{}
+	case "t":
+		action = graphview.ToggleTalk{}
 	case "o":
 		action = graphview.ToggleOrbit{}
 	case " ":
@@ -85,7 +87,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows/hjkl pan  0 fit  [ ] select  o orbit"), sDim.Render("  enter Map  space pause  ? close  tab CTO"))
+		return append(out, sDim.Render("  + - zoom  arrows/hjkl pan  0 fit  [ ] select  o orbit"), sDim.Render("  t talk  enter Map  space pause  ? close  tab CTO"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
@@ -105,7 +107,8 @@ func (m Model) graphView(w, h int) []string {
 		feed = append(feed, "no messages yet")
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
-	hint := "  + - zoom  hjkl pan  0 fit  [ ] select  o orbit  enter Map  space pause  ? keys"
+	out = append(out, sDim.Render(clip("  pink: talked, no rule set", w)))
+	hint := "  + - zoom  hjkl pan  0 fit  [ ] select  o orbit  t talk  enter Map  space pause  ? keys"
 	if scene.Paused {
 		hint = "  paused · " + strings.TrimSpace(hint)
 	}

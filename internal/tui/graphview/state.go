@@ -12,6 +12,7 @@ type State struct {
 	Graph                        *Graph
 	Talk                         []protocol.GraphTalkCount
 	TalkReady                    bool
+	HideTalk                     bool
 	Camera                       Camera
 	Orbit, Paused, ReducedMotion bool
 	Now, PausedAt                time.Time
@@ -26,6 +27,7 @@ type Fit struct{ Viewport Viewport }
 type SelectNext struct{}
 type SelectPrev struct{}
 type ToggleOrbit struct{}
+type ToggleTalk struct{}
 type TogglePause struct{}
 type OpenSelected struct{}
 type Tick struct{ Now time.Time }
@@ -47,6 +49,7 @@ func (Pan) graphAction()          {}
 func (Fit) graphAction()          {}
 func (SelectNext) graphAction()   {}
 func (SelectPrev) graphAction()   {}
+func (ToggleTalk) graphAction()   {}
 func (ToggleOrbit) graphAction()  {}
 func (TogglePause) graphAction()  {}
 func (OpenSelected) graphAction() {}
@@ -99,6 +102,8 @@ func Update(s State, action Action) (State, Effect) {
 		if s.Graph != nil {
 			s.Graph.Select(-1)
 		}
+	case ToggleTalk:
+		s.HideTalk = !s.HideTalk
 	case ToggleOrbit:
 		s.Orbit = !s.Orbit
 	case TogglePause:
@@ -128,11 +133,13 @@ func Update(s State, action Action) (State, Effect) {
 		s.Talk = append([]protocol.GraphTalkCount(nil), a.Counts...)
 		s.TalkReady = true
 	case FeedEvents:
-		if s.Graph != nil {
+		{
 			projects := make(map[string]string)
-			for _, n := range s.Graph.Nodes {
-				for _, session := range n.Sessions {
-					projects[session.ID] = n.Name
+			if s.Graph != nil {
+				for _, n := range s.Graph.Nodes {
+					for _, session := range n.Sessions {
+						projects[session.ID] = n.Name
+					}
 				}
 			}
 			for id, project := range a.Projects {
@@ -156,10 +163,12 @@ func Update(s State, action Action) (State, Effect) {
 						}
 						if i == len(s.Talk) {
 							item := protocol.GraphTalkCount{From: from, To: to}
-							for _, edge := range s.Graph.Edges {
-								if edge.From == from && edge.To == to || edge.From == to && edge.To == from {
-									item.HasEdge = true
-									break
+							if s.Graph != nil {
+								for _, edge := range s.Graph.Edges {
+									if edge.From == from && edge.To == to || edge.From == to && edge.To == from {
+										item.HasEdge = true
+										break
+									}
 								}
 							}
 							s.Talk = append(s.Talk, item)
@@ -167,7 +176,7 @@ func Update(s State, action Action) (State, Effect) {
 						s.Talk[i].Count++
 					}
 				}
-				if a.CountsOnly {
+				if a.CountsOnly || s.Graph == nil {
 					continue
 				}
 				at := event.Time

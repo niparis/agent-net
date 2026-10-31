@@ -73,3 +73,16 @@ func TestSceneFixture(t *testing.T) {
 		t.Fatalf("unexpected scene: %+v", s)
 	}
 }
+
+func TestTalkSceneBucketsAndToggle(t *testing.T) {
+	s, _ := Update(State{}, GraphChanged{Graph: protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}, Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}}}})
+	s, _ = Update(s, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "a", To: "b", Count: 1, HasEdge: true}, {From: "a", To: "c", Count: 5}, {From: "a", To: "d", Count: 20}}})
+	scene := BuildScene(s, Viewport{Width: 80, Height: 20})
+	if len(scene.Talk) != 3 || scene.Talk[0].Bucket != 1 || scene.Talk[0].NoRule || scene.Talk[1].Bucket != 2 || !scene.Talk[1].NoRule || scene.Talk[2].Bucket != 3 {
+		t.Fatalf("talk: %+v", scene.Talk)
+	}
+	s, _ = Update(s, ToggleTalk{})
+	if len(BuildScene(s, Viewport{Width: 80, Height: 20}).Talk) != 0 {
+		t.Fatal("toggle did not hide talk")
+	}
+}

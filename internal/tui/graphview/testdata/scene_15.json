@@ -443,6 +443,7 @@
       "Dashed": false
     }
   ],
+  "Talk": null,
   "Comets": [
     {
       "Position": {
@@ -536,6 +537,12 @@
         "o"
       ],
       "Action": "orbit"
+    },
+    {
+      "Keys": [
+        "t"
+      ],
+      "Action": "talk"
     },
     {
       "Keys": [

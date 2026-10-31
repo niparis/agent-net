@@ -18,6 +18,25 @@ func (asciiRenderer) Render(scene Scene, size Size) Output {
 	for y := range rows {
 		rows[y] = []rune(strings.Repeat(" ", size.Width))
 	}
+	for _, talk := range scene.Talk {
+		x0, y0 := int(talk.From.X*float64(size.Width)), int(talk.From.Y*float64(size.Height))
+		x1, y1 := int(talk.To.X*float64(size.Width)), int(talk.To.Y*float64(size.Height))
+		dx, dy := x1-x0, y1-y0
+		steps := max(abs(dx), abs(dy))
+		if steps > 10000 {
+			continue
+		}
+		for i := 0; i <= steps; i++ {
+			x, y := x0, y0
+			if steps > 0 {
+				x += int(math.Round(float64(dx*i) / float64(steps)))
+				y += int(math.Round(float64(dy*i) / float64(steps)))
+			}
+			if x >= 0 && x < size.Width && y >= 0 && y < size.Height {
+				rows[y][x] = ':'
+			}
+		}
+	}
 	for _, e := range scene.Edges {
 		x0, y0 := int(e.From.X*float64(size.Width)), int(e.From.Y*float64(size.Height))
 		x1, y1 := int(e.To.X*float64(size.Width)), int(e.To.Y*float64(size.Height))
@@ -80,5 +99,18 @@ func TestRenderersUseSameSceneNodes(t *testing.T) {
 				t.Errorf("%T did not draw %s:\n%s", renderer, n.Label, out)
 			}
 		}
+	}
+}
+
+func TestTalkHasItsOwnRendererMark(t *testing.T) {
+	scene := Scene{Talk: []SceneTalk{{From: Point{.1, .5}, To: Point{.9, .5}, Bucket: 1, NoRule: true}}}
+	out := strings.Join((asciiRenderer{}).Render(scene, Size{Width: 40, Height: 10}).Lines, "\n")
+	if !strings.Contains(out, ":") {
+		t.Fatalf("no talk mark: %s", out)
+	}
+	roles := map[string]bool{}
+	(Braille{Color: func(role, text string) string { roles[role] = true; return text }}).Render(scene, Size{Width: 40, Height: 10})
+	if !roles["talk"] {
+		t.Fatalf("no talk color: %v", roles)
 	}
 }
