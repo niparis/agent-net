@@ -496,3 +496,18 @@ func TestApplyRemovalRequiresImportedSkill(t *testing.T) {
 		})
 	}
 }
+
+func TestGatewaySkillSummaryRequiresOwnerSession(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "tools.summary", []byte(`{"a_hash":"a","b_hash":"b","a":"one","b":"two"}`)); err == nil {
+		t.Fatal("gateway accepted unauthenticated summary")
+	}
+}

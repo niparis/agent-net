@@ -688,6 +688,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return map[string]any{"events": events}, nil
+	case "tools.summary":
+		p, err := decode[protocol.SkillSummaryRequest](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		summary, err := st.phraseCleaner.Summarize(ctx, p.AHash, p.BHash, p.A, p.B)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"summary": summary}, nil
 	case "tools.read_file":
 		p, err := decode[protocol.SkillTextRequest](raw)
 		if err != nil || !g.validToolOwner(nc, p.Owner) {

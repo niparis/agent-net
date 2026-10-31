@@ -131,3 +131,10 @@ func (s *Client) ToolsReadFile(ctx context.Context, req protocol.SkillTextReques
 	}](s.action(ctx, "tools_read_file", req))
 	return result.Text, err
 }
+
+func (s *Client) ToolsSummary(ctx context.Context, req protocol.SkillSummaryRequest) (string, error) {
+	result, err := decodeCall[struct {
+		Summary string `json:"summary"`
+	}](s.action(ctx, "tools_summary", req))
+	return result.Summary, err
+}
