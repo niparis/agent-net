@@ -505,7 +505,7 @@ A provider without a row (for example `elevenlabs`) has no model provider in age
 
 `agent-net tools` groups the latest observations by kind, name and content
 hash. Each row shows scope, harnesses, machines, the number of same-name
-variants and state. Scope lists global and registered project observations;
+variants and state, desired assignment and pending application. Scope lists global and registered project observations;
 unassigned identifies project locations that do not match the registry. Offline
 machines retain their last observations as stale. The daemon scans at startup,
 after reconnecting and every five minutes.
@@ -523,6 +523,38 @@ read-only and does not execute skills or servers. MCP fingerprints omit
 sensitive descriptor values. Extension-provided MCP servers, package-managed skills, OpenCode custom config
 locations, Pi standalone Markdown skills and session-specific trust overrides need
 manual inspection. A row summarizes observations, not proof that a running session has loaded it.
+
+### Desired tool assignments
+
+The owner can plan a global, project or uninstalled assignment. Use the exact
+item ID from `tools_items`, including its brackets and quotes:
+
+```
+agent-net tools plan 'ITEM_ID' global
+agent-net tools plan 'ITEM_ID' project-one project-two
+agent-net tools plan 'ITEM_ID' uninstalled
+agent-net tools apply PLAN_ID
+agent-net tools history 'ITEM_ID'
+```
+
+`tools_plan` takes `item` and `target`, where `target.scope` is `global`,
+`projects` or `uninstalled`; projects scope also takes a `projects` array.
+It lists the known machines, harnesses, project checkouts, sources,
+destinations, intended actions and conflicts. Offline machines and unsupported
+harnesses are shown as unresolved. A skill that has not been imported and an
+unmanaged destination are conflicts. Review the plan before applying it.
+
+`tools_apply` takes `plan_id`. It refuses an out-of-date plan if its inventory,
+registered projects, item version, assignments or inspected paths have changed.
+Applying records a new desired revision and does not copy or remove files.
+`tools_items` and the CLI show desired state separately from pending application.
+`tools_history` takes `item` and returns plans and apply attempts with their
+actors, targets and results. These methods require an owner connection.
+
+The private CTO may inspect tools and propose plans. It may apply a plan only
+on the owner's explicit words in the chat. Charter `needs` are advisory text;
+the CTO tool list shows them as unverified needs and never turns them into
+assignments.
 
 ### Managed skill versions
 

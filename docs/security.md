@@ -427,3 +427,26 @@ server key. The backup directory and copied files are owner-only. Protect the
 backup as carefully as the gateway data. Backup serializes imports with the
 SQLite snapshot and repository copy. Restore writes only to a new directory and
 checks SQLite, Git objects and every saved skill hash before making it available.
+
+
+### Tool assignment plans
+
+`tools_plan`, `tools_apply` and `tools_history` require the owner gate. The
+private CTO process-tree gate may use these methods; its brief requires the
+owner's explicit words in the chat before applying. The daemon attributes
+calls as owner or CTO and the gateway checks that the request belongs to the
+sending machine's online owner session. As with other gateway operations, the
+gateway trusts its enrolled daemons.
+
+Plans contain observed source and destination paths, target machines and
+conflicts. They do not copy or remove files. The gateway binds each plan to the
+observed inventory, project registry, item versions and desired revisions. It
+rechecks the target paths and refuses a changed plan. Offline paths cannot be
+inspected and are reported as unresolved. A successful apply records desired
+state as pending; it does not claim that any target was changed. Subsequent
+reconciliation must revalidate paths and hashes before file operations.
+
+The gateway records plans and apply attempts with the owner or CTO actor,
+targets and result. Charter needs are untrusted advisory text, not authorization
+or assignment. Plan and audit records may include machine and filesystem paths;
+they do not include skill contents or native MCP credential values.
