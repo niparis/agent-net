@@ -41,7 +41,8 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
-	"charter_suggestions": {desc: "Read suggested charter diffs, pending major changes, and their evidence. Show pending major changes to the owner for approval.", fields: map[string]ctoField{}},
+	"notification_settings": {desc: "Read or set desktop notifications on this machine when the owner asks.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "True turns notifications off; false turns them on. Omit to read."}}},
+	"charter_suggestions":   {desc: "Read suggested charter diffs, pending major changes, and their evidence. Show pending major changes to the owner for approval.", fields: map[string]ctoField{}},
 	"graph_get": {
 		desc:   "Read the component graph with charters and edges. Read it at the start of a conversation and before any graph change.",
 		fields: map[string]ctoField{"all": {typ: "boolean", desc: "Include inactive empty projects."}},

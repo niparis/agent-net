@@ -32,6 +32,8 @@ func openState(dir string) (*state, error) {
 	}
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`
+CREATE TABLE IF NOT EXISTS notification_sent (session_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_history (id INTEGER PRIMARY KEY AUTOINCREMENT, harness TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, at INTEGER NOT NULL, payload TEXT NOT NULL);

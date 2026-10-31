@@ -76,3 +76,12 @@ The TUI change is one new file plus small calls in `model.go` and `view_main.go`
 - A phone app view. The state is in the agent list, so the phone can show it later without a new call.
 - A wait for Codex. Codex has no hook checked here; its sessions use `agent_announce` and `waiting`, and the session going busy clears it.
 - Server-side expiry for an old wait. A session that dies keeps the last state until the gateway marks it offline; the TUI hides offline waits unless the owner presses `o`.
+
+
+## Addendum: explicit owner questions and desktop notifications
+
+Agents can call `agent_ask_owner` on Claude Code, Codex, Pi and OpenCode when a turn ends awaiting the owner's input. It sends a one-line question, up to four options and an optional urgency over the existing waiting-state path. The gateway stores the explicit marker with the session. Plain text at the end of a turn does not raise an alert. The announce fallback and harness hooks remain available.
+
+Enter on a waiting session opens an owner answer with the first option filled in. Delivery clears the wait. Claude Code's `UserPromptSubmit` hook and a Codex `turn/started` event also clear it, as do Pi and OpenCode turn starts. The earlier descriptions of Enter and Codex above predate this addendum.
+
+A daemon with an owner TUI open observes the network session list and sends a generic desktop notification for a new explicit ask. It sends at most one per session in five minutes, including across restarts. It uses `osascript` on macOS and `notify-send` on Linux when present. The question is not included in the command or notification. The owner can toggle this machine's persistent setting with `n` in TUI help or with the CTO's `notification_settings` tool. Notifications are on by default.

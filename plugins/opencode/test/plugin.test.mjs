@@ -1024,6 +1024,9 @@ await test("agent_announce asks for a task, and tool results end with the remind
   });
   const stop = await plugin.setup(c.ctx);
   await until("hello for ses_a", () => registered("ses_a"));
+  await tools.find((t) => t.name === "agent_ask_owner").execute({ question: "Merge?", options: ["Yes"], urgency: "high" }, { sessionID: "ses_a" });
+  const ask = calls.filter(([m]) => m === "waiting").pop();
+  if (ask[1].kind !== "question" || !ask[1].explicit || ask[1].text !== "Merge?" || ask[1].options[0] !== "Yes") throw new Error(JSON.stringify(ask));
   const announce = tools.find((t) => t.name === "agent_announce");
   if (JSON.stringify(announce.input.required) !== '["task"]') throw new Error("required: " + JSON.stringify(announce.input.required));
   for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {

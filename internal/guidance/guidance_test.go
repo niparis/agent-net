@@ -36,7 +36,7 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 			"At the start of every session, before other work, call `agent_announce` with your current task in one short line.",
 			"Call it again whenever your task changes.",
 			"AGENTS.md automatically",
-			"When you stop to wait for my decision or answer, call `agent_announce` with `waiting` set to the question in one line",
+			"When you end a turn waiting for your user's decision or input, call agent_ask_owner with the question in one line",
 			"Do not pass a name unless I ask you to rename the session.",
 		} {
 			if !strings.Contains(b, want) {

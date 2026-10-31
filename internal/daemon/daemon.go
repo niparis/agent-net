@@ -172,6 +172,8 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	notify           notificationTracker
+	notifySend       func()
 	toolsMu          sync.Mutex
 	toolsReport      protocol.InventoryReport
 	toolsWake        chan struct{}
@@ -824,7 +826,11 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	conn := ls.conn
 	d.mu.Unlock()
 	if conn != nil {
-		return conn.push(ctx, m, d.cfg.PluginAckTimeout)
+		result := conn.push(ctx, m, d.cfg.PluginAckTimeout)
+		if result.Delivered && m.FromHarness == protocol.OwnerHarness {
+			d.setWaiting(ls, nil)
+		}
+		return result
 	}
 	if protocol.IsOwner(info.Harness) {
 		// The person reads it in the TUI feed. There is no program to push to.
@@ -834,7 +840,11 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 	if a == nil {
 		return Result{Detail: "no adapter for harness " + info.Harness}
 	}
-	return a.Deliver(ctx, info, m)
+	result := a.Deliver(ctx, info, m)
+	if result.Delivered && m.FromHarness == protocol.OwnerHarness {
+		d.setWaiting(ls, nil)
+	}
+	return result
 }
 
 func (d *Daemon) sendUpdate(ctx context.Context, id, state, detail string) {

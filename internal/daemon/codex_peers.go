@@ -123,7 +123,20 @@ func sleepCtx(ctx context.Context, d time.Duration) {
 
 // onNote reacts to the notifications every client gets: a thread started, a
 // thread changed status, a thread got a name.
-func (a *codexAdapter) onNote(method string, _ json.RawMessage) {
+func (a *codexAdapter) onNote(method string, raw json.RawMessage) {
+	if method == "turn/started" {
+		var p struct {
+			ThreadID string `json:"threadId"`
+		}
+		if json.Unmarshal(raw, &p) == nil && p.ThreadID != "" {
+			a.d.mu.Lock()
+			ls := a.d.sessions[key("codex", p.ThreadID)]
+			a.d.mu.Unlock()
+			if ls != nil {
+				a.d.setWaiting(ls, nil)
+			}
+		}
+	}
 	switch method {
 	case "thread/started", "thread/closed", "thread/status/changed", "thread/name/updated", "thread/archived", "thread/deleted":
 		select {

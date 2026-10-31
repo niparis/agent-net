@@ -27,7 +27,7 @@ type Caller func(ctx context.Context, method string, params any) (json.RawMessag
 // agent_announce description and, in other words, in the guidance file.
 const AnnounceRule = "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
 	"Call it again whenever your task changes. " +
-	"When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+	"When you end a turn waiting for your user's decision or input, call agent_ask_owner with the question in one line. " +
 	"Your project description is taken from the project's AGENTS.md automatically."
 
 // Instructions are the MCP server instructions.
@@ -189,6 +189,15 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			"Do not pass name unless you mean to rename this session; function is ignored."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in announceIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "announce", in)
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_ask_owner", "Ask the owner a question and show it in Needs you."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Question string   `json:"question" jsonschema:"question in one line"`
+			Options  []string `json:"options,omitempty" jsonschema:"up to four short answers"`
+			Urgency  string   `json:"urgency,omitempty" jsonschema:"normal or high"`
+		}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, protocol.MethodWaiting, protocol.WaitingRequest{Kind: protocol.WaitingQuestion, Text: in.Question, Options: in.Options, Urgency: in.Urgency, Explicit: true})
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_request_approval", "Ask the owner to approve one exact action, with your recommendation."),

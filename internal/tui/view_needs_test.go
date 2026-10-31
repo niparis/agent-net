@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
@@ -311,5 +312,53 @@ func TestNeedsRowsShowKindAndRightAlignedAge(t *testing.T) {
 	}
 	if !strings.HasSuffix(strings.TrimSpace(ansi.Strip(rows[1])), "12m") || !strings.HasSuffix(strings.TrimSpace(ansi.Strip(rows[2])), "3m") {
 		t.Fatalf("ages: %q", rows)
+	}
+}
+
+func TestNeedsEnterPrefillsAnswer(t *testing.T) {
+	m := needsModel(100, 30)
+	for i := range m.snap.Agents {
+		if m.snap.Agents[i].SessionID == "s_0000000000000002" {
+			m.snap.Agents[i].Waiting.Options = []string{"Yes", "No"}
+		}
+	}
+	m = keys(m, "g", "enter")
+	if m.mode != modeCompose || m.compose.Value() != "Yes" {
+		t.Fatalf("answer mode=%v value=%q", m.mode, m.compose.Value())
+	}
+}
+
+func TestNotifySettingInHelp(t *testing.T) {
+	m := newModel(100, 30)
+	m.help = true
+	if !strings.Contains(m.View(), "desktop notifications: on") {
+		t.Fatal("missing notification setting")
+	}
+}
+
+type notificationSource struct {
+	*fakeSource
+	disabled bool
+}
+
+func (s *notificationSource) NotificationSettings(_ context.Context, disabled *bool) (bool, error) {
+	if disabled != nil {
+		s.disabled = *disabled
+	}
+	return s.disabled, nil
+}
+func TestNotifyHelpToggle(t *testing.T) {
+	src := &notificationSource{fakeSource: &fakeSource{}}
+	m := newModel(100, 30)
+	m.src = src
+	m.help = true
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
+	if cmd == nil {
+		t.Fatal("no settings command")
+	}
+	m = next.(Model)
+	m = send(m, cmd())
+	if !src.disabled || !m.snap.NotificationsDisabled || !strings.Contains(m.View(), "desktop notifications: off") {
+		t.Fatalf("toggle did not persist: %+v", m.snap)
 	}
 }

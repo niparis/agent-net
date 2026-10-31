@@ -66,7 +66,7 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 		d.setWaiting(ls, nil)
 		return nil, nil
 	}
-	w := protocol.CleanWaiting(&protocol.Waiting{Kind: p.Kind, Text: p.Text})
+	w := protocol.CleanWaiting(&protocol.Waiting{Kind: p.Kind, Text: p.Text, Options: p.Options, Urgency: p.Urgency, Explicit: p.Explicit})
 	if w == nil || isIdlePromptWait(w) {
 		// Nothing to wait for, or only the generic idle_prompt text: clear any
 		// stale state instead of storing it again.

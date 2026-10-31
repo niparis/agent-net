@@ -312,6 +312,17 @@ await test("agent_learn records a finding", async () => {
   await p.fire("session_shutdown", {});
 });
 
+await test("agent_ask_owner sends a waiting question", async () => {
+  const p = makePi(); extension(p.api);
+  const n = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  await p.tools.get("agent_ask_owner").execute("id", { question: "Merge?", options: ["Yes"], urgency: "high" });
+  const sent = requests.filter((r) => r.method === "waiting").pop();
+  if (sent.params.kind !== "question" || !sent.params.explicit || sent.params.text !== "Merge?" || sent.params.options[0] !== "Yes") throw new Error(JSON.stringify(sent));
+  await p.fire("session_shutdown", {});
+});
+
 await test("agent_announce asks for a task and says so; no name or function is required", async () => {
   const p = makePi();
   extension(p.api);

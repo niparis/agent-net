@@ -66,3 +66,10 @@ func TestWaitingUnmarshalAcceptsStringAndObject(t *testing.T) {
 		t.Fatalf("null form: %+v %v", q.Waiting, err)
 	}
 }
+
+func TestCleanWaitingOptions(t *testing.T) {
+	w := CleanWaiting(&Waiting{Kind: WaitingQuestion, Text: "Merge?", Options: []string{" yes\nnow ", "no", "later", "skip", "extra"}, Urgency: "high"})
+	if len(w.Options) != 4 || w.Options[0] != "yes now" || w.Urgency != "high" {
+		t.Fatalf("waiting: %+v", w)
+	}
+}

@@ -16,7 +16,7 @@ const UNREACHABLE =
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
   "Call it again whenever your task changes. " +
-  "When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+  "When you end a turn waiting for your user's decision or input, call agent_ask_owner with the question in one line. " +
   "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
 const ASK_PEER_RULE =
@@ -488,7 +488,10 @@ export default function (pi: ExtensionAPI) {
     if (connected) request("status", { model: model ?? "" }).catch(() => {});
   });
 
-  pi.on("agent_start", async () => sendStatus("busy"));
+  pi.on("agent_start", async () => {
+    if (connected) await request("waiting", { clear: true }).catch(() => {});
+    sendStatus("busy");
+  });
   pi.on("agent_settled", async () => sendStatus("idle"));
 
   pi.on("session_shutdown", async () => {
@@ -828,6 +831,12 @@ export default function (pi: ExtensionAPI) {
     Type.Object({ session_id: Type.String({ description: "Session ID, like s_0123456789abcdef" }) }),
     "get",
     formatAgentGet,
+  );
+
+  defineTool(
+    "agent_ask_owner", "Ask owner", "Ask the owner a question in Needs you.",
+    Type.Object({ question: Type.String(), options: Type.Optional(Type.Array(Type.String())), urgency: Type.Optional(Type.Union([Type.Literal("normal"), Type.Literal("high")])) }),
+    "waiting", undefined, (p) => ({ kind: "question", explicit: true, text: p.question, options: p.options, urgency: p.urgency }),
   );
 
   defineTool(

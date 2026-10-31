@@ -196,6 +196,11 @@ type fetchedMsg struct {
 	hiddenErr  error
 }
 
+type notificationSettingMsg struct {
+	disabled bool
+	err      error
+}
+
 type hiddenItemsMsg struct {
 	items protocol.HiddenItems
 	err   error
@@ -533,6 +538,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fetching = false
 		m.applyFetch(msg)
 		return m, nil
+	case notificationSettingMsg:
+		if msg.err != nil {
+			m.fail("Could not change desktop notifications: " + explain(msg.err))
+		} else {
+			m.snap.NotificationsDisabled = msg.disabled
+		}
+		return m, nil
 	case hiddenItemsMsg:
 		if msg.err != nil {
 			m.fail("Could not save hidden items: " + sanitize(msg.err.Error()))
@@ -740,6 +752,22 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.help {
 		switch k.String() {
+		case "n":
+			src, ok := m.src.(interface {
+				NotificationSettings(context.Context, *bool) (bool, error)
+			})
+			if !ok {
+				m.fail("Desktop notification settings are unavailable.")
+				return m, nil
+			}
+			disabled := !m.snap.NotificationsDisabled
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				value, err := src.NotificationSettings(ctx, &disabled)
+				return notificationSettingMsg{disabled: value, err: err}
+			}
+
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
@@ -1118,6 +1146,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.feedCur = row.items[len(row.items)-1]
 			}
 			return m, nil
+		}
+		if a, ok := m.selectedAgent(); ok && a.Waiting != nil && protocol.ValidWaitingKind(a.Waiting.Kind) {
+			var cmd tea.Cmd
+			m, cmd = m.startCompose()
+			if m.mode == modeCompose && len(a.Waiting.Options) > 0 {
+				m.compose.SetValue(a.Waiting.Options[0])
+				m.compose.CursorEnd()
+			}
+			return m, cmd
 		}
 		return m, m.openConv()
 	}

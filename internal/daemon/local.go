@@ -751,7 +751,17 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
 			return nil, errors.New("bad list params")
 		}
-		return d.call(ctx, "query.agents", p)
+		result, err := d.call(ctx, "query.agents", p)
+		lc.mu.Lock()
+		tui := lc.tui && lc.client == "cli"
+		lc.mu.Unlock()
+		if err == nil && tui {
+			var agents protocol.AgentsResult
+			if json.Unmarshal(result, &agents) == nil {
+				d.notifyWaiting(agents.Agents)
+			}
+		}
+		return result, err
 
 	case "projects":
 		var p protocol.QueryProjects
