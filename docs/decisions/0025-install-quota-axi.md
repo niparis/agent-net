@@ -36,3 +36,13 @@ A machine without Node keeps an empty Quotas tab and gets the one Node line. A m
 - **Install it globally with `npm install -g`.** It writes outside agent-net's folders, needs permissions the owner may not have, and is harder to remove cleanly.
 - **Download a tarball ourselves.** npm already checks integrity, resolves the platform files and writes the launcher. A private prefix keeps the result in one folder.
 - **Install Node too.** That is a much larger change with its own upgrade path. The owner installs Node; agent-net installs quota-axi.
+
+## Addendum: choose a working owner copy first
+
+A private copy can see different local authentication state from the owner's copy. A later pinned release can also behave differently with a provider. Comparing an owner copy to the pin therefore skipped copies that the parser can use.
+
+For a new choice, agent-net discovers copies through the login and process paths, `which -a`, Homebrew, the npm global prefix, nvm, `~/.local/bin` and the private folder. It checks whether each runs and reads its version. The minimum supported version is 0.1.66, whose report shape and command options are covered by the parser tests. A working supported owner copy wins; only when none is usable does agent-net keep or install its private pin. Setup offers an upgrade of an older owner copy and waits for consent. The daemon never upgrades the owner's copy.
+
+The selected path, version and reason are recorded in agent-net's config. Startup and upgrades repeat discovery without prompting, and keep a recorded copy while it runs. This prevents a newly discovered copy from changing how credentials are read. If it stops working, agent-net chooses again.
+
+Interactive setup runs the chosen copy's read-only `auth` check and summarizes which providers are found or need attention. On macOS it offers a second run that allows a Keychain prompt. The owner may choose Always Allow. Setup records the outcome without source paths or credential values. Without a terminal, setup skips the check and points to `agent-net setup --quota`. The Quotas tab shows the selected copy and points providers that need attention to the same command.

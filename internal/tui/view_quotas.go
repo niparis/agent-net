@@ -78,9 +78,9 @@ func (m Model) quotasView(w, h int) []string {
 	}
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
-		if quotaNotSetUp(r.provider) && !providersWithQuota[provider] {
+		if quotaNotSetUp(r.provider) && !r.provider.NeedsAttention && !providersWithQuota[provider] {
 			unset = append(unset, r)
-		} else if !relevant[provider] {
+		} else if !relevant[provider] && !r.provider.NeedsAttention {
 			unused = append(unused, r)
 		} else {
 			configured = append(configured, r)
@@ -190,7 +190,9 @@ func (m Model) quotasView(w, h int) []string {
 		if p.Stale {
 			notes = append(notes, "stale reading")
 		}
-		if p.Error != "" {
+		if p.NeedsAttention {
+			notes = append(notes, "needs you once: run agent-net setup --quota")
+		} else if p.Error != "" {
 			notes = append(notes, sanitize(p.Error))
 		}
 		if len(notes) > 0 {
@@ -219,6 +221,25 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	title := "Subscriptions"
+	var copies []string
+	for _, id := range ids {
+		n := nodes[id]
+		c := n.Usage.QuotaCopy
+		if c == nil && n.Usage.Quotas != nil {
+			c = n.Usage.Quotas.Copy
+		}
+		if c != nil {
+			copies = append(copies, sanitize(firstNonEmpty(n.Hostname, id))+": "+quotaCopyLabel(c))
+		}
+	}
+	if len(copies) == 1 {
+		_, label, _ := strings.Cut(copies[0], ": ")
+		title += " · " + label
+	} else if len(copies) > 1 {
+		for _, label := range copies {
+			subscription = append(subscription, sDim.Render(label))
+		}
+	}
 	if reporting == 1 {
 		title += " · read on " + sanitize(singleMachine)
 	}
@@ -266,4 +287,12 @@ func quotaBar(frac float64, n int, color lipgloss.TerminalColor) string {
 		filled = 1
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("─", n-filled))
+}
+
+func quotaCopyLabel(c *protocol.QuotaCopy) string {
+	label := "quota-axi " + sanitize(c.Version)
+	if c.Private {
+		return label + " · agent-net's copy"
+	}
+	return label + " · yours (" + sanitize(c.Dir) + ")"
 }

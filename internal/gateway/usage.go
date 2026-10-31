@@ -127,6 +127,11 @@ func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 		}
 		r.Workers = &cp
 	}
+	if r.QuotaCopy != nil {
+		c := *r.QuotaCopy
+		c.Version, c.Dir = clip(c.Version, 40), clip(c.Dir, 300)
+		r.QuotaCopy = &c
+	}
 	r.QuotaError = clip(r.QuotaError, 300)
 	r.QuotaNote = clip(r.QuotaNote, 300)
 	r.Quotas = cleanQuotas(r.Quotas)
@@ -139,6 +144,11 @@ func cleanQuotas(q *protocol.Quotas) *protocol.Quotas {
 		return nil
 	}
 	cp := *q
+	if q.Copy != nil {
+		c := *q.Copy
+		c.Version, c.Dir = clip(c.Version, 40), clip(c.Dir, 300)
+		cp.Copy = &c
+	}
 	if len(cp.Providers) > 100 {
 		cp.Providers = cp.Providers[:100]
 	}

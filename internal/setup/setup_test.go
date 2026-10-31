@@ -16,6 +16,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/quotaaxi"
 	"github.com/niparis/agent-net/plugins/opencode"
 	"github.com/niparis/agent-net/plugins/pi"
 )
@@ -111,6 +112,20 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	home := t.TempDir()
+	restoreRoot := quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
+	t.Cleanup(restoreRoot)
+	restoreDirs := quotaaxi.SetSystemNodeDirsForTesting(nil)
+	t.Cleanup(restoreDirs)
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "npm"), []byte("#!/bin/sh\nexit 0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	shell := filepath.Join(bin, "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+bin+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_CONFIG_HOME", "")
 	t.Setenv("XDG_DATA_HOME", "")

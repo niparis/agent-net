@@ -34,6 +34,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	noNeedsHook := fs.Bool("no-claude-needs-hook", false, "do not add those hooks and do not ask")
 	workersMod := fs.Bool("claude-workers-mod", false, "install the Claude Code plugin that shows this session's workers (only if not asked before)")
 	noWorkersMod := fs.Bool("no-claude-workers-mod", false, "do not install that plugin and do not ask")
+	quotaOnly := fs.Bool("quota", false, "check quota provider logins")
 	quotaAXI := fs.Bool("quota-axi", false, "read your subscription quotas with quota-axi (agent-net installs it when needed)")
 	noQuotaAXI := fs.Bool("no-quota-axi", false, "do not read subscription quotas and do not ask")
 	fs.Parse(args)
@@ -109,7 +110,7 @@ func cmdSetup(ctx context.Context, args []string) error {
 	} else if *noAccept {
 		peer = setup.PeerMessagesNo
 	}
-	return setup.Setup(ctx, setup.Options{All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
+	return setup.Setup(ctx, setup.Options{QuotaOnly: *quotaOnly, All: allAnswer, PeerMessages: peer, CodexTools: codex, HintHook: hint, PolicyHook: policy, NeedsHook: needs, WorkersMod: workers, QuotaAXI: quota, Join: *join, Gateway: *gw, NoService: *noService, NoLaunch: *noLaunch, Launch: *launch, Data: *data, Dist: *dist, Port: *port})
 }
 
 func cmdUninstall(args []string) error {
