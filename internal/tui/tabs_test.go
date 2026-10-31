@@ -793,3 +793,15 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 		golden(t, fmt.Sprintf("quotas_failed_%dx%d", size[0], size[1]), view)
 	}
 }
+
+func TestQuotaProtectedSummary(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "no provider protected") {
+		t.Fatalf("missing empty summary: %s", v)
+	}
+	m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "saved for orchestrator"}
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "protected: anthropic · saved for orchestrator") {
+		t.Fatalf("missing summary: %s", v)
+	}
+}
