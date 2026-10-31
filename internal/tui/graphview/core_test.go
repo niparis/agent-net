@@ -33,3 +33,16 @@ func TestSelectionStable(t *testing.T) {
 		g.Select(1)
 	}
 }
+
+func TestFitUsesViewportInBothDimensions(t *testing.T) {
+	g := NewWithoutLayout(protocol.GraphView{})
+	g.Positions = map[string]Point{"a": {-4, -1}, "b": {4, 1}}
+	for _, size := range [][2]int{{100, 20}, {40, 30}} {
+		c := g.Fit(size[0], size[1])
+		x0, y0 := c.Project(g.Positions["a"], size[0], size[1])
+		x1, y1 := c.Project(g.Positions["b"], size[0], size[1])
+		if x1-x0 < float64(size[0]-4) || y1-y0 < float64(size[1]-4) {
+			t.Errorf("fit in %v uses %.1fx%.1f", size, x1-x0, y1-y0)
+		}
+	}
+}

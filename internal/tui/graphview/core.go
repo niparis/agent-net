@@ -12,12 +12,20 @@ import (
 
 type Point struct{ X, Y float64 }
 type Camera struct {
-	Center        Point
-	Zoom, FitZoom float64
+	Center         Point
+	Zoom, FitZoom  float64
+	ScaleX, ScaleY float64
 }
 
 func (c Camera) Project(p Point, width, height int) (float64, float64) {
-	return float64(width)/2 + (p.X-c.Center.X)*c.Zoom*2, float64(height)/2 + (p.Y-c.Center.Y)*c.Zoom
+	sx, sy := c.ScaleX, c.ScaleY
+	if sx == 0 {
+		sx = 1
+	}
+	if sy == 0 {
+		sy = 1
+	}
+	return float64(width)/2 + (p.X-c.Center.X)*c.Zoom*2*sx, float64(height)/2 + (p.Y-c.Center.Y)*c.Zoom*sy
 }
 func (c Camera) Level() string {
 	if c.Zoom < c.FitZoom*0.7 {
@@ -91,8 +99,16 @@ func (g *Graph) Fit(width, height int) Camera {
 		miny = math.Min(miny, p.Y)
 		maxy = math.Max(maxy, p.Y)
 	}
-	z := math.Min(math.Max(1, float64(width)-2)/(2*math.Max(1, maxx-minx)), math.Max(1, float64(height)-2)/math.Max(1, maxy-miny))
-	return Camera{Center: Point{(minx + maxx) / 2, (miny + maxy) / 2}, Zoom: z, FitZoom: z}
+	zx := math.Max(1, float64(width)-4) / (2 * math.Max(0.001, maxx-minx))
+	zy := math.Max(1, float64(height)-4) / math.Max(0.001, maxy-miny)
+	if maxx == minx {
+		zx = zy
+	}
+	if maxy == miny {
+		zy = zx
+	}
+	z := math.Min(zx, zy)
+	return Camera{Center: Point{(minx + maxx) / 2, (miny + maxy) / 2}, Zoom: z, FitZoom: z, ScaleX: zx / z, ScaleY: zy / z}
 }
 func (g *Graph) layout() {
 	n := len(g.Nodes)
