@@ -23,16 +23,21 @@ func pressE(m Model) (Model, tea.Cmd) {
 
 // capture replaces the terminal hand-over and records the command it got.
 func capture(m *Model) (got *[]string, dir *string, env *[]string, done *func(error) tea.Msg) {
+	return captureName(m, "tenebrae (Mac)")
+}
+
+// captureName is capture for a session with another name.
+func captureName(m *Model, name string) (got *[]string, dir *string, env *[]string, done *func(error) tea.Msg) {
 	got, dir, env, done = new([]string), new(string), new([]string), new(func(error) tea.Msg)
 	m.execProcess = func(c tea.ExecCommand, cb tea.ExecCallback) tea.Cmd {
 		proxy, ok := c.(*ptyproxy.Proxy)
 		if !ok {
 			panic("enter command is not proxied")
 		}
-		if proxy.Title != "tenebrae (Mac) - ctrl+] to come back" {
+		if proxy.Title != name+" - ctrl+] to come back" {
 			panic("wrong proxy title: " + proxy.Title)
 		}
-		if proxy.Name != "tenebrae (Mac)" {
+		if proxy.Name != name {
 			panic("wrong proxy name: " + proxy.Name)
 		}
 		cmd := proxy.Cmd
@@ -40,6 +45,62 @@ func capture(m *Model) (got *[]string, dir *string, env *[]string, done *func(er
 		return func() tea.Msg { return nil }
 	}
 	return
+}
+
+func TestEnterKeyEntersTheSessionLikeE(t *testing.T) {
+	for _, key := range []string{"enter", "e"} {
+		t.Run(key, func(t *testing.T) {
+			m, src := workerModel(120, 30)
+			m = selectID(m, workerID)
+			src.enterPlan = protocol.EnterPlan{Argv: []string{"opencode", "--session", "ses_9"}, Dir: "/work/tenebrae"}
+			got, dir, _, _ := capture(&m)
+			var cmd tea.Cmd
+			if key == "enter" {
+				m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			} else {
+				m, cmd = pressE(m)
+			}
+			if cmd == nil {
+				t.Fatal(key + " gave no command")
+			}
+			m, cmd = press2(m, cmd())
+			if cmd == nil {
+				t.Fatal(key + " did not run the plan")
+			}
+			if want := src.enterPlan.Argv; !reflect.DeepEqual(*got, want) || *dir != "/work/tenebrae" {
+				t.Fatalf("%s ran %v in %q, want %v in /work/tenebrae", key, *got, *dir, want)
+			}
+		})
+	}
+}
+
+func TestEnterOnAWaitingRowEntersItWithoutCompose(t *testing.T) {
+	for _, inNeeds := range []bool{true, false} {
+		row := "table"
+		if inNeeds {
+			row = "Needs you"
+		}
+		t.Run(row, func(t *testing.T) {
+			m, src := waitingTableModel()
+			m = selectWaitingRow(m, inNeeds)
+			src.enterPlan = protocol.EnterPlan{Note: "cogforge-maintenance is not in a tmux pane agent-net can reach: open its window on build-vm"}
+
+			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			if m.mode != modeNormal {
+				t.Fatalf("enter opened mode %v, want no compose form", m.mode)
+			}
+			if cmd == nil {
+				t.Fatal("enter gave no enter command")
+			}
+			m, _ = press2(m, cmd())
+			if len(src.enters) != 1 || src.enters[0].SessionID != cogforgeMaintenanceID {
+				t.Fatalf("enter asked for %+v", src.enters)
+			}
+			if v := m.View(); !strings.Contains(v, "open its window on build-vm") {
+				t.Errorf("the plan note is not on screen:\n%s", v)
+			}
+		})
+	}
 }
 
 func TestEnterRunsThePlanOfTheDaemon(t *testing.T) {

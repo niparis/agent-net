@@ -161,7 +161,7 @@ func fixtureTranscript() *transcript {
 func TestGoldenConversation(t *testing.T) {
 	for _, sz := range [][2]int{{80, 24}, {120, 40}} {
 		m, _ := convModel(sz[0], sz[1], fixtureTranscript())
-		m = pressKey(m, "enter")
+		m = pressKey(m, "c")
 		golden(t, fmt.Sprintf("conv_%dx%d", sz[0], sz[1]), m.View())
 	}
 	m, _ := convModel(80, 24, fixtureTranscript())
@@ -170,8 +170,8 @@ func TestGoldenConversation(t *testing.T) {
 	golden(t, "conv_80x24_paused", m.View())
 }
 
-func TestConversationOpensWithEnterOrC(t *testing.T) {
-	for _, k := range []string{"enter", "c"} {
+func TestConversationOpensWithC(t *testing.T) {
+	for _, k := range []string{"c"} {
 		m, src := convModel(100, 30, newTranscript(5))
 		m = pressKey(m, k)
 		if m.conv == nil || m.conv.id != m.selected || len(m.conv.entries) != 5 {
@@ -201,7 +201,7 @@ func TestConversationOpensWithEnterOrC(t *testing.T) {
 func TestPagingBackLoadsOlderEntriesOnce(t *testing.T) {
 	tr := newTranscript(120)
 	m, src := convModel(100, 30, tr)
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	if len(m.conv.entries) != convPage || m.conv.older != "c070" {
 		t.Fatalf("first page: %d entries, older %q", len(m.conv.entries), m.conv.older)
 	}
@@ -241,7 +241,7 @@ func TestPagingBackLoadsOlderEntriesOnce(t *testing.T) {
 
 func TestPagingKeepsTheViewWhereItWas(t *testing.T) {
 	m, _ := convModel(100, 30, newTranscript(120))
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	before := lines(m.View())
 	m = pressKey(m, "pgup")
 	scrolled := lines(m.View())
@@ -260,7 +260,7 @@ func TestPagingKeepsTheViewWhereItWas(t *testing.T) {
 func TestFollowAddsNewEntriesAndPausesWhenScrolledBack(t *testing.T) {
 	tr := newTranscript(10)
 	m, _ := convModel(100, 14, tr) // 11 rows of text: ten entries fill them
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	if m.conv.newer != "c009" {
 		t.Fatalf("newer %q", m.conv.newer)
 	}
@@ -302,7 +302,7 @@ func TestFollowAddsNewEntriesAndPausesWhenScrolledBack(t *testing.T) {
 func TestFollowAsksFromTheNewerCursor(t *testing.T) {
 	tr := newTranscript(3)
 	m, src := convModel(100, 30, tr)
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	m = tickOnce(m)
 	last := src.queries[len(src.queries)-1]
 	if last.After != "c002" || last.Before != "" {
@@ -313,7 +313,7 @@ func TestFollowAsksFromTheNewerCursor(t *testing.T) {
 func TestEmptySessionIsFollowedFromTheStart(t *testing.T) {
 	tr := &transcript{}
 	m, _ := convModel(100, 30, tr)
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	if !m.conv.loaded || !strings.Contains(m.View(), "nothing yet") {
 		t.Fatalf("empty session:\n%s", m.View())
 	}
@@ -326,7 +326,7 @@ func TestEmptySessionIsFollowedFromTheStart(t *testing.T) {
 
 func TestOnlyOneConversationFetchAtATime(t *testing.T) {
 	m, src := convModel(100, 30, newTranscript(5))
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	n := len(src.queries)
 	m.conv.busy = true
 	if cmd := m.convCmd(convNewer); cmd != nil {
@@ -343,7 +343,7 @@ func TestConversationErrorsAreExplained(t *testing.T) {
 	src.textFn = func(protocol.TextQuery) (protocol.TextPage, error) {
 		return protocol.TextPage{}, client.RemoteError("method \"session_text\" is only available to the owner")
 	}
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	v := m.View()
 	if !strings.Contains(v, "Could not read the conversation") || !strings.Contains(v, "only available to the owner") {
 		t.Fatalf("error not shown:\n%s", v)
@@ -367,7 +367,7 @@ func TestConversationShowsTheDaemonsTextAsItCame(t *testing.T) {
 	tr := &transcript{}
 	tr.add("token=[masked] and sk-**** stay as sent\x1b[31m red? ‮")
 	m, _ := convModel(100, 30, tr)
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	v := m.View()
 	if !strings.Contains(v, "token=[masked] and sk-**** stay as sent") {
 		t.Fatalf("masked text changed:\n%s", v)
@@ -383,7 +383,7 @@ func TestConversationShowsTheDaemonsTextAsItCame(t *testing.T) {
 
 func TestConversationLinesWrapToTheWidth(t *testing.T) {
 	m, _ := convModel(50, 30, fixtureTranscript())
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	for _, l := range m.convLines(50) {
 		if len(l.text) > convTextWidth(50)+8 { // a cut word may use up to the width in bytes
 			t.Errorf("line too long (%d): %q", len(l.text), l.text)
@@ -403,7 +403,7 @@ func TestConversationLinesWrapToTheWidth(t *testing.T) {
 
 func TestConversationKeysQuitAndHelp(t *testing.T) {
 	m, _ := convModel(100, 30, newTranscript(5))
-	m = pressKey(m, "enter")
+	m = pressKey(m, "c")
 	if _, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")}); cmd == nil {
 		t.Fatal("q did not quit from the conversation")
 	}

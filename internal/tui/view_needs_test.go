@@ -165,9 +165,9 @@ func TestWaitingRowsUseTheSameSessionActions(t *testing.T) {
 				t.Fatalf("details for the %s row show a different session:\n%s", row, got)
 			}
 
-			answer, _ := press(m, tea.KeyMsg{Type: tea.KeyEnter})
-			if answer.mode != modeCompose || answer.composeTo != cogforgeMaintenanceID {
-				t.Fatalf("enter on the %s row answered %q in mode %v", row, answer.composeTo, answer.mode)
+			answer, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			if answer.mode != modeNormal || cmd == nil {
+				t.Fatalf("enter on the %s row opened mode %v (command %t), want the enter action", row, answer.mode, cmd != nil)
 			}
 
 			conv, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
@@ -320,16 +320,16 @@ func TestNeedsRowsShowKindAndRightAlignedAge(t *testing.T) {
 	}
 }
 
-func TestNeedsEnterPrefillsAnswer(t *testing.T) {
+func TestNeedsMComposesWithoutEntering(t *testing.T) {
 	m := needsModel(100, 30)
 	for i := range m.snap.Agents {
 		if m.snap.Agents[i].SessionID == "s_0000000000000002" {
 			m.snap.Agents[i].Waiting.Options = []string{"Yes", "No"}
 		}
 	}
-	m = keys(m, "g", "enter")
-	if m.mode != modeCompose || m.compose.Value() != "Yes" {
-		t.Fatalf("answer mode=%v value=%q", m.mode, m.compose.Value())
+	m = keys(m, "g", "m")
+	if m.mode != modeCompose || m.compose.Value() != "" {
+		t.Fatalf("compose mode=%v value=%q", m.mode, m.compose.Value())
 	}
 }
 

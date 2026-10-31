@@ -1165,16 +1165,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if a, ok := m.selectedAgent(); ok && a.Waiting != nil && protocol.ValidWaitingKind(a.Waiting.Kind) {
-			var cmd tea.Cmd
-			m, cmd = m.startCompose()
-			if m.mode == modeCompose && len(a.Waiting.Options) > 0 {
-				m.compose.SetValue(a.Waiting.Options[0])
-				m.compose.CursorEnd()
-			}
-			return m, cmd
+		if m.tab == 0 {
+			// Enter enters the session, the same action as e. The owner
+			// answers a waiting session inside the session itself.
+			return m.startEnter()
 		}
-		return m, m.openConv()
 	}
 	return m, nil
 }
