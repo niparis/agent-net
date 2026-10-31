@@ -3,9 +3,9 @@ Needs you (2) ──────────────────────
 ▍▸ strategies claude          question: "Merge tenebrae-nexus/truenas-stacks #817?"              12m
 ▍  ci-runner  pi     build-vm permission: Bash(git push origin main)                              3m
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G    claude  opencode  pi       │
-│  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi                │
-│  ○ old-box    v0.3.2 offline                                                                     │
+│  ● Mac (here) cpu █░░░░░░░ 12% of 10 mem ██░░ 9.1/16G  disk 180G free                            │
+│  ● build-vm   cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   no claude · no opencode   │
+│  ○ old-box    cpu ?                  mem ?             disk ?                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               AGENT    PROJECT    MODEL      STATUS    TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────

@@ -91,15 +91,15 @@ func TestMachineDotColors(t *testing.T) {
 	m := newModel(120, 34)
 	rows := m.machineRows()
 	for _, r := range rows {
-		line := m.machineLine(r, 120, 12, 8)
+		line := m.machineLine(r, 120, machineNameWidth(m.machineRows(), m.snap.NodeID))
 		if r.online && !strings.Contains(line, "38;2;124;207;138m●") {
 			t.Fatalf("online dot: %q", line)
 		}
 	}
 	m.now = func() time.Time { return t0.Add(2 * time.Hour) }
 	for _, r := range m.machineRows() {
-		if _, st := m.nodeUsage(r.nodeID); r.online && st == usageStale && !strings.Contains(m.machineLine(r, 120, 12, 8), sNeeds.Render("●")) {
-			t.Fatalf("stale dot is not amber: %q", m.machineLine(r, 120, 12, 8))
+		if _, st := m.nodeUsage(r.nodeID); r.online && st == usageStale && !strings.Contains(m.machineLine(r, 120, machineNameWidth(m.machineRows(), m.snap.NodeID)), sNeeds.Render("●")) {
+			t.Fatalf("stale dot is not amber: %q", m.machineLine(r, 120, machineNameWidth(m.machineRows(), m.snap.NodeID)))
 		}
 	}
 }
@@ -129,12 +129,12 @@ func TestCTOTitleAndFocusedBorder(t *testing.T) {
 	}
 }
 
-func TestMachineHarnessesAreNamesOnly(t *testing.T) {
+func TestMachineRowsDoNotListInstalledHarnesses(t *testing.T) {
 	m := newModel(160, 34)
 	for _, r := range m.machineRows() {
 		if r.nodeID == "n_mac" {
-			line := ansi.Strip(m.machineLine(r, 160, 12, 8))
-			if !strings.Contains(line, "claude  opencode  pi") || strings.Contains(line, "2.1.312") {
+			line := ansi.Strip(m.machineLine(r, 160, machineNameWidth(m.machineRows(), m.snap.NodeID)))
+			if strings.Contains(line, "claude") || strings.Contains(line, "opencode") || strings.Contains(line, "pi") {
 				t.Fatal(line)
 			}
 			return

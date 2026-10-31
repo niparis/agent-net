@@ -26,7 +26,7 @@ func fakeUsage() *Usage {
 	return &Usage{
 		NodeID: "n_mac", Hostname: "Mac",
 		Local: &protocol.UsageReport{
-			Machine: protocol.MachineUsage{Cores: 10, CPU: 12.4, CPUAvg: 8.2, MemUsed: gib * 91 / 10, MemUsedAvg: gib * 9, MemTotal: 16 * gib,
+			Machine: protocol.MachineUsage{Cores: 10, CPU: 12.4, CPUAvg: 8.2, MemUsed: gib * 91 / 10, MemUsedAvg: gib * 9, MemTotal: 16 * gib, DiskFree: 180 * gib,
 				Load: [3]float64{1.24, 1.1, 0.9}, Procs: 520, Samples: 60},
 			Trees: []protocol.TreeUsage{
 				tree(4242, "claude", 38, 20, gib*12/10, 14, "s_0000000000000001"),
@@ -36,7 +36,7 @@ func fakeUsage() *Usage {
 		Gateway: &protocol.UsageAnswer{Nodes: []protocol.UsageNode{{
 			NodeID: "n_vm", Hostname: "build-vm", AgeSeconds: 4,
 			Usage: protocol.UsageReport{
-				Machine: protocol.MachineUsage{Cores: 4, CPU: 71, CPUAvg: 40, MemUsed: gib * 32 / 10, MemUsedAvg: gib * 3, MemTotal: 8 * gib,
+				Machine: protocol.MachineUsage{Cores: 4, CPU: 71, CPUAvg: 40, MemUsed: gib * 32 / 10, MemUsedAvg: gib * 3, MemTotal: 8 * gib, DiskFree: 31 * gib,
 					Load: [3]float64{0.8, 0.7, 0.6}, Procs: 140, Samples: 60},
 				Trees: []protocol.TreeUsage{
 					tree(981, "pi", 5, 3, 300<<20, 3, "s_0000000000000004"),
@@ -181,7 +181,7 @@ func TestOlderDaemonShowsQuestionMarks(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = settle(refresh(m, src))
 	v := m.View()
-	if !strings.Contains(v, "cpu ?  mem ?") || !strings.Contains(v, "?") {
+	if !strings.Contains(v, "cpu ?") || !strings.Contains(v, "mem ?") {
 		t.Fatalf("no question marks:\n%s", v)
 	}
 	// It does not ask again every second.
@@ -228,7 +228,7 @@ func TestStaleUsageReadsAsUnknown(t *testing.T) {
 		t.Fatalf("this machine's report is old too once the screen stops asking: %v", st)
 	}
 	v := m.View()
-	if !strings.Contains(v, "(stale)") || strings.Contains(v, "12%") {
+	if !strings.Contains(v, "cpu ?") || !strings.Contains(v, "mem ?") || strings.Contains(v, "12% of 10") {
 		t.Fatalf("stale figures are shown:\n%s", v)
 	}
 }
@@ -249,15 +249,18 @@ func TestHeavyTrees(t *testing.T) {
 	}
 }
 
-func TestSharedTreeIsNotARowAndItsFiguresAreInTheMachineHeading(t *testing.T) {
+func TestSharedTreeIsNotARowAndTopUsesHighestSessionCPU(t *testing.T) {
 	snap, u := openCodeSnapshot()
 	m := modelWith(snap, u, 120, 40)
 	v := m.View()
 	if strings.Contains(v, "service, shared by") {
 		t.Fatalf("the shared service still has a row of its own:\n%s", v)
 	}
-	if !strings.Contains(v, "opencode service 2.1G 9 procs") {
-		t.Fatalf("the machine heading does not carry the shared service:\n%s", v)
+	if strings.Contains(v, "opencode service") || strings.Contains(v, "procs") {
+		t.Fatalf("the machine row includes shared service process details:\n%s", v)
+	}
+	if !strings.Contains(v, "top: strategies 240%") {
+		t.Fatalf("the machine row does not name its highest CPU session:\n%s", v)
 	}
 	if n := strings.Count(v, "shared "); n < 3 { // the three sessions on the shared tree
 		t.Fatalf("the sessions are not marked shared:\n%s", v)
