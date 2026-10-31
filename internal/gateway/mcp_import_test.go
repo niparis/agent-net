@@ -3,6 +3,7 @@ package gateway
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -134,5 +135,49 @@ func TestSameNameNativeAndFederatedIsAConflict(t *testing.T) {
 	}
 	if len(srvs) != 1 || srvs[0].Name != "files" {
 		t.Errorf("catalog: %+v", srvs)
+	}
+}
+
+// The federation's own entries and agent-net's own server are never offered
+// for import, a machine filter narrows the list, and a bad offset is refused.
+func TestImportCandidatesSkipFederationAndOwnEntriesAndFilterByMachine(t *testing.T) {
+	g, node := scopeGateway(t)
+	other, _, err := g.store.CreateNode("laptop", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := &protocol.MCPImportInfo{Class: protocol.MCPImportable, Transport: "stdio"}
+	fedEntry := nativeEntry("claude", protocol.InventoryUser, "", "from-federation", "/home/u/.claude.json", ok)
+	fedEntry.Source = protocol.InventoryFederation
+	setNative(t, g, node,
+		nativeEntry("claude", protocol.InventoryUser, "", "real", "/home/u/.claude.json", ok),
+		fedEntry,
+		nativeEntry("agent-net", protocol.InventoryUser, "", "own", "/home/u/.agent-net.json", ok),
+	)
+	setNative(t, g, other, nativeEntry("claude", protocol.InventoryUser, "", "elsewhere", "/home/v/.claude.json", ok))
+	names := func(f protocol.MCPImportCandidatesRequest) string {
+		var n []string
+		for _, c := range candidatePage(t, g, f).Candidates {
+			n = append(n, c.Name)
+		}
+		sort.Strings(n)
+		return strings.Join(n, ",")
+	}
+	if got := names(protocol.MCPImportCandidatesRequest{}); got != "elsewhere,real" {
+		t.Fatalf("candidates: %s", got)
+	}
+	if got := names(protocol.MCPImportCandidatesRequest{Machine: "nas"}); got != "real" {
+		t.Fatalf("machine name filter: %s", got)
+	}
+	if got := names(protocol.MCPImportCandidatesRequest{Machine: other}); got != "elsewhere" {
+		t.Fatalf("machine id filter: %s", got)
+	}
+	for _, off := range []int{-1, 3} {
+		if _, err := g.mcpImportCandidates(protocol.MCPImportCandidatesRequest{Offset: off}); err == nil {
+			t.Errorf("offset %d was accepted", off)
+		}
+	}
+	if p, err := g.mcpImportCandidates(protocol.MCPImportCandidatesRequest{Offset: 2}); err != nil || len(p.Candidates) != 0 {
+		t.Errorf("offset at the end: %+v %v", p, err)
 	}
 }

@@ -273,3 +273,89 @@ func TestPruneKeepsMCPBackupsLikeSkillBackups(t *testing.T) {
 		t.Fatal("fresh MCP backup removed")
 	}
 }
+
+// The rename in replaceNative is the last compare-and-swap: it refuses when the
+// file no longer has the hash the edit started from.
+func TestReplaceNativeRefusesWhenTheFileChanged(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.json")
+	if err := os.WriteFile(path, []byte("one"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if why := replaceNative(path, 0o640, []byte("two"), sumHex([]byte("something else"))); why != "changed since plan" {
+		t.Fatalf("stale replace: %q", why)
+	}
+	if readNativeText(t, path) != "one" {
+		t.Fatal("a stale replace wrote the file")
+	}
+	if left, _ := os.ReadDir(dir); len(left) != 1 {
+		t.Fatalf("temporary file left: %v", left)
+	}
+	if why := replaceNative(path, 0o640, []byte("two"), sumHex([]byte("one"))); why != "" {
+		t.Fatalf("replace: %q", why)
+	}
+	if readNativeText(t, path) != "two" {
+		t.Fatal("replace did not write")
+	}
+}
+
+// Undo trusts nothing in the request except the backup ID: the backup must
+// match the edit the owner is undoing, and must be unchanged on disk.
+func TestNativeEditUndoRefusesAMismatchedOrTamperedBackup(t *testing.T) {
+	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
+	file := filepath.Join(n.home, ".claude.json")
+	plan := n.d.nativeEdit(n.claudeUser())
+	req := n.claudeUser()
+	req.Op, req.FileHash = protocol.MCPNativeApply, plan.FileHash
+	applied := n.d.nativeEdit(req)
+	if applied.Conflict != "" {
+		t.Fatalf("apply: %+v", applied)
+	}
+	good := protocol.MCPNativeEditRequest{Op: protocol.MCPNativeUndo, Name: "demo", PostHash: applied.PostHash, BackupID: applied.BackupID}
+
+	wrongPost := good
+	wrongPost.PostHash = sumHex([]byte("not the postimage"))
+	if res := n.d.nativeEdit(wrongPost); res.Conflict != "the backup is not the one this edit made" {
+		t.Fatalf("wrong post hash: %+v", res)
+	}
+	wrongName := good
+	wrongName.Name = "keep"
+	if res := n.d.nativeEdit(wrongName); res.Conflict != "the backup is not the one this edit made" {
+		t.Fatalf("wrong name: %+v", res)
+	}
+	if readNativeText(t, file) != nativeClaudeWant {
+		t.Fatal("a refused undo changed the file")
+	}
+
+	// A backup whose saved original was altered is not restored.
+	pre := filepath.Join(n.state, mcpBackupDir, filepath.FromSlash(applied.BackupID), "preimage")
+	if err := os.WriteFile(pre, []byte("{\"mcpServers\":{\"evil\":{\"command\":\"/bin/sh\"}}}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if res := n.d.nativeEdit(good); res.Conflict != "the local backup does not match" {
+		t.Fatalf("tampered backup: %+v", res)
+	}
+	if readNativeText(t, file) != nativeClaudeWant {
+		t.Fatal("a tampered backup was restored")
+	}
+}
+
+// No backup, no edit: if the original cannot be saved, the file stays as it is.
+func TestNativeEditDoesNotTouchTheFileWithoutABackup(t *testing.T) {
+	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
+	file := filepath.Join(n.home, ".claude.json")
+	plan := n.d.nativeEdit(n.claudeUser())
+	// A plain file where the backup folder must be makes every backup fail.
+	if err := os.WriteFile(filepath.Join(n.state, mcpBackupDir), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	req := n.claudeUser()
+	req.Op, req.FileHash = protocol.MCPNativeApply, plan.FileHash
+	res := n.d.nativeEdit(req)
+	if !strings.Contains(res.Conflict, "cannot save a backup") {
+		t.Fatalf("apply: %+v", res)
+	}
+	if readNativeText(t, file) != nativeClaudeFile {
+		t.Fatal("the file was edited without a backup")
+	}
+}

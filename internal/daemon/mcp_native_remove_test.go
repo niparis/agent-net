@@ -233,3 +233,91 @@ func TestMCPNativeRemoveOwnerGate(t *testing.T) {
 		t.Fatalf("cto apply: %s", out)
 	}
 }
+
+// A federated server that is switched off or unhealthy is a plan conflict on
+// its own: the native entry is its only working copy.
+func TestMCPNativeRemoveRefusesAServerThatIsOffOrUnhealthy(t *testing.T) {
+	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, "")
+	file := filepath.Join(f.home, ".claude.json")
+	original, _ := os.ReadFile(file)
+	cand := f.importProbe(t)
+	conflict := func(want string) {
+		t.Helper()
+		plan := f.nativePlan(t, cand)
+		if len(plan.Conflicts) == 0 || !strings.Contains(strings.Join(plan.Conflicts, ";"), want) {
+			t.Fatalf("want a conflict with %q: %+v", want, plan.Conflicts)
+		}
+		if _, err := f.cli.call("mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: plan.ID}); err == nil {
+			t.Fatalf("a plan with the conflict %q was applied", want)
+		}
+	}
+	// Switched off.
+	f.cli.mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "probe", Enabled: false})
+	conflict("switched off")
+	f.cli.mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "probe", Enabled: true})
+	// Not healthy: the server cannot start.
+	t.Setenv(helperEnv, "")
+	f.cli.mustCall("mcp_test", protocol.MCPName{Name: "probe"})
+	conflict("not healthy")
+	if after, _ := os.ReadFile(file); string(after) != string(original) {
+		t.Fatal("the file changed")
+	}
+}
+
+// The federated server is tested again when the owner applies: a server that
+// was healthy at plan time but fails now keeps the native entry.
+func TestMCPNativeRemoveTestsTheServerAgainAtApply(t *testing.T) {
+	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, "")
+	file := filepath.Join(f.home, ".claude.json")
+	original, _ := os.ReadFile(file)
+	plan := f.nativePlan(t, f.importProbe(t))
+	if len(plan.Conflicts) != 0 {
+		t.Fatalf("plan: %+v", plan)
+	}
+	// The recorded health is still good; only the live test fails.
+	t.Setenv(helperEnv, "")
+	_, err := f.cli.call("mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: plan.ID})
+	if err == nil || !strings.Contains(err.Error(), "fails its test") {
+		t.Fatalf("apply: %v", err)
+	}
+	if after, _ := os.ReadFile(file); string(after) != string(original) {
+		t.Fatal("the native entry was removed although the federated server fails")
+	}
+}
+
+// Any change to the scanned state makes a removal plan stale, and a plan that
+// was applied says so when it is applied again.
+func TestMCPNativeRemovePlanGoesStaleAndAppliesOnce(t *testing.T) {
+	f := newImportFixture(t, map[string]string{"probe": stdioNative(), "other": stdioNative()}, "")
+	file := filepath.Join(f.home, ".claude.json")
+	plan := f.nativePlan(t, f.importProbe(t))
+	// An unrelated entry appears after the plan.
+	b, _ := os.ReadFile(file)
+	changed := strings.Replace(string(b), `"other":`, `"another":`+stdioNative()+`,"other":`, 1)
+	if err := os.WriteFile(file, []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.cli.mustCall("inventory_scan", nil)
+	eventually(t, "new entry reaches the gateway", func() bool {
+		for _, c := range f.candidates(t).Candidates {
+			if c.Name == "another" {
+				return true
+			}
+		}
+		return false
+	})
+	if _, err := f.cli.call("mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: plan.ID}); err == nil || !strings.Contains(err.Error(), "out of date") {
+		t.Fatalf("stale plan: %v", err)
+	}
+	if kept, _ := os.ReadFile(file); string(kept) != changed {
+		t.Fatal("a stale plan edited the file")
+	}
+	// A fresh plan applies, and only once.
+	fresh := f.nativePlan(t, f.candidate(t, "claude", "probe"))
+	if res := f.nativeCall(t, protocol.MCPNativeRemoveRequest{PlanID: fresh.ID}); res.State != protocol.MCPNativeRemoved {
+		t.Fatalf("apply: %+v", res)
+	}
+	if _, err := f.cli.call("mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: fresh.ID}); err == nil || !strings.Contains(err.Error(), "already applied") {
+		t.Fatalf("second apply: %v", err)
+	}
+}

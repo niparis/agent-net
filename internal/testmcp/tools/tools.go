@@ -33,6 +33,10 @@ func text(s string) *mcp.CallToolResult {
 // New returns the server. Tools: echo, sleep, big, env, pid, crash.
 func New() *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "testmcp", Version: "0.0.1"}, nil)
+	// A server with no tools at all, for the tests of the "reports no tools" rule.
+	if os.Getenv("AGENT_NET_TEST_MCP_NO_TOOLS") != "" {
+		return s
+	}
 	mcp.AddTool(s, &mcp.Tool{Name: "echo", Description: "Echo the text back."},
 		func(_ context.Context, _ *mcp.CallToolRequest, in echoIn) (*mcp.CallToolResult, any, error) {
 			return text("echo: " + in.Text), nil, nil

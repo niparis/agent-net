@@ -197,3 +197,54 @@ func TestMCPSecretSourceConversionKeepsOnlyNames(t *testing.T) {
 		}
 	}
 }
+
+// Each of these shapes would move a secret, or run differently on the host,
+// so each must be refused on its own. Every case isolates one guard.
+func TestMCPClassifyRefusesEachUnsafeShape(t *testing.T) {
+	cases := []struct {
+		name string
+		desc map[string]any
+		want string
+	}{
+		{"shape", map[string]any{"command": "/usr/bin/x", "args": []any{"sk-live-abcdef123456"}}, "secret value"},
+		{"keyvalue", map[string]any{"command": "/usr/bin/x", "args": []any{"--api-key=abc123"}}, "secret value"},
+		{"argurl", map[string]any{"command": "/usr/bin/x", "args": []any{"https://user:pw@mcp.example.test/x"}}, "secret value"},
+		{"urluser", map[string]any{"type": "http", "url": "https://user:pw@mcp.example.test/v1"}, "credentials"},
+		{"headerliteral", map[string]any{"type": "http", "url": "https://mcp.example.test/v1", "headers": map[string]any{"X-Api": "literal-value"}}, "holds a value"},
+		{"cwd", map[string]any{"command": "/usr/bin/x", "cwd": "/srv/data"}, "working directory"},
+		{"httpenv", map[string]any{"type": "http", "url": "https://mcp.example.test/v1", "env": map[string]any{"K": "${K}"}}, "environment"},
+		{"envhttpheader", map[string]any{"url": "https://mcp.example.test/v1", "env_http_headers": map[string]any{"X-Api": "not a name"}}, "does not name"},
+	}
+	for _, c := range cases {
+		info, _ := ClassifyMCP(c.name, c.desc)
+		if info.Class != protocol.MCPUnsupported || !strings.Contains(info.Reason, c.want) {
+			t.Errorf("%s: want unsupported with %q, got %+v", c.name, c.want, info)
+		}
+	}
+	// agent-net's own server is never imported.
+	if info, _ := ClassifyMCP("agent-net", map[string]any{"command": "/usr/bin/agent-net"}); info.Class != protocol.MCPUnsupported {
+		t.Errorf("own server was importable: %+v", info)
+	}
+	// The same shapes without the unsafe part are fine, so the cases above
+	// fail for the reason they name.
+	if info, _ := ClassifyMCP("ok", map[string]any{"command": "/usr/bin/x", "args": []any{"--root", "/srv/data"}}); info.Class != protocol.MCPImportable {
+		t.Errorf("plain entry refused: %+v", info)
+	}
+}
+
+// A config file reached through a symlink is not read, even when the link
+// stays inside the home folder.
+func TestMCPNativeSourceBehindSymlinkIsRefused(t *testing.T) {
+	home := t.TempDir()
+	writeFiles(t, home, map[string]string{"real.json": `{"mcpServers":{"files":{"command":"/usr/bin/files-mcp"}}}`})
+	if err := os.Symlink(filepath.Join(home, "real.json"), filepath.Join(home, ".claude.json")); err != nil {
+		t.Fatal(err)
+	}
+	o := Options{Home: home, CodexHome: filepath.Join(home, ".codex")}
+	if _, _, _, err := LoadNativeMCP(o, "claude", protocol.InventoryUser, "", filepath.Join(home, ".claude.json"), "files"); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Fatalf("symlinked source was read: %v", err)
+	}
+	if got := verdicts(t, o); len(got) != 0 {
+		t.Fatalf("symlinked source gave verdicts: %v", got)
+	}
+}
