@@ -157,3 +157,18 @@ func TestWaitingClearsWhenOwnerMessageDelivered(t *testing.T) {
 	cli.mustCall("owner_send", protocol.OwnerSendRequest{To: id, Body: "Yes"})
 	eventually(t, "owner answer clears waiting", func() bool { return waitingOf(t, n, id) == nil })
 }
+
+func TestCodexTurnStartedClearsWaiting(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi"})
+	n.d.SetSessions("codex", []protocol.SessionInfo{{Harness: "codex", NativeID: "thread-one", Status: "busy"}})
+	eventually(t, "codex session", func() bool { return n.d.SessionID("codex", "thread-one") != "" })
+	id := n.d.SessionID("codex", "thread-one")
+	cli := dialLocal(t, n.sock)
+	cli.mustCall("hello", map[string]any{"client": "cli"})
+	cli.mustCall("waiting", map[string]any{"harness": "codex", "native_id": "thread-one", "kind": "question", "text": "Continue?"})
+	eventually(t, "wait stored", func() bool { return waitingOf(t, n, id) != nil })
+	a := &codexAdapter{d: n.d, kick: make(chan struct{}, 1)}
+	a.onNote("turn/started", json.RawMessage(`{"threadId":"thread-one"}`))
+	eventually(t, "turn start clears wait", func() bool { return waitingOf(t, n, id) == nil })
+}
