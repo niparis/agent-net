@@ -169,6 +169,13 @@ type ToolPlanTarget struct {
 	State       string `json:"state"`
 	Conflict    string `json:"conflict,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
+	// Repo removal plans name the local branch, its base commit, and the exact
+	// tracked files the daemon will remove in an isolated worktree.
+	Branch        string   `json:"branch,omitempty"`
+	DefaultBranch string   `json:"default_branch,omitempty"`
+	BaseCommit    string   `json:"base_commit,omitempty"`
+	Files         []string `json:"files,omitempty"`
+	Dirty         bool     `json:"dirty,omitempty"`
 }
 type ToolPlan struct {
 	ID           string           `json:"id"`
@@ -177,6 +184,8 @@ type ToolPlan struct {
 	BaseRevision int64            `json:"base_revision"`
 	Assignment   ToolAssignment   `json:"assignment"`
 	Targets      []ToolPlanTarget `json:"targets"`
+	Operation    string           `json:"operation,omitempty"`
+	RepoTargets  []ToolRepoTarget `json:"repo_targets,omitempty"`
 	Conflicts    []string         `json:"conflicts"`
 	State        string           `json:"state"`
 	Actor        string           `json:"actor"`
@@ -186,8 +195,17 @@ type ToolPlan struct {
 	UndoOf int64 `json:"undo_of,omitempty"`
 }
 type ToolPlanRequest struct {
-	Item   string         `json:"item"`
-	Target ToolAssignment `json:"target"`
+	Item        string           `json:"item"`
+	Target      ToolAssignment   `json:"target"`
+	Operation   string           `json:"operation,omitempty"`
+	Project     string           `json:"project,omitempty"`
+	RepoTargets []ToolRepoTarget `json:"repo_targets,omitempty"`
+}
+
+// ToolRepoTarget selects one registered checkout for a repo-level operation.
+type ToolRepoTarget struct {
+	NodeID   string `json:"node_id"`
+	Checkout string `json:"checkout"`
 }
 
 // ToolTargetOutcome is one target's result in an apply or undo answer. State is
@@ -203,6 +221,8 @@ type ToolTargetOutcome struct {
 	Action      string `json:"action"`
 	State       string `json:"state"`
 	Reason      string `json:"reason,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	Commit      string `json:"commit,omitempty"`
 }
 
 // ToolApplyResult answers tools_apply and tools_undo: the new revision and
@@ -221,16 +241,23 @@ type ToolPlanID struct {
 }
 
 type ToolPlanProbe struct {
-	Name     string `json:"name"`
-	Harness  string `json:"harness"`
-	Checkout string `json:"checkout,omitempty"`
-	Source   string `json:"source,omitempty"`
-	Hash     string `json:"hash,omitempty"`
+	Name          string `json:"name"`
+	Harness       string `json:"harness"`
+	Checkout      string `json:"checkout,omitempty"`
+	Source        string `json:"source,omitempty"`
+	Hash          string `json:"hash,omitempty"`
+	Operation     string `json:"operation,omitempty"`
+	Project       string `json:"project,omitempty"`
+	DefaultBranch string `json:"default_branch,omitempty"`
+	Branch        string `json:"branch,omitempty"`
 }
 type ToolPlanProbeResult struct {
-	Destination string `json:"destination,omitempty"`
-	Conflict    string `json:"conflict,omitempty"`
-	Fingerprint string `json:"fingerprint,omitempty"`
+	Destination string   `json:"destination,omitempty"`
+	Conflict    string   `json:"conflict,omitempty"`
+	Fingerprint string   `json:"fingerprint,omitempty"`
+	BaseCommit  string   `json:"base_commit,omitempty"`
+	Files       []string `json:"files,omitempty"`
+	Dirty       bool     `json:"dirty,omitempty"`
 }
 
 type ToolAuditEvent struct {
@@ -282,6 +309,8 @@ type ToolResult struct {
 	Checkout string `json:"checkout,omitempty"`
 	State    string `json:"state"`
 	Reason   string `json:"reason,omitempty"`
+	Branch   string `json:"branch,omitempty"`
+	Commit   string `json:"commit,omitempty"`
 }
 
 // ToolAccept marks one difference as accepted as it is, or takes the mark off.
