@@ -81,6 +81,7 @@ type ToolItem struct {
 	State      string         `json:"state"`
 	Desired    *ToolRevision  `json:"desired,omitempty"`
 	Applied    string         `json:"applied,omitempty"`
+	Results    []ToolResult   `json:"results,omitempty"`
 }
 type ToolsPage struct {
 	Items []ToolItem `json:"items"`
@@ -203,4 +204,22 @@ type ToolNeed struct {
 	Node  string `json:"node"`
 	Text  string `json:"text"`
 	State string `json:"state"`
+}
+
+// ToolTarget is an owner-applied plan target for one daemon.
+type ToolTarget struct {
+	Revision ToolRevision   `json:"revision"`
+	Name     string         `json:"name"`
+	Index    int            `json:"index"`
+	Target   ToolPlanTarget `json:"target"`
+}
+
+// ToolResult reports the outcome of one target on its owning daemon.
+type ToolResult struct {
+	Item     string `json:"item"`
+	Revision int64  `json:"revision"`
+	Index    int    `json:"index"`
+	NodeID   string `json:"node_id,omitempty"`
+	State    string `json:"state"`
+	Reason   string `json:"reason,omitempty"`
 }

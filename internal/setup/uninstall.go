@@ -51,6 +51,11 @@ func Uninstall(o Options) error {
 	r.removePiExtension()
 	r.removeOpenCodePlugin()
 	r.removeGuidance()
+	manifest := filepath.Join(daemon.StateDir(), "skill-manifest.json")
+	if err := os.Remove(manifest); err != nil && !os.IsNotExist(err) {
+		r.step("skill manifest", "", err)
+	}
+
 	if r.Purge {
 		for _, dir := range []string{daemon.ConfigDir(), daemon.StateDir()} {
 			res := "skipped (not found)"

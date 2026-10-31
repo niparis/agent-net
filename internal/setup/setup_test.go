@@ -474,3 +474,23 @@ func TestUninstallStopsTheWorkersThatKeepRunning(t *testing.T) {
 		t.Errorf("output:\n%s", out.String())
 	}
 }
+
+func TestUninstallRemovesSkillManifest(t *testing.T) {
+	f := newFixture(t)
+	state := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	if err := os.MkdirAll(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(state, "skill-manifest.json")
+	if err := os.WriteFile(path, []byte("[]"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Uninstall(Options{Out: &out, Exe: "/x"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("manifest remains: %v", err)
+	}
+}
