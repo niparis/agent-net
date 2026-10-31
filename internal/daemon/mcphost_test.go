@@ -81,6 +81,21 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Setenv(envFakePids, fakes)
+	// Test daemons must not find the machine's quota collector. It can start
+	// real harnesses that outlive its parent and write into a test's home.
+	bin := filepath.Join(fakes, "bin")
+	if err := os.MkdirAll(bin, 0700); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	if err := os.WriteFile(filepath.Join(bin, "quota-axi"), []byte("#!/bin/sh\nprintf '{}\\n'\n"), 0700); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	os.Setenv("HOME", filepath.Join(fakes, "home"))
+	os.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(fakes, "config"))
+	os.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakes, "state"))
 	code := m.Run()
 	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {
 		fmt.Fprintf(os.Stderr, "FAIL: fake harness processes still alive after the tests (killed): %v\n", leaked)
