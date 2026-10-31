@@ -74,6 +74,9 @@ func TestMain(m *testing.M) {
 		runFakeOpenCode()
 		return
 	}
+	// The race runtime has already initialized in this process. Child test
+	// binaries do not need its one-second exit delay.
+	os.Setenv("GORACE", "atexit_sleep_ms=0")
 	quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
 	quotaaxi.SetSystemNodeDirsForTesting(nil)
 	hideRealHerdr()

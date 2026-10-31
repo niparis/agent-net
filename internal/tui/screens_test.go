@@ -25,7 +25,7 @@ func TestScreens(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := osexec.Command(os.Args[0], "-test.run", "^(TestGraphGoldens|TestQuotaViewGoldens|TestConversationScreens|TestQuotaLiveFixtureGoldens|TestLayoutGoldens|TestCTOLongErrorGolden|TestCTOMarkdownGoldens|TestViewGoldenNeeds|TestGoldenMainWithUsage|TestGoldenDetailWithTopProcesses|TestGoldenStaleUsage|TestGoldenOpenCodeSharedTree|TestGoldenHelp|TestGoldenFeedSnippets|TestGoldenMap|TestGoldenMapNavigation|TestGoldenMapCard|TestGoldenLargeOverview|TestViewGolden80|TestViewGolden120|TestViewGoldenOfflineAndFilter|TestViewGoldenFeedFocusAndBody|TestDaemonDownBanner|TestGatewayOfflineBanner|TestPolicyFormGolden|TestActionScreensGolden|TestGoldenConversation|TestTreeGolden|TestToolsTabGoldens|TestToolsPlanGoldens)$", "-screens", dir)
-	cmd.Env = append(os.Environ(), "AGENT_NET_SCREEN_CHILD=1")
+	cmd.Env = append(os.Environ(), "AGENT_NET_SCREEN_CHILD=1", "GORACE=atexit_sleep_ms=0")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("render scenes: %v\n%s", err, out)
