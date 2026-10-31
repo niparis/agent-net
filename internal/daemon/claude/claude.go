@@ -276,6 +276,9 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 	if m.Type == "request" && m.RecipientRelation != "" {
 		details += " " + m.RecipientRelation
 	}
+	if m.OwnerInstruction != "" {
+		details += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction)
+	}
 	if m.ApprovalNote != "" {
 		details += "\n[agent-net] " + m.ApprovalNote
 	}

@@ -91,12 +91,12 @@ func TestSignalPromptNamesAnotherProject(t *testing.T) {
 	if err := s.RememberOwnerPrompt(a, "ask architect to arrange this"); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "please"})
+	_, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "please"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	signals, err := s.Signals()
-	if err != nil || len(signals) != 1 || signals[0].MessageID != m.ID {
+	if err != nil || len(signals) != 0 {
 		t.Fatalf("signals %+v: %v", signals, err)
 	}
 }
@@ -132,6 +132,86 @@ func TestSignalKeepsMultipleOutcomes(t *testing.T) {
 	}
 	signals, err := s.Signals()
 	if err != nil || len(signals) != 2 || signals[0].MessageID != m.ID || signals[1].MessageID != m.ID || signals[0].Outcome == signals[1].Outcome {
+		t.Fatalf("signals %+v: %v", signals, err)
+	}
+}
+
+func TestSignalOnlyFirstSend(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if err := s.RememberOwnerPrompt(a, "ask BOB please"); err != nil {
+		t.Fatal(err)
+	}
+	first, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	signals, err := s.Signals()
+	if err != nil || len(signals) != 1 || signals[0].MessageID != first.ID {
+		t.Fatalf("signals %+v: %v", signals, err)
+	}
+}
+
+func TestSignalUnmatchedFirstSendConsumesPrompt(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if err := s.RememberOwnerPrompt(a, "ask somebody else"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "first"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET name='somebody' WHERE id=?`, b); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "second"}); err != nil {
+		t.Fatal(err)
+	}
+	signals, err := s.Signals()
+	if err != nil || len(signals) != 0 {
+		t.Fatalf("signals %+v: %v", signals, err)
+	}
+}
+
+func TestSignalOwnerInstructionOnMessage(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	prompt := "ask bob " + strings.Repeat("é", 220)
+	if err := s.RememberOwnerPrompt(a, prompt); err != nil {
+		t.Fatal(err)
+	}
+	sent, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.Message(sent.ID)
+	if err != nil || !ok || got.OwnerInstruction != string([]rune(prompt)[:200]) {
+		t.Fatalf("message %+v: %v", got, err)
+	}
+}
+
+func TestSignalReplyDoesNotConsumePrompt(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	incoming, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RememberOwnerPrompt(a, "ask bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, ParentID: incoming.ID, Body: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	send, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signals, err := s.Signals()
+	if err != nil || len(signals) != 1 || signals[0].MessageID != send.ID {
 		t.Fatalf("signals %+v: %v", signals, err)
 	}
 }

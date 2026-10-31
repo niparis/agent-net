@@ -373,3 +373,14 @@ func selectFeedMessage(m Model, id string) Model {
 	}
 	return m
 }
+
+func TestMessagesOwnerInstruction(t *testing.T) {
+	m := keys(newModel(120, 34), "2")
+	it := m.feed.items[m.feedCur]
+	m.applySnippet(snippetMsg{id: it.MsgID, msg: protocol.Message{Body: "work", OwnerInstruction: "ask the agent"}})
+	v := m.View()
+	if !strings.Contains(v, "you→") || !strings.Contains(v, "ask the agent") {
+		t.Fatal(v)
+	}
+	golden(t, "messages_owner_instruction_120x34", m.View())
+}

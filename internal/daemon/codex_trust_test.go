@@ -85,3 +85,10 @@ func TestCodexApprovedRequestGetsApprovalNote(t *testing.T) {
 		t.Fatalf("untrusted marker: %q", got)
 	}
 }
+
+func TestCodexOwnerInstruction(t *testing.T) {
+	m := protocol.Message{Type: protocol.TypeRequest, Body: "work", OwnerInstruction: "ask bob"}
+	if got := codexFrame(m); !strings.Contains(got, "sent on your user's instruction: «ask bob»") {
+		t.Fatal(got)
+	}
+}
