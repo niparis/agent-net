@@ -269,6 +269,21 @@ func TestCTOTitleShowsHarnessAndModel(t *testing.T) {
 	}
 }
 
+func TestCTOTitlePrefersModelInUse(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}, events: protocol.CTOEvents{Model: "fake/m2"}}
+	m := New(src)
+	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	m = updated.(Model)
+	updated, _ = m.update(m.ctoPollCmd()())
+	m = updated.(Model)
+	if m.cto.configuredModel != "fake/m1" {
+		t.Fatalf("saved model changed unexpectedly: %q", m.cto.configuredModel)
+	}
+	if got := m.ctoView(80, 4)[0]; !strings.Contains(got, "CTO · opencode · fake/m2") {
+		t.Fatalf("title does not show model in use: %s", got)
+	}
+}
+
 func TestCTOMessageShowsHarnessFailure(t *testing.T) {
 	for _, raw := range []string{`{"type":"idle","outcome":"failed","error":{"type":"provider.upstream","message":"unknown model"}}`, `{"type":"assistant","error":{"name":"APIError","data":{"message":"no credentials"}}}`} {
 		if got := ctoMessage(json.RawMessage(raw)); !strings.HasPrefix(got, "error: ") {
