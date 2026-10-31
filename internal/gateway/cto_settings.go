@@ -50,12 +50,6 @@ func validCompaction(c protocol.CTOCompactionSettings) bool {
 	if c.ThresholdPercent != 0 && (c.ThresholdPercent < 10 || c.ThresholdPercent > 100) {
 		return false
 	}
-	if c.FloorTokens < 0 || c.FloorTokens > 10_000_000 {
-		return false
-	}
-	if c.GrowthTokens < 0 || c.GrowthTokens > 10_000_000 {
-		return false
-	}
 	if len(c.CacheWindowSeconds) > 32 {
 		return false
 	}

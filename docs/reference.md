@@ -24,26 +24,22 @@ Run `agent-net cto` to show the settings, `agent-net cto harness claude` or
 empty argument (`agent-net cto model ""`) to restore that harness's default.
 
 ```json
-{"compaction":{"threshold_percent":70,"floor_tokens":40000,
- "growth_tokens":60000,
+{"compaction":{"threshold_percent":50,"cache_expiry_enabled":true,
  "cache_window_seconds":{"anthropic":300,"openai":300}}}
 ```
 
-`threshold_percent` defaults to 70. After a CTO reply, when the conversation's
-context is at or above that share of the model's context window, the daemon
-compacts at once. `floor_tokens` defaults to 40000 and is the minimum context
-for the idle rule. `growth_tokens` defaults to 60000: the idle rule compacts
-only when the context grew by at least that much since the last compaction, or
-since the conversation started. The CTO's base context (instructions, tools,
-graph) alone does not trigger it. `cache_window_seconds` is per provider and
-defaults to 300 seconds when the provider is not listed. A `compaction` object
-replaces the previous rules: a field left out takes its default. The daemon
-compacts an idle conversation that passes both idle checks at the window minus
-30 seconds, so the next message does not reread a large cold history. One
-compaction is allowed per idle period, and none runs while a turn is active. The
-model reports its context window through OpenCode; with no window known, only
-the idle rule applies. These rules apply to the OpenCode CTO. Claude Code
-manages its own automatic compaction.
+`threshold_percent` defaults to 50. After a CTO reply, at or above this
+share of the context window, the daemon compacts. `cache_expiry_enabled`
+defaults to true. When enabled, the daemon also compacts an idle conversation
+30 seconds before the provider's configured cache window expires. The window
+is 300 seconds by default. One compaction is allowed per idle period and none
+runs during a turn. A compaction object replaces the previous rules; omitted
+fields use their defaults. Old floor and growth fields are ignored.
+
+These daemon rules apply to OpenCode, which exposes a compaction API. Claude
+Code has an interactive `/compact` command but this background integration has
+no supported compaction control or context monitoring; Claude manages its own
+compaction. The cache-expiry setting is ignored for that harness.
 
 The daemon asks OpenCode 2.2.0 to compact with
 `POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the

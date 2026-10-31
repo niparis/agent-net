@@ -39,7 +39,7 @@ func TestCTOSettingsRoutes(t *testing.T) {
 			Growth    int64 `json:"growth_tokens"`
 		} `json:"compaction"`
 	}
-	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &defaults) != nil || defaults.Compaction.Threshold != 70 || defaults.Compaction.Floor != 40000 || defaults.Compaction.Growth != 60000 {
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &defaults) != nil || defaults.Compaction.Threshold != 50 || defaults.Compaction.Floor != 0 || defaults.Compaction.Growth != 0 {
 		t.Fatalf("defaults: %d %s", w.Code, w.Body)
 	}
 	if w := request(http.MethodPut, token, `{"model":"provider/model"}`); w.Code != http.StatusOK {
@@ -70,8 +70,8 @@ func TestCTOSettingsRoutes(t *testing.T) {
 	}
 	w = request(http.MethodGet, token, "")
 	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &full) != nil ||
-		full.Model != "provider/model" || full.Compaction.Threshold != 80 || full.Compaction.Floor != 50000 ||
-		full.Compaction.Growth != 70000 || full.Compaction.Windows["fake"] != 120 {
+		full.Model != "provider/model" || full.Compaction.Threshold != 80 || full.Compaction.Floor != 0 ||
+		full.Compaction.Growth != 0 || full.Compaction.Windows["fake"] != 120 {
 		t.Fatalf("partial update: %d %s", w.Code, w.Body)
 	}
 	if w := request(http.MethodPut, token, `{"model":""}`); w.Code != http.StatusOK {
@@ -87,8 +87,8 @@ func TestCTOSettingsRoutes(t *testing.T) {
 	if w := request(http.MethodPut, token, `{"compaction":{"cache_window_seconds":{"fake":0}}}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("bad window: %d", w.Code)
 	}
-	if w := request(http.MethodPut, token, `{"compaction":{"growth_tokens":-1}}`); w.Code != http.StatusBadRequest {
-		t.Fatalf("bad growth: %d", w.Code)
+	if w := request(http.MethodPut, token, `{"compaction":{"growth_tokens":-1}}`); w.Code != http.StatusOK {
+		t.Fatalf("legacy growth: %d", w.Code)
 	}
 	if w := request(http.MethodPut, token, `{}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("empty update: %d", w.Code)
