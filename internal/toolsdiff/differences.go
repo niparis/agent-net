@@ -159,6 +159,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 	// hashes per machine, with the copy that holds each.
 	type held struct {
 		hashes map[string]Copy
+		paths  map[string]bool
 	}
 	per := map[string]*held{}
 	nodeOf := map[string]string{}
@@ -175,10 +176,16 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			}
 			h := per[l.Machine]
 			if h == nil {
-				h = &held{hashes: map[string]Copy{}}
+				h = &held{hashes: map[string]Copy{}, paths: map[string]bool{}}
 				per[l.Machine] = h
 				nodeOf[l.Machine] = l.NodeID
 				order = append(order, l.Machine)
+			}
+			if l.Location != "" && h.paths[l.Location] {
+				continue
+			}
+			if l.Location != "" {
+				h.paths[l.Location] = true
 			}
 			if _, ok := h.hashes[v.Hash]; !ok {
 				h.hashes[v.Hash] = copyOf(g, v, l)
