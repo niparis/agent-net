@@ -42,6 +42,16 @@ func (s *Store) phraseReady(ctx context.Context) error {
 	if s.phraseCleaner == nil {
 		return nil
 	}
+	// New ready items that arrive during an active window wait for the next
+	// batch. Hitting the separate hourly cap still falls back to raw text.
+	var inWindow int
+	now := s.now().UnixNano()
+	if err := s.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_phrase_runs WHERE at>? AND at<=?)`, now-int64(2*time.Minute), now).Scan(&inWindow); err != nil {
+		return err
+	}
+	if inWindow != 0 {
+		return nil
+	}
 	rows, err := s.db.Query(`SELECT l.id,l.field,l.phrase FROM learned_suggestions l JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=? AND d.origin='owner' AND l.field IN ('accepts','needs','consumers') AND p.suggestion_id IS NULL ORDER BY l.id`, s.now().UnixNano())
 	if err != nil {
 		return err

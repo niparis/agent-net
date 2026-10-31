@@ -230,3 +230,34 @@ func TestLearnPhraseDoesNotRepeatAppliedItems(t *testing.T) {
 		t.Fatalf("repeat call=%d suggestions=%+v", len(fake.req), v)
 	}
 }
+
+func TestLearnPhraseWaitsForNextWindow(t *testing.T) {
+	s, c := newTestStore(t)
+	if err := s.AddArchitect("app", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	fake := &phraseFake{report: `{"first phrase":"clean first phrase"}`}
+	s.phraseCleaner = phrasing.New(fake, phraseLimiter{s})
+	insertLearned(t, s, "app", "accepts", "", "add", "first phrase", "owner")
+	if err := s.ProcessLearned(); err != nil {
+		t.Fatal(err)
+	}
+	c.t = c.t.Add(time.Minute)
+	fake.report = `{"second phrase":"clean second phrase"}`
+	insertLearned(t, s, "app", "accepts", "", "add", "second phrase", "owner")
+	if err := s.ProcessLearned(); err != nil {
+		t.Fatal(err)
+	}
+	h, err := s.CharterHistory("app", 10)
+	if err != nil || len(h) != 1 || len(fake.req) != 1 {
+		t.Fatalf("early: history=%+v calls=%d err=%v", h, len(fake.req), err)
+	}
+	c.t = c.t.Add(time.Minute)
+	if err := s.ProcessLearned(); err != nil {
+		t.Fatal(err)
+	}
+	h, err = s.CharterHistory("app", 10)
+	if err != nil || len(h) != 2 || len(fake.req) != 2 || h[0].NewValue != "clean first phrase; clean second phrase" {
+		t.Fatalf("next window: history=%+v calls=%d err=%v", h, len(fake.req), err)
+	}
+}
