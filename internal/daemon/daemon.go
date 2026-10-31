@@ -870,7 +870,11 @@ func (d *Daemon) deliverTo(ctx context.Context, ls *localSession, m protocol.Mes
 		return result
 	}
 	if protocol.IsOwner(info.Harness) {
-		// The person reads it in the TUI feed. There is no program to push to.
+		// The gateway retains the message for the owner's feed. A conversation
+		// started by the CTO also needs a turn in its private session.
+		if err := d.deliverOwnerCTO(ctx, m); err != nil {
+			return Result{Detail: "CTO delivery: " + err.Error()}
+		}
 		return Result{Delivered: true, Detail: "owner"}
 	}
 	a := d.adapters[info.Harness]

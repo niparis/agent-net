@@ -29,7 +29,11 @@ owner's Claude login and a background session in a private working directory.
 Its session receives `--strict-mcp-config` and a private MCP configuration that
 contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The
 daemon excludes this working directory from Claude session discovery, so the
-CTO is not registered with the gateway and cannot receive peer messages.
+CTO is not registered with the gateway. Replies to a conversation started by
+the CTO go to the owner session and are also forwarded to the active CTO
+conversation as peer model output. The daemon checks the gateway's stored CTO
+marker on the conversation root and quotes the peer's body as data. Replies to
+personal owner messages are not forwarded.
 
 The private MCP server exposes the owner operations listed in
 [the CTO parity table](reference.md), including network and conversation reads,
