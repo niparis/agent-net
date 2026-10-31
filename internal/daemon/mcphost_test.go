@@ -129,7 +129,7 @@ func useHelper(t *testing.T) { t.Setenv(helperEnv, "1") }
 
 func stdioSpec(name string, env ...string) protocol.MCPServer {
 	return protocol.MCPServer{Name: name, Transport: protocol.MCPStdio, Command: os.Args[0],
-		Args: []string{"-test.run=XXX"}, Env: append([]string{helperEnv}, env...)}
+		Args: []string{"-test.run=XXX"}, Env: append([]string{helperEnv, "GORACE"}, env...)}
 }
 
 // cliClient connects to a node's socket as the CLI.

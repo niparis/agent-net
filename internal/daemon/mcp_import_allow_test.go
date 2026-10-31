@@ -14,7 +14,7 @@ import (
 // gateway. An entry with no list records the tools the server reported.
 func TestMCPImportAllowListIsKept(t *testing.T) {
 	cmd := os.Args[0]
-	codex := "[mcp_servers.listed]\ncommand = '" + cmd + "'\nargs = ['-test.run=XXX']\nenv_vars = ['" + helperEnv + "']\nenabled_tools = ['echo']\n"
+	codex := "[mcp_servers.listed]\ncommand = '" + cmd + "'\nargs = ['-test.run=XXX']\nenv_vars = ['" + helperEnv + "', 'GORACE']\nenabled_tools = ['echo']\n"
 	f := newImportFixture(t, map[string]string{"open": stdioNative()}, codex)
 	plan := f.plan(t, f.candidate(t, "codex", "listed"))
 	if len(plan.Server.AllowedTools) != 1 || plan.Server.AllowedTools[0] != "echo" {
