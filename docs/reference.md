@@ -24,26 +24,22 @@ Run `agent-net cto` to show the settings, `agent-net cto harness claude` or
 empty argument (`agent-net cto model ""`) to restore that harness's default.
 
 ```json
-{"compaction":{"threshold_percent":70,"floor_tokens":40000,
- "growth_tokens":60000,
+{"compaction":{"threshold_percent":50,"cache_expiry_enabled":true,
  "cache_window_seconds":{"anthropic":300,"openai":300}}}
 ```
 
-`threshold_percent` defaults to 70. After a CTO reply, when the conversation's
-context is at or above that share of the model's context window, the daemon
-compacts at once. `floor_tokens` defaults to 40000 and is the minimum context
-for the idle rule. `growth_tokens` defaults to 60000: the idle rule compacts
-only when the context grew by at least that much since the last compaction, or
-since the conversation started. The CTO's base context (instructions, tools,
-graph) alone does not trigger it. `cache_window_seconds` is per provider and
-defaults to 300 seconds when the provider is not listed. A `compaction` object
-replaces the previous rules: a field left out takes its default. The daemon
-compacts an idle conversation that passes both idle checks at the window minus
-30 seconds, so the next message does not reread a large cold history. One
-compaction is allowed per idle period, and none runs while a turn is active. The
-model reports its context window through OpenCode; with no window known, only
-the idle rule applies. These rules apply to the OpenCode CTO. Claude Code
-manages its own automatic compaction.
+`threshold_percent` defaults to 50. After a CTO reply, at or above this
+share of the context window, the daemon compacts. `cache_expiry_enabled`
+defaults to true. When enabled, the daemon also compacts an idle conversation
+30 seconds before the provider's configured cache window expires. The window
+is 300 seconds by default. One compaction is allowed per idle period and none
+runs during a turn. A compaction object replaces the previous rules; omitted
+fields use their defaults. Old floor and growth fields are ignored.
+
+These daemon rules apply to OpenCode, which exposes a compaction API. Claude
+Code has an interactive `/compact` command but this background integration has
+no supported compaction control or context monitoring; Claude manages its own
+compaction. The cache-expiry setting is ignored for that harness.
 
 The daemon asks OpenCode 2.2.0 to compact with
 `POST /api/session/{id}/compact` and `{"delivery":"steer"}`, which runs at the
@@ -170,7 +166,7 @@ A harness limit shows as a `◐` cell and a note in the details pane.
 - **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. `a` or `u` on a machine cell plans the change for that machine only (a global assignment limited to it), and the plan says "only on NAME: other machines are not changed". With a single machine there is no limit to set. A machine the desired state does not name is never reported as drift and never shows a pending cell. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply. A skill inside a project folder is `⌂ repo` only when the repository tracks files under it. One that is not tracked is `local` (shown as `local PROJECT`, with a `PROJECT (local)` project cell): a copy on one machine. A local copy is managed like a copy found on a machine: `a` imports it and turns it on, `u` turns it off, and there is no branch plan.
 - **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
 
-Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences (the computation is `internal/toolsdiff`).
+Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences in pages (default 20, maximum 60). Pass `next` as `offset` to read the next page.
 
 Press `4` or `M` to open the Map tab. The focus view shows the selected
 project as a card: name, maturity, the start of the purpose, and its live sessions

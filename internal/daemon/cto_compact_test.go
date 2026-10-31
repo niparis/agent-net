@@ -152,6 +152,25 @@ func ctoCompactionDone() map[string]any {
 	}
 }
 
+func TestCTOCompactionHalfWindow(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_49", 490_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 0 {
+		t.Fatalf("49%% compacted: %d", got)
+	}
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_50", 500_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 1 {
+		t.Fatalf("50%% compactions = %d", got)
+	}
+}
+
 func TestCTOCompactionThreshold(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
@@ -237,8 +256,8 @@ func TestCTOCompactionIdleIgnoresTheBaseContext(t *testing.T) {
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if got := f.compactCount(t); got != 0 {
-		t.Fatalf("idle compacted the base context: %d", got)
+	if got := f.compactCount(t); got != 1 {
+		t.Fatalf("idle did not compact the base context: %d", got)
 	}
 }
 
@@ -279,30 +298,21 @@ func TestCTOCompactionIdleAfterGrowth(t *testing.T) {
 	}
 }
 
-// The floor still applies on top of the growth rule: a small growth on a
-// conversation below the floor does not compact.
-func TestCTOCompactionFloor(t *testing.T) {
+func TestCTOCompactionCacheExpiryDisabled(t *testing.T) {
 	f := startCTOCompactionFixture(t)
-	ctx := context.Background()
-	settings := protocol.CTOCompactionSettings{FloorTokens: 40_000, GrowthTokens: 10_000}
+	enabled := false
+	settings := protocol.CTOCompactionSettings{CacheExpiryEnabled: &enabled}
 	f.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Compaction: &settings})
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
-	f.send(t, "work")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 5_000), ctoUser("work")})
-	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
-		t.Fatal(err)
-	}
-	f.send(t, "more")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 30_000), ctoUser("more"), ctoAssistant("msg_base", 5_000), ctoUser("work")})
-	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	f.clock.Advance(time.Hour)
-	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+	if err := f.n.d.ctoCompactOnce(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if got := f.compactCount(t); got != 0 {
-		t.Fatalf("compacted below the floor: %d", got)
+		t.Fatalf("disabled idle compactions = %d", got)
 	}
 }
 
@@ -452,16 +462,14 @@ func TestCTOCompactionSettings(t *testing.T) {
 	ctx := context.Background()
 	settings := protocol.CTOCompactionSettings{
 		ThresholdPercent: 90,
-		FloorTokens:      60_000,
-		GrowthTokens:     20_000,
 		CacheWindowSeconds: map[string]int{
 			"fake": 60,
 		},
 	}
 	f.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Compaction: &settings})
 	var saved protocol.CTOSettings
-	if err := json.Unmarshal(f.cli.mustCall("cto_settings", nil), &saved); err != nil || saved.Compaction.GrowthTokens != 20_000 {
-		t.Fatalf("growth setting did not round-trip: %+v %v", saved.Compaction, err)
+	if err := json.Unmarshal(f.cli.mustCall("cto_settings", nil), &saved); err != nil || saved.Compaction.ThresholdPercent != 90 {
+		t.Fatalf("threshold setting did not round-trip: %+v %v", saved.Compaction, err)
 	}
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
