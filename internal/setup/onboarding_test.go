@@ -300,7 +300,7 @@ func TestSetupOpenQuestionSkipsTTYWhenNonInteractive(t *testing.T) {
 	if opened {
 		t.Fatal("non-interactive setup checked for a controlling terminal")
 	}
-	if !strings.Contains(out.String(), "Open agent-net: run agent-net") {
+	if !strings.Contains(out.String(), "Open agent-net: run agent-net tui") {
 		t.Fatalf("non-interactive instruction: %q", out.String())
 	}
 }
@@ -344,5 +344,22 @@ func TestMapPointSaysNoProjectsWhenTheGraphIsEmpty(t *testing.T) {
 	point := (&runner{}).mapPoint(summary)
 	if point.first != "No projects yet. Each project you work in becomes one." {
 		t.Fatalf("Map line %q, want no projects", point.first)
+	}
+}
+
+// Without the graph (for example when owner-only calls are refused), the
+// folder list must never be counted: it holds every checkout ever seen.
+func TestMapPointWithoutTheGraphGivesNoFolderCount(t *testing.T) {
+	summary := setupSummary{
+		projectsKnown: true,
+		projects: []protocol.ProjectView{
+			{Name: "agent-net", Path: "/home/owner/code/agent-net"},
+			{Name: "w_4846e4b5b1eadf29", Path: "/home/owner/.local/state/agent-net/daemon/worktrees/w_4846e4b5b1eadf29"},
+			{Name: "tmp123456", Path: "/tmp/tmp123456"},
+		},
+	}
+	point := (&runner{}).mapPoint(summary)
+	if strings.ContainsAny(point.first, "0123456789") {
+		t.Fatalf("Map line %q counts folders without the graph", point.first)
 	}
 }

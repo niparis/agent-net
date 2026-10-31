@@ -327,17 +327,12 @@ func (r *runner) mapPoint(summary setupSummary) setupPoint {
 			}
 		}
 	} else {
-		for _, project := range summary.projects {
-			if project.Name != "" {
-				projects[project.Name] = true
-			}
-		}
+		// Without the graph there is no honest count: the folder list holds
+		// every checkout ever seen, worktrees and temporary folders included.
+		return setupPoint{label: "4 Map", first: "Your projects appear on the Map as agents work in them."}
 	}
 	if len(projects) == 0 {
 		return setupPoint{label: "4 Map", first: "No projects yet. Each project you work in becomes one."}
-	}
-	if !summary.graphKnown {
-		return setupPoint{label: "4 Map", first: fmt.Sprintf("%d projects seen.", len(projects))}
 	}
 	missing := len(projects) - len(chartered)
 	switch {
@@ -561,12 +556,12 @@ func (r *runner) writePoint(point setupPoint) {
 
 func (r *runner) openQuestion() {
 	if !r.interactive {
-		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net"))
+		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net tui"))
 		return
 	}
 	tty, err := openTTY()
 	if err != nil {
-		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net"))
+		fmt.Fprintln(r.Out, "Open agent-net: run "+r.colors.label("agent-net tui"))
 		return
 	}
 	defer tty.Close()
@@ -588,7 +583,7 @@ func (r *runner) openQuestion() {
 		return
 	}
 	if err := execSetupTUI(r.Exe); err != nil {
-		r.hint("could not open the TUI: %v; run agent-net", err)
+		r.hint("could not open the TUI: %v; run agent-net tui", err)
 	}
 }
 
