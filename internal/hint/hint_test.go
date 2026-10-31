@@ -74,6 +74,34 @@ func TestSuggestNeedsMoreThanOneGenericWord(t *testing.T) {
 	}
 }
 
+func TestSuggestIgnoresGenericWorkerErrorWords(t *testing.T) {
+	text := "machine research refused the worker: the record of worker s_1106ee591e2290ae has no task (it was made by an older agent-net)"
+	peer := Candidate{SessionID: "s_peer", Name: "builder", Hostname: "laptop-a", Online: true, Project: "builder",
+		Expertise: "machine worker session agent record refused error task"}
+	if got := Suggest(text, Self{SessionID: "s_me", Project: "client-app"}, []Candidate{peer}); len(got) != 0 {
+		t.Fatalf("generic error words suggested a session: %+v", got)
+	}
+}
+
+func TestSuggestDoesNotMatchMachineNameInAnotherSessionDescription(t *testing.T) {
+	text := "machine research refused the worker: the record of worker s_1106ee591e2290ae has no task (it was made by an older agent-net)"
+	peers := []Candidate{
+		{SessionID: "s_research_host", Name: "infra", Hostname: "research", Online: true, Project: "infra", Expertise: "on this machine"},
+		{SessionID: "s_research_expertise", Name: "builder", Hostname: "laptop-b", Online: true, Project: "builder",
+			Expertise: "research", Task: "worker"},
+	}
+	got := Suggest(text, Self{SessionID: "s_me", Project: "client-app"}, peers)
+	if len(got) != 1 || got[0].Candidate.SessionID != "s_research_host" {
+		t.Fatalf("want only the session on the research machine; got %+v", got)
+	}
+	if !strings.Contains(got[0].Why, "host name") {
+		t.Errorf("the match should be by host: %q", got[0].Why)
+	}
+	if got := Suggest(text, Self{SessionID: "s_me", Project: "client-app", MachineNames: []string{"research"}}, peers[1:]); len(got) != 0 {
+		t.Errorf("an enrolled machine name matched another session's description: %+v", got)
+	}
+}
+
 func TestSuggestSkipsSelfAndSameProject(t *testing.T) {
 	got := Suggest(e503, Self{SessionID: "s_cog", Project: "cogforge"}, cands())
 	for _, g := range got {

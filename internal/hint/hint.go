@@ -44,9 +44,10 @@ type Suggestion struct {
 
 // Self is the session the error came from.
 type Self struct {
-	SessionID string
-	Project   string
-	Hostname  string
+	SessionID    string
+	Project      string
+	Hostname     string
+	MachineNames []string // names of enrolled machines, including offline ones
 }
 
 var failureRE = regexp.MustCompile(`(?i)` + strings.Join([]string{
@@ -92,6 +93,7 @@ get post put delete head patch json text html data null true false none
 api apis app apps application web site page pages backend frontend
 log logs logging deploy deployment deployments deployed live live logs session sessions agent agents
 repo repository project projects code test tests build run running runs command commands tool tools
+machine machines worker workers record records task tasks
 use used using user users need needs help can does doesn did done make made work works working
 unavailable available internal bad gateway not found unauthorized forbidden permission denied
 see seen check checks checking read write error
@@ -151,6 +153,23 @@ func useful(w string) bool {
 		}
 	}
 	return false
+}
+
+func machineWords(names []string) map[string]bool {
+	out := map[string]bool{}
+	for _, name := range names {
+		name = strings.SplitN(strings.ToLower(strings.TrimSpace(name)), ".", 2)[0]
+		joined := strings.Join(words(name), "")
+		if useful(joined) {
+			out[joined] = true
+		}
+		for _, w := range words(name) {
+			if useful(w) {
+				out[w] = true
+			}
+		}
+	}
+	return out
 }
 
 // identifiers returns the names that identify a session's place: project,
@@ -296,6 +315,17 @@ func Suggest(errText string, self Self, cands []Candidate) []Suggestion {
 	}
 	lower := maskHome(strings.ToLower(errText))
 	have := keywords(lower)
+	descriptionHave := make(map[string]bool, len(have))
+	for w := range have {
+		descriptionHave[w] = true
+	}
+	knownMachines := append([]string(nil), self.MachineNames...)
+	for _, c := range cands {
+		knownMachines = append(knownMachines, c.Hostname)
+	}
+	for w := range machineWords(knownMachines) {
+		delete(descriptionHave, w)
+	}
 	skip := userNames()
 	var out []Suggestion
 	for _, c := range cands {
@@ -321,7 +351,7 @@ func Suggest(errText string, self Self, cands []Candidate) []Suggestion {
 			weight int
 		}{{c.Expertise, 3}, {c.Function, 2}, {c.Task, 1}} {
 			for w := range keywords(f.text) {
-				if have[w] && !seen[w] {
+				if descriptionHave[w] && !seen[w] {
 					seen[w] = true
 					matched = append(matched, w)
 					score += f.weight

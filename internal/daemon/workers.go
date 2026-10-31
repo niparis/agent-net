@@ -911,7 +911,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
-		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
+		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
