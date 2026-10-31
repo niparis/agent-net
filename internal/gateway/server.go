@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -192,6 +193,7 @@ func New(opts Options) (*Gateway, error) {
 	}
 	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
 		store.Close()
@@ -238,17 +240,11 @@ func (g *Gateway) Close() error {
 func (g *Gateway) RunExpiry(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
-	if err := g.store.ProcessLearned(); err != nil {
-		g.logLine("error", "where", "learned suggestions", "err", err)
-	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			if err := g.store.ProcessLearned(); err != nil {
-				g.logLine("error", "where", "learned suggestions", "err", err)
-			}
 			// Expire writes one log line per message.
 			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)
@@ -263,6 +259,23 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.dispatchPending(ctx, id, false)
 				}
 			}
+		}
+	}
+}
+
+// RunLearning processes suggestions independently of message expiry because a
+// phrasing worker can take up to three minutes to finish.
+func (g *Gateway) RunLearning(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		if err := g.store.ProcessLearnedContext(ctx); err != nil && ctx.Err() == nil {
+			g.logLine("error", "where", "learned suggestions", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }

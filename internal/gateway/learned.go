@@ -28,6 +28,7 @@ type LearnedSuggestion struct {
 	Severity  string            `json:"severity"`
 	Origin    string            `json:"origin,omitempty"`
 	HistoryID int64             `json:"history_id,omitempty"`
+	RawPhrase string            `json:"raw_phrase,omitempty"`
 	CreatedAt int64             `json:"created_at"`
 	ReadyAt   int64             `json:"ready_at"`
 	DecidedAt int64             `json:"decided_at,omitempty"`
@@ -36,11 +37,15 @@ type LearnedSuggestion struct {
 // LearnedSuggestions returns pending and decided candidates, optionally limited
 // to pending candidates whose node has been quiet for two minutes.
 func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) {
-	query := `SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,COALESCE((SELECT origin FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),''),COALESCE((SELECT history_id FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),0) FROM learned_suggestions`
+	query := `SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,COALESCE((SELECT origin FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),''),COALESCE((SELECT history_id FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),0),COALESCE((SELECT raw_phrase FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id),'') FROM learned_suggestions`
 	args := []any{}
+	query += ` WHERE 1=1`
 	if readyOnly {
-		query += ` WHERE status='pending' AND ready_at<=?`
+		query += ` AND status='pending' AND ready_at<=?`
 		args = append(args, s.now().UnixNano())
+	}
+	if s.phraseCleaner != nil {
+		query += ` AND NOT (status='pending' AND field IN ('accepts','needs','consumers') AND EXISTS(SELECT 1 FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id AND d.origin='owner') AND NOT EXISTS(SELECT 1 FROM learned_phrase_state p WHERE p.suggestion_id=learned_suggestions.id))`
 	}
 	query += ` ORDER BY id`
 	rows, err := s.db.Query(query, args...)
@@ -52,7 +57,7 @@ func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) 
 	for rows.Next() {
 		var v LearnedSuggestion
 		var evidence string
-		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt, &v.Origin, &v.HistoryID); err != nil {
+		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt, &v.Origin, &v.HistoryID, &v.RawPhrase); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(evidence), &v.Evidence); err != nil {
@@ -120,15 +125,36 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, o
 		}
 	}
 	var rejected int
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions WHERE node=? AND field=? AND phrase=? COLLATE NOCASE AND status='rejected')`, node, field, phrase).Scan(&rejected); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=? AND l.field=? AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE) AND l.status='rejected')`, node, field, phrase, phrase).Scan(&rejected); err != nil {
 		return err
 	}
 	if rejected != 0 {
 		return nil
 	}
+	// A repeated signal should not spend another worker run when its earlier
+	// learned item is still in the charter. If the owner removed it, a future
+	// signal can propose it again.
+	if field != "edge" {
+		var previous, current string
+		err := tx.QueryRow(`SELECT l.phrase FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=? AND l.field=? AND l.status='applied' AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE) ORDER BY l.id DESC LIMIT 1`, node, field, phrase, phrase).Scan(&previous)
+		if err != nil && err != sql.ErrNoRows {
+			return err
+		}
+		if err == nil {
+			err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, field).Scan(&current)
+			if err != nil && err != sql.ErrNoRows {
+				return err
+			}
+			for _, item := range strings.Split(current, ";") {
+				if strings.EqualFold(strings.TrimSpace(item), previous) {
+					return nil
+				}
+			}
+		}
+	}
 	var existing string
 	var id int64
-	err := tx.QueryRow(`SELECT id,evidence FROM learned_suggestions WHERE node=? AND field=? AND edge_kind=? AND kind='add' AND phrase=? COLLATE NOCASE AND status='pending' ORDER BY id LIMIT 1`, node, field, edgeKind, phrase).Scan(&id, &existing)
+	err := tx.QueryRow(`SELECT l.id,l.evidence FROM learned_suggestions l LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.node=? AND l.field=? AND l.edge_kind=? AND l.kind='add' AND (l.phrase=? COLLATE NOCASE OR p.raw_phrase=? COLLATE NOCASE) AND l.status='pending' ORDER BY l.id LIMIT 1`, node, field, edgeKind, phrase, phrase).Scan(&id, &existing)
 	if err != nil && err != sql.ErrNoRows {
 		return err
 	}

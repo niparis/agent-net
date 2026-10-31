@@ -356,7 +356,7 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 	var err error
 	switch h.Type {
 	case "cto.worker_capabilities":
-		data = map[string]bool{"attribution": true}
+		data = map[string]bool{"attribution": true, "read_only_enforced": true}
 	case "worker.launch":
 		var p protocol.WorkerLaunch
 		if err = json.Unmarshal(raw, &p); err == nil {

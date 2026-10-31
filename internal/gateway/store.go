@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/dbfile"
+	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	_ "modernc.org/sqlite"
 )
@@ -37,8 +38,10 @@ type Store struct {
 	// message body to it.
 	logf func(event string, kv ...any)
 
-	mu      sync.Mutex
-	buckets map[string]*bucket
+	mu            sync.Mutex
+	buckets       map[string]*bucket
+	learnMu       sync.Mutex
+	phraseCleaner *phrasing.Cleaner
 	// hiddenMu serializes reads that prune expired session entries with writes.
 	hiddenMu sync.Mutex
 }
@@ -295,6 +298,9 @@ CREATE INDEX IF NOT EXISTS learned_flow_pair ON learned_message_flow(source,targ
 CREATE TABLE IF NOT EXISTS learned_suggestion_details (suggestion_id INTEGER PRIMARY KEY, origin TEXT NOT NULL DEFAULT '', history_id INTEGER NOT NULL DEFAULT 0);
 INSERT OR IGNORE INTO learned_suggestion_details(suggestion_id,origin)
  SELECT id,'owner' FROM learned_suggestions WHERE field='accepts';
+`, `
+CREATE TABLE IF NOT EXISTS learned_phrase_state (suggestion_id INTEGER PRIMARY KEY, raw_phrase TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

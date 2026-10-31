@@ -441,6 +441,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, err
 		}
 		if len(profiles) == 0 {
+			if p.RequireReadOnly {
+				return none, reject("no registered read-only workers")
+			}
 			if p.Harness == "" {
 				p.Harness = "opencode"
 			}
@@ -452,6 +455,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			resolutionNotes := map[string]string{}
 			for _, h := range node.Harnesses {
 				if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
+					continue
+				}
+				if p.RequireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
 					continue
 				}
 				failures, err := g.store.RecentWorkerFailures(pick.NodeID, h.Name)
@@ -478,6 +484,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 						continue
 					}
 					if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
+						continue
+					}
+					if p.RequireReadOnly && isProtected(h.Name, resolved, protected) {
 						continue
 					}
 					model := resolved
@@ -532,6 +541,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 	if hi == nil {
 		return none, reject("%s is not installed on %s", p.Harness, node.Hostname)
+	}
+	if p.RequireReadOnly && (!automatic || !protocol.WorkerReadOnlySupported(p.Harness) || p.Model == "" || isProtected(p.Harness, p.Model, protected)) {
+		return none, reject("no safe automatic read-only worker is available")
 	}
 	// A loose model name is resolved against the machine's own list (W17).
 	// Without a list (claude, or a harness that cannot list), it passes through.
@@ -635,14 +647,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("machine %s is offline", pick.Hostname)
 	}
 	// A queued start must retain CTO attribution on the target machine.
-	if p.FromCTO {
+	if p.FromCTO || p.RequireReadOnly {
 		capCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		data, err := target.call(capCtx, "cto.worker_capabilities", nil)
 		cancel()
 		var caps struct {
 			Attribution bool `json:"attribution"`
+			ReadOnly    bool `json:"read_only_enforced"`
 		}
-		if err != nil || json.Unmarshal(data, &caps) != nil || !caps.Attribution {
+		if err != nil || json.Unmarshal(data, &caps) != nil || (p.FromCTO && !caps.Attribution) || (p.RequireReadOnly && !caps.ReadOnly) {
 			return none, reject("machine %s cannot preserve CTO attribution; upgrade its daemon", pick.Hostname)
 		}
 	}
@@ -651,10 +664,16 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil {
 		return none, err
 	}
+	if p.RequireReadOnly {
+		if perms == protocol.WorkersNoNetwork {
+			return none, reject("read-only phrasing would widen this project's no-network policy")
+		}
+		perms = protocol.WorkersReadOnly
+	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

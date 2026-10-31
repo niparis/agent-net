@@ -227,6 +227,7 @@ func cmdGateway(ctx context.Context, args []string) error {
 		return err
 	}
 	go gw.RunExpiry(ctx)
+	go gw.RunLearning(ctx)
 	go gw.RunRetention(ctx)
 	srv := &http.Server{Addr: *listen, Handler: gw.Handler(), TLSConfig: gw.TLSConfig()}
 	go func() {

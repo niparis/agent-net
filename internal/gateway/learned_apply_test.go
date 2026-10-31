@@ -238,13 +238,13 @@ func TestLearnedOwnerAndMajorApply(t *testing.T) {
 		}
 	}
 }
-func TestLearnedRunExpiryProcessesOnStartup(t *testing.T) {
+func TestLearnedRunLearningProcessesOnStartup(t *testing.T) {
 	s, _, _, _ := learnedProjects(t)
 	insertLearned(t, s, "app", "needs", "", "add", "ops for backups", "owner")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	g := &Gateway{store: s, logger: log.New(io.Discard, "", 0)}
-	g.RunExpiry(ctx)
+	g.RunLearning(ctx)
 	v := learnedRead(t, s, false)
 	if len(v) != 1 || v[0].Status != "applied" {
 		t.Fatalf("startup processing: %+v", v)

@@ -495,6 +495,8 @@ The gateway may automatically add an item to `accepts` from an owner instruction
 
 These rules use matched excerpts and reply outcomes as evidence. Matching does not prove the owner intended a particular send, and peer replies can influence `needs` and dependency suggestions. The gateway keeps suggestion evidence in its database; message-flow records used for detection are removed after seven days. Protect the database and backups accordingly.
 
+Before applying or showing ready suggestions based on owner words, the gateway may send their phrases to an automatically selected worker for shorter wording. It uses only an allowed, unprotected provider and a harness that enforces read-only project access. At most one worker starts per two minutes and six per rolling hour. If no suitable worker is available or its report is invalid or late, the original words are kept. The raw words remain in the gateway database and can be sent to the selected provider. The gateway preserves the original words for rejection matching and for checks against narrowing a charter.
+
 ## Graph foundation
 
 Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.

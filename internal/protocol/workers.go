@@ -190,6 +190,9 @@ type (
 	// WorkerStartFrame is "worker.start".
 	WorkerStartFrame struct {
 		FromCTO bool `json:"sender_cto,omitempty"`
+		// RequireReadOnly restricts automatic background tasks to a harness
+		// and daemon that enforce read-only project access.
+		RequireReadOnly bool `json:"require_read_only,omitempty"`
 		WorkerStartRequest
 		// Owner is the caller's session ID. The gateway checks it belongs to
 		// the sending node.
@@ -245,12 +248,13 @@ type (
 	}
 	// WorkerLaunch is "worker.launch", gateway to the machine.
 	WorkerLaunch struct {
-		FromCTO bool   `json:"sender_cto,omitempty"`
-		Project string `json:"project"`
-		Path    string `json:"path"`
-		Harness string `json:"harness"`
-		Model   string `json:"model,omitempty"`
-		Owner   string `json:"owner_session"`
+		FromCTO         bool   `json:"sender_cto,omitempty"`
+		RequireReadOnly bool   `json:"require_read_only,omitempty"`
+		Project         string `json:"project"`
+		Path            string `json:"path"`
+		Harness         string `json:"harness"`
+		Model           string `json:"model,omitempty"`
+		Owner           string `json:"owner_session"`
 		// Permissions is the project's worker level ("" means sandboxed).
 		Permissions string `json:"permissions,omitempty"`
 		// Task is what the worker should do. The machine that starts it uses
@@ -356,6 +360,10 @@ func WorkerHarnessSupported(h string) bool {
 	}
 	return false
 }
+
+// WorkerReadOnlySupported reports which worker adapters enforce read-only
+// access. Other adapters currently treat permissions as guidance only.
+func WorkerReadOnlySupported(h string) bool { return h == "codex" }
 
 // WorkerPreamble is the fixed brief before the task (decision 0002, W5 and
 // W9). It is the worker's version of a subagent system prompt.

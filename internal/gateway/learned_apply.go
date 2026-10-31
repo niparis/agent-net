@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"database/sql"
 	"regexp"
 	"strings"
@@ -55,20 +56,29 @@ func (s *Store) RejectLearnedSuggestion(id int64) error {
 // ProcessLearned classifies ready suggestions and applies eligible additions.
 // Each graph change, its history and the suggestion status commit together.
 func (s *Store) ProcessLearned() error {
+	return s.ProcessLearnedContext(context.Background())
+}
+
+func (s *Store) ProcessLearnedContext(ctx context.Context) error {
+	s.learnMu.Lock()
+	defer s.learnMu.Unlock()
+	if err := s.phraseReady(ctx); err != nil {
+		return err
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	now := s.now().UnixNano()
-	rows, err := tx.Query(`SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,COALESCE(d.origin,'') FROM learned_suggestions l LEFT JOIN learned_suggestion_details d ON d.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=? ORDER BY l.id`, now)
+	rows, err := tx.Query(`SELECT l.id,l.node,l.field,l.edge_kind,l.kind,l.phrase,l.severity,COALESCE(d.origin,''),COALESCE(p.raw_phrase,l.phrase) FROM learned_suggestions l LEFT JOIN learned_suggestion_details d ON d.suggestion_id=l.id LEFT JOIN learned_phrase_state p ON p.suggestion_id=l.id WHERE l.status='pending' AND l.ready_at<=? ORDER BY l.id`, now)
 	if err != nil {
 		return err
 	}
 	var pending []LearnedSuggestion
 	for rows.Next() {
 		var v LearnedSuggestion
-		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &v.Severity, &v.Origin); err != nil {
+		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &v.Severity, &v.Origin, &v.RawPhrase); err != nil {
 			rows.Close()
 			return err
 		}
@@ -81,6 +91,11 @@ func (s *Store) ProcessLearned() error {
 	}
 	for _, v := range pending {
 		class := learnedClass(v)
+		raw := v
+		raw.Phrase = v.RawPhrase
+		if learnedClass(raw) == "major" {
+			class = "major"
+		}
 		// A major classification is sticky, including a previous cap promotion.
 		if v.Severity == "major" {
 			class = "major"

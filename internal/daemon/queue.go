@@ -28,6 +28,10 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 		d.lastStart = time.Now()
 		return nil
 	}
+	// A short background phrasing task must not outlive its caller in the queue.
+	if l.RequireReadOnly {
+		return &protocol.WorkerLaunched{Reason: "no room for a read-only background worker"}
+	}
 	q := queuedStart{ID: protocol.NewID("q"), Owner: l.Owner, Project: l.Project, Path: l.Path, Harness: l.Harness,
 		Model: l.Model, Task: l.Task, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions, FromCTO: l.FromCTO, QueuedAt: time.Now()}
 	if err := d.st.addQueued(q); err != nil {
