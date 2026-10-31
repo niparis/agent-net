@@ -66,6 +66,7 @@ func home() string {
 type runner struct {
 	Options
 	failed error
+	colors setupColor
 	// want is the answer for the seven integrations. When it is set, the steps
 	// apply it and turn an item off as well as on. When it is nil, the steps
 	// keep their old ask-once behavior.
@@ -86,7 +87,7 @@ func newRunner(o Options) (*runner, error) {
 	if os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
 		o.NoService = true
 	}
-	return &runner{Options: o}, nil
+	return &runner{Options: o, colors: defaultSetupColor()}, nil
 }
 
 // step prints one result line. A non-nil err prints as a failure.
@@ -97,11 +98,17 @@ func (r *runner) step(name, result string, err error) {
 			r.failed = fmt.Errorf("%s: %w", name, err)
 		}
 	}
-	fmt.Fprintf(r.Out, "%-21s %s\n", name, result)
+	line := fmt.Sprintf("%-21s %s", name, result)
+	if err != nil {
+		line = r.colors.failure(line)
+	} else if strings.HasPrefix(result, "skipped") {
+		line = fmt.Sprintf("%-21s %s", name, r.colors.faint(result))
+	}
+	fmt.Fprintln(r.Out, line)
 }
 
 func (r *runner) hint(format string, a ...any) {
-	fmt.Fprintf(r.Out, "%-21s %s\n", "", fmt.Sprintf(format, a...))
+	fmt.Fprintf(r.Out, "%-21s %s\n", "", r.colors.faint(fmt.Sprintf(format, a...)))
 }
 
 // Setup makes this machine part of the network. It prints one line per step.
