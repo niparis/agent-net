@@ -385,3 +385,31 @@ func TestVersionReportsMissingNode(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestDiscoverFindsAllCopies(t *testing.T) {
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	home, _ := setupPath(t, "22.19.0")
+	first := filepath.Join(t.TempDir(), "first")
+	second := filepath.Join(t.TempDir(), "second")
+	for _, dir := range []string{first, second, filepath.Join(home, ".local", "bin")} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "quota-axi"), []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", first+string(os.PathListSeparator)+second+string(os.PathListSeparator)+os.Getenv("PATH"))
+	t.Setenv("SHELL", "")
+	copies := Discover("")
+	if len(copies) != 3 {
+		t.Fatalf("got copies: %+v", copies)
+	}
+	for _, copy := range copies {
+		if !copy.Runs || copy.Version != "0.1.66" {
+			t.Errorf("bad copy: %+v", copy)
+		}
+	}
+}

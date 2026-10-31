@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/niparis/agent-net/internal/loginpath"
 )
 
 const (
@@ -102,6 +104,70 @@ func usable(path string) bool {
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// Copy describes one discovered executable, including copies that cannot run.
+type Copy struct {
+	Path    string
+	Version string
+	Runs    bool
+	Private bool
+}
+
+// Discover lists owner and private copies in search order. It does not install
+// or change any copy. A failed version command leaves Runs false.
+func Discover(configured string) []Copy {
+	var paths []string
+	seen := map[string]bool{}
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		p, err := filepath.Abs(p)
+		if err != nil || seen[p] || !usable(p) {
+			return
+		}
+		seen[p] = true
+		paths = append(paths, p)
+	}
+	if configured != "" {
+		if filepath.IsAbs(configured) {
+			add(configured)
+		} else if p, err := exec.LookPath(configured); err == nil {
+			add(p)
+		}
+	}
+	path := loginpath.Path()
+	for _, dir := range filepath.SplitList(path) {
+		if dir != "" {
+			add(filepath.Join(dir, quotaCommand))
+		}
+	}
+	// Some shells supply additional matches through their which implementation.
+	if which, err := exec.LookPath("which"); err == nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cmd := exec.CommandContext(ctx, which, "-a", quotaCommand)
+		cmd.Env = append(os.Environ(), "PATH="+path)
+		if out, err := cmd.Output(); err == nil {
+			for _, p := range strings.Split(string(out), "\n") {
+				add(strings.TrimSpace(p))
+			}
+		}
+		cancel()
+	}
+	for _, dir := range append(append([]string{filepath.Join(home(), ".local", "bin")}, nvmBins()...), systemNodeDirs...) {
+		add(filepath.Join(dir, quotaCommand))
+	}
+	if dir := npmGlobalBin(); dir != "" {
+		add(filepath.Join(dir, quotaCommand))
+	}
+	add(Binary())
+	copies := make([]Copy, 0, len(paths))
+	for _, p := range paths {
+		version, err := InstalledVersion(p)
+		copies = append(copies, Copy{Path: p, Version: version, Runs: err == nil, Private: p == Binary()})
+	}
+	return copies
 }
 
 // UserPath finds a quota-axi the owner installed. configured is node.json
