@@ -510,13 +510,13 @@ func TestRepeatedDifferencesExpand(t *testing.T) {
 
 func TestToolsComparisonPlanShowsFiles(t *testing.T) {
 	m, _ := toolsAtScreen(120, 34, 0)
-	old := toolsdiff.Copy{Name: "demo", Item: "old", Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "gone", Fingerprint: "x"}, {Path: "SKILL.md", Fingerprint: "old"}}}}
-	newer := toolsdiff.Copy{Name: "demo", Item: "new", Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "added", Fingerprint: "y"}, {Path: "SKILL.md", Fingerprint: "new"}}}}
+	old := toolsdiff.Copy{Name: "demo", Item: "old", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "gone", Fingerprint: "x"}, {Path: "SKILL.md", Fingerprint: "old"}}}}
+	newer := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "added", Fingerprint: "y"}, {Path: "SKILL.md", Fingerprint: "new"}}}}
 	model, _ := m.openChoose("Keep the newer one in both places", toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, old}})
 	m = model.(Model)
 	m = pressKey(m, "enter")
 	v := plain(m)
-	for _, want := range []string{"added: added", "removed: gone", "changed: SKILL.md"} {
+	for _, want := range []string{"demo on research only", "added: added", "removed: gone", "changed: SKILL.md"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan missing %q:\n%s", want, v)
 		}
@@ -526,8 +526,8 @@ func TestToolsComparisonPlanShowsFiles(t *testing.T) {
 func TestToolsComparisonGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m, _ := toolsAtScreen(size[0], size[1], 0)
-		newer := toolsdiff.Copy{Name: "demo", Item: "new", Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "added.txt", Fingerprint: "add"}}}}
-		older := toolsdiff.Copy{Name: "demo", Item: "old", Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}, {Path: "removed.txt", Fingerprint: "gone"}}}}
+		newer := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "added.txt", Fingerprint: "add"}}}}
+		older := toolsdiff.Copy{Name: "demo", Item: "old", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}, {Path: "removed.txt", Fingerprint: "gone"}}}}
 		m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "two-copies:demo:research", Kind: toolsdiff.KindTwoCopies, Severity: toolsdiff.SevErr, Name: "demo", Title: "demo: Claude's copy (~/.claude/skills) is newer than Pi's (~/.pi/agent/skills), 3 files differ", Fix: "keep the newer one in both places", Action: toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, older}}}}
 		m.tl.row = 0
 		golden(t, fmt.Sprintf("tools_compare_%dx%d", size[0], size[1]), m.View())

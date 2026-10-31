@@ -1091,7 +1091,13 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 			m.tl.modal = nil
 			notes := comparisonNotes(act.Copies, c)
 			notes = append(notes, "a different copy in the way shows as a conflict in the result")
-			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, notes)
+			target := protocol.ToolAssignment{Scope: "global"}
+			where := ""
+			if len(act.Copies) == 2 && c.NodeID != "" && act.Copies[0].NodeID == c.NodeID && act.Copies[1].NodeID == c.NodeID && len(m.tl.cat.Machines) > 1 {
+				target.Machines = []string{c.NodeID}
+				where = c.Machine
+			}
+			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: target, where: where}}, notes)
 			return model.(Model), cmd
 		}
 	}
