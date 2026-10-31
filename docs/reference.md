@@ -614,9 +614,21 @@ session. Applying or undoing an assignment makes the gateway send `mcp.changed`
 to every daemon, and each daemon sends `mcp_changed` to its sessions. Claude
 Code gets `notifications/tools/list_changed` only when its tool list really
 changed. Pi hides removed tools and updates its list from the next prompt.
-Codex and OpenCode have not been tested end to end for live updates. They get
-the filtered list when they next read it, and a stale call is still refused at
-the gateway. Removing a server deletes its plans and assignment; adding it
+Pi and OpenCode plugin connections are tested end to end: after the push, the
+next `mcp_tools` is filtered for the session's project. The shipped OpenCode
+plugin does not read `mcp_tools` yet, so an OpenCode session does not get
+federated tools as tools; its connection gets the push and the filtered list,
+and a stale call is refused at the gateway.
+
+Codex starts one `agent-net mcp --codex` process for all threads of its app
+server, and `tools/list` carries no thread. That process has no project, so it
+lists only `global` servers. A server scoped to projects is not listed to Codex
+at all, even for a thread of an assigned project; to use a server from Codex,
+keep it `global`. The process hears `mcp_changed` at once (the same push as other
+sessions) and updates its list, so an assignment change shows in the next
+`tools/list` that Codex asks for. Whether Codex asks again during a running
+session is Codex's choice and is not tested against the real Codex. A call to a
+tool that is no longer listed fails with `unknown tool`. Removing a server deletes its plans and assignment; adding it
 again starts global.
 
 A call (`mcp_call`) is checked again at the gateway, whatever the client

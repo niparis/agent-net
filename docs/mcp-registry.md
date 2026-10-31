@@ -51,6 +51,8 @@ When the registry changes, or a server reports a new tool list, the gateway tell
 |---|---|---|
 | Claude Code | `agent-net mcp` adds and removes tools on its MCP server. The SDK sends `notifications/tools/list_changed` (after a short debounce) and Claude Code re-reads the list. | Works in the running session, no restart. A tool added with `agent_mcp_add` was found and called in the same conversation, and was gone after `agent_mcp_remove`. |
 | Pi | The extension registers tools with `pi.registerTool` on connect, on the daemon's `mcp_changed` push, and every 15 s. Pi cannot unregister, so a removed tool is registered again as `hidden`. | Works in the running session, no restart. Pi reads its tool list when a run starts, so a tool added during a run is usable from the next prompt, not later in the same run. |
+| Codex | One `agent-net mcp --codex` process serves all threads and has no project, so it lists global servers only. It updates its list when the daemon pushes `mcp_changed`. | Tested with a fake app server: a global server is listed and callable from every thread; after a scope change to projects it is dropped from the list. Whether the real Codex re-reads the list in a running session is not tested. |
+| OpenCode | The plugin does not read the registry yet, so OpenCode sessions get no federated tools. | The daemon pushes `mcp_changed` and answers `mcp_tools` filtered for the project (tested with a fake plugin). |
 
 If the daemon is down, tools that are already registered stay in place, and calls fail with "agent-net daemon not reachable".
 
