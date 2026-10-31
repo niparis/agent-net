@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -102,9 +103,32 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 					targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Project: checkout.Name, Checkout: checkout.Path, Action: "copy", State: "conflict", Conflict: "installed harnesses are unknown"})
 					continue
 				}
+				harnesses := make([]string, 0, len(node.Harnesses))
 				for _, h := range node.Harnesses {
+					harnesses = append(harnesses, h.Name)
+				}
+				for _, h := range node.Harnesses {
+					probeHarness := h.Name
+					projectConflict := false
+					if checkout.Path != "" {
+						root, conflict := inventory.ProjectSkillRoot(h.Name, harnesses)
+						projectConflict = conflict
+						switch root {
+						case ".agents/skills":
+							probeHarness = "codex"
+						case ".claude/skills":
+							probeHarness = "claude"
+						case ".opencode/skills":
+							probeHarness = "opencode"
+						case ".pi/skills":
+							probeHarness = "pi"
+						}
+					}
 					t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Harness: h.Name, Project: checkout.Name, Checkout: checkout.Path, Source: source, Action: "copy", State: "pending"}
-					if kind != protocol.InventorySkill {
+					if projectConflict {
+						t.State = "conflict"
+						t.Conflict = "installed harnesses have overlapping skill roots"
+					} else if kind != protocol.InventorySkill {
 						t.Action = "manual"
 						t.State = "conflict"
 						t.Conflict = "MCP projection is not supported"
@@ -112,7 +136,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 						t.State = "offline"
 						t.Conflict = "machine offline; destination cannot be inspected"
 					} else {
-						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: h.Name, Checkout: checkout.Path}, 10*time.Second)
+						raw, e := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Harness: probeHarness, Checkout: checkout.Path}, 10*time.Second)
 						if e != nil {
 							t.State = "conflict"
 							t.Conflict = "destination inspection unavailable"
