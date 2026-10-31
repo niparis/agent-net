@@ -322,7 +322,7 @@ func findTmuxPane(pid int) (tmuxPane, bool) {
 		if pane, ok := panes[p]; ok {
 			return pane, true
 		}
-		parent, err := parentPID(p)
+		parent, err := processParentPID(p)
 		if err != nil {
 			break
 		}

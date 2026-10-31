@@ -65,7 +65,7 @@ func findHerdrPane(pid int) (herdrPane, bool) {
 			}
 			return h, true
 		}
-		parent, err := parentPID(p)
+		parent, err := processParentPID(p)
 		if err != nil {
 			break
 		}
@@ -175,7 +175,7 @@ func pidChain(pid int) map[int]bool {
 	chain := map[int]bool{}
 	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
 		chain[p] = true
-		parent, err := parentPID(p)
+		parent, err := processParentPID(p)
 		if err != nil {
 			break
 		}
