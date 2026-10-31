@@ -47,7 +47,7 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	n := startClaudeNode(t, g, shortSet)
 	model := "opus"
 	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
 	defer cancel()
 	h := claudeCTOHarness{}
 	result, err := h.send(ctx, n.d, "first")
@@ -86,7 +86,7 @@ func TestClaudeCTOPrivateToolsAndSession(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
 	defer cancel()
 	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestClaudeCTOStopIgnored(t *testing.T) {
 	t.Setenv(envFakeStopIgnored, "1")
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), scaled(10*time.Second))
 	defer cancel()
 	if _, err := (claudeCTOHarness{}).send(ctx, n.d, "hello"); err != nil {
 		t.Fatal(err)
