@@ -20,6 +20,9 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	if err := g.store.db.QueryRow(`SELECT kind,name,hash FROM tool_identities WHERE id=?`, item).Scan(&kind, &name, &hash); err != nil {
 		return nil, errors.New("tool item not found")
 	}
+	if kind == protocol.InventoryMCP && isFederatedHash(hash) {
+		return g.federatedTargets(name)
+	}
 	nodes, err := g.store.toolPlanNodes()
 	if err != nil {
 		return nil, err
@@ -287,6 +290,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	r, err = g.store.ApplyToolPlan(id, actor)
 	if err == nil {
 		g.notifyToolNodes(ctx, p.Targets)
+		g.mcpScopeChanged(ctx, p.Item)
 		out = g.toolOutcome(ctx, r, p.Targets)
 	}
 	return out, err
@@ -337,6 +341,7 @@ func (g *Gateway) undoTool(ctx context.Context, item, actor string) (protocol.To
 		return protocol.ToolApplyResult{}, err
 	}
 	g.notifyToolNodes(ctx, p.Targets)
+	g.mcpScopeChanged(ctx, item)
 	return g.toolOutcome(ctx, r, p.Targets), nil
 }
 

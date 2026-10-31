@@ -113,7 +113,7 @@ func TestDynamicToolsFollowRegistry(t *testing.T) {
 	// The server notifies only sessions it has seen initialized. Connect does
 	// not wait for that, so one round trip makes sure of it.
 	listNames(t, cs)
-	reg.set(protocol.MCPServer{Name: "homelab", Hostname: "nas", Enabled: true, Tools: []protocol.MCPTool{tool("echo"), tool("boom")}})
+	reg.set(protocol.MCPServer{Name: "homelab", Hostname: "nas", Enabled: true, HostOnline: true, Tools: []protocol.MCPTool{tool("echo"), tool("boom")}})
 	if err := dyn.Refresh(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -166,6 +166,50 @@ func TestDynamicToolsFollowRegistry(t *testing.T) {
 	waitChanged()
 	if got := listNames(t, cs); len(got) != 0 {
 		t.Fatalf("tools = %v", got)
+	}
+}
+
+// A server whose host is offline stays in the catalog, marked unavailable, and
+// the mark goes when the host returns. Nothing is dropped.
+func TestDynamicMarksToolsOfAnOfflineHost(t *testing.T) {
+	reg := &fakeRegistry{}
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	srv := New(reg.call, "")
+	dyn := NewDynamic(srv, reg.call)
+	if _, err := srv.Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	desc := func() string {
+		res, err := cs.ListTools(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, tl := range res.Tools {
+			if tl.Name == "files__read" {
+				return tl.Description
+			}
+		}
+		return "missing"
+	}
+	reg.set(protocol.MCPServer{Name: "files", Hostname: "nas", Enabled: true, HostOnline: false, Tools: []protocol.MCPTool{tool("read")}})
+	if err := dyn.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := desc(); !strings.Contains(got, "unavailable: host nas offline") || !strings.Contains(got, "does read") {
+		t.Fatalf("offline description = %q", got)
+	}
+	reg.set(protocol.MCPServer{Name: "files", Hostname: "nas", Enabled: true, HostOnline: true, Tools: []protocol.MCPTool{tool("read")}})
+	if err := dyn.Refresh(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := desc(); got != "[files on nas] does read" {
+		t.Fatalf("online description = %q", got)
 	}
 }
 

@@ -70,6 +70,21 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		}
 		return map[string]any{"servers": srvs}, nil
 
+	case "mcp.catalog":
+		p, err := decode[protocol.MCPCatalog](raw)
+		if err != nil {
+			return nil, reject("bad mcp.catalog")
+		}
+		project, err := g.callerProject(nc, p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		srvs, err := g.mcpCatalog(project)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"servers": srvs}, nil
+
 	case "mcp.remove":
 		p, err := decode[protocol.MCPName](raw)
 		if err != nil {
@@ -139,7 +154,7 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		if err != nil {
 			return nil, reject("bad mcp.call")
 		}
-		return g.mcpCall(ctx, p)
+		return g.mcpCall(ctx, nc, p)
 	}
 	return nil, reject("unknown frame type %q", typ)
 }
@@ -149,8 +164,16 @@ func (g *Gateway) mcpList() ([]protocol.MCPServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	assigned, err := g.store.MCPAssignments()
+	if err != nil {
+		return nil, err
+	}
 	for i := range srvs {
 		srvs[i].HostOnline = g.conn(srvs[i].NodeID) != nil
+		srvs[i].Scope, srvs[i].Projects = "global", nil
+		if a, ok := assigned[srvs[i].Name]; ok {
+			srvs[i].Scope, srvs[i].Projects = a.Scope, a.Projects
+		}
 	}
 	return srvs, nil
 }
@@ -239,13 +262,32 @@ func (g *Gateway) mcpTest(ctx context.Context, name string) (any, error) {
 	return map[string]any{"ok": true, "tools": tools}, nil
 }
 
-func (g *Gateway) mcpCall(ctx context.Context, p protocol.MCPCall) (any, error) {
+func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall) (any, error) {
 	srv, ok, err := g.store.MCPServer(p.Server)
 	if err != nil {
 		return nil, err
 	}
 	if !ok {
 		return nil, reject("no MCP server named %q", p.Server)
+	}
+	// Authorize here, on every call, from the gateway's own records: a client
+	// that cached the tool earlier gets no more than its project may see now.
+	if !g.validToolOwner(nc, p.Owner) {
+		project, err := g.callerProject(nc, p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		a, err := g.store.MCPAssignment(p.Server)
+		if err != nil {
+			return nil, err
+		}
+		if !mcpVisible(a, project) {
+			g.store.Event("mcp.refused", nc.id, p.SessionID, "", p.Server+": not assigned to project "+project)
+			if project == "" {
+				return nil, reject("MCP server %q is not assigned to this project (the session has no project)", p.Server)
+			}
+			return nil, reject("MCP server %q is not assigned to this project", p.Server)
+		}
 	}
 	if !srv.Enabled {
 		return nil, reject("MCP server %q is disabled", p.Server)
@@ -255,7 +297,7 @@ func (g *Gateway) mcpCall(ctx context.Context, p protocol.MCPCall) (any, error) 
 	}
 	hc := g.conn(srv.NodeID)
 	if hc == nil {
-		return nil, reject("MCP server %q is hosted on %s, which is offline", p.Server, srv.Hostname)
+		return nil, reject("host %s offline: MCP server %q runs there and is unavailable until it returns", srv.Hostname, p.Server)
 	}
 	inv := protocol.MCPInvoke{Server: p.Server, Tool: p.Tool, Arguments: p.Arguments,
 		TimeoutSec: int(srv.Timeout() / time.Second)}

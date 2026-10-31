@@ -251,6 +251,17 @@ A repeated send with the same idempotency key stores nothing new.
 
 Registered MCP servers run on the machine that hosts them, as your user, and their tools can be called by any agent on any enrolled machine. The registry holds env var names and file paths, never secret values; header and env values are read on the hosting machine and are redacted from errors, logs and tool results there. A daemon runs only the servers registered with its own node. See [mcp-registry.md](mcp-registry.md#security).
 
+### Scoped MCP servers
+
+The owner can limit a server to some projects ([reference](reference.md#scoped-mcp-servers), [decision 0027](decisions/0027-skills-and-mcp-management.md)). The limit is enforced at the gateway, not in the client.
+
+- **Every call is checked again.** `mcp.call` checks the server's current assignment against the caller's project each time. A client that cached a tool before the owner changed the scope gets `not assigned to this project`. A server with scope `uninstalled` refuses everyone. A refused call is logged as an `mcp.refused` event with the node, session and server (no arguments).
+- **The caller is not taken from the request.** The frame carries a session ID from the daemon of the node. The gateway accepts it only if its own record says that session lives on the node of the connection, and it reads the project from that record. There is no project field: a project in the request is ignored. A node that names another node's session, or an unknown session, is refused. The catalog (`mcp.catalog`) follows the same rule.
+- **Fail closed.** A caller with no project, or with no session, can use only global servers. An unreadable assignment counts as `uninstalled`.
+- **The owner's command line** calls with the owner's authority: the daemon adds the owner session ID, and the gateway accepts it only for the owner session of that node, as for `tools.plan`. A command line run inside an agent session (the process-tree check) has no such ID and is treated as a caller with no project.
+- **What this does not stop.** The gateway trusts the daemon of an enrolled node to name the right local session, as it does for every other frame. A compromised enrolled machine can name any session of its own node, and so any project that has a session on it. It cannot act as a session of another machine. The list of servers (`mcp list`, `agent_mcp_list`) is a registry view and still shows every server, with its scope, to every agent.
+- **Host failure is visible.** An offline host gives `host NAME offline`, never a silent empty result, and never drops the assignment.
+
 ## Project registry
 
 A registered project is a folder where workers may start sessions (see [decision 0002](decisions/0002-workers.md)). Registering one widens that set, so it is controlled like this:
