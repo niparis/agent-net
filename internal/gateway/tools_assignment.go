@@ -267,6 +267,25 @@ func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 	if err = json.Unmarshal([]byte(raw), &p); err != nil {
 		return r, err
 	}
+	for _, target := range p.Targets {
+		if target.Action != "remove" {
+			continue
+		}
+		var kind string
+		if err = tx.QueryRow(`SELECT kind FROM tool_identities WHERE id=?`, p.Item).Scan(&kind); err != nil {
+			return r, err
+		}
+		if kind == "skill" {
+			var imported int
+			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM skill_versions WHERE item=? AND hash=?)`, p.Item, p.Version).Scan(&imported); err != nil {
+				return r, err
+			}
+			if imported == 0 {
+				return r, errors.New("import it first")
+			}
+		}
+		break
+	}
 	r, err = assignToolTx(tx, p.Item, p.Assignment, actor, "plan:"+id, s.now().UnixNano())
 	if err != nil {
 		return r, err

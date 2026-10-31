@@ -406,3 +406,33 @@ func TestToolApplyRejectsCorruptStoredVersion(t *testing.T) {
 		t.Fatalf("corrupt version accepted: %v", err)
 	}
 }
+
+func TestApplyRemovalRequiresImportedSkill(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	p, err := s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "uninstalled"}, []protocol.ToolPlanTarget{{NodeID: "node", Action: "remove"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ApplyToolPlan(p.ID, "owner"); err == nil || !strings.Contains(err.Error(), "import it first") {
+		t.Fatalf("expected import refusal: %v", err)
+	}
+	if _, err = s.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at) VALUES(?,?,?,?,?,?)`, id, "abc", "fixture", "node", "fixture", 0); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "uninstalled"}, []protocol.ToolPlanTarget{{NodeID: "node", Action: "remove"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ApplyToolPlan(p.ID, "owner"); err != nil {
+		t.Fatalf("imported skill refused: %v", err)
+	}
+}
