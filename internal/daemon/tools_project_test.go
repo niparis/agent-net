@@ -429,3 +429,35 @@ func TestProjectGitWorktreeSymlinkRefused(t *testing.T) {
 		t.Fatalf("accepted symlinked Git metadata: %+v", r)
 	}
 }
+
+func TestProjectFailedCopyRecordsExcludeOwnership(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q")
+	root := filepath.Join(checkout, ".claude")
+	if err := os.Mkdir(root, 0500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(root, 0700) })
+	if r := d.copyProjectSkill(target, bundle); r.State == "applied" {
+		t.Fatalf("unexpected copy: %+v", r)
+	}
+	exclude, err := os.ReadFile(filepath.Join(checkout, ".git/info/exclude"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(exclude), "/.claude/skills/demo/") {
+		return
+	}
+	data, err := os.ReadFile(filepath.Join(d.cfg.StateDir, "skill-manifest.json"))
+	if err != nil {
+		t.Fatalf("unrecorded exclusion: %v", err)
+	}
+	var entries []skillManifestEntry
+	if err = json.Unmarshal(data, &entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].ExcludeLine != "/.claude/skills/demo/" || !entries[0].ExcludeOwned || entries[0].Owned {
+		t.Fatalf("bad ownership: %+v", entries)
+	}
+}

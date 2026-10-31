@@ -248,6 +248,13 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 			return e
 		})
 	}
+	reserve := func(owned bool) error {
+		dest := filepath.Join(checkout, rel)
+		if e := d.recordSkill(t, dest, false); e != nil {
+			return e
+		}
+		return d.recordProjectExclude(dest, exclude, pattern, owned)
+	}
 	if !present {
 		candidate, e := os.CreateTemp(d.cfg.StateDir, ".project-ignore-")
 		if e != nil {
@@ -266,6 +273,9 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 		if e = checkFiles(candidatePath); e != nil {
 			return fail("pending", "managed path is not ignored by Git")
 		}
+		if e = reserve(true); e != nil {
+			return fail("failed", "cannot record Git exclude")
+		}
 		addition := []byte(pattern + "\n")
 		if len(before) > 0 && before[len(before)-1] != '\n' {
 			addition = append([]byte("\n"), addition...)
@@ -276,6 +286,11 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 	}
 	if err = checkFiles(""); err != nil {
 		return fail("pending", "managed path is not ignored by Git")
+	}
+	if present {
+		if err = reserve(false); err != nil {
+			return fail("failed", "cannot record Git exclude")
+		}
 	}
 
 	result := d.copySkillAt(t, bundle, checkout, root)

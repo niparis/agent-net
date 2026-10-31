@@ -38,7 +38,9 @@ func (d *Daemon) recordSkill(t protocol.ToolTarget, dest string, owned bool) err
 	for i := range entries {
 		if entries[i].Path == dest {
 			if entries[i].Item == t.Revision.Item && entries[i].Owned {
-				owned = true
+				if info, err := os.Lstat(dest); err == nil && info.IsDir() {
+					owned = true
+				}
 			}
 			previous := entries[i]
 			entries[i] = skillManifestEntry{Item: t.Revision.Item, Path: dest, Hash: t.Revision.Version, Revision: t.Revision.Revision, Owned: owned, Exclude: previous.Exclude, ExcludeLine: previous.ExcludeLine, ExcludeOwned: previous.ExcludeOwned}
