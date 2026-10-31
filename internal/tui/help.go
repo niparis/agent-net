@@ -30,7 +30,7 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"tab", "focus", 1}, {"enter", "send", 1}, {"m", "model", 1}, {"o", "full screen", 2}, {"n", "new", 2}, {"u", "undo", 2}, {"esc", "back", 1}}
+		return []hint{{"enter", "open CTO", 1}, {"tab", "back", 1}, {"esc", "back", 3}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == 1:
 		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "thread", 1}, {"w", "workers", 2}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
 	case m.tab == 2:
@@ -142,7 +142,7 @@ func (m Model) helpContent(w int) []string {
 		{"map D", "name project (empty clears)"},
 		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h hide, H show hidden"},
 		{"5 Tools", "[ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first"},
-		{"C, tab", "focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model"},
+		{"C, tab", "focus the CTO box (tab or esc returns); enter opens the full CTO, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},

@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -68,15 +67,15 @@ func (f *fakeCTOSource) CTOUndo(_ context.Context, id int64) error {
 	return nil
 }
 func (f *fakeCTOSource) CTONew(context.Context) error { f.fresh++; return nil }
-func TestCTOPaneSendAndPoll(t *testing.T) {
+func TestCTOPanePollAndEnter(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"hello"}`)}, Next: 1}}
 	m := New(src)
 	m.width = 80
 	m.height = 24
-	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
+	updated, _ := m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("C")})
 	m = updated.(Model)
-	if m.cto == nil || cmd == nil {
-		t.Fatal("C did not open the CTO")
+	if m.cto == nil || m.focus != focusCTO {
+		t.Fatal("C did not focus the CTO box")
 	}
 	msg := m.ctoPollCmd()()
 	updated, _ = m.update(msg)
@@ -84,20 +83,18 @@ func TestCTOPaneSendAndPoll(t *testing.T) {
 	if !strings.Contains(m.View(), "fake/m1") || !strings.Contains(m.View(), "hello") {
 		t.Fatalf("missing model or reply:\n%s", m.View())
 	}
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEnter})
-	m = updated.(Model)
 	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("question")})
 	m = updated.(Model)
-	updated, cmd = m.update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = updated.(Model)
 	if cmd == nil {
-		t.Fatal("send did not start")
+		t.Fatal("Enter did not request the CTO plan")
 	}
-	msg = cmd()
-	updated, _ = m.update(msg)
-	m = updated.(Model)
-	if len(src.sent) != 1 || src.sent[0] != "question" {
-		t.Fatalf("sent: %v", src.sent)
+	if _, ok := cmd().(enterMsg); !ok {
+		t.Fatal("Enter did not return an enter plan")
+	}
+	if len(src.sent) != 0 {
+		t.Fatalf("the read-only box sent a message: %v", src.sent)
 	}
 	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = updated.(Model)
@@ -311,29 +308,76 @@ func TestCTOMessageShowsHarnessFailure(t *testing.T) {
 	}
 }
 
-func TestCTOOpenFullRequestsPlan(t *testing.T) {
+func TestCTOEnterOnFocusedBoxRequestsPlan(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m := New(src)
 	model, _ := m.startCTO()
 	m = model.(Model)
-	_, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	_, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
-		t.Fatal("open full did not request a plan")
+		t.Fatal("enter did not request a plan")
 	}
 	if _, ok := cmd().(enterMsg); !ok {
-		t.Fatal("open full did not return an enter plan")
+		t.Fatal("enter did not return an enter plan")
 	}
 }
 
-func TestCTOSendErrorSurvivesPoll(t *testing.T) {
+func TestCTOBoxHasNoInput(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
-	model, _ := New(src).startCTO()
-	m := model.(Model)
-	updated, _ := m.Update(ctoSendMsg{err: errors.New("send failed"), generation: m.cto.generation})
-	m = updated.(Model)
-	m.applyCTOPoll(ctoPollMsg{generation: m.cto.generation})
-	if !strings.Contains(strings.Join(m.cto.messages, "\n"), "error: send failed") {
-		t.Fatalf("error lost: %+v", m.cto.messages)
+	m := New(src)
+	model, _ := m.startCTO()
+	m = model.(Model)
+	m.cto.messages = []string{"cto: hello"}
+	for _, key := range []string{"hello", "x", "a"} {
+		next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		if cmd != nil {
+			t.Fatalf("%q started a command", key)
+		}
+		m = next.(Model)
+	}
+	if len(src.sent) != 0 || len(m.cto.messages) != 1 || m.cto.messages[0] != "cto: hello" {
+		t.Fatalf("typing changed the box: sent=%v messages=%v", src.sent, m.cto.messages)
+	}
+}
+
+func TestCTOBoxOKeyDoesNothing(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}}
+	m := New(src)
+	model, _ := m.startCTO()
+	m = model.(Model)
+	m.focus = focusCTO
+	next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'o'}})
+	if cmd != nil {
+		t.Fatal("o still opened the full CTO")
+	}
+	if next.(Model).focus != focusCTO {
+		t.Fatal("o changed the focus")
+	}
+}
+
+func TestCTOBoxHintAndHelp(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	model, _ := m.startCTO()
+	m = model.(Model)
+	m.focus = focusCTO
+	view := ansi.Strip(strings.Join(m.ctoView(80, 8), "\n"))
+	if !strings.Contains(view, "enter: open the CTO · tab: back") {
+		t.Fatalf("box hint missing:\n%s", view)
+	}
+	line := ansi.Strip(m.helpLine(100))
+	for _, want := range []string{"enter", "open CTO", "tab", "back"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("key line missing %q: %s", want, line)
+		}
+	}
+	for _, old := range []string{"send", "full screen"} {
+		if strings.Contains(line, old) {
+			t.Errorf("key line still says %q: %s", old, line)
+		}
+	}
+	help := ansi.Strip(strings.Join(m.helpContent(100), "\n"))
+	if !strings.Contains(help, "enter opens the full CTO") {
+		t.Fatalf("help does not describe Enter: %s", help)
 	}
 }
 
@@ -462,70 +506,19 @@ func TestCTOProviderErrorsSuggestModelChange(t *testing.T) {
 	if got := ctoMessage(json.RawMessage(`{"error":{"message":"network unavailable"}}`)); strings.Contains(got, "m to change") {
 		t.Fatal(got)
 	}
-	src := &fakeCTOSource{fakeSource: &fakeSource{}}
-	model, _ := New(src).startCTO()
-	m := model.(Model)
-	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: m.cto.generation})
-	m = next.(Model)
-	if !strings.HasSuffix(m.cto.messages[0], " (m to change the model)") {
-		t.Fatal(m.cto.messages)
-	}
-}
-
-func TestCTOSendErrorReconcilesPolledMessages(t *testing.T) {
-	src := &fakeCTOSource{fakeSource: &fakeSource{}}
-	model, _ := New(src).startCTO()
-	m := model.(Model)
-	g := m.cto.generation
-	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g})
-	m = next.(Model)
-	poll := ctoPollMsg{generation: g, events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","error":{"message":"quota exceeded"}}`)}}}
-	m.applyCTOPoll(poll)
-	if len(m.cto.messages) != 1 {
-		t.Fatalf("duplicate error: %v", m.cto.messages)
-	}
-	m.applyCTOPoll(poll)
-	if len(m.cto.messages) != 1 {
-		t.Fatalf("duplicate after second poll: %v", m.cto.messages)
-	}
-}
-
-func TestCTOSendErrorKeepsRepeatedFailures(t *testing.T) {
-	model, _ := New(&fakeCTOSource{fakeSource: &fakeSource{}}).startCTO()
-	m := model.(Model)
-	g := m.cto.generation
-	raw := json.RawMessage(`{"error":{"message":"quota exceeded"}}`)
-	poll := ctoPollMsg{generation: g, events: protocol.CTOEvents{Messages: []json.RawMessage{raw}}}
-	m.applyCTOPoll(poll)
-	line := ctoMessage(raw)
-	next, _ := m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g, baseline: map[string]int{line: 1}})
-	m = next.(Model)
-	m.applyCTOPoll(poll)
-	if len(m.cto.messages) != 2 {
-		t.Fatalf("older failure hid a new one: %v", m.cto.messages)
-	}
-	poll.events.Messages = append(poll.events.Messages, raw)
-	m.applyCTOPoll(poll)
-	if len(m.cto.messages) != 2 {
-		t.Fatalf("repeated errors: %v", m.cto.messages)
-	}
-	// A poll can arrive before the send result.
-	m.applyCTOPoll(poll)
-	next, _ = m.Update(ctoSendMsg{err: errors.New("quota exceeded"), generation: g, baseline: map[string]int{line: 1}})
-	m = next.(Model)
-	if len(m.cto.messages) != 2 {
-		t.Fatalf("late send result duplicated error: %v", m.cto.messages)
-	}
 }
 
 func TestCTOWrapsLongLines(t *testing.T) {
 	m := Model{cto: &ctoState{messages: []string{"cto: " + strings.Repeat("word ", 18)}, err: strings.Repeat("failure ", 16)}}
 	view := m.ctoView(30, 12)
 	joined := strings.Join(view, "\n")
-	if strings.Contains(joined, "…") || !strings.Contains(joined, "  failure") {
+	if !strings.Contains(joined, "  failure") {
 		t.Fatalf("lines not wrapped:\n%s", joined)
 	}
 	for _, line := range view {
+		if strings.Contains(line, "…") && !strings.Contains(line, "enter: open the CTO") {
+			t.Fatalf("line clipped: %q", line)
+		}
 		if ansi.StringWidth(line) > 30 {
 			t.Fatalf("line too wide: %q", line)
 		}
@@ -549,18 +542,6 @@ func TestCTOLongErrorGolden(t *testing.T) {
 	m = keys(m, "C")
 	m.cto.err = "Provider request failed because the account has insufficient credits. Add credits or choose another model before retrying the request. The request was not completed."
 	golden(t, "cto_long_error_80x24", m.View())
-}
-
-func TestCTOPollFailureDoesNotRepeatSendFailure(t *testing.T) {
-	model, _ := New(&fakeCTOSource{fakeSource: &fakeSource{}}).startCTO()
-	m := model.(Model)
-	g := m.cto.generation
-	next, _ := m.Update(ctoSendMsg{err: errors.New("connection failed"), generation: g})
-	m = next.(Model)
-	m.applyCTOPoll(ctoPollMsg{err: errors.New("connection failed"), generation: g})
-	if got := strings.Join(m.ctoView(80, 8), "\n"); strings.Count(got, "error: connection failed") != 1 {
-		t.Fatalf("duplicate poll error:\n%s", got)
-	}
 }
 
 func TestCTOMultilineReplyPreserved(t *testing.T) {

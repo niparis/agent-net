@@ -146,14 +146,15 @@ sandbox defaults. The tool schemas describe the other fields and fixed values.
 filter text and a short reason. `ui_notice` shows a short note. Both show a
 `CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
 
-In the TUI, `C` focuses the CTO box on the Sessions tab.
+In the TUI, `C` or `tab` focuses the CTO box on every tab.
 Its title shows the selected harness and model.
-Type in the focused input and press Enter to send. When the input is empty,
-`n` asks before starting a new conversation, `u` undoes the latest graph change,
-`m` opens the harness and model form,
-and Esc returns focus to the session list. The chat polls once per second and shows recorded CTO
-tool calls, including reads and failures, plus graph diffs; a graph change
-refreshes an open map.
+The box is read-only: it shows the latest CTO output lines and one hint line,
+`enter: open the CTO · tab: back`. Enter opens the full CTO harness UI through
+`cto_enter`, the same hand-over a session uses; ctrl+] returns. `n` asks before
+starting a new conversation, `u` undoes the latest graph change, `m` opens the
+harness and model form, and Esc or `tab` returns focus to the tab. The chat
+polls once per second and shows recorded CTO tool calls, including reads and
+failures, plus graph diffs; a graph change refreshes an open map.
 
 Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
 It has three screens. Digits stay the global tabs and `tab` goes to the CTO box, so `[` and `]` switch screens. Left and right arrows also switch screens except in All tools, where they select a machine or projects cell. Press `?` for Tools keys.
@@ -185,8 +186,8 @@ Use the arrows to select a box, Page Up and Page Down to scroll the projects
 and visible edges, and Enter to
 focus the selected project. Edges are shown only when both endpoints are
 visible; a count shows the edges off screen. In focus view, Enter opens
-Sessions filtered to the selected project, and `c` starts a CTO question
-about it. Tab moves between the map and CTO box.
+Sessions filtered to the selected project, and `c` focuses the CTO box.
+Tab moves between the map and CTO box.
 
 Hidden item preferences are shared by every machine's TUI through the
 gateway's `owner_settings` entry `hidden_items`. On Sessions, `h` hides or
@@ -1128,7 +1129,7 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has six tabs: `1` Sessions, `2` Messages, `3` Quotas, `4` Map, `5` Tools and `6` Graph. On each tab, `tab` moves focus between the tab and CTO chat. In the CTO box, replies use Markdown; pgup/pgdn or ctrl+u/ctrl+d scroll the conversation, enter sends and esc returns to the list. When the input is empty, `o` opens the full interface, `n` starts a new conversation after confirmation, `u` undoes the last graph change, and `m` edits the harness and model. Messages groups the feed into conversations. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
+`agent-net tui` has six tabs: `1` Sessions, `2` Messages, `3` Quotas, `4` Map, `5` Tools and `6` Graph. On each tab, `tab` moves focus between the tab and the CTO box. The box is read-only and shows the latest CTO output plus `enter: open the CTO · tab: back`; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the harness and model, and esc returns to the list. Messages groups the feed into conversations. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. The current renderer uses Braille; a kitty pixel renderer can consume the same scene later.
 
@@ -1390,7 +1391,7 @@ A rejection or escalation of another agent's request appears as a separate Needs
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when the worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
-The owner-only `cto_enter` method starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO pane, press `o` to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing.
+The owner-only `cto_enter` method starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing.
 
 The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell

@@ -197,8 +197,8 @@ func TestMapFocusNavigationAndActions(t *testing.T) {
 	}
 	m.mp.selected = "cogforge"
 	m = keys(m, "c")
-	if m.focus != focusCTO || m.cto.input.Value() != "about cogforge: " {
-		t.Fatal("CTO prompt missing")
+	if m.focus != focusCTO {
+		t.Fatal("c did not focus the CTO box")
 	}
 	m = keys(m, "tab", "enter")
 	if m.mapOn || m.tab != 0 || m.filter != "cogforge" {

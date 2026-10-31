@@ -47,7 +47,7 @@ func TestSessionsUsePanels(t *testing.T) {
 
 func TestCTOHintFitsAndProgressShowsTrickle(t *testing.T) {
 	for _, line := range newModel(80, 24).ctoView(80, 7) {
-		if strings.Contains(line, "write to the CTO:") && strings.Contains(line, "…") {
+		if strings.Contains(line, "enter: open the CTO") && strings.Contains(line, "…") {
 			t.Fatal("CTO hint is clipped")
 		}
 	}
