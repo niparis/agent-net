@@ -110,6 +110,9 @@ func TestDynamicToolsFollowRegistry(t *testing.T) {
 		}
 	}
 
+	// The server notifies only sessions it has seen initialized. Connect does
+	// not wait for that, so one round trip makes sure of it.
+	listNames(t, cs)
 	reg.set(protocol.MCPServer{Name: "homelab", Hostname: "nas", Enabled: true, Tools: []protocol.MCPTool{tool("echo"), tool("boom")}})
 	if err := dyn.Refresh(ctx); err != nil {
 		t.Fatal(err)

@@ -328,11 +328,15 @@ func ExecEnv(path string) []string {
 	return env
 }
 
+// systemNodeDirs are the usual Node folders outside PATH (Homebrew, the
+// official installer). Tests clear it so the host's Node does not count.
+var systemNodeDirs = []string{"/opt/homebrew/bin", "/usr/local/bin"}
+
 // NodeExecEnv finds a supported Node for quota-axi without requiring npm.
 func NodeExecEnv(path string) ([]string, error) {
 	env := os.Environ()
 	dirs := append([]string{filepath.Dir(path)}, nvmBins()...)
-	dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
+	dirs = append(dirs, systemNodeDirs...)
 	if node, err := exec.LookPath("node"); err == nil {
 		dirs = append(dirs, filepath.Dir(node))
 	}
@@ -370,7 +374,7 @@ func userDirs() []string {
 		return dirs
 	}
 	dirs = append(dirs, nvmBins()...)
-	dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
+	dirs = append(dirs, systemNodeDirs...)
 	if p := npmGlobalBin(); p != "" {
 		dirs = append(dirs, p)
 	}
@@ -463,8 +467,9 @@ func nodeDirs() []string {
 		for _, dir := range nvmBins() {
 			add(dir)
 		}
-		add("/opt/homebrew/bin")
-		add("/usr/local/bin")
+		for _, dir := range systemNodeDirs {
+			add(dir)
+		}
 		add(npmGlobalBin())
 	}
 	return dirs

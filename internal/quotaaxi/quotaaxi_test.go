@@ -371,6 +371,9 @@ func TestExecEnvFindsCompatibleNVMNode(t *testing.T) {
 }
 
 func TestVersionReportsMissingNode(t *testing.T) {
+	saved := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = saved })
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", t.TempDir())
 	path := filepath.Join(t.TempDir(), "quota-axi")
