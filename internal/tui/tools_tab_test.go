@@ -445,3 +445,65 @@ func TestToolsRescanReadsAgain(t *testing.T) {
 		t.Fatalf("rescans %d", src.rescans)
 	}
 }
+
+func TestToolsScreenGuidanceAndNavigation(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	if v := plain(m); !strings.Contains(v, "Things that do not match across your machines") || !strings.Contains(v, "[ ] switch screen") {
+		t.Fatalf("differences guidance missing:\n%s", v)
+	}
+	m = pressKey(m, "right")
+	if m.tl.screen != toolsAll {
+		t.Fatalf("right did not switch screens: %d", m.tl.screen)
+	}
+	if v := plain(m); !strings.Contains(v, "Every skill and MCP server") {
+		t.Fatalf("all tools guidance missing:\n%s", v)
+	}
+	col := m.tl.col
+	m = pressKey(m, "right")
+	if m.tl.screen != toolsAll || m.tl.col == col {
+		t.Fatalf("arrow must select a machine cell: screen %d column %d", m.tl.screen, m.tl.col)
+	}
+	m = pressKey(m, "]")
+	if v := plain(m); !strings.Contains(v, "What a session in this project gets") {
+		t.Fatalf("project guidance missing:\n%s", v)
+	}
+	m = pressKey(m, "?")
+	if v := plain(m); !strings.Contains(v, "Tools keys") || !strings.Contains(v, "turn on") {
+		t.Fatalf("tools help missing:\n%s", v)
+	}
+}
+
+func TestToolsEmptyScreensExplainWhatAppears(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	m.tl.cat = toolsdiff.Catalog{}
+	m.tl.items = nil
+	m.snap.Projects = nil
+	m.tl.projSel = ""
+	if v := plain(m); !strings.Contains(v, "Nothing differs:") {
+		t.Fatalf("differences: %s", v)
+	}
+	m = pressKey(m, "]")
+	if v := plain(m); !strings.Contains(v, "Skills and MCP servers appear here after a scan") {
+		t.Fatalf("tools: %s", v)
+	}
+	m = pressKey(m, "]")
+	if v := plain(m); !strings.Contains(v, "Registered projects and their tools appear here") {
+		t.Fatalf("projects: %s", v)
+	}
+}
+
+func TestRepeatedDifferencesExpand(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	d := m.tl.cat.Diffs[0]
+	other := d
+	other.Name, other.Key, other.Title = "another", "two-copies:another:research", "another has 2 different copies on research"
+	m.tl.cat.Diffs = []toolsdiff.Difference{d, other}
+	m.tl.row = 0
+	if ds := m.shownDiffs(); len(ds) != 1 || !strings.Contains(ds[0].Title, "2 skills have 2 different copies on research") {
+		t.Fatalf("group: %+v", ds)
+	}
+	m = pressKey(m, "enter")
+	if ds := m.shownDiffs(); len(ds) != 3 {
+		t.Fatalf("expanded: %+v", ds)
+	}
+}

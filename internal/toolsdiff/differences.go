@@ -159,10 +159,28 @@ func skillDiffs(g group, ms []Machine) []Difference {
 	// hashes per machine, with the copy that holds each.
 	type held struct {
 		hashes map[string]Copy
+		paths  map[string]bool
 	}
 	per := map[string]*held{}
 	nodeOf := map[string]string{}
 	var order []string
+	// Observations from older peers have no content fingerprint. Reuse a known
+	// fingerprint for the same strict hash and otherwise retain the strict hash.
+	fingerprints := map[string]string{}
+	for _, v := range g.variants {
+		for _, l := range v.Locations {
+			if l.ContentFingerprint != "" {
+				fingerprints[v.Hash] = l.ContentFingerprint
+			}
+		}
+	}
+	comparisonHash := func(hash string) string {
+		if f := fingerprints[hash]; f != "" {
+			return "content:" + f
+		}
+		return "strict:" + hash
+	}
+	userStrict := map[string]bool{}
 	// A machine the desired state does not name is not part of the change:
 	// "on research only" is not drift against the other machines.
 	inScope := func(machine string) bool {
@@ -175,13 +193,21 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			}
 			h := per[l.Machine]
 			if h == nil {
-				h = &held{hashes: map[string]Copy{}}
+				h = &held{hashes: map[string]Copy{}, paths: map[string]bool{}}
 				per[l.Machine] = h
 				nodeOf[l.Machine] = l.NodeID
 				order = append(order, l.Machine)
 			}
-			if _, ok := h.hashes[v.Hash]; !ok {
-				h.hashes[v.Hash] = copyOf(g, v, l)
+			if l.Location != "" && h.paths[l.Location] {
+				continue
+			}
+			if l.Location != "" {
+				h.paths[l.Location] = true
+			}
+			userStrict[v.Hash] = true
+			key := comparisonHash(v.Hash)
+			if _, ok := h.hashes[key]; !ok {
+				h.hashes[key] = copyOf(g, v, l)
 			}
 		}
 	}
@@ -233,7 +259,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 		})
 		labelOf := map[string]string{}
 		for _, v := range g.variants {
-			labelOf[v.Hash] = g.label(v.VersionNo, v.Hash)
+			labelOf[comparisonHash(v.Hash)] = g.label(v.VersionNo, v.Hash)
 		}
 		// One part per machine: "Mac on v1, research on v3".
 		hashOf := map[string]string{}
@@ -265,12 +291,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 		out = append(out, d)
 	}
 	// a project's own copy hides a machine-wide one
-	userHashes := map[string]bool{}
-	for _, m := range order {
-		for h := range per[m].hashes {
-			userHashes[h] = true
-		}
-	}
+	userHashes := userStrict
 	if mg != nil {
 		userHashes[mg.Hash] = true
 	}

@@ -236,3 +236,21 @@ func TestPluginAndSystemCopiesAreNotDifferences(t *testing.T) {
 		t.Fatalf("%+v", ds)
 	}
 }
+
+func TestSamePathWithDifferentObservationsIsNotTwoCopies(t *testing.T) {
+	a := skill("demo", "hash-a", loc("n_r", "research", "/home/skills/demo", "user", ""))
+	b := skill("demo", "hash-b", loc("n_r", "research", "/home/skills/demo", "user", ""))
+	if d := find(Differences([]protocol.ToolItem{a, b}, machines), KindTwoCopies, "demo"); d != nil {
+		t.Fatalf("same path reported as copies: %+v", d)
+	}
+}
+
+func TestSkillCopiesWithMatchingContentFingerprintDoNotDiffer(t *testing.T) {
+	a := skill("demo", "strict-a", loc("n_r", "research", "/a", "user", ""))
+	b := skill("demo", "strict-b", loc("n_r", "research", "/b", "user", ""))
+	a.Locations[0].ContentFingerprint = "content"
+	b.Locations[0].ContentFingerprint = "content"
+	if d := find(Differences([]protocol.ToolItem{a, b}, machines), KindTwoCopies, "demo"); d != nil {
+		t.Fatalf("same content reported as different: %+v", d)
+	}
+}

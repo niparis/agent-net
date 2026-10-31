@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const maxFiles = 10000
@@ -38,13 +39,23 @@ func SkillHash(root string) (string, error) {
 	return skillHashRoot(dir)
 }
 
-func skillHashRoot(dir *os.Root) (string, error) {
+func skillHashRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, false) }
+
+func skillContentFingerprintRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, true) }
+
+func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 	var paths []string
 	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if path == "." {
+			return nil
+		}
+		if contentOnly && skillNoise(filepath.Base(path)) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if len(paths) >= maxFiles {
@@ -98,7 +109,9 @@ func skillHashRoot(dir *os.Root) (string, error) {
 				return "", fmt.Errorf("skill changed during scan")
 			}
 			write([]byte("file"))
-			write([]byte{byte(info.Mode() & 0111)})
+			if !contentOnly {
+				write([]byte{byte(info.Mode() & 0111)})
+			}
 			write(data)
 		case info.IsDir():
 			write([]byte("directory"))
@@ -132,6 +145,12 @@ func skillFilesRoot(dir *os.Root) ([]string, error) {
 		if path == "." {
 			return nil
 		}
+		if skillNoise(filepath.Base(path)) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		if len(paths) >= maxFiles {
 			return fmt.Errorf("skill exceeds file count limit")
 		}
@@ -141,4 +160,8 @@ func skillFilesRoot(dir *os.Root) ([]string, error) {
 		return nil
 	})
 	return paths, err
+}
+
+func skillNoise(name string) bool {
+	return name == ".DS_Store" || name == "Thumbs.db" || strings.HasSuffix(name, "~") || strings.HasSuffix(name, ".swp") || strings.HasSuffix(name, ".swo")
 }

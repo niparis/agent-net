@@ -233,6 +233,25 @@ func (m Model) helpLine(w int) string {
 
 // helpView is the overlay that lists every key.
 func (m Model) helpView(w, h int) []string {
+	if m.tab == toolsTab && !m.mapOn {
+		rows := []string{section("Tools keys", w),
+			"  [ ]          switch screens",
+			"  left/right   switch screens (on All tools, select a machine or projects)",
+			"  j/k          select a difference, tool or project",
+			"  enter        open the selected fix or plan",
+			"  x            accept a difference as it is",
+			"  .            show accepted differences",
+			"  a/u          turn on or turn off for the selected machine or projects",
+			"  m            change the machine on By project",
+			"  /            search or filter", "  r            rescan", "  esc or ?     close help"}
+		for i := range rows {
+			rows[i] = clip(rows[i], w)
+		}
+		if len(rows) > h {
+			rows = rows[:h]
+		}
+		return rows
+	}
 	rows := [][2]string{
 		{"Sessions", ""},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},

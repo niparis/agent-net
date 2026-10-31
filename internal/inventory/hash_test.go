@@ -63,3 +63,31 @@ func TestSkillHashInTreeLinkAndSizeLimit(t *testing.T) {
 		t.Fatal("accepted oversized skill")
 	}
 }
+
+func TestContentFingerprintIgnoresNoiseAndMode(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	before, err := skillContentFingerprintRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, "SKILL.md"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{".DS_Store", "Thumbs.db", ".SKILL.md.swp", "file.swo", "file~"} {
+		if err := os.WriteFile(filepath.Join(root, n), []byte(n), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, err := skillContentFingerprintRoot(dir)
+	if err != nil || before != after {
+		t.Fatalf("content fingerprint changed: %s %s %v", before, after, err)
+	}
+}
