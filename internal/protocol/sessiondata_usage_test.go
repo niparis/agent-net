@@ -18,4 +18,7 @@ func TestMachineUsageRoundTripsDiskFree(t *testing.T) {
 	if got.Machine.DiskFree != want.Machine.DiskFree {
 		t.Fatalf("disk_free = %d, want %d (%s)", got.Machine.DiskFree, want.Machine.DiskFree, raw)
 	}
+	if got.Machine.Cores != want.Machine.Cores {
+		t.Fatalf("cores = %d, want %d (%s)", got.Machine.Cores, want.Machine.Cores, raw)
+	}
 }
