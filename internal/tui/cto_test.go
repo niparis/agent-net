@@ -16,12 +16,13 @@ import (
 
 type fakeCTOSource struct {
 	*fakeSource
-	saved   protocol.CTOSettingsRequest
-	sent    []string
-	events  protocol.CTOEvents
-	fresh   int
-	history []protocol.CTOGraphChange
-	undone  []int64
+	saved    protocol.CTOSettingsRequest
+	settings protocol.CTOSettings
+	sent     []string
+	events   protocol.CTOEvents
+	fresh    int
+	history  []protocol.CTOGraphChange
+	undone   []int64
 }
 
 func (f *fakeCTOSource) CTOEnter(context.Context) (protocol.EnterPlan, error) {
@@ -35,11 +36,25 @@ func (f *fakeCTOSource) CTOEvents(_ context.Context, index int) (protocol.CTOEve
 	return f.events, nil
 }
 func (f *fakeCTOSource) CTOSettings(context.Context) (protocol.CTOSettings, error) {
-	return protocol.CTOSettings{Model: "fake/m1"}, nil
+	if f.settings.Harness == "" && f.settings.Model == "" && f.settings.OpenCodeModel == "" && f.settings.ClaudeModel == "" {
+		return protocol.CTOSettings{Model: "fake/m1", Harness: "opencode", OpenCodeModel: "fake/m1"}, nil
+	}
+	return f.settings, nil
 }
 func (f *fakeCTOSource) SetCTOSettings(_ context.Context, req protocol.CTOSettingsRequest) (protocol.CTOSettings, error) {
 	f.saved = req
-	return protocol.CTOSettings{Harness: *req.Harness, Model: *req.Model}, nil
+	if req.Harness != nil {
+		f.settings.Harness = *req.Harness
+	}
+	if req.Model != nil {
+		if f.settings.Harness == "claude" {
+			f.settings.ClaudeModel = *req.Model
+		} else {
+			f.settings.OpenCodeModel = *req.Model
+		}
+		f.settings.Model = *req.Model
+	}
+	return f.settings, nil
 }
 func (f *fakeCTOSource) CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error) {
 	return f.history, nil
@@ -344,17 +359,92 @@ func TestCTOModelFormSaveAndCancel(t *testing.T) {
 	}
 }
 
+func TestCTOModelFormSwapsPerHarnessModelsAndSuggestions(t *testing.T) {
+	snap := fakeSnapshot()
+	for i := range snap.Nodes {
+		if snap.Nodes[i].NodeID != snap.NodeID {
+			continue
+		}
+		for j := range snap.Nodes[i].Harnesses {
+			switch snap.Nodes[i].Harnesses[j].Name {
+			case "opencode":
+				snap.Nodes[i].Harnesses[j].Models = []string{"openai/gpt-6"}
+			case "claude":
+				snap.Nodes[i].Harnesses[j].Models = []string{"claude-sonnet-5-5", "claude-haiku-4-5"}
+			}
+		}
+	}
+	src := &fakeCTOSource{fakeSource: &fakeSource{snap: snap}, settings: protocol.CTOSettings{
+		Model: "openai/gpt-6", Harness: "opencode", OpenCodeModel: "openai/gpt-6", ClaudeModel: "haiku",
+	}}
+	m := New(src)
+	m.snap = snap
+	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = keys(m, "C")
+	next, _ := m.update(m.ctoPollCmd()())
+	m = next.(Model)
+	m = keys(m, "m")
+	if got := m.cto.settingsForm.input.Value(); got != "openai/gpt-6" {
+		t.Fatalf("OpenCode model field = %q", got)
+	}
+	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.cto.settingsForm.input.Value(); got != "haiku" {
+		t.Fatalf("Claude model field = %q", got)
+	}
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"Model:   haiku", "Suggestions: haiku, claude-haiku-4-5"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Claude form missing %q:\n%s", want, view)
+		}
+	}
+	m = send(m, tea.KeyMsg{Type: tea.KeyLeft})
+	if got := m.cto.settingsForm.input.Value(); got != "openai/gpt-6" {
+		t.Fatalf("OpenCode model was not restored: %q", got)
+	}
+	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
+	if got := m.cto.settingsForm.input.Value(); got != "haiku" {
+		t.Fatalf("Claude model was not restored: %q", got)
+	}
+	m.cto.settingsForm.input.SetValue("")
+	view = ansi.Strip(m.View())
+	for _, want := range []string{"Model:   default", "Suggestions: opus, sonnet, haiku, fable", "claude-sonnet-5-5"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Claude default form missing %q:\n%s", want, view)
+		}
+	}
+	m.cto.settingsForm.input.SetValue("claude-sonnet")
+	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
+	if got := m.cto.settingsForm.input.Value(); got != "claude-sonnet-5-5" {
+		t.Fatalf("Claude tab completion = %q", got)
+	}
+}
+
 func TestCTOModelFormGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
-		src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot()}}
+		snap := fakeSnapshot()
+		for i := range snap.Nodes {
+			if snap.Nodes[i].NodeID != snap.NodeID {
+				continue
+			}
+			for j := range snap.Nodes[i].Harnesses {
+				if snap.Nodes[i].Harnesses[j].Name == "claude" {
+					snap.Nodes[i].Harnesses[j].Models = []string{"claude-sonnet-5-5"}
+				}
+			}
+		}
+		src := &fakeCTOSource{fakeSource: &fakeSource{snap: snap}}
 		m := New(src)
 		m.loc, m.now = time.UTC, func() time.Time { return t0 }
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refresh(m, src.fakeSource)
+		m.snap = snap
 		m.src = src
 		m = send(m, m.ctoPollCmd()())
 		m = keys(m, "C", "m")
 		golden(t, fmt.Sprintf("cto_model_%dx%d", size[0], size[1]), m.View())
+		m = send(m, tea.KeyMsg{Type: tea.KeyRight})
+		golden(t, fmt.Sprintf("cto_model_claude_default_%dx%d", size[0], size[1]), m.View())
 	}
 }
 

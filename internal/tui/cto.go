@@ -31,6 +31,8 @@ type ctoState struct {
 	editing, polling    bool
 	confirming          bool
 	model, harness, err string
+	opencodeModel       string
+	claudeModel         string
 	polledHarness       string
 	messages            []string
 	archived            []string
@@ -47,9 +49,11 @@ type ctoState struct {
 	generation          int
 }
 type ctoSettingsForm struct {
-	harness    string
-	input      textinput.Model
-	modelFocus bool
+	harness       string
+	input         textinput.Model
+	modelFocus    bool
+	opencodeDraft string
+	claudeDraft   string
 }
 type ctoSettingsMsg struct {
 	settings   protocol.CTOSettings
@@ -58,6 +62,8 @@ type ctoSettingsMsg struct {
 }
 type ctoPollMsg struct {
 	configuredModel string
+	opencodeModel   string
+	claudeModel     string
 	events          protocol.CTOEvents
 	history         []protocol.CTOGraphChange
 	model           string
@@ -124,7 +130,15 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		if harness == "" {
 			harness = "opencode"
 		}
-		return ctoPollMsg{events: events, history: history, model: model, harness: harness, configuredModel: settings.Model, err: err, generation: generation}
+		openCodeModel, claudeModel := settings.OpenCodeModel, settings.ClaudeModel
+		if openCodeModel == "" && claudeModel == "" && settings.Model != "" {
+			if harness == "claude" {
+				claudeModel = settings.Model
+			} else {
+				openCodeModel = settings.Model
+			}
+		}
+		return ctoPollMsg{events: events, history: history, model: model, harness: harness, configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
 	}
 }
 func ctoMessage(raw json.RawMessage) string {
@@ -228,12 +242,13 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ti := textinput.New()
 			ti.Prompt = ""
 			ti.CharLimit = 4000
-			ti.SetValue(c.configuredModel)
 			harness := c.harness
 			if harness == "" {
 				harness = "opencode"
 			}
-			c.settingsForm = &ctoSettingsForm{harness: harness, input: ti}
+			ti.Placeholder = "default"
+			ti.SetValue(c.modelForHarness(harness))
+			c.settingsForm = &ctoSettingsForm{harness: harness, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
 			return m, nil
 		case "o":
 			src := m.src.(ctoSource)
@@ -313,6 +328,8 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		c.archived = append(c.archived, fmt.Sprintf("switched to %s · %s", r.harness, r.model))
 	}
 	c.configuredModel = r.configuredModel
+	c.opencodeModel = r.opencodeModel
+	c.claudeModel = r.claudeModel
 	c.model = r.model
 	c.harness = r.harness
 	c.polledHarness = r.harness
@@ -422,10 +439,15 @@ func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyLeft, tea.KeyRight:
 		if !f.modelFocus {
 			if f.harness == "opencode" {
+				f.opencodeDraft = f.input.Value()
 				f.harness = "claude"
+				f.input.SetValue(f.claudeDraft)
 			} else {
+				f.claudeDraft = f.input.Value()
 				f.harness = "opencode"
+				f.input.SetValue(f.opencodeDraft)
 			}
+			f.input.CursorEnd()
 			return m, nil
 		}
 	case tea.KeyEnter:
@@ -451,25 +473,34 @@ func (m Model) ctoSettingsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) ctoModelCandidates(harness, query string) []string {
 	var models []string
 	if harness == "claude" {
-		models = []string{"opus", "sonnet", "fable"}
-	} else {
-		for _, n := range m.snap.Nodes {
-			if n.NodeID == m.snap.NodeID {
-				for _, h := range n.Harnesses {
-					if h.Name == "opencode" {
-						models = append(models, h.Models...)
-					}
-				}
+		models = []string{"opus", "sonnet", "haiku", "fable"}
+	}
+	for _, n := range m.snap.Nodes {
+		if n.NodeID != m.snap.NodeID {
+			continue
+		}
+		for _, h := range n.Harnesses {
+			if h.Name == harness {
+				models = append(models, h.Models...)
 			}
 		}
 	}
 	var out []string
+	seen := make(map[string]bool, len(models))
 	for _, model := range models {
-		if strings.Contains(strings.ToLower(model), strings.ToLower(query)) {
+		if !seen[model] && strings.Contains(strings.ToLower(model), strings.ToLower(query)) {
+			seen[model] = true
 			out = append(out, model)
 		}
 	}
 	return out
+}
+
+func (c *ctoState) modelForHarness(harness string) string {
+	if harness == "claude" {
+		return c.claudeModel
+	}
+	return c.opencodeModel
 }
 
 func ctoErrorHint(msg string) string {

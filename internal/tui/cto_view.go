@@ -33,11 +33,12 @@ func (m Model) ctoView(w, h int) []string {
 			marker, other = " ", ">"
 		}
 		f.input.Width = max(w-12, 1)
-		out = append(out, clip(marker+" Harness: < "+f.harness+" >", w), clip(other+" Model:   "+f.input.View(), w))
-		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
-		if len(candidates) > 3 {
-			candidates = candidates[:3]
+		model := f.input.View()
+		if f.input.Value() == "" {
+			model = sDim.Render("default")
 		}
+		out = append(out, clip(marker+" Harness: < "+f.harness+" >", w), clip(other+" Model:   "+model, w))
+		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
 		if len(candidates) > 0 {
 			out = append(out, clip("  Suggestions: "+strings.Join(candidates, ", "), w))
 		}
