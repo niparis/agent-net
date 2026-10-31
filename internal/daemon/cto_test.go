@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -693,6 +694,42 @@ func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief missing %q", want)
 		}
+	}
+}
+
+func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{st: st}
+	events := protocol.CTOEvents{Messages: make([]json.RawMessage, 0, ctoHistoryLimit+5), Actions: []protocol.CTOAction{}}
+	for i := 0; i < ctoHistoryLimit+5; i++ {
+		events.Messages = append(events.Messages, json.RawMessage(fmt.Sprintf(`{"type":"user","text":"entry-%d","time":{"created":%d}}`, i, i+1)))
+	}
+	latest, err := d.mergeCTOHistory(events, "opencode", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(latest.Messages) != ctoHistoryLimit || latest.Next != ctoHistoryLimit {
+		t.Fatalf("entry cap: messages=%d next=%d", len(latest.Messages), latest.Next)
+	}
+	var first, last struct {
+		Text string `json:"text"`
+	}
+	json.Unmarshal(latest.Messages[0], &first)
+	json.Unmarshal(latest.Messages[len(latest.Messages)-1], &last)
+	if first.Text != "entry-5" || last.Text != "entry-504" {
+		t.Fatalf("returned range: first=%q last=%q", first.Text, last.Text)
+	}
+	page, err := d.mergeCTOHistory(events, "opencode", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	json.Unmarshal(page.Messages[0], &first)
+	if len(page.Messages) != ctoHistoryLimit-10 || first.Text != "entry-15" {
+		t.Fatalf("indexed page: count=%d first=%q", len(page.Messages), first.Text)
 	}
 }
 

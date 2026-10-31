@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -34,6 +35,7 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	if err != nil {
 		return protocol.CTOSettings{}, err
 	}
+	previousHarness := harness
 	if in.Harness != nil {
 		if *in.Harness != "opencode" && *in.Harness != "claude" {
 			return protocol.CTOSettings{}, fmt.Errorf("bad CTO harness %q", *in.Harness)
@@ -52,9 +54,31 @@ func (d *Daemon) ctoSettings(ctx context.Context, in protocol.CTOSettingsRequest
 	if in.Compaction != nil {
 		compaction = in.Compaction.Normalized()
 	}
+	switched := in.Harness != nil && previousHarness != harness
+	if switched {
+		if err := d.snapshotCTOHarness(ctx, previousHarness); err != nil {
+			return protocol.CTOSettings{}, fmt.Errorf("save CTO history before switching harness: %w", err)
+		}
+	}
 
 	if in.Model != nil || in.Harness != nil {
 		if _, err := d.st.db.Exec(`UPDATE cto SET opencode_model=?, claude_model=?, active_harness=? WHERE id=1`, openCodeModel, claudeModel, harness); err != nil {
+			return protocol.CTOSettings{}, err
+		}
+	}
+	if switched {
+		model := modelForCTOHarness(harness, openCodeModel, claudeModel)
+		if model == "" {
+			model = "default"
+			if harness == "claude" {
+				model = "opus"
+			}
+		}
+		payload, err := json.Marshal(model)
+		if err != nil {
+			return protocol.CTOSettings{}, err
+		}
+		if _, err := d.st.db.Exec(`INSERT INTO cto_history(harness,kind,at,payload) VALUES(?,'switch',?,?)`, harness, time.Now().UnixNano(), string(payload)); err != nil {
 			return protocol.CTOSettings{}, err
 		}
 	}
