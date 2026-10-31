@@ -249,42 +249,115 @@ A repeated send with the same idempotency key stores nothing new.
 
 ## MCP server registry
 
-Registered MCP servers run on the machine that hosts them, as your user, and their tools can be called by any agent on any enrolled machine. The registry holds env var names and file paths, never secret values; header and env values are read on the hosting machine and are redacted from errors, logs and tool results there. A daemon runs only the servers registered with its own node. See [mcp-registry.md](mcp-registry.md#security).
+Registered MCP servers run on the machine that hosts them, as your user. Scoping, import and native removal are in [Skills and MCP management](#skills-and-mcp-management).
+
+## Skills and MCP management
+
+This section covers everything the owner can do with skills and MCP servers across machines ([decision 0027](decisions/0027-skills-and-mcp-management.md), [reference](reference.md#tools-inventory)): see them, import them, assign them, remove them and undo that. Skill files and MCP configs can hold secrets and can steer an agent, so the rules are strict. Each rule below is enforced in code, not only in guidance text.
+
+### Who may change things
+
+- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import` and `mcp_native_remove` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO may use them through its own process-tree-checked channel, and it may apply a plan only on your explicit words in the chat.
+- **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
+- **Advice is not authority.** A charter's `needs`, a peer message, a skill's text or a project file never grants a change. Needs are shown as unverified text and are never turned into assignments.
+- **Audit.** The gateway records each plan and apply with the actor (owner or CTO), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
+
+### What discovery sees
+
+The daemon scans its own machine at start, after it reconnects and every five minutes. It never runs a skill or a server. It sends the gateway names, paths, hashes and plain reasons, not skill contents and not raw MCP configuration. MCP fingerprints leave out environment and header values, URL queries and unknown argument values. Scan limits:
+
+- A skill bundle: at most 10,000 entries and 64 MiB of regular file data. Special files, absolute or escaping symlinks and files that change while being read are rejected.
+- Pi source discovery: at most 10,000 directories and 32 path components.
+- MCP and settings files: 1 MiB. A report: 10,000 entries and 256 KiB of field text. Reads are paged to 240 KiB.
+- An oversized source or report fails the scan. It is never silently cut. A failed scan leaves the old records marked stale.
+
+### The private skill store
+
+`tools_import` copies a skill from a machine to the gateway. Only an owner connection can ask for it. Review the files for secrets first, because this is the one step that sends skill contents.
+
+- The gateway checks the observed hash, so a skill that changed after its scan is rejected. It rejects traversal, escaping links, special files and bundles over 2 MiB or 2,048 entries.
+- The skill goes into `skills.git` in the gateway data directory: a private bare Git repository, mode 0700. SQLite keeps the item ID, content hash, commit and source. Nothing is pushed anywhere.
+- Git keeps history. A later version that drops a secret does not erase it from earlier commits. Anyone who can read the data directory or a backup can read these contents.
+- `gateway_backup` holds a consistent database snapshot, the skill repository, the CA key and the server key. The folder and its files are owner-only. Treat a backup like the gateway data. Restore writes only to a new directory and checks SQLite, Git objects and every saved skill hash before it finishes.
+
+### Plans, copies and ownership
+
+A plan changes nothing. It lists the machines, harnesses, checkouts, sources, destinations and conflicts, and binds to the inventory, the project registry, the item versions and the desired revisions. An out-of-date plan is refused. Destination checks use a bounded fingerprint, locally keyed, so the plan carries no file contents. Incomplete scans, opaque sources and offline paths are conflicts. An apply records the desired state as pending. It does not claim that a file changed. A target stays `pending` until the machine reports.
+
+When a daemon applies a target:
+
+- It fetches the stored bundle and checks its hash before it writes.
+- It stages the copy beside the destination and renames it into place without replacing anything. A different existing destination is a conflict. A symlinked parent is refused.
+- It records path, hash, revision and whether it created the folder in the owner-only `skill-manifest.json`. A matching folder that was already there is recorded as not owned and never removed.
+- It refuses compatibility roots that would show the same skill twice or shadow another one, and it refuses to remove the last copy of a skill that was never imported.
+- For a project copy it checks Git's tracked paths and ignore rules, then adds the exact folder to `info/exclude`. It locks that file, refuses a symlinked one and counts references, because linked worktrees share it. It never changes `.gitignore` or the index. A non-Git checkout stays pending until you choose an ignore mechanism. A skill committed in the repo is yours: agent-net does not move it.
+
+### Backups, journal and undo
+
+Before the daemon removes a skill it saves an exact copy under `skill-backups`. Before it edits a native MCP file it saves the whole file under `mcp-backups`. **Both can hold secrets**, because skill files and native configs can. So:
+
+- They stay on the machine. They are never uploaded to the gateway and never shown in the TUI, in `tools_history` or to the CTO. `tools_history` lists only time, size and original path.
+- Folders are mode 0700 and files 0600 (0700 for an executable file).
+- The daemon keeps the newest 20 per item and none older than 30 days. It prunes after each removal and at start, and never prunes one that an unfinished journal record names.
+- Uninstall deletes them.
+
+The journal in `skill-journal` (mode 0600, folder 0700) holds paths, hashes and step names, not contents. It is written before the first change and deleted at the end. It also holds a random token for each Git `index.lock` the daemon makes, so a restart removes only its own lock. After a crash the daemon finishes or undoes what the record says. If a hash does not match, it leaves the files alone, logs `skill journal conflict` and answers `conflict` for that path.
+
+Undo is a new owner-gated desired revision. It restores only when the current files still equal what the apply left ("changed since apply" otherwise), and it never overwrites a later edit.
+
+### Compare-and-swap edits
+
+Every edit of a file you may also be editing follows one rule: act only on the exact bytes the plan saw, and check again at the last moment.
+
+- **Skills:** the daemon compares the planned hash, rejects symlinks and tracked project files, moves the folder to the backup, checks the backup hash and restores the source if it changed. An undo removes a copy only if it is still the copy agent-net made.
+- **Native MCP files:** the plan records the file hash. The daemon edits only a file with that hash, reads again under Claude Code's `.claude.json.lock`, checks once more before the rename, and then proves the result equals the old document minus the entry. A changed file gives "changed since plan"; a changed result gives "changed since apply" on undo.
+- **Never rewritten:** a file the daemon cannot edit as a minimal cut (a TOML inline table, a duplicate key, a file that does not parse, a symlink) is refused. There is no whole-file fallback.
+
+### MCP servers and the gateway
+
+Registered MCP servers run on the machine that hosts them, as your user, and any allowed agent on any enrolled machine can call their tools. The registry holds env var names and file paths, never secret values. Header and env values are read on the hosting machine and are redacted from errors, logs and tool results there. A daemon runs only the servers registered with its own node. See also [mcp-registry.md](mcp-registry.md#security).
 
 ### Scoped MCP servers
 
-The owner can limit a server to some projects ([reference](reference.md#scoped-mcp-servers), [decision 0027](decisions/0027-skills-and-mcp-management.md)). The limit is enforced at the gateway, not in the client.
+The owner can limit a server to some projects ([reference](reference.md#scoped-mcp-servers)). The limit is enforced at the gateway, not in the client.
 
 - **Every call is checked again.** `mcp.call` checks the server's current assignment against the caller's project each time. A client that cached a tool before the owner changed the scope gets `not assigned to this project`. A server with scope `uninstalled` refuses everyone. A refused call is logged as an `mcp.refused` event with the node, session and server (no arguments).
 - **The caller is not taken from the request.** The frame carries a session ID from the daemon of the node. The gateway accepts it only if its own record says that session lives on the node of the connection, and it reads the project from that record. There is no project field: a project in the request is ignored. A node that names another node's session, or an unknown session, is refused. The catalog (`mcp.catalog`) follows the same rule.
 - **Fail closed.** A caller with no project, or with no session, can use only global servers. An unreadable assignment counts as `uninstalled`.
-- **The owner's command line** calls with the owner's authority: the daemon adds the owner session ID, and the gateway accepts it only for the owner session of that node, as for `tools.plan`. A command line run inside an agent session (the process-tree check) has no such ID and is treated as a caller with no project.
-- **What this does not stop.** The gateway trusts the daemon of an enrolled node to name the right local session, as it does for every other frame. A compromised enrolled machine can name any session of its own node, and so any project that has a session on it. It cannot act as a session of another machine. The list of servers (`mcp list`, `agent_mcp_list`) is a registry view and still shows every server, with its scope, to every agent.
+- **The owner's command line** calls with the owner's authority: the daemon adds the owner session ID, and the gateway accepts it only for the owner session of that node, as for `tools.plan`. A command line run inside an agent session has no such ID and is treated as a caller with no project.
 - **Host failure is visible.** An offline host gives `host NAME offline`, never a silent empty result, and never drops the assignment.
+- **The list is a registry view.** `mcp list` and `agent_mcp_list` still show every server and its scope to every agent. Only the tool catalog and calls are filtered.
 
 ### Importing native MCP servers
 
-Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness's own MCP entry into the federation. Rules:
+Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness's own MCP entry into the federation.
 
-- **Secrets stay as names.** The scanner classifies an entry and the gateway stores only names and reasons: the class, a plain reason, the transport, environment variable names and a tool allow-list. A secret given as a value (environment value, header value, URL query, argument, URL credential) makes the entry `unsupported`; it is never copied, shown or logged. The registry keeps command, arguments and variable names, as for `mcp_add`.
-- **The host runs the server.** The server runs on the machine that has the native entry, as that user, with that machine's environment. The gateway asks the daemon to read the entry again, from a source it saw in its own scan only; the gateway cannot name another file.
-- **The owner gate.** `mcp_import` is an owner method, served like `tools_apply`: only the owner's connection or the CTO on the owner's words, never an agent session, and the gateway checks the owner session of the node. The plan binds to the scanned entry and the inventory snapshot; a changed entry or inventory makes the plan stale. A plan applies once.
+- **Secrets stay as names.** The scanner classifies an entry and the gateway stores only names and reasons: the class, a plain reason, the transport, environment variable names and a tool allow-list. A secret given as a value (environment value, header value, URL query, argument, URL credential) makes the entry `unsupported`. It is never copied, shown or logged. If the entry says `${VAR}`, the host reads the value from its own environment when it starts the server.
+- **The host runs the server.** The server runs on the machine that has the native entry, as that user. The gateway asks the daemon to read the entry again, from a source the daemon saw in its own scan. The gateway cannot name another file.
+- **A plan applies once** and binds to the scanned entry and the inventory snapshot. A changed entry or inventory makes it stale.
 - **A failed import changes nothing.** The server is added disabled, tested, and removed again on any failure. No session can use it before the test passes.
-- **No config is written.** Import never edits a harness config file. The native entry stays, so the server can be defined twice until the owner removes the native entry; this is shown as a conflict on both items.
-- **Audit.** Plans, applies, refusals and failures are recorded with actor and result, without values.
+- **No config is written.** The native entry stays, so the server is defined twice until the owner removes the native entry. Both items show a conflict.
 
 ### Removing a native MCP entry
 
-`mcp_native_remove` ([reference](reference.md#removing-a-native-mcp-entry)) is the one place agent-net edits a harness's own MCP config file. Rules:
+`mcp_native_remove` ([reference](reference.md#removing-a-native-mcp-entry)) is the one place agent-net edits a harness's own MCP config file.
 
-- **Owner gate.** Plan, apply and undo are owner methods, served like `mcp_import`: the owner's connection, or the CTO on the owner's words. An agent session is refused at the daemon and at the gateway, which checks the owner session of the node.
-- **Only an imported, tested entry.** The gateway refuses an entry whose server was not imported from that exact entry, and it tests the federated server again before the daemon edits anything. A native entry with no working replacement is never removed.
-- **Compare-and-swap.** The plan records the hash of the file. The daemon edits only a file that still has that hash, reads it again under Claude Code's config lock, and checks the hash once more just before the rename. A file that changed gives "changed since plan" and is left alone.
-- **Minimal edit.** Only the entry's bytes are cut. The daemon parses the old and new text and proves nothing else changed. A file it cannot edit this way is refused, never rewritten. The daemon takes the file from its own scan and its fixed list of native sources; the gateway cannot name another path.
-- **Committed files are not edited.** A tracked project file stays as it is; remove the entry with a commit.
-- **Backups contain secrets.** Before the edit the daemon saves the whole original file under `mcp-backups` in its state directory. A native config can hold literal credentials that import refuses, so the backup can too. Backups are local only: never uploaded, never shown in the TUI, `tools_history` or to the CTO. Folders are mode 0700 and files 0600. The daemon keeps the newest 20 per item and none older than 30 days, and never prunes one that an unfinished journal record names. Uninstall deletes them. The gateway keeps only hashes, the backup ID and the plan.
-- **Undo never overwrites.** Undo restores the original only if the file still equals what the edit wrote. After a later edit it stops with "changed since apply".
-- **Audit.** Plans, applies, refusals and undo are recorded with actor, machine, path and result, without file content or values.
+- **Only an imported, tested entry.** The gateway refuses an entry whose server was not imported from that exact entry, and it tests the federated server again before the daemon edits anything. A native entry with no working replacement is never removed. The agent-net entry is never removed.
+- **Only known files.** The daemon takes the file from its own scan and a fixed list of native sources. The gateway cannot name a path.
+- **Committed files are not edited.** A tracked project file stays as it is. You remove the entry with a commit ("committed in the repo").
+- **Edits are compare-and-swap with a private backup**, as described above. The gateway keeps only hashes, the backup ID and the plan.
+- A running session keeps its native tools until it restarts.
+
+### The trust limit
+
+The gateway trusts the daemon of an enrolled node. A compromised enrolled machine can therefore name any session of its own node, and so any project that has a session there. It can request owner methods that the daemon would normally gate, because the gateway cannot tell the owner from a program that detaches from its process tree. It cannot act as a session of another machine. Keep enrollment credentials private. The owner gate is a barrier against an agent that runs a command, not against hostile code that runs as you.
+
+### What uninstall does
+
+| Kept | Removed |
+|---|---|
+| Installed skill copies and every native MCP file, including daemon edits. Use undo first if you want them back. | `skill-manifest.json`, `skill-backups`, `mcp-backups`, `skill-journal` and leftover temporary files, and the Git exclude lines the manifest owns. |
+| The gateway data (`skills.git`, `gateway.db`, `admin.json`), even with `--purge`. | Backups are removed because they can hold secrets. |
 
 ## Project registry
 
@@ -421,114 +494,3 @@ local process can connect to a loopback listener and forge this header; the
 check does not protect the gateway from other processes on its host. The host
 and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
-
-The tools inventory scanner bounds a skill bundle to 10,000 entries and
-64 MiB of regular file data. Pi source discovery is limited to 10,000
-directories and 32 path components. It rejects special files, absolute or escaping
-symlinks, and files that change while being read. MCP and settings files are
-limited to 1 MiB. Inventory reports are bounded to 10,000 entries and 256 KiB
-of field text. Oversized sources and reports fail the scan rather than silently
-truncating it.
-
-MCP fingerprints omit environment and header values, URL queries, and unknown
-argument values. They retain URL paths, environment variable names, safe config
-arguments, and numeric `--port` values.
-The local inventory scan and read methods use the owner gate. The gateway stores
-observations from authenticated daemons and keeps the previous records marked
-stale after a failed scan. Discovery does not send skill contents or raw MCP configuration to the gateway.
-
-Inventory reads are paged to at most 240 KiB of encoded report data per response.
-
-
-### Managed skill store and backups
-
-Only an owner connection can request `tools_import`, `tools_versions`,
-`tools_export` or `gateway_backup` through the daemon. The gateway trusts its
-enrolled daemons, as it does for other operator requests. Before importing, the
-owner must review the source files for secrets. Import sends the skill contents
-to the gateway. It does not run them or modify their source. The gateway checks
-the observed hash and rejects traversal, escaping links, special files and
-bundles over 2 MiB or 2,048 entries. A source that changed since its scan is
-rejected. Unknown and unsafe content is not made safe by hashing it.
-
-The gateway data directory contains `skills.git`, a private bare Git repository.
-Its directory is mode 0700. Imported file contents, including any secrets in
-those files, are retained in Git history. SQLite stores the item ID, content
-hash, commit and source location. The gateway account and anyone who can read
-its data directory or a backup can read these contents. Git history does not
-erase a secret when a later version removes it. Nothing is pushed to a remote.
-
-Gateway backups contain the database, skill repository, CA private key and
-server key. The backup directory and copied files are owner-only. Protect the
-backup as carefully as the gateway data. Backup serializes imports with the
-SQLite snapshot and repository copy. Restore writes only to a new directory and
-checks SQLite, Git objects and every saved skill hash before making it available.
-
-
-### Tool assignment plans
-
-`tools_plan`, `tools_apply`, `tools_undo` and `tools_history` require the owner gate. The
-private CTO process-tree gate may use these methods; its brief requires the
-owner's explicit words in the chat before applying. The daemon attributes
-calls as owner or CTO and the gateway checks that the request belongs to the
-sending machine's online owner session. As with other gateway operations, the
-gateway trusts its enrolled daemons.
-
-Plans contain observed source and destination paths, target machines and
-conflicts. They do not copy or remove files. The gateway binds each plan to the
-observed inventory, project registry, item versions and desired revisions. It
-refreshes reachable inventories, rechecks the target paths and refuses a changed plan. Destination checks use a bounded, locally keyed fingerprint of metadata and
-file contents; the fingerprint, not the contents, is included in the plan. Incomplete
-scans, opaque sources and offline paths are reported as unresolved conflicts. A successful apply records desired
-state as pending; it does not claim that any target was changed. Subsequent
-reconciliation must revalidate paths and hashes before file operations.
-
-The gateway records plans and apply attempts with the owner or CTO actor,
-targets and result. Charter needs are untrusted advisory text, not authorization
-or assignment. Plan and audit records may include machine and filesystem paths;
-they do not include skill contents or native MCP credential values.
-
-### Skill backups, journal and undo
-
-Before the daemon removes a skill, it saves an exact copy under
-`skill-backups` in its state directory. A skill can contain secrets, so a
-backup can too. Backups are local only: they are never uploaded to the
-gateway and never shown in the TUI, in `tools_history` or to the CTO.
-`tools_history` shows only each backup's time, size and original path. The
-folders are mode 0700 and the files are mode 0600 (0700 for an executable
-file). The daemon keeps the newest 20 backups per item and none older than 30
-days. Uninstall deletes them.
-
-The operation journal in `skill-journal` holds paths, hashes and step names,
-not file contents. It is mode 0600 in a 0700 folder and is never uploaded.
-The journal also holds a random token for each Git `index.lock` the daemon
-creates. At start the daemon removes a lock only if it holds that token, so it
-never removes a lock made by Git or by you.
-
-Undo is a new desired revision that needs the owner gate. It restores from a
-backup only when the current files still match what the earlier apply left
-(or the path is still absent where a skill was removed). Otherwise that target
-stops as a conflict and nothing is overwritten.
-
-### Skill copies
-
-For an owner-applied global assignment, the daemon fetches the stored bundle and
-checks its content hash before installation. It stages the copy beside the
-destination and uses an atomic no-replace rename. It refuses a different
-existing destination and refuses symlinked destination parents. The local
-owner-only skill manifest records the path, hash, revision and whether the
-daemon created the directory. Matching pre-existing directories are recorded
-as not owned. For projects, the daemon checks the registered checkout, Git's
-tracked paths and ignore rules before installing. It locks the local Git
-exclude file and records its exact owned exclusion lines in the manifest;
-linked worktrees share the line. Symlinked exclusion files are refused. Git
-index files and `.gitignore` are not changed. Non-Git checkouts stay pending.
-The daemon refuses compatibility roots that would expose duplicate copies or
-shadow a skill. It refuses removal of an unimported skill's last assigned copy.
-Before removing a source, it checks the planned hash, rejects symlinks and
-tracked project files, and moves the directory to an owner-only local backup.
-It checks the backup hash again and restores the source when possible if it
-changed. Backups retain at most 20 versions per item and may contain secrets;
-they are not uploaded. Moves wait for all planned copies to succeed. Exclude
-lines are removed only when their last manifest reference is gone. Uninstall
-removes the backups and owned exclude lines.
