@@ -35,16 +35,32 @@ func TestAdoptedWorkerKeepsItsSessionID(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.d.Stop()
+	// The gateway answers each request in its own goroutine, so a late update
+	// from the stopped daemon can bring the record back. Wait until the node is
+	// gone, then repeat the cleanup until the record stays deleted.
+	eventually(t, "the gateway sees the node offline", func() bool {
+		info, err := g.gw.NodesInfo()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, n := range info.Nodes {
+			if n.NodeID == w.d.NodeID() {
+				return !n.Online
+			}
+		}
+		return true
+	})
 	// What the broken cleanup did: the offline record is gone.
-	if err := st.SetSessionOffline(w.d.NodeID(), res.SessionID); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, ok, _ := st.Agent(res.SessionID); ok {
-		t.Fatal("setup: the record is still there")
-	}
+	eventually(t, "setup: the record is deleted", func() bool {
+		if err := st.SetSessionOffline(w.d.NodeID(), res.SessionID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, nil); err != nil {
+			t.Fatal(err)
+		}
+		_, ok, _ := st.Agent(res.SessionID)
+		return !ok
+	})
 	w.node.restart()
 	w.cli = cliClient(t, w.node)
 	eventually(t, "the adopted worker is back under its session ID", func() bool {
