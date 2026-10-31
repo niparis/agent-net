@@ -39,6 +39,8 @@ type Store struct {
 
 	mu      sync.Mutex
 	buckets map[string]*bucket
+	// hiddenMu serializes reads that prune expired session entries with writes.
+	hiddenMu sync.Mutex
 }
 
 type bucket struct {

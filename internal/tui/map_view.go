@@ -25,6 +25,9 @@ func (m Model) mapView(w, h int) []string {
 func (m Model) mapTitle(w int) string {
 	left := sTitle.Render("Map") + " " + sDim.Render("(read only)")
 	mid := fmt.Sprintf("%d nodes, %d edges", len(m.mp.nodes), len(m.mp.edges))
+	if n := len(m.hiddenNodes); n > 0 {
+		mid += fmt.Sprintf(" · hidden %d", n)
+	}
 	right := ""
 	switch {
 	case m.mp.loading:
@@ -98,6 +101,9 @@ func (m Model) mapNodeLine(r mapRow, width int, selected bool) string {
 	if name == "" {
 		name = r.node
 	}
+	if r.hidden {
+		name = "[hidden] " + name
+	}
 	marker := "  "
 	if selected {
 		marker = "> "
@@ -131,6 +137,8 @@ func (m Model) mapNodeLine(r mapRow, width int, selected bool) string {
 	switch {
 	case selected:
 		return sSel.Render(clip(stripStyles(line), width))
+	case r.hidden:
+		return sDim.Render(clip(stripStyles(line), width))
 	case r.bold:
 		return clip(line, width)
 	}

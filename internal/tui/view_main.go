@@ -258,6 +258,9 @@ func (m Model) titleLine(w int) string {
 	var tabs []string
 	for i, name := range tabNames {
 		label := fmt.Sprintf("%d %s", i+1, name)
+		if i == 0 && len(m.hiddenSessions) > 0 {
+			label += fmt.Sprintf(" hidden %d", len(m.hiddenSessions))
+		}
 		if i == m.tab {
 			tabs = append(tabs, sActiveTab.Render(label))
 		} else {
@@ -886,7 +889,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 		case "MODEL":
 			v = shortModel(a.Model)
 		case "STATUS":
-			v = m.statusCell(a)
+			if m.hiddenSessions[a.SessionID] && m.showHiddenSessions {
+				v = "hidden"
+			} else {
+				v = m.statusCell(a)
+			}
 		case "TRUST":
 			v = m.requestRuleBadge(a)
 		case "POLICY":
@@ -922,6 +929,8 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w i
 	switch {
 	case selected:
 		return selectedRow(clip(line, w))
+	case m.hiddenSessions[a.SessionID]:
+		return sDim.Render(clip(stripStyles(line), w))
 	case !a.Online || m.idleLong(a):
 		return sDim.Render(clip(stripStyles(line), w))
 	}

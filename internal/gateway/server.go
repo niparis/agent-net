@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -983,6 +984,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return st.NodeSettings(p.Node)
+	case "hidden.get":
+		return st.HiddenItems()
+	case "hidden.set":
+		p, err := decode[protocol.HiddenItems](raw)
+		if err != nil {
+			return nil, reject("bad hidden.set")
+		}
+		items, err := st.SetHiddenItems(p)
+		if err != nil {
+			return nil, reject("%v", err)
+		}
+		st.Event("hidden.set", nc.id, "", "", fmt.Sprintf("sessions=%d nodes=%d", len(items.Sessions), len(items.Nodes)))
+		g.logLine("hidden.set", "node", nc.id, "sessions", len(items.Sessions), "nodes", len(items.Nodes))
+		return items, nil
 
 	case "session.policy":
 		p, err := decode[protocol.SessionPolicy](raw)

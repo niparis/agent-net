@@ -14,7 +14,7 @@ type mapLink struct {
 
 func (m Model) mapLinks(side string) []mapLink {
 	var links []mapLink
-	for _, e := range m.mp.edges {
+	for _, e := range m.mapVisibleEdges() {
 		switch {
 		case side == "below" && e.Kind == "governs" && e.From == m.mp.selected:
 			links = append(links, mapLink{e.To, e})

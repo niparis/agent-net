@@ -7,7 +7,7 @@ Keys ─────────────────────────
   e                    enter the session (ctrl+] to return)
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
-  x                    stop the selected worker (asks y/n)
+  x, h, H              stop worker; h hides/unhides; H shows hidden sessions (d…
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (…
   I                    integrations for all machines: six checkboxes (a form)

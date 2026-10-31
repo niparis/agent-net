@@ -71,11 +71,15 @@ type Model struct {
 	fetching bool
 
 	// What the person chose.
-	selected    string // session ID
-	selIdx      int    // position in the visible list, to move on when the session leaves
-	tableTop    int    // first table row on screen
-	showOffline bool
-	activeOnly  bool
+	selected           string // session ID
+	selIdx             int    // position in the visible list, to move on when the session leaves
+	tableTop           int    // first table row on screen
+	showOffline        bool
+	activeOnly         bool
+	hiddenSessions     map[string]bool
+	hiddenNodes        map[string]bool
+	showHiddenSessions bool
+	showHiddenNodes    bool
 	// events says how much of the quiet session and worker news the feed
 	// shows (l).
 	events    feedEvents
@@ -139,7 +143,7 @@ func New(src Source) Model {
 	ti.CharLimit = 80
 	ti.Cursor.SetMode(cursor.CursorHide)
 	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
-		top: map[string]*topEntry{}}
+		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{}}
 	ct := textinput.New()
 	ct.Prompt = "> "
 	ct.Placeholder = "write to the CTO..."
@@ -171,6 +175,13 @@ type fetchedMsg struct {
 	usageErr   error
 	counts     protocol.SessionCounts
 	countsErr  error
+	hidden     protocol.HiddenItems
+	hiddenErr  error
+}
+
+type hiddenItemsMsg struct {
+	items protocol.HiddenItems
+	err   error
 }
 
 type topMsg struct {
@@ -219,6 +230,7 @@ func (m Model) fetchCmd() tea.Cmd {
 		if res.err != nil || !res.snap.Connected {
 			return res
 		}
+		res.hidden, res.hiddenErr = src.HiddenItems(ctx)
 		if askUsage {
 			res.askedUsage = true
 			if askU {
@@ -451,6 +463,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fetching = false
 		m.applyFetch(msg)
 		return m, nil
+	case hiddenItemsMsg:
+		if msg.err != nil {
+			m.fail("Could not save hidden items: " + sanitize(msg.err.Error()))
+			return m, nil
+		}
+		m.setHiddenItems(msg.items)
+		m.ensureSelection()
+		m.fixScroll()
+		if m.mapOn {
+			m.mapEnsureSelection()
+		}
+		m.say("Hidden items saved for every machine.")
+		return m, nil
 
 	case mapMsg:
 		m.applyMap(msg)
@@ -538,6 +563,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	if r.hiddenErr == nil {
+		m.setHiddenItems(r.hidden)
+	}
 	m.applyUsage(r)
 	if r.eventsErr != nil {
 		if errors.Is(r.eventsErr, ErrFeedUnavailable) {
@@ -788,6 +816,16 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.startEnter()
 	case "x":
 		return m.startConfirm()
+	case "h":
+		if m.tab == 0 && m.focus == focusSessions {
+			return m.toggleHiddenSession()
+		}
+	case "H":
+		if m.tab == 0 && m.focus == focusSessions {
+			m.showHiddenSessions = !m.showHiddenSessions
+			m.ensureSelection()
+			m.fixScroll()
+		}
 	case "t":
 		return m.startTrust()
 	case "p":
@@ -1046,6 +1084,9 @@ func (m Model) groups() []group {
 	for _, a := range m.snap.Agents {
 		if protocol.IsOwner(a.Harness) {
 			continue // the owner is a sender, not a row
+		}
+		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
+			continue
 		}
 		// Dormant sessions are reachable but quiet: hidden with the offline ones.
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {

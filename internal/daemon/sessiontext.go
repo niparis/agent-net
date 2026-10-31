@@ -36,6 +36,7 @@ var operatorMethods = map[string]bool{
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
+	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true,
 	protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
@@ -532,6 +533,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if err == nil {
 			d.Logf("integrations.set on=%d", in.CountOn())
 		}
+	case protocol.OpHiddenGet:
+		res, err = d.call(ctx, "hidden.get", nil)
+	case protocol.OpHiddenSet:
+		var items protocol.HiddenItems
+		if json.Unmarshal(raw, &items) != nil {
+			return nil, true, errors.New("hidden_set needs sessions and nodes")
+		}
+		res, err = d.call(ctx, "hidden.set", items)
 	case "session_enter":
 		var q protocol.EnterRequest
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {

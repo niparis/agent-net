@@ -18,12 +18,12 @@ type overviewLine struct {
 
 func (m Model) overviewLines(w int) []overviewLine {
 	degree := map[string]int{}
-	for _, e := range m.mp.edges {
+	for _, e := range m.mapVisibleEdges() {
 		degree[e.From]++
 		degree[e.To]++
 	}
 	var architects, components, isolated []protocol.Node
-	for _, n := range m.mp.nodes {
+	for _, n := range m.mapVisibleNodes() {
 		if degree[n.Name] == 0 {
 			isolated = append(isolated, n)
 		} else if n.Kind == "architect" {
@@ -68,6 +68,9 @@ func (m Model) overviewLines(w int) []overviewLine {
 		names := make([]string, 0, len(isolated))
 		for _, n := range isolated {
 			name := sanitize(n.Name)
+			if m.hiddenNodes[n.Name] {
+				name = "[hidden] " + name
+			}
 			if n.Name == m.mp.selected {
 				name = "▸ " + name
 			}
@@ -97,11 +100,17 @@ func (m Model) overviewBox(n protocol.Node, w int) string {
 	level := maturityLevel(n.Charter.Maturity)
 	suffix := " · " + level + " · " + ansi.Strip(status)
 	room := max(w-4-ansi.StringWidth(suffix), 1)
-	name := clip(sanitize(n.Name), room)
+	nameText := sanitize(n.Name)
+	if m.hiddenNodes[n.Name] {
+		nameText = "[hidden] " + nameText
+	}
+	name := clip(nameText, room)
 	content := name + sDim.Render(" · ") + mapLevelStyle(level).Render(level) + sDim.Render(" · ") + status
 	border := lipgloss.NewStyle().Foreground(roleFaint)
 	if n.Name == m.mp.selected {
 		border = lipgloss.NewStyle().Foreground(roleAccent)
+	} else if m.hiddenNodes[n.Name] {
+		border = sDim
 	}
 	return border.Render("[") + " " + padStyled(content, max(w-4, 0)) + " " + border.Render("]")
 }
@@ -130,7 +139,7 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 	}
 	remaining := max(h-len(out)-len(isolated)-1, 0)
 	var eligible []protocol.Edge
-	for _, e := range m.mp.edges {
+	for _, e := range m.mapVisibleEdges() {
 		if visible[e.From] && visible[e.To] {
 			eligible = append(eligible, e)
 		}
@@ -263,7 +272,7 @@ func (m *Model) overviewPage(delta int) {
 		}
 	}
 	eligible := 0
-	for _, e := range m.mp.edges {
+	for _, e := range m.mapVisibleEdges() {
 		if visible[e.From] && visible[e.To] {
 			eligible++
 		}
