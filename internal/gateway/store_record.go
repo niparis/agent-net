@@ -452,6 +452,11 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 		s.logf("retention", "messages", res.Messages, "deliveries", res.Deliveries,
 			"events", res.Events, "sessions", res.Sessions, "worker_runs", res.WorkerRuns)
 	}
+	// TUI hidden preferences have their own fixed 30-day ended-session TTL,
+	// independent of whether session rows are retained longer.
+	if _, err := s.HiddenItems(); err != nil {
+		return res, err
+	}
 	return res, nil
 }
 

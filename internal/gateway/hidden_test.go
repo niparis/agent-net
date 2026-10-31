@@ -84,6 +84,43 @@ func TestHiddenItemsPersistAndForgetEndedSessionsAfter30Days(t *testing.T) {
 	}
 }
 
+func TestRetentionPrunesHiddenSessionPreferencesAfter30Days(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, err := s.CreateNode("fake-host", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	s.now = func() time.Time { return now }
+	sid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "ended"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSessionOffline(node, sid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE sessions SET last_seen=? WHERE id=?`, now.Add(-31*24*time.Hour).UnixNano(), sid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetHiddenItems(protocol.HiddenItems{Sessions: []string{sid}, Nodes: []string{"cogforge"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Prune(Retention{}); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key=?`, hiddenItemsKey).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.HiddenItems
+	if err := json.Unmarshal([]byte(raw), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Sessions) != 0 || len(got.Nodes) != 1 || got.Nodes[0] != "cogforge" {
+		t.Fatalf("retention did not prune the ended session only: %+v", got)
+	}
+}
+
 func mustJSON(t *testing.T, value any) []byte {
 	t.Helper()
 	b, err := json.Marshal(value)
