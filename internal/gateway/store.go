@@ -34,6 +34,7 @@ type Store struct {
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
 	identityMerges    [][2]string
+	identityConflicts [][2]string
 	now               func() time.Time
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
@@ -353,9 +354,9 @@ func (s *Store) migrate() error {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
-		var merges [][2]string
+		var merges, conflicts [][2]string
 		if strings.Contains(migrations[i], "project identity migration") {
-			merges, err = migrateProjectIdentities(tx)
+			merges, conflicts, err = migrateProjectIdentities(tx)
 			if err != nil {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
@@ -369,6 +370,7 @@ func (s *Store) migrate() error {
 			return err
 		}
 		s.identityMerges = append(s.identityMerges, merges...)
+		s.identityConflicts = append(s.identityConflicts, conflicts...)
 		if strings.Contains(migrations[i], "DELETE FROM graph_nodes") {
 			s.graphJunkRemoved, _ = result.RowsAffected()
 			s.graphJunkMigrated = true

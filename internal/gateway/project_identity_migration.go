@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
@@ -12,17 +13,19 @@ import (
 // migrateProjectIdentities uses the remote as evidence, never the folder alone.
 // A folder name that points to different repositories is ambiguous and is left
 // alone. All changes and the schema version are committed together.
-func migrateProjectIdentities(tx *sql.Tx) ([][2]string, error) {
+var errIdentityConflict = errors.New("conflicting graph controls")
+
+func migrateProjectIdentities(tx *sql.Tx) (merges, conflicts [][2]string, err error) {
 	rows, err := tx.Query(`SELECT repo_root,repo_project,repo_remote FROM sessions WHERE repo_root<>'' AND repo_remote<>'' UNION ALL SELECT path,name,remote FROM projects WHERE remote<>''`)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	candidates := map[string]map[string]bool{}
 	for rows.Next() {
 		var root, old, remote string
 		if err = rows.Scan(&root, &old, &remote); err != nil {
 			rows.Close()
-			return nil, err
+			return nil, nil, err
 		}
 		name := repoinfo.ProjectFromRemote(remote)
 		if !validGraphName(name) {
@@ -41,7 +44,7 @@ func migrateProjectIdentities(tx *sql.Tx) ([][2]string, error) {
 	err = rows.Err()
 	rows.Close()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var names []string
 	for old, targets := range candidates {
@@ -50,7 +53,6 @@ func migrateProjectIdentities(tx *sql.Tx) ([][2]string, error) {
 		}
 	}
 	sort.Strings(names)
-	var merges [][2]string
 	for _, old := range names {
 		var name string
 		for name = range candidates[old] {
@@ -60,7 +62,7 @@ func migrateProjectIdentities(tx *sql.Tx) ([][2]string, error) {
 		var kind string
 		err = tx.QueryRow(`SELECT kind FROM graph_nodes WHERE name=?`, old).Scan(&kind)
 		if err != nil && err != sql.ErrNoRows {
-			return nil, err
+			return nil, nil, err
 		}
 		if kind == "architect" {
 			continue
@@ -69,14 +71,18 @@ func migrateProjectIdentities(tx *sql.Tx) ([][2]string, error) {
 			continue
 		}
 		merged, err := migrateProjectName(tx, old, name)
+		if errors.Is(err, errIdentityConflict) {
+			conflicts = append(conflicts, [2]string{old, name})
+			continue
+		}
 		if err != nil {
-			return nil, fmt.Errorf("project %q to %q: %w", old, name, err)
+			return nil, nil, fmt.Errorf("project %q to %q: %w", old, name, err)
 		}
 		if merged {
 			merges = append(merges, [2]string{old, name})
 		}
 	}
-	return merges, nil
+	return merges, conflicts, nil
 }
 
 func migrateProjectName(tx *sql.Tx, old, name string) (bool, error) {
@@ -93,7 +99,7 @@ func migrateProjectName(tx *sql.Tx, old, name string) (bool, error) {
 			return false, err
 		}
 		if n != 0 {
-			return false, fmt.Errorf("conflicting graph controls require owner review")
+			return false, errIdentityConflict
 		}
 	}
 	var conflicts int

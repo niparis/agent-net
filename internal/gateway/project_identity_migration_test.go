@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"bytes"
-	"database/sql"
 	"log"
 	"path/filepath"
 	"strings"
@@ -122,13 +121,20 @@ func TestProjectIdentityMigrationMergesChartersAndLogs(t *testing.T) {
 	}
 }
 
-func TestProjectIdentityMigrationConflictingControlsRollsBack(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gateway.db")
-	s, err := OpenStore(path)
+func TestProjectIdentityMigrationConflictDoesNotBlockOtherProjects(t *testing.T) {
+	dir := t.TempDir()
+	s, err := OpenStore(filepath.Join(dir, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	identityFixture(t, s, "a2a-ocs", "first")
+	identityFixture(t, s, "a2a-ocs", "conflicting charter")
+	identityFixture(t, s, "clean-folder", "clean charter")
+	if _, err = s.db.Exec(`UPDATE sessions SET repo_project='clean-repo', repo_remote='https://example.com/clean-repo.git' WHERE repo_root='/src/clean-folder'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE projects SET remote='https://example.com/clean-repo.git' WHERE name='clean-folder'`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = s.db.Exec(`INSERT INTO graph_node_settings VALUES('agent-net','sandbox','different',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
@@ -138,18 +144,24 @@ func TestProjectIdentityMigrationConflictingControlsRollsBack(t *testing.T) {
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if s, err = OpenStore(path); err == nil {
-		s.Close()
-		t.Fatal("expected a conflicting control to abort migration")
-	}
-	// The failed migration keeps the old data and schema version intact.
-	db, err := sql.Open("sqlite", "file:"+path)
+	var logs bytes.Buffer
+	g, err := New(Options{DataDir: dir, Logger: log.New(&logs, "", 0)})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("gateway did not open: %v", err)
 	}
-	defer db.Close()
-	var n int
-	if err = db.QueryRow(`SELECT count(*) FROM graph_charter WHERE node='a2a-ocs' AND value='first'`).Scan(&n); err != nil || n != 1 {
-		t.Fatalf("old charter count=%d, err=%v", n, err)
+	defer g.Close()
+	for _, q := range []string{
+		`SELECT count(*) FROM graph_charter WHERE node='a2a-ocs' AND value='conflicting charter'`,
+		`SELECT count(*) FROM graph_node_settings WHERE node='agent-net' AND value='different'`,
+		`SELECT count(*) FROM graph_charter WHERE node='clean-repo' AND value='clean charter'`,
+		`SELECT count(*) FROM projects WHERE name='clean-repo'`,
+	} {
+		var n int
+		if err = g.store.db.QueryRow(q).Scan(&n); err != nil || n != 1 {
+			t.Errorf("%s: count=%d err=%v", q, n, err)
+		}
+	}
+	if got := logs.String(); !strings.Contains(got, "project.identity_conflict") || !strings.Contains(got, "a2a-ocs") || !strings.Contains(got, "agent-net") {
+		t.Fatalf("missing conflict log: %s", got)
 	}
 }

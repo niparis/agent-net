@@ -204,6 +204,9 @@ func New(opts Options) (*Gateway, error) {
 	for _, merge := range store.identityMerges {
 		g.logLine("project.identity_merge", "from", merge[0], "to", merge[1])
 	}
+	for _, conflict := range store.identityConflicts {
+		g.logLine("project.identity_conflict", "from", conflict[0], "to", conflict[1])
+	}
 	if store.graphJunkMigrated {
 		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
 	}
