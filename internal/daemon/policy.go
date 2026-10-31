@@ -179,6 +179,9 @@ func (lc *localConn) policyCall(ctx context.Context, client string, ls *localSes
 	if sid == "" {
 		return protocol.PolicyResult{}, nil
 	}
+	if client == "cli" && p.Harness == "claude" {
+		_, _ = d.call(ctx, "signal.prompt", map[string]string{"session_id": sid, "prompt": p.Prompt})
+	}
 	got, ok := d.policyOf(ctx, sid)
 	if !ok {
 		return protocol.PolicyResult{}, nil
