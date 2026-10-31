@@ -430,3 +430,17 @@ func closestModels(qtoks []string, models []string) []string {
 	}
 	return out
 }
+
+// ClosestModels returns up to limit model ids that resemble query, using the
+// same ranking as a failed model resolution. A trailing effort is ignored.
+func ClosestModels(query string, models []string, limit int) []string {
+	if limit <= 0 || len(models) == 0 {
+		return nil
+	}
+	query, _ = SplitModelLevel(query)
+	closest := closestModels(modelTokens(query), models)
+	if len(closest) > limit {
+		closest = closest[:limit]
+	}
+	return closest
+}

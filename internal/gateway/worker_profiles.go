@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,6 +26,58 @@ func (s *Store) WorkerProfiles() ([]protocol.WorkerProfile, error) {
 	err = json.Unmarshal([]byte(raw), &profiles)
 	return profiles, err
 }
+
+func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []protocol.NodeView) []protocol.WorkerProfile {
+	out := append([]protocol.WorkerProfile(nil), profiles...)
+	for i := range out {
+		var checked []string
+		var models []string
+		seenMachines := map[string]bool{}
+		seenModels := map[string]bool{}
+		available := false
+		known := false
+		for _, node := range nodes {
+			if !node.Online {
+				continue
+			}
+			for _, harness := range node.Harnesses {
+				if harness.Name != out[i].Harness {
+					continue
+				}
+				known = true
+				machine := node.Hostname
+				if machine == "" {
+					machine = node.NodeID
+				}
+				if machine != "" && !seenMachines[machine] {
+					checked = append(checked, machine)
+					seenMachines[machine] = true
+				}
+				for _, model := range harness.Models {
+					if model == out[i].Model {
+						available = true
+					}
+					if !seenModels[model] {
+						models = append(models, model)
+						seenModels[model] = true
+					}
+				}
+			}
+		}
+		sort.Strings(checked)
+		out[i].MachinesChecked = checked
+		out[i].Available = nil
+		out[i].Closest = nil
+		if known {
+			out[i].Available = &available
+			if !available {
+				out[i].Closest = protocol.ClosestModels(out[i].Model, models, 3)
+			}
+		}
+	}
+	return out
+}
+
 func (s *Store) saveWorkerProfiles(profiles []protocol.WorkerProfile) error {
 	raw, err := json.Marshal(profiles)
 	if err != nil {
@@ -81,7 +134,15 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 	}
 	switch action {
 	case "worker.profile.list":
-		return g.store.WorkerProfiles()
+		profiles, err := g.store.WorkerProfiles()
+		if err != nil {
+			return nil, err
+		}
+		nodes, err := g.store.Nodes()
+		if err != nil {
+			return nil, err
+		}
+		return withWorkerProfileAvailability(profiles, nodes), nil
 	case "worker.profile.remove":
 		if strings.TrimSpace(p.Name) == "" {
 			return nil, reject("worker profile name is required")
