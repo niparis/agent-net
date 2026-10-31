@@ -43,9 +43,24 @@ func hideRealHerdr() {
 	// The server fallback reads command lines up the process tree. Hide a
 	// real herdr server too, unless its binary is under the temporary folder.
 	rawArgs := osProcessArgs
+	// The test process itself may run under a real agent host (a worker under
+	// `opencode serve`, a Codex app server): the owner gate would then refuse
+	// every CLI call of the tests. Hide the real ancestors of this process.
+	ancestors := map[int]bool{}
+	for p, depth := os.Getpid(), 0; p > 1 && depth < 64; depth++ {
+		ancestors[p] = true
+		parent, err := parentPID(p)
+		if err != nil {
+			break
+		}
+		p = parent
+	}
 	processArgs = func(pid int) []string {
 		args := rawArgs(pid)
 		if len(args) > 0 && filepath.Base(args[0]) == "herdr" && !strings.HasPrefix(args[0], os.TempDir()) {
+			return nil
+		}
+		if ancestors[pid] && sessionHostCommand(args) {
 			return nil
 		}
 		return args
