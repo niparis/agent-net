@@ -61,7 +61,7 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 			return err
 		}
 	}
-	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id)`); err != nil {
+	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM tool_revisions WHERE item=tool_identities.id)`); err != nil {
 		return err
 	}
 	return tx.Commit()

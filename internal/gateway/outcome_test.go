@@ -286,7 +286,7 @@ func TestExistingOutcomesMigrateToInbox(t *testing.T) {
 	if inboxVersion == 0 {
 		t.Fatal("missing inbox migration")
 	}
-	if _, err = s.db.Exec(`DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities`); err != nil {
+	if _, err = s.db.Exec(`DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = s.db.Exec(`DROP TABLE inventory_reports`); err != nil {

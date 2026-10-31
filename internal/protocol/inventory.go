@@ -118,3 +118,19 @@ type ToolVersionRequest struct {
 	Item    string `json:"item"`
 	Version string `json:"version,omitempty"`
 }
+
+// ToolAssignment is the owner's desired scope, separate from observations.
+type ToolAssignment struct {
+	Scope    string   `json:"scope"`
+	Projects []string `json:"projects,omitempty"`
+}
+type ToolRevision struct {
+	Item       string         `json:"item"`
+	Revision   int64          `json:"revision"`
+	Assignment ToolAssignment `json:"assignment"`
+	Version    string         `json:"version"`
+	Actor      string         `json:"actor"`
+	Source     string         `json:"source"`
+	At         int64          `json:"at"`
+	State      string         `json:"state"`
+}
