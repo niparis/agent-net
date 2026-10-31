@@ -202,16 +202,8 @@ func (m Model) quotaModels() []quotaModel {
 
 func (m Model) quotaModelsView(w int) []string {
 	rows := m.quotaModels()
-	title := fmt.Sprintf("Workers · %d registered · scores: Artificial Analysis", len(rows))
-	var out []string
-	nameWidth, harnessWidth, modelWidth := 18, 8, 26
-	header := fmt.Sprintf("%-*s %-*s %-*s %-11s T S N H V  USED", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", "SCORE")
-	if w < 100 {
-		header = fmt.Sprintf("%-18s %-8s %-26s %-5s T S N H V", "NAME", "HARNESS", "MODEL", "SCORE")
-	}
-	out = append(out, sDim.Render(header))
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
-	levelNames := []string{"T", "S", "N", "H", "V"}
+	levelText := []string{"trivial", "simple", "normal", "hard", "very complex"}
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
 		if r.available && r.allowed && r.scored {
@@ -231,12 +223,35 @@ func (m Model) quotaModelsView(w int) []string {
 			running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
 		}
 	}
+	runningCount := 0
+	for _, a := range m.snap.Agents {
+		if a.Online && a.Worker != nil {
+			runningCount++
+		}
+	}
 	picks := make([]protocol.WorkerModelChoice, len(levels))
 	for i, level := range levels {
 		picks[i], _ = protocol.ChooseWorkerModel(candidates, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
 	}
-	for _, r := range rows {
-		var fits, chosen []string
+	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
+	showUsed := w >= 110
+	usedWidth := max(w-4-(nameWidth+1+harnessWidth+1+modelWidth+1+scoreWidth+1+9+2), 0)
+	header := fmt.Sprintf("%-*s %-*s %-*s %-*s T S N H V", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", scoreWidth, "SCORE")
+	if showUsed {
+		header += "  USED"
+	}
+	var body []string
+	body = append(body, sDim.Render(header))
+	type displayRow struct {
+		line      string
+		picks     []int
+		fitLetter []string
+	}
+	displayed := make([]displayRow, 0, len(rows))
+	selectedRow, selectedCount := -1, 0
+	for rowIndex, r := range rows {
+		var fits, fitLetters []string
+		var chosen []int
 		for i, level := range levels {
 			letter := "-"
 			color := roleFaint
@@ -258,10 +273,12 @@ func (m Model) quotaModelsView(w int) []string {
 			if letter == "G" {
 				style = style.Faint(true)
 			}
-			fits = append(fits, style.Render(letter))
 			if picks[i].Model == r.model && picks[i].Harness == r.harness && picks[i].Model != "" {
-				chosen = append(chosen, levelNames[i])
+				style = sSel.Bold(true)
+				chosen = append(chosen, i)
 			}
+			fits = append(fits, style.Render(letter))
+			fitLetters = append(fitLetters, letter)
 		}
 		score := "-"
 		if r.scored {
@@ -270,37 +287,100 @@ func (m Model) quotaModelsView(w int) []string {
 		if r.score.Effort != "" {
 			score += "/" + r.score.Effort
 		}
-		usage := fmt.Sprintf("%d runs", r.used)
-		if w >= 100 {
-			usage += " " + sBusy.Render(fmt.Sprintf("%d done", r.done)) + " " + sBad.Render(fmt.Sprintf("%d failed", r.failedRuns))
-			usage = padStyled(usage, 24)
+		model := workerDisplayModel(r.harness, r.model)
+		line := fmt.Sprintf("%-*s %-*s %-*s %-*s %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(model), modelWidth), scoreWidth, cell(score, scoreWidth), strings.Join(fits, " "))
+		if showUsed {
+			line += "  " + cell(workerUsage(r), usedWidth)
 		}
-		line := fmt.Sprintf("%-*s %-*s %-*s %-11s %s  %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(r.model), modelWidth), cell(score, 11), strings.Join(fits, " "), usage)
-		if w < 100 {
-			shortScore := "-"
-			if r.scored {
-				shortScore = fmt.Sprintf("%g", r.score.Score)
-			}
-			line = fmt.Sprintf("%-18s %-8s %-26s %-5s %s", cell(sanitize(r.name), 18), cell(r.harness, 8), cell(sanitize(r.model), 26), cell(shortScore, 5), strings.Join(fits, " "))
-		}
-		if len(chosen) > 0 {
-			marker := "◀ " + strings.Join(chosen, ",")
-			if w < 100 {
-				marker = "◀"
-			}
-			line += "  " + lipgloss.NewStyle().Foreground(roleAccent).Render(marker)
+		if len(chosen) > selectedCount {
+			selectedRow, selectedCount = rowIndex, len(chosen)
 		}
 		if !r.available || !r.allowed {
 			line = sDim.Render(stripStyles(line))
 		}
-		out = append(out, clip(line, w-4))
+		displayed = append(displayed, displayRow{line: clip(line, w-4), picks: chosen, fitLetter: fitLetters})
+	}
+	for i, d := range displayed {
+		body = append(body, d.line)
+		r := rows[i]
 		if !r.available || !r.allowed {
 			reason := "not available on an online machine"
 			if r.available {
 				reason = "not a worker provider"
 			}
-			out = append(out, sDim.Render("  ("+reason+")"))
+			body = append(body, sDim.Render("  ("+reason+")"))
 		}
 	}
-	return panel(title, out, w, roleAccent)
+	key := "fit per task size: T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · highlighted = picked now"
+	body = append(body, sDim.Render(clip(key, w-4)))
+	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
+	out := panel(title, body, w, roleAccent)
+	if selectedRow >= 0 {
+		r := rows[selectedRow]
+		var selected, strong, good, poor []string
+		for _, i := range displayed[selectedRow].picks {
+			selected = append(selected, levelText[i])
+		}
+		for i, fit := range displayed[selectedRow].fitLetter {
+			switch fit {
+			case "E":
+				strong = append(strong, levelText[i])
+			case "G":
+				good = append(good, levelText[i])
+			case "P":
+				poor = append(poor, levelText[i])
+			}
+		}
+		label := sanitize(r.name)
+		if !strings.Contains(strings.ToLower(label), strings.ToLower(r.harness)) {
+			label += " " + sanitize(r.harness)
+		}
+		detail := fmt.Sprintf("%s: picked for %s.", label, naturalList(selected))
+		if len(strong) > 0 {
+			detail += " Strong at " + naturalList(strong) + "."
+		} else if len(good) > 0 {
+			detail += " OK at " + naturalList(good) + "."
+		} else if len(poor) > 0 {
+			detail += " Weak at " + naturalList(poor) + "."
+		}
+		out = append(out, sDim.Render(clip(detail, w)))
+	}
+	return out
+}
+
+func workerDisplayModel(harness, model string) string {
+	i := strings.IndexByte(model, '/')
+	if i <= 0 || i == len(model)-1 {
+		return model
+	}
+	provider := strings.ToLower(model[:i])
+	if provider == "opencode-go" || provider == "openai-codex" || provider == "openai" || provider == strings.ToLower(harness) {
+		return model[i+1:]
+	}
+	return model
+}
+
+func workerUsage(r quotaModel) string {
+	if r.used <= 0 {
+		return "unused"
+	}
+	pct := (r.done*100 + r.used/2) / r.used
+	usage := fmt.Sprintf("%d · %d%% done", r.used, pct)
+	if r.failedRuns > 0 {
+		usage += fmt.Sprintf(" · %d failed", r.failedRuns)
+	}
+	return usage
+}
+
+func naturalList(items []string) string {
+	switch len(items) {
+	case 0:
+		return "none"
+	case 1:
+		return items[0]
+	case 2:
+		return items[0] + " and " + items[1]
+	default:
+		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
+	}
 }

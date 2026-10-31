@@ -9,10 +9,10 @@
 │ 2 more subscriptions (not used by your agents) · s to show                                                           │
 │ laptop: exit status 2                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─Workers · 1 registered · scores: Artificial Analysis─────────────────────────────────────────────────────────────────╮
-│ NAME               HARNESS  MODEL                      SCORE       T S N H V  USED                                   │
-│ terra              codex    gpt-6.1-terra:high         42.3/high   E E E G P  0 runs 0 done 0 failed                 │
-│ workers now: none                                                                                                    │
+╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
+│ NAME               HARNESS  MODEL                     SCORE        T S N H V  USED                                   │
+│ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P  unused                                 │
+│ fit per task size: T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · highlighte… │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 

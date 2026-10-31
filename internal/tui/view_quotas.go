@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -181,28 +180,7 @@ func (m Model) quotasView(w, h int) []string {
 	}
 	out = append(out, panel(title, subscription, w, roleAccent)...)
 
-	counts := map[string]int{}
-	for _, a := range m.snap.Agents {
-		if a.Online && a.Worker != nil {
-			counts[a.Harness]++
-		}
-	}
-	names := make([]string, 0, len(counts))
-	for k := range counts {
-		names = append(names, k)
-	}
-	sort.Strings(names)
-	var parts []string
-	for _, k := range names {
-		parts = append(parts, fmt.Sprintf("%s %d", sanitize(k), counts[k]))
-	}
-	if len(parts) == 0 {
-		parts = append(parts, "none")
-	}
-	bottom := "workers now: " + strings.Join(parts, " · ")
 	workers := m.quotaModelsView(w)
-	footer := panel("", []string{sDim.Render(bottom)}, w, roleAccent)[1]
-	workers = append(workers[:len(workers)-1], footer, workers[len(workers)-1])
 	out = append(out, workers...)
 	if len(out) > h {
 		body := out[1:]

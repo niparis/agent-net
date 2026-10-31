@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 
 	"github.com/niparis/agent-net/internal/quotaaxi"
 )
@@ -105,8 +107,8 @@ func TestQuotaViewKeepsFooterWithManyRows(t *testing.T) {
 	for i := 0; i < 80; i++ {
 		m = keys(m, "down")
 	}
-	if !strings.Contains(ansi.Strip(m.View()), "workers now:") {
-		t.Fatal("footer lost")
+	if !strings.Contains(ansi.Strip(m.View()), "Workers ·") {
+		t.Fatal("workers panel lost")
 	}
 }
 
@@ -370,7 +372,7 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed    ◀ T,S,N,H,V") {
+	if !strings.Contains(v, "b codex: picked for") || strings.Contains(v, "◀") {
 		t.Fatalf("choice ignored failed run:\n%s", v)
 	}
 }
@@ -393,7 +395,7 @@ func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed    ◀ T,S,N,H,V") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "b codex: picked for") || strings.Contains(v, "◀") {
 		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }
@@ -443,29 +445,88 @@ func TestWorkerPanelPicksAndTrackRecord(t *testing.T) {
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "artificialanalysis"}}
 	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, s := range []string{"Workers · 1 registered · scores: Artificial Analysis", "◀", "12 runs", "10 done", "2 failed"} {
+	for _, s := range []string{"Workers · 1 registered · 0 running · scores: Artificial Analysis", "12 · 83% done · 2 failed", "picked for"} {
 		if !strings.Contains(v, s) {
 			t.Errorf("missing %q in %s", s, v)
 		}
 	}
-	if strings.Contains(v, "now:") || strings.Contains(v, "E*") {
+	if strings.Contains(v, "workers now:") || strings.Contains(v, "◀") || strings.Contains(v, "E*") {
 		t.Fatal(v)
 	}
 }
 
-func TestWorkersNowIsInsidePanel(t *testing.T) {
+func TestWorkersPanelRedesign(t *testing.T) {
+	profile := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(profile)
 	m := newModel(120, 34)
 	m.tab = 2
-	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	for _, line := range strings.Split(v, "\n") {
-		if strings.Contains(line, "workers now:") {
-			if !strings.HasPrefix(line, "│ ") || !strings.HasSuffix(line, " │") {
-				t.Fatalf("footer outside panel: %q", line)
-			}
-			return
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai/gpt-6-luna", "openai-codex/gpt-6.1-terra", "openrouter/anthropic/claude-opus-5.5"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{
+		{Name: "luna codex", Harness: "codex", Model: "openai/gpt-6-luna", Effort: "xhigh"},
+		{Name: "terra codex", Harness: "codex", Model: "openai-codex/gpt-6.1-terra", Effort: "high"},
+		{Name: "router", Harness: "codex", Model: "openrouter/anthropic/claude-opus-5.5"},
+	}
+	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "openai/gpt-6-luna:xhigh", Runs: 3, Complete: 2, Failed: 1}, {Harness: "codex", Model: "openai-codex/gpt-6.1-terra:high", Runs: 5, Complete: 5}}
+	m.snap.Nodes[0].Harnesses[0].ModelDefaultEfforts = map[string]string{"openai/gpt-6-luna": "xhigh", "openai-codex/gpt-6.1-terra": "high"}
+	m.snap.Agents = append(m.snap.Agents, protocol.AgentView{Harness: "codex", Online: true, Worker: &protocol.WorkerInfo{ID: "w1"}}, protocol.AgentView{Harness: "codex", Online: false, Worker: &protocol.WorkerInfo{ID: "w2"}})
+	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6-luna", Effort: "xhigh", Score: 30, Source: "artificialanalysis"}, {Match: "gpt-6.1-terra", Effort: "high", Score: 42.3, Source: "artificialanalysis"}}
+	m.snap.WorkerProviders = []string{"codex"}
+
+	got := strings.Join(m.quotaModelsView(120), "\n")
+	plain := ansi.Strip(got)
+	for _, want := range []string{
+		"Workers · 3 registered · 1 running · scores: Artificial Analysis",
+		"gpt-6-luna:xhigh",
+		"gpt-6.1-terra:high",
+		"openrouter/anthropic/cla…",
+		"3 · 67% done · 1 failed",
+		"5 · 100% done",
+		"unused",
+		"fit per task size: T trivial S simple N normal H hard V very complex",
+		"E strong G ok P weak - too weak",
+		"terra codex: picked for",
+		"Strong at",
+	} {
+		if !strings.Contains(plain, want) {
+			t.Errorf("missing %q in:\n%s", want, plain)
 		}
 	}
-	t.Fatal("footer missing")
+	if strings.Contains(plain, "workers now:") || strings.Contains(plain, "◀") {
+		t.Fatalf("old workers decoration remains:\n%s", plain)
+	}
+	if !strings.Contains(got, "48;2;") {
+		t.Fatalf("picked fit cell has no highlight background:\n%q", got)
+	}
+	for _, line := range strings.Split(plain, "\n") {
+		if strings.Contains(line, "fit per task size:") && ansi.StringWidth(line) > 120 {
+			t.Fatalf("key line exceeds panel width: %q", line)
+		}
+	}
+}
+
+func TestWorkerDisplayModelDropsOnlyUnambiguousProviders(t *testing.T) {
+	cases := []struct{ harness, model, want string }{
+		{"opencode", "opencode-go/deepseek-v4.1-flash", "deepseek-v4.1-flash"},
+		{"codex", "openai-codex/gpt-6.1-terra", "gpt-6.1-terra"},
+		{"codex", "openai/gpt-6-luna", "gpt-6-luna"},
+		{"opencode", "deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4.1-flash"},
+		{"opencode", "openrouter/anthropic/claude-opus-5.5", "openrouter/anthropic/claude-opus-5.5"},
+	}
+	for _, tc := range cases {
+		if got := workerDisplayModel(tc.harness, tc.model); got != tc.want {
+			t.Errorf("workerDisplayModel(%q, %q) = %q, want %q", tc.harness, tc.model, got, tc.want)
+		}
+	}
+}
+
+func TestWorkersSummaryIsInTitle(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	if !strings.Contains(v, "Workers · 0 registered · 0 running") || strings.Contains(v, "workers now:") {
+		t.Fatalf("workers summary title missing or old footer remains:\n%s", v)
+	}
 }
 
 func TestQuotaUnconfiguredFold(t *testing.T) {
@@ -571,7 +632,7 @@ func TestQuotaDoesNotShowOrphanWorkerFooter(t *testing.T) {
 	}
 	m.usage.raw.Local.Quotas = q
 	v := ansi.Strip(m.View())
-	if strings.Contains(v, "workers now:") && !strings.Contains(v, "Workers ·") {
+	if strings.Contains(v, "workers now:") {
 		t.Fatal(v)
 	}
 }

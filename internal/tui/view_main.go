@@ -137,6 +137,9 @@ func (m Model) View() string {
 		}
 	default:
 		box := min(max((h-1)/3, 6), max(h-4, 1))
+		if m.tab == 2 && h <= 24 && box > 6 {
+			box = 6
+		}
 		contentHeight := h - 1 - box
 		switch {
 		case m.mapOn:
