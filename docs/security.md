@@ -432,7 +432,7 @@ checks SQLite, Git objects and every saved skill hash before making it available
 
 ### Tool assignment plans
 
-`tools_plan`, `tools_apply` and `tools_history` require the owner gate. The
+`tools_plan`, `tools_apply`, `tools_undo` and `tools_history` require the owner gate. The
 private CTO process-tree gate may use these methods; its brief requires the
 owner's explicit words in the chat before applying. The daemon attributes
 calls as owner or CTO and the gateway checks that the request belongs to the
@@ -452,6 +452,28 @@ The gateway records plans and apply attempts with the owner or CTO actor,
 targets and result. Charter needs are untrusted advisory text, not authorization
 or assignment. Plan and audit records may include machine and filesystem paths;
 they do not include skill contents or native MCP credential values.
+
+### Skill backups, journal and undo
+
+Before the daemon removes a skill, it saves an exact copy under
+`skill-backups` in its state directory. A skill can contain secrets, so a
+backup can too. Backups are local only: they are never uploaded to the
+gateway and never shown in the TUI, in `tools_history` or to the CTO.
+`tools_history` shows only each backup's time, size and original path. The
+folders are mode 0700 and the files are mode 0600 (0700 for an executable
+file). The daemon keeps the newest 20 backups per item and none older than 30
+days. Uninstall deletes them.
+
+The operation journal in `skill-journal` holds paths, hashes and step names,
+not file contents. It is mode 0600 in a 0700 folder and is never uploaded.
+The journal also holds a random token for each Git `index.lock` the daemon
+creates. At start the daemon removes a lock only if it holds that token, so it
+never removes a lock made by Git or by you.
+
+Undo is a new desired revision that needs the owner gate. It restores from a
+backup only when the current files still match what the earlier apply left
+(or the path is still absent where a skill was removed). Otherwise that target
+stops as a conflict and nothing is overwritten.
 
 ### Skill copies
 

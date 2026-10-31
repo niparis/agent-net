@@ -271,6 +271,9 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | Integration applied record | `~/.config/agent-net/integrations-applied.json` | The last answers this machine applied, so a daemon start does not repeat the work. |
 | Claude workers marketplace | `~/.local/share/agent-net/claude-plugins/` | The local marketplace and the `agent-net-workers` plugin files, written from the binary. Claude Code reads the plugin from this folder. |
 | quota-axi private copy | `~/.local/share/agent-net/quota-axi/` | The pinned npm package `quota-axi`, installed by setup or the daemon when the Quota integration is on and you have no quota-axi. The daemon runs `node_modules/.bin/quota-axi` from it. Removed by uninstall and when the item is turned off. |
+| Skill manifest | `~/.local/state/agent-net/daemon/skill-manifest.json` | Paths, hashes, revisions and ownership of skill copies the daemon made, and the Git exclude lines it owns. Mode 0600. |
+| Skill backups | `~/.local/state/agent-net/daemon/skill-backups/<item hash>/<time>-<id>/` | Exact copy of a skill directory before the daemon removed it. Local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. |
+| Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. |
 | Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files). **Back this folder up.** Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
 | Gateway binaries | `~/.local/share/agent-net/dist/agent-net-<os>-<arch>` | The four binaries the gateway hands out to new machines. |
@@ -564,9 +567,73 @@ mechanism. Removals move the verified source to the daemon's local backup
 directory before removing it from the skill location.
 It compares the source hash with the planned version and reports a conflict if
 the content changed. Backups retain the original path under a timestamped
-directory, with at most 20 backups per item. Moves wait for every planned copy
+directory. Moves wait for every planned copy
 to succeed before removing an old copy. Results show partial progress while
 targets remain unfinished.
+
+`tools_apply` answers with the new revision and one result per target: `ok`,
+`pending`, `conflict` or `failed`, with a reason when it is not `ok`. The
+gateway waits up to three seconds for connected machines to report, so a
+fast local apply shows its real result. A machine that is offline, or slow,
+stays `pending` and applies when it reports later. `tools_item` shows the
+final results.
+
+#### Journal and crash recovery
+
+Every skill write is journaled: a copy into a skill folder (global or
+project), a removal into backup, a restore, and a move across filesystems.
+The daemon writes the record to `skill-journal` before the first change, updates the
+step after each change, and deletes the record when the operation ends. A Git
+`index.lock` that the daemon creates is recorded first, with a private token
+written inside the lock file.
+
+At each daemon start the daemon reads the leftover records and:
+
+- deletes a staged copy that was never renamed into place;
+- finishes the manifest and exclude update when a source was already moved to
+  backup;
+- finishes a guarded source removal when a cross-filesystem backup was
+  complete;
+- removes an `index.lock` only if it holds the record's token. A lock that
+  someone else made stays;
+- leaves anything whose hash does not match the record alone. It writes a
+  `skill journal conflict` line to the daemon log, keeps the record, and
+  answers `conflict` for that path ("interrupted operation ...") until the
+  owner has looked at it and deleted the record file.
+
+A move to backup tries a rename. When the backup folder is on another
+filesystem (`EXDEV`), the daemon copies the skill to a staging folder in the
+backup folder, checks the hash, renames it into place, and removes the source
+only if its hash still matches. Every step is journaled.
+
+#### Undo
+
+`tools_undo` takes an `item` and reverses the item's newest revision. Undo is
+a new audited desired revision, like an apply: it takes the previous
+assignment (or `uninstalled` when there is none) and a plan that reverses only
+the targets that reported `applied`. It answers with the same per-target
+results as `tools_apply`. Offline machines stay pending and undo when they
+reconnect.
+
+- An installed copy is removed only if it is still the copy agent-net made
+  (owned, same hash). A copy backup is kept. An owned Git exclude line is
+  released when its last reference goes.
+- A removed skill is copied back from the local backup only if the original
+  path is still absent. The backup stays for another undo.
+- If the current content differs ("changed since apply"), that target stops
+  with a `conflict` and the files stay as they are. Undo never overwrites a
+  later edit.
+- Undoing an undo applies the first revision again.
+
+Running sessions may need a reload to see the change.
+
+#### Backup retention
+
+The daemon keeps the newest 20 backups per item and none older than 30 days.
+It prunes after each removal and at start. It never prunes a backup that an
+unfinished journal record names. `tools_history` adds a `backups` list for
+this machine with each backup's `time`, `size` and original path. It never
+returns content.
 
 Before a project copy, the daemon checks for tracked files and Git ignore rules.
 It locks and adds the exact managed directory to the path returned by
@@ -580,7 +647,8 @@ Daemons report each target as applied, pending, conflict, manual or failed.
 A missing report stays pending, including while a machine is offline. The
 daemon records installed paths, hashes and revisions in its owner-only
 `skill-manifest.json` in the daemon state directory. Backups are in
-`skill-backups` under that directory. Uninstall removes the manifest, backups,
+`skill-backups` and the operation journal is in `skill-journal` under that
+directory. Uninstall removes the manifest, backups, journal,
 and owned Git exclude lines but does not remove installed skills.
 A stored item with no remaining observed locations stays listed as `unobserved`.
 `tools_history` takes `item` and returns plans and apply attempts with their
