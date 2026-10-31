@@ -155,3 +155,54 @@ func TestOwnerAuthorityNeedsSameNodeAndOnline(t *testing.T) {
 		t.Fatalf("offline owner was believed: %v", err)
 	}
 }
+
+// Import and native removal change what runs on a machine, so the gateway
+// checks the owner authority itself: the actor named in the frame is not
+// enough, and neither is an owner claim the gateway cannot match to an online
+// owner session of the sending node.
+func TestImportAndNativeRemoveNeedOwnerAuthorityAtTheGateway(t *testing.T) {
+	g, node := scopeGateway(t)
+	other, _, err := g.store.CreateNode("laptop", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Name: "owner", Status: "idle"}
+	owner, err := g.store.UpsertSession(node, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.db.Exec(`UPDATE sessions SET online=1 WHERE id=?`, owner); err != nil {
+		t.Fatal(err)
+	}
+	plain := scopedSession(t, g, node, "p", "alpha")
+	for _, method := range []string{"mcp.import", "mcp.native_remove"} {
+		frame := func(actor, who string) string {
+			return `{"candidate":"no-such-candidate","actor":"` + actor + `","owner":"` + who + `"}`
+		}
+		call := func(on, actor, who string) error {
+			_, err := g.handleMCP(context.Background(), &nodeConn{id: on}, method, []byte(frame(actor, who)))
+			return err
+		}
+		denied := func(err error) bool { return err != nil && strings.Contains(err.Error(), "owner authority required") }
+		if err := call(node, "agent", owner); !denied(err) {
+			t.Errorf("%s: actor agent: %v", method, err)
+		}
+		if err := call(node, "", owner); !denied(err) {
+			t.Errorf("%s: no actor: %v", method, err)
+		}
+		if err := call(node, "owner", ""); !denied(err) {
+			t.Errorf("%s: no owner session: %v", method, err)
+		}
+		if err := call(node, "owner", plain); !denied(err) {
+			t.Errorf("%s: a plain session as owner: %v", method, err)
+		}
+		if err := call(other, "owner", owner); !denied(err) {
+			t.Errorf("%s: owner of another node: %v", method, err)
+		}
+		// With the real owner the gate opens, and the request fails later on
+		// the candidate, which does not exist.
+		if err := call(node, "owner", owner); err == nil || denied(err) {
+			t.Errorf("%s: real owner: %v", method, err)
+		}
+	}
+}
