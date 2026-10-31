@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
-	"sort"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -21,9 +21,12 @@ const hintBudget = 280 * time.Millisecond
 // PostToolUseFailure has "error" and no "tool_response"; PostToolUse has
 // "tool_response" (https://code.claude.com/docs/en/hooks).
 type hookInput struct {
-	SessionID    string          `json:"session_id"`
-	EventName    string          `json:"hook_event_name"`
-	ToolName     string          `json:"tool_name"`
+	SessionID string `json:"session_id"`
+	EventName string `json:"hook_event_name"`
+	ToolName  string `json:"tool_name"`
+	ToolInput struct {
+		Command string `json:"command"`
+	} `json:"tool_input"`
 	Error        string          `json:"error"`
 	IsInterrupt  bool            `json:"is_interrupt"`
 	ToolResponse json.RawMessage `json:"tool_response"`
@@ -37,36 +40,111 @@ type hookOutput struct {
 	} `json:"hookSpecificOutput"`
 }
 
-// flattenStrings joins every string in a JSON value (the tool_response of a Bash
-// call is an object with stdout and stderr), keys in sorted order.
-func flattenStrings(raw json.RawMessage) string {
-	var v any
-	if json.Unmarshal(raw, &v) != nil {
+type bashToolResponse struct {
+	Stdout string `json:"stdout"`
+	Stderr string `json:"stderr"`
+}
+
+func successfulBashText(in hookInput) string {
+	var response bashToolResponse
+	if json.Unmarshal(in.ToolResponse, &response) != nil {
 		return ""
 	}
-	var parts []string
-	var walk func(any)
-	walk = func(x any) {
-		switch t := x.(type) {
-		case string:
-			parts = append(parts, t)
-		case []any:
-			for _, e := range t {
-				walk(e)
-			}
-		case map[string]any:
-			keys := make([]string, 0, len(t))
-			for k := range t {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				walk(t[k])
+	text := response.Stderr
+	if len(response.Stdout) < 2000 && !readOnlyBashCommand(in.ToolInput.Command) {
+		if text != "" && response.Stdout != "" {
+			text += "\n"
+		}
+		text += response.Stdout
+	}
+	return text
+}
+
+var readCommands = map[string]bool{
+	"cat": true, "head": true, "tail": true, "grep": true, "rg": true, "less": true, "jq": true,
+}
+
+var readGitCommands = map[string]bool{
+	"diff": true, "log": true, "show": true, "grep": true, "blame": true,
+}
+
+// readOnlyBashCommand identifies common commands whose stdout is source or
+// history rather than the result of an operation.
+func readOnlyBashCommand(command string) bool {
+	words := strings.Fields(command)
+	commandStart := true
+	for i, raw := range words {
+		word, ended := shellCommandWord(raw)
+		if word != "" && commandStart {
+			name := filepath.Base(word)
+			switch {
+			case name == "git":
+				if gitReadCommand(words[i+1:]) {
+					return true
+				}
+				commandStart = false
+			case name == "sed":
+				if sedReadsLines(words[i+1:]) {
+					return true
+				}
+				commandStart = false
+			case readCommands[name]:
+				return true
+			case name == "sudo" || name == "env" || name == "command" || name == "time" || name == "nice" || name == "nohup":
+				// These wrappers leave the actual command as the next word.
+			default:
+				commandStart = false
 			}
 		}
+		if ended {
+			commandStart = true
+		}
 	}
-	walk(v)
-	return strings.Join(parts, "\n")
+	return false
+}
+
+func gitReadCommand(words []string) bool {
+	for i := 0; i < len(words); i++ {
+		arg, ended := shellCommandWord(words[i])
+		if arg == "" {
+			if ended {
+				return false
+			}
+			continue
+		}
+		if arg == "--" {
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			if arg == "-C" || arg == "-c" || arg == "--git-dir" || arg == "--work-tree" || arg == "--namespace" {
+				i++
+			}
+			continue
+		}
+		return readGitCommands[arg]
+	}
+	return false
+}
+
+func sedReadsLines(words []string) bool {
+	for _, raw := range words {
+		arg, ended := shellCommandWord(raw)
+		if arg == "-n" || strings.HasPrefix(arg, "-n") || arg == "--silent" || arg == "--quiet" {
+			return true
+		}
+		if ended {
+			return false
+		}
+	}
+	return false
+}
+
+func shellCommandWord(raw string) (word string, ended bool) {
+	raw = strings.Trim(raw, "\"'")
+	if i := strings.IndexAny(raw, ";|&"); i >= 0 {
+		return strings.Trim(raw[:i], "()"), true
+	}
+	return strings.Trim(raw, "()"), false
 }
 
 // runHint is `agent-net hint`: a Claude Code hook for PostToolUseFailure and
@@ -94,7 +172,7 @@ func runHint(ctx context.Context, stdin io.Reader, stdout io.Writer,
 		if in.ToolName != "Bash" {
 			return
 		}
-		text = flattenStrings(in.ToolResponse)
+		text = successfulBashText(in)
 		if !hint.LooksLikeFailure(text) {
 			return
 		}
