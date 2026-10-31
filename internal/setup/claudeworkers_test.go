@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -132,6 +133,45 @@ func TestClaudeWorkersModUpgradeRefreshesAndAsksForReload(t *testing.T) {
 	for _, want := range []string{"plugin marketplace update agent-net", "plugin update agent-net-workers@agent-net -s user"} {
 		if !callsContain(calls, want) {
 			t.Errorf("no %q in the claude calls:\n%s", want, strings.Join(calls, "\n"))
+		}
+	}
+}
+
+func TestClaudeWorkersModUpdatesWhenOnlyPluginVersionIsStale(t *testing.T) {
+	f := newFixture(t)
+	logPath := fakeClaude(t, f.home)
+	options := Options{Join: f.newJoin(t), PeerMessages: PeerMessagesNo, HintHook: HintHookNo, PolicyHook: PolicyHookNo, WorkersMod: WorkersModYes}
+	runAskingAll(t, options)
+
+	manifestPath := filepath.Join(agentfiles.ClaudeWorkersPluginDir(), ".claude-plugin", "plugin.json")
+	manifest, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields struct {
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(manifest, &fields); err != nil {
+		t.Fatal(err)
+	}
+	oldVersion, _ := json.Marshal(fields.Version)
+	manifest = bytes.Replace(manifest, append([]byte(`"version": `), oldVersion...), []byte(`"version": "0.1.0"`), 1)
+	if bytes.Contains(manifest, oldVersion) && fields.Version != "0.1.0" {
+		t.Fatal("failed to replace the installed plugin version")
+	}
+	if err := os.WriteFile(manifestPath, manifest, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(logPath, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	options.Join = ""
+	options.WorkersMod = ""
+	runAskingAll(t, options)
+	for _, want := range []string{"plugin marketplace update agent-net", "plugin update agent-net-workers@agent-net -s user"} {
+		if !callsContain(claudeCalls(t, logPath), want) {
+			t.Errorf("no %q in the claude calls:\n%s", want, strings.Join(claudeCalls(t, logPath), "\n"))
 		}
 	}
 }
