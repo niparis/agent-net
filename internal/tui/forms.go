@@ -665,7 +665,9 @@ func (m Model) startCmd(req protocol.WorkerStartRequest) tea.Cmd {
 		}
 		text := fmt.Sprintf("Started worker %s (%s, %s on %s). Its reply will show in the messages.",
 			res.SessionID, res.Harness, sanitize(res.Project), sanitize(res.Hostname))
-		if res.Queued {
+		if res.Status == "starting" {
+			text = fmt.Sprintf("Starting worker %s; a notice follows when it starts or fails.", res.SessionID)
+		} else if res.Queued {
 			text = fmt.Sprintf("Started worker %s, but the task waits: the gateway link dropped. It is sent when the link is back.", res.SessionID)
 		}
 		return actionMsg{text: text}

@@ -143,7 +143,11 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if err != nil {
 			return nil, reject("bad worker.queued_start")
 		}
-		return nil, g.relayQueuedTask(ctx, nc, p)
+		if err := g.relayQueuedTask(ctx, nc, p); err != nil {
+			return nil, err
+		}
+		g.store.Event("worker.started", nc.id, p.SessionID, "", strings.TrimPrefix(pairs("project", p.Project, "harness", p.Harness, "owner", p.Owner, "branch", p.Branch), " "))
+		return nil, nil
 
 	case "worker.cleanup":
 		p, err := decode[protocol.WorkerCleanup](raw)
@@ -632,13 +636,17 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if err != nil || launched.SessionID == "" {
 		return none, reject("machine %s answered without a session", pick.Hostname)
 	}
-	g.store.Event("worker.started", pick.NodeID, launched.SessionID, "",
+	event := "worker.started"
+	if launched.Starting {
+		event = "worker.starting"
+	}
+	g.store.Event(event, pick.NodeID, launched.SessionID, "",
 		strings.TrimPrefix(pairs("project", pick.Name, "harness", p.Harness, "model", p.Model, "owner", p.Owner,
 			"isolation", p.Isolation, "branch", launched.Branch), " "))
-	g.logLine("worker.started", "node", pick.NodeID, "host", pick.Hostname, "session", launched.SessionID,
+	g.logLine(event, "node", pick.NodeID, "host", pick.Hostname, "session", launched.SessionID,
 		"worker", launched.WorkerID, "project", pick.Name, "path", pick.Path, "harness", p.Harness, "model", p.Model,
 		"owner", p.Owner, "from_node", nc.id, "isolation", p.Isolation, "permissions", perms, "worktree", launched.Worktree, "branch", launched.Branch)
-	return protocol.WorkerStartAnswer{SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
+	return protocol.WorkerStartAnswer{Starting: launched.Starting, SessionID: launched.SessionID, NodeID: pick.NodeID, Hostname: pick.Hostname,
 		Project: pick.Name, Path: pick.Path, Harness: p.Harness, Model: p.Model, ModelNote: modelNote,
 		Worktree: launched.Worktree, Branch: launched.Branch, ProjectRules: launched.ProjectRules, MachineNote: machineNote, Permissions: perms,
 		Track: track, Playbooks: books}, nil
@@ -803,7 +811,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
-	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner,
+	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO,
 		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task)})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
@@ -831,13 +839,17 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	if err != nil || c.SessionID == "" {
 		return none, reject("machine %s answered without a session", old.Hostname)
 	}
-	g.store.Event("worker.started", old.NodeID, c.SessionID, "",
+	event := "worker.started"
+	if c.Starting {
+		event = "worker.starting"
+	}
+	g.store.Event(event, old.NodeID, c.SessionID, "",
 		strings.TrimPrefix(pairs("project", c.Project, "harness", c.Harness, "model", c.Model, "owner", p.Owner,
 			"continues", old.SessionID, "branch", c.Branch), " "))
-	g.logLine("worker.started", "node", old.NodeID, "host", old.Hostname, "session", c.SessionID,
+	g.logLine(event, "node", old.NodeID, "host", old.Hostname, "session", c.SessionID,
 		"worker", c.WorkerID, "project", c.Project, "path", c.Path, "harness", c.Harness, "model", c.Model,
 		"owner", p.Owner, "from_node", nc.id, "continues", old.SessionID, "worktree", c.Worktree, "branch", c.Branch)
-	return protocol.WorkerStartAnswer{SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
+	return protocol.WorkerStartAnswer{Starting: c.Starting, SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
 		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model,
 		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task,
 		Permissions: old.Worker.Permissions, Track: c.Track, Playbooks: c.Playbooks}, nil

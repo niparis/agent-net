@@ -56,9 +56,9 @@ func TestPeerTrustIsOwnerOnlyAndReachesDelivery(t *testing.T) {
 	}
 
 	cli.mustCall(protocol.OpSessionTrust, protocol.SessionTrustRequest{SessionID: s2, On: true})
-	if !trustAgent(trustList(t, cli), s2).PeerTrust {
-		t.Fatal("list does not show the trust")
-	}
+	eventually(t, "list shows trust", func() bool {
+		return trustAgent(trustList(t, cli), s2).PeerTrust
+	})
 	if trustAgent(trustList(t, cli), s1).PeerTrust {
 		t.Fatal("trust leaked to the other session")
 	}

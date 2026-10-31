@@ -143,9 +143,17 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 	// An agent session that runs in the repository.
 	pi, piID := helloPi(t, w.node, "caller-pi", repo, true)
 	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Harness: "opencode", Task: "x"}))
-	if res.Project != "shop" || res.Path != repo || res.Task == nil || res.Task.From != piID || res.Worktree == "" {
+	if res.Project != "shop" || res.Path != repo || res.Worktree == "" || res.Status != "starting" {
 		t.Errorf("worker for the caller's project: %+v", res)
 	}
+	eventually(t, "the caller's task reaches the worker", func() bool {
+		for _, m := range w.messagesOf(t, piID) {
+			if m.From == piID && m.To == res.SessionID && m.Type == protocol.TypeRequest {
+				return true
+			}
+		}
+		return false
+	})
 	// A caller in a folder that is not a repository: its folder is a seen
 	// project, and the worker gets no worktree there.
 	dir, _ := filepath.EvalSymlinks(t.TempDir())

@@ -260,7 +260,9 @@ type WorkerStartResult struct {
 	Task *Message `json:"task,omitempty"`
 	// Queued is true when the task message waits in the outbox.
 	Queued bool `json:"queued,omitempty"`
-	// Status is "started" or "queued". A queued start has no SessionID yet:
+	// Status is "starting", "started" or "queued". A starting worker has a
+	// session ID and receives its task after checkout and launch. A queued
+	// start has no SessionID yet:
 	// the machine has no room now, QueueID names the start (agent_stop takes
 	// it), Position is its place in that machine's queue, and QueueReason
 	// says why it waits. A worker notice follows when it starts.

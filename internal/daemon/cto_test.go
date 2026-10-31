@@ -551,20 +551,18 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
 	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
-	workers := w.workers(t)
-	if len(workers) != 1 {
-		t.Fatalf("worker not started: %+v", workers)
-	}
-	messages := w.messagesOf(t, workers[0].SessionID)
-	foundTask := false
-	for _, m := range messages {
-		if m.Type == protocol.TypeRequest && m.FromCTO {
-			foundTask = true
+	eventually(t, "worker task carries CTO attribution", func() bool {
+		workers := w.workers(t)
+		if len(workers) != 1 {
+			return false
 		}
-	}
-	if !foundTask {
-		t.Fatalf("worker task did not carry CTO attribution: %+v", messages)
-	}
+		for _, m := range w.messagesOf(t, workers[0].SessionID) {
+			if m.Type == protocol.TypeRequest && m.FromCTO {
+				return true
+			}
+		}
+		return false
+	})
 	var events protocol.CTOEvents
 	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil {
 		t.Fatal(err)
@@ -574,7 +572,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter architecture: purpose updated", "sent to", "worker started"} {
+	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter architecture: purpose updated", "sent to", "worker starting"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}

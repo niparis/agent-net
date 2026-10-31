@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -509,5 +510,20 @@ func TestWorkerFormAllowsAutomaticHarness(t *testing.T) {
 	m = finish(t, next.(Model), cmd)
 	if src.started == nil || src.started.Harness != "" {
 		t.Fatalf("automatic harness: %+v", src.started)
+	}
+}
+
+type startingWorkerSource struct{ fakeSource }
+
+func (s *startingWorkerSource) StartWorker(context.Context, protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
+	return protocol.WorkerStartResult{Status: "starting", SessionID: "s_pending"}, nil
+}
+
+func TestStartCommandReportsStarting(t *testing.T) {
+	m := New(&startingWorkerSource{})
+	msg := m.startCmd(protocol.WorkerStartRequest{Project: "shop"})()
+	result, ok := msg.(actionMsg)
+	if !ok || result.err != nil || !strings.Contains(result.text, "Starting worker s_pending") || !strings.Contains(result.text, "notice") {
+		t.Fatalf("result: %+v", msg)
 	}
 }

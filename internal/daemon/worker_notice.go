@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/niparis/agent-net/internal/loginpath"
@@ -54,10 +55,32 @@ func worktreeGitPath() string {
 	return strings.Join(dirs, string(os.PathListSeparator))
 }
 
+var workerGitCommandTimeout = func() *atomic.Int64 {
+	timeout := &atomic.Int64{}
+	timeout.Store(int64(20 * time.Second))
+	return timeout
+}()
+
+type workerGitError struct {
+	args   []string
+	err    error
+	stderr string
+}
+
+func (e *workerGitError) Error() string {
+	return fmt.Sprintf("git %s: %v: %s", strings.Join(e.args, " "), e.err, e.stderr)
+}
+
+func (e *workerGitError) Unwrap() error { return e.err }
+
 // git runs a git command in dir and returns its output.
 func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(workerGitCommandTimeout.Load()))
 	defer cancel()
+	return gitOutWithContext(ctx, dir, args...)
+}
+
+func gitOutWithContext(ctx context.Context, dir string, args ...string) (string, error) {
 	path := worktreeGitPath()
 	git := "git"
 	for _, dir := range filepath.SplitList(path) {
@@ -72,7 +95,7 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(errb.String()))
+		return "", &workerGitError{args: args, err: err, stderr: strings.TrimSpace(errb.String())}
 	}
 	return strings.TrimRight(out.String(), "\n"), nil
 }
@@ -112,7 +135,19 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 		return err
 	}
 	branch := protocol.WorktreeBranch(w.id)
-	if _, err := gitOut(ctx, main, "worktree", "add", dir, "-b", branch, base); err != nil {
+	if _, err := gitOutWithContext(ctx, main, "worktree", "add", dir, "-b", branch, base); err != nil {
+		var gitErr *workerGitError
+		if errors.As(err, &gitErr) {
+			message := gitErr.stderr
+			missingLFS := strings.Contains(message, "git-lfs: command not found")
+			if len(message) > 200 {
+				message = message[len(message)-200:]
+			}
+			if missingLFS {
+				return fmt.Errorf("cannot make a worktree: git-lfs is missing on this machine: %s: %w", message, gitErr.err)
+			}
+			return fmt.Errorf("cannot make a worktree: git worktree add: %s: %w", message, gitErr.err)
+		}
 		return fmt.Errorf("cannot make a worktree: %w", err)
 	}
 	d.wmu.Lock()
