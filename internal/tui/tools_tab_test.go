@@ -507,3 +507,73 @@ func TestRepeatedDifferencesExpand(t *testing.T) {
 		t.Fatalf("expanded: %+v", ds)
 	}
 }
+
+func TestToolsComparisonPlanShowsFiles(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	old := toolsdiff.Copy{Name: "demo", Item: "old", Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "gone", Fingerprint: "x"}, {Path: "SKILL.md", Fingerprint: "old"}}}}
+	newer := toolsdiff.Copy{Name: "demo", Item: "new", Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "added", Fingerprint: "y"}, {Path: "SKILL.md", Fingerprint: "new"}}}}
+	model, _ := m.openChoose("Keep the newer one in both places", toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, old}})
+	m = model.(Model)
+	m = pressKey(m, "enter")
+	v := plain(m)
+	for _, want := range []string{"added: added", "removed: gone", "changed: SKILL.md"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("plan missing %q:\n%s", want, v)
+		}
+	}
+}
+
+func TestToolsComparisonGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := toolsAtScreen(size[0], size[1], 0)
+		newer := toolsdiff.Copy{Name: "demo", Item: "new", Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "added.txt", Fingerprint: "add"}}}}
+		older := toolsdiff.Copy{Name: "demo", Item: "old", Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}, {Path: "removed.txt", Fingerprint: "gone"}}}}
+		m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "two-copies:demo:research", Kind: toolsdiff.KindTwoCopies, Severity: toolsdiff.SevErr, Name: "demo", Title: "demo: Claude's copy (~/.claude/skills) is newer than Pi's (~/.pi/agent/skills), 3 files differ", Fix: "keep the newer one in both places", Action: toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, older}}}}
+		m.tl.row = 0
+		golden(t, fmt.Sprintf("tools_compare_%dx%d", size[0], size[1]), m.View())
+		m = pressKey(m, "enter")
+		m = pressKey(m, "enter")
+		golden(t, fmt.Sprintf("tools_compare_plan_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
+func TestLongDifferenceIsReadableAt80Columns(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "demo", Severity: toolsdiff.SevErr, Title: "demo: Claude's copy (~/.claude/skills) is newer than Pi's (~/.pi/agent/skills), 3 files differ", Fix: "keep the newer one in both places"}}
+	if v := plain(m); !strings.Contains(v, "3 files differ") || !strings.Contains(v, "keep the newer one") {
+		t.Fatalf("difference clipped:\n%s", v)
+	}
+}
+
+func TestDetailedDifferencesStillGroupByMachine(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	d := m.tl.cat.Diffs[0]
+	d.Title = "first: Claude is newer than Pi, 2 files differ"
+	d.Name = "first"
+	e := d
+	e.Name = "second"
+	e.Key = "two-copies:second:research"
+	e.Title = "second: Pi is newer than Claude, 3 files differ"
+	m.tl.cat.Diffs = []toolsdiff.Difference{d, e}
+	if ds := m.shownDiffs(); len(ds) != 1 || !strings.Contains(ds[0].Title, "2 skills have 2 different copies on research") {
+		t.Fatalf("not grouped: %+v", ds)
+	}
+}
+
+func TestToolsPlanCanScrollLongComparison(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	md := m.openModal("Comparison")
+	for i := 0; i < 50; i++ {
+		md.lines = append(md.lines, fmt.Sprintf("changed: file%02d", i))
+	}
+	md.foot = []string{"esc", "close"}
+	if strings.Contains(plain(m), "changed: file49") {
+		t.Fatal("last entry already visible")
+	}
+	for i := 0; i < 50; i++ {
+		m = pressKey(m, "down")
+	}
+	if !strings.Contains(plain(m), "changed: file49") {
+		t.Fatalf("last entry missing:\n%s", plain(m))
+	}
+}

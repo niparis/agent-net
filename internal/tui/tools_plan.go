@@ -41,6 +41,7 @@ type toolsModal struct {
 	paths      []string
 	pathsTitle string
 	showPaths  bool
+	scroll     int
 	loading    bool
 	done       bool
 	actions    map[string]func(Model) (Model, tea.Cmd)
@@ -88,6 +89,12 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.tl.modal = nil
 		return m, nil
 	case md.loading:
+		return m, nil
+	case key == "down" || key == "j":
+		md.scroll++
+		return m, nil
+	case key == "up" || key == "k":
+		md.scroll = max(0, md.scroll-1)
 		return m, nil
 	case key == "d" && len(md.paths) > 0:
 		md.showPaths = !md.showPaths
@@ -1082,9 +1089,15 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		md.foot = append(md.foot, letter, "keep "+c.Version())
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
-			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, []string{"a different copy in the way shows as a conflict in the result"})
+			notes := comparisonNotes(act.Copies, c)
+			notes = append(notes, "a different copy in the way shows as a conflict in the result")
+			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, notes)
 			return model.(Model), cmd
 		}
+	}
+	if title == "Keep the newer one in both places" && len(act.Copies) == 2 {
+		md.actions["enter"] = md.actions["a"]
+		md.foot = append([]string{"enter", "keep newer"}, md.foot...)
 	}
 	md.lines = append(md.lines, tsDim.Render("  the one you keep goes into agent-net and to every machine"))
 	md.foot = append(md.foot, "d", "exact folders", "esc", "cancel")
@@ -1092,3 +1105,31 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 }
 
 const time10min = 10 * time.Minute
+
+func comparisonNotes(copies []toolsdiff.Copy, chosen toolsdiff.Copy) []string {
+	var notes []string
+	for _, other := range copies {
+		if other.Item == chosen.Item && other.NodeID == chosen.NodeID && other.Location == chosen.Location {
+			continue
+		}
+		added, removed, changed, ok := toolsdiff.CompareFiles(other, chosen)
+		if !ok {
+			notes = append(notes, "file comparison unavailable or too large to compare")
+			continue
+		}
+		notes = append(notes, "Compared with "+other.Machine+" "+other.Location+":")
+		for _, p := range added {
+			notes = append(notes, "added: "+p)
+		}
+		for _, p := range removed {
+			notes = append(notes, "removed: "+p)
+		}
+		for _, p := range changed {
+			notes = append(notes, "changed: "+p)
+		}
+		if len(added)+len(removed)+len(changed) == 0 {
+			notes = append(notes, "no file differences")
+		}
+	}
+	return notes
+}

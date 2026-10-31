@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -62,4 +63,27 @@ func TestScanIncludesSkillManifest(t *testing.T) {
 		}
 	}
 	t.Fatal("missing skill")
+}
+
+func TestSkillManifestByteLimit(t *testing.T) {
+	root := t.TempDir()
+	nested := filepath.Join(root, strings.Repeat("d", 200))
+	if err := os.MkdirAll(nested, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 160; i++ {
+		name := fmt.Sprintf("%03d%s", i, strings.Repeat("n", 197))
+		if err := os.WriteFile(filepath.Join(nested, name), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer dir.Close()
+	m, err := skillManifestRoot(dir)
+	if err != nil || !m.TooLarge || len(m.Files) != 0 {
+		t.Fatalf("byte cap: %+v %v", m, err)
+	}
 }
