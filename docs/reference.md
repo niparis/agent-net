@@ -548,7 +548,8 @@ unmanaged destination are conflicts. Review the plan before applying it.
 registered projects, item version, assignments or inspected paths have changed.
 Applying records a new desired revision and nudges connected daemons. Each
 daemon pulls its own targets again after reconnecting and on the regular scan
-interval. For global skills it fetches the stored version, verifies its hash
+interval. A plan that would remove the last assigned copy of an unimported
+skill is refused; import it first. For global skills the daemon fetches the stored version, verifies its hash
 and installs a missing destination using a temporary directory beside it and an
 atomic no-replace rename. A different existing destination is a conflict.
 For project assignments it also copies into registered Git checkouts. The plan
@@ -557,12 +558,18 @@ combination that would expose the name twice, or an existing shadowing source,
 is a conflict. Non-Git checkouts stay pending until the owner chooses an ignore
 mechanism. Removals move the verified source to the daemon's local backup
 directory before removing it from the skill location.
+It compares the source hash with the planned version and reports a conflict if
+the content changed. Backups retain the original path under a timestamped
+directory, with at most 20 backups per item. Moves wait for every planned copy
+to succeed before removing an old copy. Results show partial progress while
+targets remain unfinished.
 
 Before a project copy, the daemon checks for tracked files and Git ignore rules.
 It locks and adds the exact managed directory to the path returned by
 `git rev-parse --git-path info/exclude`. Linked worktrees can share that file;
 the daemon records references to the shared line in its manifest. It does not
-change `.gitignore` or the Git index. Matching foreign copies are left alone.
+change `.gitignore` or the Git index. It removes an owned line after its last
+reference is removed. Matching foreign copies are left alone.
 
 Daemons report each target as applied, pending, conflict, manual or failed.
 `tools_items` and `tools_item` show the desired revision and reported results.

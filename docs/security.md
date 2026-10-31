@@ -466,4 +466,11 @@ exclude file and records its exact owned exclusion lines in the manifest;
 linked worktrees share the line. Symlinked exclusion files are refused. Git
 index files and `.gitignore` are not changed. Non-Git checkouts stay pending.
 The daemon refuses compatibility roots that would expose duplicate copies or
-shadow a skill. Removals are not yet performed.
+shadow a skill. It refuses removal of an unimported skill's last assigned copy.
+Before removing a source, it checks the planned hash, rejects symlinks and
+tracked project files, and moves the directory to an owner-only local backup.
+It checks the backup hash again and restores the source when possible if it
+changed. Backups retain at most 20 versions per item and may contain secrets;
+they are not uploaded. Moves wait for all planned copies to succeed. Exclude
+lines are removed only when their last manifest reference is gone. Uninstall
+removes the backups and owned exclude lines.
