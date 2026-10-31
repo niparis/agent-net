@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/guidance"
 	"github.com/niparis/agent-net/plugins/opencode"
@@ -333,4 +334,67 @@ func TestSyncAndLogReplacedSymlink(t *testing.T) {
 		}
 	}
 	t.Fatalf("log lines %q, want one %q", lines, want)
+}
+
+func TestSyncGuidanceSharedSymlinkTarget(t *testing.T) {
+	h := fakeHome(t)
+	t.Setenv("CODEX_HOME", "")
+	target := filepath.Join(h, "dotfiles", "AGENTS.md")
+	write(t, target, "before\n"+guidance.Begin+"\nold\n"+guidance.End+"\nafter\n")
+	for _, f := range GuidanceFiles() {
+		symlink(t, target, f.Path)
+	}
+	for _, r := range SyncGuidance() {
+		if r.Err != nil {
+			t.Fatal(r.Err)
+		}
+	}
+	got := read(t, target)
+	for _, want := range []string{"before\n" + guidance.Begin, guidance.End + "\nafter\n", "Claude Code:", "Pi, OpenCode, Codex:", "`SendMessage`", "`agent_reply`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Count(got, guidance.Begin) != 1 {
+		t.Error("expected one block")
+	}
+	oldTime := time.Unix(1000000000, 0)
+	if err := os.Chtimes(target, oldTime, oldTime); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range SyncGuidance() {
+		if r.Err != nil || r.Changed {
+			t.Errorf("second sync: %+v", r)
+		}
+	}
+	st, err := os.Stat(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.ModTime().Equal(oldTime) || read(t, target) != got {
+		t.Error("second sync touched target")
+	}
+	for _, f := range GuidanceFiles() {
+		if !isSymlink(t, f.Path) {
+			t.Errorf("%s no longer a symlink", f.Path)
+		}
+	}
+}
+
+func TestSyncGuidanceSeparateFiles(t *testing.T) {
+	fakeHome(t)
+	t.Setenv("CODEX_HOME", "")
+	for _, f := range GuidanceFiles() {
+		write(t, f.Path, "before\n"+guidance.Begin+"\nold\n"+guidance.End+"\nafter\n")
+	}
+	for _, r := range SyncGuidance() {
+		if r.Err != nil {
+			t.Fatal(r.Err)
+		}
+	}
+	for _, f := range GuidanceFiles() {
+		if got, want := read(t, f.Path), "before\n"+guidance.Block(f.Variant)+"after\n"; got != want {
+			t.Errorf("%s: got %q, want %q", f.Name, got, want)
+		}
+	}
 }

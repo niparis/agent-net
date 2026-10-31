@@ -95,9 +95,9 @@ func GuidanceFiles() []GuidanceFile {
 
 // Sync brings the Pi extension, the OpenCode plugin and the guidance blocks in
 // line with this binary. It only touches what setup would manage: the harness
-// folder must exist. A symlink to a foreign file is left alone; a symlink to an
-// older agent-net copy is replaced with a real file. Guidance changes only the
-// part between the markers.
+// folder must exist. A plugin symlink to a foreign file is left alone; a
+// symlink to an older agent-net plugin is replaced with a real file. Guidance
+// follows symlinks and changes only the part between the markers.
 func Sync() []Result {
 	rs := []Result{SyncPi(), SyncOpencode(), SyncClaudeWorkers()}
 	return append(rs, SyncGuidance()...)
@@ -227,9 +227,40 @@ func replaceSymlink(path string, data []byte) error {
 
 // SyncGuidance writes the guidance blocks.
 func SyncGuidance() []Result {
+	files := GuidanceFiles()
+	keys := make([]string, len(files))
+	variants := make(map[string]map[string]bool)
+	for i, f := range files {
+		if !exists(f.Dir) {
+			continue
+		}
+		key, err := filepath.EvalSymlinks(f.Path)
+		if err != nil {
+			key = f.Path
+		}
+		keys[i] = key
+		if variants[key] == nil {
+			variants[key] = make(map[string]bool)
+		}
+		variants[key][f.Variant] = true
+	}
 	var rs []Result
-	for _, f := range GuidanceFiles() {
-		rs = append(rs, syncGuidance(f))
+	seen := make(map[string]Result)
+	for i, f := range files {
+		key := keys[i]
+		if previous, ok := seen[key]; key != "" && ok {
+			r := Result{Name: f.Name, Path: f.Path, Text: "ok (shared guidance)", Err: previous.Err}
+			rs = append(rs, r)
+			continue
+		}
+		if len(variants[key]) > 1 {
+			f.Variant = guidance.Combined
+		}
+		r := syncGuidance(f)
+		rs = append(rs, r)
+		if key != "" {
+			seen[key] = r
+		}
 	}
 	return rs
 }
