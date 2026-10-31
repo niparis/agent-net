@@ -2,12 +2,15 @@ package tui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestMessageConversationsGroupAndSort(t *testing.T) {
@@ -167,6 +170,50 @@ func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 	m = keys(m, "w")
 	if got := m.messageConversations(); len(got) != 3 {
 		t.Fatalf("w should show worker threads again, got %+v", got)
+	}
+}
+
+func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
+	const owner, a, b, worker = "s_owner", "s_agent", "s_other", "s_worker"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.now = func() time.Time { return t0 }
+	m.snap = Snapshot{NodeID: "n", Agents: []protocol.AgentView{
+		agent(owner, "n", "Mac", "owner", "you", nil),
+		agent(a, "n", "Mac", "claude", "a2a-ocs", nil),
+		agent(b, "n", "Mac", "pi", "reviewer", nil),
+		agent(worker, "n", "Mac", "opencode", "shop worker 6", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_6", Owner: owner} }),
+	}}
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		ev(1, -10*time.Minute, "msg.stored", "instruction", owner, a, "request", func(e *protocol.FeedEvent) { e.ConversationID = "instruction" }),
+		ev(2, -2*time.Minute, "msg.stored", "older", a, b, "notification", func(e *protocol.FeedEvent) { e.ConversationID = "older" }),
+		ev(3, -time.Minute, "msg.stored", "recent", a, b, "request", func(e *protocol.FeedEvent) { e.ConversationID = "recent" }),
+		ev(4, -time.Second, "msg.stored", "worker-task", owner, worker, "request", func(e *protocol.FeedEvent) { e.ConversationID = "worker-task" }),
+	})
+	m.feed.byMsg["instruction"].OwnerInstruction = "please inspect the failing check"
+	m.feed.byMsg["instruction"].Snippet = "Inspect the failing check"
+	m.feed.byMsg["older"].Snippet = "Older agent note"
+	m.feed.byMsg["recent"].Snippet = "Waiting on test"
+	rows := m.messageConversations()
+	if len(rows) != 4 || rows[0].id != "instruction" || rows[1].id != "recent" || rows[2].id != "older" || !rows[3].worker {
+		t.Fatalf("instruction, recent agent threads, then worker threads expected: %+v", rows)
+	}
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	line := m.messageConversationLine(rows[0], 110, false)
+	if !strings.Contains(ansi.Strip(line), "you→") {
+		t.Fatalf("owner instruction marker missing: %s", line)
+	}
+	warning := lipgloss.NewStyle().Foreground(roleWarning).Render("Waiting on test · a2a-ocs ↔ reviewer")
+	if !strings.Contains(m.messageConversationLine(rows[1], 110, false), warning) {
+		t.Fatal("a request without a reply is not orange")
+	}
+	view := ansi.Strip(strings.Join(m.messagesView(120, 22), "\n"))
+	if !strings.Contains(view, "orange: waiting for a reply") || !strings.Contains(view, "you→") {
+		t.Fatalf("the screen does not explain its marker and orange lines:\n%s", view)
 	}
 }
 

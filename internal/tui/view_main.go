@@ -1072,6 +1072,7 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
+	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO", w)))
 	filter := "conversations"
 	switch m.events {
 	case eventsAll:
@@ -1123,7 +1124,7 @@ func (m Model) messagesView(w, h int) []string {
 		}
 	}
 	if w >= 100 {
-		height := max(h-3, 0)
+		height := max(h-4, 0)
 		list = messageFit(list, max(height-1, 0), selected)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat = messageFit(chat, height, chatSelected)
@@ -1134,7 +1135,7 @@ func (m Model) messagesView(w, h int) []string {
 		}
 		return out
 	}
-	available := max(h-5, 0)
+	available := max(h-6, 0)
 	listHeight := min(max((available+2)/2, 1), len(list)+1)
 	chatHeight := max(available-listHeight, 0)
 	list = messageFit(list, max(listHeight-1, 0), selected)

@@ -12,14 +12,15 @@ import (
 )
 
 type messageConversation struct {
-	id            string
-	items         []int
-	at            time.Time
-	cto           bool
-	event         bool
-	worker        bool
-	workerSession string
-	workerOwner   string
+	id               string
+	items            []int
+	at               time.Time
+	cto              bool
+	event            bool
+	worker           bool
+	workerSession    string
+	workerOwner      string
+	ownerInstruction bool
 }
 
 func (m Model) messageConversations() []messageConversation {
@@ -52,6 +53,7 @@ func (m Model) messageConversations() []messageConversation {
 			groups[id] = g
 		}
 		g.items = append(g.items, i)
+		g.ownerInstruction = g.ownerInstruction || it.OwnerInstruction != ""
 		activity := it.At
 		if it.Updated.After(activity) {
 			activity = it.Updated
@@ -93,11 +95,20 @@ func (m Model) messageConversations() []messageConversation {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].event != out[j].event {
-			return !out[i].event
+		rank := func(c messageConversation) int {
+			switch {
+			case c.event:
+				return 3
+			case c.worker:
+				return 2
+			case c.ownerInstruction:
+				return 0
+			default:
+				return 1
+			}
 		}
-		if out[i].worker != out[j].worker {
-			return !out[i].worker
+		if rank(out[i]) != rank(out[j]) {
+			return rank(out[i]) < rank(out[j])
 		}
 		if out[i].at.Equal(out[j].at) {
 			return out[i].items[len(out[i].items)-1] > out[j].items[len(out[j].items)-1]
@@ -184,7 +195,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	}
 	suffix := fmt.Sprintf("%d %s · %s", len(c.items), messageWord, ageText)
 	marker := ""
-	if first.OwnerInstruction != "" {
+	if c.ownerInstruction {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
 	}
 	style := lipgloss.NewStyle().Foreground(roleText)
