@@ -103,12 +103,12 @@ func TestBrailleDashAndEdgeRoles(t *testing.T) {
 		t.Fatalf("dash has %d dots, solid %d", dashed, solid)
 	}
 }
-func TestBrailleShortensLabel(t *testing.T) {
+func TestBrailleDropsLabelThatDoesNotFit(t *testing.T) {
 	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "a-very-long-project-name"}}})
 	g.Positions["a-very-long-project-name"] = Point{}
 	out := strings.Join(renderGraph(Braille{}, g, Camera{Zoom: 1, FitZoom: 1}, 10, 3, time.Time{}), "\n")
-	if !strings.Contains(out, "…") {
-		t.Fatalf("label was not shortened: %s", out)
+	if strings.Contains(out, "…") || strings.Contains(out, "a-very") {
+		t.Fatalf("partial label: %s", out)
 	}
 }
 

@@ -3,6 +3,7 @@ package graphview
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -201,7 +202,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 	}
 
-	for _, n := range scene.Nodes {
+	labelNodes := append([]SceneNode(nil), scene.Nodes...)
+	sort.SliceStable(labelNodes, func(i, j int) bool { return labelNodes[i].Selected && !labelNodes[j].Selected })
+	for _, n := range labelNodes {
 		x, y := point(n.Position)
 		cx, cy := x/2, y/4
 		label := n.Label
@@ -250,7 +253,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 				if pos[0] < cx {
 					gap = pos[0] + len(rs)
 				}
-				if gap >= 0 && gap < width {
+				if gap >= 0 && gap < width && !cells[cy*width+gap].occupied {
 					cells[cy*width+gap] = cell{text: ' ', role: "label", occupied: true}
 				}
 			}
@@ -258,34 +261,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			labelX, labelY = pos[0], pos[1]
 			break
 		}
-		if !placed {
-			for length := len(rs) - 1; length >= 2 && !placed; length-- {
-				short := append(append([]rune(nil), rs[:length-1]...), '…')
-				for _, pos := range [][2]int{{cx + radiusX + 1, cy}, {cx - length - radiusX, cy}, {cx - length/2, cy - radiusY - 1}, {cx - length/2, cy + radiusY + 1}} {
-					if pos[0] < 0 || pos[1] < 0 || pos[0]+length > width || pos[1] >= height {
-						continue
-					}
-					free := true
-					for i := range short {
-						if cells[pos[1]*width+pos[0]+i].occupied {
-							free = false
-							break
-						}
-					}
-					if !free {
-						continue
-					}
-					for i, r := range short {
-						if put(pos[0]+i, pos[1], r, labelRole) {
-							hits[Cell{pos[0] + i, pos[1]}] = n.Name
-						}
-					}
-					placed = true
-					labelX, labelY = pos[0], pos[1]
-					break
-				}
-			}
-		}
+
 		if placed && scene.Level == "cards" {
 			count := n.Card.Sessions
 			detail := fmt.Sprintf("%d sessions", count)
