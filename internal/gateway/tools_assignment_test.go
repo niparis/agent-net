@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -110,5 +111,21 @@ func TestToolPlanAndApplyAudit(t *testing.T) {
 	events, err := s.ToolHistory(id)
 	if err != nil || len(events) != 2 || events[0].Actor != "cto" || events[1].Actor != "owner" || events[1].Revision != 1 || len(events[1].Targets) != 1 {
 		t.Fatalf("history: %+v %v", events, err)
+	}
+}
+
+func TestGatewayToolPlanRequiresOwnerSession(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"item":"x","target":{"scope":"global"},"actor":"owner"}`)
+	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "tools.plan", raw); err == nil || !strings.Contains(err.Error(), "owner authority") {
+		t.Fatalf("gateway accepted unauthenticated owner: %v", err)
 	}
 }

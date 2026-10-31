@@ -194,3 +194,10 @@ type ToolAuditEvent struct {
 type ToolHistoryRequest struct {
 	Item string `json:"item"`
 }
+
+// ToolNeed is advisory charter text whose satisfaction is not inferred.
+type ToolNeed struct {
+	Node  string `json:"node"`
+	Text  string `json:"text"`
+	State string `json:"state"`
+}

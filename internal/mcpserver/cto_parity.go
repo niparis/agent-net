@@ -14,6 +14,10 @@ func init() {
 	sid := s("Session ID, as returned by agents.")
 	model := s("Model name; an empty model selects the default where supported.")
 	harness := en("Harness name, or omit to use the default.", "opencode", "claude", "pi", "codex")
+	add("tools_list", "List observed skills and MCP items, their desired and pending state, and advisory charter needs requiring review.", map[string]ctoField{"kind": s("Filter by skill or mcp."), "harness": s("Filter by harness."), "project": s("Filter by registered project."), "state": s("Filter by observed state."), "offset": n("Page offset from next.")})
+	add("tools_plan", "Propose a tool assignment plan, including target paths and conflicts. This changes no files or assignment.", map[string]ctoField{"item": s("Exact item ID from tools_list."), "target": obj("Desired assignment with scope and optional project names.")})
+	add("tools_apply", "Apply a previously reviewed plan only on the owner's explicit words in this chat. This records desired state, not file changes.", map[string]ctoField{"plan_id": s("Exact plan ID returned by tools_plan.")})
+	add("tools_history", "Read an item's recorded plans and assignment revisions, including actors, targets and results.", map[string]ctoField{"item": s("Exact item ID from tools_list.")})
 	add("ui_show", "Show a tab, selection and filter in every open local TUI, with a short explanation.", map[string]ctoField{"tab": en("Tab to show.", "sessions", "messages", "quotas", "map"), "select": s("Session ID, exact session name or project node to select."), "filter": s("Text to filter the view."), "why": s("Short reason shown to the owner.")})
 	add("ui_notice", "Show a short one-line notice in every open local TUI; returns no TUI open when none is connected.", map[string]ctoField{"text": s("Notice text.")})
 	add("info", "Read this daemon's connection, machine, owner session and local session information.", nil)
@@ -80,6 +84,7 @@ func init() {
 		spec.fields[field] = f
 		ctoTools[tool] = spec
 	}
+	setProperties("tools_plan", "target", map[string]any{"scope": property("string", "Desired scope.", "global", "projects", "uninstalled"), "projects": stringsArray("Registered project names when scope is projects.")})
 	setProperties("nodes", "models", map[string]any{"machine": property("string", "Machine name or ID."), "harness": property("string", "Harness name.")})
 	setProperties("session_policy", "policy", map[string]any{
 		"delegate":    property("string", "Delegation mode.", "", "off", "native", "workers"),

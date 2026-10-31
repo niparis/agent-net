@@ -242,3 +242,22 @@ func TestCTOSessionPolicyToolDescribesWrite(t *testing.T) {
 	}
 	t.Fatal("session_policy missing")
 }
+
+func TestCTOToolManagementDescriptions(t *testing.T) {
+	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]*mcp.Tool{}
+	for _, v := range list.Tools {
+		found[v.Name] = v
+	}
+	for _, name := range []string{"tools_list", "tools_plan", "tools_apply", "tools_history"} {
+		if found[name] == nil || len(found[name].Description) < 60 {
+			t.Fatalf("missing description: %s", name)
+		}
+	}
+	if !strings.Contains(found["tools_apply"].Description, "explicit") {
+		t.Fatal("apply description lacks owner instruction requirement")
+	}
+}

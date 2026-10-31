@@ -190,3 +190,11 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 	checked = true
 	return g.store.ApplyToolPlan(id, actor)
 }
+
+func (g *Gateway) validToolOwner(nc *nodeConn, id string) bool {
+	if id == "" {
+		return false
+	}
+	a, ok, err := g.store.Agent(id)
+	return err == nil && ok && a.NodeID == nc.id && a.Harness == protocol.OwnerHarness && a.Online
+}

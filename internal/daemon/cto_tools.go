@@ -43,7 +43,7 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	}
 	// These operations reuse the same owner implementations after ctoTool has
 	// checked the calling process tree. This connection is never exposed.
-	lc := &localConn{d: d, client: "cli"}
+	lc := &localConn{d: d, client: "cli", cto: true}
 	if ctoOwnerMethods[name] {
 		res, _, err := lc.dispatchOwner(ctx, name, raw)
 		return res, err
@@ -52,6 +52,24 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "tools_list":
+		data, err := d.call(ctx, "query.tools_items", json.RawMessage(raw))
+		if err != nil {
+			return nil, err
+		}
+		var page protocol.ToolsPage
+		if err = json.Unmarshal(data, &page); err != nil {
+			return nil, err
+		}
+		needs, err := d.call(ctx, "query.tools_needs", struct{}{})
+		if err != nil {
+			return nil, err
+		}
+		var advisory []protocol.ToolNeed
+		if err = json.Unmarshal(needs, &advisory); err != nil {
+			return nil, err
+		}
+		return map[string]any{"items": page.Items, "next": page.Next, "unmet_needs": advisory}, nil
 	case "ui_show", "ui_notice":
 		var q protocol.UIRequest
 		if json.Unmarshal(raw, &q) != nil {
@@ -398,6 +416,7 @@ func (d *Daemon) recordCTOAction(text string) error {
 
 // These allowlists are reachable only from ctoTool's process-tree check.
 var ctoOwnerMethods = map[string]bool{
+	"tools_plan": true, "tools_apply": true, "tools_history": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true,
 	"usage": true, "usage_top": true, "counts": true, "graph_view": true, "session_text": true, "session_enter": true,
 	"session_trust": true, "session_policy": true, "node_rename": true, "integrations_get": true, "integrations_set": true,

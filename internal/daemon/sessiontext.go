@@ -204,6 +204,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case "gateway_backup":
 		res, err = d.call(withCallWait(ctx, 10*time.Minute), "gateway.backup", json.RawMessage(raw))
 	case "tools_plan":
+		actor := "owner"
+		if lc.cto {
+			actor = "cto"
+		}
 		var p protocol.ToolPlanRequest
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad tools_plan")
@@ -211,8 +215,13 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.plan", struct {
 			protocol.ToolPlanRequest
 			Actor string `json:"actor"`
-		}{p, "owner"})
+			Owner string `json:"owner"`
+		}{p, actor, d.ownerSessionID()})
 	case "tools_apply":
+		actor := "owner"
+		if lc.cto {
+			actor = "cto"
+		}
 		var p protocol.ToolPlanID
 		if json.Unmarshal(raw, &p) != nil {
 			return nil, true, errors.New("bad tools_apply")
@@ -220,7 +229,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.apply", struct {
 			protocol.ToolPlanID
 			Actor string `json:"actor"`
-		}{p, "owner"})
+			Owner string `json:"owner"`
+		}{p, actor, d.ownerSessionID()})
 	case "tools_history":
 		var p protocol.ToolHistoryRequest
 		if json.Unmarshal(raw, &p) != nil || p.Item == "" {

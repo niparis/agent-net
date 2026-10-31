@@ -560,8 +560,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[struct {
 			protocol.ToolPlanRequest
 			Actor string `json:"actor"`
+			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") {
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
@@ -569,11 +570,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		p, err := decode[struct {
 			protocol.ToolPlanID
 			Actor string `json:"actor"`
+			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") {
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.applyTool(ctx, p.ID, p.Actor)
+	case "query.tools_needs":
+		graph, err := st.Graph()
+		if err != nil {
+			return nil, err
+		}
+		needs := []protocol.ToolNeed{}
+		for _, node := range graph.Nodes {
+			if node.Charter.Needs != "" {
+				needs = append(needs, protocol.ToolNeed{Node: node.Name, Text: node.Charter.Needs, State: "unverified"})
+			}
+		}
+		return needs, nil
 	case "tools.history":
 		p, err := decode[protocol.ToolHistoryRequest](raw)
 		if err != nil || p.Item == "" {
