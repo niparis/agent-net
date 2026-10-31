@@ -137,6 +137,62 @@ func TestNeedsAndTableRowsAreVisitedOnceInOrder(t *testing.T) {
 	}
 }
 
+func selectWaitingRow(m Model, inNeeds bool) Model {
+	index := len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
+	if inNeeds {
+		for i, a := range m.needsRows() {
+			if a.SessionID == cogforgeMaintenanceID {
+				index = i
+				break
+			}
+		}
+	}
+	m.selected, m.selIdx, m.selNeeds = cogforgeMaintenanceID, index, inNeeds
+	return m
+}
+
+func TestWaitingRowsUseTheSameSessionActions(t *testing.T) {
+	for _, inNeeds := range []bool{true, false} {
+		row := "table"
+		if inNeeds {
+			row = "Needs you"
+		}
+		t.Run(row, func(t *testing.T) {
+			m, src := waitingTableModel()
+			m = selectWaitingRow(m, inNeeds)
+			if got := detailText(m); !strings.Contains(got, "cogforge-maintenance") {
+				t.Fatalf("details for the %s row show a different session:\n%s", row, got)
+			}
+
+			conv, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+			if cmd == nil || conv.conv == nil || conv.conv.id != cogforgeMaintenanceID {
+				var got string
+				if conv.conv != nil {
+					got = conv.conv.id
+				}
+				t.Fatalf("enter opened conversation for %q, command %t", got, cmd != nil)
+			}
+
+			m, src = waitingTableModel()
+			m = selectWaitingRow(m, inNeeds)
+			_, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})
+			if cmd == nil {
+				t.Fatal("e returned no enter command")
+			}
+			cmd()
+			if len(src.enters) != 1 || src.enters[0].SessionID != cogforgeMaintenanceID {
+				t.Fatalf("e entered sessions %+v", src.enters)
+			}
+			m, _ = waitingTableModel()
+			m = selectWaitingRow(m, inNeeds)
+			composed, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("m")})
+			if composed.mode != modeCompose || composed.composeTo != cogforgeMaintenanceID {
+				t.Fatalf("m composed to %q in mode %v", composed.composeTo, composed.mode)
+			}
+		})
+	}
+}
+
 func TestNeedsSectionIsAboveTheMachinesAndOldestFirst(t *testing.T) {
 	m := needsModel(100, 30)
 	text := m.View()
