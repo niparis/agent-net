@@ -130,6 +130,9 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 				return plan, e
 			}
 		}
+		if _, e = d.syncOpenCodeCTOSelection(ctx, id); e != nil {
+			return plan, e
+		}
 		plan.Argv = []string{bin, "--server", d.cto.base, "--session", id}
 		plan.Env = map[string]string{"OPENCODE_SERVER_PASSWORD": d.cto.password}
 	}
