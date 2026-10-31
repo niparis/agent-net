@@ -419,7 +419,11 @@ func NodeExecEnv(path string) ([]string, error) {
 // service needs to find the same local quota stores as the setup shell. System
 // services do not inherit variables exported by a shell profile. Provider
 // credential variables are deliberately excluded.
-func ServiceEnvironment(home string) []string {
+func ServiceEnvironment(home string, source ...[]string) []string {
+	environment := os.Environ()
+	if len(source) > 0 {
+		environment = source[0]
+	}
 	values := map[string]string{}
 	xdgPathKeys := map[string]bool{
 		"XDG_CACHE_HOME":  true,
@@ -428,7 +432,7 @@ func ServiceEnvironment(home string) []string {
 		"XDG_RUNTIME_DIR": true,
 		"XDG_STATE_HOME":  true,
 	}
-	for _, item := range os.Environ() {
+	for _, item := range environment {
 		key, value, ok := strings.Cut(item, "=")
 		if !ok {
 			continue
