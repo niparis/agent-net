@@ -277,8 +277,8 @@ ALTER TABLE tool_audit ADD COLUMN assignment TEXT NOT NULL DEFAULT '';
 ALTER TABLE tool_results ADD COLUMN branch TEXT NOT NULL DEFAULT '';
 ALTER TABLE tool_results ADD COLUMN commit_hash TEXT NOT NULL DEFAULT '';
 `, `
-CREATE TABLE signal_prompts (session_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE charter_signals (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, prompt TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS signal_prompts (session_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS charter_signals (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, prompt TEXT NOT NULL, at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
