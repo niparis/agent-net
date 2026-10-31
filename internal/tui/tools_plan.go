@@ -650,9 +650,11 @@ func (m Model) openRepoRemove(project, name string, copies []toolsdiff.Copy) (te
 	md := m.openModal("Remove " + name + " from the " + project + " repo")
 	md.lines = []string{
 		tsErr.Render("- ") + project + " repo: remove " + name,
-		tsDim.Render("  it is committed, so this is a change to the repo. agent-net never commits to the default branch:"),
-		tsAcc.Render("  a ") + "a new branch agent-net/remove-" + name + " with one commit; you merge it " + tsFaint.Render("(not available yet)"),
-		tsAcc.Render("  b ") + "ask " + project + "'s agent to do it (it follows its charter)",
+		tsDim.Render("  it is committed, so this is a change to the repo."),
+		tsDim.Render("  agent-net never commits to the default branch:"),
+		tsAcc.Render("  a  ") + "a new branch with one commit that you merge " + tsFaint.Render("(not available yet)"),
+		tsFaint.Render("     branch name: agent-net/remove-" + name),
+		tsAcc.Render("  b  ") + "ask " + project + "'s agent to do it (it follows its charter)",
 	}
 	for _, c := range copies {
 		md.paths = append(md.paths, c.Machine+"  "+c.Location+"  (committed in git)")
@@ -928,7 +930,7 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		}
 		letter := string(rune('a' + i))
 		c := c
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+toolsdiff.Short(c.Hash)+")"+tsDim.Render("  "+c.Location))
+		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+toolsdiff.Short(c.Hash)+")")
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
 		md.foot = append(md.foot, letter, "keep "+toolsdiff.Short(c.Hash))
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {

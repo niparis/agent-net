@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 7 sessions, 6 online · 1 busy                      updated 14:05:00
+ Differences   All tools   By project   [ ] switch   / search
+╭─Compare, then keep one───────────────────────────────────────────────────────────────────────────────────────────────╮
+│ a  keep the copy on research (bbbbbb)                                                                                │
+│ b  keep the copy on research (aaaaaa)                                                                                │
+│   the one you keep goes into agent-net and to every machine                                                          │
+│                                                                                                                      │
+│ exact folders                                                                                                        │
+│   research  /home/n/.agents/skills/design-taste-frontend                                                             │
+│   research  /home/n/.claude/skills/design-taste-frontend                                                             │
+│                                                                                                                      │
+│ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+│   … mastering-postgresql waits for Nicolas-MBP                                                                       │
+│     nothing to do: it applies when the machine is back                                                               │
+│   … react-best-practices waits for Nicolas-MBP                                                                       │
+│     nothing to do: it applies when the machine is back                                                               │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ 5 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept as is  . accepted  [ ] screen  r rescan  tab CTO  ? help  q quit

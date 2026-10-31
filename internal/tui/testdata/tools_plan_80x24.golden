@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 7 sessions, 6 online · 1 busy
+ Differences   All tools   By project   [ ] switch   / search
+╭─Compare, then keep one───────────────────────────────────────────────────────╮
+│ a  keep the copy on research (bbbbbb)                                        │
+│ b  keep the copy on research (aaaaaa)                                        │
+│   the one you keep goes into agent-net and to every machine                  │
+│                                                                              │
+│ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                    │
+╰──────────────────────────────────────────────────────────────────────────────╯
+│   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours      │
+│     fix: remove the repo copy                                                │
+│   ○ 23 skills are only on research and not managed by agent-net              │
+│     fix: import them and put them on every machine                           │
+│                                                                              │
+│ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept as is  . accepted  [ ] screen  tab CTO  ? help

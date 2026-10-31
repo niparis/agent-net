@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -155,8 +156,8 @@ func (m Model) diffsView(w, h int) []string {
 		body = append(body, tsGood.Render("Everything matches what you set. Nothing to do."))
 	}
 	per := 3
-	if rows < 6 {
-		per = 2
+	if rows < 6 || len(ds)*3 > rows {
+		per = 2 // no blank line between them when they would not all fit
 	}
 	visible := max(rows/per, 1)
 	start := 0
@@ -226,25 +227,34 @@ func marker(sel bool) string {
 
 // ---- screen 2: all tools ----
 
-type toolCols struct{ name, from, mach, proj, note int }
+type toolCols struct {
+	name, from, proj, note int
+	machs                  []int // one width per machine column
+}
 
-func toolColumns(w, machines int) toolCols {
+func toolColumns(w int, ms []toolsdiff.Machine) toolCols {
 	inner := w - 4
-	c := toolCols{from: 16, mach: 11, proj: 16}
+	c := toolCols{from: 17, proj: 15}
 	if inner >= 110 {
-		c.from, c.proj, c.note = 18, 24, 24
+		c.from, c.proj, c.note = 21, 22, 22
 	}
-	if machines > 3 {
-		c.mach = 9
+	machTotal := 0
+	for _, mc := range ms {
+		n := min(max(ansi.StringWidth(sanitize(mc.Name))+2, 6), 14)
+		if len(ms) > 3 {
+			n = min(n, 10)
+		}
+		c.machs = append(c.machs, n)
+		machTotal += n
 	}
-	c.name = inner - c.from - c.mach*machines - c.proj - c.note
+	c.name = inner - c.from - machTotal - c.proj - c.note
 	if c.name < 14 {
 		c.proj = max(c.proj-(14-c.name), 8)
-		c.name = inner - c.from - c.mach*machines - c.proj - c.note
+		c.name = inner - c.from - machTotal - c.proj - c.note
 	}
 	if c.name < 12 {
 		c.from = max(c.from-(12-c.name), 8)
-		c.name = inner - c.from - c.mach*machines - c.proj - c.note
+		c.name = inner - c.from - machTotal - c.proj - c.note
 	}
 	c.name = max(c.name, 8)
 	return c
@@ -267,7 +277,7 @@ func cellGlyph(c toolsdiff.Cell) (string, lipgloss.Style) {
 func (m Model) allToolsView(w, h int) []string {
 	rows := m.shownRows()
 	ms := m.tl.cat.Machines
-	cols := toolColumns(w, len(ms))
+	cols := toolColumns(w, ms)
 	detailH := 4
 	listH := max(h-detailH-2-2, 2) // panel borders, the header and the count
 	hdrStyle := func(i int) lipgloss.Style {
@@ -276,9 +286,9 @@ func (m Model) allToolsView(w, h int) []string {
 		}
 		return tsDim
 	}
-	hdr := "  " + tsDim.Render(cell("NAME", cols.name-2)) + tsDim.Render(cell("FROM", cols.from))
+	hdr := "  " + tsDim.Render(cell("NAME", cols.name-3)) + " " + tsDim.Render(cell("FROM", cols.from-1)) + " "
 	for i, mc := range ms {
-		hdr += hdrStyle(i).Render(cell(" "+mc.Name, cols.mach))
+		hdr += hdrStyle(i).Render(cell(" "+mc.Name, cols.machs[i]-1)) + " "
 	}
 	hdr += hdrStyle(len(ms)).Render(cell("PROJECTS", cols.proj))
 	if cols.note > 0 {
@@ -299,12 +309,12 @@ func (m Model) allToolsView(w, h int) []string {
 		case r.Origin == toolsdiff.OriginRepo:
 			prefix, nameStyle = "⌂ ", tsDim
 		}
-		line := marker(sel) + nameStyle.Render(cell(prefix+r.Name, cols.name-2))
+		line := marker(sel) + nameStyle.Render(cell(prefix+r.Name, cols.name-3)) + " "
 		fromStyle := tsDim
 		if r.Origin == toolsdiff.OriginStore {
 			fromStyle = tsText
 		}
-		line += fromStyle.Render(cell(r.From, cols.from))
+		line += fromStyle.Render(cell(r.From, cols.from-1)) + " "
 		for ci := range ms {
 			g, st := cellGlyph(r.Cells[ci])
 			text := " " + g
@@ -312,7 +322,7 @@ func (m Model) allToolsView(w, h int) []string {
 				text = "[" + g + "]"
 				st = sSel
 			}
-			line += st.Render(cell(text, cols.mach-1)) + " "
+			line += st.Render(cell(text, cols.machs[ci]-1)) + " "
 		}
 		ptext, pwarn := r.ProjectSummary()
 		pst := tsText
@@ -412,7 +422,7 @@ func (m Model) projectToolsView(w, h int) []string {
 		}
 		body = append(body, l+tsFaint.Render("│ ")+r)
 	}
-	title := fmt.Sprintf("By project · what a session in %s gets on %s (m changes the machine)", sanitize(proj), sanitize(mach))
+	title := fmt.Sprintf("By project · what %s gets on %s · m machine", sanitize(proj), sanitize(mach))
 	return panel(title, body, w, roleAccent)
 }
 
@@ -435,10 +445,12 @@ func (m Model) projectLayers(proj, mach string, rows, width int) []string {
 	every = layer{head: "ON " + strings.ToUpper(mach) + " FOR EVERY PROJECT", color: tsText, empty: "  none"}
 	servers = layer{head: "MCP SERVERS", color: tsMat, empty: "  none"}
 	repoNames := map[string]bool{}
+	var available []string
 	for _, r := range m.tl.cat.Rows {
 		if r.Origin == toolsdiff.OriginRepo && r.Repo == proj {
 			repoNames[r.Name] = true
-			repo.lines = append(repo.lines, "  "+tsDim.Render("⌂ ")+tsText.Render(cell(r.Name, 30))+tsFaint.Render("committed · u removes it on a branch"))
+			available = append(available, r.Name)
+			repo.lines = append(repo.lines, "  "+tsDim.Render("⌂ ")+tsText.Render(cell(r.Name, 30))+tsFaint.Render("committed"))
 		}
 	}
 	for _, r := range m.tl.cat.Rows {
@@ -454,6 +466,7 @@ func (m Model) projectLayers(proj, mach string, rows, width int) []string {
 				on = true
 			}
 			if on {
+				available = append(available, r.Name)
 				servers.lines = append(servers.lines, "  "+tsMat.Render("◆ ")+tsText.Render(cell(r.Name, 30))+tsFaint.Render(r.From))
 			}
 			continue
@@ -473,88 +486,124 @@ func (m Model) projectLayers(proj, mach string, rows, width int) []string {
 			case toolsdiff.ProjPending:
 				why, ws, dot = "pending: machine offline", tsWarn, tsWarn.Render("● ")
 			}
+			if state == toolsdiff.ProjOn {
+				available = append(available, r.Name)
+			}
 			forProj.lines = append(forProj.lines, "  "+dot+name+ws.Render(why))
 			continue
 		}
 		if len(r.Projects) == 0 && mi < len(r.Cells) && r.Cells[mi].State != toolsdiff.CellOff {
 			g, st := cellGlyph(r.Cells[mi])
+			if r.Cells[mi].State == toolsdiff.CellOther {
+				g = "◐"
+			}
 			name, why := tsText.Render(cell(r.Name, 30)), r.From
 			if r.Origin == toolsdiff.OriginMachines {
 				why = "not managed"
 			}
 			if repoNames[r.Name] {
 				name, why = tsStrike.Render(cell(r.Name, 30)), "hidden by the repo's copy"
+			} else {
+				available = append(available, r.Name)
 			}
 			every.lines = append(every.lines, "  "+st.Render(cell(g, 2))+name+tsFaint.Render(why))
 		}
 	}
 	_ = ms
 	layers := []*layer{&repo, &forProj, &every, &servers}
-	// Share the lines: a heading and one line each at least, then the rest by need.
+	// Share the lines. A heading and a line each come first; short layers are
+	// shown whole, and the longest ones get what is left.
 	budget := rows - 1 - len(layers) // the needs line and the headings
-	need := 0
-	for _, l := range layers {
+	take := make([]int, len(layers))
+	order := make([]int, len(layers))
+	for i, l := range layers {
+		order[i] = i
 		if len(l.lines) == 0 {
-			budget--
-		} else {
-			need += len(l.lines)
+			budget-- // the "none" line
 		}
 	}
-	var out []string
-	left := len(layers)
-	for _, l := range layers {
-		take := len(l.lines)
-		if take > 0 {
-			fair := max(budget/max(left, 1), 1)
-			if take > fair && need > budget {
-				take = fair
-			}
-			budget -= take
+	sort.SliceStable(order, func(a, b int) bool { return len(layers[order[a]].lines) < len(layers[order[b]].lines) })
+	for n, i := range order {
+		l := layers[i]
+		if len(l.lines) == 0 {
+			continue
 		}
+		fair := max(budget/(len(order)-n), 1)
+		take[i] = min(len(l.lines), fair)
+		budget -= take[i]
+	}
+	// The "+ n more" lines need room too: take lines from the longest layer.
+	size := func() int {
+		n := 0
+		for i, l := range layers {
+			n += 1 + max(take[i], 1)
+			if take[i] < len(l.lines) {
+				n++
+			}
+		}
+		return n
+	}
+	for size() > rows-1 {
+		big := -1
+		for i := range layers {
+			if take[i] > 1 && (big < 0 || take[i] > take[big]) {
+				big = i
+			}
+		}
+		if big < 0 {
+			break
+		}
+		take[big]--
+	}
+	var out []string
+	for i, l := range layers {
 		out = append(out, l.color.Bold(true).Render(l.head)+tsFaint.Render(fmt.Sprintf("  %d", len(l.lines))))
 		if len(l.lines) == 0 {
 			out = append(out, tsFaint.Render(l.empty))
 		}
-		out = append(out, l.lines[:take]...)
-		if take < len(l.lines) {
-			out = append(out, tsFaint.Render(fmt.Sprintf("  + %d more", len(l.lines)-take)))
+		out = append(out, l.lines[:take[i]]...)
+		if take[i] < len(l.lines) {
+			out = append(out, tsFaint.Render(fmt.Sprintf("  + %d more", len(l.lines)-take[i])))
 		}
-		left--
 	}
 	for len(out) < rows-1 {
 		out = append(out, "")
 	}
 	out = out[:min(len(out), rows-1)]
-	return append(out, m.needsLine(proj))
+	return append(out, m.needsLine(proj, available))
 }
+
+var needStopWord = map[string]bool{"skill": true, "skills": true, "server": true, "tools": true, "found": true}
 
 // needsLine is the charter's needs text, and whether a tool covers it. A need is
 // advisory: nothing is assigned because of it.
-func (m Model) needsLine(proj string) string {
+func (m Model) needsLine(proj string, available []string) string {
 	text := ""
 	for _, n := range m.tl.needs {
 		if n.Node == proj {
 			text = n.Text
 		}
 	}
-	head := tsFaint.Render("charter needs: ")
+	head := tsFaint.Render("needs: ")
 	if text == "" {
 		return head + tsFaint.Render("nothing listed")
 	}
 	low := strings.ToLower(text)
-	for _, r := range m.tl.cat.Rows {
-		if strings.Contains(low, strings.ToLower(r.Name)) {
-			return head + tsGood.Render(sanitize(text)+": "+r.Name+" covers it")
+	for _, name := range available {
+		for _, tok := range strings.Split(strings.ToLower(name), "-") {
+			if len(tok) >= 5 && !needStopWord[tok] && strings.Contains(low, tok) {
+				return head + tsGood.Render(sanitize(text)+" - "+name)
+			}
 		}
 	}
-	return head + tsWarn.Render(sanitize(text)+": nothing here covers it yet")
+	return head + tsWarn.Render(sanitize(text)+" - not covered yet")
 }
 
 // ---- plan on top ----
 
 func (m Model) modalBox(w, h int) []string {
 	md := m.tl.modal
-	bw := min(92, w-4)
+	bw := w
 	var body []string
 	switch {
 	case md.picker != nil && !md.loading && !md.done:
@@ -646,16 +695,14 @@ func overlayModal(screen, box []string, w int) []string {
 	}
 	x := max((w-bw)/2, 0)
 	out := append([]string(nil), screen...)
+	// The plan floats on a clear band: no pieces of the screen under it show
+	// beside it.
 	for i, l := range box {
 		r := y + i
 		if r >= len(out) {
 			break
 		}
-		base := out[r]
-		if pad := x - ansi.StringWidth(base); pad > 0 {
-			base += strings.Repeat(" ", pad)
-		}
-		out[r] = ansi.Cut(base, 0, x) + l + ansi.Cut(base, x+bw, w)
+		out[r] = strings.Repeat(" ", x) + l
 	}
 	return out
 }

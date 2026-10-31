@@ -6,7 +6,7 @@
 
 ## Status
 
-Build steps 1 to 7 and 9 are done: inventory, gateway storage, the private skill store, owner-gated assignments, skill projection with journal and undo, scoped MCP federation, and native MCP import and guarded removal, with the final documentation, setup and uninstall pass. Step 8 (the Tools tab and CTO workflows) is pending the owner's approval of the mockup. The decision text below is unchanged.
+Build steps 1 to 9 are done: inventory, gateway storage, the private skill store, owner-gated assignments, skill projection with journal and undo, scoped MCP federation, and native MCP import and guarded removal, with the final documentation, setup and uninstall pass. Step 8 is done: the Tools tab (Differences, All tools, By project, plans first) and the CTO workflows (`tools_differences` and the brief). Open points: agent-net has no per-machine switch (a machine cell plans for every machine), the branch-and-commit removal of a repo skill is not built (the plan asks the project's agent instead), and repo skills are not told apart from other project-file copies. The decision text below is unchanged.
 
 ## Goal and terms
 

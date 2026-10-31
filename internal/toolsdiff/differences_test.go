@@ -42,10 +42,10 @@ func TestDriftBetweenMachinesSuggestsManagedVersion(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no drift in %+v", ds)
 	}
-	if !strings.Contains(d.Title, "aaaaaaa on research") || !strings.Contains(d.Title, "bbbbbbb on mac") {
+	if !strings.Contains(d.Title, "aaaaaa on research") || !strings.Contains(d.Title, "bbbbbb on mac") {
 		t.Errorf("title %q", d.Title)
 	}
-	if d.Fix != "make every machine use aaaaaaa" || d.Action.Kind != ActAssign || d.Action.Item != a.ID {
+	if d.Fix != "make every machine use aaaaaa" || d.Action.Kind != ActAssign || d.Action.Item != a.ID {
 		t.Errorf("fix %q action %+v", d.Fix, d.Action)
 	}
 	if d.Key != "drift:code-review" || d.Severity != SevWarn {
@@ -201,7 +201,7 @@ func TestCatalogCellsAndOrigins(t *testing.T) {
 		t.Fatalf("no row %s", name)
 		return Row{}
 	}
-	if r := row("review"); r.Origin != OriginStore || r.From != "agent-net aaaaaaa" || r.Cells[0].State != CellOn || r.Cells[1].State != CellPartial || r.Cells[1].Note == "" {
+	if r := row("review"); r.Origin != OriginStore || r.From != "agent-net aaaaaa" || r.Cells[0].State != CellOn || r.Cells[1].State != CellPartial || r.Cells[1].Note == "" {
 		t.Errorf("review %+v", r)
 	}
 	if r := row("found"); r.Origin != OriginMachines || r.Cells[0].State != CellFound || r.Cells[1].State != CellOff {

@@ -96,8 +96,8 @@ func Short(hash string) string {
 	if i := strings.LastIndex(hash, ":"); i >= 0 {
 		hash = hash[i+1:]
 	}
-	if len(hash) > 7 {
-		hash = hash[:7]
+	if len(hash) > 6 {
+		hash = hash[:6]
 	}
 	return hash
 }
