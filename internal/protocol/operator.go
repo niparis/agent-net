@@ -20,13 +20,14 @@ import (
 // Operator method names.
 const (
 	// Data. These only read.
-	OpInfo     = "info"           // answers OperatorInfo
-	OpNodes    = "nodes"          // answers NodesInfo
-	OpAgents   = "list"           // takes QueryAgents, answers AgentsResult
-	OpProjects = "projects"       // takes QueryProjects, answers ProjectsResult
-	OpEvents   = "events"         // takes QueryEvents, answers EventsResult
-	OpMessage  = "message_status" // takes QueryMessage, answers MessageResult
-	OpWorkers  = "workers"        // takes nothing, answers WorkersResult
+	OpInfo             = "info"              // answers OperatorInfo
+	OpNodes            = "nodes"             // answers NodesInfo
+	OpAgents           = "list"              // takes QueryAgents, answers AgentsResult
+	OpProjects         = "projects"          // takes QueryProjects, answers ProjectsResult
+	OpEvents           = "events"            // takes QueryEvents, answers EventsResult
+	OpMessage          = "message_status"    // takes QueryMessage, answers MessageResult
+	OpWorkers          = "workers"           // takes nothing, answers WorkersResult
+	OpToolsDifferences = "tools_differences" // owner-only summary of skill and MCP server differences
 
 	// Owner-only data (decision 0008): CPU and memory, the text of a session,
 	// the session counts. They share one gate with OpSend (decision 0008): the
@@ -112,7 +113,7 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
+var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,

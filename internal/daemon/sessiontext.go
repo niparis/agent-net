@@ -34,7 +34,7 @@ import (
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
 	"notification_settings": true,
-	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
+	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpProjectDisplayGet: true, protocol.OpProjectDisplaySet: true,
 	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true,
@@ -238,6 +238,18 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "query.tools_accepted", struct{}{})
 	case "tools_needs":
 		res, err = d.call(ctx, "query.tools_needs", struct{}{})
+	case protocol.OpToolsDifferences:
+		var p struct {
+			Offset int `json:"offset"`
+			Limit  int `json:"limit"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad pagination")
+		}
+		if p.Offset < 0 {
+			return nil, true, errors.New("bad pagination")
+		}
+		res, err = d.toolDifferences(ctx, p.Offset, p.Limit)
 	case "tools_accept":
 		var p protocol.ToolAccept
 		if json.Unmarshal(raw, &p) != nil || p.Key == "" {

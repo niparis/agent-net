@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/term"
+
 	"github.com/niparis/agent-net/internal/agentfiles"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/daemon"
@@ -65,8 +67,14 @@ func home() string {
 
 type runner struct {
 	Options
-	failed error
-	colors setupColor
+	failed         error
+	failedStep     string
+	colors         setupColor
+	joining        bool
+	foundHarnesses []string
+	statusClient   *client.Client
+	statusInfo     daemonInfo
+	interactive    bool
 	// want is the answer for the seven integrations. When it is set, the steps
 	// apply it and turn an item off as well as on. When it is nil, the steps
 	// keep their old ask-once behavior.
@@ -74,6 +82,7 @@ type runner struct {
 }
 
 func newRunner(o Options) (*runner, error) {
+	interactive := o.Out == nil && setupHasTerminal()
 	if o.Out == nil {
 		o.Out = os.Stdout
 	}
@@ -87,7 +96,21 @@ func newRunner(o Options) (*runner, error) {
 	if os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
 		o.NoService = true
 	}
-	return &runner{Options: o, colors: defaultSetupColor()}, nil
+	return &runner{Options: o, colors: defaultSetupColor(), interactive: interactive}, nil
+}
+
+// setupHasTerminal checks stdin and the controlling terminal without sending
+// terminal queries. Setup prompts only when a person can answer them.
+func setupHasTerminal() bool {
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		return true
+	}
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		return false
+	}
+	defer tty.Close()
+	return term.IsTerminal(int(tty.Fd()))
 }
 
 // step prints one result line. A non-nil err prints as a failure.
@@ -96,7 +119,10 @@ func (r *runner) step(name, result string, err error) {
 		result = "failed (" + err.Error() + ")"
 		if r.failed == nil {
 			r.failed = fmt.Errorf("%s: %w", name, err)
+			r.failedStep = name
 		}
+	} else if harness := setupHarness(name); harness != "" && !strings.Contains(result, "not found") {
+		r.foundHarnesses = appendUnique(r.foundHarnesses, harness)
 	}
 	line := fmt.Sprintf("%-21s %s", name, result)
 	if err != nil {
@@ -111,7 +137,8 @@ func (r *runner) hint(format string, a ...any) {
 	fmt.Fprintf(r.Out, "%-21s %s\n", "", r.colors.faint(fmt.Sprintf(format, a...)))
 }
 
-// Setup makes this machine part of the network. It prints one line per step.
+// Setup makes this machine part of the network, prints its setup steps, and
+// finishes with a summary when the setup is not quota-only.
 func Setup(ctx context.Context, o Options) error {
 	r, err := newRunner(o)
 	if err != nil {
@@ -122,6 +149,7 @@ func Setup(ctx context.Context, o Options) error {
 		r.quotaAXI(ctx)
 		return r.failed
 	}
+	defer r.finish(ctx)
 	if r.Gateway {
 		r.setupGateway(ctx)
 		if r.failed != nil {
@@ -235,6 +263,7 @@ func (r *runner) join(ctx context.Context) error {
 		r.step("join", "skipped (already joined)", nil)
 		return nil
 	}
+	r.joining = joinStr != ""
 	if joinStr == "" {
 		if !r.NoService {
 			if err := waitForPort("localhost:"+r.port(), 10*time.Second); err != nil {
@@ -443,11 +472,15 @@ func (r *runner) daemonStatus(ctx context.Context) {
 	deadline := time.Now().Add(10 * time.Second)
 	state := "daemon is not reachable (see the service log)"
 	for {
-		if info, err := queryInfo(ctx); err == nil {
+		cl, info, err := queryDaemonInfo(ctx)
+		if err == nil {
 			if info.Connected {
 				r.step("daemon status", "connected to "+info.GatewayURL+" as node "+info.NodeID, nil)
+				r.statusClient = cl
+				r.statusInfo = info
 				return
 			}
+			cl.Close()
 			state = "daemon is running but not connected to " + info.GatewayURL + " yet"
 		}
 		if time.Now().After(deadline) || ctx.Err() != nil {
@@ -459,28 +492,36 @@ func (r *runner) daemonStatus(ctx context.Context) {
 }
 
 type daemonInfo struct {
-	Connected  bool   `json:"connected"`
-	NodeID     string `json:"node_id"`
-	GatewayURL string `json:"gateway_url"`
+	Connected  bool                   `json:"connected"`
+	NodeID     string                 `json:"node_id"`
+	Hostname   string                 `json:"hostname"`
+	GatewayURL string                 `json:"gateway_url"`
+	Launch     bool                   `json:"launch"`
+	Sessions   []protocol.SessionInfo `json:"sessions"`
 }
 
-func queryInfo(ctx context.Context) (daemonInfo, error) {
+func queryDaemonInfo(ctx context.Context) (*client.Client, daemonInfo, error) {
 	var info daemonInfo
 	cl, err := client.Dial(daemon.SocketPath())
 	if err != nil {
-		return info, err
+		return nil, info, err
 	}
-	defer cl.Close()
 	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	if _, err := cl.Call(cctx, "hello", map[string]any{"client": "cli", "protocol": protocol.LocalProtocol}); err != nil {
-		return info, err
+		cl.Close()
+		return nil, info, err
 	}
 	raw, err := cl.Call(cctx, "info", nil)
 	if err != nil {
-		return info, err
+		cl.Close()
+		return nil, info, err
 	}
-	return info, json.Unmarshal(raw, &info)
+	if err := json.Unmarshal(raw, &info); err != nil {
+		cl.Close()
+		return nil, info, err
+	}
+	return cl, info, nil
 }
 
 // ---- helpers ----

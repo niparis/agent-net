@@ -14,8 +14,10 @@ func TestSetupColorRolesUseBasicANSI(t *testing.T) {
 		{c.label("See"), "\x1b[36mSee\x1b[0m"},
 		{c.attention("!"), "\x1b[33m!\x1b[0m"},
 		{c.failure("failed"), "\x1b[31mfailed\x1b[0m"},
+		{c.failureBold("Setup did not finish"), "\x1b[31;1mSetup did not finish\x1b[0m"},
 		{c.faint("details"), "\x1b[2mdetails\x1b[0m"},
 		{c.heading("What you have now"), "\x1b[1mWhat you have now\x1b[0m"},
+		{c.attentionBold("Do this first"), "\x1b[33;1mDo this first\x1b[0m"},
 	}
 	for _, tc := range cases {
 		if tc.got != tc.want {

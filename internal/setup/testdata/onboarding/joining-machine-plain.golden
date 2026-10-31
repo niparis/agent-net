@@ -1,0 +1,12 @@
+daemon status         connected to https://gateway.example:7420 as node n_build
+agent-net is running on build-vm, with 1 other machine.
+
+What you have now
+1 See   2 sessions here: 1 pi, 1 opencode. They show on laptop too.
+2 Talk  They can now ask your agents on laptop, and the reverse.
+5 Work  build-vm takes workers. Harnesses: pi, opencode.
+
+Do this first
+! Restart 2 sessions (pi, opencode) so they get the agent-net tools.
+
+Open agent-net here? [y/N]

@@ -69,3 +69,24 @@ func TestToolsMethodsPageAndCarryTheirParameters(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestToolsDifferencesReturnsCountToReview(t *testing.T) {
+	d, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
+		if method == "hello" {
+			return map[string]any{}, ""
+		}
+		if method == protocol.OpToolsDifferences {
+			return map[string]any{"to_look_at": 3}, ""
+		}
+		return nil, "unknown method"
+	})
+	c := New(path)
+	defer c.Close()
+	count, err := c.ToolsDifferences(context.Background())
+	if err != nil || count != 3 {
+		t.Fatalf("differences count %d, err %v", count, err)
+	}
+	if _, ok := d.params[protocol.OpToolsDifferences]; !ok {
+		t.Fatal("tools_differences was not called")
+	}
+}

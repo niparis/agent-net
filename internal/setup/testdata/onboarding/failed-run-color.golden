@@ -1,0 +1,7 @@
+[31mdaemon service        failed (systemctl --user start: exit 1)[0m
+
+[31;1mSetup did not finish: daemon service failed.[0m
+
+[33;1mDo this first[0m
+[33m![0m See why: [36mjournalctl --user -u agent-net-daemon[0m
+  Then run [36magent-net setup[0m again.

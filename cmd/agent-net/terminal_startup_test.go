@@ -41,6 +41,13 @@ func TestNonTUIStartupDoesNotQueryTerminalBackground(t *testing.T) {
 
 func childEnv(values ...string) []string {
 	env := os.Environ()
+	for i := 0; i < len(env); {
+		if strings.HasPrefix(env[i], "CI=") || strings.HasPrefix(env[i], "NO_COLOR=") {
+			env = append(env[:i], env[i+1:]...)
+			continue
+		}
+		i++
+	}
 	for _, value := range values {
 		key, _, _ := strings.Cut(value, "=")
 		prefix := key + "="
