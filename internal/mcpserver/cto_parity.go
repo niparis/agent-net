@@ -79,7 +79,7 @@ func init() {
 	add("cto_new", "Start a new CTO conversation for the selected harness, only when the owner asks.", nil)
 	add("cto_events", "Read messages and action lines from the current CTO conversation.", map[string]ctoField{"index": n("Message index to read from; zero begins at the start.")})
 	add("cto_graph_history", "Read graph changes recorded for CTO conversations after an optional history ID.", map[string]ctoField{"after": n("Return changes after this history ID.")})
-	add("cto_settings", "Read or set the CTO harness, model and automatic compaction settings on the owner's instruction.", map[string]ctoField{"harness": en("CTO harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction object: threshold_percent, floor_tokens and cache_window_seconds by provider.")})
+	add("cto_settings", "Read or set the CTO harness, model and automatic compaction settings on the owner's instruction.", map[string]ctoField{"harness": en("CTO harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction object: threshold_percent, floor_tokens, growth_tokens and cache_window_seconds by provider.")})
 	// Nested schemas make the valid settings and credential sources visible to
 	// the model, while the daemon remains the final validator.
 	property := func(typ, desc string, values ...string) map[string]any {
@@ -114,7 +114,8 @@ func init() {
 	})
 	setProperties("cto_settings", "compaction", map[string]any{
 		"threshold_percent":    property("integer", "Context percentage that triggers compaction."),
-		"floor_tokens":         property("integer", "Minimum tokens for idle compaction."),
+		"floor_tokens":         property("integer", "Minimum context tokens for idle compaction."),
+		"growth_tokens":        property("integer", "Context growth since the last compaction before idle compaction."),
 		"cache_window_seconds": map[string]any{"type": "object", "description": "Prompt cache window in seconds per provider.", "additionalProperties": map[string]any{"type": "integer"}},
 	})
 

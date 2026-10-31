@@ -16,17 +16,19 @@ type CTOSettings struct {
 }
 
 // CTOCompactionSettings are the auto-compaction rules. Zero values are
-// defaults: 70 percent of the model's context, a 40k floor for the idle rule,
-// and a five minute prompt cache window per provider.
+// defaults: 70 percent of the model's context, a 40k floor and 60k of growth
+// for the idle rule, and a five minute prompt cache window per provider.
 type CTOCompactionSettings struct {
 	ThresholdPercent   int            `json:"threshold_percent,omitempty"`
 	FloorTokens        int64          `json:"floor_tokens,omitempty"`
+	GrowthTokens       int64          `json:"growth_tokens,omitempty"`
 	CacheWindowSeconds map[string]int `json:"cache_window_seconds,omitempty"`
 }
 
 const (
 	DefaultCTOCompactionThreshold = 70
 	DefaultCTOCompactionFloor     = 40_000
+	DefaultCTOCompactionGrowth    = 60_000
 	DefaultCTOCacheWindowSeconds  = 5 * 60
 )
 
@@ -38,6 +40,9 @@ func (s CTOCompactionSettings) Normalized() CTOCompactionSettings {
 	}
 	if s.FloorTokens <= 0 {
 		s.FloorTokens = DefaultCTOCompactionFloor
+	}
+	if s.GrowthTokens <= 0 {
+		s.GrowthTokens = DefaultCTOCompactionGrowth
 	}
 	windows := make(map[string]int, len(s.CacheWindowSeconds))
 	for provider, seconds := range s.CacheWindowSeconds {
