@@ -432,6 +432,13 @@ func runFakeOpenCode() {
 		}
 		json.NewEncoder(w).Encode(map[string]any{"data": item})
 	})
+	var ctoMu sync.Mutex
+	var ctoSession *mcp.ClientSession
+	defer func() {
+		if ctoSession != nil {
+			ctoSession.Close()
+		}
+	}()
 	mux.HandleFunc("POST /fake/cto-tool", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
 			http.Error(w, "unauthorized", 401)
@@ -445,35 +452,39 @@ func runFakeOpenCode() {
 			http.Error(w, "bad request", 400)
 			return
 		}
-		var config struct {
-			MCP struct {
-				Servers map[string]struct {
-					Command     []string          `json:"command"`
-					Environment map[string]string `json:"environment"`
-				} `json:"servers"`
-			} `json:"mcp"`
+		ctoMu.Lock()
+		defer ctoMu.Unlock()
+		if ctoSession == nil {
+			var config struct {
+				MCP struct {
+					Servers map[string]struct {
+						Command     []string          `json:"command"`
+						Environment map[string]string `json:"environment"`
+					} `json:"servers"`
+				} `json:"mcp"`
+			}
+			data, err := os.ReadFile(filepath.Join(cwd, "opencode.json"))
+			if err != nil || json.Unmarshal(data, &config) != nil {
+				http.Error(w, "bad config", 500)
+				return
+			}
+			entry := config.MCP.Servers["agent-net-cto"]
+			if len(entry.Command) == 0 {
+				http.Error(w, "no MCP server", 500)
+				return
+			}
+			cmd := exec.Command(entry.Command[0], entry.Command[1:]...)
+			cmd.Env = workerEnv(os.Environ(), entry.Environment)
+			sess, err := mcp.NewClient(&mcp.Implementation{Name: "fake-opencode", Version: "test"}, nil).Connect(context.Background(), &mcp.CommandTransport{Command: cmd}, nil)
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+			ctoSession = sess
 		}
-		data, err := os.ReadFile(filepath.Join(cwd, "opencode.json"))
-		if err != nil || json.Unmarshal(data, &config) != nil {
-			http.Error(w, "bad config", 500)
-			return
-		}
-		entry := config.MCP.Servers["agent-net-cto"]
-		if len(entry.Command) == 0 {
-			http.Error(w, "no MCP server", 500)
-			return
-		}
-		cmd := exec.Command(entry.Command[0], entry.Command[1:]...)
-		cmd.Env = workerEnv(os.Environ(), entry.Environment)
 		ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 		defer cancel()
-		sess, err := mcp.NewClient(&mcp.Implementation{Name: "fake-opencode", Version: "test"}, nil).Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
-		if err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		defer sess.Close()
-		out, err := sess.CallTool(ctx, &mcp.CallToolParams{Name: q.Name, Arguments: q.Arguments})
+		out, err := ctoSession.CallTool(ctx, &mcp.CallToolParams{Name: q.Name, Arguments: q.Arguments})
 		if err != nil {
 			http.Error(w, err.Error(), 500)
 			return
