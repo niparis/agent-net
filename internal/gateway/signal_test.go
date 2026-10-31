@@ -215,3 +215,29 @@ func TestSignalReplyDoesNotConsumePrompt(t *testing.T) {
 		t.Fatalf("signals %+v: %v", signals, err)
 	}
 }
+
+func TestSignalInjectedPromptClearsOwnerInstruction(t *testing.T) {
+	for _, prompt := range []string{"<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>", "  <cross-session-message from-name=\"peer\">\nask bob"} {
+		t.Run(prompt, func(t *testing.T) {
+			s, _ := newTestStore(t)
+			a, b := twoSessions(t, s)
+			if err := s.RememberOwnerPrompt(a, "ask bob earlier"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.RememberOwnerPrompt(a, prompt); err != nil {
+				t.Fatal(err)
+			}
+			sent, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "work"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _, err := s.Message(sent.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.OwnerInstruction != "" {
+				t.Fatalf("injected prompt marked as owner instruction: %q", got.OwnerInstruction)
+			}
+		})
+	}
+}

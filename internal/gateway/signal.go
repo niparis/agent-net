@@ -11,6 +11,12 @@ import (
 
 // RememberOwnerPrompt keeps only the latest prompt; it is never logged.
 func (s *Store) RememberOwnerPrompt(session, prompt string) error {
+	// Claude delivers peer messages as user turns. Clear any earlier prompt as
+	// well: it cannot explain a send made in response to this injected turn.
+	if strings.HasPrefix(strings.TrimSpace(prompt), "<cross-session-message") {
+		_, err := s.db.Exec(`DELETE FROM signal_prompts WHERE session_id=?`, session)
+		return err
+	}
 	r := []rune(prompt)
 	if len(r) > 300 {
 		prompt = string(r[:300])
