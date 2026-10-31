@@ -126,3 +126,86 @@ func TestRemoveNativeEntryRefusals(t *testing.T) {
 		t.Fatal("unknown source accepted")
 	}
 }
+
+// verifyRemoval is the last guard before a file is rewritten: each of its
+// three checks must refuse on its own.
+func TestVerifyRemovalRefusesEachWrongEdit(t *testing.T) {
+	src := nativeSource{key: "mcpServers"}
+	before := []byte(`{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}},"theme":"dark"}`)
+	for name, tc := range map[string]struct{ after, want string }{
+		"entry still there":   {`{"mcpServers":{"a":{"command":"x"},"b":{"command":"y"}},"theme":"dark"}`, "does not remove"},
+		"another value lost":  {`{"mcpServers":{"b":{"command":"y"}}}`, "more than the entry"},
+		"another value moved": {`{"mcpServers":{"b":{"command":"z"}},"theme":"dark"}`, "more than the entry"},
+		"broken result":       {`{"mcpServers":{"b":{"command":"y"}},"theme":"dark"`, "malformed"},
+	} {
+		if err := verifyRemoval(src, before, []byte(tc.after), "", "a"); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: got %v, want an error with %q", name, err, tc.want)
+		}
+	}
+	if err := verifyRemoval(src, before, []byte(`{"mcpServers":{"b":{"command":"y"}},"theme":"dark"}`), "", "a"); err != nil {
+		t.Errorf("a right edit was refused: %v", err)
+	}
+	if err := verifyRemoval(src, []byte(`{"mcpServers":`), []byte(`{}`), "", "a"); err == nil || !strings.Contains(err.Error(), "malformed") {
+		t.Errorf("a malformed original was accepted: %v", err)
+	}
+}
+
+// Each refusal names its own reason, so one guard cannot hide behind another.
+func TestRemoveNativeEntryRefusalReasons(t *testing.T) {
+	root := t.TempDir()
+	_, err := removeVia(t, "claude", "user", root, ".claude.json", `{"mcpServers": {"a": {"command": "x"}, "a": {"command": "y"}}}`, "a")
+	if err == nil || !strings.Contains(err.Error(), "appears twice") {
+		t.Errorf("duplicate entry: %v", err)
+	}
+	_, err = removeVia(t, "claude", "user", root, ".claude.json", `{"mcpServers": {"b": {"command": "x"}}, "mcpServers": {"a": {"command": "y"}}}`, "a")
+	if err == nil || !strings.Contains(err.Error(), "appears twice") {
+		t.Errorf("duplicate table: %v", err)
+	}
+	o := Options{Home: t.TempDir()}
+	_, err = RemoveNativeEntry(o, "claude", "user", "", "/etc/hostname", "a", []byte(`{"mcpServers":{"a":{"command":"x"}}}`))
+	if err == nil || !strings.Contains(err.Error(), "not a known native MCP source") {
+		t.Errorf("unknown source: %v", err)
+	}
+}
+
+func TestReadNativeFileGuards(t *testing.T) {
+	base := t.TempDir()
+	write := func(rel string, data []byte, mode os.FileMode) string {
+		p := filepath.Join(base, rel)
+		if err := os.WriteFile(p, data, mode); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, mode); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	good := write("good.json", []byte(`{}`), 0o640)
+	data, perm, err := ReadNativeFile(base, good)
+	if err != nil || string(data) != "{}" || perm != 0o640 {
+		t.Fatalf("good file: %q %v %v", data, perm, err)
+	}
+	if err := os.Symlink(good, filepath.Join(base, "link.json")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadNativeFile(base, filepath.Join(base, "link.json")); err == nil || !strings.Contains(err.Error(), "symlink") {
+		t.Errorf("symlink: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(base, "dir.json"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := ReadNativeFile(base, filepath.Join(base, "dir.json")); err == nil || !strings.Contains(err.Error(), "regular") {
+		t.Errorf("directory: %v", err)
+	}
+	big := write("big.json", []byte(strings.Repeat("x", MaxNativeFile+1)), 0o600)
+	if _, _, err := ReadNativeFile(base, big); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Errorf("large file: %v", err)
+	}
+	exact := write("exact.json", []byte(strings.Repeat(" ", MaxNativeFile)), 0o600)
+	if _, _, err := ReadNativeFile(base, exact); err != nil {
+		t.Errorf("a file at the limit was refused: %v", err)
+	}
+	if _, _, err := ReadNativeFile(base, filepath.Join(t.TempDir(), "outside.json")); err == nil {
+		t.Error("a path outside the base was read")
+	}
+}
