@@ -149,14 +149,26 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 		return fail("conflict", "Git worktree directory is unsafe")
 	}
 	defer closeGit()
-	indexLock := filepath.Join(gitRoot, "index.lock")
-	f, err := os.OpenFile(indexLock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	rel := filepath.Join(root, t.Name)
+	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "project-copy", Target: filepath.Join(checkout, rel), AfterHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
+		return fail("failed", "cannot write skill journal")
+	}
+	retain := false
+	defer func() {
+		if !retain {
+			_ = j.finish()
+		}
+	}()
+	release, busy, err := j.acquireIndexLock(filepath.Join(gitDir, "index.lock"), filepath.Join(gitRoot, "index.lock"))
+	if busy {
 		return fail("pending", "Git index is locked")
 	}
-	f.Close()
-	defer os.Remove(indexLock)
-	rel := filepath.Join(root, t.Name)
+	if err != nil {
+		retain = true
+		return fail("failed", "cannot lock Git index")
+	}
+	defer release()
 	tracked, err := projectGit(checkout, "ls-files", "-z", "--", rel)
 	if err != nil {
 		return fail("failed", "cannot inspect tracked paths")
@@ -282,6 +294,11 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 		}
 		if err = appendSkillExclude(safeExclude, addition); err != nil {
 			return fail("pending", "cannot update Git exclude")
+		}
+		j.record.Exclude, j.record.ExcludeLine = exclude, pattern
+		if err = j.advance("exclude_added"); err != nil {
+			retain = true
+			return fail("failed", "skill operation interrupted")
 		}
 		if err = d.recordProjectExclude(filepath.Join(checkout, rel), exclude, pattern, true); err != nil {
 			return fail("failed", "cannot record Git exclude")

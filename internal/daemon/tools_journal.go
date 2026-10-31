@@ -1,6 +1,8 @@
 package daemon
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
@@ -29,7 +31,16 @@ type skillJournalRecord struct {
 	Stage      string `json:"stage,omitempty"`
 	BeforeHash string `json:"before_hash,omitempty"`
 	AfterHash  string `json:"after_hash,omitempty"`
-	Step       string `json:"step"`
+	Item       string `json:"item,omitempty"`
+	Revision   int64  `json:"revision,omitempty"`
+	// Lock is a Git index.lock this operation creates. LockToken is written
+	// into the lock file, so recovery removes only a lock we created.
+	Lock      string `json:"lock,omitempty"`
+	LockToken string `json:"lock_token,omitempty"`
+	// Exclude and ExcludeLine name a Git exclude line this operation added.
+	Exclude     string `json:"exclude,omitempty"`
+	ExcludeLine string `json:"exclude_line,omitempty"`
+	Step        string `json:"step"`
 }
 
 type skillJournal struct {
@@ -110,4 +121,53 @@ func syncSkillJournalDir(dir string) error {
 	}
 	defer f.Close()
 	return f.Sync()
+}
+
+// acquireIndexLock records the lock in the journal, then creates it with a
+// private token. stable is the durable path stored in the journal; lock is the
+// descriptor-anchored path used to create it. busy is true when the lock already exists. After an error
+// that is not busy the caller must keep the journal record.
+func (j *skillJournal) acquireIndexLock(stable, lock string) (release func(), busy bool, err error) {
+	raw := make([]byte, 16)
+	if _, err = rand.Read(raw); err != nil {
+		return nil, false, err
+	}
+	token := hex.EncodeToString(raw)
+	j.record.Lock, j.record.LockToken = stable, token
+	if err = j.advance("locking"); err != nil {
+		return nil, false, err
+	}
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil, true, err
+		}
+		return nil, false, err
+	}
+	_, err = f.WriteString(token)
+	if e := f.Close(); err == nil {
+		err = e
+	}
+	release = func() { removeOwnedIndexLock(lock, token) }
+	if err != nil {
+		release()
+		return nil, false, err
+	}
+	if err = j.advance("locked"); err != nil {
+		release()
+		return nil, false, err
+	}
+	return release, false, nil
+}
+
+// removeOwnedIndexLock removes the lock only when it holds our token.
+func removeOwnedIndexLock(lock, token string) bool {
+	if lock == "" || token == "" {
+		return false
+	}
+	b, err := os.ReadFile(lock)
+	if err != nil || string(b) != token {
+		return false
+	}
+	return os.Remove(lock) == nil
 }

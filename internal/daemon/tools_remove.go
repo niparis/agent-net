@@ -133,7 +133,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	}); err != nil {
 		return fail("conflict", "source contains a symlink or cannot be inspected")
 	}
-	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "remove", Target: source, BeforeHash: t.Revision.Version, Step: "prepared"})
+	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "remove", Target: source, BeforeHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
 		return fail("failed", "cannot write skill journal")
 	}
@@ -159,13 +159,15 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 			return fail("conflict", "Git worktree directory is unsafe")
 		}
 		defer closeGit()
-		lock := filepath.Join(gitPath, "index.lock")
-		f, e := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if e != nil {
+		release, busy, e := j.acquireIndexLock(filepath.Join(strings.TrimSpace(string(gitDir)), "index.lock"), filepath.Join(gitPath, "index.lock"))
+		if busy {
 			return fail("pending", "Git index is locked")
 		}
-		f.Close()
-		defer os.Remove(lock)
+		if e != nil {
+			retain = true
+			return fail("failed", "cannot lock Git index")
+		}
+		defer release()
 		tracked, e := projectGit(gitRoot, "ls-files", "-z", "--", gitRel)
 		if e != nil {
 			return fail("failed", "cannot inspect tracked paths")
@@ -216,6 +218,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if err != nil || hash != t.Revision.Version {
 		if e := restoreSkillBackup(dest, anchored); e == nil {
 			os.RemoveAll(stamp)
+			retain = false
 		}
 		return fail("conflict", "changed since plan")
 	}

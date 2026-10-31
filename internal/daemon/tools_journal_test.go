@@ -143,3 +143,112 @@ func TestRemoveSkillJournalAfterBackup(t *testing.T) {
 		t.Fatalf("backup hash %q: %v", h, e)
 	}
 }
+
+func readOnlyJournal(t *testing.T, state string) skillJournalRecord {
+	t.Helper()
+	entries, err := os.ReadDir(filepath.Join(state, "skill-journal"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("journal: %v %v", entries, err)
+	}
+	b, err := os.ReadFile(filepath.Join(state, "skill-journal", entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec skillJournalRecord
+	if err = json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	return rec
+}
+
+func TestRemoveSkillJournalsIndexLockBeforeCreating(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	gitIn(t, home, "init", "-q")
+	source := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := inventory.SkillHash(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock := filepath.Join(home, ".git", "index.lock")
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: source, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: source}}
+	seen := map[string]bool{}
+	skillJournalHook = func(step string) error {
+		rec := readOnlyJournal(t, state)
+		switch step {
+		case "locking":
+			if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+				t.Fatalf("lock exists before it is journaled: %v", err)
+			}
+			if rec.Lock != lock || rec.LockToken == "" {
+				t.Fatalf("lock not recorded: %+v", rec)
+			}
+		case "locked":
+			b, err := os.ReadFile(lock)
+			if err != nil || string(b) != rec.LockToken {
+				t.Fatalf("lock content: %q %v", b, err)
+			}
+		}
+		seen[step] = true
+		return nil
+	}
+	defer func() { skillJournalHook = nil }()
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("remove: %+v", r)
+	}
+	if !seen["locking"] || !seen["locked"] || !seen["backed_up"] || !seen["forgotten"] {
+		t.Fatalf("steps: %v", seen)
+	}
+	if _, err := os.Lstat(lock); !os.IsNotExist(err) {
+		t.Fatalf("lock remains: %v", err)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(state, "skill-journal")); len(entries) != 0 {
+		t.Fatalf("journal remains: %v", entries)
+	}
+}
+
+func TestProjectCopyJournalsLockAndExclude(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q")
+	lock := filepath.Join(checkout, ".git", "index.lock")
+	seen := map[string]bool{}
+	skillJournalHook = func(step string) error {
+		entries, _ := os.ReadDir(filepath.Join(d.cfg.StateDir, "skill-journal"))
+		for _, e := range entries {
+			b, _ := os.ReadFile(filepath.Join(d.cfg.StateDir, "skill-journal", e.Name()))
+			var rec skillJournalRecord
+			_ = json.Unmarshal(b, &rec)
+			if rec.Operation != "project-copy" {
+				continue
+			}
+			seen[step] = true
+			if step == "locking" {
+				if _, err := os.Lstat(lock); !os.IsNotExist(err) || rec.Lock != lock {
+					t.Fatalf("lock before journal: %v %+v", err, rec)
+				}
+			}
+			if step == "exclude_added" && rec.ExcludeLine != "/.claude/skills/demo/" {
+				t.Fatalf("exclude not journaled: %+v", rec)
+			}
+		}
+		return nil
+	}
+	defer func() { skillJournalHook = nil }()
+	if r := d.copyProjectSkill(target, bundle); r.State != "applied" {
+		t.Fatalf("copy: %+v", r)
+	}
+	if !seen["locking"] || !seen["locked"] || !seen["exclude_added"] {
+		t.Fatalf("steps: %v", seen)
+	}
+	if entries, _ := os.ReadDir(filepath.Join(d.cfg.StateDir, "skill-journal")); len(entries) != 0 {
+		t.Fatalf("journal remains: %v", entries)
+	}
+}

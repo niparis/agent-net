@@ -114,7 +114,7 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 		return fail("failed", "local directories unavailable")
 	}
 	manifestDest := filepath.Join(root, rel, t.Name)
-	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "copy", Target: manifestDest, AfterHash: t.Revision.Version, Step: "prepared"})
+	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "copy", Target: manifestDest, AfterHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
 		return fail("failed", "cannot write skill journal")
 	}
