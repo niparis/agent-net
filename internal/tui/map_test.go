@@ -249,6 +249,38 @@ func TestMapHelpAndHints(t *testing.T) {
 	}
 }
 
+func TestMapHidesAndUnhidesNodesWithSharedPreference(t *testing.T) {
+	src := &fakeSource{snap: fakeSnapshot(), events: fakeEvents(), graph: fakeGraph(),
+		hidden: protocol.HiddenItems{Nodes: []string{"cogforge"}}}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 34})
+	m = settle(refresh(m, src))
+	m = openMap(t, m)
+	if containsString(m.mapSelectable(), "cogforge") || !strings.Contains(m.mapTitle(120), "hidden 1") {
+		t.Fatalf("hidden node is still listed or not counted:\n%s", m.View())
+	}
+	m = keys(m, "X")
+	if !containsString(m.mapSelectable(), "cogforge") || !strings.Contains(m.View(), "hidden") {
+		t.Fatalf("X did not show the tagged hidden node:\n%s", m.View())
+	}
+	m.mp.selected = "cogforge"
+	m = finishHiddenKey(t, m, "x")
+	if containsString(src.hidden.Nodes, "cogforge") || !containsString(m.mapSelectable(), "cogforge") {
+		t.Fatalf("hidden node was not unhidden: %+v / %v", src.hidden, m.mapSelectable())
+	}
+	m = keys(m, "X")
+	m.mp.selected = "shop"
+	m = finishHiddenKey(t, m, "x")
+	if !containsString(src.hidden.Nodes, "shop") || containsString(m.mapSelectable(), "shop") {
+		t.Fatalf("visible node was not hidden: %+v / %v", src.hidden, m.mapSelectable())
+	}
+	line := m.helpLine(120)
+	if !strings.Contains(line, "x hide") || !strings.Contains(line, "X hidden") {
+		t.Fatalf("map key hints: %s", line)
+	}
+}
+
 func TestMapFocusKeepsArchitectNameAt80(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, fakeGraph()))
 	m.mp.selected = "cogforge"

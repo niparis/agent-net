@@ -140,9 +140,9 @@ func (m Model) hints() []hint {
 	case m.conv != nil:
 		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
-		return []hint{{"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"?", "help", 2}}
+		return []hint{{"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"x", "hide", 0}, {"X", "hidden", 0}, {"?", "help", 2}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 1}, {"[ ]", "charter", 3}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 1}, {"[ ]", "charter", 3}, {"x", "hide", 0}, {"X", "hidden", 0}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -157,7 +157,7 @@ func (m Model) hints() []hint {
 			return []hint{{"c", "recipient", 1}, {"R", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"1/2/3/4", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+	return []hint{{"1/2/3/4", "tabs", 2}, {"up/down", "select", 1}, {"enter", "chat", 3}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
@@ -228,12 +228,12 @@ func (m Model) helpView(w, h int) []string {
 		{"e", "enter the session (ctrl+] to return)"},
 		{"m", "send a message to the session as yourself"},
 		{"s", "start a worker (a form: project, harness, model, task)"},
-		{"x", "stop the selected worker (asks y/n)"},
+		{"x, h, H", "stop worker; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"4/M", "map: charters and edges (read only); z switches overview"},
-		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll charter; overview: arrows, pgup/pgdn, enter"},
+		{"map arrows", "x hide, X show hidden; arrows move/follow; / find; z overview; [ ] charter"},
 		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
@@ -243,6 +243,7 @@ func (m Model) helpView(w, h int) []string {
 		{"tab, C", "focus the CTO box; tab or esc returns to sessions"},
 		{"Messages", "up/down: conversation; left/right: message; v: body; e/l: events"},
 		{"r", "refresh now"},
+		{"states", "messages: pending … delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
 		{"Conversation", ""},
 		{"up/down, pgup/pgdn", "scroll; at the top, older entries load"},
@@ -260,7 +261,6 @@ func (m Model) helpView(w, h int) []string {
 		{"shared", "one process many sessions share; its figures are on the machine line"},
 		{"dim row", "offline, or idle for more than an hour"},
 		{"?", "a figure that is missing or older than 45 seconds"},
-		{"… ✓ ↩ ✗", "message state: pending, delivered, replied, failed"},
 		{"└", "a reply, under the message it answers"},
 		{"\"...\"", "the first line of the body, when this machine is in the conversation"},
 	}

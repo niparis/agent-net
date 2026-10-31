@@ -54,6 +54,7 @@ type mapRow struct {
 	note    string
 	indent  int
 	bold    bool
+	hidden  bool
 }
 
 // startMap opens the map and reads the graph. The last data stays on screen
@@ -175,6 +176,14 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.cto.input.CursorEnd()
 			return m, m.cto.input.Focus()
 		}
+	case "x":
+		return m.toggleHiddenNode()
+	case "X":
+		m.showHiddenNodes = !m.showHiddenNodes
+		m.mapEnsureSelection()
+		if m.mp.overview {
+			m.overviewRevealSelection()
+		}
 	case "pgup":
 		if m.mp.overview {
 			m.overviewPage(-1)
@@ -214,7 +223,7 @@ func (m Model) mapBodyRows() int {
 // nodes and their mode in brackets, then components with no architect, then
 // architects without nodes. Every group and node is sorted by name.
 func (m Model) mapRows() []mapRow {
-	nodes := append([]protocol.Node(nil), m.mp.nodes...)
+	nodes := m.mapVisibleNodes()
 	sort.Slice(nodes, func(i, j int) bool {
 		return strings.ToLower(nodes[i].Name) < strings.ToLower(nodes[j].Name)
 	})
@@ -222,7 +231,7 @@ func (m Model) mapRows() []mapRow {
 	for _, n := range nodes {
 		byName[n.Name] = n
 	}
-	edges := append([]protocol.Edge(nil), m.mp.edges...)
+	edges := m.mapVisibleEdges()
 	sort.Slice(edges, func(i, j int) bool {
 		if strings.ToLower(edges[i].To) != strings.ToLower(edges[j].To) {
 			return strings.ToLower(edges[i].To) < strings.ToLower(edges[j].To)
@@ -247,10 +256,11 @@ func (m Model) mapRows() []mapRow {
 		if len(es) == 0 {
 			continue
 		}
-		rows = append(rows, mapRow{node: a.Name, text: a.Name, level: maturityLevel(a.Charter.Maturity), bold: true})
+		rows = append(rows, mapRow{node: a.Name, text: a.Name, level: maturityLevel(a.Charter.Maturity), bold: true,
+			hidden: m.hiddenNodes[a.Name]})
 		for _, e := range es {
 			rows = append(rows, mapRow{node: e.To, level: maturityLevel(byName[e.To].Charter.Maturity),
-				note: "[" + dashIfEmpty(e.Mode) + "]", indent: 2})
+				note: "[" + dashIfEmpty(e.Mode) + "]", indent: 2, hidden: m.hiddenNodes[e.To]})
 		}
 	}
 	hasArchitect := map[string]bool{}
@@ -268,7 +278,8 @@ func (m Model) mapRows() []mapRow {
 	if len(loose) > 0 {
 		rows = append(rows, mapRow{section: true, text: "Components with no architect"})
 		for _, n := range loose {
-			rows = append(rows, mapRow{node: n.Name, level: maturityLevel(n.Charter.Maturity), indent: 2})
+			rows = append(rows, mapRow{node: n.Name, level: maturityLevel(n.Charter.Maturity), indent: 2,
+				hidden: m.hiddenNodes[n.Name]})
 		}
 	}
 	var empty []protocol.Node
@@ -280,7 +291,8 @@ func (m Model) mapRows() []mapRow {
 	if len(empty) > 0 {
 		rows = append(rows, mapRow{section: true, text: "Architects without nodes"})
 		for _, a := range empty {
-			rows = append(rows, mapRow{node: a.Name, level: maturityLevel(a.Charter.Maturity), indent: 2})
+			rows = append(rows, mapRow{node: a.Name, level: maturityLevel(a.Charter.Maturity), indent: 2,
+				hidden: m.hiddenNodes[a.Name]})
 		}
 	}
 	if m.uiFilter != "" && m.mapOn {
@@ -298,7 +310,7 @@ func (m Model) mapRows() []mapRow {
 // mapSelectable is the order the selection keys move through. A component that
 // two architects govern appears under both but is selected once.
 func (m Model) mapProjectNodes() []protocol.Node {
-	nodes := append([]protocol.Node(nil), m.mp.nodes...)
+	nodes := m.mapVisibleNodes()
 	sort.SliceStable(nodes, func(i, j int) bool {
 		ai := nodes[i].Kind == "architect"
 		aj := nodes[j].Kind == "architect"
@@ -341,8 +353,10 @@ func (m *Model) mapMove(delta int) {
 }
 
 func (m *Model) mapEnsureSelection() {
-	if _, ok := m.mapNode(m.mp.selected); ok {
-		return
+	for _, name := range m.mapSelectable() {
+		if name == m.mp.selected {
+			return
+		}
 	}
 	list := m.mapSelectable()
 	if len(list) == 0 {
@@ -350,7 +364,7 @@ func (m *Model) mapEnsureSelection() {
 		return
 	}
 	degree := map[string]int{}
-	for _, e := range m.mp.edges {
+	for _, e := range m.mapVisibleEdges() {
 		if _, ok := m.mapNode(e.From); ok {
 			if _, ok := m.mapNode(e.To); ok {
 				degree[e.From]++

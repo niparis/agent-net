@@ -7,12 +7,12 @@ Keys ─────────────────────────
   e                    enter the session (ctrl+] to return)
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
-  x                    stop the selected worker (asks y/n)
+  x, h, H              stop worker; h hides/unhides; H shows hidden sessions (dim)
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
   4/M                  map: charters and edges (read only); z switches overview
-  map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll charter; overview: arrows, pgup/pg…
+  map arrows           x hide, X show hidden; arrows move/follow; / find; z overview; [ ] charter
   C                    focus CTO chat; o opens full UI, n starts new, u undoes, m changes model
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support
@@ -22,6 +22,7 @@ Keys ─────────────────────────
   tab, C               focus the CTO box; tab or esc returns to sessions
   Messages             up/down: conversation; left/right: message; v: body; e/l: events
   r                    refresh now
+  states               messages: pending … delivered ✓ replied ↩ failed ✗
  Conversation
   up/down, pgup/pgdn   scroll; at the top, older entries load
   g                    go to the oldest loaded entry
@@ -36,5 +37,4 @@ Keys ─────────────────────────
   shared               one process many sessions share; its figures are on the machine line
   dim row              offline, or idle for more than an hour
   ?                    a figure that is missing or older than 45 seconds
-  … ✓ ↩ ✗              message state: pending, delivered, replied, failed
 esc close help  q quit

@@ -165,6 +165,10 @@ type fakeSource struct {
 	intgGetErr       error
 	intgSetErr       error
 	intgSaved        []protocol.Integrations
+	hidden           protocol.HiddenItems
+	hiddenGetErr     error
+	hiddenSetErr     error
+	hiddenSaved      []protocol.HiddenItems
 
 	// CPU, memory, counts, top lists and conversations. Nil means the daemon
 	// is older than the feature.
@@ -234,6 +238,19 @@ func (f *fakeSource) SetIntegrations(_ context.Context, in protocol.Integrations
 	}
 	f.intg, f.intgSet = in, true
 	return protocol.IntegrationsResult{Set: true, Integrations: in}, nil
+}
+
+func (f *fakeSource) HiddenItems(context.Context) (protocol.HiddenItems, error) {
+	return f.hidden, f.hiddenGetErr
+}
+
+func (f *fakeSource) SetHiddenItems(_ context.Context, in protocol.HiddenItems) (protocol.HiddenItems, error) {
+	f.hiddenSaved = append(f.hiddenSaved, in)
+	if f.hiddenSetErr != nil {
+		return protocol.HiddenItems{}, f.hiddenSetErr
+	}
+	f.hidden = in
+	return in, nil
 }
 
 func (f *fakeSource) SetPeerTrust(_ context.Context, id string, on bool) error {

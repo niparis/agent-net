@@ -21,4 +21,4 @@ Isolated: isolated-01, isolated-02, isolated-03, isolated-04, isolated-05,
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select/scroll  left/right select  pgup/pgdn scroll  enter focus  ? help
+up/down select/scroll  left/right select  pgup/pgdn scroll  x hide  X hidden

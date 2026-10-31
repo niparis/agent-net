@@ -38,6 +38,9 @@ func (m Model) needsRows() []protocol.AgentView {
 		if protocol.IsOwner(a.Harness) || a.Waiting == nil {
 			continue
 		}
+		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
+			continue
+		}
 		if (!a.Online || a.Status == protocol.StatusDormant) && !m.showOffline {
 			continue
 		}
@@ -63,6 +66,9 @@ func (m Model) needsRows() []protocol.AgentView {
 				a = candidate
 				break
 			}
+		}
+		if a.SessionID != "" && m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
+			continue
 		}
 		if a.SessionID == "" {
 			a.SessionID = item.SessionID
