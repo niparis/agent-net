@@ -4,7 +4,7 @@ Register an MCP server once. Every agent session on every machine can then use i
 
 The gateway keeps the registry. The machine that hosts a server runs it: for a command, its daemon starts and restarts the process; for a URL, its daemon connects as an MCP client. A call goes from the agent's session to its own daemon, to the gateway, to the hosting daemon, to the server, and back. Secrets stay on the hosting machine.
 
-Version 1 covers tools only (no resources or prompts), stdio, streamable HTTP and SSE, and bearer or custom header auth. OAuth and per-host or per-project scoping come later.
+Version 1 covers tools only (no resources or prompts), stdio, streamable HTTP and SSE, and bearer or custom header auth. OAuth and per-host scoping come later. A server can be limited to some projects: see [scoped MCP servers](reference.md#scoped-mcp-servers).
 
 ## Add a server
 

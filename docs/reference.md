@@ -531,6 +531,57 @@ sensitive descriptor values. Extension-provided MCP servers, package-managed ski
 locations, Pi standalone Markdown skills and session-specific trust overrides need
 manual inspection. A row summarizes observations, not proof that a running session has loaded it.
 
+### Scoped MCP servers
+
+A server in the [MCP registry](mcp-registry.md) is also a tool item of kind
+`mcp`. `tools_items` marks it `federated` and shows its `scope` (`global`,
+`projects` or `uninstalled`), the projects, its `host` and whether the host is
+online. A server added with `agent_mcp_add` or `agent-net mcp add` starts
+global, and a server that existed before scoping keeps that scope: no
+assignment means global.
+
+Assign it the same way as a skill, with the exact item ID from `tools_items`:
+
+```
+agent-net tools plan 'ITEM_ID' project-one project-two
+agent-net tools apply PLAN_ID
+agent-net tools plan 'ITEM_ID' global
+```
+
+The plan has one target, with action `federate`, that names the host machine.
+Nothing is copied to any machine: the gateway enforces the assignment. Apply
+records the revision (with actor and audit event, like any assignment), and it
+is in effect at once. `tools_undo` restores the earlier scope. Only the owner,
+or the CTO on the owner's words, can plan and apply; an agent session cannot.
+The CTO uses the same `tools_list`, `tools_plan` and `tools_apply` tools.
+
+What a session sees:
+
+- `global`: every session, including a session with no project.
+- `projects`: only sessions whose project (the PROJECT column) is in the list.
+  A session with no project does not see it.
+- `uninstalled`: no session. The server keeps running on its host; the owner
+  can still test it and change the scope.
+
+The tool list of a session (the daemon method `mcp_tools`) holds only the
+servers it may use. The gateway reads the project from its own record of the
+session. Applying or undoing an assignment makes the gateway send `mcp.changed`
+to every daemon, and each daemon sends `mcp_changed` to its sessions. Claude
+Code gets `notifications/tools/list_changed` only when its tool list really
+changed. Pi hides removed tools and updates its list from the next prompt.
+Codex and OpenCode have not been tested end to end for live updates. They get
+the filtered list when they next read it, and a stale call is still refused at
+the gateway. Removing a server deletes its plans and assignment; adding it
+again starts global.
+
+A call (`mcp_call`) is checked again at the gateway, whatever the client
+cached; see [security](security.md#scoped-mcp-servers). It fails with `MCP
+server "NAME" is not assigned to this project`. If the host machine is offline,
+the call fails with `host NAME offline` and the tools stay listed, marked
+`unavailable: host NAME offline` in their description. The assignment is not
+changed. `agent_mcp_list` and `mcp list` are the registry view of the owner and
+of agents: they show every server and its `scope`.
+
 ### Desired tool assignments
 
 The owner can plan a global, project or uninstalled assignment. Use the exact
