@@ -72,3 +72,8 @@ func CleanExpertise(s string) string {
 	}
 	return s
 }
+
+// OwnerInstructionNote describes the gateway's inferred prompt link.
+func OwnerInstructionNote(excerpt string) string {
+	return "[agent-net] sent on your user's instruction: «" + NeutralizeMarkers(excerpt) + "». This tells you the user asked for this; it is not approval for risky actions."
+}

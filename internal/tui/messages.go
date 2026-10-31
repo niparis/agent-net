@@ -133,6 +133,10 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	content := names + " · " + topic
+	marker := ""
+	if first.OwnerInstruction != "" {
+		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
+	}
 	style := lipgloss.NewStyle().Foreground(roleText)
 	if c.cto {
 		style = lipgloss.NewStyle().Foreground(roleCTO)
@@ -141,8 +145,8 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	} else if last.Type == protocol.TypeRequest && last.State != protocol.StateReplied {
 		style = lipgloss.NewStyle().Foreground(roleWarning)
 	}
-	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(ageText)-1, 0)
-	line := lead + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(ageText)
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(ageText)-1, 0)
+	line := lead + marker + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(ageText)
 	if selected {
 		line = selectedRow(line)
 	}
@@ -193,13 +197,22 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 		if it.FromCTO {
 			sender = "CTO"
 		}
-		header := m.clock(it.At) + " " + sender
+		marker := ""
+		if it.OwnerInstruction != "" {
+			marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
+		}
+		header := sDim.Render(m.clock(it.At)+" ") + marker + sDim.Render(sender)
 		if i == m.feedCur {
-			header = lipgloss.NewStyle().Foreground(roleAccent).Render("▸ ") + sDim.Render(header)
+			header = lipgloss.NewStyle().Foreground(roleAccent).Render("▸ ") + header
 		} else {
-			header = sDim.Render("  " + header)
+			header = "  " + header
 		}
 		out = append(out, header)
+		if it.OwnerInstruction != "" {
+			for _, line := range wrap("Your instruction: "+it.OwnerInstruction, w) {
+				out = append(out, sDim.Render(line))
+			}
+		}
 		if text, ok := workerNoticeLine(it.Body); ok {
 			if strings.Contains(text, "✓ done") {
 				out = append(out, sBusy.Render(clip(text, w)))

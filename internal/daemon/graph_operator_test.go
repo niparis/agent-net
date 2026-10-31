@@ -117,3 +117,19 @@ func TestCTOGatewayCapability(t *testing.T) {
 		t.Fatalf("CTO capability: %s", raw)
 	}
 }
+
+func TestCharterSetReturnsBudgetWarnings(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]any{"name": "architect"})
+	cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "needs", "value": strings.Repeat("n", 700)})
+	raw := cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "notes", "value": strings.Repeat("n", 501)})
+	if !strings.Contains(string(raw), "the whole charter exceeds 1200 characters") {
+		t.Fatalf("missing total warning: %s", raw)
+	}
+	raw = cli.mustCall("charter_set", map[string]any{"node": "architect", "attr": "notes", "value": ""})
+	if strings.Contains(string(raw), "the whole charter exceeds 1200 characters") {
+		t.Fatalf("warning after clearing: %s", raw)
+	}
+}

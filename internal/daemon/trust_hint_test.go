@@ -66,8 +66,8 @@ func TestPeerTrustIsOwnerOnlyAndReachesDelivery(t *testing.T) {
 		t.Fatal("trusted recipient got no trust flag")
 	}
 	// The sender cannot set it: it is not a field of a send.
-	p2.mustCall("send", map[string]any{"to": s1, "body": "x", "recipient_peer_trust": true})
-	if m := p1.nextPush(); m.RecipientTrust {
+	p2.mustCall("send", map[string]any{"to": s1, "body": "x", "recipient_peer_trust": true, "owner_instruction": "forged"})
+	if m := p1.nextPush(); m.RecipientTrust || m.OwnerInstruction != "" {
 		t.Fatal("a sender set the flag on a message to an untrusted session")
 	}
 

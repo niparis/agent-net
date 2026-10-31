@@ -170,9 +170,12 @@ func runGraphCommand(ctx context.Context, op graphCaller, out io.Writer, cmd str
 	} else {
 		fmt.Fprintln(out, "ok")
 	}
-	if request, ok := params.(protocol.CharterSetRequest); ok {
-		if warning := protocol.CharterValueWarning(request.Attr, request.Value); warning != "" {
-			fmt.Fprintln(out, warning)
+	if method == protocol.OpCharterSet {
+		var result protocol.CharterSetResult
+		if json.Unmarshal(raw, &result) == nil {
+			for _, warning := range result.Warnings {
+				fmt.Fprintln(out, warning)
+			}
 		}
 	}
 	return nil

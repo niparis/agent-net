@@ -117,6 +117,12 @@ type CharterSetRequest struct {
 	Value string `json:"value"`
 }
 
+// CharterSetResult reports advisory warnings without blocking the save.
+type CharterSetResult struct {
+	OK       bool     `json:"ok"`
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 // GraphHistoryRequest selects history by node, newest first.
 type GraphHistoryRequest struct {
 	Node  string `json:"node"`

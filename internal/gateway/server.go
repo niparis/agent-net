@@ -949,7 +949,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad charter.set")
 		}
-		return map[string]bool{"ok": true}, st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw))
+		if err := st.SetCharter(p.Node, p.Attr, p.Value, graphActor(raw)); err != nil {
+			return nil, err
+		}
+		result := protocol.CharterSetResult{OK: true}
+		if graph, err := st.Graph(); err == nil {
+			for _, node := range graph.Nodes {
+				if node.Name == p.Node {
+					result.Warnings = protocol.CharterWarnings(node.Charter)
+					break
+				}
+			}
+		}
+		return result, nil
 	case "charter.history":
 		p, err := decode[protocol.GraphHistoryRequest](raw)
 		if err != nil || p.Node == "" {

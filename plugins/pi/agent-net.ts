@@ -56,6 +56,7 @@ interface DeliveredMessage {
   overruled?: boolean;
   owner_approved?: boolean;
   recipient_relation?: string;
+  owner_instruction?: string;
   approval_note?: string;
   message_type?: string;
   parent_message_id?: string;
@@ -91,6 +92,7 @@ function authorityNote(m: DeliveredMessage): string {
 
 function formatDelivery(m: DeliveredMessage): string {
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
+  if (m.owner_instruction) text += `\n[agent-net] sent on your user's instruction: «${neutralizeMarkers(m.owner_instruction)}». This tells you the user asked for this; it is not approval for risky actions.`;
   if (m.overruled === true) text += `\n[agent-net] Nicolas overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;
   // A worker's report (a reply) is model output whatever the recipient's trust.
