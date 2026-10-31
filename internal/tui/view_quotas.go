@@ -168,7 +168,7 @@ func (m Model) quotasView(w, h int) []string {
 		if m.quotaShowUnset {
 			action = "s to hide"
 		}
-		subscription = append(subscription, sDim.Render(fmt.Sprintf("%d more subscriptions (not used by your agents) · %s", len(unused), action)))
+		subscription = append(subscription, sDim.Render(fmt.Sprintf("%s (not used by your agents) · %s", strings.Replace(plural(len(unused), "subscription"), " ", " more ", 1), action)))
 	}
 	for _, e := range errors {
 		for _, line := range wrap(e, w-4) {

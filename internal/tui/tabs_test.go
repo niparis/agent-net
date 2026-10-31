@@ -669,7 +669,7 @@ func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6"}}
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "copilot", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
-	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 more subscriptions (not used by your agents) · s to show") {
+	if strings.Contains(v, "copilot") || !strings.Contains(v, "1 more subscription (not used by your agents) · s to show") {
 		t.Fatal(v)
 	}
 	m = keys(m, "s")
