@@ -1,5 +1,6 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 1 busy             updated 14:05:00
- Differences   All tools   By project   [ ] switch   / search
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+Things that do not match across your machines. enter fixes the selected one, x accepts it as it is.
 ╭─What differs · 5 to look at──────────────────────────────────────────────────────────────────────────────────────────╮
 │ ▸ ! design-taste-frontend has 2 different copies on research                                                         │
 │     fix: compare, then keep one                                                                                      │
@@ -15,7 +16,6 @@
 │     nothing to do: it applies when the machine is back                                                               │
 │   … react-best-practices waits for Nicolas-MBP                                                                       │
 │     nothing to do: it applies when the machine is back                                                               │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │

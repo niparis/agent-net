@@ -1,5 +1,5 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 1 busy             updated 14:05:00
- Differences   All tools   By project   [ ] switch   / search
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────────────────────────────────────────────╮
 │ a  keep the copy on research (bbbbbb)                                                                                │
 │ b  keep the copy on research (aaaaaa)                                                                                │
@@ -11,11 +11,11 @@
 │                                                                                                                      │
 │ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+│     fix: import them and put them on every machine                                                                   │
 │   … mastering-postgresql waits for Nicolas-MBP                                                                       │
 │     nothing to do: it applies when the machine is back                                                               │
 │   … react-best-practices waits for Nicolas-MBP                                                                       │
 │     nothing to do: it applies when the machine is back                                                               │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │

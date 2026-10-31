@@ -16,6 +16,14 @@ import (
 // three screens, the screen, and the plan on top when one is open.
 func (m Model) toolsView(w, h int) []string {
 	out := []string{m.titleLine(w), m.toolsScreenLine(w)}
+	guidance := []string{
+		"Things that do not match across your machines. enter fixes the selected one, x accepts it as it is.",
+		"Every skill and MCP server, and where it is on. a turns on, u turns off for the selected machine or projects.",
+		"What a session in this project gets. m changes the machine.",
+	}
+	for _, line := range wrap(guidance[m.tl.screen], w) {
+		out = append(out, tsText.Render(line))
+	}
 	body := max(h-len(out), 3)
 	var lines []string
 	switch {
@@ -52,10 +60,13 @@ func (m Model) toolsScreenLine(w int) string {
 		if i == m.tl.screen {
 			parts = append(parts, sSel.Render(label))
 		} else {
-			parts = append(parts, sDim.Render(label))
+			parts = append(parts, tsText.Render(label))
 		}
 	}
-	left := strings.Join(parts, " ") + tsFaint.Render("  [ ] switch")
+	left := strings.Join(parts, " ") + tsText.Render("  [ ] switch screen")
+	if m.tl.screen != toolsAll {
+		left += tsText.Render(" · ← → also")
+	}
 	if m.tl.screen == toolsAll && (m.tl.search != "" || m.tl.searching) {
 		left += tsAcc.Render("   /" + sanitize(m.tl.search) + searchCursor(m.tl.searching))
 	} else if m.tl.screen == toolsProject && (m.tl.projFind != "" || m.tl.searching) {
@@ -153,7 +164,7 @@ func (m Model) diffsView(w, h int) []string {
 	rows := inner - 1 // the last line is the count of what matches
 	var body []string
 	if len(ds) == 0 {
-		body = append(body, tsGood.Render("Everything matches what you set. Nothing to do."))
+		body = append(body, tsGood.Render("Nothing differs: every skill is the same everywhere you set it."))
 	}
 	per := 3
 	if rows < 6 || len(ds)*3 > rows {
@@ -349,7 +360,7 @@ func (m Model) allToolsView(w, h int) []string {
 	for len(body) < listH+1 {
 		body = append(body, "")
 	}
-	count := "no tools yet"
+	count := "No tools found. Skills and MCP servers appear here after a scan."
 	if len(rows) > 0 {
 		count = fmt.Sprintf("%d-%d of %d", start+1, min(len(rows), start+listH), len(rows))
 	}
@@ -435,7 +446,7 @@ type layer struct {
 
 func (m Model) projectLayers(proj, mach string, rows, width int) []string {
 	if proj == "" {
-		return []string{tsFaint.Render("no project yet")}
+		return []string{tsText.Render("Registered projects and their tools appear here.")}
 	}
 	ms := m.tl.cat.Machines
 	mi := m.tl.machine

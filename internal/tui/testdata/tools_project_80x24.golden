@@ -1,5 +1,6 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
- Differences   All tools   By project   [ ] switch   / search
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+What a session in this project gets. m changes the machine.
 ╭─By project · what homelab gets on Nicolas-MBP · m machine────────────────────╮
 │   a2a-ocs           │ FROM THE REPO  1                                       │
 │   cogforge          │   ⌂ estate-runbook                committed            │
@@ -8,11 +9,10 @@
 │ ▸ homelab           │ ON NICOLAS-MBP FOR EVERY PROJECT  9                    │
 │   homelab-portal    │   ● clean-architecture-python     agent-net v1         │
 │   infra-game        │   ◐ code-review                   agent-net v3         │
-│   sovl-clone        │   ◐ diagnosing-bugs               agent-net v1         │
-│   strategies        │   + 6 more                                             │
-│   tenebrae          │ MCP SERVERS  1                                         │
-│   wbg-arch          │   ◆ tenebrae-library              gateway on research  │
-│   wbg-housing       │ needs: a deploy runbook skill - estate-runbook         │
+│   sovl-clone        │   + 7 more                                             │
+│   strategies        │ MCP SERVERS  1                                         │
+│   tenebrae          │   ◆ tenebrae-library              gateway on research  │
+│   wbg-arch          │ needs: a deploy runbook skill - estate-runbook         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

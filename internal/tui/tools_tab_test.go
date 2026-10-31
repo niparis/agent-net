@@ -445,3 +445,49 @@ func TestToolsRescanReadsAgain(t *testing.T) {
 		t.Fatalf("rescans %d", src.rescans)
 	}
 }
+
+func TestToolsScreenGuidanceAndNavigation(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	if v := plain(m); !strings.Contains(v, "Things that do not match across your machines") || !strings.Contains(v, "[ ] switch screen") {
+		t.Fatalf("differences guidance missing:\n%s", v)
+	}
+	m = pressKey(m, "right")
+	if m.tl.screen != toolsAll {
+		t.Fatalf("right did not switch screens: %d", m.tl.screen)
+	}
+	if v := plain(m); !strings.Contains(v, "Every skill and MCP server") {
+		t.Fatalf("all tools guidance missing:\n%s", v)
+	}
+	col := m.tl.col
+	m = pressKey(m, "right")
+	if m.tl.screen != toolsAll || m.tl.col == col {
+		t.Fatalf("arrow must select a machine cell: screen %d column %d", m.tl.screen, m.tl.col)
+	}
+	m = pressKey(m, "]")
+	if v := plain(m); !strings.Contains(v, "What a session in this project gets") {
+		t.Fatalf("project guidance missing:\n%s", v)
+	}
+	m = pressKey(m, "?")
+	if v := plain(m); !strings.Contains(v, "Tools keys") || !strings.Contains(v, "turn on") {
+		t.Fatalf("tools help missing:\n%s", v)
+	}
+}
+
+func TestToolsEmptyScreensExplainWhatAppears(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	m.tl.cat = toolsdiff.Catalog{}
+	m.tl.items = nil
+	m.snap.Projects = nil
+	m.tl.projSel = ""
+	if v := plain(m); !strings.Contains(v, "Nothing differs:") {
+		t.Fatalf("differences: %s", v)
+	}
+	m = pressKey(m, "]")
+	if v := plain(m); !strings.Contains(v, "Skills and MCP servers appear here after a scan") {
+		t.Fatalf("tools: %s", v)
+	}
+	m = pressKey(m, "]")
+	if v := plain(m); !strings.Contains(v, "Registered projects and their tools appear here") {
+		t.Fatalf("projects: %s", v)
+	}
+}

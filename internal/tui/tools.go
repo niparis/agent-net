@@ -304,9 +304,21 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		} else {
 			m.tl.row--
 		}
-	case "right", "l":
+	case "right":
+		if m.tl.screen != toolsAll {
+			m.toolsSetScreen(m.tl.screen + 1)
+		} else {
+			m.tl.col++
+		}
+	case "left":
+		if m.tl.screen != toolsAll {
+			m.toolsSetScreen(m.tl.screen - 1)
+		} else {
+			m.tl.col--
+		}
+	case "l":
 		m.tl.col++
-	case "left", "h":
+	case "h":
 		m.tl.col--
 	case "m":
 		if n := len(m.tl.cat.Machines); n > 0 {

@@ -1,5 +1,7 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
- Differences   All tools   By project   [ ] switch   / search
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+Things that do not match across your machines. enter fixes the selected one, x
+accepts it as it is.
 ╭─What differs · 5 to look at──────────────────────────────────────────────────╮
 │ ▸ ! design-taste-frontend has 2 different copies on research                 │
 │     fix: compare, then keep one                                              │
@@ -9,8 +11,6 @@
 │     fix: remove imnplementing-clean-architecture                             │
 │   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours      │
 │     fix: remove the repo copy                                                │
-│   ○ 23 skills are only on research and not managed by agent-net              │
-│     fix: import them and put them on every machine                           │
 │                                                                              │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
