@@ -23,8 +23,8 @@ func TestSkillHashDeterministicAndSensitive(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, err = SkillHash(root)
-	if err != nil || a == b {
-		t.Fatalf("mode ignored: %q %q %v", a, b, err)
+	if err != nil || a != b {
+		t.Fatalf("mode changed hash: %q %q %v", a, b, err)
 	}
 }
 
@@ -61,5 +61,23 @@ func TestSkillHashInTreeLinkAndSizeLimit(t *testing.T) {
 	}
 	if _, err := SkillHash(root); err == nil {
 		t.Fatal("accepted oversized skill")
+	}
+}
+
+func TestSkillHashIgnoresEditorNoise(t *testing.T) {
+	root := t.TempDir()
+	os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("skill"), 0600)
+	before, err := SkillHash(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".DS_Store", "Thumbs.db", ".SKILL.md.swp", "file.swo", "file~"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	after, err := SkillHash(root)
+	if err != nil || before != after {
+		t.Fatalf("noise changed hash: %s %s %v", before, after, err)
 	}
 }

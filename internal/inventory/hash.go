@@ -11,12 +11,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 const maxFiles = 10000
 const maxBytes = 64 << 20
 
-// SkillHash hashes a sorted manifest of paths, file contents, executable bits,
+// SkillHash hashes a sorted manifest of paths, file contents,
 // and in-tree symlink targets. It refuses special files and oversized bundles.
 func SkillHash(root string) (string, error) {
 	root, err := filepath.Abs(root)
@@ -45,6 +46,12 @@ func skillHashRoot(dir *os.Root) (string, error) {
 			return err
 		}
 		if path == "." {
+			return nil
+		}
+		if skillNoise(filepath.Base(path)) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
 			return nil
 		}
 		if len(paths) >= maxFiles {
@@ -98,7 +105,6 @@ func skillHashRoot(dir *os.Root) (string, error) {
 				return "", fmt.Errorf("skill changed during scan")
 			}
 			write([]byte("file"))
-			write([]byte{byte(info.Mode() & 0111)})
 			write(data)
 		case info.IsDir():
 			write([]byte("directory"))
@@ -132,6 +138,12 @@ func skillFilesRoot(dir *os.Root) ([]string, error) {
 		if path == "." {
 			return nil
 		}
+		if skillNoise(filepath.Base(path)) {
+			if entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
 		if len(paths) >= maxFiles {
 			return fmt.Errorf("skill exceeds file count limit")
 		}
@@ -141,4 +153,8 @@ func skillFilesRoot(dir *os.Root) ([]string, error) {
 		return nil
 	})
 	return paths, err
+}
+
+func skillNoise(name string) bool {
+	return name == ".DS_Store" || name == "Thumbs.db" || strings.HasSuffix(name, "~") || strings.HasSuffix(name, ".swp") || strings.HasSuffix(name, ".swo")
 }

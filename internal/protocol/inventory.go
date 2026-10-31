@@ -44,6 +44,7 @@ type InventoryItem struct {
 	Reason      string    `json:"reason,omitempty"`
 	Unsupported []string  `json:"unsupported,omitempty"`
 	Files       []string  `json:"files,omitempty"`
+	Aliases     []string  `json:"aliases,omitempty"`
 	// Tracked is set for a project skill when the repository lists files under
 	// it: it is part of the repo. An untracked project skill is a local copy.
 	Tracked bool `json:"tracked,omitempty"`

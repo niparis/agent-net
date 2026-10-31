@@ -605,3 +605,58 @@ func TestMCPFingerprintIncludesSafeScriptAndMode(t *testing.T) {
 		t.Fatal("secret changed fingerprint")
 	}
 }
+
+func TestSkillSymlinkAlias(t *testing.T) {
+	home := t.TempDir()
+	real := filepath.Join(home, ".agents/skills/demo")
+	alias := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(real, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(real, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(alias), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink("../../.agents/skills/demo", alias); err != nil {
+		t.Fatal(err)
+	}
+	report := Scan(Options{Home: home})
+	found := false
+	for _, item := range report.Items {
+		if item.Harness == "claude" && item.Name == "demo" {
+			found = true
+			if item.Location != real || item.Hash == "" || len(item.Aliases) != 1 || item.Aliases[0] != alias {
+				t.Fatalf("alias: %+v", item)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("missing alias")
+	}
+}
+
+func TestSkillSymlinkOutsideHomeIsNotFollowed(t *testing.T) {
+	home, outside := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(outside, "SKILL.md"), []byte("outside"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".claude/skills")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "demo")); err != nil {
+		t.Fatal(err)
+	}
+	report := Scan(Options{Home: home})
+	for _, item := range report.Items {
+		if item.Harness == "claude" && item.Name == "demo" {
+			if item.Hash != "" || item.Location != filepath.Join(dir, "demo") || !strings.Contains(item.Reason, outside) {
+				t.Fatalf("outside link: %+v", item)
+			}
+			return
+		}
+	}
+	t.Fatal("missing outside link")
+}

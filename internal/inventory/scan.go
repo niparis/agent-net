@@ -119,13 +119,29 @@ func Scan(o Options) protocol.InventoryReport {
 		}
 		for _, e := range entries {
 			p := filepath.Join(path, e.Name())
-			if !e.IsDir() {
-				if e.Type()&os.ModeSymlink != 0 {
-					add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "skill root is a symlink")
+			actual := p
+			var alias string
+			if e.Type()&os.ModeSymlink != 0 {
+				target, resolveErr := filepath.EvalSymlinks(p)
+				if resolveErr != nil || !safePath(o.Home, target) {
+					link, _ := os.Readlink(p)
+					add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "skill root is a symlink: "+link)
+					continue
 				}
+				info, statErr := os.Lstat(target)
+				if statErr != nil || !info.IsDir() {
+					continue
+				}
+				actual, alias = target, p
+			} else if !e.IsDir() {
 				continue
 			}
-			skillRoot, err := sourceRoot.OpenRoot(e.Name())
+			var skillRoot *os.Root
+			if alias != "" {
+				skillRoot, err = os.OpenRoot(actual)
+			} else {
+				skillRoot, err = sourceRoot.OpenRoot(e.Name())
+			}
 			if err != nil {
 				add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), "", protocol.InventoryError, "cannot open skill safely")
 				continue
@@ -157,7 +173,10 @@ func Scan(o Options) protocol.InventoryReport {
 				continue
 			}
 			index := len(report.Items)
-			add(h, protocol.InventorySkill, scope, project, root, p, e.Name(), hash, protocol.InventoryOK, "")
+			add(h, protocol.InventorySkill, scope, project, root, actual, e.Name(), hash, protocol.InventoryOK, "")
+			if alias != "" && index < len(report.Items) {
+				report.Items[index].Aliases = []string{alias}
+			}
 			attachFiles(index, files)
 		}
 	}
