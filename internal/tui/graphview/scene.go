@@ -1,15 +1,18 @@
 package graphview
 
-import "math"
+import (
+	"github.com/niparis/agent-net/internal/protocol"
+	"math"
+)
 
 // Viewport describes the shape of a view in abstract units.
 type Viewport struct{ Width, Height float64 }
 type SceneNode struct {
-	Name, Label, Role, PreferredSide string
-	Position                         Point
-	Selected, Flashing, Wildcard     bool
-	Architect, HasSessions, Pulse    bool
-	Card                             SceneCard
+	Name, Label, Role, PreferredSide          string
+	Position                                  Point
+	Selected, Flashing, Wildcard              bool
+	Architect, HasSessions, Pulse, HasCharter bool
+	Card                                      SceneCard
 }
 type SceneCard struct {
 	Name, Maturity, Purpose      string
@@ -94,7 +97,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 				break
 			}
 		}
-		node := SceneNode{Name: n.Name, Label: n.Name, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == g.Selected(), Flashing: flash[n.Name], Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
+		node := SceneNode{Name: n.Name, Label: n.Name, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == g.Selected(), Flashing: flash[n.Name], HasCharter: n.Charter != (protocol.Charter{}), Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
 		for _, e := range g.Edges {
 			if e.From == n.Name {
 				node.Card.Outgoing++

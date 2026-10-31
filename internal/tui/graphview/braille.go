@@ -148,9 +148,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 	for _, n := range scene.Nodes {
 		x, y := point(n.Position)
 		marker := '○'
-		if n.Architect {
-			marker = '◆'
-		} else if n.HasSessions {
+		if n.HasCharter {
 			marker = '●'
 		}
 		role := "node"
@@ -188,6 +186,10 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if n.Wildcard {
 			label += " ◂all"
 		}
+		labelRole := "labelDim"
+		if n.HasCharter {
+			labelRole = "label"
+		}
 		rs := []rune(label)
 		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
 		placed := false
@@ -207,7 +209,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 				continue
 			}
 			for i, r := range rs {
-				if put(pos[0]+i, pos[1], r, "label") {
+				if put(pos[0]+i, pos[1], r, labelRole) {
 					hits[Cell{pos[0] + i, pos[1]}] = n.Name
 				}
 			}
@@ -244,7 +246,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 						continue
 					}
 					for i, r := range short {
-						if put(pos[0]+i, pos[1], r, "label") {
+						if put(pos[0]+i, pos[1], r, labelRole) {
 							hits[Cell{pos[0] + i, pos[1]}] = n.Name
 						}
 					}

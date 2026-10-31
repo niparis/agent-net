@@ -128,7 +128,7 @@ func (m Model) graphView(w, h int) []string {
 		feed = append(feed, "no messages yet")
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
-	out = append(out, sDim.Render(clip("  pink: talked, no rule set", w)))
+	out = append(out, sDim.Render(clip("  ● charter  ○ no charter  ·  pink: talked, no rule set", w)))
 	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
 	return out
 }

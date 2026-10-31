@@ -15,6 +15,7 @@
       "Architect": true,
       "HasSessions": true,
       "Pulse": false,
+      "HasCharter": true,
       "Card": {
         "Name": "architect",
         "Maturity": "growing",
@@ -39,6 +40,7 @@
       "Architect": false,
       "HasSessions": true,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-01",
         "Maturity": "",
@@ -63,6 +65,7 @@
       "Architect": false,
       "HasSessions": true,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-02",
         "Maturity": "",
@@ -87,6 +90,7 @@
       "Architect": false,
       "HasSessions": true,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-03",
         "Maturity": "",
@@ -111,6 +115,7 @@
       "Architect": false,
       "HasSessions": true,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-04",
         "Maturity": "",
@@ -135,6 +140,7 @@
       "Architect": false,
       "HasSessions": true,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-05",
         "Maturity": "",
@@ -159,6 +165,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-06",
         "Maturity": "",
@@ -183,6 +190,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-07",
         "Maturity": "",
@@ -207,6 +215,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-08",
         "Maturity": "",
@@ -231,6 +240,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-09",
         "Maturity": "",
@@ -255,6 +265,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-10",
         "Maturity": "",
@@ -279,6 +290,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-11",
         "Maturity": "",
@@ -303,6 +315,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-12",
         "Maturity": "",
@@ -327,6 +340,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-13",
         "Maturity": "",
@@ -351,6 +365,7 @@
       "Architect": false,
       "HasSessions": false,
       "Pulse": false,
+      "HasCharter": false,
       "Card": {
         "Name": "project-14",
         "Maturity": "",

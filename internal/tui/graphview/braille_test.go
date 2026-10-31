@@ -27,14 +27,14 @@ func TestBrailleGraphShowsNodesAndWildcard(t *testing.T) {
 }
 
 func TestBrailleFeatures(t *testing.T) {
-	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "busy", Sessions: []protocol.GraphSession{{Status: "busy"}}}, {Name: "idle", SessionCount: 1}, {Name: "arch", Kind: "architect"}, {Name: "empty"}}, Edges: []protocol.Edge{{From: "busy", To: "idle", Kind: "depends"}, {From: "arch", To: "empty", Kind: "governs"}, {From: "*", To: "empty", Kind: "deploys"}}})
+	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "busy", Charter: protocol.Charter{Purpose: "test"}, Sessions: []protocol.GraphSession{{Status: "busy"}}}, {Name: "idle", SessionCount: 1}, {Name: "arch", Kind: "architect"}, {Name: "empty"}}, Edges: []protocol.Edge{{From: "busy", To: "idle", Kind: "depends"}, {From: "arch", To: "empty", Kind: "governs"}, {From: "*", To: "empty", Kind: "deploys"}}})
 	g.Positions = map[string]Point{"busy": {-3, -2}, "idle": {3, -2}, "arch": {-3, 2}, "empty": {3, 2}}
 	g.Message("busy", "idle", "request", time.Unix(10, 0))
 	roles := map[string]bool{}
 	b := Braille{Color: func(role, text string) string { roles[role] = true; return text }}
 	now := time.Unix(11, 0)
 	out := strings.Join(renderGraph(b, g, Camera{Zoom: 2, FitZoom: 2}, 60, 20, now), "\n")
-	for _, want := range []string{"●", "○", "◆", "◂all", "→"} {
+	for _, want := range []string{"●", "○", "◂all", "→"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
@@ -169,4 +169,17 @@ func TestHitMapIncludesLabelCells(t *testing.T) {
 		}
 	}
 	t.Fatal("label missing")
+}
+
+func TestCharterMarkersAndLabels(t *testing.T) {
+	roles := map[string]string{}
+	scene := Scene{Nodes: []SceneNode{{Name: "with", Label: "with", HasCharter: true, Position: Point{.25, .5}}, {Name: "without", Label: "absent", Position: Point{.65, .5}}}}
+	out := (Braille{Color: func(role, text string) string { roles[text] = role; return text }}).Render(scene, Size{Width: 50, Height: 10})
+	text := strings.Join(out.Lines, "\n")
+	if !strings.Contains(text, "●") || !strings.Contains(text, "○") {
+		t.Fatalf("markers: %s", text)
+	}
+	if roles["a"] != "labelDim" {
+		t.Fatalf("unchartered label role %q", roles["a"])
+	}
 }
