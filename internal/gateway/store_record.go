@@ -446,6 +446,9 @@ func (s *Store) Prune(r Retention) (PruneResult, error) {
 	if _, err := s.db.Exec(`DELETE FROM signal_prompts WHERE at < ?`, now.Add(-10*time.Minute).UnixNano()); err != nil {
 		return res, err
 	}
+	if _, err := s.db.Exec(`DELETE FROM learned_message_flow WHERE at < ?`, now.Add(-7*24*time.Hour).UnixNano()); err != nil {
+		return res, err
+	}
 	// A finding that was never promoted goes stale after 90 days.
 	if _, err := s.db.Exec(`UPDATE findings SET status = ? WHERE status = ? AND at < ?`,
 		protocol.FindingStale, protocol.FindingNew, now.Add(-protocol.FindingStaleDays*24*time.Hour).Unix()); err != nil {

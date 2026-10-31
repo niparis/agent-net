@@ -56,7 +56,7 @@ func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 	if m.CreatedAt.UnixNano()-at < 0 || m.CreatedAt.UnixNano()-at > int64(10*time.Minute) {
 		return nil
 	}
-	matched := mentionsName(prompt, to) || mentionsName(prompt, name)
+	matched := mentionsName(prompt, from) || mentionsName(prompt, to) || mentionsName(prompt, name)
 	if !matched {
 		rows, e := tx.Query(`SELECT name FROM graph_nodes WHERE name<>? UNION SELECT COALESCE(NULLIF(p.name,''),s.name,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id<>? UNION SELECT COALESCE(NULLIF(s.repo_project,''),p.project,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id<>?`, from, m.From, m.From)
 		if e != nil {
@@ -82,14 +82,20 @@ func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 		return nil
 	}
 	_, err = tx.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES(?,?,?,?,?)`, m.ID, from, to, prompt, m.CreatedAt.UnixNano())
-	return err
+	if err != nil {
+		return err
+	}
+	return s.learnOwner(tx, from, to, m.ID, prompt, m.CreatedAt.UnixNano())
 }
 
 func (s *Store) signalOutcome(tx *sql.Tx, m protocol.Message, p protocol.MsgSend) error {
 	// Keep outcomes even without a prompt: redirects are evidence too.
 	_, err := tx.Exec(`INSERT OR IGNORE INTO charter_signals(message_id,source,target,prompt,at)
  SELECT q.id,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),'',? FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE q.id=?`, m.CreatedAt.UnixNano(), p.ParentID)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.learnOutcome(tx, m.ID, m.CreatedAt.UnixNano())
 }
 
 func (s *Store) Signals() ([]protocol.CharterSignal, error) {
