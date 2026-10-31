@@ -45,6 +45,7 @@ type Options struct {
 	PolicyHook   string // "" leave; PolicyHookYes or PolicyHookNo is a local answer
 	NeedsHook    string // "" leave; NeedsHookYes or NeedsHookNo is a local answer
 	WorkersMod   string // "" leave; WorkersModYes or WorkersModNo is a local answer
+	QuotaOnly    bool   // run only the quota setup step
 	QuotaAXI     string // "" leave; QuotaAXIYes or QuotaAXINo is a local answer
 	Out          io.Writer
 }
@@ -108,6 +109,11 @@ func Setup(ctx context.Context, o Options) error {
 	r, err := newRunner(o)
 	if err != nil {
 		return err
+	}
+	if r.QuotaOnly {
+		r.want = &protocol.Integrations{QuotaAXI: true}
+		r.quotaAXI(ctx)
+		return r.failed
 	}
 	if r.Gateway {
 		r.setupGateway(ctx)

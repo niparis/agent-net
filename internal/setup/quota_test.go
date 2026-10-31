@@ -231,3 +231,70 @@ func TestQuotaUpgradeRequiresConsent(t *testing.T) {
 		t.Fatalf("upgrade: %q %v", b, err)
 	}
 }
+
+func TestQuotaAuthInteractiveAndRecord(t *testing.T) {
+	f := newFixture(t)
+	bin, _ := quotaPath(t, "22.19.0")
+	path := filepath.Join(bin, "quota-axi")
+	script := `#!/bin/sh
+printf '%s\n' "$*" >> "$AUTH_LOG"
+printf '%s\n' '{"auth":[{"provider":"claude","sources":[{"status":"available"}]},{"provider":"codex","sources":[{"status":"expired"}]}]}'
+`
+	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	log := filepath.Join(f.home, "auth.log")
+	t.Setenv("AUTH_LOG", log)
+	oldTTY, oldPlatform := openTTY, quotaPlatform
+	t.Cleanup(func() { openTTY = oldTTY; quotaPlatform = oldPlatform })
+	openTTY = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("y\n")), nil }
+	quotaPlatform = "darwin"
+	var out bytes.Buffer
+	r := &runner{Options: Options{Out: &out}}
+	r.quotaAuth(context.Background(), quotaaxi.Choice{Path: path, Version: "0.1.66"})
+	b, err := os.ReadFile(log)
+	if err != nil || string(b) != "auth --json\n--allow-keychain-prompt auth --json\n" {
+		t.Fatalf("args %q %v", b, err)
+	}
+	if !strings.Contains(out.String(), "claude: found") || !strings.Contains(out.String(), "codex: needs attention") {
+		t.Fatal(out.String())
+	}
+	result, err := quotaaxi.LoadAuth(daemon.ConfigDir())
+	if err != nil || !result.KeychainPrompt || len(result.Providers) != 2 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+}
+
+func TestQuotaAuthWithoutTerminalSkips(t *testing.T) {
+	newFixture(t)
+	bin, _ := quotaPath(t, "22.19.0")
+	path := filepath.Join(bin, "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 99\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	r := &runner{Options: Options{Out: &out}}
+	r.quotaAuth(context.Background(), quotaaxi.Choice{Path: path})
+	if !strings.Contains(out.String(), "agent-net setup --quota") {
+		t.Fatal(out.String())
+	}
+	if _, err := quotaaxi.LoadAuth(daemon.ConfigDir()); !os.IsNotExist(err) {
+		t.Fatalf("saved auth: %v", err)
+	}
+}
+
+func TestQuotaOnlyDoesNotRequireJoin(t *testing.T) {
+	newFixture(t)
+	bin, _ := quotaPath(t, "22.19.0")
+	path := filepath.Join(bin, "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 0.1.66; else echo '{\"auth\":[]}'; fi\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Setup(context.Background(), Options{QuotaOnly: true, Out: &out}); err != nil {
+		t.Fatalf("%v: %s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "agent-net setup --quota") {
+		t.Fatalf("output: %s", out.String())
+	}
+}

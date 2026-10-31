@@ -321,6 +321,7 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | Integration local answers | `~/.config/agent-net/integrations-local.json` | The per-item `--...` answers this machine made for itself. They win over the network answers. |
 | Integration applied record | `~/.config/agent-net/integrations-applied.json` | The last answers this machine applied, so a daemon start does not repeat the work. |
 | Claude workers marketplace | `~/.local/share/agent-net/claude-plugins/` | The local marketplace and the `agent-net-workers` plugin files, written from the binary. Claude Code reads the plugin from this folder. |
+| quota-axi auth check | `~/.config/agent-net/quota-axi-auth.json` | Provider status and Keychain prompt outcome, without credentials or source paths. Uninstall removes it. |
 | quota-axi choice | `~/.config/agent-net/quota-axi-choice.json` | Selected executable path, version, and reason. Setup and the daemon keep a working choice; uninstall removes the record. |
 | quota-axi private copy | `~/.local/share/agent-net/quota-axi/` | The pinned npm package `quota-axi`, installed by setup or the daemon when the Quota integration is on and you have no quota-axi. The daemon uses it when no usable owner copy is selected. Removed by uninstall and when the item is turned off. |
 | Skill manifest | `~/.local/state/agent-net/daemon/skill-manifest.json` | Paths, hashes, revisions and ownership of skill copies the daemon made, and the Git exclude lines it owns. Mode 0600, owned by you. Kept until uninstall, which also releases the owned exclude lines. |
@@ -416,6 +417,7 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | | `--no-claude-needs-hook` | off. Do not add them on this machine and do not ask. It wins over the network answer. |
 | | `--claude-workers-mod` | off. Install the Claude Code plugin that shows the session's workers and register its marketplace, as a local answer for this machine. It wins over the network answer. |
 | | `--no-claude-workers-mod` | off. Do not install it on this machine and do not ask. It wins over the network answer. |
+| | `--quota` | Run only the quota setup and provider login check. |
 | | `--quota-axi` | off. Read subscription quotas with quota-axi and install it when needed, as a local answer for this machine. It wins over the network answer. |
 | | `--no-quota-axi` | off. Do not read subscription quotas on this machine, do not ask, and remove the private quota-axi copy. It wins over the network answer. |
 | | `--data DIR`, `--dist DIR`, `--port P` | gateway data, dist dir, `7420` (with `--gateway`) |

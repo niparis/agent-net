@@ -53,6 +53,9 @@ func Uninstall(o Options) error {
 	r.removeNeedsHook()
 	r.removeClaudeWorkersMod()
 	r.removeQuotaAXI()
+	if err := quotaaxi.RemoveAuth(daemon.ConfigDir()); err != nil {
+		r.step("quota-axi auth", "", err)
+	}
 	if err := quotaaxi.RemoveChoice(daemon.ConfigDir()); err != nil {
 		r.step("quota-axi choice", "", err)
 	}

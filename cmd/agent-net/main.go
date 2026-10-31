@@ -39,7 +39,7 @@ const usage = `usage: agent-net <command>
 
   phone      configure the phone app owner
   gateway    run the gateway server
-  setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod, --[no-]quota-axi
+  setup      set this machine up: --join S, --gateway, --no-service, --all, --none, --[no-]accept-peer-messages, --[no-]accept-codex-tools, --[no-]claude-hint-hook, --[no-]claude-policy-hook, --[no-]claude-needs-hook, --[no-]claude-workers-mod, --quota, --[no-]quota-axi
   invite     print the one-line installer for a new machine (run on the gateway host)
   uninstall  remove services and integrations (--purge also removes credentials)
   enroll     print a one-time join string (run on the gateway host)

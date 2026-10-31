@@ -3,12 +3,15 @@ package setup
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/loginpath"
@@ -60,6 +63,7 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		} else {
 			r.step(quotaStepName, "ok (using the installed quota-axi)", nil)
 		}
+		r.quotaAuth(ctx, choice)
 		return
 	}
 	if err := ensureQuotaAXI(ctx, nil); err != nil {
@@ -80,6 +84,7 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		return
 	}
 	r.step(quotaStepName, "ok (installed "+quotaaxi.Version+")", nil)
+	r.quotaAuth(ctx, choice)
 }
 
 // quotaUpgradeCommand chooses the installer from the executable or its target.
@@ -134,12 +139,102 @@ func (r *runner) offerQuotaUpgrade(ctx context.Context, copies []quotaaxi.Copy) 
 		}
 		cmd := exec.CommandContext(ctx, executable, args[1:]...)
 		cmd.Env = quotaaxi.ExecEnv(c.Path)
-		cmd.Stdin = tty
 		cmd.Stdout = r.Out
 		cmd.Stderr = r.Out
 		if err := cmd.Run(); err != nil {
 			r.hint("upgrade failed: %v", err)
 		}
 		return
+	}
+}
+
+var quotaPlatform = runtime.GOOS
+
+// quotaAuth inspects sources only while a person is present. It never stores
+// source paths, errors from the tool, or credential values.
+func (r *runner) quotaAuth(ctx context.Context, choice quotaaxi.Choice) {
+	tty, err := openTTY()
+	if err != nil {
+		r.hint("to check provider logins later, run agent-net setup --quota")
+		return
+	}
+	defer tty.Close()
+	result := quotaaxi.AuthResult{Path: choice.Path, Version: choice.Version, CheckedAt: time.Now().UTC()}
+	run := func(prompt bool) error {
+		args := []string{"auth", "--json"}
+		if prompt {
+			args = append([]string{"--allow-keychain-prompt"}, args...)
+		}
+		runCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(runCtx, choice.Path, args...)
+		env, err := quotaaxi.NodeExecEnv(choice.Path)
+		if err != nil {
+			return err
+		}
+		cmd.Env = env
+		raw, err := cmd.Output()
+		if err != nil {
+			return err
+		}
+		var report struct {
+			Auth []struct {
+				Provider string `json:"provider"`
+				Sources  []struct {
+					Status string `json:"status"`
+				} `json:"sources"`
+			} `json:"auth"`
+		}
+		if err = json.Unmarshal(raw, &report); err != nil {
+			return err
+		}
+		if report.Auth == nil {
+			return errors.New("missing auth report")
+		}
+		result.Providers = nil
+		for _, p := range report.Auth {
+			if p.Provider == "" {
+				continue
+			}
+			status := "not found"
+			for _, source := range p.Sources {
+				if source.Status == "available" {
+					status = "found"
+					break
+				}
+				if source.Status != "missing" {
+					status = "needs attention"
+				}
+			}
+			result.Providers = append(result.Providers, quotaaxi.AuthProvider{Provider: p.Provider, Status: status})
+		}
+		return nil
+	}
+	if err := run(false); err != nil {
+		result.Error = "auth check failed"
+		r.hint("could not check provider logins; run agent-net setup --quota")
+	} else {
+		for _, p := range result.Providers {
+			r.hint("%s: %s", p.Provider, p.Status)
+		}
+	}
+	if quotaPlatform == "darwin" {
+		fmt.Fprint(r.Out, "Allow a Keychain prompt now? Choose Always Allow in the dialog. [y/N] ")
+		line, _ := bufio.NewReader(tty).ReadString('\n')
+		if answer := strings.ToLower(strings.TrimSpace(line)); answer == "y" || answer == "yes" {
+			result.KeychainPrompt = true
+			result.Error = ""
+			if err := run(true); err != nil {
+				result.Error = "auth check failed"
+				r.hint("could not check provider logins; run agent-net setup --quota")
+			} else {
+				for _, p := range result.Providers {
+					r.hint("%s: %s", p.Provider, p.Status)
+				}
+			}
+		}
+	}
+	if err := quotaaxi.SaveAuth(daemon.ConfigDir(), result); err != nil {
+		r.step("quota auth", "", err)
 	}
 }
