@@ -67,16 +67,20 @@ type Model struct {
 	hideWorkerThreads bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap            Snapshot
-	haveData        bool
-	lastOK          time.Time
-	problem         Problem
-	problemT        string // text of the last error
-	graphState      graphview.State
-	graphHelp       bool
-	graphGeneration int
-	feed            feed
-	fetching        bool
+	snap             Snapshot
+	haveData         bool
+	lastOK           time.Time
+	problem          Problem
+	problemT         string // text of the last error
+	graphState       graphview.State
+	graphHelp        bool
+	graphGeneration  int
+	graphTalkLoading bool
+	graphTalkLastID  int64
+	graphTalkPending []graphview.FeedEvents
+	graphTalkAt      time.Time
+	feed             feed
+	fetching         bool
 
 	// What the person chose.
 	sessionOrder              map[string]sessionOrder
@@ -333,8 +337,30 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case graphTalkMsg:
+		m.graphTalkLoading = false
+		m.graphTalkAt = msg.at
+		if msg.err == nil {
+			m.graphTalkLastID = msg.result.LastID
+			m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: msg.result.Counts})
+		}
+		if msg.err == nil {
+			for _, pending := range m.graphTalkPending {
+				pending.CountAfter = m.graphTalkLastID
+				pending.CountsOnly = true
+				m.graphState, _ = graphview.Update(m.graphState, pending)
+			}
+		}
+		m.graphTalkPending = nil
+		return m, nil
+
 	case tickMsg:
 		cmds := []tea.Cmd{tick()}
+		if m.tab == 5 && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
+			m.graphTalkLoading = true
+			m.graphTalkPending = nil
+			cmds = append(cmds, m.graphTalkCmd())
+		}
 		if (m.mapOn || m.tab == 5) && !m.mp.loading {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
@@ -636,7 +662,23 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		wasLast := m.feedCur >= m.feedLastVisible()
 		lastID := m.feed.lastID
 		m.feed.apply(r.events)
-		m.graphState, _ = graphview.Update(m.graphState, graphview.FeedEvents{Events: r.events, LastID: lastID, Now: r.at})
+		projects := make(map[string]string)
+		for _, a := range r.snap.Agents {
+			if a.Harness == "owner" {
+				projects[a.SessionID] = ""
+			} else {
+				p := a.Repo.Project
+				if p == "" {
+					p = a.Profile.Project
+				}
+				projects[a.SessionID] = p
+			}
+		}
+		events := graphview.FeedEvents{Events: r.events, LastID: lastID, CountAfter: m.graphTalkLastID, Now: r.at, Projects: projects}
+		if m.graphTalkLoading {
+			m.graphTalkPending = append(m.graphTalkPending, events)
+		}
+		m.graphState, _ = graphview.Update(m.graphState, events)
 		if m.focus != focusFeed || wasLast {
 			m.feedCur = m.feedLastVisible()
 		} else {
@@ -744,11 +786,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tab, m.mapOn, m.focus = 5, false, focusSessions
 			m.graphGeneration++
 			animation := graphTick(m.graphGeneration)
+			var talk tea.Cmd
+			if !m.graphTalkLoading {
+				m.graphTalkLoading = true
+				m.graphTalkPending = nil
+				talk = m.graphTalkCmd()
+			}
 			if m.mp.loading {
-				return m, animation
+				return m, tea.Batch(animation, talk)
 			}
 			m.mp.loading = true
-			return m, tea.Batch(m.mapCmd(), animation)
+			return m, tea.Batch(m.mapCmd(), animation, talk)
 		}
 		if k.String() == "4" {
 			return m.startMap()

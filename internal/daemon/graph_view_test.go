@@ -2,7 +2,9 @@ package daemon
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -60,5 +62,18 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	}
 	if len(view.Changes) == 0 || view.Changes[0].Attr != "maturity" {
 		t.Fatalf("no history: %#v", view.Changes)
+	}
+}
+
+func TestGraphTalkOwnerGate(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
+	agent, _ := helloPi(t, n, "talk-agent", "/w/talk", true)
+	eventually(t, "connected", func() bool { return n.d.Connected() })
+	if _, err := cliClient(t, n).call("graph_talk", nil); err != nil {
+		t.Fatalf("owner: %v", err)
+	}
+	if _, err := agent.call("graph_talk", nil); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("agent gate: %v", err)
 	}
 }

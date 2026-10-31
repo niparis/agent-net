@@ -17,3 +17,13 @@ func (s *Client) GraphView(ctx context.Context, q protocol.QueryGraph) (protocol
 	}
 	return out, json.Unmarshal(raw, &out)
 }
+
+// GraphTalk reads recent message counts between projects.
+func (s *Client) GraphTalk(ctx context.Context) (protocol.GraphTalkResult, error) {
+	var out protocol.GraphTalkResult
+	raw, err := s.action(ctx, protocol.OpGraphTalk, nil)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}

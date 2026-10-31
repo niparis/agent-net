@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -127,5 +128,32 @@ func TestGraphViewOfOneProjectIsItsNeighbourhood(t *testing.T) {
 		if c.Node == "shop" {
 			t.Fatalf("a change of an unrelated node: %#v", c)
 		}
+	}
+}
+
+func TestGraphTalkCountsSevenDays(t *testing.T) {
+	s := graphTestStore(t)
+	now := s.now()
+	for _, v := range []struct{ id, project, harness string }{{"a", "cogforge", "claude"}, {"b", "tenebrae", "claude"}, {"c", "shop", "claude"}, {"owner", "shop", "owner"}} {
+		_, err := s.db.Exec(`INSERT INTO sessions (id,node_id,harness,native_id,repo_project,last_seen) VALUES (?,?,?,?,?,?)`, v.id, "n_test", v.harness, v.id, v.project, now.UnixNano())
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, v := range []struct {
+		from, to string
+		age      time.Duration
+	}{{"a", "b", time.Hour}, {"b", "a", time.Hour}, {"a", "c", time.Hour}, {"a", "a", time.Hour}, {"a", "owner", time.Hour}, {"a", "c", 8 * 24 * time.Hour}} {
+		_, err := s.db.Exec(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, fmt.Sprint(i), "conv", v.from, v.to, "request", "", 0, fmt.Sprint(i), now.Add(-v.age).UnixNano(), now.UnixNano(), "stored")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	talk, err := s.GraphTalkCounts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(talk) != 2 || talk[0].From != "cogforge" || talk[0].To != "shop" || talk[0].Count != 1 || talk[0].HasEdge || talk[1].Count != 2 || !talk[1].HasEdge {
+		t.Fatalf("talk: %+v", talk)
 	}
 }

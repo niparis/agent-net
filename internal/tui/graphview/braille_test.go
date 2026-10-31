@@ -131,3 +131,26 @@ func TestBrailleLabelsSitOneSpaceFromTheirMarkers(t *testing.T) {
 		}
 	}
 }
+
+func TestTalkDensityAndEdgePriority(t *testing.T) {
+	size := Size{Width: 60, Height: 8}
+	count := func(bucket int) int {
+		out := (Braille{}).Render(Scene{Talk: []SceneTalk{{From: Point{.1, .5}, To: Point{.9, .5}, Bucket: bucket, NoRule: true}}}, size)
+		n := 0
+		for _, r := range out.Lines[4] {
+			if r != ' ' {
+				n++
+			}
+		}
+		return n
+	}
+	if count(1) >= count(3) {
+		t.Fatalf("higher bucket should have denser visible dots: %d %d", count(1), count(3))
+	}
+	roles := map[string]bool{}
+	scene := Scene{Talk: []SceneTalk{{From: Point{.1, .5}, To: Point{.9, .5}, Bucket: 3}}, Edges: []SceneEdge{{From: Point{.1, .5}, To: Point{.9, .5}, Kind: "depends"}}}
+	(Braille{Color: func(role, text string) string { roles[role] = true; return text }}).Render(scene, size)
+	if !roles["depends"] || roles["talkFaint"] {
+		t.Fatalf("edge should cover talk: %v", roles)
+	}
+}
