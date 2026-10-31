@@ -372,7 +372,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.graphTalkAt = msg.at
 		if msg.err == nil {
 			m.graphTalkLastID = msg.result.LastID
-			m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: msg.result.Counts})
+			m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: msg.result.Counts, Activity: msg.result.Activity})
 		}
 		if msg.err == nil {
 			for _, pending := range m.graphTalkPending {
@@ -1687,5 +1687,5 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) graphMouseActive() bool {
-	return m.tab == 5 && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.learned && m.conv == nil
+	return m.tab == 5 && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.learned
 }

@@ -13,6 +13,7 @@ type State struct {
 	Graph                          *Graph
 	neighbourAnchor, neighbourLast string
 	Talk                           []protocol.GraphTalkCount
+	Activity                       map[string]int
 	TalkReady                      bool
 	HideTalk                       bool
 	Camera                         Camera
@@ -39,7 +40,10 @@ type TogglePause struct{}
 type OpenSelected struct{}
 type Tick struct{ Now time.Time }
 type GraphChanged struct{ Graph protocol.GraphView }
-type TalkLoaded struct{ Counts []protocol.GraphTalkCount }
+type TalkLoaded struct {
+	Counts   []protocol.GraphTalkCount
+	Activity map[string]int
+}
 type MessageEvent struct{ Message Message }
 type FeedEvents struct {
 	Events     []protocol.FeedEvent
@@ -88,6 +92,13 @@ func Update(s State, action Action) (State, Effect) {
 		s.Graph = &graph
 	}
 	s.Talk = append([]protocol.GraphTalkCount(nil), s.Talk...)
+	if s.Activity != nil {
+		copied := make(map[string]int, len(s.Activity))
+		for k, v := range s.Activity {
+			copied[k] = v
+		}
+		s.Activity = copied
+	}
 	var effect Effect
 	switch a := action.(type) {
 	case ZoomIn:
@@ -193,6 +204,13 @@ func Update(s State, action Action) (State, Effect) {
 		}
 	case TalkLoaded:
 		s.Talk = append([]protocol.GraphTalkCount(nil), a.Counts...)
+		s.Activity = a.Activity
+		if a.Activity != nil {
+			s.Activity = make(map[string]int, len(a.Activity))
+			for k, v := range a.Activity {
+				s.Activity[k] = v
+			}
+		}
 		s.TalkReady = true
 	case FeedEvents:
 		{
@@ -213,6 +231,14 @@ func Update(s State, action Action) (State, Effect) {
 				}
 				if s.TalkReady && event.ID > a.CountAfter && !event.Time.IsZero() && !event.Time.Before(a.Now.Add(-7*24*time.Hour)) && !event.Time.After(a.Now) {
 					from, to := projects[event.From], projects[event.To]
+					if s.Activity != nil {
+						if from != "" {
+							s.Activity[from]++
+						}
+						if to != "" && to != from {
+							s.Activity[to]++
+						}
+					}
 					if from != "" && to != "" && from != to {
 						if from > to {
 							from, to = to, from

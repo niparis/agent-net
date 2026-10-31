@@ -134,7 +134,7 @@ func TestGraphViewOfOneProjectIsItsNeighbourhood(t *testing.T) {
 func TestGraphTalkCountsSevenDays(t *testing.T) {
 	s := graphTestStore(t)
 	now := s.now()
-	for _, v := range []struct{ id, project, harness string }{{"a", "cogforge", "claude"}, {"b", "tenebrae", "claude"}, {"c", "shop", "claude"}, {"owner", "shop", "owner"}} {
+	for _, v := range []struct{ id, project, harness string }{{"a", "cogforge", "claude"}, {"a2", "cogforge", "claude"}, {"b", "tenebrae", "claude"}, {"c", "shop", "claude"}, {"owner", "shop", "owner"}} {
 		_, err := s.db.Exec(`INSERT INTO sessions (id,node_id,harness,native_id,repo_project,last_seen) VALUES (?,?,?,?,?,?)`, v.id, "n_test", v.harness, v.id, v.project, now.UnixNano())
 		if err != nil {
 			t.Fatal(err)
@@ -143,11 +143,18 @@ func TestGraphTalkCountsSevenDays(t *testing.T) {
 	for i, v := range []struct {
 		from, to string
 		age      time.Duration
-	}{{"a", "b", time.Hour}, {"b", "a", time.Hour}, {"a", "c", time.Hour}, {"a", "a", time.Hour}, {"a", "owner", time.Hour}, {"a", "c", 8 * 24 * time.Hour}} {
+	}{{"a", "b", time.Hour}, {"b", "a", time.Hour}, {"a", "c", time.Hour}, {"a", "a2", time.Hour}, {"a", "owner", time.Hour}, {"owner", "a", time.Hour}, {"a", "c", 8 * 24 * time.Hour}} {
 		_, err := s.db.Exec(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state) VALUES (?,?,?,?,?,?,?,?,?,?,?)`, fmt.Sprint(i), "conv", v.from, v.to, "request", "", 0, fmt.Sprint(i), now.Add(-v.age).UnixNano(), now.UnixNano(), "stored")
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+	snapshot, err := s.GraphTalkSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Activity["cogforge"] != 6 || snapshot.Activity["shop"] != 1 || snapshot.Activity["tenebrae"] != 2 {
+		t.Fatalf("activity: %+v", snapshot.Activity)
 	}
 	talk, err := s.GraphTalkCounts()
 	if err != nil {

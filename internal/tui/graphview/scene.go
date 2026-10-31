@@ -123,6 +123,9 @@ func BuildScene(s State, viewport Viewport) Scene {
 			counts[t.To] += t.Count
 		}
 	}
+	if s.Activity != nil {
+		counts = s.Activity
+	}
 	var values []int
 	for _, n := range scene.Nodes {
 		if n.Position.X >= 0 && n.Position.X < 1 && n.Position.Y >= 0 && n.Position.Y < 1 && counts[n.Name] > 0 {
