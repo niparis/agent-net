@@ -491,11 +491,11 @@ func names(m Model) []string {
 
 func TestOfflineToggle(t *testing.T) {
 	m := newModel(100, 30)
-	if got := strings.Join(names(m), ","); got != "strategies,tenebrae-53,web,ci-runner,scratch" {
+	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch" {
 		t.Fatalf("online sessions: %s", got)
 	}
 	m = keys(m, "o")
-	if got := strings.Join(names(m), ","); got != "strategies,tenebrae-53,web,ci-runner,scratch,old-session" {
+	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
 		t.Fatalf("with offline: %s", got)
 	}
 	m = keys(m, "G") // the offline session is last

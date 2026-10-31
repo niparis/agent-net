@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -47,11 +48,12 @@ var quotaArgs = []string{"--json", "--max-age", "5m", "--no-credential-refresh"}
 // ensureQuotaAXI installs the private copy. Tests replace it so they never
 // run npm.
 var ensureQuotaAXI = quotaaxi.Ensure
-var ensureQuotaAXIPrivate = quotaaxi.EnsurePrivate
+var discoverQuotaChoice = quotaaxi.DiscoverChoice
 
 type quotaState struct {
 	mu   sync.Mutex
 	last *protocol.Quotas
+	copy *protocol.QuotaCopy
 	at   time.Time
 	err  string
 	// note is why no reading can be made yet, for example missing Node. It is
@@ -61,6 +63,20 @@ type quotaState struct {
 
 func (q *quotaState) lock()   { q.mu.Lock() }
 func (q *quotaState) unlock() { q.mu.Unlock() }
+
+func (q *quotaState) setCopy(c *protocol.QuotaCopy) { q.lock(); defer q.unlock(); q.copy = c }
+func (q *quotaState) copyInfo() *protocol.QuotaCopy {
+	q.lock()
+	defer q.unlock()
+	if q.copy == nil {
+		return nil
+	}
+	c := *q.copy
+	return &c
+}
+func (d *Daemon) setQuotaChoice(c quotaaxi.Choice) {
+	d.quota.setCopy(&protocol.QuotaCopy{Version: c.Version, Dir: filepath.Dir(c.Path), Private: c.Private})
+}
 
 // set records a good reading.
 func (q *quotaState) set(p *protocol.Quotas) {
@@ -119,6 +135,10 @@ func cloneQuotas(q *protocol.Quotas) *protocol.Quotas {
 		return nil
 	}
 	cp := *q
+	if q.Copy != nil {
+		copy := *q.Copy
+		cp.Copy = &copy
+	}
 	cp.Providers = make([]protocol.QuotaProvider, len(q.Providers))
 	for i, p := range q.Providers {
 		cp.Providers[i] = p
@@ -150,15 +170,20 @@ func quotaAllowed(configDir string) bool {
 // the background (decision 0025), then reads with it.
 func (d *Daemon) startQuota(ctx context.Context) {
 	allowed := quotaAllowed(ConfigDir())
+	if !allowed {
+		return
+	}
 	every := d.cfg.QuotaInterval
 	if every <= 0 {
 		every = defaultQuotaInterval
 	}
-	path, ok := FindQuotaAXI(d.cfg.QuotaAXIPath, d.Logf)
+	choice, err := discoverQuotaChoice(ConfigDir(), d.cfg.QuotaAXIPath)
+	if err != nil {
+		d.Logf("quota-axi: cannot record choice: %v", err)
+		return
+	}
+	path, ok := choice.Path, choice.Path != ""
 	if !ok {
-		if !allowed {
-			return
-		}
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
@@ -169,20 +194,23 @@ func (d *Daemon) startQuota(ctx context.Context) {
 				}
 				return
 			}
-			p, ok := FindQuotaAXI(d.cfg.QuotaAXIPath, d.Logf)
+			choice, err := discoverQuotaChoice(ConfigDir(), d.cfg.QuotaAXIPath)
+			if err != nil {
+				d.Logf("quota-axi: cannot record choice: %v", err)
+				return
+			}
+			p, ok := choice.Path, choice.Path != ""
 			if !ok {
 				return
 			}
 			d.quota.setNote("")
+			d.setQuotaChoice(choice)
 			d.quotaLoop(ctx, p, every)
 		}()
 		return
 	}
-	if !allowed {
-		d.Logf("quota-axi is installed but the integration is off")
-		return
-	}
 	d.quota.setNote("")
+	d.setQuotaChoice(choice)
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
@@ -214,6 +242,18 @@ func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas
 		d.Logf("quota-axi: %v", err)
 		return nil
 	}
+	if version, err := quotaaxi.InstalledVersion(path); err == nil {
+		q.Copy = &protocol.QuotaCopy{Version: version, Dir: filepath.Dir(path), Private: path == quotaaxi.Binary()}
+	}
+	if auth, err := quotaaxi.LoadAuth(ConfigDir()); err == nil && auth.Path == path && auth.Error == "" {
+		for i := range q.Providers {
+			for _, p := range auth.Providers {
+				if strings.EqualFold(p.Provider, q.Providers[i].Provider) && p.Status == "needs attention" && q.Providers[i].Error != "" {
+					q.Providers[i].NeedsAttention = true
+				}
+			}
+		}
+	}
 	d.quota.set(q)
 	return q
 }
@@ -243,34 +283,7 @@ func readQuotaAXIWith(ctx context.Context, path string, logf func(format string,
 			if err != nil {
 				version = "unknown"
 			}
-			if path == quotaaxi.Binary() {
-				return nil, fmt.Errorf("quota-axi rejected its options (version %s)", version)
-			}
-			notice := fmt.Sprintf("quota-axi rejected its options (version %s); using the pinned copy", version)
-			if logf != nil {
-				logf("%s", notice)
-			}
-			if err := ensureQuotaAXIPrivate(ctx, logf); err != nil {
-				return nil, fmt.Errorf("%s: %w", notice, err)
-			}
-			return readQuotaAXIOnce(ctx, quotaaxi.Binary())
-		}
-	}
-	return nil, quotaAXIFailure(runErr, stderr)
-}
-
-func readQuotaAXIOnce(ctx context.Context, path string) (*protocol.Quotas, error) {
-	raw, stderr, runErr := runQuotaAXI(ctx, path)
-	if runErr == nil {
-		return parseQuotaAXI(raw)
-	}
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("it did not answer within %s", quotaTimeout)
-	}
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) && exitErr.ExitCode() == 1 {
-		if q, err := parseQuotaAXI(raw); err == nil {
-			return q, nil
+			return nil, fmt.Errorf("quota-axi rejected its options (version %s)", version)
 		}
 	}
 	return nil, quotaAXIFailure(runErr, stderr)
@@ -369,7 +382,9 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 	for _, p := range in.Providers {
 		qp := protocol.QuotaProvider{Provider: p.Provider, Plan: p.Plan, Stale: p.State.Stale || strings.EqualFold(p.State.Status, "stale")}
 		if p.State.Error != "" {
-			qp.Error = quotaAXIProviderError(p.Provider, p.State.Error)
+			qp.Error = p.State.Error
+			reason := strings.ToLower(p.State.Error)
+			qp.NeedsAttention = strings.Contains(reason, "auth_rejected") || strings.Contains(reason, "credential_invalid") || strings.Contains(reason, "credential_expired")
 		}
 		// Per-window pace facts.
 		for _, w := range p.Windows {
@@ -405,13 +420,6 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 		out.Providers = append(out.Providers, qp)
 	}
 	return out, nil
-}
-
-func quotaAXIProviderError(provider, message string) string {
-	if strings.EqualFold(provider, "opencode-go") && strings.EqualFold(message, "provider_auth_rejected") {
-		return "the OpenCode Go login the daemon found was rejected"
-	}
-	return message
 }
 
 // quotaPercent prefers percentUsed when quota-axi sends it and otherwise

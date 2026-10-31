@@ -17,6 +17,7 @@ type WorkerModelCandidate struct {
 	DefaultEffort string
 	Failed        bool
 	Succeeded     bool
+	Track         TrackRecord
 }
 
 // WorkerModelChoice explains an automatic worker model selection.
@@ -27,8 +28,8 @@ type WorkerModelChoice struct {
 	QuotaNote string
 }
 
-// ChooseWorkerModel ranks eligible models by fit, quota room and recent failure.
-// Rotation selects among equally ranked choices when no quota readings exist.
+// ChooseWorkerModel ranks adequate models by track record, quota pace and score.
+// Rotation selects among equally ranked choices.
 func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation int) (WorkerModelChoice, error) {
 	if level == "" {
 		level = "normal"
@@ -51,10 +52,10 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		}
 		fit, _ := DifficultyFit(s.Score, level, minimums)
 		reasons = append(reasons, fmt.Sprintf("%s %s (score %g, %s)", c.Harness, c.Model, s.Score, fit))
-		if fit == "denied" {
+		if fit != "good" && fit != "excellent" {
 			continue
 		}
-		rank := map[string]int{"excellent": 0, "good": 1, "poor": 2}[fit]
+		rank := 0
 		provider := c.Provider
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
@@ -82,8 +83,17 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if a.fit != b.fit {
 			return a.fit < b.fit
 		}
+		if poorTrack(a.choice.Track) != poorTrack(b.choice.Track) {
+			return !poorTrack(a.choice.Track)
+		}
 		if measured && a.room != b.room {
 			return a.room > b.room
+		}
+		if a.choice.Score != b.choice.Score {
+			return a.choice.Score < b.choice.Score
+		}
+		if strongTrack(a.choice.Track) != strongTrack(b.choice.Track) {
+			return strongTrack(a.choice.Track)
 		}
 		if a.choice.Failed != b.choice.Failed {
 			return !a.choice.Failed
@@ -97,7 +107,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	ties := 1
 	for ties < len(eligible) {
 		r := eligible[ties]
-		if r.fit != best.fit || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
+		if r.fit != best.fit || poorTrack(r.choice.Track) != poorTrack(best.choice.Track) || strongTrack(r.choice.Track) != strongTrack(best.choice.Track) || r.choice.Score != best.choice.Score || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
 			break
 		}
 		ties++
@@ -145,9 +155,27 @@ func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
 		current := elapsed - w.PercentUsed
 		if !measured || current < room {
 			room = current
-			note = fmt.Sprintf("%s %s %.0f%% used at %.0f%% elapsed", provider, QuotaWindowName(w), w.PercentUsed, elapsed)
+			pace := "on pace"
+			if current > 0.05 {
+				pace = fmt.Sprintf("%.0f%% behind pace", current)
+			} else if current < -0.05 {
+				pace = fmt.Sprintf("%.0f%% ahead of pace", -current)
+			}
+			note = fmt.Sprintf("%s %s (%s, %.0f%% used at %.0f%% elapsed)", provider, pace, QuotaWindowName(w), w.PercentUsed, elapsed)
 			measured = true
 		}
 	}
 	return room, note, measured, false
+}
+
+// Only finished outcomes that describe task quality count; stopped and timed-out
+// runs can reflect circumstances unrelated to the model.
+func poorTrack(t TrackRecord) bool {
+	n := t.Complete + t.Partial + t.Failed
+	return n >= 5 && 2*t.Complete < n
+}
+
+func strongTrack(t TrackRecord) bool {
+	n := t.Complete + t.Partial + t.Failed
+	return n >= 5 && 2*t.Complete >= n
 }

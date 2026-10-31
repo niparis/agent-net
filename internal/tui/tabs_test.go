@@ -511,7 +511,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T trivial S simple N normal H hard V very complex",
 		"E strong G ok P weak - too weak",
-		"terra codex: picked for",
+		"luna codex: picked for trivial, simple and normal",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {
@@ -787,7 +787,7 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 		m := newModel(size[0], size[1])
 		m.tab = 2
 		m.quotaShowUnset = true
-		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "the OpenCode Go login the daemon found was rejected"}}}
+		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Copy: &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}, Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "provider_auth_rejected", NeedsAttention: true}}}
 		view := ansi.Strip(m.View())
 		for _, line := range lines(view) {
 			if strings.Contains(line, "opencode-go") && !strings.Contains(line, "provider_auth_rejected") {
@@ -839,5 +839,47 @@ func TestQuotaSelectionVisible(t *testing.T) {
 	v = ansi.Strip(m.View())
 	if !strings.Contains(v, "> codex") {
 		t.Fatalf("selection did not move: %s", v)
+	}
+}
+
+func TestQuotaCopyAndAttention(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.quotaShowUnset = true
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Copy: &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}, Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "provider_auth_rejected", NeedsAttention: true}}}
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"quota-axi 0.1.66 · yours (/opt/homebrew/bin)", "needs you once: run agent-net setup --quota"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q:\n%s", want, view)
+		}
+	}
+	m.usage.raw.Local.Quotas.Copy.Private = true
+	view = ansi.Strip(m.View())
+	if !strings.Contains(view, "agent-net's copy") {
+		t.Fatal(view)
+	}
+}
+
+func TestQuotaCopyShownBeforeFirstReading(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = nil
+	m.usage.raw.Local.QuotaCopy = &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}
+	m.usage.raw.Local.QuotaError = "it failed"
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "quota-axi 0.1.66 · yours (/opt/homebrew/bin)") {
+		t.Fatal(view)
+	}
+}
+
+func TestWorkerPanelUsesTrackRecordForPicks(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "cheap", Harness: "codex", Model: "fake/a"}, {Name: "strong", Harness: "codex", Model: "fake/b"}}
+	m.snap.WorkerProviders = []string{"codex"}
+	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 32}, {Match: "fake/b", Score: 42}}
+	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "fake/a", Runs: 5, Complete: 1, Partial: 4}}
+	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	if !strings.Contains(v, "strong codex: picked for") {
+		t.Fatalf("track record not used for picks: %s", v)
 	}
 }

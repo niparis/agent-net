@@ -450,6 +450,14 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			p.Model = ""
 			automaticNote = "no registered workers; add one with the CTO or agent_worker_profile_add"
 		} else {
+			tracks, err := g.store.TrackRecords(pick.NodeID, 0)
+			if err != nil {
+				return none, err
+			}
+			trackByModel := make(map[string]protocol.TrackRecord, len(tracks))
+			for _, track := range tracks {
+				trackByModel[track.Harness+"\x00"+track.Model] = track
+			}
 			var candidates []protocol.WorkerModelCandidate
 			var skippedProfiles []string
 			resolutionNotes := map[string]string{}
@@ -493,7 +501,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 					if profile.Effort != "" {
 						model += ":" + profile.Effort
 					}
-					candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+					candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero(), Track: trackByModel[h.Name+"\x00"+model]})
 					if resolved != profile.Model {
 						resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
 					}
@@ -515,15 +523,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, reject("%v", err)
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
-			automaticNote = fmt.Sprintf("%s -> %s %s (score %g, %s", difficulty, p.Harness, p.Model, choice.Score, choice.Fit)
+			automaticNote = workerChoiceNote(difficulty, choice, candidates, scores, minimums)
 			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
 				automaticNote += "; " + note
 			}
 			if protectionNote != "" {
 				automaticNote += "; " + protectionNote
-			}
-			if choice.QuotaNote != "" {
-				automaticNote += "; " + choice.QuotaNote
 			}
 			if len(skippedProfiles) > 0 {
 				automaticNote += "; " + strings.Join(skippedProfiles, "; ")
@@ -995,4 +1000,38 @@ func (g *Gateway) resumeEndedWorker(ctx context.Context, nc *nodeConn, p protoco
 	}
 	g.logLine("worker.resumed", "node", a.NodeID, "host", a.Hostname, "session", p.Recipient, "owner", p.Sender)
 	return nil
+}
+
+// workerChoiceNote leaves the parenthesis open for resolution and protection notes.
+func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidates []protocol.WorkerModelCandidate, scores []protocol.ModelScore, minimums map[string]float64) string {
+	note := fmt.Sprintf("%s -> %s %s (%g, good enough", level, choice.Harness, choice.Model, choice.Score)
+	if choice.QuotaNote != "" {
+		note += "; " + choice.QuotaNote
+	} else {
+		note += "; no quota pace reading"
+	}
+	for _, c := range candidates {
+		n := c.Track.Complete + c.Track.Partial + c.Track.Failed
+		if c.Model != choice.Model && n >= 5 && 2*c.Track.Complete < n {
+			note += "; " + c.Model + " has a poor track record"
+			break
+		}
+	}
+	for _, c := range candidates {
+		score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
+		if !ok || score.Score <= choice.Score {
+			continue
+		}
+		fit, _ := protocol.DifficultyFit(score.Score, level, minimums)
+		if fit != "good" && fit != "excellent" {
+			continue
+		}
+		name := c.Name
+		if name == "" {
+			name = c.Model
+		}
+		note += "; " + name + " kept for harder work"
+		break
+	}
+	return note
 }

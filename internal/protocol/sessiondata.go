@@ -68,6 +68,8 @@ type UsageReport struct {
 	// owner turned the integration off, when quota-axi is not installed and
 	// could not be installed, or before the first reading.
 	Quotas *Quotas `json:"quotas,omitempty"`
+	// QuotaCopy is the selected executable, including before a first reading.
+	QuotaCopy *QuotaCopy `json:"quota_copy,omitempty"`
 	// QuotaError is the latest quota-axi command failure, if any.
 	QuotaError string `json:"quota_error,omitempty"`
 	// QuotaNote explains why no quota reading can be made yet, for example

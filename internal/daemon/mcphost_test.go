@@ -17,6 +17,7 @@ import (
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/quotaaxi"
 	"github.com/niparis/agent-net/internal/testmcp/tools"
 	"github.com/niparis/agent-net/internal/tui"
 )
@@ -73,6 +74,8 @@ func TestMain(m *testing.M) {
 		runFakeOpenCode()
 		return
 	}
+	quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
+	quotaaxi.SetSystemNodeDirsForTesting(nil)
 	hideRealHerdr()
 	// Do not run the programs of the machine the tests run on.
 	defaultDetect = func(context.Context) []protocol.HarnessInfo { return nil }
@@ -89,10 +92,14 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := os.WriteFile(filepath.Join(bin, "quota-axi"), []byte("#!/bin/sh\nprintf '{}\\n'\n"), 0700); err != nil {
+	if err := os.WriteFile(filepath.Join(bin, "quota-axi"), []byte("#!/bin/sh\nif [ \"$1\" = --version ]; then echo 0.1.69; else printf '{}\\n'; fi\n"), 0700); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	os.WriteFile(filepath.Join(bin, "npm"), []byte("#!/bin/sh\nexit 0\n"), 0700)
+	os.WriteFile(filepath.Join(bin, "node"), []byte("#!/bin/sh\necho v22.19.0\n"), 0700)
+	os.WriteFile(filepath.Join(bin, "shell"), []byte("#!/bin/sh\np=${PATH%%:*}\nprintf '%s\\0' \"$p\" '' '' '' '' '' '' '' ''\n"), 0700)
+	os.Setenv("SHELL", filepath.Join(bin, "shell"))
 	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	os.Setenv("HOME", filepath.Join(fakes, "home"))
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(fakes, "claude-config"))

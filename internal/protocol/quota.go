@@ -46,15 +46,24 @@ type QuotaProvider struct {
 	Plan     string `json:"plan,omitempty"`
 	// Stale is true when quota-axi served a cached reading. A stale reading is
 	// shown but never used to choose or refuse a model.
-	Stale   bool          `json:"stale,omitempty"`
-	Error   string        `json:"error,omitempty"`
-	Windows []QuotaWindow `json:"windows"`
+	Stale          bool          `json:"stale,omitempty"`
+	Error          string        `json:"error,omitempty"`
+	NeedsAttention bool          `json:"needs_attention,omitempty"`
+	Windows        []QuotaWindow `json:"windows"`
+}
+
+// QuotaCopy identifies the executable that produced a reading.
+type QuotaCopy struct {
+	Version string `json:"version"`
+	Dir     string `json:"dir,omitempty"`
+	Private bool   `json:"private,omitempty"`
 }
 
 // Quotas is one quota-axi reading.
 type Quotas struct {
 	// GeneratedAt is when quota-axi produced the reading, in Unix seconds.
 	GeneratedAt int64           `json:"generated_at,omitempty"`
+	Copy        *QuotaCopy      `json:"copy,omitempty"`
 	Providers   []QuotaProvider `json:"providers"`
 }
 

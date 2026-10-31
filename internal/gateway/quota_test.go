@@ -68,3 +68,11 @@ func TestNodesInfoCarriesRecentWorkerFailures(t *testing.T) {
 		t.Fatalf("info: %+v %v", info, err)
 	}
 }
+
+func TestCleanQuotaCopyIsBoundedAndCopied(t *testing.T) {
+	copy := &protocol.QuotaCopy{Version: strings.Repeat("v", 80), Dir: strings.Repeat("d", 400)}
+	got := cleanQuotas(&protocol.Quotas{Copy: copy})
+	if got.Copy == copy || len(got.Copy.Version) > 40 || len(got.Copy.Dir) > 300 {
+		t.Fatalf("copy %+v", got.Copy)
+	}
+}

@@ -78,16 +78,20 @@ type Model struct {
 	fetching        bool
 
 	// What the person chose.
-	selected           string // session ID
-	selIdx             int    // position in the visible list, to move on when the session leaves
-	selNeeds           bool   // whether the selected visible row is in the Needs you section
-	tableTop           int    // first table row on screen
-	showOffline        bool
-	activeOnly         bool
-	hiddenSessions     map[string]bool
-	hiddenNodes        map[string]bool
-	showHiddenSessions bool
-	showHiddenNodes    bool
+	sessionOrder              map[string]sessionOrder
+	sessionNext, sessionFront int64
+	orderFrozenUntil          time.Time
+	frozenOrder               map[string]int
+	selected                  string // session ID
+	selIdx                    int    // position in the visible list, to move on when the session leaves
+	selNeeds                  bool   // whether the selected visible row is in the Needs you section
+	tableTop                  int    // first table row on screen
+	showOffline               bool
+	activeOnly                bool
+	hiddenSessions            map[string]bool
+	hiddenNodes               map[string]bool
+	showHiddenSessions        bool
+	showHiddenNodes           bool
 	// events says how much of the quiet session and worker news the feed
 	// shows (l).
 	events    feedEvents
@@ -568,6 +572,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		m.frozenOrder = make(map[string]int)
+		for i, a := range m.visible() {
+			m.frozenOrder[a.SessionID] = i
+		}
+		m.orderFrozenUntil = m.now().Add(3 * time.Second)
 		next, cmd := m.key(msg)
 		if m.mapOn {
 			if changed, ok := next.(Model); ok && (!changed.mapOn || changed.quitting) {
@@ -612,6 +621,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	m.updateSessionOrder(r.events)
 	if r.hiddenErr == nil {
 		m.setHiddenItems(r.hidden)
 	}
@@ -1179,9 +1189,7 @@ func matches(a protocol.AgentView, filter string) bool {
 }
 
 // groups returns the sessions that pass the filter and the switches, grouped
-// by machine. The order is stable between refreshes: machines by name, and
-// within a machine the sessions by when they were first seen, oldest first.
-// No other key sorts them.
+// by machine, with activity bands kept stable between refreshes.
 func (m Model) groups() []group {
 	by := map[string]*group{}
 	var order []*group
@@ -1234,6 +1242,26 @@ func (m Model) groups() []group {
 	for _, g := range order {
 		sort.SliceStable(g.agents, func(i, j int) bool {
 			a, b := g.agents[i], g.agents[j]
+			if m.now().Before(m.orderFrozenUntil) {
+				ia, oka := m.frozenOrder[a.SessionID]
+				ib, okb := m.frozenOrder[b.SessionID]
+				if oka != okb {
+					return oka
+				}
+				if oka && ia != ib {
+					return ia < ib
+				}
+			}
+			oa, oka := m.sessionOrder[a.SessionID]
+			ob, okb := m.sessionOrder[b.SessionID]
+			if oka && okb {
+				if oa.band != ob.band {
+					return oa.band < ob.band
+				}
+				if oa.rank != ob.rank {
+					return oa.rank < ob.rank
+				}
+			}
 			if sa, sb := sessionStart(a), sessionStart(b); sa != sb {
 				return sa < sb
 			}

@@ -11,6 +11,7 @@ import (
 	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/guidance"
+	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
 // stopWorkers is a variable so a test can look at the call.
@@ -52,6 +53,12 @@ func Uninstall(o Options) error {
 	r.removeNeedsHook()
 	r.removeClaudeWorkersMod()
 	r.removeQuotaAXI()
+	if err := quotaaxi.RemoveAuth(daemon.ConfigDir()); err != nil {
+		r.step("quota-axi auth", "", err)
+	}
+	if err := quotaaxi.RemoveChoice(daemon.ConfigDir()); err != nil {
+		r.step("quota-axi choice", "", err)
+	}
 	r.removePiExtension()
 	r.removeOpenCodePlugin()
 	r.removeGuidance()
