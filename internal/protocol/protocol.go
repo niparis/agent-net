@@ -83,6 +83,7 @@ type Message struct {
 	// recipient's node (decision 0022). It is agent-net's own text, after the
 	// body, and a sender cannot set it.
 	RecipientRelation string `json:"recipient_relation,omitempty"`
+	OwnerInstruction  string `json:"owner_instruction,omitempty"`
 }
 
 // SessionInfo is what a daemon reports about one local session.

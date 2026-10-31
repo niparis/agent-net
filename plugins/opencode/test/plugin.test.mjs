@@ -1319,6 +1319,11 @@ await test("without a daemon answer the last policy still applies, and an old Op
   }, { noAgent: true });
 });
 
+await test("owner instruction follows the body", async () => {
+  const text = await deliveredText({ ...peerMsg, owner_instruction: "ask alice" });
+  if (!text.includes("sent on your user's instruction: «ask alice»")) throw new Error(text);
+});
+
 server.close();
 rmSync(dir, { recursive: true, force: true });
 if (failures) {

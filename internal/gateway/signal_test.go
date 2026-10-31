@@ -175,3 +175,20 @@ func TestSignalUnmatchedFirstSendConsumesPrompt(t *testing.T) {
 		t.Fatalf("signals %+v: %v", signals, err)
 	}
 }
+
+func TestSignalOwnerInstructionOnMessage(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	prompt := "ask bob " + strings.Repeat("é", 220)
+	if err := s.RememberOwnerPrompt(a, prompt); err != nil {
+		t.Fatal(err)
+	}
+	sent, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := s.Message(sent.ID)
+	if err != nil || !ok || got.OwnerInstruction != string([]rune(prompt)[:200]) {
+		t.Fatalf("message %+v: %v", got, err)
+	}
+}

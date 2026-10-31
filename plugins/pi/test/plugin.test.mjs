@@ -587,6 +587,11 @@ await test("without a connection the turn is not blocked and no policy is invent
   if (Date.now() - t0 > 1000 || out.systemPrompt.includes("standing policy")) throw new Error("blocked or invented a policy: " + out.systemPrompt);
 });
 
+await test("owner instruction follows the body", async () => {
+  const text = await delivered({ ...peer, owner_instruction: "ask alice" });
+  if (!text.includes("sent on your user's instruction: «ask alice»")) throw new Error(text);
+});
+
 server.close();
 rmSync(dir, { recursive: true, force: true });
 if (failures) {
