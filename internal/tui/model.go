@@ -812,13 +812,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			row := rows[min(m.quotaSelected, len(rows)-1)]
-			provider := strings.ToLower(row.provider.Provider)
-			switch provider {
-			case "claude":
-				provider = "anthropic"
-			case "codex":
-				provider = "openai"
-			}
+			provider := m.quotaModelProvider(row.provider.Provider)
 			m.notice = notice{}
 			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
 			m.mode = modeQuotaConfirm

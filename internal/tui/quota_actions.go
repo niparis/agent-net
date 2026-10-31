@@ -22,7 +22,7 @@ func (m Model) quotaConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		p.Providers = append([]string(nil), p.Providers...)
 		var providers []string
 		for _, name := range p.Providers {
-			if !strings.EqualFold(name, m.quotaConfirm) && !(m.quotaUnprotect && protocol.QuotaProviderForModelProvider(name) != "" && protocol.QuotaProviderForModelProvider(name) == protocol.QuotaProviderForModelProvider(m.quotaConfirm)) {
+			if !strings.EqualFold(name, m.quotaConfirm) {
 				providers = append(providers, name)
 			}
 		}
@@ -51,4 +51,27 @@ func (m Model) quotaConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// quotaModelProvider resolves a quota reader's alias to the model provider.
+func (m Model) quotaModelProvider(quota string) string {
+	quota = strings.ToLower(quota)
+	for _, p := range m.snap.ProtectedProviders.Providers {
+		if strings.EqualFold(p, quota) || protocol.QuotaProviderForModelProvider(p) == quota {
+			return p
+		}
+	}
+	for _, p := range m.snap.WorkerProfiles {
+		provider := protocol.ProfileProvider(p.Harness, p.Model)
+		if protocol.QuotaProviderForModelProvider(provider) == quota {
+			return provider
+		}
+	}
+	switch quota {
+	case "claude":
+		return "anthropic"
+	case "codex":
+		return "openai"
+	}
+	return quota
 }

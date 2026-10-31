@@ -43,3 +43,15 @@ func TestQuotaProtectionSavesAndRefreshes(t *testing.T) {
 		t.Fatal("save must refresh and show a notice")
 	}
 }
+
+func TestQuotaSelectionMapsProfileProvider(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	m.quotaShowUnset = true
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "opencode", Model: "google/gemini"}}
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "agy", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
+	m = keys(m, "p")
+	if m.quotaConfirm != "google" {
+		t.Fatalf("got provider %q, want google", m.quotaConfirm)
+	}
+}
