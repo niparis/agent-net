@@ -483,7 +483,7 @@ func TestEverySizeFitsWithUsage(t *testing.T) {
 
 func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 	m := newModel(140, 30)
-	if l := m.helpLine(160); !strings.Contains(l, "d detail") || !strings.Contains(l, "? help") || !strings.Contains(l, "e enter (ctrl+] back)") {
+	if l := m.helpLine(160); !strings.Contains(l, "d detail") || !strings.Contains(l, "? help") || !strings.Contains(l, "enter open session") {
 		t.Fatalf("wide key line %q", l)
 	}
 	l := m.helpLine(60)
@@ -495,10 +495,13 @@ func TestKeyLineGivesUpTheLeastUsefulHints(t *testing.T) {
 func TestHelpOverlay(t *testing.T) {
 	m := keys(newModel(100, 40), "?")
 	v := m.View() + keys(m, "G").View()
-	for _, want := range []string{"Keys", "answer a waiting session", "Conversation", "q, ctrl+c", "shared"} {
+	for _, want := range []string{"Keys", "enter the selected session", "q, ctrl+c", "shared"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help lacks %q:\n%s", want, v)
 		}
+	}
+	if strings.Contains(v, "open the conversation") {
+		t.Errorf("help still lists the conversation view:\n%s", v)
 	}
 	m = keys(m, "x") // other keys do nothing
 	if !m.help {
@@ -507,12 +510,6 @@ func TestHelpOverlay(t *testing.T) {
 	m = keys(m, "esc")
 	if m.help {
 		t.Fatal("esc did not close the help")
-	}
-	// ? toggles from the conversation too, and returns to it.
-	m = keys(newModel(100, 40), "c")
-	m = keys(m, "?", "?")
-	if m.help || m.conv == nil {
-		t.Fatal("help over the conversation lost it")
 	}
 }
 

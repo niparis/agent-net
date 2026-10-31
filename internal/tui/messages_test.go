@@ -154,8 +154,8 @@ func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) 
 		}
 	}
 	m = keys(m, "enter")
-	if m.open != nil || m.conv != nil || m.feedCur != rows[0].items[1] {
-		t.Fatalf("enter should open the latest message in the thread pane, got open=%+v conv=%+v cursor=%d", m.open, m.conv, m.feedCur)
+	if m.open != nil || m.feedCur != rows[0].items[1] {
+		t.Fatalf("enter should open the latest message in the thread pane, got open=%+v cursor=%d", m.open, m.feedCur)
 	}
 }
 

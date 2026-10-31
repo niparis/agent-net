@@ -233,9 +233,8 @@ type snippetMsg struct {
 	err error
 }
 
-// snippetCmd asks the daemon for one message body, the same call the
-// conversation view uses. Owners can also read remote messages through the
-// daemon's participant relay.
+// snippetCmd asks the daemon for one message body. Owners can also read remote
+// messages through the daemon's participant relay.
 func (m Model) snippetCmd(id string) tea.Cmd {
 	src := m.src
 	return func() tea.Msg {
@@ -250,7 +249,7 @@ func (m Model) snippetCmd(id string) tea.Cmd {
 // this machine may read and which has none yet. One at a time keeps the feed
 // cheap, and the answer never blocks a redraw.
 func (m *Model) wantSnippets() tea.Cmd {
-	if m.feed.unavailable != "" || m.conv != nil || m.help {
+	if m.feed.unavailable != "" || m.help {
 		return nil
 	}
 	for _, it := range m.feed.items {
