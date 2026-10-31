@@ -234,6 +234,9 @@ func (lc *localConn) run(ctx context.Context) {
 			if strings.HasPrefix(req.Method, "mcp_") {
 				timeout = protocol.MCPMaxTimeout + time.Minute // a tool call may run as long as its server allows
 			}
+			if req.Method == "send" || req.Method == "owner_send" {
+				timeout = 100 * time.Second
+			}
 			if req.Method == protocol.OpWorkerStart {
 				timeout = lc.d.cfg.Workers.filled().StartTimeout + 60*time.Second // the machine starts a harness
 			}

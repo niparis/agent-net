@@ -204,7 +204,7 @@ func fakeClaudeSession() {
 	dir := os.Getenv(envFakeClaudeSessions)
 	id := randHex(4)
 	session := id + "-0000-4000-8000-" + randHex(6)
-	if resumed := argValue(in.Args, "--resume"); resumed != "" {
+	if resumed := argValue(in.Args, "--resume"); resumed != "" && os.Getenv("FAKE_CLAUDE_NEW_RESUME_ID") == "" {
 		session = resumed // the same conversation, a new background job
 	}
 	sock := filepath.Join(os.Getenv(envFakeClaudeSockets), "fc-"+id+".sock")

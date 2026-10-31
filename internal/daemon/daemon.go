@@ -256,7 +256,8 @@ type Daemon struct {
 	recent map[string]recentWorker
 	// resumeMu serializes starting an ended worker again, so two messages
 	// from its owner cannot start two processes.
-	resumeMu sync.Mutex
+	resumeMu      sync.Mutex
+	claudeStartMu sync.Mutex
 	// mcpHello is when the MCP server of each Claude session first said hello.
 	// A Claude worker waits for it before it gets its task.
 	mcpHello map[string]time.Time
@@ -427,6 +428,10 @@ func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...
 // ---- registry ----
 
 func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
+	if harness == "claude" {
+		d.claudeStartMu.Lock()
+		defer d.claudeStartMu.Unlock()
+	}
 	// The repository commands run here, outside the lock. A session whose other
 	// fields changed gets a fresh branch; the rest use the cache.
 	d.mu.Lock()
@@ -454,6 +459,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		// harness title is not used (decision 0024).
 		if wk := d.workerByNative(harness, infos[i].NativeID); wk != nil {
 			infos[i].Worker = d.workerInfo(wk)
+			d.wmu.Lock()
+			infos[i].SessionID = wk.sessionID
+			d.wmu.Unlock()
 			infos[i].Mode = protocol.ModeBackground
 			infos[i].Name = ""
 		}
@@ -495,6 +503,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			in.Waiting = keepWaiting(before[k], in)
 			if ls.info != in {
 				sid := ls.info.SessionID
+				if harness == "claude" && in.Worker != nil && ls.info.PID != in.PID {
+					ls.sessionID = "" // wait for this process to be registered
+				}
 				ls.info = in
 				ls.info.SessionID = sid
 				changed = append(changed, ls)
@@ -514,7 +525,11 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		d.pushSession(ls)
 	}
 	for _, id := range gone {
-		d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: id})
+		// A resumed worker may replace a native session while retaining its
+		// gateway ID. Do not take that newly registered session offline.
+		if d.sessionByID(id) == nil {
+			d.call(context.Background(), "session.remove", protocol.SessionRemove{SessionID: id})
+		}
 	}
 }
 
@@ -544,7 +559,9 @@ func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	info := ls.info
-	info.SessionID = ls.sessionID
+	if ls.sessionID != "" {
+		info.SessionID = ls.sessionID
+	}
 	return info
 }
 
@@ -579,7 +596,9 @@ func (d *Daemon) snapshot() []protocol.SessionInfo {
 	out := make([]protocol.SessionInfo, 0, len(d.sessions))
 	for _, ls := range d.sessions {
 		info := ls.info
-		info.SessionID = ls.sessionID
+		if ls.sessionID != "" {
+			info.SessionID = ls.sessionID
+		}
 		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -639,7 +658,7 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 		return d.ctoAttributedCall(ctx, "msg.send", p)
 	}
 	if d.st.outboxLen() == 0 {
-		data, err := d.call(ctx, "msg.send", p)
+		data, err := d.call(withCallWait(ctx, 90*time.Second), "msg.send", p)
 		var re RemoteError
 		if err == nil || errors.As(err, &re) {
 			return data, err
@@ -663,7 +682,7 @@ func (d *Daemon) flushOutbox(ctx context.Context) {
 		return
 	}
 	for _, q := range items {
-		_, err := d.call(ctx, "msg.send", q.msg)
+		_, err := d.call(withCallWait(ctx, 90*time.Second), "msg.send", q.msg)
 		var re RemoteError
 		if err != nil && !errors.As(err, &re) {
 			return // link trouble: keep the rest, in order

@@ -1257,9 +1257,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 				"reason", "sender session not on this node")
 			return nil, reject("sender session %q does not belong to this node", p.Sender)
 		}
+		if p.IdempotencyKey == "" {
+			p.IdempotencyKey = protocol.NewID("k")
+		}
 		// A message from its owner starts an ended worker again, before it is
 		// stored, so a refusal reaches the sender (W10).
 		if err := g.resumeEndedWorker(ctx, nc, p); err != nil {
+			g.notifyResumeRefusal(ctx, p, err)
 			var rj Rejection
 			if errors.As(err, &rj) {
 				st.Event("msg.refused", nc.id, p.Sender, "", err.Error())

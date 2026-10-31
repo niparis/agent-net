@@ -77,6 +77,13 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
 	owner := c.ownerID()
+	defer func() {
+		if t.Failed() {
+			t.Logf("messages: %+v", c.messagesOf(t, owner))
+			t.Logf("agents: %+v", c.agents(t, true))
+			t.Logf("logs: %v", c.logs.lines())
+		}
+	}()
 
 	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Model: "haiku", Task: "FAKE:handback say ok"})
 	rec := readClaude(t, repo)
@@ -163,6 +170,37 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 		rows, _ := c.d.st.workers()
 		return len(rows) == 1 && rows[0].Resumable
 	})
+}
+
+// Claude may assign a fresh native session ID to a resumed background job.
+func TestClaudeWorkerResumeWithNewSessionID(t *testing.T) {
+	t.Setenv("FAKE_CLAUDE_NEW_RESUME_ID", "1")
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.StartTimeout = scaled(2 * time.Second)
+	c := startClaudeNode(t, g, set)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:handback first"})
+	rec := readClaude(t, repo)
+	c.waitNotice(t, 1)
+	eventually(t, "worker ended", func() bool { return c.d.workerCount() == 0 && !alive(rec.Pid) })
+	_, err := c.cli.call("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:handback again"})
+	if err != nil {
+		t.Fatalf("resume failed: %v", err)
+	}
+	defer func() {
+		if t.Failed() {
+			t.Logf("messages: %+v", c.messagesOf(t, c.ownerID()))
+			t.Logf("agents: %+v", c.agents(t, true))
+			t.Logf("daemon log: %v", c.logs.lines())
+		}
+	}()
+	c.waitNotice(t, 2)
+	rec2 := readClaude(t, repo)
+	if rec2.Session == rec.Session || argValue(rec2.Args, "--resume") != rec.Session {
+		t.Fatalf("resume session: %+v", rec2)
+	}
 }
 
 // If `claude stop` does nothing, and the process ignores SIGTERM, the group is

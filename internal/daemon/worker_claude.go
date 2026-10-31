@@ -122,6 +122,13 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	if w.model != "" {
 		args = append(args, "--model", w.model)
 	}
+	d.claudeStartMu.Lock()
+	locked := true
+	defer func() {
+		if locked {
+			d.claudeStartMu.Unlock()
+		}
+	}()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = w.path
 	out, err := cmd.CombinedOutput()
@@ -145,13 +152,10 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	w.ref = id
 	d.wmu.Unlock()
 
-	// The session file gives the process and the session ID. On a resume the
-	// job has a new id but the session keeps its own, so it is found by that.
+	// The launcher identifies the new job, including when resume changes the
+	// native session ID. Match the job, not the old conversation ID.
 	var sf claudeSessionFile
 	find := func() (claudeSessionFile, bool) {
-		if resume != "" {
-			return findClaudeSession(d.cfg.ClaudeSessionsDir, resume)
-		}
 		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
 	}
 	for {
@@ -162,14 +166,25 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		select {
 		case <-ctx.Done():
 			claudeLauncher{}.stopID(d, id)
-			return fmt.Errorf("the Claude background session %s wrote no session file in time", id)
+			if resume != "" {
+				return fmt.Errorf("the Claude background session %s wrote no session file in time; retry the message or resume the conversation with `claude --resume %s`", id, resume)
+			}
+			return fmt.Errorf("the Claude background session %s wrote no session file in time; check Claude Code and retry the worker start", id)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
 	d.attachWorkerProcess(w, sf.PID)
+	if resume != "" && sf.SessionID != resume {
+		d.wmu.Lock()
+		w.nativeID = sf.SessionID
+		d.saveWorkerLocked(w)
+		d.wmu.Unlock()
+	}
 	if err := d.bindWorkerNative(w, sf.SessionID); err != nil {
 		return err
 	}
+	d.claudeStartMu.Unlock()
+	locked = false
 	// The adapter discovers the session from the same file. Wait until the
 	// daemon has it, with the worker flag, and the gateway has given it an ID.
 	// The task is sent when the start returns, so the MCP server must be there
@@ -237,12 +252,6 @@ func findClaudeBg(dir, id string) (claudeSessionFile, bool) {
 	})
 }
 
-// findClaudeSession finds the live session with this session ID. A resumed
-// background job has a new job id but the same session id.
-func findClaudeSession(dir, sessionID string) (claudeSessionFile, bool) {
-	return findClaudeSessionFile(dir, func(sf claudeSessionFile) bool { return sf.SessionID == sessionID })
-}
-
 func findClaudeSessionFile(dir string, match func(claudeSessionFile) bool) (claudeSessionFile, bool) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -275,11 +284,11 @@ func findClaudeSessionFile(dir string, match func(claudeSessionFile) bool) (clau
 // daemon has registered it with the worker flag, or "".
 func (d *Daemon) workerSessionIDOf(w *worker) string {
 	d.wmu.Lock()
-	harness, native := w.harness, w.nativeID
+	harness, native, pid := w.harness, w.nativeID, w.pid
 	d.wmu.Unlock()
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if ls := d.sessions[key(harness, native)]; ls != nil && ls.info.Worker != nil {
+	if ls := d.sessions[key(harness, native)]; ls != nil && ls.info.Worker != nil && (harness != "claude" || ls.info.PID == pid) {
 		return ls.sessionID
 	}
 	return ""

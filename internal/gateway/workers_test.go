@@ -142,3 +142,39 @@ func TestFeedIncludesWorkerEvents(t *testing.T) {
 		t.Errorf("feed kinds: %v", kinds)
 	}
 }
+
+func TestResumeWorkerRebindsOnlyItsOfflineSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("one", "linux")
+	other, _, _ := s.CreateNode("two", "linux")
+	old := protocol.SessionInfo{Harness: "claude", NativeID: "old", Worker: &protocol.WorkerInfo{ID: "w_one", Owner: "s_owner"}}
+	id, err := s.UpsertSession(node, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incoming := old
+	incoming.NativeID, incoming.SessionID = "new", id
+	got, err := s.UpsertSession(node, incoming)
+	if err != nil || got == id {
+		t.Fatalf("online worker rebound: %s %v", got, err)
+	}
+	if err := s.SetSessionOffline(node, id); err != nil {
+		t.Fatal(err)
+	}
+	incoming.NativeID = "other-node"
+	got, err = s.UpsertSession(other, incoming)
+	if err != nil || got == id {
+		t.Fatalf("other node rebound: %s %v", got, err)
+	}
+	incoming.NativeID = "wrong-worker"
+	incoming.Worker = &protocol.WorkerInfo{ID: "w_other"}
+	got, err = s.UpsertSession(node, incoming)
+	if err != nil || got == id {
+		t.Fatalf("other worker rebound: %s %v", got, err)
+	}
+	incoming.NativeID, incoming.Worker = "resumed", old.Worker
+	got, err = s.UpsertSession(node, incoming)
+	if err != nil || got != id {
+		t.Fatalf("worker did not retain ID: %s want %s: %v", got, id, err)
+	}
+}

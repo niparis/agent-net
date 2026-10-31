@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -108,8 +109,44 @@ func TestPiWorkerCannotBeResumed(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot be started again") || !strings.Contains(err.Error(), "Pi's rpc mode") {
 		t.Fatalf("a Pi worker was resumed, or the reason is unclear: %v", err)
 	}
+	eventually(t, "restart refusal notice", func() bool {
+		for _, m := range w.messagesOf(t, w.ownerID()) {
+			if m.To == w.ownerID() && strings.Contains(m.Body, "cannot be started again") && strings.Contains(m.Body, "and again") {
+				return true
+			}
+		}
+		return false
+	})
 	if w.d.workerCount() != 0 {
 		t.Error("a Pi worker was started again")
+	}
+}
+
+// A send queued while disconnected still reports a restart refusal.
+func TestQueuedWorkerResumeRefusalNotifiesSender(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startPiNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:handback say ok"})
+	w.waitNotice(t, 1)
+	eventually(t, "worker ended", func() bool { return w.d.workerCount() == 0 })
+	p := protocol.MsgSend{Sender: w.ownerID(), Recipient: res.SessionID, Body: "queued follow-up", IdempotencyKey: "k_queued"}
+	raw, _ := json.Marshal(p)
+	if err := w.d.st.enqueue(raw); err != nil {
+		t.Fatal(err)
+	}
+	w.d.flushOutbox(context.Background())
+	eventually(t, "queued restart refusal notice", func() bool {
+		for _, m := range w.messagesOf(t, w.ownerID()) {
+			if m.To == w.ownerID() && strings.Contains(m.Body, "cannot be started again") && strings.Contains(m.Body, "queued follow-up") {
+				return true
+			}
+		}
+		return false
+	})
+	if n := w.d.st.outboxLen(); n != 0 {
+		t.Fatalf("outbox has %d messages", n)
 	}
 }
 

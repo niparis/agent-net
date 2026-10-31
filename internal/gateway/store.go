@@ -522,6 +522,15 @@ func (s *Store) upsertSession(q interface {
 	if in.Status == "" {
 		in.Status = "unknown"
 	}
+	// A resumed worker may get a new native ID. Only its own node may
+	// rebind its offline record, and the worker ID must still match.
+	if in.Worker != nil && validSessionID(in.SessionID) {
+		_, err := q.Exec(`UPDATE sessions SET native_id=? WHERE id=? AND node_id=? AND harness=? AND online=0 AND CASE WHEN json_valid(worker) THEN json_extract(worker, '$.id') END=? AND native_id<>? AND NOT EXISTS (SELECT 1 FROM sessions WHERE node_id=? AND harness=? AND native_id=?)`,
+			in.NativeID, in.SessionID, nodeID, in.Harness, in.Worker.ID, in.NativeID, nodeID, in.Harness, in.NativeID)
+		if err != nil {
+			return "", false, err
+		}
+	}
 	var knownID, knownName string
 	err = q.QueryRow(`SELECT id, name FROM sessions WHERE node_id=? AND harness=? AND native_id=?`,
 		nodeID, in.Harness, in.NativeID).Scan(&knownID, &knownName)
