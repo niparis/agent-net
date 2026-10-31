@@ -797,6 +797,12 @@ retryWorker:
 		d.sendUpdate(ctx, m.ID, protocol.StateFailed, "no such local session")
 		return
 	}
+	firstPiTask := false
+	if targetWorker != nil && targetWorker.harness == "pi" {
+		d.wmu.Lock()
+		firstPiTask = targetWorker.taskMsg == "" && m.From == targetWorker.owner && m.Type == protocol.TypeRequest
+		d.wmu.Unlock()
+	}
 	d.touchWorker(m.To, m.From)
 	d.noteAsk(m)
 	var res Result
@@ -805,6 +811,18 @@ retryWorker:
 			res = adapter.deliverWorker(targetWorker, m)
 		} else {
 			res = d.deliverTo(ctx, ls, m)
+		}
+	} else if firstPiTask {
+		d.mu.Lock()
+		conn := ls.conn
+		d.mu.Unlock()
+		if conn == nil {
+			res = Result{Detail: "Pi worker extension is disconnected"}
+		} else {
+			res = conn.pushWithConfirmation(ctx, m, d.cfg.PluginAckTimeout, true)
+			if !res.Delivered && res.Detail == "plugin did not confirm the worker turn" && ctx.Err() == nil {
+				res = conn.pushWithConfirmation(ctx, m, d.cfg.PluginAckTimeout, true)
+			}
 		}
 	} else {
 		res = d.deliverTo(ctx, ls, m)

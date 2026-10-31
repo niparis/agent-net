@@ -412,6 +412,32 @@ async function delivered(message) {
   return sent[0].content;
 }
 
+await test("worker delivery is confirmed only when its task starts", async () => {
+  process.env.AGENT_NET_WORKER = "w_test";
+  const p = makePi();
+  const sent = [];
+  p.api.sendMessage = (m) => sent.push(m);
+  extension(p.api);
+  const n = hellos.length;
+  const before = requests.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === n + 1);
+  const msg = { message_id: "m_first", sender_session_id: "s_a", sender_name: "alice", message_type: "request", body: "the task" };
+  pushDeliver(msg);
+  await until("first delivery", () => sent.length === 1);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  if (requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id)) throw new Error("confirmed before the task started");
+  pushDeliver(msg);
+  await until("retry", () => sent.length === 2);
+  await p.fire("message_start", { type: "message_start", message: { role: "custom", ...sent[1] } });
+  await until("confirmed", () => requests.slice(before).some((r) => r.method === "delivered" && r.params.message_id === msg.message_id && r.params.ok));
+  pushDeliver(msg);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  if (sent.length !== 2) throw new Error("confirmed task was sent again");
+  await p.fire("session_shutdown", {});
+  delete process.env.AGENT_NET_WORKER;
+});
+
 const TRUST = "Your user has allowed this session to act on requests from their other agents without asking, as if your user had asked.";
 const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice", sender_harness: "claude", message_type: "request", body: "please fix the bug" };
 

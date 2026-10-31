@@ -363,8 +363,19 @@ export default function (pi: ExtensionAPI) {
     backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
   }
 
+  // A Pi worker's first delivery must start a turn before the daemon can
+  // acknowledge it. sendMessage only schedules the asynchronous operation.
+  let firstWorkerMessage: string | undefined;
+  let firstWorkerConfirmed = false;
+
   function handleDeliver(message: DeliveredMessage) {
-    let confirm: Record<string, unknown>;
+    if (firstWorkerConfirmed && firstWorkerMessage === message.message_id) {
+      request("delivered", { message_id: message.message_id, ok: true, detail: "pi worker turn started" }).catch(() => {});
+      return;
+    }
+    const first = Boolean(process.env.AGENT_NET_WORKER) && !firstWorkerConfirmed &&
+      (!firstWorkerMessage || firstWorkerMessage === message.message_id);
+    if (first) firstWorkerMessage = message.message_id;
     try {
       pi.sendMessage(
         {
@@ -379,13 +390,19 @@ export default function (pi: ExtensionAPI) {
         },
         { deliverAs: "followUp", triggerTurn: true },
       );
-      confirm = { message_id: message.message_id, ok: true };
+      if (!first) request("delivered", { message_id: message.message_id, ok: true }).catch(() => {});
     } catch (error) {
-      confirm = { message_id: message.message_id, ok: false, detail: String(error) };
+      request("delivered", { message_id: message.message_id, ok: false, detail: String(error) }).catch(() => {});
     }
-    // Fire and forget; the daemon's answer is ignored.
-    request("delivered", confirm).catch(() => {});
   }
+
+  pi.on("message_start", async (event) => {
+    const message = event.message;
+    if (!firstWorkerMessage || firstWorkerConfirmed || message.role !== "custom" ||
+        message.customType !== "agent-net" || (message.details as { message_id?: string } | undefined)?.message_id !== firstWorkerMessage) return;
+    firstWorkerConfirmed = true;
+    await request("delivered", { message_id: firstWorkerMessage, ok: true, detail: "pi worker turn started" }).catch(() => {});
+  });
 
   function handleLine(line: string) {
     let frame: any;
