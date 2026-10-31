@@ -321,13 +321,24 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		if item == nil || item.Desired == nil {
 			continue
 		}
+		for _, r := range item.Results {
+			if r.State == "applied" {
+				item.Applied = "partial"
+				break
+			}
+		}
 		if len(plan.Targets) > 0 && len(item.Results) == len(plan.Targets) {
-			item.Applied = "applied"
+			allApplied := true
 			for _, r := range item.Results {
 				if r.State != "applied" {
-					item.Applied = r.State
-					break
+					allApplied = false
+					if item.Applied != "partial" {
+						item.Applied = r.State
+					}
 				}
+			}
+			if allApplied {
+				item.Applied = "applied"
 			}
 		}
 	}

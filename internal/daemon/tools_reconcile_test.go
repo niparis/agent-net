@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -163,5 +164,333 @@ func TestSkillRootStaysAnchoredAfterParentSwap(t *testing.T) {
 	}
 	if _, err = os.Stat(filepath.Join(home, "moved", "fixture")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestRemoveSkillBackupAndChangedContent(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
+	home, state := t.TempDir(), t.TempDir()
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := inventory.SkillHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Harness: "claude", Source: path}}
+	if err = os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.removeSkill(target); r.State != "conflict" || r.Reason != "changed since plan" {
+		t.Fatalf("changed: %+v", r)
+	}
+	if err = os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("remove: %+v", r)
+	}
+	if _, err = os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("source remains: %v", err)
+	}
+	var found bool
+	err = filepath.WalkDir(filepath.Join(state, "skill-backups"), func(p string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Name() == "SKILL.md" {
+			b, e := os.ReadFile(p)
+			found = e == nil && string(b) == "original"
+		}
+		return nil
+	})
+	if err != nil || !found {
+		t.Fatalf("backup missing: %v", err)
+	}
+}
+
+func TestForgetSkillExcludeRefcount(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
+	state := t.TempDir()
+	repo := t.TempDir()
+	if _, err := projectGit(repo, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	exclude := filepath.Join(repo, ".git", "info", "exclude")
+	line := "/.agents/skills/demo/"
+	if err := os.WriteFile(exclude, []byte("# existing\n"+line+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	entries := []skillManifestEntry{{Item: "i", Path: filepath.Join(repo, "a"), Exclude: exclude, ExcludeLine: line, ExcludeOwned: true}, {Item: "i", Path: filepath.Join(repo, "b"), Exclude: exclude, ExcludeLine: line, ExcludeOwned: true}}
+	b, _ := json.Marshal(entries)
+	if err := os.WriteFile(filepath.Join(state, "skill-manifest.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{StateDir: state}}
+	if err := d.forgetSkill(entries[0].Path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(exclude)
+	if !strings.Contains(string(b), line) {
+		t.Fatalf("removed referenced line: %q", b)
+	}
+	if err := d.forgetSkill(entries[1].Path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(exclude)
+	if string(b) != "# existing\n" {
+		t.Fatalf("exclude: %q", b)
+	}
+}
+
+func TestRemoveSkillRejectsChangedObservationAndIsIdempotent(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
+	home, state := t.TempDir(), t.TempDir()
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(path, "SKILL.md")
+	if err := os.WriteFile(file, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Harness: "claude", Source: path}}
+	if err := os.WriteFile(file, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changed, _ := inventory.SkillHash(path)
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: changed, Source: protocol.InventoryNative}}
+	if r := d.removeSkill(target); r.State != "conflict" || r.Reason != "changed since plan" {
+		t.Fatalf("changed observation: %+v", r)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	d.toolsReport.Items = nil
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("absent retry: %+v", r)
+	}
+}
+
+func TestRemoveSkillRefusesTrackedGlobalSource(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
+	home, state := t.TempDir(), t.TempDir()
+	if _, err := projectGit(home, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := projectGit(home, "add", "-f", ".claude/skills/demo/SKILL.md"); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "manual" {
+		t.Fatalf("tracked source: %+v", r)
+	}
+}
+
+func TestRemoveSkillHonorsPlanConflict(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
+	home, state := t.TempDir(), t.TempDir()
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path, Conflict: "source inspection unavailable"}}
+	if r := d.removeSkill(target); r.State != "conflict" {
+		t.Fatalf("plan conflict ignored: %+v", r)
+	}
+}
+
+func TestRemoveSkillFromSeparateCodexHome(t *testing.T) {
+	home, codex, state := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", codex)
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(codex, "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, CodexHome: codex, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("codex source: %+v", r)
+	}
+}
+
+func TestRemoveSkillRefusesMixedSystemObservation(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(home, ".agents", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}
+	sys := obs
+	sys.Source = protocol.InventorySystem
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{obs, sys}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "manual" {
+		t.Fatalf("system source: %+v", r)
+	}
+}
+
+func TestRemoveOwnedExcludeKeepsSimilarLines(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(home, "state"))
+	dir := filepath.Join(home, ".git", "info")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "exclude")
+	line := "/.agents/skills/demo/"
+	if err := os.WriteFile(path, []byte("# "+line+"\nkeep\n"+line+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeOwnedExclude(path, line); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "# "+line+"\nkeep\n" {
+		t.Fatalf("changed another line: %q", b)
+	}
+}
+
+func TestRemoveSkillRefusesSymlink(t *testing.T) {
+	home, state, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "file"), []byte("external"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "file"), filepath.Join(path, "link")); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: "fixture", Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: "fixture"}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "conflict" {
+		t.Fatalf("symlink: %+v", r)
+	}
+	if b, err := os.ReadFile(filepath.Join(outside, "file")); err != nil || string(b) != "external" {
+		t.Fatalf("target: %q %v", b, err)
+	}
+}
+
+func TestRestoreSkillBackupDoesNotReplaceNewSource(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(root, "state"))
+	backup, source := filepath.Join(root, "backup"), filepath.Join(root, "source")
+	if err := os.Mkdir(backup, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreSkillBackup(backup, source); err == nil {
+		t.Fatal("replaced new source")
+	}
+	if _, err := os.Stat(backup); err != nil {
+		t.Fatalf("backup lost: %v", err)
+	}
+}
+
+func TestVerifySkillAbsence(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(home, ".agents", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: "hash", Location: path, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: `["skill","demo","hash"]`, Version: "hash"}, Target: protocol.ToolPlanTarget{Action: "verify"}}
+	if r := d.verifySkillAbsence(target); r.State != "pending" {
+		t.Fatalf("existing skill: %+v", r)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.verifySkillAbsence(target); r.State != "applied" {
+		t.Fatalf("absent skill: %+v", r)
 	}
 }

@@ -406,3 +406,59 @@ func TestToolApplyRejectsCorruptStoredVersion(t *testing.T) {
 		t.Fatalf("corrupt version accepted: %v", err)
 	}
 }
+
+func TestApplyRemovalRequiresImportedSkill(t *testing.T) {
+	for _, tc := range []struct {
+		name                           string
+		remaining, imported, wantError bool
+	}{
+		{name: "last copy", wantError: true},
+		{name: "another assigned copy", remaining: true},
+		{name: "imported", imported: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer s.Close()
+			obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok", Scope: "user", Location: "/one"}
+			if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+				t.Fatal(err)
+			}
+			id := `["skill","demo","abc"]`
+			assignment := protocol.ToolAssignment{Scope: "uninstalled"}
+			if tc.remaining {
+				if _, err = s.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES('other','/repo','demo',0,0)`); err != nil {
+					t.Fatal(err)
+				}
+				other := obs
+				other.Scope = "project"
+				other.Project = "demo"
+				other.ProjectRoot = "/repo"
+				other.Location = "/repo/.agents/skills/demo"
+				if err = s.SetInventory("other", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{other}}); err != nil {
+					t.Fatal(err)
+				}
+				assignment = protocol.ToolAssignment{Scope: "projects", Projects: []string{"demo"}}
+			}
+			if tc.imported {
+				if _, err = s.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at) VALUES(?,?,?,?,?,?)`, id, "abc", "fixture", "node", "fixture", 0); err != nil {
+					t.Fatal(err)
+				}
+			}
+			p, err := s.SaveToolPlan(id, assignment, []protocol.ToolPlanTarget{{NodeID: "node", Source: "/one", Action: "remove"}}, "owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = s.ApplyToolPlan(p.ID, "owner")
+			if tc.wantError {
+				if err == nil || err.Error() != "this is the last copy and it is not imported: import it first" {
+					t.Fatalf("expected last-copy refusal: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("removal refused: %v", err)
+			}
+		})
+	}
+}

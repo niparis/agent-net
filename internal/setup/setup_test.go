@@ -3,6 +3,7 @@ package setup
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http/httptest"
 	"os"
@@ -492,5 +493,39 @@ func TestUninstallRemovesSkillManifest(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("manifest remains: %v", err)
+	}
+}
+
+func TestUninstallRemovesSkillBackupsAndOwnedExclude(t *testing.T) {
+	f := newFixture(t)
+	state := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	exclude := filepath.Join(f.home, "repo", ".git", "info", "exclude")
+	if err := os.MkdirAll(filepath.Dir(exclude), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exclude, []byte("# mine\n/.agents/skills/demo/\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(state, "skill-backups", "fixture"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := json.Marshal([]map[string]any{{"item": "i", "path": filepath.Join(f.home, "repo", ".agents", "skills", "demo"), "exclude": exclude, "exclude_line": "/.agents/skills/demo/", "exclude_owned": true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(state, "skill-manifest.json"), manifest, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err = Uninstall(Options{Out: &out, NoService: true}); err != nil {
+		t.Fatalf("uninstall: %v %s", err, out.String())
+	}
+	if _, err = os.Stat(filepath.Join(state, "skill-backups")); !os.IsNotExist(err) {
+		t.Fatalf("backups remain: %v", err)
+	}
+	b, err := os.ReadFile(exclude)
+	if err != nil || string(b) != "# mine\n" {
+		t.Fatalf("exclude: %q %v", b, err)
 	}
 }

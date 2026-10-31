@@ -208,10 +208,11 @@ type ToolNeed struct {
 
 // ToolTarget is an owner-applied plan target for one daemon.
 type ToolTarget struct {
-	Revision ToolRevision   `json:"revision"`
-	Name     string         `json:"name"`
-	Index    int            `json:"index"`
-	Target   ToolPlanTarget `json:"target"`
+	Revision    ToolRevision   `json:"revision"`
+	Name        string         `json:"name"`
+	Index       int            `json:"index"`
+	Target      ToolPlanTarget `json:"target"`
+	CopiesReady bool           `json:"copies_ready"`
 }
 
 // ToolResult reports the outcome of one target on its owning daemon.

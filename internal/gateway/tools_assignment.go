@@ -267,6 +267,61 @@ func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 	if err = json.Unmarshal([]byte(raw), &p); err != nil {
 		return r, err
 	}
+	for _, target := range p.Targets {
+		if target.Action != "remove" {
+			continue
+		}
+		var kind string
+		if err = tx.QueryRow(`SELECT kind FROM tool_identities WHERE id=?`, p.Item).Scan(&kind); err != nil {
+			return r, err
+		}
+		if kind == "skill" {
+			var imported int
+			if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM skill_versions WHERE item=? AND hash=?)`, p.Item, p.Version).Scan(&imported); err != nil {
+				return r, err
+			}
+			if imported == 0 {
+				rows, e := tx.Query(`SELECT node_id,observation FROM tool_locations WHERE identity_id=?`, p.Item)
+				if e != nil {
+					return r, e
+				}
+				remaining := false
+				for rows.Next() {
+					var node, observation string
+					if e = rows.Scan(&node, &observation); e != nil {
+						break
+					}
+					var obs protocol.InventoryItem
+					if e = json.Unmarshal([]byte(observation), &obs); e != nil {
+						break
+					}
+					assigned := p.Assignment.Scope == "global" && obs.Scope == protocol.InventoryUser
+					for _, project := range p.Assignment.Projects {
+						if p.Assignment.Scope == "projects" && obs.Scope == protocol.InventoryProject && obs.Project == project {
+							assigned = true
+						}
+					}
+					for _, removal := range p.Targets {
+						if removal.Action == "remove" && removal.NodeID == node && removal.Source == obs.Location {
+							assigned = false
+						}
+					}
+					remaining = remaining || assigned
+				}
+				if e == nil {
+					e = rows.Err()
+				}
+				rows.Close()
+				if e != nil {
+					return r, e
+				}
+				if !remaining {
+					return r, errors.New("this is the last copy and it is not imported: import it first")
+				}
+			}
+		}
+		break
+	}
 	r, err = assignToolTx(tx, p.Item, p.Assignment, actor, "plan:"+id, s.now().UnixNano())
 	if err != nil {
 		return r, err

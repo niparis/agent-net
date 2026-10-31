@@ -71,3 +71,43 @@ func TestToolResultsOnlyCurrentOwnedTarget(t *testing.T) {
 		t.Fatal("accepted invalid state")
 	}
 }
+
+func TestRemovalWaitsForAllCopies(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok", Scope: "user", Location: "/source"}
+	if err = s.SetInventory("one", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	if _, err = s.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at) VALUES(?,?,?,?,?,?)`, id, "abc", "fixture", "one", "fixture", 0); err != nil {
+		t.Fatal(err)
+	}
+	targets := []protocol.ToolPlanTarget{{NodeID: "one", Action: "remove", Source: "/source"}, {NodeID: "two", Action: "copy"}}
+	p, err := s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "global"}, targets, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev, err := s.ApplyToolPlan(p.ID, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.ToolTargets("one")
+	if err != nil || len(got) != 1 || got[0].CopiesReady {
+		t.Fatalf("before copy: %+v %v", got, err)
+	}
+	if err = s.ReportToolResult("two", protocol.ToolResult{Item: id, Revision: rev.Revision, Index: 1, State: "applied"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.ToolTargets("one")
+	if err != nil || len(got) != 1 || !got[0].CopiesReady {
+		t.Fatalf("after copy: %+v %v", got, err)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
+	if err != nil || len(items) != 1 || items[0].Applied != "partial" {
+		t.Fatalf("partial result: %+v %v", items, err)
+	}
+}
