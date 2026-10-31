@@ -82,11 +82,11 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if a.fit != b.fit {
 			return a.fit < b.fit
 		}
-		if a.choice.Score != b.choice.Score {
-			return a.choice.Score < b.choice.Score
-		}
 		if measured && a.room != b.room {
 			return a.room > b.room
+		}
+		if a.choice.Score != b.choice.Score {
+			return a.choice.Score < b.choice.Score
 		}
 		if a.choice.Failed != b.choice.Failed {
 			return !a.choice.Failed

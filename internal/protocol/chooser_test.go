@@ -90,3 +90,25 @@ func TestChooseWorkerModelAdequateScore(t *testing.T) {
 		})
 	}
 }
+
+func TestChooseWorkerModelQuotaPaceBeforeScore(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	c := []WorkerModelCandidate{{Model: "cheap", Provider: "a"}, {Model: "strong", Provider: "b"}}
+	scores := []ModelScore{{Match: "cheap", Score: 32.5}, {Match: "strong", Score: 42.3}}
+	for _, tt := range []struct {
+		name string
+		a, b float64
+		want string
+	}{
+		{"behind beats ahead", 70, 20, "strong"},
+		{"cheap behind", 20, 70, "cheap"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: tt.a, ResetsAt: now.Add(84 * time.Hour).Unix()}}}, {Provider: "b", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: tt.b, ResetsAt: now.Add(84 * time.Hour).Unix()}}}}}
+			got, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, 0)
+			if err != nil || got.Model != tt.want {
+				t.Fatalf("got %+v: %v", got, err)
+			}
+		})
+	}
+}
