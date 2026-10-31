@@ -168,6 +168,12 @@ func TestSkillRootStaysAnchoredAfterParentSwap(t *testing.T) {
 }
 
 func TestRemoveSkillBackupAndChangedContent(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
 	home, state := t.TempDir(), t.TempDir()
 	path := filepath.Join(home, ".claude", "skills", "demo")
 	if err := os.MkdirAll(path, 0700); err != nil {
@@ -215,6 +221,12 @@ func TestRemoveSkillBackupAndChangedContent(t *testing.T) {
 }
 
 func TestForgetSkillExcludeRefcount(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
 	state := t.TempDir()
 	repo := t.TempDir()
 	if _, err := projectGit(repo, "init", "-q"); err != nil {
@@ -248,6 +260,12 @@ func TestForgetSkillExcludeRefcount(t *testing.T) {
 }
 
 func TestRemoveSkillRejectsChangedObservationAndIsIdempotent(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
 	home, state := t.TempDir(), t.TempDir()
 	path := filepath.Join(home, ".claude", "skills", "demo")
 	if err := os.MkdirAll(path, 0700); err != nil {
@@ -278,6 +296,12 @@ func TestRemoveSkillRejectsChangedObservationAndIsIdempotent(t *testing.T) {
 }
 
 func TestRemoveSkillRefusesTrackedGlobalSource(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
 	home, state := t.TempDir(), t.TempDir()
 	if _, err := projectGit(home, "init", "-q"); err != nil {
 		t.Fatal(err)
@@ -302,6 +326,12 @@ func TestRemoveSkillRefusesTrackedGlobalSource(t *testing.T) {
 }
 
 func TestRemoveSkillHonorsPlanConflict(t *testing.T) {
+	fakeHome := t.TempDir()
+	t.Setenv("HOME", fakeHome)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(fakeHome, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(fakeHome, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakeHome, "state"))
+
 	home, state := t.TempDir(), t.TempDir()
 	path := filepath.Join(home, ".claude", "skills", "demo")
 	if err := os.MkdirAll(path, 0700); err != nil {
