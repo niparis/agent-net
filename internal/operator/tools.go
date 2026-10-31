@@ -46,6 +46,14 @@ func (s *Client) ToolsAccepted(ctx context.Context) ([]string, error) {
 	return decodeCall[[]string](s.action(ctx, "tools_accepted", struct{}{}))
 }
 
+// ToolsDifferences counts the skill and MCP differences that need review.
+func (s *Client) ToolsDifferences(ctx context.Context) (int, error) {
+	result, err := decodeCall[struct {
+		ToLookAt int `json:"to_look_at"`
+	}](s.action(ctx, protocol.OpToolsDifferences, nil))
+	return result.ToLookAt, err
+}
+
 // ToolsAccept accepts a difference as it is, or takes the mark off.
 func (s *Client) ToolsAccept(ctx context.Context, key string, accepted bool) error {
 	_, err := s.action(ctx, "tools_accept", protocol.ToolAccept{Key: key, Accepted: accepted})

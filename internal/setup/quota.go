@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 
@@ -58,12 +59,8 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		return
 	}
 	if choice.Path != "" {
-		if choice.Private {
-			r.step(quotaStepName, "ok (already installed)", nil)
-		} else {
-			r.step(quotaStepName, "ok (using the installed quota-axi)", nil)
-		}
 		r.quotaAuth(ctx, choice)
+		r.quotaStep(choice.Version)
 		return
 	}
 	if err := ensureQuotaAXI(ctx, nil); err != nil {
@@ -83,8 +80,28 @@ func (r *runner) quotaAXI(ctx context.Context) {
 		r.step(quotaStepName, "skipped (install failed earlier today, trying again tomorrow)", nil)
 		return
 	}
-	r.step(quotaStepName, "ok (installed "+quotaaxi.Version+")", nil)
 	r.quotaAuth(ctx, choice)
+	r.quotaStep(choice.Version)
+}
+
+// quotaStep prints the complete quota status on one short line. The narrower
+// label column is deliberate: it keeps the summary readable without the wide
+// alignment used by setup's other step lines.
+func (r *runner) quotaStep(version string) {
+	result := "ok (" + version + ") - no provider logins found yet"
+	if auth, err := quotaaxi.LoadAuth(daemon.ConfigDir()); err == nil {
+		var providers []string
+		for _, p := range auth.Providers {
+			if p.Status == "found" && p.Provider != "" {
+				providers = append(providers, p.Provider)
+			}
+		}
+		sort.Strings(providers)
+		if len(providers) > 0 {
+			result = "ok (" + version + ") - logged in: " + strings.Join(providers, ", ")
+		}
+	}
+	fmt.Fprintf(r.Out, "%-10s %s\n", quotaStepName, result)
 }
 
 // quotaUpgradeCommand chooses the installer from the executable or its target.
@@ -155,7 +172,6 @@ var quotaPlatform = runtime.GOOS
 func (r *runner) quotaAuth(ctx context.Context, choice quotaaxi.Choice) {
 	tty, err := openTTY()
 	if err != nil {
-		r.hint("to check provider logins later, run agent-net setup --quota")
 		return
 	}
 	defer tty.Close()
@@ -212,11 +228,6 @@ func (r *runner) quotaAuth(ctx context.Context, choice quotaaxi.Choice) {
 	}
 	if err := run(false); err != nil {
 		result.Error = "auth check failed"
-		r.hint("could not check provider logins; run agent-net setup --quota")
-	} else {
-		for _, p := range result.Providers {
-			r.hint("%s: %s", p.Provider, p.Status)
-		}
 	}
 	if quotaPlatform == "darwin" {
 		fmt.Fprint(r.Out, "Allow a Keychain prompt now? Choose Always Allow in the dialog. [y/N] ")
@@ -226,11 +237,6 @@ func (r *runner) quotaAuth(ctx context.Context, choice quotaaxi.Choice) {
 			result.Error = ""
 			if err := run(true); err != nil {
 				result.Error = "auth check failed"
-				r.hint("could not check provider logins; run agent-net setup --quota")
-			} else {
-				for _, p := range result.Providers {
-					r.hint("%s: %s", p.Provider, p.Status)
-				}
 			}
 		}
 	}

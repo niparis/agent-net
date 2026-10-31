@@ -12,6 +12,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/integrations"
+	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
@@ -64,7 +65,7 @@ func TestSetupInstallsQuotaAXIWhenOn(t *testing.T) {
 	ensureQuotaAXI = quotaaxi.Ensure
 	_, log := quotaPath(t, "22.19.0")
 	out := runAskingAll(t, Options{Join: f.newJoin(t), All: AllYes})
-	if !strings.Contains(out, "quota-axi ok (installed "+quotaaxi.Version+")") {
+	if !strings.Contains(out, "quota-axi ok ("+quotaaxi.Version+") - no provider logins found yet") {
 		t.Errorf("output:\n%s", out)
 	}
 	if st, err := os.Stat(quotaaxi.Binary()); err != nil || st.IsDir() {
@@ -256,12 +257,35 @@ printf '%s\n' '{"auth":[{"provider":"claude","sources":[{"status":"available"}]}
 	if err != nil || string(b) != "auth --json\n--allow-keychain-prompt auth --json\n" {
 		t.Fatalf("args %q %v", b, err)
 	}
-	if !strings.Contains(out.String(), "claude: found") || !strings.Contains(out.String(), "codex: needs attention") {
-		t.Fatal(out.String())
+	if strings.Contains(out.String(), "claude: found") || strings.Contains(out.String(), "codex: needs attention") {
+		t.Fatalf("provider statuses should be summarized by quotaAXI, not printed individually: %s", out.String())
 	}
 	result, err := quotaaxi.LoadAuth(daemon.ConfigDir())
 	if err != nil || !result.KeychainPrompt || len(result.Providers) != 2 {
 		t.Fatalf("result %+v %v", result, err)
+	}
+}
+
+func TestQuotaSetupPrintsOneLoginSummaryLine(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(f.home, "quota-axi")
+	script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 0.1.69; exit 0; fi\nprintf '%s\\n' '{\"auth\":[{\"provider\":\"claude\",\"sources\":[{\"status\":\"available\"}]},{\"provider\":\"codex\",\"sources\":[{\"status\":\"available\"}]},{\"provider\":\"gemini\",\"sources\":[{\"status\":\"missing\"}]}]}'\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := quotaaxi.SaveChoice(daemon.ConfigDir(), []quotaaxi.Copy{{Path: path, Version: "0.1.69", Runs: true}}); err != nil {
+		t.Fatal(err)
+	}
+	answer(t, "n\n")
+	oldPlatform := quotaPlatform
+	quotaPlatform = "linux"
+	t.Cleanup(func() { quotaPlatform = oldPlatform })
+	var out bytes.Buffer
+	r := &runner{Options: Options{Out: &out}, want: &protocol.Integrations{QuotaAXI: true}}
+	r.quotaAXI(context.Background())
+	want := "quota-axi  ok (0.1.69) - logged in: claude, codex\n"
+	if out.String() != want {
+		t.Fatalf("quota output:\n%q\nwant:\n%q", out.String(), want)
 	}
 }
 
@@ -275,7 +299,7 @@ func TestQuotaAuthWithoutTerminalSkips(t *testing.T) {
 	var out bytes.Buffer
 	r := &runner{Options: Options{Out: &out}}
 	r.quotaAuth(context.Background(), quotaaxi.Choice{Path: path})
-	if !strings.Contains(out.String(), "agent-net setup --quota") {
+	if out.Len() != 0 {
 		t.Fatal(out.String())
 	}
 	if _, err := quotaaxi.LoadAuth(daemon.ConfigDir()); !os.IsNotExist(err) {
@@ -294,7 +318,7 @@ func TestQuotaOnlyDoesNotRequireJoin(t *testing.T) {
 	if err := Setup(context.Background(), Options{QuotaOnly: true, Out: &out}); err != nil {
 		t.Fatalf("%v: %s", err, out.String())
 	}
-	if !strings.Contains(out.String(), "agent-net setup --quota") {
+	if !strings.Contains(out.String(), "quota-axi  ok (0.1.66) - no provider logins found yet") {
 		t.Fatalf("output: %s", out.String())
 	}
 }

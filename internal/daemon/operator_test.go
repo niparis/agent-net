@@ -249,7 +249,7 @@ func TestAgentConnectionsCannotCallOwnerData(t *testing.T) {
 	oc.mustCall("hello", map[string]any{"client": "opencode", "harness": "opencode", "native_id": "o1", "cwd": "/w/o"})
 	un := dialLocal(t, n.sock) // never said hello as anything useful: a cli client is the only one allowed
 	for name, lc := range map[string]*localClient{"pi": pi, "opencode": oc} {
-		for _, method := range []string{"usage", "usage_top", "session_text", "counts", "session_enter", protocol.OpProtectedProvidersSet, "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule"} {
+		for _, method := range []string{"usage", "usage_top", "session_text", "counts", "session_enter", protocol.OpToolsDifferences, protocol.OpProtectedProvidersSet, "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule"} {
 			params := map[string]any{"session_id": sid}
 			res, err := lc.call(method, params)
 			if err == nil || !strings.Contains(err.Error(), "only available to the owner") {
@@ -270,6 +270,15 @@ func TestOperatorGateRefusesEveryClientButCLI(t *testing.T) {
 	}
 	if err := (&localConn{d: d, client: "cli"}).operatorGate("session_text"); err != nil {
 		t.Errorf("cli refused: %v", err)
+	}
+}
+
+func TestToolsDifferencesIsOwnerOnly(t *testing.T) {
+	d := &Daemon{inSession: func(int) bool { return false }}
+	lc := &localConn{d: d, client: "pi"}
+	_, handled, err := lc.dispatchOperator(context.Background(), protocol.OpToolsDifferences, json.RawMessage(`{}`))
+	if !handled || err == nil || !strings.Contains(err.Error(), "only available to the owner's command line or TUI") {
+		t.Fatalf("tools_differences was not owner-gated: handled=%v err=%v", handled, err)
 	}
 }
 

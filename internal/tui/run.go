@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -13,6 +14,9 @@ import (
 // alternate screen and needs no mouse.
 func Run(ctx context.Context, src Source) error {
 	defer src.Close()
+	// Resolve Lip Gloss's adaptive colors before Bubble Tea acquires the
+	// terminal. Non-TUI commands never need to ask the terminal for its palette.
+	_ = lipgloss.HasDarkBackground()
 	m := New(src)
 	m.tmuxSocket = tmuxSocketOf(os.Getenv("TMUX"))
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))

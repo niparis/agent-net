@@ -1,0 +1,7 @@
+daemon service        failed (systemctl --user start: exit 1)
+
+Setup did not finish: daemon service failed.
+
+Do this first
+! See why: journalctl --user -u agent-net-daemon
+  Then run agent-net setup again.
