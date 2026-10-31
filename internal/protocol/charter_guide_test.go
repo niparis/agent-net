@@ -71,7 +71,7 @@ func TestCharterBudgetWarnings(t *testing.T) {
 		{"total", Charter{Needs: strings.Repeat("é", 1201)}, "the whole charter exceeds 1200 characters: the project's agent reads it every turn"},
 		{"purpose", Charter{Purpose: strings.Repeat("a", 161)}, "purpose exceeds 160 characters: the owner reads it on the Map card"},
 		{"items", Charter{Escalate: "a;b;c;d;e;f\ng"}, "escalate has more than 6 items: use short categories so the agent can scan them"},
-		{"first", Charter{Accepts: strings.Repeat("a", 161) + "; b"}, "neighbors see only the first 160 characters of accepts: put the main item first"},
+		{"first", Charter{Accepts: strings.Repeat("a", 41) + "; b"}, "neighbors see only the first 40 characters of accepts: put the main item first"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -87,7 +87,7 @@ func TestCharterBudgetWarnings(t *testing.T) {
 
 func TestCharterGuideExplainsReadersAndBudget(t *testing.T) {
 	text := CharterGuideText()
-	for _, want := range []string{"1200 characters", "160 characters", "6 items", "first", "names and pointers", "rules nothing else covers"} {
+	for _, want := range []string{"1200 characters", "first 40 characters", "6 items", "first", "names and pointers", "rules nothing else covers"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("guide misses %q", want)
 		}

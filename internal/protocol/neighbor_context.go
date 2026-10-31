@@ -7,6 +7,10 @@ import (
 )
 
 // NeighborCharters describes the charters of directly connected nodes.
+// NeighborFieldChars is how much of a neighbour's accepts and refuses a
+// connected agent sees. The charter guide quotes it, so the two cannot drift.
+const NeighborFieldChars = 40
+
 func NeighborCharters(g Graph, name string) string {
 	type candidate struct {
 		name     string
@@ -67,7 +71,7 @@ func NeighborCharters(g Graph, name string) string {
 			}
 			return s
 		}
-		line := fmt.Sprintf("%s: accepts %s; refuses %s; ask it for those", short(c.name, 40), short(n.Charter.Accepts, 40), short(n.Charter.Refuses, 40))
+		line := fmt.Sprintf("%s: accepts %s; refuses %s; ask it for those", short(c.name, 40), short(n.Charter.Accepts, NeighborFieldChars), short(n.Charter.Refuses, NeighborFieldChars))
 		if len(strings.Join(append(lines, line), "\n")) > 1500 {
 			break
 		}

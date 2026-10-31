@@ -61,7 +61,7 @@ func CharterGuideFor(name string) (CharterAttributeGuide, bool) {
 // the shared protocol guide.
 func CharterGuideText() string {
 	var b strings.Builder
-	b.WriteString("Budget about 1200 characters (~300 tokens) for the whole charter because the project's agent reads it every turn. Neighbors see only the first 160 characters of accepts and refuses, so put the most important item first.\n")
+	fmt.Fprintf(&b, "Budget about 1200 characters (~300 tokens) for the whole charter because the project's agent reads it every turn. Neighbors see only the first %d characters of accepts and refuses, so put the most important item first, in a few words.\n", NeighborFieldChars)
 	for i, guide := range charterGuide {
 		if i > 0 {
 			b.WriteByte('\n')
@@ -114,8 +114,8 @@ func CharterWarnings(c Charter) []string {
 		if len(nonempty) > 6 {
 			warnings = append(warnings, field.name+" has more than 6 items: use short categories so the agent can scan them")
 		}
-		if (field.name == "accepts" || field.name == "refuses") && len(nonempty) > 0 && utf8.RuneCountInString(nonempty[0]) > 160 {
-			warnings = append(warnings, "neighbors see only the first 160 characters of "+field.name+": put the main item first")
+		if (field.name == "accepts" || field.name == "refuses") && len(nonempty) > 0 && utf8.RuneCountInString(nonempty[0]) > NeighborFieldChars {
+			warnings = append(warnings, fmt.Sprintf("neighbors see only the first %d characters of %s: put the main item first", NeighborFieldChars, field.name))
 		}
 	}
 	return warnings
