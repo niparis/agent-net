@@ -491,3 +491,19 @@ func TestToolsEmptyScreensExplainWhatAppears(t *testing.T) {
 		t.Fatalf("projects: %s", v)
 	}
 }
+
+func TestRepeatedDifferencesExpand(t *testing.T) {
+	m, _ := toolsAtScreen(120, 34, 0)
+	d := m.tl.cat.Diffs[0]
+	other := d
+	other.Name, other.Key, other.Title = "another", "two-copies:another:research", "another has 2 different copies on research"
+	m.tl.cat.Diffs = []toolsdiff.Difference{d, other}
+	m.tl.row = 0
+	if ds := m.shownDiffs(); len(ds) != 1 || !strings.Contains(ds[0].Title, "2 skills have 2 different copies on research") {
+		t.Fatalf("group: %+v", ds)
+	}
+	m = pressKey(m, "enter")
+	if ds := m.shownDiffs(); len(ds) != 3 {
+		t.Fatalf("expanded: %+v", ds)
+	}
+}

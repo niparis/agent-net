@@ -12,10 +12,10 @@
 │ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 │     fix: import them and put them on every machine                                                                   │
-│   … mastering-postgresql waits for Nicolas-MBP                                                                       │
-│     nothing to do: it applies when the machine is back                                                               │
-│   … react-best-practices waits for Nicolas-MBP                                                                       │
-│     nothing to do: it applies when the machine is back                                                               │
+│   … 2 items share a difference (pending)                                                                             │
+│     press enter to see each difference                                                                               │
+│                                                                                                                      │
+│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │

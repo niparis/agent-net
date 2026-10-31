@@ -64,10 +64,11 @@ type toolsState struct {
 	needs           []protocol.ToolNeed
 	cat             toolsdiff.Catalog
 
-	screen       int
-	row, col     int
-	scroll       int
-	showAccepted bool
+	screen        int
+	row, col      int
+	scroll        int
+	showAccepted  bool
+	expandedDiffs map[string]bool
 
 	search    string // filter of the All tools screen
 	projSel   string // the project of the By project screen
@@ -209,12 +210,42 @@ func (m Model) shownProjects() []string {
 
 // shownDiffs is the Differences list: accepted ones only when asked for.
 func (m Model) shownDiffs() []toolsdiff.Difference {
-	var out []toolsdiff.Difference
+	groups := map[string][]toolsdiff.Difference{}
+	var order []string
 	for _, d := range m.tl.cat.Diffs {
 		if m.tl.accepted[d.Key] && !m.tl.showAccepted {
 			continue
 		}
+		key := d.Key
+		if d.Name != "" && !m.tl.accepted[d.Key] && d.Kind != toolsdiff.KindUnmanaged {
+			key = "group:" + d.Kind + ":" + strings.Replace(d.Title, d.Name, "{name}", 1)
+		}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], d)
+	}
+	var out []toolsdiff.Difference
+	for _, key := range order {
+		group := groups[key]
+		if len(group) == 1 {
+			out = append(out, group[0])
+			continue
+		}
+		d := group[0]
+		tail := strings.TrimPrefix(d.Title, d.Name+" ")
+		if strings.HasPrefix(tail, "has ") {
+			d.Title = fmt.Sprintf("%d skills have %s", len(group), strings.TrimPrefix(tail, "has "))
+		} else {
+			d.Title = fmt.Sprintf("%d items share a difference (%s)", len(group), d.Kind)
+		}
+		d.Key, d.Name = key, ""
+		d.Fix = "press enter to see each difference"
+		d.Action = toolsdiff.Action{Kind: toolsdiff.ActNone}
 		out = append(out, d)
+		if m.tl.expandedDiffs[key] {
+			out = append(out, group...)
+		}
 	}
 	return out
 }
@@ -346,6 +377,17 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "enter":
 		switch m.tl.screen {
 		case toolsDiffs:
+			ds := m.shownDiffs()
+			if m.tl.row < len(ds) && strings.HasPrefix(ds[m.tl.row].Key, "group:") {
+				key := ds[m.tl.row].Key
+				next := map[string]bool{}
+				for k, v := range m.tl.expandedDiffs {
+					next[k] = v
+				}
+				next[key] = !next[key]
+				m.tl.expandedDiffs = next
+				return m, nil
+			}
 			return m.openFix()
 		case toolsAll:
 			m.toolsToast("details are below the list")
@@ -438,6 +480,10 @@ func (m Model) toolsAccept() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	d := ds[m.tl.row]
+	if strings.HasPrefix(d.Key, "group:") {
+		m.toolsToast("press enter to see each difference")
+		return m, nil
+	}
 	if d.Info {
 		m.toolsToast("nothing to accept: " + d.Fix)
 		return m, nil
