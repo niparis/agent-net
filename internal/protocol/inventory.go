@@ -28,24 +28,37 @@ type InventoryReport struct {
 	Reason    string          `json:"reason,omitempty"`
 }
 
+type SkillFile struct {
+	Path        string `json:"path"`
+	Size        int64  `json:"size"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+type SkillManifest struct {
+	Files    []SkillFile `json:"files,omitempty"`
+	Newest   time.Time   `json:"newest"`
+	TooLarge bool        `json:"too_large,omitempty"`
+}
+
 // InventoryItem describes one observed skill, MCP server, or source error.
 type InventoryItem struct {
-	Harness            string    `json:"harness"`
-	Kind               string    `json:"kind"`
-	Scope              string    `json:"scope"`
-	Project            string    `json:"project,omitempty"`
-	ProjectRoot        string    `json:"project_root,omitempty"`
-	Location           string    `json:"location"`
-	Name               string    `json:"name"`
-	Source             string    `json:"source"`
-	Hash               string    `json:"hash,omitempty"`
-	ContentFingerprint string    `json:"content_fingerprint,omitempty"`
-	ScannedAt          time.Time `json:"scanned_at"`
-	State              string    `json:"state"`
-	Reason             string    `json:"reason,omitempty"`
-	Unsupported        []string  `json:"unsupported,omitempty"`
-	Files              []string  `json:"files,omitempty"`
-	Aliases            []string  `json:"aliases,omitempty"`
+	Harness            string         `json:"harness"`
+	Kind               string         `json:"kind"`
+	Scope              string         `json:"scope"`
+	Project            string         `json:"project,omitempty"`
+	ProjectRoot        string         `json:"project_root,omitempty"`
+	Location           string         `json:"location"`
+	Name               string         `json:"name"`
+	Source             string         `json:"source"`
+	Hash               string         `json:"hash,omitempty"`
+	ContentFingerprint string         `json:"content_fingerprint,omitempty"`
+	Manifest           *SkillManifest `json:"manifest,omitempty"`
+	ScannedAt          time.Time      `json:"scanned_at"`
+	State              string         `json:"state"`
+	Reason             string         `json:"reason,omitempty"`
+	Unsupported        []string       `json:"unsupported,omitempty"`
+	Files              []string       `json:"files,omitempty"`
+	Aliases            []string       `json:"aliases,omitempty"`
 	// Tracked is set for a project skill when the repository lists files under
 	// it: it is part of the repo. An untracked project skill is a local copy.
 	Tracked bool `json:"tracked,omitempty"`

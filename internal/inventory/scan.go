@@ -65,6 +65,20 @@ func Scan(o Options) protocol.InventoryReport {
 		totalFields += size
 		report.Items[index].Files = files
 	}
+	attachManifest := func(index int, manifest *protocol.SkillManifest) {
+		if index >= len(report.Items) {
+			return
+		}
+		data, _ := json.Marshal(manifest)
+		if totalFields+len(data) > 256<<10 {
+			report.State = protocol.InventoryError
+			report.Reason = "inventory exceeds report limit"
+			return
+		}
+		totalFields += len(data)
+		report.Items[index].Manifest = manifest
+	}
+
 	// Never traverse links in a source path or skill root.
 	safe := safePath
 	sourceCount := 0
@@ -189,6 +203,10 @@ func Scan(o Options) protocol.InventoryReport {
 				err = fpErr
 			}
 			files, filesErr := skillFilesRoot(skillRoot)
+			manifest, manifestErr := skillManifestRoot(skillRoot)
+			if err == nil {
+				err = manifestErr
+			}
 			if err == nil {
 				err = filesErr
 			}
@@ -218,6 +236,7 @@ func Scan(o Options) protocol.InventoryReport {
 				totalFields += len(fingerprint)
 			}
 			attachFiles(index, files)
+			attachManifest(index, manifest)
 		}
 	}
 	config := func(h, scope, project, root, base, path, key string, tomlFormat bool) {
@@ -333,6 +352,10 @@ func Scan(o Options) protocol.InventoryReport {
 					err = fpErr
 				}
 				files, filesErr := skillFilesRoot(skillRoot)
+				manifest, manifestErr := skillManifestRoot(skillRoot)
+				if err == nil {
+					err = manifestErr
+				}
 				if err == nil {
 					err = filesErr
 				}
@@ -353,6 +376,7 @@ func Scan(o Options) protocol.InventoryReport {
 						totalFields += len(fingerprint)
 					}
 					attachFiles(index, files)
+					attachManifest(index, manifest)
 				}
 				continue
 			}
