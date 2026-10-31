@@ -82,7 +82,7 @@ func NewWithoutLayout(view protocol.GraphView) *Graph {
 	return g
 }
 func (g *Graph) Selected() string {
-	if len(g.Nodes) == 0 {
+	if g.selected < 0 || g.selected >= len(g.Nodes) {
 		return ""
 	}
 	return g.Nodes[g.selected].Name

@@ -72,9 +72,11 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		w, h := m.graphSize()
 		action = graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "[":
-		action = graphview.SelectPrev{}
+		w, h := m.graphSize()
+		action = graphview.SelectPrev{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "]":
-		action = graphview.SelectNext{}
+		w, h := m.graphSize()
+		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "t":
 		action = graphview.ToggleTalk{}
 	case "o":

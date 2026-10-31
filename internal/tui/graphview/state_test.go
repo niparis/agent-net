@@ -9,7 +9,7 @@ import (
 
 func TestUpdateActions(t *testing.T) {
 	now := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
-	view := protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}}}
+	view := protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}}, Edges: []protocol.Edge{{From: "a", To: "b"}}}
 	s := State{Graph: New(view), Camera: Camera{Zoom: 1, FitZoom: 1}, Now: now}
 	original := s.Graph.Selected()
 	next, _ := Update(s, SelectNext{})
@@ -17,8 +17,8 @@ func TestUpdateActions(t *testing.T) {
 		t.Fatal("selection must change without mutating input")
 	}
 	next, _ = Update(next, SelectPrev{})
-	if next.Graph.Selected() != original {
-		t.Fatal("previous selection")
+	if next.Graph.Selected() != "b" {
+		t.Fatal("only neighbour should remain selected")
 	}
 	next, _ = Update(s, ZoomIn{})
 	if next.Camera.Zoom != 1.25 {
@@ -140,5 +140,29 @@ func TestSpatialSelectionUsesScreenPositions(t *testing.T) {
 	next, _ := Update(s, SelectDirection{DX: 1, Viewport: Viewport{Width: 80, Height: 20}})
 	if got := next.Graph.Selected(); got != "c" {
 		t.Fatalf("right selected %q, want c", got)
+	}
+}
+
+func TestNeighbourSelectionCyclesAroundAnchor(t *testing.T) {
+	g := New(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}, Edges: []protocol.Edge{{From: "a", To: "b"}, {From: "a", To: "c"}, {From: "a", To: "d"}}})
+	g.Positions = map[string]Point{"a": {0, 0}, "b": {1, 0}, "c": {0, 1}, "d": {-1, 0}}
+	s := State{Graph: g, Camera: Camera{Zoom: 1, FitZoom: 1}}
+	for _, want := range []string{"b", "c", "d", "b"} {
+		s, _ = Update(s, SelectNext{Viewport: Viewport{Width: 80, Height: 20}})
+		if got := s.Graph.Selected(); got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestNoSelectionChoosesNearestViewCentre(t *testing.T) {
+	for _, action := range []Action{SelectNext{}, SelectPrev{}, SelectDirection{DX: 1, Viewport: Viewport{80, 20}}} {
+		g := New(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}}})
+		g.Positions = map[string]Point{"a": {5, 0}, "b": {0, 0}}
+		g.selected = -1
+		s, _ := Update(State{Graph: g, Camera: Camera{Zoom: 1, FitZoom: 1}}, action)
+		if got := s.Graph.Selected(); got != "b" {
+			t.Fatalf("%T selected %q", action, got)
+		}
 	}
 }
