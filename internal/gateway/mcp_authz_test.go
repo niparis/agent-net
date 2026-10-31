@@ -120,3 +120,38 @@ func TestOperatorCallUsesOwnerAuthority(t *testing.T) {
 		t.Fatalf("owner call: %v", err)
 	}
 }
+
+// The owner authority is checked against the gateway's own record: the owner
+// session must be on the node that sent the frame, and must be online.
+func TestOwnerAuthorityNeedsSameNodeAndOnline(t *testing.T) {
+	g, node := scopeGateway(t)
+	other, _, err := g.store.CreateNode("laptop", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assignMCP(t, g, "files", protocol.ToolAssignment{Scope: "projects", Projects: []string{"alpha"}})
+	info := protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Name: "owner", Status: "idle"}
+	owner, err := g.store.UpsertSession(other, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.db.Exec(`UPDATE sessions SET online=1 WHERE id=?`, owner); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(protocol.MCPCall{Server: "files", Tool: "read", Owner: owner})
+	// An owner session of another node is not authority for this node.
+	if err := callRaw(g, node, string(raw)); passedCheck(err) {
+		t.Fatalf("owner of another node was believed: %v", err)
+	}
+	// The same owner on its own node passes while online.
+	if err := callRaw(g, other, string(raw)); !passedCheck(err) {
+		t.Fatalf("online owner on its node: %v", err)
+	}
+	// An offline owner session is not authority.
+	if _, err = g.store.db.Exec(`UPDATE sessions SET online=0 WHERE id=?`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if err := callRaw(g, other, string(raw)); passedCheck(err) {
+		t.Fatalf("offline owner was believed: %v", err)
+	}
+}
