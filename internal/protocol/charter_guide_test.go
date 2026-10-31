@@ -84,3 +84,12 @@ func TestCharterBudgetWarnings(t *testing.T) {
 		t.Fatalf("unexpected warnings: %v", got)
 	}
 }
+
+func TestCharterGuideExplainsReadersAndBudget(t *testing.T) {
+	text := CharterGuideText()
+	for _, want := range []string{"1200 characters", "160 characters", "6 items", "first", "names and pointers", "rules nothing else covers"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("guide misses %q", want)
+		}
+	}
+}

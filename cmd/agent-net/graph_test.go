@@ -17,7 +17,7 @@ func (f *graphFake) Call(_ context.Context, method string, params any) (json.Raw
 	f.method = method
 	f.params = params
 	if method == "charter_set" {
-		return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md"]}`), nil
+		return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md"]}`), nil
 	}
 	if method == "graph_get" {
 		return json.RawMessage(`{"nodes":[{"name":"p","kind":"component","charter":{"purpose":"test"}}],"edges":[]}`), nil
@@ -52,7 +52,7 @@ func TestCharterSetWarnsAboutDetailedValueAndStillSucceeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("charter set failed: %v", err)
 	}
-	if !strings.Contains(out.String(), "too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md") {
+	if !strings.Contains(out.String(), "too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md") {
 		t.Fatalf("charter set did not print the warning: %q", out.String())
 	}
 }

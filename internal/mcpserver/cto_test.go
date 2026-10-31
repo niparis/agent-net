@@ -16,7 +16,7 @@ func ctoTestSession(t *testing.T) *mcp.ClientSession {
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
 		if method == "charter_set" {
-			return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md"]}`), nil
+			return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md"]}`), nil
 		}
 		return json.RawMessage(`{"ok":true}`), nil
 	}, "test")
@@ -141,7 +141,7 @@ func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
 		"attr":  props["attr"]["description"].(string),
 		"value": props["value"]["description"].(string),
 	} {
-		for _, want := range []string{"accepts", "other agents ask", "Bug fixes in retrieval", "Bearer-authenticated", "200 characters", "AGENTS.md"} {
+		for _, want := range []string{"accepts", "other agents ask", "Bug fixes in retrieval", "Bearer-authenticated", "1200 characters", "AGENTS.md"} {
 			if !strings.Contains(description, want) {
 				t.Errorf("%s description misses %q: %s", name, want, description)
 			}
@@ -159,7 +159,7 @@ func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
 			text += item.Text
 		}
 	}
-	if !strings.Contains(text, "too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md") {
+	if !strings.Contains(text, "too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md") {
 		t.Fatalf("successful charter_set did not include the warning: %q", text)
 	}
 }

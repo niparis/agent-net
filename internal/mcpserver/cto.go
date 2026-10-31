@@ -179,7 +179,7 @@ func NewCTO(call Caller, version string) *mcp.Server {
 			description := f.desc
 			if name == "charter_set" && (k == "attr" || k == "value") {
 				description += "\nPer-attribute charter guide:\n" + protocol.CharterGuideText() +
-					"\nKeep each value under about 200 characters. Never include secrets, IPs, tokens or paths; put detail in AGENTS.md."
+					"\nBudget about 1200 characters for the whole charter. Never include secrets, IPs, tokens or paths; put detail in AGENTS.md."
 			}
 			prop := map[string]any{"type": f.typ, "description": description}
 			if f.properties != nil {
@@ -200,7 +200,7 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		}
 		toolDescription := spec.desc
 		if name == "charter_set" {
-			toolDescription += "\nCharters are short rules for other agents, read on every turn. Keep each value under about 200 characters; never include secrets, IPs, tokens or paths.\nPer-attribute charter guide:\n" + protocol.CharterGuideText()
+			toolDescription += "\nCharters are short rules for other agents, read on every turn. Budget about 1200 characters for the whole charter; never include secrets, IPs, tokens or paths.\nPer-attribute charter guide:\n" + protocol.CharterGuideText()
 		}
 		tool := &mcp.Tool{Name: name, Description: toolDescription, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
 		method := name
