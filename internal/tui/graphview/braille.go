@@ -249,7 +249,14 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			dot(int(x*2), int(y*4), "trail")
 		}
 		x, y := cam.Project(c.Position, width, height)
-		put(int(x), int(y), '•', "comet")
+		cx, cy := int(x), int(y)
+		if !put(cx, cy, '•', "comet") {
+			for _, offset := range [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+				if put(cx+offset[0], cy+offset[1], '•', "comet") {
+					break
+				}
+			}
+		}
 	}
 	out := make([]string, height)
 	for y := 0; y < height; y++ {

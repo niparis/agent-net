@@ -2,12 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 func graphFixture() protocol.GraphView {
@@ -80,6 +82,9 @@ func TestGraphGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := graphModel(size[0], size[1])
 		got := m.View()
+		if strings.Count(got, "•") < 2 {
+			t.Fatalf("two comets must be visible at %dx%d:\n%s", size[0], size[1], got)
+		}
 		if !strings.Contains(got, "Graph") {
 			t.Fatal("graph absent")
 		}
@@ -113,4 +118,37 @@ func TestGraphConnectedNodesSpanRows(t *testing.T) {
 	if high-low < 4 {
 		t.Fatalf("connected nodes span only %d rows (%d to %d)", high-low+1, low, high)
 	}
+}
+
+func TestGraphFixtureLabelsStayWithTheirMarkers(t *testing.T) {
+	m := graphModel(120, 34)
+	w, h := m.graphSize()
+	lines := (graphview.Braille{Now: t0}).Render(m.graph, m.graphCamera, w, h)
+	for _, node := range m.graph.Nodes {
+		x, y := m.graphCamera.Project(m.graph.Positions[node.Name], w, h)
+		cx := int(math.Round(x*2)) / 2
+		cy := int(math.Round(y*4)) / 4
+		found := false
+		for row, line := range lines {
+			i := strings.Index(line, node.Name)
+			if i < 0 {
+				continue
+			}
+			start := len([]rune(line[:i]))
+			end := start + len([]rune(node.Name))
+			if row == cy && (start == cx+1 || end == cx) || absGraph(row-cy) == 1 && start <= cx && end > cx {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("label %q is not adjacent to marker at %d,%d", node.Name, cx, cy)
+		}
+	}
+}
+func absGraph(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
