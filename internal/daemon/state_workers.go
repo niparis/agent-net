@@ -130,6 +130,9 @@ func (s *state) workerNativeKnown(harness, native string) bool {
 }
 
 func (s *state) deleteWorker(id string) error {
+	if err := s.deleteWorkerIdleNotice(id); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`DELETE FROM workers WHERE id = ?`, id)
 	return err
 }
@@ -138,5 +141,29 @@ func (s *state) deleteWorker(id string) error {
 // worker ended. It changes nothing when the worker has been started again.
 func (s *state) markWorkerReported(id, reason string) error {
 	_, err := s.db.Exec(`UPDATE workers SET reported = 1 WHERE id = ? AND ended_reason = ?`, id, reason)
+	return err
+}
+
+// Idle notice state survives adoption so a restart does not repeat a notice.
+func (s *state) saveWorkerIdleNotice(id string, since time.Time, key, report string, sent bool) error {
+	_, err := s.db.Exec(`INSERT INTO worker_idle_notice(worker_id, since, notice_key, report, sent) VALUES(?,?,?,?,?)
+ ON CONFLICT(worker_id) DO UPDATE SET since=excluded.since, notice_key=excluded.notice_key, report=excluded.report, sent=excluded.sent`, id, since.UnixNano(), key, report, boolInt(sent))
+	return err
+}
+func (s *state) loadWorkerIdleNotice(id string) (time.Time, string, string, bool, error) {
+	var since int64
+	var key, report string
+	var sent int
+	err := s.db.QueryRow(`SELECT since, notice_key, report, sent FROM worker_idle_notice WHERE worker_id=?`, id).Scan(&since, &key, &report, &sent)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, "", "", false, nil
+	}
+	if err != nil {
+		return time.Time{}, "", "", false, err
+	}
+	return time.Unix(0, since), key, report, sent != 0, nil
+}
+func (s *state) deleteWorkerIdleNotice(id string) error {
+	_, err := s.db.Exec(`DELETE FROM worker_idle_notice WHERE worker_id=?`, id)
 	return err
 }

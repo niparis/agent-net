@@ -725,6 +725,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			p.Status = "busy"
 		} else if p.Status == "busy" {
 			if w := d.workerBySession(statusSession); w != nil && w.harness == "opencode" {
+				d.resetIdleNotice(w)
 				d.wmu.Lock()
 				w.turnAwaitingStart = false
 				d.wmu.Unlock()

@@ -755,6 +755,19 @@ func fakeCodex() {
 						case <-time.After(scaled(3 * time.Second)):
 						}
 					}
+					if strings.Contains(text, "FAKE:hold-codex") {
+						os.WriteFile(filepath.Join(cwd, "fake-codex-held"), nil, 0600)
+						for {
+							if _, err := os.Stat(filepath.Join(cwd, "fake-codex-release")); err == nil {
+								break
+							}
+							time.Sleep(10 * time.Millisecond)
+						}
+						mu.Lock()
+						rec.CompletedOffline = true
+						mu.Unlock()
+						save()
+					}
 					status, errObj := "completed", any(nil)
 					if strings.Contains(text, "FAKE:fail") {
 						status, errObj = "failed", map[string]any{"message": "model overloaded"}

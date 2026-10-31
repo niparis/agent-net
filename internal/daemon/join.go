@@ -59,6 +59,7 @@ type NodeWorkers struct {
 	// Max is the hard cap of workers on the machine (default 12).
 	Max        int    `json:"max,omitempty"`
 	Idle       string `json:"idle,omitempty"`
+	IdleNotice string `json:"idle_notice,omitempty"`
 	MaxAge     string `json:"max_age,omitempty"`
 	OwnerGrace string `json:"owner_grace,omitempty"`
 	// CPUTarget is the 5-minute CPU busy percent above which no worker starts
@@ -117,7 +118,7 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 		name string
 		in   string
 		out  *time.Duration
-	}{{"idle", nc.Workers.Idle, &s.Idle}, {"max_age", nc.Workers.MaxAge, &s.MaxAge}, {"owner_grace", nc.Workers.OwnerGrace, &s.OwnerGrace},
+	}{{"idle", nc.Workers.Idle, &s.Idle}, {"idle_notice", nc.Workers.IdleNotice, &s.IdleNotice}, {"max_age", nc.Workers.MaxAge, &s.MaxAge}, {"owner_grace", nc.Workers.OwnerGrace, &s.OwnerGrace},
 		{"queue_timeout", nc.Workers.QueueTimeout, &s.QueueTimeout}} {
 		if f.in == "" {
 			continue

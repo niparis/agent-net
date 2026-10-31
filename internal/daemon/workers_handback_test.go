@@ -353,3 +353,114 @@ func mustJSON(t *testing.T, raw json.RawMessage, v any) {
 		t.Fatalf("bad JSON %s: %v", raw, err)
 	}
 }
+
+func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.IdleNotice = 200 * time.Millisecond
+	w := startWorkerNode(t, g, set, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree})
+	n := w.waitNotice(t, 1)[0]
+	for _, want := range []string{"status: idle without hand-back", "run time:", "work.txt", "last assistant message", "finished without hand-back", protocol.ChecklistMarker} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("notice missing %q: %s", want, n.Body)
+		}
+	}
+	time.Sleep(500 * time.Millisecond)
+	if got := len(w.notices(t)); got != 1 {
+		t.Fatalf("got %d notices", got)
+	}
+	if w.d.sessionByID(res.SessionID) == nil {
+		t.Fatal("worker ended")
+	}
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	eventually(t, "idle worker adopted", func() bool { return w.d.workerBySession(res.SessionID) != nil && w.d.sessionByID(res.SessionID) != nil })
+	time.Sleep(700 * time.Millisecond)
+	if got := len(w.notices(t)); got != 1 {
+		t.Fatalf("got %d notices after daemon restart", got)
+	}
+	// Simulate a crash after the gateway accepted the notice but before the
+	// daemon saved the acknowledgement. The same key must not send it twice.
+	adopted := w.d.workerBySession(res.SessionID)
+	w.d.wmu.Lock()
+	id, since, key := adopted.id, adopted.idleNoticeSince, adopted.idleNoticeKey
+	w.d.wmu.Unlock()
+	if err := w.d.st.saveWorkerIdleNotice(id, since, key, "", false); err != nil {
+		t.Fatal(err)
+	}
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	eventually(t, "worker adopted after unrecorded acknowledgement", func() bool { return w.d.workerBySession(res.SessionID) != nil && w.d.sessionByID(res.SessionID) != nil })
+	time.Sleep(700 * time.Millisecond)
+	if got := len(w.notices(t)); got != 1 {
+		t.Fatalf("got %d notices after retry", got)
+	}
+	var followup protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "another turn"}), &followup)
+	second := w.waitNotice(t, 2)[1]
+	if second.ParentID != followup.Message.ID || !strings.Contains(second.Body, "idle without hand-back") {
+		t.Fatalf("second idle notice: %+v", second)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if got := len(w.notices(t)); got != 2 {
+		t.Fatalf("got %d notices after second turn", got)
+	}
+	// A turn can start in the harness without a plugin busy event.
+	worker := w.d.workerBySession(res.SessionID)
+	w.d.wmu.Lock()
+	activeFile, native := filepath.Join(worker.dir, "data", "fake-active"), worker.nativeID
+	w.d.wmu.Unlock()
+	if err := os.WriteFile(activeFile, []byte(native), 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "server reports a new turn", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "busy" })
+	if err := os.Remove(activeFile); err != nil {
+		t.Fatal(err)
+	}
+	w.waitNotice(t, 3)
+}
+
+func TestCodexWorkerIdleNoticeAfterAutomaticHandbackFails(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.IdleNotice = 1 * time.Second
+	w := startCodexNode(t, g, set)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree})
+	eventually(t, "codex turn held", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "fake-codex-held")); return err == nil })
+	worker := w.d.workerBySession(res.SessionID)
+	w.d.wmu.Lock()
+	cc := worker.codex
+	w.d.wmu.Unlock()
+	cc.mu.Lock()
+	cc.cur.from = "s_unknown"
+	cc.mu.Unlock()
+	if err := os.WriteFile(filepath.Join(res.Worktree, "fake-codex-release"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "automatic handback fails", func() bool {
+		w.d.wmu.Lock()
+		defer w.d.wmu.Unlock()
+		return !worker.idleNoticeSince.IsZero()
+	})
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	eventually(t, "codex worker adopted", func() bool { return w.d.workerBySession(res.SessionID) != nil && w.d.sessionByID(res.SessionID) != nil })
+	n := w.waitNotice(t, 1)[0]
+	for _, want := range []string{"status: idle without hand-back", "last assistant message", "codex done in", "work.txt", protocol.ChecklistMarker} {
+		if !strings.Contains(n.Body, want) {
+			t.Errorf("notice missing %q: %s", want, n.Body)
+		}
+	}
+	var next protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "continue"}), &next)
+	handback := w.waitNotice(t, 2)[1]
+	if !strings.Contains(handback.Body, "status: done") || handback.ParentID != next.Message.ID {
+		t.Fatalf("follow-up handback: %+v", handback)
+	}
+	eventually(t, "codex worker ends after follow-up", func() bool { return w.d.workerCount() == 0 })
+}

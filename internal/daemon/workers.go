@@ -46,6 +46,8 @@ type WorkerSettings struct {
 	StartGap time.Duration
 	// Idle ends a worker with no message to or from it for this long.
 	Idle time.Duration
+	// IdleNotice is the wait after a turn ends without a hand-back.
+	IdleNotice time.Duration
 	// MaxAge ends a worker this long after it started.
 	MaxAge time.Duration
 	// OwnerGrace ends a worker whose owner session ended or stayed offline
@@ -88,6 +90,9 @@ func (s WorkerSettings) filled() WorkerSettings {
 	if s.Idle <= 0 {
 		s.Idle = protocol.DefaultWorkerIdle
 	}
+	if s.IdleNotice <= 0 {
+		s.IdleNotice = 2 * time.Minute
+	}
 	if s.MaxAge <= 0 {
 		s.MaxAge = protocol.DefaultWorkerMaxAge
 	}
@@ -127,6 +132,10 @@ type worker struct {
 	turnHandbackIdle                         bool
 	turnAwaitingStart                        bool
 	turnQueue                                []protocol.Message
+	idleNoticeSince                          time.Time
+	idleNoticeSent, idleNoticePending        bool
+	idleNoticeGeneration                     uint64
+	idleNoticeReport, idleNoticeKey          string
 	dir                                      string
 	logPath                                  string
 	// Worktree isolation (W13).
@@ -712,6 +721,9 @@ func (d *Daemon) endWorker(w *worker, reason string) {
 		return
 	}
 	w.stopping = true
+	if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
+		d.Logf("worker %s: remove idle notice: %v", w.id, err)
+	}
 	sid, harness, project, id, dir, started := w.sessionID, w.harness, w.project, w.id, w.dir, w.startedAt
 	done := w.doneStatus != ""
 	d.wmu.Unlock()
@@ -1091,7 +1103,8 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 		}
 		// Refresh the context and token figures while the worker runs. A
 		// harness that cannot say returns an empty result.
-		grew := d.noteWorkerUsage(w, d.workerStats(w))
+		stats := d.workerStats(w)
+		grew := d.noteWorkerUsage(w, stats)
 		// A session that is busy, or a run whose token count grew, is working:
 		// it is not idle even when no message has come for a while. This keeps
 		// a worker busy on a long task past the idle limit.
@@ -1099,6 +1112,7 @@ func (d *Daemon) checkWorkers(ctx context.Context) {
 			d.keepWorkerActive(w, now)
 			idle = 0
 		}
+		d.checkIdleNotice(ctx, w, now, set.IdleNotice, stats)
 		switch {
 		case d.gone(w):
 			d.endWorker(w, protocol.StopExited)
@@ -1263,6 +1277,9 @@ func (d *Daemon) adoptWorkers() {
 		}
 		tok, alive := procToken(r.PID)
 		if !alive || tok != r.StartToken {
+			if err := d.st.deleteWorkerIdleNotice(r.ID); err != nil {
+				d.Logf("worker %s: remove idle notice: %v", r.ID, err)
+			}
 			r.EndedReason = protocol.StopLost
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
@@ -1280,6 +1297,11 @@ func (d *Daemon) adoptWorkers() {
 			taskFull:    r.TaskFull,
 			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions)}
 		w.logPath = filepath.Join(w.dir, "worker.log")
+		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {
+			w.idleNoticeSince, w.idleNoticeKey, w.idleNoticeReport, w.idleNoticeSent = since, key, report, sent
+		} else {
+			d.Logf("worker %s: load idle notice: %v", w.id, err)
+		}
 		w.readyOnce.Do(func() { close(w.ready) })
 		d.wmu.Lock()
 		d.workers[w.id] = w
