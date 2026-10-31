@@ -369,3 +369,16 @@ func TestExecEnvFindsCompatibleNVMNode(t *testing.T) {
 		t.Fatal("compatible Node was not prepended to PATH")
 	}
 }
+
+func TestVersionReportsMissingNode(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("PATH", t.TempDir())
+	path := filepath.Join(t.TempDir(), "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 127\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := InstalledVersion(path)
+	if !errors.Is(err, ErrNeedNode) {
+		t.Fatalf("got %v", err)
+	}
+}
