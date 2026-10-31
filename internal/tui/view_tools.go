@@ -618,7 +618,11 @@ func (m Model) modalBox(w, h int) []string {
 			body = append(body, tsDim.Render("planning..."))
 		}
 		if md.showPaths && len(md.paths) > 0 {
-			body = append(body, "", tsFaint.Bold(true).Render("exact folders"))
+			title := md.pathsTitle
+			if title == "" {
+				title = "exact folders"
+			}
+			body = append(body, "", tsFaint.Bold(true).Render(title))
 			for _, p := range md.paths {
 				body = append(body, tsDim.Render("  "+sanitize(p)))
 			}

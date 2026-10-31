@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -34,16 +35,17 @@ var (
 
 // toolsModal is the plan (or the project picker, or the result) on screen.
 type toolsModal struct {
-	id        int
-	title     string
-	lines     []string
-	paths     []string
-	showPaths bool
-	loading   bool
-	done      bool
-	actions   map[string]func(Model) (Model, tea.Cmd)
-	foot      []string // key and label pairs
-	picker    *projPicker
+	id         int
+	title      string
+	lines      []string
+	paths      []string
+	pathsTitle string
+	showPaths  bool
+	loading    bool
+	done       bool
+	actions    map[string]func(Model) (Model, tea.Cmd)
+	foot       []string // key and label pairs
+	picker     *projPicker
 }
 
 // toolsModalMsg changes the open modal when a background call ends.
@@ -223,12 +225,27 @@ func repoCopies(r toolsdiff.Row) []toolsdiff.Copy {
 	var out []toolsdiff.Copy
 	for _, v := range r.Variants {
 		for _, l := range v.Locations {
-			if l.Scope == protocol.InventoryProject && (l.GraphNode == r.Repo || l.Project == r.Repo) {
-				out = append(out, toolsdiff.Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name})
+			if l.Scope == protocol.InventoryProject && l.Tracked && (l.GraphNode == r.Repo || l.Project == r.Repo) {
+				checkout := l.ProjectRoot
+				if checkout == "" {
+					checkout = checkoutForSkillLocation(l.Location, v.Name)
+				}
+				out = append(out, toolsdiff.Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: checkout, Hash: v.Hash, Name: v.Name})
 			}
 		}
 	}
 	return out
+}
+
+func checkoutForSkillLocation(location, name string) string {
+	for _, root := range []string{".agents/skills", ".claude/skills", ".opencode/skills", ".pi/skills"} {
+		suffix := filepath.Join(root, name)
+		clean := filepath.Clean(location)
+		if strings.HasSuffix(clean, string(filepath.Separator)+suffix) {
+			return strings.TrimSuffix(clean, string(filepath.Separator)+suffix)
+		}
+	}
+	return ""
 }
 
 // openAssign shows the plan for one or more jobs. A single job for a skill that
@@ -670,31 +687,133 @@ func (m Model) pickerConfirm() (tea.Model, tea.Cmd) {
 
 // ---- repo copies ----
 
-// openRepoRemove is the plan for a skill committed in a project. Removing it is
-// a change to the repo: agent-net never commits to the default branch. The
-// branch-and-commit action does not exist in the backend yet, so (a) says so,
-// and (b) asks the project's own agent through the owner send path.
+// openRepoRemove plans a repo skill removal through the audited tools workflow.
+// The daemon creates a branch in a temporary worktree and leaves the checkout
+// and default branch alone.
 func (m Model) openRepoRemove(project, name string, copies []toolsdiff.Copy) (tea.Model, tea.Cmd) {
-	md := m.openModal("Remove " + name + " from the " + project + " repo")
-	md.lines = []string{
-		tsErr.Render("- ") + project + " repo: remove " + name,
-		tsDim.Render("  it is committed, so this is a change to the repo."),
-		tsDim.Render("  agent-net never commits to the default branch:"),
-		tsAcc.Render("  a  ") + "a new branch with one commit that you merge " + tsFaint.Render("(not available yet)"),
-		tsFaint.Render("     branch name: agent-net/remove-" + name),
-		tsAcc.Render("  b  ") + "ask " + project + "'s agent to do it (it follows its charter)",
-	}
-	for _, c := range copies {
-		md.paths = append(md.paths, c.Machine+"  "+c.Location+"  (committed in git)")
-	}
-	md.foot = []string{"a", "branch and commit", "b", "ask the agent", "d", "exact folders", "esc", "cancel"}
-	md.actions["a"] = func(m Model) (Model, tea.Cmd) {
-		m.tl.modal = nil
-		m.toolsToast("a branch with one commit is not available yet: press b to ask " + project + "'s agent")
+	ts, ok := m.toolsSource()
+	if !ok {
+		m.toolsToast("this daemon cannot plan repo skill removal")
 		return m, nil
 	}
+	md := m.openModal("Remove " + name + " from the " + project + " repo")
+	md.lines = []string{tsDim.Render("planning the branch and exact files to remove..."), tsDim.Render("  agent-net never commits to the default branch or pushes")}
+	md.pathsTitle = "exact files"
+	md.foot = []string{"b", "ask the agent", "esc", "cancel"}
 	md.actions["b"] = func(m Model) (Model, tea.Cmd) { return m.askProjectAgent(project, name, copies) }
-	return m, nil
+	var repoTargets []protocol.ToolRepoTarget
+	seen := map[string]bool{}
+	for _, c := range copies {
+		if c.NodeID == "" || c.Checkout == "" {
+			continue
+		}
+		key := c.NodeID + "\x00" + filepath.Clean(c.Checkout)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		repoTargets = append(repoTargets, protocol.ToolRepoTarget{NodeID: c.NodeID, Checkout: c.Checkout})
+	}
+	if len(copies) == 0 || len(repoTargets) == 0 {
+		md.lines = []string{tsErr.Render("! ") + "no registered project checkout is available for this repo skill"}
+		return m, nil
+	}
+	md.loading = true
+	id := md.id
+	req := protocol.ToolPlanRequest{Item: copies[0].Item, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{project}}, Operation: "repo_remove", Project: project, RepoTargets: repoTargets}
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*Timeout)
+		defer cancel()
+		plan, err := ts.ToolsPlan(ctx, req)
+		return toolsModalMsg{id: id, update: func(md *toolsModal) {
+			md.loading = false
+			if err != nil {
+				md.lines = []string{tsErr.Render("! " + sanitize(err.Error()))}
+				return
+			}
+			md.lines = repoRemovalPlanLines(plan, project, name)
+			md.paths = repoRemovalFiles(plan)
+			md.showPaths = true
+			if len(plan.Conflicts) > 0 {
+				md.foot = []string{"b", "ask the agent", "d", "exact files", "esc", "cancel"}
+				return
+			}
+			md.foot = []string{"a", "create branch and commit", "b", "ask the agent", "d", "exact files", "esc", "cancel"}
+			md.actions["a"] = func(m Model) (Model, tea.Cmd) { return m.applyRepoRemoval(plan.ID, project, name) }
+		}}
+	}
+}
+
+func repoRemovalPlanLines(plan protocol.ToolPlan, project, name string) []string {
+	lines := []string{
+		tsErr.Render("- ") + project + " repo: remove " + name,
+		tsDim.Render("  agent-net creates a local branch and commit; it never pushes"),
+		tsDim.Render("  b: ask " + project + "'s agent to do it and follow its charter"),
+	}
+	for _, target := range plan.Targets {
+		lines = append(lines, tsAcc.Render("  branch ")+target.Branch+" from "+orStr(target.DefaultBranch, "unknown default branch")+" in "+orStr(target.Machine, project))
+		if target.Dirty {
+			lines = append(lines, tsWarn.Render("  uncommitted changes in this skill folder stay in the owner's checkout"))
+		}
+		if target.Conflict != "" {
+			lines = append(lines, tsErr.Render("  "+sanitize(target.Conflict)))
+		}
+	}
+	return lines
+}
+
+func repoRemovalFiles(plan protocol.ToolPlan) []string {
+	var files []string
+	for _, target := range plan.Targets {
+		for _, file := range target.Files {
+			files = append(files, target.Machine+"  "+file)
+		}
+	}
+	return files
+}
+
+func (m Model) applyRepoRemoval(planID, project, name string) (Model, tea.Cmd) {
+	ts, _ := m.toolsSource()
+	md := m.tl.modal
+	md.loading = true
+	md.lines = append(md.lines, "", tsDim.Render("creating the branch and commit..."))
+	id := md.id
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*Timeout)
+		defer cancel()
+		res, err := ts.ToolsApply(ctx, planID)
+		return toolsModalMsg{id: id, reload: true, update: func(md *toolsModal) {
+			md.loading, md.done, md.paths = false, true, nil
+			md.foot = []string{"enter", "close"}
+			if err != nil {
+				md.lines = []string{tsErr.Render("! " + sanitize(err.Error()))}
+				return
+			}
+			md.title = "Branch created: " + name
+			md.lines = repoRemovalOutcomeLines(res, project)
+		}}
+	}
+}
+
+func repoRemovalOutcomeLines(res protocol.ToolApplyResult, project string) []string {
+	var lines []string
+	for _, target := range res.Targets {
+		switch target.State {
+		case "ok":
+			lines = append(lines, tsGood.Render("✓ ")+"branch "+target.Branch+" created in "+orStr(target.Project, project)+": merge it when ready")
+			if target.Commit != "" {
+				lines = append(lines, tsDim.Render("  commit "+target.Commit))
+			}
+		case "pending":
+			lines = append(lines, tsWarn.Render("◐ ")+"branch creation pending on "+orStr(target.Machine, project)+": "+orStr(target.Reason, "machine offline"))
+		default:
+			lines = append(lines, tsErr.Render("! ")+"branch creation failed in "+orStr(target.Project, project)+": "+orStr(target.Reason, "fix the conflict and plan again"))
+		}
+	}
+	if len(lines) == 0 {
+		lines = []string{tsErr.Render("! ") + "no branch result was reported"}
+	}
+	return lines
 }
 
 // projectAgent finds the session to ask: online, in the project, not the owner.

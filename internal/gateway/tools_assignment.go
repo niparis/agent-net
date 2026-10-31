@@ -197,9 +197,9 @@ func (s *Store) ToolSnapshot() (string, error) {
 	return v, tx.Commit()
 }
 func (s *Store) SaveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor string) (protocol.ToolPlan, error) {
-	return s.saveToolPlan(item, a, targets, actor, "")
+	return s.saveToolPlan(item, a, targets, actor, "", "", nil)
 }
-func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected string) (protocol.ToolPlan, error) {
+func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected, operation string, repoTargets []protocol.ToolRepoTarget) (protocol.ToolPlan, error) {
 	var p protocol.ToolPlan
 	if actor != "owner" && actor != "cto" {
 		return p, errors.New("owner authority required")
@@ -249,7 +249,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if targets == nil {
 		targets = []protocol.ToolPlanTarget{}
 	}
-	p = protocol.ToolPlan{ID: protocol.NewID("plan"), Item: item, Version: version, BaseRevision: baseRevision, Assignment: a, Targets: targets, Conflicts: []string{}, State: "pending", Actor: actor, At: s.now().UnixNano()}
+	p = protocol.ToolPlan{ID: protocol.NewID("plan"), Item: item, Version: version, BaseRevision: baseRevision, Assignment: a, Targets: targets, Operation: operation, RepoTargets: repoTargets, Conflicts: []string{}, State: "pending", Actor: actor, At: s.now().UnixNano()}
 	for _, target := range targets {
 		if target.Conflict != "" {
 			p.Conflicts = append(p.Conflicts, target.Conflict)

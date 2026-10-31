@@ -129,6 +129,9 @@ func (d *Daemon) onToolPlanProbe(ctx context.Context, l *link, h protocol.Header
 		return
 	}
 	result := d.probeToolDestination(p)
+	if p.Operation == "repo_remove" {
+		result = d.probeRepoSkillRemoval(p)
+	}
 	if b, err := protocol.EncodeResult(h.ID, result, nil); err == nil {
 		_ = l.write(ctx, b)
 	}

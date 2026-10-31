@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -178,7 +179,13 @@ func (f *fakeTools) ToolsPlan(_ context.Context, r protocol.ToolPlanRequest) (pr
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.plans = append(f.plans, r)
-	plan := protocol.ToolPlan{ID: fmt.Sprintf("plan_%d", len(f.plans)), Item: r.Item, Assignment: r.Target}
+	plan := protocol.ToolPlan{ID: fmt.Sprintf("plan_%d", len(f.plans)), Item: r.Item, Assignment: r.Target, Operation: r.Operation, RepoTargets: r.RepoTargets, Conflicts: []string{}}
+	if r.Operation == "repo_remove" {
+		for _, target := range r.RepoTargets {
+			plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: target.NodeID, Machine: "research", Project: r.Project, Checkout: target.Checkout, Action: "repo_remove", State: "pending", Branch: "agent-net/remove-deploy-test-server", DefaultBranch: "main", BaseCommit: "base", Files: []string{".agents/skills/deploy-test-server/SKILL.md", ".claude/skills/deploy-test-server/SKILL.md"}, Dirty: true})
+		}
+		return plan, nil
+	}
 	for _, n := range []struct{ id, host, dir string }{{toolNodeR, "research", "/home/n"}, {toolNodeM, "Nicolas-MBP", "/Users/n"}} {
 		if !r.Target.OnMachine(n.id) {
 			continue
@@ -193,6 +200,9 @@ func (f *fakeTools) ToolsApply(_ context.Context, id string) (protocol.ToolApply
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.applied = append(f.applied, id)
+	if len(f.plans) > 0 && f.plans[len(f.plans)-1].Operation == "repo_remove" {
+		return protocol.ToolApplyResult{Targets: []protocol.ToolTargetOutcome{{NodeID: toolNodeR, Machine: "research", Project: "sovl-clone", Action: "repo_remove", State: "ok", Branch: "agent-net/remove-deploy-test-server", Commit: strings.Repeat("a", 40)}}}, nil
+	}
 	return protocol.ToolApplyResult{Targets: []protocol.ToolTargetOutcome{{NodeID: toolNodeR, Machine: "research", State: "ok"}, {NodeID: toolNodeM, Machine: "Nicolas-MBP", State: "pending", Reason: "machine offline"}}}, nil
 }
 func (f *fakeTools) ToolsImport(_ context.Context, imp protocol.ToolImport) error {

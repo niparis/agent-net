@@ -253,6 +253,7 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if err != nil {
 		return out, err
 	}
+	p.Target = a
 	failed, err := g.refreshToolObservations(ctx)
 	if err != nil {
 		return out, err
@@ -261,11 +262,108 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if err != nil {
 		return out, err
 	}
-	targets, err := g.toolTargets(ctx, p.Item, a, failed)
+	var targets []protocol.ToolPlanTarget
+	switch p.Operation {
+	case "":
+		targets, err = g.toolTargets(ctx, p.Item, a, failed)
+	case "repo_remove":
+		targets, err = g.repoRemovalTargets(ctx, p)
+	default:
+		return out, errors.New("unsupported tools operation")
+	}
 	if err != nil {
 		return out, err
 	}
-	return g.store.saveToolPlan(p.Item, a, targets, actor, snap)
+	return g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets)
+}
+
+func (g *Gateway) repoRemovalTargets(ctx context.Context, p protocol.ToolPlanRequest) ([]protocol.ToolPlanTarget, error) {
+	var kind, name string
+	if err := g.store.db.QueryRow(`SELECT kind,name FROM tool_identities WHERE id=?`, p.Item).Scan(&kind, &name); err != nil {
+		return nil, errors.New("tool item not found")
+	}
+	if kind != protocol.InventorySkill {
+		return nil, errors.New("repo removal requires a skill")
+	}
+	if p.Project == "" || len(p.RepoTargets) == 0 || len(p.RepoTargets) > 200 || p.Target.Scope != "projects" || len(p.Target.Projects) != 1 || p.Target.Projects[0] != p.Project {
+		return nil, errors.New("repo removal needs one project checkout")
+	}
+	projects, err := g.store.Projects(p.Project)
+	if err != nil {
+		return nil, err
+	}
+	registered := map[string]protocol.ProjectView{}
+	for _, project := range projects {
+		if project.Name == p.Project && (project.Source == protocol.SourceRegistered || project.Source == protocol.SourceBoth) {
+			registered[project.NodeID+"\x00"+filepath.Clean(project.Path)] = project
+		}
+	}
+	items, err := g.store.ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	if err != nil {
+		return nil, err
+	}
+	tracked := map[string]bool{}
+	for _, item := range items {
+		if item.ID != p.Item {
+			continue
+		}
+		for _, location := range item.Locations {
+			if location.Scope == protocol.InventoryProject && location.Tracked && location.Project == p.Project && location.ProjectRoot != "" {
+				tracked[location.NodeID+"\x00"+filepath.Clean(location.ProjectRoot)] = true
+			}
+		}
+	}
+	branch := "agent-net/remove-" + name
+	seen := map[string]bool{}
+	targets := make([]protocol.ToolPlanTarget, 0, len(p.RepoTargets))
+	for _, repo := range p.RepoTargets {
+		key := repo.NodeID + "\x00" + filepath.Clean(repo.Checkout)
+		if repo.NodeID == "" || repo.Checkout == "" || seen[key] {
+			return nil, errors.New("invalid repo checkout list")
+		}
+		seen[key] = true
+		project, ok := registered[key]
+		if !ok {
+			return nil, errors.New("project checkout is no longer registered")
+		}
+		if !tracked[key] {
+			return nil, errors.New("repo removal requires a tracked project copy")
+		}
+		t := protocol.ToolPlanTarget{NodeID: project.NodeID, Machine: project.Hostname, Project: project.Name, Checkout: project.Path, Branch: branch,
+			DefaultBranch: project.DefaultBranch, Action: "repo_remove", State: "pending"}
+		host := g.conn(project.NodeID)
+		if host == nil {
+			t.State, t.Conflict = "offline", "machine offline; project cannot be inspected"
+			targets = append(targets, t)
+			continue
+		}
+		raw, probeErr := host.request(ctx, "node.tool_plan_probe", protocol.ToolPlanProbe{Name: name, Operation: "repo_remove", Project: project.Name, Checkout: project.Path, DefaultBranch: project.DefaultBranch, Branch: branch}, 20*time.Second)
+		if probeErr != nil {
+			t.State, t.Conflict = "conflict", "project inspection unavailable"
+		} else {
+			var result protocol.ToolPlanProbeResult
+			if json.Unmarshal(raw, &result) != nil {
+				t.State, t.Conflict = "conflict", "invalid project inspection"
+			} else {
+				t.BaseCommit, t.Files, t.Dirty, t.Conflict = result.BaseCommit, result.Files, result.Dirty, result.Conflict
+				if t.Conflict != "" {
+					t.State = "conflict"
+				}
+			}
+		}
+		targets = append(targets, t)
+	}
+	sort.Slice(targets, func(i, j int) bool {
+		return targets[i].NodeID+"\x00"+targets[i].Checkout < targets[j].NodeID+"\x00"+targets[j].Checkout
+	})
+	return targets, nil
+}
+
+func firstRepoProject(targets []protocol.ToolPlanTarget) string {
+	if len(targets) == 0 {
+		return ""
+	}
+	return targets[0].Project
 }
 
 func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol.ToolApplyResult, err error) {
@@ -297,12 +395,24 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	if json.Unmarshal([]byte(raw), &p) != nil {
 		return out, errors.New("invalid plan")
 	}
-	targets, e := g.toolTargets(ctx, p.Item, p.Assignment, failed)
+	var targets []protocol.ToolPlanTarget
+	if p.Operation == "repo_remove" {
+		targets, e = g.repoRemovalTargets(ctx, protocol.ToolPlanRequest{Item: p.Item, Target: p.Assignment, Operation: p.Operation, Project: firstRepoProject(p.Targets), RepoTargets: p.RepoTargets})
+	} else {
+		targets, e = g.toolTargets(ctx, p.Item, p.Assignment, failed)
+	}
 	if e != nil {
 		if e.Error() == "tool item not found" {
 			return out, errors.New("plan out of date")
 		}
 		return out, e
+	}
+	if p.Operation == "repo_remove" {
+		for _, target := range targets {
+			if target.Conflict == "branch exists" {
+				return out, errors.New("branch exists")
+			}
+		}
 	}
 	if !reflect.DeepEqual(targets, p.Targets) {
 		return out, errors.New("plan out of date")

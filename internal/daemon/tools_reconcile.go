@@ -261,6 +261,13 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout] != "" {
 			result.State = "conflict"
 			result.Reason = projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout]
+		} else if t.Target.Action == "repo_remove" && !projectsReady {
+			result.Reason = "project registry unavailable"
+		} else if t.Target.Action == "repo_remove" && !projects[t.Target.Project+"\x00"+filepath.Clean(t.Target.Checkout)] {
+			result.State = "conflict"
+			result.Reason = "checkout is no longer registered"
+		} else if t.Target.Action == "repo_remove" {
+			result = d.removeRepoSkill(t)
 		} else if t.Target.Action == "remove" && !t.CopiesReady {
 			result.Reason = "waiting for copies to be applied"
 		} else if t.Target.Action == "remove" {
