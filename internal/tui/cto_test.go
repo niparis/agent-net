@@ -513,3 +513,15 @@ func TestCTOEnterEmptyPlanShowsError(t *testing.T) {
 		t.Fatalf("empty CTO plan must show an error: %+v", m.notice)
 	}
 }
+
+func TestCTOGroupsCharterActions(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, events: protocol.CTOEvents{Actions: []protocol.CTOAction{
+		{Text: "charter cogforge: purpose updated · u to undo", At: 1},
+		{Text: "charter cogforge: maturity updated · u to undo", At: 2},
+	}}})
+	if len(m.cto.messages) != 1 || m.cto.messages[0] != "charter cogforge: 2 fields updated · u to undo" {
+		t.Fatalf("charter group: %v", m.cto.messages)
+	}
+}

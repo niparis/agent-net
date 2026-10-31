@@ -353,7 +353,19 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c.sendErrors = pendingErrors
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
 	c.messages = nil
-	for _, v := range lines {
+	for i := 0; i < len(lines); i++ {
+		v := lines[i]
+		node, _, ok := strings.Cut(strings.TrimPrefix(v.text, "charter "), ": ")
+		if strings.HasPrefix(v.text, "charter ") && ok && strings.HasSuffix(v.text, " updated · u to undo") {
+			j := i + 1
+			for j < len(lines) && lines[j].at-v.at <= int64(5e9) && strings.HasPrefix(lines[j].text, "charter "+node+": ") && strings.HasSuffix(lines[j].text, " updated · u to undo") {
+				j++
+			}
+			if j-i > 1 {
+				v.text = fmt.Sprintf("charter %s: %d fields updated · u to undo", node, j-i)
+				i = j - 1
+			}
+		}
 		c.messages = append(c.messages, v.text)
 	}
 }
