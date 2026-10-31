@@ -75,6 +75,7 @@ type runner struct {
 	statusClient   *client.Client
 	statusInfo     daemonInfo
 	interactive    bool
+	titleStore     ctoTitleStore
 	// want is the answer for the seven integrations. When it is set, the steps
 	// apply it and turn an item off as well as on. When it is nil, the steps
 	// keep their old ask-once behavior.
@@ -163,7 +164,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.workersSetting()
 	r.daemonService()
 	r.chooseIntegrations(ctx)
-	r.proposeProtectedProviders(ctx)
+	r.askCTOTitle(ctx)
 	r.claudeMCP()
 	r.claudePeerMessages()
 	r.codexMCP()

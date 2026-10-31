@@ -329,6 +329,8 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/cto-settings", g.handleCTOSettingsSet)
 	mux.HandleFunc("GET /v1/integrations", g.handleIntegrationsGet)
 	mux.HandleFunc("PUT /v1/integrations", g.handleIntegrationsSet)
+	mux.HandleFunc("GET /v1/cto-title", g.handleCTOTitleGet)
+	mux.HandleFunc("PUT /v1/cto-title", g.handleCTOTitleSet)
 	mux.HandleFunc("GET /install/bin/{os}/{arch}", g.handleInstallBin)
 	mux.HandleFunc("GET /install/{code}", g.handleInstallScript)
 	g.upgradeRoutes(mux)
