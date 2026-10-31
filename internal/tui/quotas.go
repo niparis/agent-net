@@ -133,6 +133,7 @@ type quotaModel struct {
 	failed, allowed, scored, succeeded, available bool
 	stale, protected                              bool
 	provider                                      string
+	track                                         protocol.TrackRecord
 }
 
 // quotaModels lists only registered profiles, including unavailable profiles.
@@ -207,6 +208,9 @@ func (m Model) quotaModels() []quotaModel {
 		for _, n := range m.snap.Nodes {
 			for _, track := range n.Tracks {
 				if track.Harness == p.Harness && trackedModels[track.Model] {
+					row.track.Complete += track.Complete
+					row.track.Partial += track.Partial
+					row.track.Failed += track.Failed
 					row.used += track.Runs
 					row.done += track.Complete
 					row.failedRuns += track.Failed + track.TimedOut
@@ -242,7 +246,7 @@ func (m Model) quotaModelsView(w int) []string {
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
 		if r.available && r.allowed && r.scored {
-			candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded})
+			candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
 		}
 	}
 	q := &protocol.Quotas{}
