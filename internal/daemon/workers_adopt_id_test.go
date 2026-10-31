@@ -78,3 +78,33 @@ func TestSessionReportsKnownID(t *testing.T) {
 		t.Errorf("sync ID = %q, want %q", got, ls.sessionID)
 	}
 }
+
+func TestAdoptedCodexKeepsItsSessionIDAfterRecordCleanup(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
+	w.d.Stop()
+	st := g.gw.Store()
+	if err := st.SetSessionOffline(w.d.NodeID(), res.SessionID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CleanWorkers(w.d.NodeID(), time.Nanosecond, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := st.Agent(res.SessionID); err != nil || ok {
+		t.Fatalf("worker record remains: exists=%v err=%v", ok, err)
+	}
+	w.node.restart()
+	w.cli = cliClient(t, w.node)
+	eventually(t, "adopted Codex keeps its session ID", func() bool {
+		for _, v := range w.workers(t) {
+			if v.SessionID == res.SessionID && v.Online {
+				return true
+			}
+		}
+		return false
+	})
+}

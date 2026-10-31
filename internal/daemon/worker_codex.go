@@ -408,7 +408,7 @@ func (codexLauncher) stats(ctx context.Context, _ *Daemon, w *worker) workerStat
 // all its sessions when it connects.
 func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool) error {
 	d.wmu.Lock()
-	native, model, path, pid := w.nativeID, w.model, w.path, w.pid
+	native, model, path, pid, sessionID := w.nativeID, w.model, w.path, w.pid, w.sessionID
 	cc := w.codex
 	d.wmu.Unlock()
 	if cc != nil && cc.model != "" {
@@ -417,7 +417,7 @@ func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool)
 	info := protocol.SessionInfo{Harness: "codex", NativeID: native, PID: pid, Cwd: path,
 		Status: "idle", Delivery: "codex-app-server", Repo: d.repo.Refresh(path),
 		Mode: protocol.ModeBackground, Model: protocol.CleanModel(model), Worker: d.workerInfo(w)}
-	ls := &localSession{info: info, owned: true}
+	ls := &localSession{info: info, sessionID: sessionID, owned: true}
 	d.mu.Lock()
 	d.sessions[key("codex", native)] = ls
 	d.mu.Unlock()
