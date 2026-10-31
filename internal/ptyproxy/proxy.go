@@ -148,35 +148,42 @@ func (p *Proxy) Run() error {
 	return err
 }
 
-// escapeMatcher buffers only prefixes of the escape and release sequences.
+// escapeMatcher watches for ctrl+] and drops the repeat and release events of
+// that key. It buffers only bytes that could still become one of those
+// sequences, so every other byte is forwarded unchanged and in order.
 type escapeMatcher struct{ pending []byte }
 
+// escapeScan is what the buffered bytes at the start of the input are.
+type escapeScan int
+
+const (
+	escapeIncomplete escapeScan = iota // a longer sequence may still match
+	escapeOther                        // not ctrl+]
+	escapeTrigger                      // ctrl+] was pressed
+	escapeSwallow                      // a repeat or release of ctrl+] to drop
+)
+
 func (m *escapeMatcher) write(out io.Writer, input []byte) bool {
-	sequences := []string{"\x1d", "\x1b[93;5u", "\x1b[93;5:1u", "\x1b[27;5;93~", "\x1b[93;5:3u"}
+	m.pending = append(m.pending, input...)
 	var forward []byte
-	defer func() { _, _ = out.Write(forward) }()
-	for _, c := range input {
-		m.pending = append(m.pending, c)
-		for len(m.pending) > 0 {
-			prefix := false
-			for i, seq := range sequences {
-				if bytes.Equal(m.pending, []byte(seq)) {
-					m.pending = m.pending[:0]
-					if i != len(sequences)-1 {
-						return true
-					}
-					prefix = true
-					break
-				}
-				if bytes.HasPrefix([]byte(seq), m.pending) {
-					prefix = true
-				}
-			}
-			if prefix {
-				break
-			}
+	defer func() {
+		if len(forward) > 0 {
+			_, _ = out.Write(forward)
+		}
+	}()
+	for len(m.pending) > 0 {
+		scan, n := scanEscape(m.pending)
+		switch scan {
+		case escapeIncomplete:
+			return false
+		case escapeOther:
 			forward = append(forward, m.pending[0])
 			m.pending = m.pending[1:]
+		case escapeSwallow:
+			m.pending = m.pending[n:]
+		case escapeTrigger:
+			m.pending = m.pending[:0]
+			return true
 		}
 	}
 	return false
@@ -185,4 +192,232 @@ func (m *escapeMatcher) write(out io.Writer, input []byte) bool {
 func (m *escapeMatcher) flush(out io.Writer) {
 	_, _ = out.Write(m.pending)
 	m.pending = nil
+}
+
+// scanEscape reads the start of p. It reports a complete sequence and its
+// length, whether p is a prefix of one, or that it is something else.
+func scanEscape(p []byte) (escapeScan, int) {
+	if len(p) == 0 {
+		return escapeIncomplete, 0
+	}
+	if p[0] == 0x1d {
+		return escapeTrigger, 1
+	}
+	if p[0] != 0x1b {
+		return escapeOther, 0
+	}
+	if len(p) < 2 {
+		return escapeIncomplete, 0
+	}
+	if p[1] != '[' {
+		return escapeOther, 0
+	}
+	kitty, kn := scanKitty(p)
+	xterm, xn := scanModifyOtherKeys(p)
+	switch {
+	case kitty == escapeTrigger:
+		return escapeTrigger, kn
+	case xterm == escapeTrigger:
+		return escapeTrigger, xn
+	case kitty == escapeSwallow:
+		return escapeSwallow, kn
+	case xterm == escapeSwallow:
+		return escapeSwallow, xn
+	case kitty == escapeIncomplete || xterm == escapeIncomplete:
+		return escapeIncomplete, 0
+	default:
+		return escapeOther, 0
+	}
+}
+
+// scanKitty reads a kitty keyboard protocol CSI-u sequence:
+//
+//	ESC [ key[:alternate...] ; modifiers[:event] [; text] u
+//
+// The key may also be 29, the control code for ctrl+].
+func scanKitty(p []byte) (escapeScan, int) {
+	i := 2
+	keyStart := i
+	for i < len(p) && isDigit(p[i]) {
+		i++
+	}
+	if i == keyStart {
+		return escapeOther, 0
+	}
+	if !keyPrefix(p[keyStart:i]) {
+		return escapeOther, 0
+	}
+	keyEnd := i
+	// Alternate keys may be empty, for example 93::93.
+	for i < len(p) && p[i] == ':' {
+		i++
+		for i < len(p) && isDigit(p[i]) {
+			i++
+		}
+	}
+	if i == len(p) {
+		return escapeIncomplete, 0
+	}
+	if p[i] != ';' {
+		return escapeOther, 0
+	}
+	i++
+	modStart := i
+	for i < len(p) && isDigit(p[i]) {
+		i++
+	}
+	if i == modStart {
+		if i == len(p) {
+			return escapeIncomplete, 0
+		}
+		return escapeOther, 0
+	}
+	modEnd := i
+	if i == len(p) {
+		return escapeIncomplete, 0
+	}
+	event := 1
+	if p[i] == ':' {
+		i++
+		eventStart := i
+		for i < len(p) && isDigit(p[i]) {
+			i++
+		}
+		if i == eventStart {
+			if i == len(p) {
+				return escapeIncomplete, 0
+			}
+			return escapeOther, 0
+		}
+		event = smallInt(p[eventStart:i])
+	}
+	if i == len(p) {
+		return escapeIncomplete, 0
+	}
+	// Associated text is an optional third field of codepoints.
+	if p[i] == ';' {
+		i++
+		textStart := i
+		for i < len(p) && (isDigit(p[i]) || p[i] == ':') {
+			i++
+		}
+		if i == textStart {
+			if i == len(p) {
+				return escapeIncomplete, 0
+			}
+			return escapeOther, 0
+		}
+	}
+	if i == len(p) {
+		return escapeIncomplete, 0
+	}
+	if p[i] != 'u' {
+		return escapeOther, 0
+	}
+	i++
+	key := smallInt(p[keyStart:keyEnd])
+	if key != 93 && key != 29 {
+		return escapeOther, 0
+	}
+	if !ctrlOnly(smallInt(p[modStart:modEnd])) {
+		return escapeOther, 0
+	}
+	switch event {
+	case 1:
+		return escapeTrigger, i
+	case 2, 3:
+		return escapeSwallow, i
+	default:
+		return escapeOther, 0
+	}
+}
+
+var modifyOtherKeysPrefix = []byte("\x1b[27;")
+
+// scanModifyOtherKeys reads an xterm modifyOtherKeys sequence for ctrl+]:
+//
+//	ESC [ 27 ; modifiers ; 93 ~
+func scanModifyOtherKeys(p []byte) (escapeScan, int) {
+	if len(p) < len(modifyOtherKeysPrefix) {
+		if bytes.HasPrefix(modifyOtherKeysPrefix, p) {
+			return escapeIncomplete, 0
+		}
+		return escapeOther, 0
+	}
+	if !bytes.HasPrefix(p, modifyOtherKeysPrefix) {
+		return escapeOther, 0
+	}
+	i := len(modifyOtherKeysPrefix)
+	modStart := i
+	for i < len(p) && isDigit(p[i]) {
+		i++
+	}
+	if i == modStart {
+		if i == len(p) {
+			return escapeIncomplete, 0
+		}
+		return escapeOther, 0
+	}
+	modEnd := i
+	if i == len(p) {
+		return escapeIncomplete, 0
+	}
+	if p[i] != ';' {
+		return escapeOther, 0
+	}
+	i++
+	keyStart := i
+	for i < len(p) && isDigit(p[i]) {
+		i++
+	}
+	if i == keyStart {
+		if i == len(p) {
+			return escapeIncomplete, 0
+		}
+		return escapeOther, 0
+	}
+	keyEnd := i
+	if i == len(p) {
+		return escapeIncomplete, 0
+	}
+	if p[i] != '~' {
+		return escapeOther, 0
+	}
+	i++
+	if smallInt(p[keyStart:keyEnd]) != 93 {
+		return escapeOther, 0
+	}
+	if !ctrlOnly(smallInt(p[modStart:modEnd])) {
+		return escapeOther, 0
+	}
+	return escapeTrigger, i
+}
+
+// keyPrefix reports whether digits could still be 93 or 29.
+func keyPrefix(digits []byte) bool {
+	return bytes.HasPrefix([]byte("93"), digits) || bytes.HasPrefix([]byte("29"), digits)
+}
+
+// ctrlOnly reports whether the kitty modifier value, after the Caps Lock (64)
+// and Num Lock (128) bits are ignored, is ctrl (4) and nothing else.
+func ctrlOnly(mod int) bool {
+	if mod < 1 {
+		return false
+	}
+	return (mod-1)&^(64|128) == 4
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// smallInt reads decimal digits, stopping at a value no sequence can use.
+func smallInt(b []byte) int {
+	const limit = 1 << 20
+	n := 0
+	for _, c := range b {
+		if n > limit/10 {
+			return limit
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
