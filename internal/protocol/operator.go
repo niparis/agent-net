@@ -45,6 +45,9 @@ const (
 	// (decision 0014). Owner only, no agent tool.
 	OpSessionPolicy = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
 
+	// Project display names are set and read by the owner.
+	OpProjectDisplayGet = "project_display_get"
+	OpProjectDisplaySet = "project_display_set"
 	// OpNodeRename gives a machine a display name that every machine sees
 	// (decision 0015). Owner only, no agent tool.
 	OpNodeRename = "node_rename" // takes NodeRenameRequest, answers NodeRenameResult
@@ -104,7 +107,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
+	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
@@ -469,4 +472,15 @@ func CleanNodeName(s string) (string, error) {
 type HeldAnswer struct {
 	MessageID string `json:"message_id"`
 	Action    string `json:"action"`
+}
+
+// ProjectDisplayRequest identifies a project and an optional display name.
+// An empty name clears it.
+type ProjectDisplayRequest struct {
+	Project string `json:"project"`
+	Name    string `json:"name"`
+}
+type ProjectDisplayResult struct {
+	Project string `json:"project"`
+	Name    string `json:"name"`
 }

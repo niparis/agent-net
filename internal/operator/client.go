@@ -415,3 +415,20 @@ func (s *Client) SetRequestRule(ctx context.Context, e protocol.Edge) error {
 	_, err := s.action(ctx, protocol.OpEdgeSet, e)
 	return err
 }
+
+func (s *Client) ProjectDisplayName(ctx context.Context, project string) (protocol.ProjectDisplayResult, error) {
+	var out protocol.ProjectDisplayResult
+	raw, err := s.action(ctx, protocol.OpProjectDisplayGet, protocol.ProjectDisplayRequest{Project: project})
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+func (s *Client) SetProjectDisplayName(ctx context.Context, project, name string) (protocol.ProjectDisplayResult, error) {
+	var out protocol.ProjectDisplayResult
+	raw, err := s.action(ctx, protocol.OpProjectDisplaySet, protocol.ProjectDisplayRequest{Project: project, Name: name})
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}

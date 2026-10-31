@@ -34,6 +34,7 @@ import (
 var operatorMethods = map[string]bool{
 	"inventory_scan": true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	protocol.OpProjectDisplayGet: true, protocol.OpProjectDisplaySet: true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true,
@@ -393,6 +394,16 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			res = protocol.SessionTrustResult{SessionID: q.SessionID, On: q.On}
 			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
 		}
+	case protocol.OpProjectDisplayGet, protocol.OpProjectDisplaySet:
+		var q protocol.ProjectDisplayRequest
+		if json.Unmarshal(raw, &q) != nil || q.Project == "" {
+			return nil, true, errors.New("project display needs project")
+		}
+		frame := "project.display.get"
+		if method == protocol.OpProjectDisplaySet {
+			frame = "project.display.set"
+		}
+		res, err = d.call(ctx, frame, q)
 	case protocol.OpNodeRename:
 		// The name appears in every machine's lists, hints and plans: only the
 		// owner at the keyboard sets it (decision 0015). The gate above refuses

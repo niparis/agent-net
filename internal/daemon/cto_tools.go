@@ -476,7 +476,7 @@ var ctoOwnerMethods = map[string]bool{
 	"mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true,
 	"usage": true, "usage_top": true, "counts": true, "graph_view": true, "session_text": true, "session_enter": true,
-	"session_trust": true, "session_policy": true, "node_rename": true, "integrations_get": true, "integrations_set": true,
+	"session_trust": true, "session_policy": true, "node_rename": true, "project_display_get": true, "project_display_set": true, "integrations_get": true, "integrations_set": true,
 	"held_list": true, "held_answer": true, "node_settings_get": true, "node_settings_set": true,
 	"playbook_get": true, "playbook_set": true, "cto_settings": true, "cto_enter": true, "cto_send": true, "cto_new": true, "cto_events": true, "cto_graph_history": true,
 }

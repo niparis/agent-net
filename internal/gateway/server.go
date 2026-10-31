@@ -546,6 +546,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		// when there is one) where it compares host names.
 		return map[string]string{"node_id": nc.id, "hostname": st.hostname(nc.id)}, nil
 
+	case "project.display.get", "project.display.set":
+		p, err := decode[protocol.ProjectDisplayRequest](raw)
+		if err != nil || p.Project == "" {
+			return nil, reject("project identity required")
+		}
+		if typ == "project.display.set" {
+			return st.SetProjectDisplayName(p.Project, p.Name)
+		}
+		return st.ProjectDisplayName(p.Project)
+
 	case "node.rename":
 		p, err := decode[protocol.NodeRename](raw)
 		if err != nil || p.NodeID == "" {

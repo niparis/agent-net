@@ -1162,3 +1162,10 @@ func TestLoadingAndPartialSnapshot(t *testing.T) {
 	}
 	golden(t, "view_80x24_partial", m.View())
 }
+
+func (f *fakeSource) ProjectDisplayName(_ context.Context, project string) (protocol.ProjectDisplayResult, error) {
+	return protocol.ProjectDisplayResult{Project: project}, nil
+}
+func (f *fakeSource) SetProjectDisplayName(_ context.Context, project, name string) (protocol.ProjectDisplayResult, error) {
+	return protocol.ProjectDisplayResult{Project: project, Name: name}, nil
+}

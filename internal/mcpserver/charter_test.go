@@ -34,3 +34,27 @@ func TestAgentToolsCarryCharter(t *testing.T) {
 		}
 	}
 }
+
+func TestAgentToolsCarryProjectDisplayName(t *testing.T) {
+	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		a := `{"session_id":"s_test","repo":{"project":"agent-net"},"project_display_name":"Agent Network"}`
+		if method == "list" {
+			return json.RawMessage(`{"agents":[` + a + `]}`), nil
+		}
+		return json.RawMessage(`{"agent":` + a + `}`), nil
+	})
+	for _, name := range []string{"agent_list", "agent_get"} {
+		args := map[string]any{}
+		if name == "agent_get" {
+			args["session_id"] = "s_test"
+		}
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(res)
+		if !strings.Contains(string(raw), "agent-net") || !strings.Contains(string(raw), "Agent Network") {
+			t.Fatalf("%s: %s", name, raw)
+		}
+	}
+}

@@ -199,3 +199,10 @@ func TestProtectProvidersEdit(t *testing.T) {
 		t.Fatalf("unprotect: %+v %v", got, err)
 	}
 }
+
+func (f *fakeOp) ProjectDisplayName(context.Context, string) (protocol.ProjectDisplayResult, error) {
+	return protocol.ProjectDisplayResult{}, nil
+}
+func (f *fakeOp) SetProjectDisplayName(context.Context, string, string) (protocol.ProjectDisplayResult, error) {
+	return protocol.ProjectDisplayResult{}, nil
+}

@@ -10,6 +10,26 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func resetIdentityMigration(t *testing.T, s *Store) {
+	t.Helper()
+	var version int
+	for i, m := range migrations {
+		if strings.Contains(m, "project identity migration") {
+			version = i + 1
+			break
+		}
+	}
+	if version == 0 {
+		t.Fatal("identity migration missing")
+	}
+	if _, err := s.db.Exec(`DROP TABLE IF EXISTS project_display_names`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version>=?`, version); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func identityFixture(t *testing.T, s *Store, folder, charter string) {
 	t.Helper()
 	n, _, err := s.CreateNode(folder, "linux")
@@ -51,9 +71,7 @@ func TestProjectIdentityMigration(t *testing.T) {
 		t.Fatal(err)
 	}
 	identityFixture(t, s, "a2a-ocs", "project purpose")
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
-		t.Fatal(err)
-	}
+	resetIdentityMigration(t, s)
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +96,7 @@ func TestProjectIdentityMigration(t *testing.T) {
 			}
 		}
 		if i == 0 {
-			if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
-				t.Fatal(err)
-			}
+			resetIdentityMigration(t, s)
 		}
 		if err = s.Close(); err != nil {
 			t.Fatal(err)
@@ -97,9 +113,7 @@ func TestProjectIdentityMigrationMergesChartersAndLogs(t *testing.T) {
 	}
 	identityFixture(t, s, "a2a-ocs", "first charter")
 	identityFixture(t, s, "other-folder", "second charter")
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
-		t.Fatal(err)
-	}
+	resetIdentityMigration(t, s)
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -138,9 +152,7 @@ func TestProjectIdentityMigrationConflictDoesNotBlockOtherProjects(t *testing.T)
 	if _, err = s.db.Exec(`INSERT INTO graph_node_settings VALUES('agent-net','sandbox','different',1,'owner')`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`DELETE FROM schema_version WHERE version=?`, len(migrations)); err != nil {
-		t.Fatal(err)
-	}
+	resetIdentityMigration(t, s)
 	if err = s.Close(); err != nil {
 		t.Fatal(err)
 	}
