@@ -63,6 +63,23 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		}
 		return g.mcpAdd(ctx, nc, p)
 
+	case "mcp.import":
+		p, err := decode[struct {
+			protocol.MCPImportRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if (p.Candidate == "") == (p.PlanID == "") {
+			return nil, reject("import needs a candidate or a plan_id")
+		}
+		if p.Candidate != "" {
+			return g.planMCPImport(ctx, p.Candidate, p.Actor)
+		}
+		return g.applyMCPImport(ctx, p.PlanID, p.Actor, p.Owner)
+
 	case "mcp.list":
 		srvs, err := g.mcpList()
 		if err != nil {

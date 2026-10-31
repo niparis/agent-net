@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"inventory_scan": true, "inventory_get": true, "mcp_import_candidates": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
+	"inventory_scan": true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
@@ -202,6 +202,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 				Item string `json:"item"`
 			}{p.ID})
 		}
+	case "mcp_import":
+		actor := "owner"
+		if lc.cto {
+			actor = "cto"
+		}
+		var p protocol.MCPImportRequest
+		if json.Unmarshal(raw, &p) != nil || (p.Candidate == "") == (p.PlanID == "") {
+			return nil, true, errors.New("mcp_import needs a candidate (to plan) or a plan_id (to apply)")
+		}
+		res, err = d.call(withCallWait(ctx, 3*time.Minute), "mcp.import", struct {
+			protocol.MCPImportRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}{p, actor, d.ownerSessionID()})
 	case "mcp_import_candidates":
 		res, err = d.call(ctx, "query.mcp_import_candidates", json.RawMessage(raw))
 	case "tools_import":

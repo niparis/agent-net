@@ -48,7 +48,17 @@ func scanMCP(sc interface{ Scan(...any) error }) (protocol.MCPServer, error) {
 }
 
 // AddMCPServer stores a new server. The name must be free.
-func (s *Store) AddMCPServer(srv protocol.MCPServer) error {
+func (s *Store) AddMCPServer(srv protocol.MCPServer) error { return s.addMCPServer(srv, true) }
+
+// AddMCPServerDisabled stores a new server that no session can use until it is
+// enabled. The import path adds it this way, then tests it.
+func (s *Store) AddMCPServerDisabled(srv protocol.MCPServer) error { return s.addMCPServer(srv, false) }
+
+func (s *Store) addMCPServer(srv protocol.MCPServer, enabled bool) error {
+	enabledInt := 0
+	if enabled {
+		enabledInt = 1
+	}
 	if err := srv.Validate(); err != nil {
 		return reject("%v", err)
 	}
@@ -67,7 +77,7 @@ func (s *Store) AddMCPServer(srv protocol.MCPServer) error {
 	defer tx.Rollback()
 	_, err = tx.Exec(`INSERT INTO mcp_servers (name, node_id, spec, enabled, added_by_node, added_by_session,
 		added_by_harness, added_at, health, health_detail, health_at, tools) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		srv.Name, srv.NodeID, specOf(srv), 1, srv.AddedByNode, srv.AddedBySession, srv.AddedByHarness,
+		srv.Name, srv.NodeID, specOf(srv), enabledInt, srv.AddedByNode, srv.AddedBySession, srv.AddedByHarness,
 		s.now().UnixNano(), srv.Health, srv.HealthDetail, s.now().UnixNano(), tools)
 	if err != nil {
 		// The store has one connection: end the transaction before reading.

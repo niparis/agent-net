@@ -47,6 +47,8 @@ type Gateway struct {
 	opts     Options
 	store    *Store
 	skillsMu sync.Mutex
+	// importMu serializes MCP imports, so two applies cannot race on a name.
+	importMu sync.Mutex
 	skills   *skillStore
 	ca       *authority
 	cert     tls.Certificate
