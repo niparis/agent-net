@@ -8,12 +8,13 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment) ([]protocol.ToolPlanTarget, error) {
+func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolAssignment, failed map[string]bool) ([]protocol.ToolPlanTarget, error) {
 	var kind, name, hash string
 	if err := g.store.db.QueryRow(`SELECT kind,name,hash FROM tool_identities WHERE id=?`, item).Scan(&kind, &name, &hash); err != nil {
 		return nil, errors.New("tool item not found")
@@ -31,6 +32,11 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		return nil, err
 	}
 	targets := []protocol.ToolPlanTarget{}
+	for _, node := range nodes {
+		if failed[node.NodeID] {
+			targets = append(targets, protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "inspect", State: "conflict", Conflict: "fresh inventory scan unavailable"})
+		}
+	}
 	source := ""
 	if kind == protocol.InventorySkill {
 		var commit string
@@ -174,11 +180,15 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if err != nil {
 		return out, err
 	}
+	failed, err := g.refreshToolObservations(ctx)
+	if err != nil {
+		return out, err
+	}
 	snap, err := g.store.ToolSnapshot()
 	if err != nil {
 		return out, err
 	}
-	targets, err := g.toolTargets(ctx, p.Item, a)
+	targets, err := g.toolTargets(ctx, p.Item, a, failed)
 	if err != nil {
 		return out, err
 	}
@@ -198,6 +208,10 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 	if err = g.store.db.QueryRow(`SELECT plan,snapshot FROM tool_plans WHERE id=?`, id).Scan(&raw, &snapshot); err != nil {
 		return r, errors.New("plan not found")
 	}
+	failed, e := g.refreshToolObservations(ctx)
+	if e != nil {
+		return r, e
+	}
 	current, e := g.store.ToolSnapshot()
 	if e != nil {
 		return r, e
@@ -209,7 +223,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 	if json.Unmarshal([]byte(raw), &p) != nil {
 		return r, errors.New("invalid plan")
 	}
-	targets, e := g.toolTargets(ctx, p.Item, p.Assignment)
+	targets, e := g.toolTargets(ctx, p.Item, p.Assignment, failed)
 	if e != nil {
 		if e.Error() == "tool item not found" {
 			return r, errors.New("plan out of date")
@@ -249,4 +263,44 @@ func (s *Store) toolPlanNodes() ([]protocol.NodeView, error) {
 		nodes = append(nodes, n)
 	}
 	return nodes, rows.Err()
+}
+
+func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool, error) {
+	nodes, err := g.store.toolPlanNodes()
+	if err != nil {
+		return nil, err
+	}
+	failed := map[string]bool{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 16)
+	for _, node := range nodes {
+		host := g.conn(node.NodeID)
+		if host == nil {
+			continue
+		}
+		wg.Add(1)
+		go func(id string) {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				mu.Lock()
+				failed[id] = true
+				mu.Unlock()
+				return
+			}
+			defer func() { <-sem }()
+			if _, err := host.request(ctx, "node.tool_plan_scan", struct{}{}, 30*time.Second); err != nil {
+				mu.Lock()
+				failed[id] = true
+				mu.Unlock()
+			}
+		}(node.NodeID)
+	}
+	wg.Wait()
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	return failed, nil
 }

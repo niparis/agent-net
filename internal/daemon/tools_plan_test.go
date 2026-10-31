@@ -283,3 +283,53 @@ func TestToolPlanReportsMissingCheckout(t *testing.T) {
 		t.Fatalf("missing checkout not reported: %+v", r)
 	}
 }
+
+func TestToolApplyRejectsUnscannedShadow(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var item protocol.ToolItem
+	eventually(t, "tool inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "demo" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	raw, err := cli.call("tools_plan", protocol.ToolPlanRequest{Item: item.ID, Target: protocol.ToolAssignment{Scope: "uninstalled"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var plan protocol.ToolPlan
+	if err = json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	shadow := filepath.Join(home, ".agents/skills/demo")
+	if err = os.MkdirAll(shadow, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(shadow, "SKILL.md"), []byte("new shadow"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = cli.call("tools_apply", protocol.ToolPlanID{ID: plan.ID}); err == nil || !strings.Contains(err.Error(), "plan out of date") {
+		t.Fatalf("unscanned shadow accepted: %v", err)
+	}
+}

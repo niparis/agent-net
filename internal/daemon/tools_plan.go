@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -206,4 +207,19 @@ func (d *Daemon) destinationFingerprint(root string) (string, error) {
 		return "", fmt.Errorf("unsupported destination type")
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+func (d *Daemon) onToolPlanScan(ctx context.Context, l *link, h protocol.Header) {
+	var err error
+	if d.cfg.InventoryHome == "" {
+		err = errors.New("inventory scanner unavailable")
+	} else {
+		report := d.scanTools(ctx)
+		if report.State != protocol.InventoryOK {
+			err = errors.New("inventory scan incomplete")
+		}
+	}
+	if b, e := protocol.EncodeResult(h.ID, nil, err); e == nil {
+		_ = l.write(ctx, b)
+	}
 }

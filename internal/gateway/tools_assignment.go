@@ -8,6 +8,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -119,6 +120,30 @@ func toolSnapshot(tx *sql.Tx) (string, error) {
 			if err = rows.Scan(ptrs...); err != nil {
 				rows.Close()
 				return "", err
+			}
+			if strings.Contains(query, "FROM inventory_reports") {
+				var raw string
+				switch v := vals[1].(type) {
+				case string:
+					raw = v
+				case []byte:
+					raw = string(v)
+				}
+				var report protocol.InventoryReport
+				if err = json.Unmarshal([]byte(raw), &report); err != nil {
+					rows.Close()
+					return "", err
+				}
+				report.ScannedAt = time.Time{}
+				for i := range report.Items {
+					report.Items[i].ScannedAt = time.Time{}
+				}
+				normalized, e := json.Marshal(report)
+				if e != nil {
+					rows.Close()
+					return "", e
+				}
+				vals[1] = string(normalized)
 			}
 			b, err := json.Marshal(vals)
 			if err != nil {

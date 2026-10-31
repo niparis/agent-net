@@ -539,8 +539,8 @@ agent-net tools history 'ITEM_ID'
 
 `tools_plan` takes `item` and `target`, where `target.scope` is `global`,
 `projects` or `uninstalled`; projects scope also takes a `projects` array.
-It lists the known machines, harnesses, project checkouts, sources,
-destinations, intended actions and conflicts. Offline machines and unsupported
+It refreshes reachable machines and lists the known machines, harnesses,
+project checkouts, sources, destinations, intended actions and conflicts. Offline machines and unsupported
 harnesses are shown as unresolved. A skill that has not been imported and an
 unmanaged destination are conflicts. Review the plan before applying it.
 
