@@ -805,3 +805,17 @@ func TestQuotaProtectedSummary(t *testing.T) {
 		t.Fatalf("missing summary: %s", v)
 	}
 }
+
+func TestQuotaProtectionConfirm(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
+	m = keys(m, "s", "p")
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "workers will use other subscriptions first") {
+		t.Fatalf("missing confirmation: %s", v)
+	}
+	m = keys(m, "n")
+	if v := ansi.Strip(m.View()); strings.Contains(v, "workers will use other subscriptions first") {
+		t.Fatal("confirmation did not close")
+	}
+}
