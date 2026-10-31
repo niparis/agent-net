@@ -168,7 +168,16 @@ func TestToolUndoThroughGatewayRemovesInstalledCopy(t *testing.T) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: p.ID})
+	raw = cli.mustCall("tools_apply", protocol.ToolPlanID{ID: p.ID})
+	var applied protocol.ToolApplyResult
+	if err := json.Unmarshal(raw, &applied); err != nil || applied.Revision != 1 || len(applied.Targets) != len(p.Targets) {
+		t.Fatalf("apply answer: %s %v", raw, err)
+	}
+	for _, o := range applied.Targets {
+		if o.State != "ok" {
+			t.Errorf("target %+v is not ok in the apply answer", o)
+		}
+	}
 	installed := filepath.Join(home, ".agents", "skills", "demo")
 	eventually(t, "skill installed", func() bool {
 		data, err := os.ReadFile(filepath.Join(installed, "SKILL.md"))

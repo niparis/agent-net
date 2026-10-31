@@ -171,6 +171,28 @@ type ToolPlanRequest struct {
 	Target ToolAssignment `json:"target"`
 }
 
+// ToolTargetOutcome is one target's result in an apply or undo answer. State is
+// ok, pending, conflict or failed. Reason says why when it is not ok.
+type ToolTargetOutcome struct {
+	NodeID      string `json:"node_id"`
+	Machine     string `json:"machine"`
+	Harness     string `json:"harness,omitempty"`
+	Project     string `json:"project,omitempty"`
+	Checkout    string `json:"checkout,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Action      string `json:"action"`
+	State       string `json:"state"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// ToolApplyResult answers tools_apply and tools_undo: the new revision and
+// what each target reported when the answer was built.
+type ToolApplyResult struct {
+	ToolRevision
+	Targets []ToolTargetOutcome `json:"targets"`
+}
+
 // ToolUndoRequest asks to reverse an item's newest applied revision.
 type ToolUndoRequest struct {
 	Item string `json:"item"`
