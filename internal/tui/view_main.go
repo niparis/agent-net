@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -211,7 +213,7 @@ func (m Model) mainView(w, h int) []string {
 			machines = append(machines, sDim.Render(clip(fmt.Sprintf("  +%d more", len(rows)-maxMachineRows), w-4)))
 			break
 		}
-		machines = append(machines, m.machineLine(r, w-4, machineNameWidth(rows, m.snap.NodeID), machineVersionWidth(rows)))
+		machines = append(machines, m.machineLineFor(r, rows, w-4, machineNameWidth(rows, m.snap.NodeID)))
 	}
 	if len(rows) == 0 {
 		machines = append(machines, sDim.Render("  no machines yet"))
@@ -422,27 +424,18 @@ func (m Model) queuedWorkers() int {
 
 // ---- machines ----
 
-// machineNameWidth is the width of the name column: the longest name, with
-// "(here)", between 8 and 16.
+// machineNameWidth is the display width of the longest machine name, with
+// "(here)" when it is local.
 func machineNameWidth(rows []machineRow, here string) int {
-	n := 8
+	n := 1
 	for _, r := range rows {
-		l := utf8.RuneCountInString(r.host)
+		l := ansi.StringWidth(r.host)
 		if r.nodeID == here && here != "" {
 			l += len(" (here)")
 		}
 		n = max(n, l)
 	}
-	return min(n, 16)
-}
-
-// machineVersionWidth is the width of the version column: the longest version.
-func machineVersionWidth(rows []machineRow) int {
-	n := 3
-	for _, r := range rows {
-		n = max(n, utf8.RuneCountInString(r.version))
-	}
-	return min(n, 10)
+	return min(n, 15)
 }
 
 // loadStyle colours a machine figure by how loaded it is (percent).
@@ -456,117 +449,333 @@ func loadStyle(pct float64) lipgloss.Style {
 	return sIdle
 }
 
-// machineLine writes one machine: name, version, state, CPU now and over the
-// last 5 minutes, memory, load, and the harnesses when there is room.
-func (m Model) machineLine(r machineRow, w, nameW, versionW int) string {
+type machineFigures struct {
+	cpu, mem, disk, workers, top, note string
+	machine                            protocol.MachineUsage
+	cpuPct, memPct                     float64
+	diskFree                           uint64
+	workerCount                        int
+	knownCPU, knownMem                 bool
+}
+
+type machineRowLayout struct {
+	nameW, cpuW, memW, diskW, workersW, topW, noteW int
+	showDisk, showWorkers, showTop, showNote        bool
+}
+
+func (m Model) machineLine(r machineRow, w, nameW int) string {
+	return m.machineLineFor(r, m.machineRows(), w, nameW)
+}
+
+func (m Model) machineLineFor(r machineRow, rows []machineRow, w, nameW int) string {
+	figures := make(map[string]machineFigures, len(rows))
+	for _, row := range rows {
+		figures[row.nodeID] = m.machineFigures(row, rows)
+	}
+	layout := machineRowWidths(rows, figures, w, nameW)
+	fig := figures[r.nodeID]
 	name := r.host
 	if r.nodeID == m.snap.NodeID && r.nodeID != "" {
 		name += " (here)"
 	}
-	version := "-"
-	if r.version != "" {
-		version = r.version
-	}
-	dot, state, style := "○", "offline", sDim
+	dot, style := "○", sDim
 	if r.online {
-		dot, state, style = "●", "online", sBusy
+		dot, style = "●", sBusy
 		if _, st := m.nodeUsage(r.nodeID); st == usageStale {
 			style = sNeeds
 		}
 	}
-	if w < 50 {
-		version, versionW = "", 0
+	line := " " + style.Render(dot) + " " + cell(name, layout.nameW)
+	line += " " + padStyled(m.machineCPUCell(fig), layout.cpuW)
+	line += " " + padStyled(m.machineMemCell(fig), layout.memW)
+	if layout.showDisk {
+		line += " " + padStyled(m.machineDiskCell(fig), layout.diskW)
 	}
-	line := " " + style.Render(dot) + " " + cell(name, nameW) + " " + cell(version, versionW) + " " + style.Render(cell(state, 7))
-	room := w - ansi.StringWidth(line) - 1
-	hl := harnessText(r.harnesses, false)
-	if r.online && hl != "" && w >= 70 {
-		room -= ansi.StringWidth(hl) + 2
+	if layout.showWorkers {
+		line += " " + padStyled(m.machineWorkersCell(fig), layout.workersW)
 	}
-	line += " " + m.machineUsage(r, room)
-	if !r.online {
-		return clip(sDim.Render(ansi.Strip(line)), w)
+	if layout.showTop {
+		line += " " + padStyled(m.machineTopCell(fig), layout.topW)
 	}
-
-	rest := w - ansi.StringWidth(line) - 2
-	// The shared OpenCode service belongs to the machine, not to any one
-	// session: a short note here, its process list in a session's detail.
-	if t, st := m.sharedService(r.nodeID); st == usageOK {
-		note := fmt.Sprintf("%s service %s %s", sanitize(t.Harness), fmtMem(t.RSS), plural(t.Procs, "proc"))
-		if ansi.StringWidth(note) <= rest {
-			line += "  " + sDim.Render(note)
-			rest -= ansi.StringWidth(note) + 2
-		}
-	}
-	// How many workers run and wait here, and whether a new one would start.
-	if n, st := m.nodeUsage(r.nodeID); st == usageOK && n.Usage.Workers != nil && (n.Usage.Workers.Running > 0 || n.Usage.Workers.Queued > 0 || n.Usage.Workers.Room != protocol.RoomOK) {
-		wl := *n.Usage.Workers
-		if note := wl.RoomText(); ansi.StringWidth(note) <= rest {
-			style := sDim
-			if wl.Room != protocol.RoomOK {
-				style = sBusy
-			}
-			line += "  " + style.Render(note)
-			rest -= ansi.StringWidth(note) + 2
-		}
-	}
-
-	if hl != "" {
-		column := 13 + nameW + versionW + machineCPUW + machineMemW + machineLoadW + 4
-		gap := max(2, column-ansi.StringWidth(line))
-		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) > w {
-			gap = 2
-		}
-		if ansi.StringWidth(line)+gap+ansi.StringWidth(hl) <= w {
-			line += strings.Repeat(" ", gap) + sDim.Render(hl)
-		}
+	if layout.showNote && fig.note != "" {
+		line += " " + sDim.Render(cell(fig.note, layout.noteW))
 	}
 	return clip(line, w)
 }
 
-// Widths of the fixed parts of a machine's usage. The CPU cell holds a
-// three-digit percentage now and in the 5 minute average: "cpu ████ 100% (100%)".
-const (
-	machineCPUW  = 20
-	machineMemW  = 18
-	machineLoadW = len("load 1.2")
-)
-
-// machineUsage writes the CPU, memory and load of a machine in a fixed width
-// (about 48 columns). An unknown figure is "?", dim.
-func (m Model) machineUsage(r machineRow, room int) string {
-	unknownW := machineCPUW + 1 + machineMemW + 1 + machineLoadW
+func (m Model) machineFigures(r machineRow, rows []machineRow) machineFigures {
+	f := machineFigures{cpu: "cpu ?", mem: "mem ?", disk: "disk ?", workers: "-", top: "-", note: m.machineHarnessNote(r, rows)}
 	if !r.online {
-		return ""
+		return f
 	}
 	n, st := m.nodeUsage(r.nodeID)
-	if st != usageOK || n.Usage.Machine.Samples == 0 && n.Usage.Machine.MemTotal == 0 {
-		label := "cpu ?  mem ?  load ?"
-		if st == usageStale {
-			label += "  (stale)"
-		}
-		return sDim.Render(clip(label, max(room, 0)))
+	if st != usageOK {
+		return f
 	}
 	mu := n.Usage.Machine
-	var cpu string
-	if mu.Samples == 0 {
-		cpu = sDim.Render("cpu ...")
-	} else {
-		cpu = "cpu " + progressBar(mu.CPU/100, 4, loadStyle(mu.CPU).GetForeground()) + " " + cellR(fmtPct(mu.CPU), 4) + sDim.Render(" ("+fmtPct(mu.CPUAvg)+")")
+	f.machine = mu
+	if mu.Samples > 0 && mu.Cores > 0 {
+		f.cpuPct, f.knownCPU = mu.CPU, true
+		f.cpu = fmt.Sprintf("cpu %s %s of %d", barText(mu.CPU, 8), fmtPct(mu.CPU), mu.Cores)
 	}
-	memPct := 0.0
 	if mu.MemTotal > 0 {
-		memPct = float64(mu.MemUsed) / float64(mu.MemTotal) * 100
+		f.memPct, f.knownMem = float64(mu.MemUsed)/float64(mu.MemTotal)*100, true
+		f.mem = "mem " + barText(f.memPct, 4) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
 	}
-	mem := "mem " + progressBar(memPct/100, 4, roleAccent) + " " + fmtMemPair(mu.MemUsed, mu.MemTotal)
-	load := sDim.Render("load ") + fmt.Sprintf("%.1f", mu.Load[0])
-	if room < machineCPUW+1+machineMemW {
-		return padStyled(cpu, machineCPUW)
+	if mu.DiskFree > 0 {
+		f.diskFree = mu.DiskFree
+		f.disk = "disk " + fmtMem(mu.DiskFree) + " free"
 	}
-	if room < unknownW {
-		return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) // no room for the load
+	f.workerCount = 0
+	for _, a := range m.snap.Agents {
+		if a.NodeID == r.nodeID && a.Online && a.Worker != nil {
+			f.workerCount++
+		}
 	}
-	return padStyled(cpu, machineCPUW) + " " + padStyled(mem, machineMemW) + " " + load
+	if n.Usage.Workers != nil {
+		f.workerCount = n.Usage.Workers.Running
+	}
+	if f.workerCount > 0 {
+		memory := "?"
+		if used := m.machineWorkerMemory(r.nodeID, n.Usage.Trees); used > 0 {
+			memory = fmtMem(used)
+		}
+		f.workers = fmt.Sprintf("%d workers · %s", f.workerCount, memory)
+	}
+	if name, pct, ok := m.machineTop(r.nodeID, n.Usage.Trees); ok {
+		f.top = fmt.Sprintf("top: %s %s", name, fmtPct(pct))
+	}
+	return f
+}
+
+func barText(pct float64, width int) string {
+	fraction := pct / 100
+	filled := int(fraction*float64(width) + 0.5)
+	filled = min(max(filled, 0), width)
+	if fraction > 0 && filled == 0 {
+		filled = 1
+	}
+	return strings.Repeat("█", filled) + strings.Repeat("░", width-filled)
+}
+
+func machineRowWidths(rows []machineRow, figures map[string]machineFigures, w, nameW int) machineRowLayout {
+	l := machineRowLayout{showDisk: true, showWorkers: true, showTop: true}
+	for _, r := range rows {
+		f := figures[r.nodeID]
+		l.cpuW = max(l.cpuW, ansi.StringWidth(f.cpu))
+		l.memW = max(l.memW, ansi.StringWidth(f.mem))
+		l.diskW = max(l.diskW, ansi.StringWidth(f.disk))
+		l.workersW = max(l.workersW, ansi.StringWidth(f.workers))
+		l.topW = max(l.topW, ansi.StringWidth(f.top))
+		l.noteW = max(l.noteW, ansi.StringWidth(f.note))
+	}
+	l.showNote = l.noteW > 0
+	width := func() int {
+		n := 3 + nameW + 1 + l.cpuW + 1 + l.memW
+		if l.showDisk {
+			n += 1 + l.diskW
+		}
+		if l.showWorkers {
+			n += 1 + l.workersW
+		}
+		if l.showTop {
+			n += 1 + l.topW
+		}
+		if l.showNote {
+			n += 1 + l.noteW
+		}
+		return n
+	}
+	for _, drop := range []string{"top", "workers", "disk"} {
+		if width() <= w {
+			break
+		}
+		switch drop {
+		case "top":
+			l.showTop = false
+		case "workers":
+			l.showWorkers = false
+		case "disk":
+			l.showDisk = false
+		}
+	}
+	if width() > w && l.showNote {
+		l.showNote = false
+		l.showTop, l.showWorkers, l.showDisk = true, true, true
+		for _, drop := range []string{"top", "workers", "disk"} {
+			if width() <= w {
+				break
+			}
+			switch drop {
+			case "top":
+				l.showTop = false
+			case "workers":
+				l.showWorkers = false
+			case "disk":
+				l.showDisk = false
+			}
+		}
+	}
+	if width() > w {
+		nameW = max(1, nameW-(width()-w))
+	}
+	l.nameW = nameW
+	return l
+}
+
+func (m Model) machineCPUCell(f machineFigures) string {
+	if !f.knownCPU {
+		return sDim.Render(f.cpu)
+	}
+	return "cpu " + progressBar(f.cpuPct/100, 8, loadStyle(f.cpuPct).GetForeground()) + " " + loadStyle(f.cpuPct).Render(fmtPct(f.cpuPct)) + sDim.Render(fmt.Sprintf(" of %d", f.machine.Cores))
+}
+
+func (m Model) machineMemCell(f machineFigures) string {
+	if !f.knownMem {
+		return sDim.Render(f.mem)
+	}
+	return "mem " + progressBar(f.memPct/100, 4, roleAccent) + " " + fmtMemPair(f.machine.MemUsed, f.machine.MemTotal)
+}
+
+func (m Model) machineDiskCell(f machineFigures) string {
+	if f.diskFree == 0 {
+		return sDim.Render(f.disk)
+	}
+	switch {
+	case f.diskFree < 10<<30:
+		return sBad.Render(f.disk)
+	case f.diskFree < 20<<30:
+		return sNeeds.Render(f.disk)
+	default:
+		return f.disk
+	}
+}
+
+func (m Model) machineWorkersCell(f machineFigures) string {
+	if f.workerCount == 0 {
+		return sDim.Render(f.workers)
+	}
+	return f.workers
+}
+
+func (m Model) machineTopCell(f machineFigures) string {
+	if f.top == "-" {
+		return sDim.Render(f.top)
+	}
+	return f.top
+}
+
+func (m Model) machineWorkerMemory(nodeID string, trees []protocol.TreeUsage) uint64 {
+	workers := map[string]bool{}
+	for _, a := range m.snap.Agents {
+		if a.NodeID == nodeID && a.Online && a.Worker != nil {
+			workers[a.SessionID] = true
+		}
+	}
+	seen := map[int]bool{}
+	var total uint64
+	for i, t := range trees {
+		match := false
+		for _, id := range t.Sessions {
+			if workers[id] {
+				match = true
+				break
+			}
+		}
+		key := t.PID
+		if key <= 0 {
+			key = -i - 1
+		}
+		if match && !seen[key] {
+			total += t.RSS
+			seen[key] = true
+		}
+	}
+	return total
+}
+
+func (m Model) machineTop(nodeID string, trees []protocol.TreeUsage) (string, float64, bool) {
+	byID := map[string]protocol.AgentView{}
+	for _, a := range m.snap.Agents {
+		if a.NodeID == nodeID && a.Online && !protocol.IsOwner(a.Harness) {
+			byID[a.SessionID] = a
+		}
+	}
+	var name string
+	var pct float64
+	found := false
+	for _, t := range trees {
+		if t.Samples == 0 {
+			continue
+		}
+		for _, id := range t.Sessions {
+			a, ok := byID[id]
+			if !ok {
+				continue
+			}
+			if !found || t.CPU > pct {
+				name, pct, found = rowName(a), t.CPU, true
+			}
+		}
+	}
+	return name, pct, found
+}
+
+func (m Model) machineHarnessNote(r machineRow, rows []machineRow) string {
+	if r.harnesses == nil {
+		return ""
+	}
+	best := map[string]string{}
+	present := map[string]string{}
+	for _, row := range rows {
+		if row.harnesses == nil {
+			continue
+		}
+		for _, h := range row.harnesses {
+			version := numberOf(h.Version)
+			if current, ok := best[h.Name]; !ok || versionGreater(version, current) {
+				best[h.Name] = version
+			}
+			if row.nodeID == r.nodeID {
+				present[h.Name] = version
+			}
+		}
+	}
+	var names []string
+	for name := range best {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var notes []string
+	for _, name := range names {
+		local, ok := present[name]
+		if !ok {
+			notes = append(notes, "no "+name)
+		} else if best[name] != "" && local != "" && versionGreater(best[name], local) {
+			notes = append(notes, "old "+name)
+		}
+	}
+	return strings.Join(notes, " · ")
+}
+
+func versionGreater(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	aa, bb := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < max(len(aa), len(bb)); i++ {
+		ai, bi := 0, 0
+		if i < len(aa) {
+			ai, _ = strconv.Atoi(aa[i])
+		}
+		if i < len(bb) {
+			bi, _ = strconv.Atoi(bb[i])
+		}
+		if ai != bi {
+			return ai > bi
+		}
+	}
+	return false
 }
 
 // padStyled pads (or cuts) a string that holds colour codes to w columns.
@@ -575,19 +784,6 @@ func padStyled(s string, w int) string {
 		return ansi.Truncate(s, w, "")
 	}
 	return s + strings.Repeat(" ", w-ansi.StringWidth(s))
-}
-
-// harnessText lists the installed harnesses compactly: "claude 2.1 opencode 2.2".
-func harnessText(hs []protocol.HarnessInfo, versions bool) string {
-	var parts []string
-	for _, h := range hs {
-		if v := numberOf(h.Version); v != "" && versions {
-			parts = append(parts, h.Name+" "+v)
-		} else {
-			parts = append(parts, h.Name)
-		}
-	}
-	return strings.Join(parts, "  ")
 }
 
 // ---- sessions table ----

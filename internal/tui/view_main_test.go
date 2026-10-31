@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -96,7 +97,7 @@ func TestMachineCPUAt100Fits(t *testing.T) {
 		m := modelWith(fakeSnapshot(), u, w, 24)
 		var line string
 		for _, l := range lines(m.View()) {
-			if strings.Contains(l, "Mac (here)") && strings.Contains(l, "cpu") {
+			if strings.Contains(l, "cpu ") {
 				line = l
 				break
 			}
@@ -107,22 +108,165 @@ func TestMachineCPUAt100Fits(t *testing.T) {
 		if strings.Contains(line, "10…") {
 			t.Fatalf("%d columns: the CPU cell cuts 100%%: %q", w, line)
 		}
-		if !strings.Contains(line, "100% (100%)") {
-			t.Fatalf("%d columns: the CPU cell lacks 100%%: %q", w, line)
+		if !strings.Contains(line, "100% of 10") {
+			t.Fatalf("%d columns: the CPU cell lacks capacity: %q", w, line)
 		}
 	}
 }
 
-func TestOnlineMachinesShowAllHarnessNames(t *testing.T) {
-	m := newModel(80, 24)
+func TestOnlineMachinesShowOnlyMissingHarnessNotes(t *testing.T) {
+	m := newModel(160, 24)
 	for _, r := range m.machineRows() {
-		if r.nodeID == "n_mac" {
-			line := m.machineLine(r, 78, machineNameWidth(m.machineRows(), m.snap.NodeID), machineVersionWidth(m.machineRows()))
-			if !strings.Contains(ansi.Strip(line), "claude  opencode  pi") {
-				t.Fatalf("missing harness names: %s", line)
+		if r.nodeID == "n_vm" {
+			line := ansi.Strip(m.machineLine(r, 156, machineNameWidth(m.machineRows(), m.snap.NodeID)))
+			if !strings.Contains(line, "no claude") || !strings.Contains(line, "no opencode") {
+				t.Fatalf("missing harness notes: %s", line)
+			}
+			if strings.Contains(line, "pi") {
+				t.Fatalf("installed harness was listed: %s", line)
 			}
 			return
 		}
 	}
 	t.Fatal("machine missing")
+}
+
+func TestMachineRowsShowCapacityDiskWorkersAndTop(t *testing.T) {
+	snap := fakeSnapshot()
+	var workerTrees []protocol.TreeUsage
+	for i, cpu := range []float64{5, 8, 12, 106, 9} {
+		id := fmt.Sprintf("s_worker_%02d", i)
+		snap.Agents = append(snap.Agents, agent(id, "n_mac", "Mac", "codex", fmt.Sprintf("a2a-ocs worker %d", i), func(a *protocol.AgentView) {
+			a.Worker = &protocol.WorkerInfo{ID: fmt.Sprintf("worker-%d", i), Project: "a2a-ocs"}
+		}))
+		workerTrees = append(workerTrees, tree(6000+i, "codex", cpu, cpu, gib*21/50, 4, id))
+	}
+	u := fakeUsage()
+	u.Local.Machine = protocol.MachineUsage{Cores: 16, CPU: 72, MemUsed: 24 * gib, MemTotal: 32 * gib, DiskFree: 31 * gib, Samples: 60}
+	u.Local.Workers = &protocol.WorkerLoad{Running: 5, Room: protocol.RoomOK}
+	u.Local.Trees = append(workerTrees,
+		tree(7000, "claude", 20, 20, gib, 4, "s_0000000000000001"),
+		tree(7001, "claude", 30, 30, gib, 5, "s_0000000000000002"),
+	)
+	m := modelWith(snap, u, 160, 34)
+	var local string
+	for _, r := range m.machineRows() {
+		if r.nodeID == "n_mac" {
+			local = ansi.Strip(m.machineLine(r, 156, machineNameWidth(m.machineRows(), m.snap.NodeID)))
+			break
+		}
+	}
+	for _, want := range []string{"cpu ", "72% of 16", "mem ", "24/32G", "disk 31G free", "5 workers · 2.1G", "top: a2a-ocs worker 3 106%"} {
+		if !strings.Contains(local, want) {
+			t.Errorf("machine row lacks %q: %s", want, local)
+		}
+	}
+	for _, unwanted := range []string{"opencode service", "procs", "claude  opencode", "codex  "} {
+		if strings.Contains(local, unwanted) {
+			t.Errorf("machine row still shows %q: %s", unwanted, local)
+		}
+	}
+}
+
+func TestMachineColumnsAlignAndDropInOrderAtNarrowWidths(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Nodes[1].Hostname = "東京"
+	m := modelWith(snap, fakeUsage(), 160, 34)
+	var linesByNode = map[string]string{}
+	for _, r := range m.machineRows() {
+		linesByNode[r.nodeID] = ansi.Strip(m.machineLine(r, 116, machineNameWidth(m.machineRows(), m.snap.NodeID)))
+	}
+	for _, field := range []string{"cpu ", "mem ", "disk ", "top:"} {
+		start := func(line string) int {
+			i := strings.Index(line, field)
+			if i < 0 {
+				return -1
+			}
+			return ansi.StringWidth(line[:i])
+		}
+		mac, vm := start(linesByNode["n_mac"]), start(linesByNode["n_vm"])
+		if mac < 0 || mac != vm {
+			t.Errorf("%q column starts differ: Mac %d, build-vm %d\n%s\n%s", field, mac, vm, linesByNode["n_mac"], linesByNode["n_vm"])
+		}
+	}
+	for _, tc := range []struct {
+		width        int
+		want, absent []string
+	}{
+		{width: 76, want: []string{"disk "}, absent: []string{"top:", "workers"}},
+		{width: 60, want: []string{"cpu ", "mem "}, absent: []string{"disk ", "workers", "top:"}},
+	} {
+		line := ansi.Strip(m.machineLine(m.machineRows()[0], tc.width, machineNameWidth(m.machineRows(), m.snap.NodeID)))
+		for _, s := range tc.want {
+			if !strings.Contains(line, s) {
+				t.Errorf("width %d lacks %q: %s", tc.width, s, line)
+			}
+		}
+		for _, s := range tc.absent {
+			if strings.Contains(line, s) {
+				t.Errorf("width %d retains %q: %s", tc.width, s, line)
+			}
+		}
+	}
+}
+
+func TestMachineOptionalColumnsDropTopThenWorkersThenDisk(t *testing.T) {
+	rows := []machineRow{{nodeID: "n"}}
+	figures := map[string]machineFigures{"n": {
+		cpu: "cpu ████████ 100% of 16", mem: "mem ████ 32/32G", disk: "disk 31G free",
+		workers: "5 workers · 2.1G", top: "top: a2a-ocs worker 4 106%",
+	}}
+	for _, tc := range []struct {
+		width              int
+		top, workers, disk bool
+	}{{90, false, true, true}, {70, false, false, true}, {60, false, false, false}} {
+		got := machineRowWidths(rows, figures, tc.width, 8)
+		if got.showTop != tc.top || got.showWorkers != tc.workers || got.showDisk != tc.disk {
+			t.Errorf("width %d: top/workers/disk = %v/%v/%v, want %v/%v/%v", tc.width, got.showTop, got.showWorkers, got.showDisk, tc.top, tc.workers, tc.disk)
+		}
+	}
+}
+
+func TestMachineHarnessNoteShowsOnlyMissingOrOutdatedSharedHarnesses(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Nodes[0].Harnesses = append(snap.Nodes[0].Harnesses, protocol.HarnessInfo{Name: "codex", Version: "2.1.0"})
+	snap.Nodes[1].Harnesses = append(snap.Nodes[1].Harnesses, protocol.HarnessInfo{Name: "codex", Version: "1.9.0"})
+	snap.Nodes[2].Harnesses = []protocol.HarnessInfo{}
+	m := modelWith(snap, fakeUsage(), 180, 34)
+	rows := m.machineRows()
+	for _, tc := range []struct{ node, want string }{{"n_vm", "old codex"}, {"n_old", "no codex"}} {
+		for _, r := range rows {
+			if r.nodeID == tc.node {
+				line := ansi.Strip(m.machineLine(r, 176, machineNameWidth(rows, m.snap.NodeID)))
+				if !strings.Contains(line, tc.want) {
+					t.Errorf("%s row lacks %q: %s", tc.node, tc.want, line)
+				}
+				break
+			}
+		}
+	}
+	for _, r := range rows {
+		if r.nodeID == "n_mac" && strings.Contains(ansi.Strip(m.machineLine(r, 176, machineNameWidth(rows, m.snap.NodeID))), "codex") {
+			t.Fatal("current harness version should not get a note")
+		}
+	}
+}
+
+func TestMachineDiskFreeUsesLowAndWarningColors(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+	m := newModel(160, 34)
+	for _, tc := range []struct {
+		free uint64
+		want lipgloss.Style
+	}{{9 << 30, sBad}, {15 << 30, sNeeds}} {
+		f := machineFigures{disk: "disk free", diskFree: tc.free}
+		if got, want := m.machineDiskCell(f), tc.want.Render(f.disk); got != want {
+			t.Errorf("%d GiB free: got %q, want %q", tc.free>>30, got, want)
+		}
+	}
+	if got := m.machineDiskCell(machineFigures{disk: "disk free", diskFree: 20 << 30}); got != "disk free" {
+		t.Errorf("20 GiB free should be uncolored: %q", got)
+	}
 }
