@@ -323,6 +323,8 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		}
 		action := map[string]string{"worker_profile_list": "worker.profile.list", "worker_profile_add": "worker.profile.add", "worker_profile_remove": "worker.profile.remove"}[name]
 		return d.call(ctx, action, protocol.WorkerProfileFrame{WorkerProfileRequest: p, Requester: sid})
+	case "protected_providers_get":
+		return d.protectedProviders(ctx, nil)
 	case "protected_providers_set":
 		var p protocol.ProtectedProviders
 		if json.Unmarshal(raw, &p) != nil {
