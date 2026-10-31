@@ -246,3 +246,57 @@ func TestForgetSkillExcludeRefcount(t *testing.T) {
 		t.Fatalf("exclude: %q", b)
 	}
 }
+
+func TestRemoveSkillRejectsChangedObservationAndIsIdempotent(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(path, "SKILL.md")
+	if err := os.WriteFile(file, []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Harness: "claude", Source: path}}
+	if err := os.WriteFile(file, []byte("changed"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	changed, _ := inventory.SkillHash(path)
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: changed, Source: protocol.InventoryNative}}
+	if r := d.removeSkill(target); r.State != "conflict" || r.Reason != "changed since plan" {
+		t.Fatalf("changed observation: %+v", r)
+	}
+	if err := os.RemoveAll(path); err != nil {
+		t.Fatal(err)
+	}
+	d.toolsReport.Items = nil
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("absent retry: %+v", r)
+	}
+}
+
+func TestRemoveSkillRefusesTrackedGlobalSource(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	if _, err := projectGit(home, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := projectGit(home, "add", "-f", ".claude/skills/demo/SKILL.md"); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "manual" {
+		t.Fatalf("tracked source: %+v", r)
+	}
+}

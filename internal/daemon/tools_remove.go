@@ -25,25 +25,13 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	d.toolsMu.Lock()
 	var observed *protocol.InventoryItem
 	for _, v := range d.toolsReport.Items {
-		if v.Kind == protocol.InventorySkill && v.Name == t.Name && v.Location == source && v.Hash == t.Revision.Version {
+		if v.Kind == protocol.InventorySkill && v.Name == t.Name && v.Location == source {
 			v := v
 			observed = &v
 			break
 		}
 	}
 	d.toolsMu.Unlock()
-	if observed == nil {
-		return fail("conflict", "source is no longer observed")
-	}
-	if observed.Source != protocol.InventoryNative {
-		return fail("manual", "source is managed externally")
-	}
-	if t.Target.Checkout != "" && (observed.Scope != protocol.InventoryProject || filepath.Clean(observed.ProjectRoot) != filepath.Clean(t.Target.Checkout)) {
-		return fail("conflict", "source project differs from plan")
-	}
-	if t.Target.Checkout == "" && observed.Scope == protocol.InventoryProject {
-		return fail("conflict", "source project differs from plan")
-	}
 	root := d.cfg.InventoryHome
 	if t.Target.Checkout != "" {
 		root = filepath.Clean(t.Target.Checkout)
@@ -68,6 +56,21 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fail("conflict", "source is not a safe directory")
 	}
+	if observed == nil {
+		return fail("conflict", "source is no longer observed")
+	}
+	if observed.Source != protocol.InventoryNative {
+		return fail("manual", "source is managed externally")
+	}
+	if observed.Hash != t.Revision.Version {
+		return fail("conflict", "changed since plan")
+	}
+	if t.Target.Checkout != "" && (observed.Scope != protocol.InventoryProject || filepath.Clean(observed.ProjectRoot) != filepath.Clean(t.Target.Checkout)) {
+		return fail("conflict", "source project differs from plan")
+	}
+	if t.Target.Checkout == "" && observed.Scope == protocol.InventoryProject {
+		return fail("conflict", "source project differs from plan")
+	}
 	if err = filepath.WalkDir(anchored, func(_ string, e fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -79,14 +82,38 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	}); err != nil {
 		return fail("conflict", "source contains a symlink or cannot be inspected")
 	}
-	if t.Target.Checkout != "" {
-		tracked, e := projectGit(root, "ls-files", "-z", "--", rel)
+	top, gitErr := projectGit(filepath.Dir(source), "rev-parse", "--show-toplevel")
+	if gitErr == nil {
+		gitRoot := strings.TrimSpace(string(top))
+		gitRel, e := filepath.Rel(gitRoot, source)
+		if e != nil || gitRel == ".." || strings.HasPrefix(gitRel, ".."+string(os.PathSeparator)) {
+			return fail("conflict", "source outside Git worktree")
+		}
+		gitDir, e := projectGit(gitRoot, "rev-parse", "--absolute-git-dir")
+		if e != nil {
+			return fail("failed", "cannot inspect Git worktree")
+		}
+		gitPath, closeGit, e := openSkillRoot(strings.TrimSpace(string(gitDir)), ".")
+		if e != nil {
+			return fail("conflict", "Git worktree directory is unsafe")
+		}
+		defer closeGit()
+		lock := filepath.Join(gitPath, "index.lock")
+		f, e := os.OpenFile(lock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if e != nil {
+			return fail("pending", "Git index is locked")
+		}
+		f.Close()
+		defer os.Remove(lock)
+		tracked, e := projectGit(gitRoot, "ls-files", "-z", "--", gitRel)
 		if e != nil {
 			return fail("failed", "cannot inspect tracked paths")
 		}
 		if len(tracked) != 0 {
 			return fail("manual", "source contains tracked files")
 		}
+	} else if t.Target.Checkout != "" {
+		return fail("failed", "cannot inspect tracked paths")
 	}
 	hash, err := inventory.SkillHash(anchored)
 	if err != nil || hash != t.Revision.Version {
