@@ -18,6 +18,9 @@ import (
 func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index}
 	fail := func(state, reason string) protocol.ToolResult { r.State, r.Reason = state, reason; return r }
+	if t.Target.Conflict != "" && t.Target.Conflict != "unmanaged source requires guarded removal" && t.Target.Conflict != "machine offline; source cannot be inspected" {
+		return fail("conflict", t.Target.Conflict)
+	}
 	source := filepath.Clean(t.Target.Source)
 	if !filepath.IsAbs(source) || t.Name == "" || filepath.Base(source) != t.Name || t.Name == "." || t.Name == ".." {
 		return fail("conflict", "invalid source")

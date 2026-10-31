@@ -300,3 +300,21 @@ func TestRemoveSkillRefusesTrackedGlobalSource(t *testing.T) {
 		t.Fatalf("tracked source: %+v", r)
 	}
 }
+
+func TestRemoveSkillHonorsPlanConflict(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path, Conflict: "source inspection unavailable"}}
+	if r := d.removeSkill(target); r.State != "conflict" {
+		t.Fatalf("plan conflict ignored: %+v", r)
+	}
+}
