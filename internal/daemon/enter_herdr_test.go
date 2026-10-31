@@ -211,6 +211,37 @@ func TestEnterHerdrStalePane(t *testing.T) {
 	}
 }
 
+// An OpenCode session is not lost when its herdr pane closes: the session is
+// still in the OpenCode service, so enter opens it there, not with a note.
+// Only when the service cannot be reached either does the note say what was
+// tried.
+func TestEnterOpenCodeClosedHerdrPaneUsesTheService(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "opencode")
+	cwd := t.TempDir()
+	f := newFakeHerdr(t)
+	f.panes(t, "") // the recorded pane w3:p2X has closed, and no pane holds it
+	pid := f.session(t, "w3:p2X")
+	info := protocol.SessionInfo{NativeID: "ses_1", PID: pid, Cwd: cwd, Name: "oc", Status: "idle"}
+
+	n, _, id := enterNode(t, g, "opencode", info, bins, nil)
+	p := enterOf(t, n, id, "")
+	if want := []string{bins["opencode"], "--session", "ses_1"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("closed herdr pane: %+v, want %v", p, want)
+	}
+	if p.Dir != cwd || len(p.Env) != 0 || strings.Contains(p.Note, "has closed") {
+		t.Fatalf("closed herdr pane: %+v", p)
+	}
+
+	// Without the OpenCode program there is nothing left to open the session
+	// with, and the note says what was tried.
+	n, _, id = enterNode(t, g, "opencode", info, nil, nil)
+	p = enterOf(t, n, id, "")
+	if len(p.Argv) != 0 || !strings.Contains(p.Note, "has closed") || !strings.Contains(p.Note, "not installed") {
+		t.Fatalf("no opencode binary: %+v", p)
+	}
+}
+
 // A pane with no detected agent is attached as a terminal. A herdr that does
 // not answer gives a note, not a tmux guess.
 func TestEnterHerdrPlainTerminalAndDownServer(t *testing.T) {
