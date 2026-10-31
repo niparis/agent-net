@@ -11,7 +11,7 @@ same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
 
 Model score overrides, difficulty minimums and the worker provider allowlist are owner settings. The daemon's
-`scores_get`, `scores_set`, `difficulty_get`, `difficulty_set`, `worker_providers_get` and `worker_providers_set` methods use the
+`scores_get`, `scores_set`, `difficulty_get`, `difficulty_set`, `worker_providers_get`, `worker_providers_set`, `protected_providers_get` and `protected_providers_set` methods use the
 owner gate and refuse agent sessions. Their gateway endpoints require an
 enrolled node token, which is an owner credential. Scores and minimums are
 limited to 0 through 100. The private CTO `score_set` tool uses the same

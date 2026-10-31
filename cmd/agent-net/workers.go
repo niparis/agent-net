@@ -113,6 +113,9 @@ func runStop(ctx context.Context, op operator.Operator, out io.Writer, args []st
 
 // cmdWorkers: agent-net workers.
 func cmdWorkers(ctx context.Context, args []string) error {
+	if len(args) > 0 && (args[0] == "protect" || args[0] == "unprotect") {
+		return cmdProtectProviders(ctx, args[0], args[1:])
+	}
 	if len(args) > 0 && args[0] == "profiles" {
 		return cmdWorkerProfiles(ctx, args[1:])
 	}
@@ -236,5 +239,61 @@ func runSend(ctx context.Context, op operator.Operator, out io.Writer, args []st
 	if res.Message != nil {
 		fmt.Fprintf(out, "sent %s to %s as you (%s)\n", res.Message.ID, res.Message.To, res.Message.State)
 	}
+	return nil
+}
+
+const protectedProviderReason = "Workers on the orchestrator's subscription spend the limit it needs to keep working. Use other subscriptions first."
+
+func editProtectedProviders(p protocol.ProtectedProviders, action string, args []string) (protocol.ProtectedProviders, error) {
+	if len(args) == 0 || action == "unprotect" && len(args) != 1 {
+		return p, errors.New("usage: agent-net workers protect <provider>... | unprotect <provider>")
+	}
+	for _, name := range args {
+		name = strings.ToLower(strings.TrimSpace(name))
+		if name == "" {
+			return p, errors.New("provider cannot be empty")
+		}
+		var next []string
+		for _, existing := range p.Providers {
+			if existing != name {
+				next = append(next, existing)
+			}
+		}
+		if action == "protect" {
+			next = append(next, name)
+		}
+		p.Providers = next
+	}
+	if p.Reason == "" && len(p.Providers) > 0 {
+		p.Reason = protectedProviderReason
+	}
+	return p, nil
+}
+
+func cmdProtectProviders(ctx context.Context, action string, args []string) error {
+	if len(args) == 0 || action == "unprotect" && len(args) != 1 {
+		return errors.New("usage: agent-net workers protect <provider>... | unprotect <provider>")
+	}
+	cl, err := dialCLI(ctx)
+	if err != nil {
+		return err
+	}
+	defer cl.Close()
+	raw, err := cl.Call(ctx, protocol.OpProtectedProvidersGet, nil)
+	if err != nil {
+		return err
+	}
+	var p protocol.ProtectedProviders
+	if err = json.Unmarshal(raw, &p); err != nil {
+		return err
+	}
+	p, err = editProtectedProviders(p, action, args)
+	if err != nil {
+		return err
+	}
+	if _, err = cl.Call(ctx, protocol.OpProtectedProvidersSet, p); err != nil {
+		return err
+	}
+	fmt.Println("Protected providers:", strings.Join(p.Providers, ", "))
 	return nil
 }

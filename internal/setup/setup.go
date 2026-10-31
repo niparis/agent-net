@@ -122,6 +122,7 @@ func Setup(ctx context.Context, o Options) error {
 	r.workersSetting()
 	r.daemonService()
 	r.chooseIntegrations(ctx)
+	r.proposeProtectedProviders(ctx)
 	r.claudeMCP()
 	r.claudePeerMessages()
 	r.codexMCP()

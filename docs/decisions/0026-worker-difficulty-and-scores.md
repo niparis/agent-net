@@ -9,3 +9,7 @@ The chooser skips exhausted windows and windows above 90 percent used. It compar
 The gateway stores a roster of named harness, model and optional effort profiles with creator and creation time. The CTO, the owner CLI, and non-worker agent sessions can manage it; the model must be listed by a machine. The Quotas view shows registered profiles, scores and fit, recent use and current picks. It credits Artificial Analysis when its scores appear.
 
 Automatic choices use the owner's worker provider allowlist, or subscription and quota-reading defaults when unset; equal-fit and equal-room choices prefer a recent successful worker.
+
+## Protected providers
+
+The owner may protect providers used by the orchestrator, because workers on the same subscription spend the limit the orchestrator needs to keep working. When protection is set, automatic selection first considers unprotected profiles at or above the difficulty minimum, then protected profiles if none qualify or all are out of quota. The result explains the choice. Explicit model requests remain available and carry a note. The owner can change the list and reason; setup only suggests it.

@@ -248,3 +248,14 @@ func TestWorkerProfilesResolveUsingTrackRecord(t *testing.T) {
 		t.Fatalf("profile: %s", raw)
 	}
 }
+
+func TestWorkerExplicitProtectedProviderNote(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	w.cli.mustCall(protocol.OpProtectedProvidersSet, protocol.ProtectedProviders{Providers: []string{"fake"}, Reason: "orchestrator"})
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "x"})
+	if err != nil || !strings.Contains(res.ModelNote, "protected provider (fake)") {
+		t.Fatalf("explicit: %+v %v", res, err)
+	}
+}

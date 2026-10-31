@@ -749,3 +749,29 @@ func TestWorkerColumnsKeepNamesAndModels(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestProtectedQuotaProfileMark(t *testing.T) {
+	m := Model{}
+	m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet", Harness: "claude", Model: "sonnet"}}
+	view := strings.Join(m.quotaModelsView(120), "\n")
+	if !strings.Contains(view, "protected") || !strings.Contains(view, "saved for your orchestrator (anthropic)") {
+		t.Fatalf("missing protected note: %s", view)
+	}
+}
+
+func TestProtectedQuotaGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		m.tab = 2
+		m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}}
+		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "claude", Models: []string{"claude-sonnet-4"}}}
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet", Harness: "claude", Model: "claude-sonnet-4"}}
+		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude", Plan: "max", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 30}}}}}
+		view := ansi.Strip(m.View())
+		if !strings.Contains(view, "🔒 claude") || !strings.Contains(view, "🔒 sonnet") {
+			t.Fatalf("missing subscription or profile lock:\n%s", view)
+		}
+		golden(t, fmt.Sprintf("quotas_protected_%dx%d", size[0], size[1]), m.View())
+	}
+}

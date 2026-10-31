@@ -125,3 +125,40 @@ func (d *Daemon) workerProviders(ctx context.Context, change *protocol.WorkerPro
 	err = json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&out)
 	return out, err
 }
+
+func (d *Daemon) protectedProviders(ctx context.Context, change *protocol.ProtectedProviders) (protocol.ProtectedProviders, error) {
+	c, ok := d.integrationsClient()
+	if !ok {
+		return protocol.ProtectedProviders{}, errNotConnected
+	}
+	method := http.MethodGet
+	var body io.Reader
+	if change != nil {
+		method = http.MethodPut
+		b, err := json.Marshal(change)
+		if err != nil {
+			return protocol.ProtectedProviders{}, err
+		}
+		body = bytes.NewReader(b)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.URL, "/")+"/v1/protected-providers", body)
+	if err != nil {
+		return protocol.ProtectedProviders{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return protocol.ProtectedProviders{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return protocol.ProtectedProviders{}, fmt.Errorf("gateway answered %s", resp.Status)
+	}
+	var out protocol.ProtectedProviders
+	err = json.NewDecoder(io.LimitReader(resp.Body, 8192)).Decode(&out)
+	return out, err
+}

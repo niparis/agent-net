@@ -138,6 +138,9 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 			snap.WorkerProviders = providers.Providers
 		}
 	}
+	if raw, err := s.Call(ctx, protocol.OpProtectedProvidersGet, nil); err == nil {
+		_ = json.Unmarshal(raw, &snap.ProtectedProviders)
+	}
 	if raw, err := s.Call(ctx, protocol.OpScoresGet, nil); err == nil {
 		_ = json.Unmarshal(raw, &snap.Scores)
 	}

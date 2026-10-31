@@ -187,3 +187,15 @@ func TestWorkersCommandOwnerAndRecentFlags(t *testing.T) {
 		t.Errorf("the table has a new column:\n%s", out.String())
 	}
 }
+
+func TestProtectProvidersEdit(t *testing.T) {
+	p := protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "keep"}
+	got, err := editProtectedProviders(p, "protect", []string{"openai", "anthropic"})
+	if err != nil || len(got.Providers) != 2 || got.Reason != "keep" {
+		t.Fatalf("protect: %+v %v", got, err)
+	}
+	got, err = editProtectedProviders(got, "unprotect", []string{"anthropic"})
+	if err != nil || len(got.Providers) != 1 || got.Providers[0] != "openai" {
+		t.Fatalf("unprotect: %+v %v", got, err)
+	}
+}

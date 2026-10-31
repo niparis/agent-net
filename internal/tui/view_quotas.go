@@ -82,6 +82,9 @@ func (m Model) quotasView(w, h int) []string {
 			provider, plan := "", ""
 			if i == 0 {
 				provider = sanitize(p.Provider)
+				if m.quotaProviderProtected(p.Provider) {
+					provider = "🔒 " + provider
+				}
 				plan = sanitize(p.Plan)
 			}
 			name := protocol.QuotaWindowName(window)
@@ -136,7 +139,7 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("%-11s %-9s %-14s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), remaining, pace, reset)
+			line := fmt.Sprintf("%s %s %s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), remaining, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}
