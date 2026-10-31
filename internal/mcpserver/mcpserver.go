@@ -191,6 +191,15 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			out, err := run(ctx, "announce", in)
 			return nil, out, err
 		})
+	mcp.AddTool(s, tool("agent_ask_owner", "Ask the owner a question and show it in Needs you."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Question string   `json:"question" jsonschema:"question in one line"`
+			Options  []string `json:"options,omitempty" jsonschema:"up to four short answers"`
+			Urgency  string   `json:"urgency,omitempty" jsonschema:"normal or high"`
+		}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, protocol.MethodWaiting, protocol.WaitingRequest{Kind: protocol.WaitingQuestion, Text: in.Question, Options: in.Options, Urgency: in.Urgency})
+			return nil, out, err
+		})
 	mcp.AddTool(s, tool("agent_request_approval", "Ask the owner to approve one exact action, with your recommendation."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
 			Action         string `json:"action" jsonschema:"the exact action"`

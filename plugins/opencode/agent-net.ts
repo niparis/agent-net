@@ -850,6 +850,7 @@ interface ToolDef {
   required: string[];
   method: string;
   format?: (result: any) => string;
+  mapParams?: (params: any) => any;
 }
 
 const TOOLS: ToolDef[] = [
@@ -885,6 +886,14 @@ const TOOLS: ToolDef[] = [
     required: ["session_id"],
     method: "get",
     format: formatAgentGet,
+  },
+  {
+    name: "agent_ask_owner",
+    description: "Ask the owner a question in Needs you.",
+    properties: { question: str("Question in one line"), options: { type: "array", items: { type: "string" } }, urgency: { type: "string", enum: ["normal", "high"] } },
+    required: ["question"], method: "waiting",
+    mapParams: (p) => ({ kind: "question", text: p.question, options: p.options, urgency: p.urgency }),
+    format: () => "Question sent to the owner.",
   },
   {
     name: "agent_announce",
@@ -1634,7 +1643,7 @@ export default {
               const link = await ensureLink(sid);
               if (!link) return text("agent-net: this session is not registered with the daemon.");
               link.touch(); // using an agent-net tool is activity
-              const params = def.method === "list" ? { online_only: true, ...(input ?? {}) } : (input ?? {});
+              const params = def.method === "list" ? { online_only: true, ...(input ?? {}) } : (def.mapParams ? def.mapParams(input ?? {}) : (input ?? {}));
               const result = await link.request(def.method, params);
               if (def.method === "announce") announced.add(sid);
               return text((def.format ?? ((r) => JSON.stringify(r ?? {}, null, 2)))(result ?? {}));

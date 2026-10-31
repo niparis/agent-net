@@ -180,3 +180,18 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 	}
 	t.Fatal("no agent_announce tool")
 }
+
+func TestAskOwnerPassesQuestion(t *testing.T) {
+	var got protocol.WaitingRequest
+	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == protocol.MethodWaiting {
+			b, _ := json.Marshal(params)
+			_ = json.Unmarshal(b, &got)
+		}
+		return json.RawMessage(`{"ok":true}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_ask_owner", Arguments: map[string]any{"question": "Merge?", "options": []string{"Yes", "No"}, "urgency": "high"}})
+	if err != nil || res.IsError || got.Kind != protocol.WaitingQuestion || got.Text != "Merge?" || len(got.Options) != 2 || got.Urgency != "high" {
+		t.Fatalf("ask: %v %+v %+v", err, res, got)
+	}
+}
