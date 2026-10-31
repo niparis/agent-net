@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/testmcp/tools"
@@ -94,7 +95,14 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	os.Setenv("HOME", filepath.Join(fakes, "home"))
-	os.Setenv("AGENT_NET_CONFIG_DIR", filepath.Join(fakes, "config"))
+	config := filepath.Join(fakes, "config")
+	answers := integrations.AllOn()
+	answers.QuotaAXI = false
+	if err := integrations.SaveApplied(config, answers); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	os.Setenv("AGENT_NET_CONFIG_DIR", config)
 	os.Setenv("AGENT_NET_STATE_DIR", filepath.Join(fakes, "state"))
 	code := m.Run()
 	if leaked := reapFakes(fakes); len(leaked) > 0 && code == 0 {
