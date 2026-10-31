@@ -172,6 +172,8 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	notify           notificationTracker
+	notifySend       func()
 	toolsMu          sync.Mutex
 	toolsReport      protocol.InventoryReport
 	toolsWake        chan struct{}

@@ -319,7 +319,7 @@ await test("agent_ask_owner sends a waiting question", async () => {
   await until("hello", () => hellos.length === n + 1);
   await p.tools.get("agent_ask_owner").execute("id", { question: "Merge?", options: ["Yes"], urgency: "high" });
   const sent = requests.filter((r) => r.method === "waiting").pop();
-  if (sent.params.kind !== "question" || sent.params.text !== "Merge?" || sent.params.options[0] !== "Yes") throw new Error(JSON.stringify(sent));
+  if (sent.params.kind !== "question" || !sent.params.explicit || sent.params.text !== "Merge?" || sent.params.options[0] !== "Yes") throw new Error(JSON.stringify(sent));
   await p.fire("session_shutdown", {});
 });
 

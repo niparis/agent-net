@@ -30,11 +30,12 @@ const MethodWaiting = "waiting"
 // Harness and NativeID empty. A command line hook names the session it runs
 // for, as it does for MethodHint.
 type WaitingRequest struct {
-	Kind    string   `json:"kind,omitempty"`
-	Text    string   `json:"text,omitempty"`
-	Options []string `json:"options,omitempty"`
-	Urgency string   `json:"urgency,omitempty"`
-	Clear   bool     `json:"clear,omitempty"`
+	Explicit bool     `json:"explicit,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
+	Text     string   `json:"text,omitempty"`
+	Options  []string `json:"options,omitempty"`
+	Urgency  string   `json:"urgency,omitempty"`
+	Clear    bool     `json:"clear,omitempty"`
 	// Harness and NativeID are only read from a command-line client.
 	Harness  string `json:"harness,omitempty"`
 	NativeID string `json:"native_id,omitempty"`
@@ -43,11 +44,12 @@ type WaitingRequest struct {
 // Waiting is what a session asks its user. Since is the Unix time in seconds
 // when the wait began.
 type Waiting struct {
-	Kind    string   `json:"kind"`
-	Text    string   `json:"text"`
-	Since   int64    `json:"since,omitempty"`
-	Options []string `json:"options,omitempty"`
-	Urgency string   `json:"urgency,omitempty"`
+	Explicit bool     `json:"explicit,omitempty"`
+	Kind     string   `json:"kind"`
+	Text     string   `json:"text"`
+	Since    int64    `json:"since,omitempty"`
+	Options  []string `json:"options,omitempty"`
+	Urgency  string   `json:"urgency,omitempty"`
 }
 
 // ValidWaitingKind tells whether k is a kind a client may report.
@@ -102,7 +104,7 @@ func CleanWaiting(w *Waiting) *Waiting {
 	if w.Urgency == "high" {
 		urgency = "high"
 	}
-	return &Waiting{Kind: kind, Text: text, Since: w.Since, Options: options, Urgency: urgency}
+	return &Waiting{Kind: kind, Text: text, Since: w.Since, Options: options, Urgency: urgency, Explicit: w.Explicit}
 }
 
 // UnmarshalJSON accepts the object form and the short string form that the

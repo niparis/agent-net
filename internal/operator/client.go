@@ -131,7 +131,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 	}
 	calls := []request{
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
-		{method: protocol.OpNodes}, {method: protocol.OpWorkerProfiles},
+		{method: protocol.OpNodes}, {method: "notification_settings"}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet},
 		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: "outcome_inbox"}, {method: "learned_list"},
 		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
@@ -168,6 +168,12 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 				var v protocol.AgentsResult
 				err = json.Unmarshal(c.raw, &v)
 				snap.Agents = v.Agents
+			case "notification_settings":
+				var v struct {
+					Disabled bool `json:"disabled"`
+				}
+				err = json.Unmarshal(c.raw, &v)
+				snap.NotificationsDisabled = v.Disabled
 			case protocol.OpNodes:
 				var v protocol.NodesInfo
 				err = json.Unmarshal(c.raw, &v)
@@ -414,4 +420,17 @@ func (s *Client) AnswerHeld(ctx context.Context, q protocol.HeldAnswer) error {
 func (s *Client) SetRequestRule(ctx context.Context, e protocol.Edge) error {
 	_, err := s.action(ctx, protocol.OpEdgeSet, e)
 	return err
+}
+
+// NotificationSettings reads or updates the local owner's desktop preference.
+func (s *Client) NotificationSettings(ctx context.Context, disabled *bool) (bool, error) {
+	raw, err := s.action(ctx, "notification_settings", map[string]any{"disabled": disabled})
+	if err != nil {
+		return false, err
+	}
+	var out struct {
+		Disabled bool `json:"disabled"`
+	}
+	err = json.Unmarshal(raw, &out)
+	return out.Disabled, err
 }

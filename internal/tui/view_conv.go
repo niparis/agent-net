@@ -252,12 +252,18 @@ func (m Model) helpView(w, h int) []string {
 		}
 		return rows
 	}
+	state := "on"
+	if m.snap.NotificationsDisabled {
+		state = "off"
+	}
 	rows := [][2]string{
+		{"n", "desktop notifications: " + state + " (toggle)"},
 		{"Sessions", ""},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
-		{"enter or c", "open the conversation of the session"},
+		{"enter", "answer a waiting session; otherwise open its conversation"},
+		{"c", "open the session conversation"},
 		{"e", "enter the session (ctrl+] to return)"},
 		{"m", "send a message to the session as yourself"},
 		{"s", "start a worker (a form: project, harness, model, task)"},

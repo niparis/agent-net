@@ -892,7 +892,7 @@ const TOOLS: ToolDef[] = [
     description: "Ask the owner a question in Needs you.",
     properties: { question: str("Question in one line"), options: { type: "array", items: { type: "string" } }, urgency: { type: "string", enum: ["normal", "high"] } },
     required: ["question"], method: "waiting",
-    mapParams: (p) => ({ kind: "question", text: p.question, options: p.options, urgency: p.urgency }),
+    mapParams: (p) => ({ kind: "question", explicit: true, text: p.question, options: p.options, urgency: p.urgency }),
     format: () => "Question sent to the owner.",
   },
   {

@@ -836,7 +836,7 @@ export default function (pi: ExtensionAPI) {
   defineTool(
     "agent_ask_owner", "Ask owner", "Ask the owner a question in Needs you.",
     Type.Object({ question: Type.String(), options: Type.Optional(Type.Array(Type.String())), urgency: Type.Optional(Type.Union([Type.Literal("normal"), Type.Literal("high")])) }),
-    "waiting", undefined, (p) => ({ kind: "question", text: p.question, options: p.options, urgency: p.urgency }),
+    "waiting", undefined, (p) => ({ kind: "question", explicit: true, text: p.question, options: p.options, urgency: p.urgency }),
   );
 
   defineTool(

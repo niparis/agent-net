@@ -191,7 +191,7 @@ func TestAskOwnerPassesQuestion(t *testing.T) {
 		return json.RawMessage(`{"ok":true}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_ask_owner", Arguments: map[string]any{"question": "Merge?", "options": []string{"Yes", "No"}, "urgency": "high"}})
-	if err != nil || res.IsError || got.Kind != protocol.WaitingQuestion || got.Text != "Merge?" || len(got.Options) != 2 || got.Urgency != "high" {
+	if err != nil || res.IsError || got.Kind != protocol.WaitingQuestion || got.Text != "Merge?" || len(got.Options) != 2 || got.Urgency != "high" || !got.Explicit {
 		t.Fatalf("ask: %v %+v %+v", err, res, got)
 	}
 }

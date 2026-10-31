@@ -197,7 +197,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			Options  []string `json:"options,omitempty" jsonschema:"up to four short answers"`
 			Urgency  string   `json:"urgency,omitempty" jsonschema:"normal or high"`
 		}) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, protocol.MethodWaiting, protocol.WaitingRequest{Kind: protocol.WaitingQuestion, Text: in.Question, Options: in.Options, Urgency: in.Urgency})
+			out, err := run(ctx, protocol.MethodWaiting, protocol.WaitingRequest{Kind: protocol.WaitingQuestion, Text: in.Question, Options: in.Options, Urgency: in.Urgency, Explicit: true})
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_request_approval", "Ask the owner to approve one exact action, with your recommendation."),
