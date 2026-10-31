@@ -349,6 +349,30 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case ctoOlderMsg:
+		if m.cto == nil || m.cto.generation != msg.generation {
+			return m, nil
+		}
+		m.cto.olderLoading = false
+		if msg.err != nil {
+			m.cto.err = sanitize(msg.err.Error())
+			return m, nil
+		}
+		if len(msg.events.Messages) == 0 && len(msg.events.Actions) == 0 {
+			m.cto.olderCursor = 0
+			return m, nil
+		}
+		m.cto.olderPages = append([]protocol.CTOEvents{msg.events}, m.cto.olderPages...)
+		if msg.events.Older >= m.cto.olderCursor {
+			m.cto.olderCursor = 0
+		} else {
+			m.cto.olderCursor = msg.events.Older
+		}
+		m.cto.scroll = int(^uint(0) >> 1)
+		poll := m.cto.lastPoll
+		poll.olderPage = true
+		m.applyCTOPoll(poll)
+		return m, nil
 	case ctoUndoMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil
@@ -413,9 +437,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cto.err = sanitize(msg.err.Error())
 			} else {
 				m.cto.messages = nil
-				m.cto.archived = nil
-				m.cto.currentAll = nil
-				m.cto.seen = nil
+				m.cto.olderPages = nil
+				m.cto.olderCursor = 0
+				m.cto.olderLoading = false
 				m.cto.local = nil
 				m.cto.sendErrors = nil
 				m.cto.polledErrors = nil

@@ -472,8 +472,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.ctoNew(ctx)
 	case protocol.OpCTOEvents:
 		var q protocol.CTOEventsRequest
-		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil || q.Index < 0 {
-			return nil, true, errors.New("cto_events needs a non-negative index")
+		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("cto_events needs a valid index")
 		}
 		res, err = d.ctoEvents(ctx, q.Index)
 	case protocol.OpWorkerProvidersGet:
