@@ -288,7 +288,7 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 - A comparison manifest: at most 200 files and 64 KiB of JSON per skill copy. An oversized manifest is marked too large to compare; no partial file list is sent.
 - A skill bundle: at most 10,000 entries and 64 MiB of regular file data. Special files, absolute or escaping symlinks and files that change while being read are rejected.
 - Pi source discovery: at most 10,000 directories and 32 path components.
-- MCP and settings files: 1 MiB. A report: 10,000 entries and 256 KiB of field text. Reads are paged to 240 KiB.
+- MCP and settings files: 1 MiB. A report: 10,000 entries, 512 KiB of field text, 1 MiB of manifests and 3 MiB encoded. A single file list is limited to 256 KiB. Reads are paged to 240 KiB.
 - An oversized source or report fails the scan. It is never silently cut. A failed scan leaves the old records marked stale.
 
 ### The private skill store

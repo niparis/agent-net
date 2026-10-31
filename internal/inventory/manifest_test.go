@@ -87,3 +87,25 @@ func TestSkillManifestByteLimit(t *testing.T) {
 		t.Fatalf("byte cap: %+v %v", m, err)
 	}
 }
+
+func TestManySmallSkillManifestsFitInventory(t *testing.T) {
+	home := t.TempDir()
+	for i := 0; i < 700; i++ {
+		dir := filepath.Join(home, ".claude/skills", fmt.Sprintf("demo-%04d", i))
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	report := Scan(Options{Home: home})
+	if report.State != "ok" {
+		t.Fatalf("large inventory rejected: %s (%d items)", report.Reason, len(report.Items))
+	}
+	for _, item := range report.Items {
+		if item.Name != "" && item.Manifest == nil {
+			t.Fatalf("missing manifest for %s", item.Name)
+		}
+	}
+}

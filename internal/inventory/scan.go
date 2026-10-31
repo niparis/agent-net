@@ -32,12 +32,13 @@ func Scan(o Options) protocol.InventoryReport {
 	now := time.Now().UTC()
 	report := protocol.InventoryReport{Machine: o.Machine, ScannedAt: now, State: protocol.InventoryOK, Items: []protocol.InventoryItem{}}
 	totalFields := 0
+	manifestBytes := 0
 	add := func(h, k, scope, project, root, path, name, hash, state, reason string, unsupported ...string) {
 		total := len(h) + len(k) + len(scope) + len(project) + len(root) + len(path) + len(name) + len(hash) + len(reason)
 		for _, flag := range unsupported {
 			total += len(flag)
 		}
-		if len(name) > 4096 || len(path) > 4096 || len(root) > 4096 || len(project) > 4096 || len(report.Items) >= 10000 || totalFields+total > 256<<10 {
+		if len(name) > 4096 || len(path) > 4096 || len(root) > 4096 || len(project) > 4096 || len(report.Items) >= 10000 || totalFields+total > 512<<10 {
 			report.State = protocol.InventoryError
 			report.Reason = "inventory exceeds report limit"
 			return
@@ -57,7 +58,7 @@ func Scan(o Options) protocol.InventoryReport {
 		for _, file := range files {
 			size += len(file)
 		}
-		if totalFields+size > 256<<10 {
+		if size > 256<<10 || totalFields+size > 512<<10 {
 			report.State = protocol.InventoryError
 			report.Reason = "inventory exceeds report limit"
 			return
@@ -70,12 +71,12 @@ func Scan(o Options) protocol.InventoryReport {
 			return
 		}
 		data, _ := json.Marshal(manifest)
-		if totalFields+len(data) > 256<<10 {
+		if manifestBytes+len(data) > 1<<20 {
 			report.State = protocol.InventoryError
-			report.Reason = "inventory exceeds report limit"
+			report.Reason = "inventory manifests exceed report limit"
 			return
 		}
-		totalFields += len(data)
+		manifestBytes += len(data)
 		report.Items[index].Manifest = manifest
 	}
 
@@ -218,7 +219,7 @@ func Scan(o Options) protocol.InventoryReport {
 			index := len(report.Items)
 			add(h, protocol.InventorySkill, scope, project, root, actual, e.Name(), hash, protocol.InventoryOK, "")
 			if alias != "" && index < len(report.Items) {
-				if totalFields+len(alias) > 256<<10 {
+				if totalFields+len(alias) > 512<<10 {
 					report.State = protocol.InventoryError
 					report.Reason = "inventory exceeds report limit"
 					return
@@ -227,7 +228,7 @@ func Scan(o Options) protocol.InventoryReport {
 				report.Items[index].Aliases = []string{alias}
 			}
 			if index < len(report.Items) {
-				if totalFields+len(fingerprint) > 256<<10 {
+				if totalFields+len(fingerprint) > 512<<10 {
 					report.State = protocol.InventoryError
 					report.Reason = "inventory exceeds report limit"
 					return
@@ -367,7 +368,7 @@ func Scan(o Options) protocol.InventoryReport {
 					index := len(report.Items)
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
 					if index < len(report.Items) {
-						if totalFields+len(fingerprint) > 256<<10 {
+						if totalFields+len(fingerprint) > 512<<10 {
 							report.State = protocol.InventoryError
 							report.Reason = "inventory exceeds report limit"
 							return
@@ -502,6 +503,12 @@ func Scan(o Options) protocol.InventoryReport {
 			config("pi", protocol.InventoryProject, p.Name, base, base, filepath.Join(base, ".pi/mcp.json"), "mcpServers", false)
 		}
 
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil || len(encoded) > 3<<20 {
+		report.State = protocol.InventoryError
+		report.Reason = "inventory exceeds encoded report limit"
+		report.Items = nil
 	}
 	return report
 }
