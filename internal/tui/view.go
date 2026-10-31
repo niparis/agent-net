@@ -637,3 +637,15 @@ func wrap(s string, w int) []string {
 }
 
 // ---- help ----
+
+func (m Model) partialLine(w int) string {
+	names := make([]string, 0, len(m.snap.FailedCalls))
+	for _, method := range m.snap.FailedCalls {
+		name := strings.ReplaceAll(method, "_", " ")
+		if method == protocol.OpNodes {
+			name = "machines list"
+		}
+		names = append(names, name)
+	}
+	return sDim.Render(cell(strings.Join(names, ", ")+" slow or unavailable", w))
+}
