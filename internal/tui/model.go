@@ -63,18 +63,16 @@ type Model struct {
 	messageShowEvents bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap                               Snapshot
-	haveData                           bool
-	lastOK                             time.Time
-	problem                            Problem
-	problemT                           string // text of the last error
-	graph                              *graphview.Graph
-	graphCamera                        graphview.Camera
-	graphOrbit, graphPaused, graphHelp bool
-	graphPausedAt                      time.Time
-	graphGeneration                    int
-	feed                               feed
-	fetching                           bool
+	snap            Snapshot
+	haveData        bool
+	lastOK          time.Time
+	problem         Problem
+	problemT        string // text of the last error
+	graphState      graphview.State
+	graphHelp       bool
+	graphGeneration int
+	feed            feed
+	fetching        bool
 
 	// What the person chose.
 	selected           string // session ID
@@ -321,6 +319,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case graphTickMsg:
 		if m.tab == 5 && !m.mapOn && msg.generation == m.graphGeneration {
+			m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 			return m, graphTick(m.graphGeneration)
 		}
 		return m, nil
@@ -612,7 +611,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		wasLast := m.feedCur >= m.feedLastVisible()
 		lastID := m.feed.lastID
 		m.feed.apply(r.events)
-		m.graphEvents(r.events, lastID, r.at)
+		m.graphState, _ = graphview.Update(m.graphState, graphview.FeedEvents{Events: r.events, LastID: lastID, Now: r.at})
 		if m.focus != focusFeed || wasLast {
 			m.feedCur = m.feedLastVisible()
 		} else {
