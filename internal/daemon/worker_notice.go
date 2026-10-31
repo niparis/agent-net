@@ -44,7 +44,14 @@ func worktreeGitPath() string {
 		}
 		gitSearchPath = strings.Join(append(dirs, login), string(os.PathListSeparator))
 	})
-	return gitSearchPath
+	// Honor an explicitly selected git on the daemon's current PATH, while
+	// adding the login-shell tools for subprocesses such as git-lfs.
+	var dirs []string
+	if git, err := exec.LookPath("git"); err == nil {
+		dirs = append(dirs, filepath.Dir(git))
+	}
+	dirs = append(dirs, gitSearchPath, os.Getenv("PATH"))
+	return strings.Join(dirs, string(os.PathListSeparator))
 }
 
 // git runs a git command in dir and returns its output.
