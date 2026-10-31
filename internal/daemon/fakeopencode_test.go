@@ -273,6 +273,15 @@ func runFakeOpenCode() {
 				http.Error(w, "bad session", 500)
 				return
 			}
+			if typ := r.URL.Query().Get("type"); typ != "" {
+				filtered := items[:0]
+				for _, item := range items {
+					if item["type"] == typ {
+						filtered = append(filtered, item)
+					}
+				}
+				items = filtered
+			}
 			if r.URL.Query().Get("order") == "asc" || r.URL.Query().Get("cursor") != "" {
 				for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
 					items[i], items[j] = items[j], items[i]
@@ -283,7 +292,11 @@ func runFakeOpenCode() {
 				http.Error(w, "invalid cursor", 400)
 				return
 			}
-			end := start + 2
+			limit := 2
+			if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 {
+				limit = n
+			}
+			end := start + limit
 			if end > len(items) {
 				end = len(items)
 			}
@@ -299,6 +312,9 @@ func runFakeOpenCode() {
 				"input": 80000, "output": 2000, "reasoning": 0, "cache": map[string]any{"read": 3000, "write": 1000},
 			}},
 			{"id": "msg_user", "type": "user", "text": "task"},
+			{"id": "msg_old", "type": "assistant", "tokens": map[string]any{
+				"input": 100, "output": 0, "reasoning": 0, "cache": map[string]any{"read": 0, "write": 0},
+			}},
 		}
 		if fakeOCFailed.Load() || fakeOCLocalFailed.Load() {
 			typ, message := "provider.upstream", fakeOCError
@@ -308,7 +324,24 @@ func runFakeOpenCode() {
 			items = append([]map[string]any{{"id": "msg_idle", "type": "idle", "outcome": "failed",
 				"error": map[string]any{"type": typ, "message": message}}}, items...)
 		}
-		json.NewEncoder(w).Encode(map[string]any{"data": items})
+		if typ := r.URL.Query().Get("type"); typ != "" {
+			filtered := items[:0]
+			for _, item := range items {
+				if item["type"] == typ {
+					filtered = append(filtered, item)
+				}
+			}
+			items = filtered
+		}
+		if r.URL.Query().Get("order") == "asc" {
+			for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
+				items[i], items[j] = items[j], items[i]
+			}
+		}
+		if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n < len(items) {
+			items = items[:n]
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": items, "cursor": map[string]any{}})
 	})
 	mux.HandleFunc("POST /api/session", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {
