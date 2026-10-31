@@ -61,10 +61,12 @@ harness switches. `cto_new` starts a fresh conversation for the selected
 harness only. When a harness is left, the daemon saves its messages and action
 lines in the local state database. `cto_events` merges that saved history with
 the selected harness's live conversation and the durable switch dividers, in
-chronological order. It returns at most 500 entries per page. `next` is the
-cursor for the older page; the TUI loads that page when scrolling reaches the
-oldest loaded entry. Changing harness stops the previous runtime; the next send
-resumes the selected conversation. The CTO is not a worker or a network session.
+chronological order. It returns at most 500 entries per page. An `index` of 0
+returns the newest page. `older` is the cursor for the previous page; the TUI
+sends its negative value as `index` when scrolling reaches the oldest loaded
+entry. `next` remains the forward offset.
+Changing harness stops the previous runtime; the next send resumes the selected
+conversation. The CTO is not a worker or a network session.
 
 Each harness resumes its conversation with its own saved model. For OpenCode,
 the model is resolved against the local inventory. With no preference, the
