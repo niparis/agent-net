@@ -47,7 +47,7 @@ var quotaArgs = []string{"--json", "--max-age", "5m", "--no-credential-refresh"}
 // ensureQuotaAXI installs the private copy. Tests replace it so they never
 // run npm.
 var ensureQuotaAXI = quotaaxi.Ensure
-var ensureQuotaAXIPrivate = quotaaxi.EnsurePrivate
+var discoverQuotaChoice = quotaaxi.DiscoverChoice
 
 type quotaState struct {
 	mu   sync.Mutex
@@ -150,15 +150,20 @@ func quotaAllowed(configDir string) bool {
 // the background (decision 0025), then reads with it.
 func (d *Daemon) startQuota(ctx context.Context) {
 	allowed := quotaAllowed(ConfigDir())
+	if !allowed {
+		return
+	}
 	every := d.cfg.QuotaInterval
 	if every <= 0 {
 		every = defaultQuotaInterval
 	}
-	path, ok := FindQuotaAXI(d.cfg.QuotaAXIPath, d.Logf)
+	choice, err := discoverQuotaChoice(ConfigDir(), d.cfg.QuotaAXIPath)
+	if err != nil {
+		d.Logf("quota-axi: cannot record choice: %v", err)
+		return
+	}
+	path, ok := choice.Path, choice.Path != ""
 	if !ok {
-		if !allowed {
-			return
-		}
 		d.wg.Add(1)
 		go func() {
 			defer d.wg.Done()
@@ -169,17 +174,18 @@ func (d *Daemon) startQuota(ctx context.Context) {
 				}
 				return
 			}
-			p, ok := FindQuotaAXI(d.cfg.QuotaAXIPath, d.Logf)
+			choice, err := discoverQuotaChoice(ConfigDir(), d.cfg.QuotaAXIPath)
+			if err != nil {
+				d.Logf("quota-axi: cannot record choice: %v", err)
+				return
+			}
+			p, ok := choice.Path, choice.Path != ""
 			if !ok {
 				return
 			}
 			d.quota.setNote("")
 			d.quotaLoop(ctx, p, every)
 		}()
-		return
-	}
-	if !allowed {
-		d.Logf("quota-axi is installed but the integration is off")
 		return
 	}
 	d.quota.setNote("")
@@ -243,34 +249,7 @@ func readQuotaAXIWith(ctx context.Context, path string, logf func(format string,
 			if err != nil {
 				version = "unknown"
 			}
-			if path == quotaaxi.Binary() {
-				return nil, fmt.Errorf("quota-axi rejected its options (version %s)", version)
-			}
-			notice := fmt.Sprintf("quota-axi rejected its options (version %s); using the pinned copy", version)
-			if logf != nil {
-				logf("%s", notice)
-			}
-			if err := ensureQuotaAXIPrivate(ctx, logf); err != nil {
-				return nil, fmt.Errorf("%s: %w", notice, err)
-			}
-			return readQuotaAXIOnce(ctx, quotaaxi.Binary())
-		}
-	}
-	return nil, quotaAXIFailure(runErr, stderr)
-}
-
-func readQuotaAXIOnce(ctx context.Context, path string) (*protocol.Quotas, error) {
-	raw, stderr, runErr := runQuotaAXI(ctx, path)
-	if runErr == nil {
-		return parseQuotaAXI(raw)
-	}
-	if ctx.Err() != nil {
-		return nil, fmt.Errorf("it did not answer within %s", quotaTimeout)
-	}
-	var exitErr *exec.ExitError
-	if errors.As(runErr, &exitErr) && exitErr.ExitCode() == 1 {
-		if q, err := parseQuotaAXI(raw); err == nil {
-			return q, nil
+			return nil, fmt.Errorf("quota-axi rejected its options (version %s)", version)
 		}
 	}
 	return nil, quotaAXIFailure(runErr, stderr)

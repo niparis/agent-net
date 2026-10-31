@@ -33,6 +33,8 @@ const (
 	// Version is the quota-axi release agent-net installs. Updating it is part
 	// of an agent-net release.
 	Version = "0.1.69"
+	// MinSupported is the oldest release whose report and options we support.
+	MinSupported = "0.1.66"
 	// MinNode is the oldest Node that quota-axi supports.
 	MinNode = "22.19"
 	// NeedNodeMessage is the one line shown when Node or npm is missing.
@@ -107,11 +109,134 @@ func exists(path string) bool {
 }
 
 // Copy describes one discovered executable, including copies that cannot run.
+var testDiscoveryRoot string
+
+// SetDiscoveryRootForTesting confines candidates to a temporary test tree.
+func SetDiscoveryRootForTesting(root string) func() {
+	old := testDiscoveryRoot
+	testDiscoveryRoot = filepath.Clean(root)
+	return func() { testDiscoveryRoot = old }
+}
+
 type Copy struct {
 	Path    string
 	Version string
 	Runs    bool
 	Private bool
+}
+
+// Choice is the selected executable and the reason it was chosen.
+type Choice struct {
+	Path    string `json:"path"`
+	Version string `json:"version"`
+	Why     string `json:"why"`
+	Private bool   `json:"private"`
+}
+
+// Decide selects a supported owner copy before the private copy, but keeps a
+// recorded copy while it still runs. It has no side effects.
+func Decide(copies []Copy, previous string) Choice {
+	for _, c := range copies {
+		if c.Path == previous && previous != "" && c.Runs {
+			return Choice{c.Path, c.Version, "previous choice still runs", c.Private}
+		}
+	}
+	var private Copy
+	for _, c := range copies {
+		if !c.Runs || !Supported(c.Version) {
+			continue
+		}
+		if !c.Private {
+			return Choice{c.Path, c.Version, "supported owner copy", false}
+		}
+		if private.Path == "" {
+			private = c
+		}
+	}
+	if private.Path != "" {
+		return Choice{private.Path, private.Version, "no usable owner copy", true}
+	}
+	return Choice{}
+}
+
+var choiceMu sync.Mutex
+
+// LoadChoice loads the last selected executable from the agent-net config.
+func LoadChoice(dir string) (Choice, error) {
+	var c Choice
+	b, err := os.ReadFile(filepath.Join(dir, "quota-axi-choice.json"))
+	if err != nil {
+		return c, err
+	}
+	err = json.Unmarshal(b, &c)
+	return c, err
+}
+
+// RemoveChoice removes the selected-copy record during uninstall.
+func RemoveChoice(dir string) error {
+	err := os.Remove(filepath.Join(dir, "quota-axi-choice.json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	return err
+}
+
+// SaveChoice decides and atomically records the result, preserving a working
+// previous choice. It returns an empty choice when no candidate works.
+func SaveChoice(dir string, copies []Copy) (Choice, error) {
+	choiceMu.Lock()
+	defer choiceMu.Unlock()
+	previous, err := LoadChoice(dir)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return Choice{}, err
+	}
+	c := Decide(copies, previous.Path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return Choice{}, err
+	}
+	b, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return Choice{}, err
+	}
+	f, err := os.CreateTemp(dir, ".quota-choice-*")
+	if err != nil {
+		return Choice{}, err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(append(b, '\n')); err != nil {
+		f.Close()
+		return Choice{}, err
+	}
+	if err = f.Close(); err != nil {
+		return Choice{}, err
+	}
+	if err = os.Rename(f.Name(), filepath.Join(dir, "quota-axi-choice.json")); err != nil {
+		return Choice{}, err
+	}
+	return c, nil
+}
+
+// DiscoverChoice includes the recorded path even if it fell off the PATH.
+func DiscoverChoice(dir, configured string) (Choice, error) {
+	copies := Discover(configured)
+	if prior, err := LoadChoice(dir); err == nil && prior.Path != "" {
+		found := false
+		for _, c := range copies {
+			if c.Path == prior.Path {
+				found = true
+				break
+			}
+		}
+		if !found {
+			for _, c := range Discover(prior.Path) {
+				if c.Path == prior.Path {
+					copies = append(copies, c)
+					break
+				}
+			}
+		}
+	}
+	return SaveChoice(dir, copies)
 }
 
 // Discover lists owner and private copies in search order. It does not install
@@ -124,7 +249,7 @@ func Discover(configured string) []Copy {
 			return
 		}
 		p, err := filepath.Abs(p)
-		if err != nil || seen[p] || !usable(p) {
+		if err != nil || seen[p] || !usable(p) || (testDiscoveryRoot != "" && p != testDiscoveryRoot && !strings.HasPrefix(p, testDiscoveryRoot+string(os.PathSeparator))) {
 			return
 		}
 		seen[p] = true
@@ -139,6 +264,11 @@ func Discover(configured string) []Copy {
 	}
 	path := loginpath.Path()
 	for _, dir := range filepath.SplitList(path) {
+		if dir != "" {
+			add(filepath.Join(dir, quotaCommand))
+		}
+	}
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if dir != "" {
 			add(filepath.Join(dir, quotaCommand))
 		}
@@ -202,20 +332,17 @@ func UserPath(configured string) (string, bool) {
 	return "", false
 }
 
-// Path finds the quota-axi to run: a compatible owner copy first, then
-// agent-net's private copy. Older owner copies are logged and skipped.
+// Path finds a compatible owner copy first, then the private copy.
+// Use DiscoverChoice when the selected path must be persisted.
 func Path(configured string, logf ...func(format string, args ...any)) (string, bool) {
-	if p, ok := UserPath(configured); ok {
-		if version, err := InstalledVersion(p); err == nil && olderThanPinned(version) {
-			logSkipped(p, version, logCallback(logf))
-		} else {
-			return p, true
+	copies := Discover(configured)
+	for _, c := range copies {
+		if c.Runs && !c.Private && !Supported(c.Version) {
+			logSkipped(c.Path, c.Version, logCallback(logf))
 		}
 	}
-	if usable(Binary()) {
-		return Binary(), true
-	}
-	return "", false
+	choice := Decide(copies, "")
+	return choice.Path, choice.Path != ""
 }
 
 func logCallback(logf []func(format string, args ...any)) func(format string, args ...any) {
@@ -314,12 +441,20 @@ func parseSemver(raw string) (semanticVersion, error) {
 	return v, nil
 }
 
-func olderThanPinned(version string) bool {
+// Supported reports whether a release meets the minimum parser and option support.
+func Supported(version string) bool {
+	if _, err := parseSemver(version); err != nil {
+		return false
+	}
+	return !olderThan(version, MinSupported)
+}
+
+func olderThan(version, minimum string) bool {
 	got, err := parseSemver(version)
 	if err != nil {
 		return false
 	}
-	pinned, err := parseSemver(Version)
+	pinned, err := parseSemver(minimum)
 	if err != nil {
 		return false
 	}
@@ -390,7 +525,7 @@ func logSkipped(path, version string, logf func(format string, args ...any)) {
 	cached.skipLogged = true
 	versionCache.byPath[path] = cached
 	versionCache.Unlock()
-	logf("quota-axi: skipped %s (version %s is older than pinned %s)", path, version, Version)
+	logf("quota-axi: skipped %s (version %s is older than supported %s)", path, version, MinSupported)
 }
 
 // ExecEnv returns the environment for running the quota-axi at path. When a
@@ -404,6 +539,14 @@ func ExecEnv(path string) []string {
 // systemNodeDirs are the usual Node folders outside PATH (Homebrew, the
 // official installer). Tests clear it so the host's Node does not count.
 var systemNodeDirs = []string{"/opt/homebrew/bin", "/usr/local/bin"}
+
+// SetSystemNodeDirsForTesting confines discovery in integration tests. It must
+// be called before starting concurrent work; the returned function restores it.
+func SetSystemNodeDirsForTesting(dirs []string) func() {
+	old := systemNodeDirs
+	systemNodeDirs = append([]string(nil), dirs...)
+	return func() { systemNodeDirs = old }
+}
 
 // NodeExecEnv finds a supported Node for quota-axi without requiring npm.
 func NodeExecEnv(path string) ([]string, error) {
@@ -594,6 +737,9 @@ func nodeDirs() []string {
 	if p, err := exec.LookPath("node"); err == nil {
 		add(filepath.Dir(p))
 	}
+	for _, dir := range filepath.SplitList(loginpath.Path()) {
+		add(dir)
+	}
 	add(filepath.Join(home(), ".local", "bin"))
 	if platform == "darwin" {
 		for _, dir := range nvmBins() {
@@ -639,18 +785,19 @@ func Ensure(ctx context.Context, logf func(format string, args ...any)) error {
 	ensureMu.Lock()
 	defer ensureMu.Unlock()
 
-	if user, ok := UserPath(""); ok {
-		if version, err := InstalledVersion(user); err != nil || !olderThanPinned(version) {
+	for _, c := range Discover("") {
+		if c.Runs && !c.Private && Supported(c.Version) {
 			return nil
-		} else {
-			logSkipped(user, version, logf)
+		}
+		if c.Runs && !c.Private && !Supported(c.Version) {
+			logSkipped(c.Path, c.Version, logf)
 		}
 	}
 	return ensurePrivateLocked(ctx, logf)
 }
 
 // EnsurePrivate installs the pinned copy even when a compatible owner copy
-// exists. It is used when an owner copy rejects options supported by the pin.
+// exists. It is used for an explicit request for a private copy.
 func EnsurePrivate(ctx context.Context, logf func(format string, args ...any)) error {
 	ensureMu.Lock()
 	defer ensureMu.Unlock()
@@ -659,7 +806,13 @@ func EnsurePrivate(ctx context.Context, logf func(format string, args ...any)) e
 
 func ensurePrivateLocked(ctx context.Context, logf func(format string, args ...any)) error {
 	if usable(Binary()) {
-		return nil
+		version, err := installedVersion(Binary(), false)
+		if err == nil && Supported(version) {
+			return nil
+		}
+		if errors.Is(err, ErrNeedNode) {
+			return ErrNeedNode
+		}
 	}
 	if failedToday(time.Now()) {
 		return nil
@@ -696,6 +849,20 @@ func ensurePrivateLocked(ctx context.Context, logf func(format string, args ...a
 		logf("quota-axi: installed %s", Version)
 	}
 	return nil
+}
+
+// EnsureChoice keeps a working recorded choice, installing the private copy
+// only when discovery has no usable candidate.
+func EnsureChoice(ctx context.Context, dir, configured string, logf func(string, ...any)) error {
+	c, err := DiscoverChoice(dir, configured)
+	if err != nil || c.Path != "" {
+		return err
+	}
+	if err = Ensure(ctx, logf); err != nil {
+		return err
+	}
+	_, err = DiscoverChoice(dir, configured)
+	return err
 }
 
 // EnsureAsync runs Ensure in the background, so a daemon start never waits

@@ -2,12 +2,15 @@ package setup
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/integrations"
 	"github.com/niparis/agent-net/internal/quotaaxi"
 )
@@ -23,6 +26,7 @@ func fakeNode(t *testing.T, dir, version string) {
 func fakeNPM(t *testing.T, dir, logPath string) {
 	t.Helper()
 	body := `#!/bin/sh
+if [ "$1" = "prefix" ]; then exit 0; fi
 printf '%s\n' "$*" >> "$FAKE_NPM_LOG"
 prefix=""
 while [ $# -gt 0 ]; do
@@ -30,7 +34,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 /bin/mkdir -p "$prefix/node_modules/.bin"
-printf '#!/bin/sh\nexit 0\n' > "$prefix/node_modules/.bin/quota-axi"
+printf '#!/bin/sh\necho 0.1.69\n' > "$prefix/node_modules/.bin/quota-axi"
 /bin/chmod 755 "$prefix/node_modules/.bin/quota-axi"
 `
 	if err := os.WriteFile(filepath.Join(dir, "npm"), []byte(body), 0o755); err != nil {
@@ -47,6 +51,11 @@ func quotaPath(t *testing.T, version string) (bin, log string) {
 	log = filepath.Join(t.TempDir(), "npm.log")
 	fakeNPM(t, bin, log)
 	t.Setenv("PATH", bin)
+	shell := filepath.Join(t.TempDir(), "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+bin+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
 	return bin, log
 }
 
@@ -140,4 +149,85 @@ func TestApplyIntegrationsInstallsAndRemovesInTheBackground(t *testing.T) {
 		t.Fatalf("removals: %d", removed)
 	}
 	_ = f
+}
+
+func TestQuotaSetupRecordsOwnerCopy(t *testing.T) {
+	f := newFixture(t)
+	ensureQuotaAXI = quotaaxi.Ensure
+	bin, log := quotaPath(t, "22.19.0")
+	shell := filepath.Join(f.home, "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+bin+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	owner := filepath.Join(bin, "quota-axi")
+	if err := os.WriteFile(owner, []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	out := runAskingAll(t, Options{Join: f.newJoin(t), All: AllYes})
+	choice, err := quotaaxi.LoadChoice(daemon.ConfigDir())
+	if err != nil || choice.Path != owner || choice.Version != "0.1.66" {
+		t.Fatalf("choice %+v %v; output %s", choice, err, out)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("npm ran: %v", err)
+	}
+}
+
+func TestUninstallRemovesQuotaChoice(t *testing.T) {
+	f := newFixture(t)
+	if _, err := quotaaxi.SaveChoice(daemon.ConfigDir(), []quotaaxi.Copy{{Path: "/fake/quota-axi", Version: quotaaxi.Version, Runs: true}}); err != nil {
+		t.Fatal(err)
+	}
+	oldStop := stopWorkers
+	stopWorkers = func(string, time.Duration) (int, error) { return 0, nil }
+	t.Cleanup(func() { stopWorkers = oldStop })
+	var out bytes.Buffer
+	if err := Uninstall(Options{Out: &out, NoService: true, Exe: "/x"}); err != nil {
+		t.Fatalf("%v: %s", err, out.String())
+	}
+	if _, err := quotaaxi.LoadChoice(daemon.ConfigDir()); !os.IsNotExist(err) {
+		t.Fatalf("choice remains: %v", err)
+	}
+	_ = f
+}
+
+func TestQuotaUpgradeCommand(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	cases := []struct{ path, command string }{
+		{"/opt/homebrew/bin/quota-axi", "brew upgrade quota-axi"},
+		{filepath.Join(home, ".nvm/versions/node/v22.19.0/bin/quota-axi"), "npm i -g quota-axi"},
+		{filepath.Join(home, ".local/bin/quota-axi"), "quota-axi update"},
+	}
+	for _, c := range cases {
+		if got := strings.Join(quotaUpgradeCommand(c.path), " "); got != c.command {
+			t.Errorf("%s: %s", c.path, got)
+		}
+	}
+}
+
+func TestQuotaUpgradeRequiresConsent(t *testing.T) {
+	dir, _ := quotaPath(t, "22.19.0")
+	script := filepath.Join(dir, "quota-axi")
+	log := filepath.Join(dir, "updates")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '"+log+"'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	copy := quotaaxi.Copy{Path: script, Version: "0.1.65", Runs: true}
+	var out bytes.Buffer
+	old := openTTY
+	t.Cleanup(func() { openTTY = old })
+	openTTY = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("n\n")), nil }
+	r := &runner{Options: Options{Out: &out}}
+	r.offerQuotaUpgrade(context.Background(), []quotaaxi.Copy{copy})
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("declined upgrade ran: %v", err)
+	}
+	openTTY = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader("y\n")), nil }
+	r.offerQuotaUpgrade(context.Background(), []quotaaxi.Copy{copy})
+	b, err := os.ReadFile(log)
+	if err != nil || strings.TrimSpace(string(b)) != "update" {
+		t.Fatalf("upgrade: %q %v", b, err)
+	}
 }

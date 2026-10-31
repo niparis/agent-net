@@ -52,11 +52,12 @@ func TestSetupOneQuestionAllOn(t *testing.T) {
 
 func TestQuotaAXIIsOnByDefaultWhenInstalled(t *testing.T) {
 	f := newFixture(t)
+	quotaPath(t, "22.19.0")
 	local := filepath.Join(f.home, ".local", "bin")
 	if err := os.MkdirAll(local, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(local, "quota-axi"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(filepath.Join(local, "quota-axi"), []byte("#!/bin/sh\necho 0.1.66\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	in := (&runner{Options: Options{}}).currentIntegrations()

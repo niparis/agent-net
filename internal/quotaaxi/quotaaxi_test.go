@@ -37,7 +37,7 @@ while [ $# -gt 0 ]; do
   shift
 done
 /bin/mkdir -p "$prefix/node_modules/.bin"
-printf '#!/bin/sh\nexit 0\n' > "$prefix/node_modules/.bin/quota-axi"
+printf '#!/bin/sh\necho 0.1.69\n' > "$prefix/node_modules/.bin/quota-axi"
 /bin/chmod 755 "$prefix/node_modules/.bin/quota-axi"
 `
 	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
@@ -50,6 +50,8 @@ printf '#!/bin/sh\nexit 0\n' > "$prefix/node_modules/.bin/quota-axi"
 func setupPath(t *testing.T, version string) (home, log string) {
 	t.Helper()
 	home = t.TempDir()
+	restoreRoot := SetDiscoveryRootForTesting(os.TempDir())
+	t.Cleanup(restoreRoot)
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("AGENT_NET_DATA_DIR", "")
@@ -58,6 +60,10 @@ func setupPath(t *testing.T, version string) (home, log string) {
 	log = filepath.Join(t.TempDir(), "npm.log")
 	fakeNPM(t, bin, log)
 	t.Setenv("PATH", bin)
+	fakeLoginPath(t, bin)
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
 	return home, log
 }
 
@@ -79,8 +85,8 @@ func TestPathSkipsOlderUserCopyForPrivateCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := filepath.Join(t.TempDir(), "version-calls")
-	fakeQuotaVersion(t, user, "0.1.68", calls)
-	if err := os.WriteFile(private, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+	fakeQuotaVersion(t, user, "0.1.65", calls)
+	if err := os.WriteFile(private, []byte("#!/bin/sh\necho 0.1.69\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	var logs []string
@@ -88,7 +94,7 @@ func TestPathSkipsOlderUserCopyForPrivateCopy(t *testing.T) {
 	if got, ok := Path(user, logf); !ok || got != private {
 		t.Fatalf("old user copy was selected: %q %v", got, ok)
 	}
-	if len(logs) != 1 || !strings.Contains(logs[0], user) || !strings.Contains(logs[0], "0.1.68") {
+	if len(logs) != 1 || !strings.Contains(logs[0], user) || !strings.Contains(logs[0], "0.1.65") {
 		t.Fatalf("skip log: %q", logs)
 	}
 }
@@ -99,7 +105,7 @@ func TestEnsureInstallsPinnedCopyWhenUserCopyIsTooOld(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(user), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	fakeQuotaVersion(t, user, "0.1.68", filepath.Join(t.TempDir(), "version-calls"))
+	fakeQuotaVersion(t, user, "0.1.65", filepath.Join(t.TempDir(), "version-calls"))
 	var logs []string
 	if err := Ensure(context.Background(), func(format string, args ...any) {
 		logs = append(logs, fmt.Sprintf(format, args...))
@@ -109,7 +115,7 @@ func TestEnsureInstallsPinnedCopyWhenUserCopyIsTooOld(t *testing.T) {
 	if !usable(Binary()) {
 		t.Fatal("Ensure did not install a private copy for the old user version")
 	}
-	if len(logs) != 2 || !strings.Contains(logs[0], user) || !strings.Contains(logs[0], "0.1.68") || !strings.Contains(logs[1], "installed "+Version) {
+	if len(logs) != 2 || !strings.Contains(logs[0], user) || !strings.Contains(logs[0], "0.1.65") || !strings.Contains(logs[1], "installed "+Version) {
 		t.Fatalf("logs: %q", logs)
 	}
 	if raw, err := os.ReadFile(log); err != nil || !strings.Contains(string(raw), "quota-axi@"+Version) {
@@ -189,7 +195,7 @@ func TestEnsureSkipsWhenTheUserHasACopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	user := filepath.Join(local, "quota-axi")
-	if err := os.WriteFile(user, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(user, []byte("#!/bin/sh\necho 0.1.66\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := Ensure(context.Background(), nil); err != nil {
@@ -286,13 +292,14 @@ func TestUserCopyWinsOverThePrivateOne(t *testing.T) {
 		t.Fatal(err)
 	}
 	user := filepath.Join(t.TempDir(), "quota-axi")
-	if err := os.WriteFile(user, []byte("#!/bin/sh\n"), 0o755); err != nil {
+	if err := os.WriteFile(user, []byte("#!/bin/sh\necho 0.1.66\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if got, ok := Path(user); !ok || got != user {
 		t.Fatalf("configured copy lost: %q %v", got, ok)
 	}
-	t.Setenv("PATH", filepath.Dir(user))
+	t.Setenv("PATH", filepath.Dir(user)+string(os.PathListSeparator)+os.Getenv("PATH"))
+	fakeLoginPath(t, os.Getenv("PATH"))
 	if got, ok := Path(""); !ok || got != user {
 		t.Fatalf("PATH copy lost to the private one: %q %v", got, ok)
 	}
@@ -571,5 +578,190 @@ func TestDiscoverRechecksWorkingCopy(t *testing.T) {
 	}
 	if got := Discover(""); len(got) != 1 || got[0].Runs {
 		t.Fatalf("second: %+v", got)
+	}
+}
+
+func TestDecision(t *testing.T) {
+	tests := []struct {
+		name      string
+		copies    []Copy
+		previous  string
+		want, why string
+	}{
+		{"owner before private", []Copy{{Path: "private", Version: Version, Runs: true, Private: true}, {Path: "owner", Version: "0.1.66", Runs: true}}, "", "owner", "supported owner copy"},
+		{"old owner", []Copy{{Path: "old", Version: "0.1.65", Runs: true}, {Path: "private", Version: Version, Runs: true, Private: true}}, "", "private", "no usable owner copy"},
+		{"invalid and broken", []Copy{{Path: "bad", Version: "invalid", Runs: true}, {Path: "broken", Version: Version}, {Path: "good", Version: "0.1.66", Runs: true}}, "", "good", "supported owner copy"},
+		{"keep running private", []Copy{{Path: "owner", Version: "0.1.66", Runs: true}, {Path: "private", Version: Version, Runs: true, Private: true}}, "private", "private", "previous choice still runs"},
+		{"replace broken", []Copy{{Path: "owner", Version: "0.1.66", Runs: true}, {Path: "private", Version: Version, Private: true}}, "private", "owner", "supported owner copy"},
+		{"none", nil, "", "", ""},
+		{"prerelease unsupported", []Copy{{Path: "pre", Version: "0.1.66-rc.1", Runs: true}}, "", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := Decide(tt.copies, tt.previous)
+			if got.Path != tt.want || got.Why != tt.why {
+				t.Fatalf("got %+v", got)
+			}
+		})
+	}
+}
+
+func TestChoicePersistsAndRechecks(t *testing.T) {
+	dir := t.TempDir()
+	copies := []Copy{{Path: "private", Version: Version, Runs: true, Private: true}}
+	c, err := SaveChoice(dir, copies)
+	if err != nil || c.Path != "private" {
+		t.Fatalf("first: %+v %v", c, err)
+	}
+	copies = append([]Copy{{Path: "owner", Version: "0.1.66", Runs: true}}, copies...)
+	c, err = SaveChoice(dir, copies)
+	if err != nil || c.Path != "private" {
+		t.Fatalf("preserve: %+v %v", c, err)
+	}
+	copies[1].Runs = false
+	c, err = SaveChoice(dir, copies)
+	if err != nil || c.Path != "owner" {
+		t.Fatalf("replace: %+v %v", c, err)
+	}
+	c, err = LoadChoice(dir)
+	if err != nil || c.Path != "owner" || c.Version != "0.1.66" || c.Why == "" {
+		t.Fatalf("record: %+v %v", c, err)
+	}
+}
+
+func TestEnsureUsesSupportedOwnerBelowPin(t *testing.T) {
+	home, log := setupPath(t, "22.19.0")
+	fakeLoginPath(t, os.Getenv("PATH"))
+	oldDirs := systemNodeDirs
+	systemNodeNodeDirs := []string{}
+	systemNodeDirs = systemNodeNodeDirs
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	user := filepath.Join(home, ".local", "bin", quotaCommand)
+	if err := os.MkdirAll(filepath.Dir(user), 0755); err != nil {
+		t.Fatal(err)
+	}
+	fakeQuotaVersion(t, user, "0.1.66", filepath.Join(home, "calls"))
+	if err := Ensure(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("npm ran: %v", err)
+	}
+}
+
+func TestDiscoverChoiceKeepsRecordedCopyOffPath(t *testing.T) {
+	home, _ := setupPath(t, "22.19.0")
+	config := filepath.Join(home, "config")
+	first := filepath.Join(home, "first")
+	second := filepath.Join(home, "second")
+	for _, dir := range []string{first, second} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "quota-axi"), []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	nodePath := os.Getenv("PATH")
+	fakeLoginPath(t, first+string(os.PathListSeparator)+nodePath)
+	c, err := DiscoverChoice(config, "")
+	if err != nil || c.Path != filepath.Join(first, "quota-axi") {
+		t.Fatalf("first: %+v %v", c, err)
+	}
+	fakeLoginPath(t, second+string(os.PathListSeparator)+nodePath)
+	c, err = DiscoverChoice(config, "")
+	if err != nil || c.Path != filepath.Join(first, "quota-axi") {
+		t.Fatalf("retained: %+v %v", c, err)
+	}
+	if err := os.Remove(filepath.Join(first, "quota-axi")); err != nil {
+		t.Fatal(err)
+	}
+	c, err = DiscoverChoice(config, "")
+	if err != nil || c.Path != filepath.Join(second, "quota-axi") {
+		t.Fatalf("replacement: %+v %v", c, err)
+	}
+}
+
+func TestEnsureReplacesBrokenPrivateCopy(t *testing.T) {
+	_, log := setupPath(t, "22.19.0")
+	if err := os.MkdirAll(filepath.Dir(Binary()), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(Binary(), []byte("#!/bin/sh\nexit 1\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Ensure(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(log); err != nil {
+		t.Fatalf("npm not run: %v", err)
+	}
+	if version, err := installedVersion(Binary(), false); err != nil || version != Version {
+		t.Fatalf("installed %q %v", version, err)
+	}
+}
+
+func TestEnsureChoiceKeepsOwnerOffPath(t *testing.T) {
+	home, log := setupPath(t, "22.19.0")
+	owner := filepath.Join(t.TempDir(), "quota-axi")
+	if err := os.WriteFile(owner, []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(home, "config")
+	if _, err := SaveChoice(config, []Copy{{Path: owner, Version: "0.1.66", Runs: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureChoice(context.Background(), config, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(log); !os.IsNotExist(err) {
+		t.Fatalf("npm ran: %v", err)
+	}
+}
+
+func TestEnsureFindsNodeAndNPMOnLoginPath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("PATH", t.TempDir())
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	login := t.TempDir()
+	fakeNode(t, login, "22.19.0")
+	log := filepath.Join(home, "npm.log")
+	fakeNPM(t, login, log)
+	fakeLoginPath(t, login)
+	if err := Ensure(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(log); err != nil {
+		t.Fatalf("npm did not run: %v", err)
+	}
+}
+
+func TestDiscoverIncludesProcessAndLoginPaths(t *testing.T) {
+	_, _ = setupPath(t, "22.19.0")
+	bin := os.Getenv("PATH")
+	login := t.TempDir()
+	process := t.TempDir()
+	for _, dir := range []string{login, process} {
+		if err := os.WriteFile(filepath.Join(dir, "quota-axi"), []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", process+string(os.PathListSeparator)+bin)
+	fakeLoginPath(t, login)
+	copies := Discover("")
+	found := map[string]bool{}
+	for _, c := range copies {
+		if c.Runs {
+			found[c.Path] = true
+		}
+	}
+	for _, dir := range []string{login, process} {
+		if !found[filepath.Join(dir, "quota-axi")] {
+			t.Errorf("missing %s: %+v", dir, copies)
+		}
 	}
 }

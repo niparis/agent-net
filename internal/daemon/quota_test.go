@@ -3,7 +3,6 @@ package daemon
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -190,31 +189,11 @@ func TestReadQuotaAXIUsesJSONWhenEveryProviderFailed(t *testing.T) {
 	}
 }
 
-func TestReadQuotaAXIFallsBackToPrivateCopyOnOptionRejection(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", t.TempDir())
+func TestReadQuotaAXIDoesNotChangeCopyOnOptionRejection(t *testing.T) {
 	user := fakeQuotaAXIExit(t, t.TempDir(), "0.1.69", fakeQuotaJSON, 2, "unknown option")
-	private := quotaaxi.Binary()
-	if err := os.MkdirAll(filepath.Dir(private), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(private, []byte("#!/bin/sh\ncat <<'QUOTA_EOF'\n"+fakeQuotaJSON+"\nQUOTA_EOF\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	oldEnsure := ensureQuotaAXIPrivate
-	ensureQuotaAXIPrivate = func(context.Context, func(string, ...any)) error { return nil }
-	t.Cleanup(func() { ensureQuotaAXIPrivate = oldEnsure })
-	var logs []string
-	q, err := readQuotaAXIWith(context.Background(), user, func(format string, args ...any) {
-		logs = append(logs, fmt.Sprintf(format, args...))
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if q == nil || len(q.Providers) != 4 {
-		t.Fatalf("fallback report: %+v", q)
-	}
-	if len(logs) != 1 || logs[0] != "quota-axi rejected its options (version 0.1.69); using the pinned copy" {
-		t.Fatalf("fallback log: %q", logs)
+	q, err := readQuotaAXI(context.Background(), user)
+	if err == nil || !strings.Contains(err.Error(), "rejected its options") || q != nil {
+		t.Fatalf("got %+v, %v", q, err)
 	}
 }
 
@@ -282,6 +261,21 @@ func TestReadQuotaAXIStopsAtTheTimeout(t *testing.T) {
 	}
 }
 
+func writeQuotaCandidate(t *testing.T, dir string) string {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "node"), []byte("#!/bin/sh\necho v22.19.0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func TestFindQuotaAXIUsesThePrivateCopy(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -291,7 +285,7 @@ func TestFindQuotaAXIUsesThePrivateCopy(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\n/bin/cat <<'EOF'\n" + fakeQuotaJSON + "\nEOF\n"
+	script := "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 0.1.69; exit; fi\n/bin/cat <<'EOF'\n" + fakeQuotaJSON + "\nEOF\n"
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -314,21 +308,8 @@ func TestFindQuotaAXIPrefersTheUserCopy(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("PATH", t.TempDir())
-	private := quotaaxi.Binary()
-	if err := os.MkdirAll(filepath.Dir(private), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(private, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	local := filepath.Join(home, ".local", "bin")
-	if err := os.MkdirAll(local, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	user := filepath.Join(local, quotaCommand)
-	if err := os.WriteFile(user, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	writeQuotaCandidate(t, filepath.Dir(quotaaxi.Binary()))
+	user := writeQuotaCandidate(t, filepath.Join(home, ".local", "bin"))
 	if got, ok := FindQuotaAXI(""); !ok || got != user {
 		t.Fatalf("user copy lost: %q %v", got, ok)
 	}
@@ -350,29 +331,21 @@ func TestUsageReportCarriesQuotaNote(t *testing.T) {
 
 func TestFindQuotaAXI(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "quota-axi")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := FindQuotaAXI(path); !ok || got != path {
-		t.Fatalf("configured path: %q %v", got, ok)
-	}
+	path := writeQuotaCandidate(t, dir)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
 	t.Setenv("PATH", dir)
+	if got, ok := FindQuotaAXI(path); !ok || got != path {
+		t.Fatalf("configured: %q %v", got, ok)
+	}
 	if got, ok := FindQuotaAXI(""); !ok || got != path {
 		t.Fatalf("PATH: %q %v", got, ok)
 	}
 	t.Setenv("PATH", t.TempDir())
-	local := filepath.Join(home, ".local", "bin")
-	if err := os.MkdirAll(local, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(local, "quota-axi"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got, ok := FindQuotaAXI(""); !ok || got != filepath.Join(local, "quota-axi") {
-		t.Fatalf("~/.local/bin: %q %v", got, ok)
+	local := writeQuotaCandidate(t, filepath.Join(home, ".local", "bin"))
+	if got, ok := FindQuotaAXI(""); !ok || got != local {
+		t.Fatalf("local: %q %v", got, ok)
 	}
 }
 
@@ -466,5 +439,45 @@ func TestUsageReportCarriesQuotaError(t *testing.T) {
 	rep, ok := d.usageReport()
 	if !ok || rep.QuotaError != "it failed" {
 		t.Fatalf("report: %+v ok=%v", rep, ok)
+	}
+}
+
+func TestQuotaUsesRecordedChoiceAtStart(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	old := discoverQuotaChoice
+	t.Cleanup(func() { discoverQuotaChoice = old })
+	got := make(chan string, 1)
+	dir := t.TempDir()
+	choice := writeQuotaCandidate(t, dir)
+	marker := filepath.Join(dir, "ran")
+	if err := os.WriteFile(choice, []byte("#!/bin/sh\nprintf yes > '"+marker+"'\necho '{}'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	discoverQuotaChoice = func(dir, configured string) (quotaaxi.Choice, error) {
+		got <- configured
+		return quotaaxi.Choice{Path: choice, Version: "0.1.66"}, nil
+	}
+	d := &Daemon{cfg: Config{QuotaAXIPath: "configured"}, log: log.New(io.Discard, "", 0)}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d.startQuota(ctx)
+	if configured := <-got; configured != "configured" {
+		t.Fatalf("configured %q", configured)
+	}
+	eventually(t, "chosen quota executable runs", func() bool { _, err := os.Stat(marker); return err == nil })
+	cancel()
+	d.wg.Wait()
+}
+
+// This report shape is taken from quota-axi 0.1.66's response redaction test
+// (source commit a568c710d5321dacc81f799d4e04545906e31dc0).
+func TestQuotaParsesMinSupportedReport(t *testing.T) {
+	const report = `{"generatedAt":"2026-07-06T18:10:00Z","schemaVersion":5,"providers":[{"provider":"claude","label":"Claude","source":"oauth","windows":[],"state":{"status":"fresh","stale":false,"sourcesTried":["oauth"]}}]}`
+	if quotaaxi.MinSupported != "0.1.66" {
+		t.Fatal("update the minimum-version fixture")
+	}
+	q, err := parseQuotaAXI([]byte(report))
+	if err != nil || q.GeneratedAt == 0 || len(q.Providers) != 1 || q.Providers[0].Provider != "claude" || q.Providers[0].Stale {
+		t.Fatalf("report: %+v %v", q, err)
 	}
 }
