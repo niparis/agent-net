@@ -89,7 +89,7 @@ func (m Model) quotaNodes() (map[string]protocol.UsageNode, []string) {
 	return nodes, ids
 }
 
-func (m Model) quotaWarning() (string, bool) {
+func (m Model) quotaRelevantProviders() map[string]bool {
 	relevant := map[string]bool{}
 	for _, p := range m.snap.WorkerProfiles {
 		if name := protocol.QuotaProviderForStart(p.Harness, p.Model); name != "" {
@@ -103,6 +103,11 @@ func (m Model) quotaWarning() (string, bool) {
 			}
 		}
 	}
+	return relevant
+}
+
+func (m Model) quotaWarning() (string, bool) {
+	relevant := m.quotaRelevantProviders()
 	for _, r := range m.quotaRows() {
 		if !relevant[strings.ToLower(r.provider.Provider)] || r.provider.Stale || r.provider.Error != "" {
 			continue
