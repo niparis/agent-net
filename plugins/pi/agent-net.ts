@@ -1165,8 +1165,8 @@ export default function (pi: ExtensionAPI) {
   );
 
   defineTool("agent_worker_profiles", "List worker profiles", "List registered worker profiles. Workers cannot use this tool.", Type.Object({}), "worker_profiles");
-  defineTool("agent_worker_profile_add", "Register worker profile", "Register a worker profile when the owner asks. The model must be available on an installed harness.", Type.Object({
-    name: Type.Optional(Type.String({ description: "Optional profile name." })),
+  defineTool("agent_worker_profile_add", "Register worker profile", "Register a worker profile when the owner asks. Reusing a profile name replaces its model or effort. The model must be available on an installed harness.", Type.Object({
+    name: Type.Optional(Type.String({ description: "Optional profile name. Reuse an existing name to replace its model or effort." })),
     harness: Type.String({ description: "Installed worker harness." }),
     model: Type.String({ description: "Model ID or loose name." }),
     effort: Type.Optional(Type.String({ description: "Optional reasoning effort." })),

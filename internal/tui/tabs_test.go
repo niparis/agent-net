@@ -55,10 +55,12 @@ func TestMergeQuotaReadings(t *testing.T) {
 
 func TestQuotaViewGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		stale := false
 		m := newModel(size[0], size[1])
 		m.tab = 2
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5"}}}
-		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"}, {Name: "sol", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}, {Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}}
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"}, {Name: "sol", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}, {Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}, {Name: "renamed", Harness: "pi", Model: "openai-codex/gpt-6.1-zed", Available: &stale}}
+		m.snap.Scores = append(m.snap.Scores, protocol.ModelScore{Match: "openai-codex/gpt-6.1-zed", Score: 77, Source: "owner"})
 		m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "claude", Model: "claude-opus-5-5:high", Runs: 12, Complete: 10, Failed: 2}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
 			{Provider: "codex", Plan: "pro", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 92, Pace: protocol.QuotaPaceAhead, ResetsAt: t0.Add(2 * time.Hour).Unix()}}},
@@ -67,6 +69,14 @@ func TestQuotaViewGoldens(t *testing.T) {
 		}}
 		m.usage.raw.Gateway.Nodes = append(m.usage.raw.Gateway.Nodes, protocol.UsageNode{NodeID: "other", Hostname: "other", Usage: protocol.UsageReport{Quotas: &protocol.Quotas{GeneratedAt: t0.Add(-time.Minute).Unix(), Providers: []protocol.QuotaProvider{{Provider: "codex", Plan: "pro"}}}}})
 		view := m.View()
+		if !strings.Contains(ansi.Strip(view), "model gone - ask the CTO to fix") {
+			t.Fatalf("stale profile note missing:\n%s", ansi.Strip(view))
+		}
+		for _, line := range lines(ansi.Strip(view)) {
+			if strings.Contains(line, "renamed") && strings.Contains(line, "77") {
+				t.Fatalf("stale profile still shows its score: %s", line)
+			}
+		}
 		for _, line := range lines(view) {
 			if ansi.StringWidth(line) > size[0] {
 				t.Fatalf("wide line: %q", line)

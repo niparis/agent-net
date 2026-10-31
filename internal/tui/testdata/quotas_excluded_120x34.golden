@@ -7,9 +7,11 @@
 │   (read on Mac)                                                                                                      │
 │ 1 more subscription (not used by your agents) · s to show                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-╭─Workers · 4 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
+╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE        T S N H V  USED                                   │
 │ opus               claude   claude-opus-5-5:high      51.7/high    E E E E G  12 · 83% done · 2 failed               │
+│ renamed            pi       gpt-6.1-zed               -            - - - - -  unused                                 │
+│   model gone - ask the CTO to fix                                                                                    │
 │ router             opencode openrouter/anthropic/cla… 51.7/high    E E E E G  unused                                 │
 │   (not a worker provider)                                                                                            │
 │ sol                codex    gpt-6.1-sol:medium        46.1/medium  E E E G P  unused                                 │
@@ -17,8 +19,6 @@
 │ T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 opus claude: picked for trivial, simple, normal, hard and very complex. Strong at trivial, simple, normal and hard.
-
-
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

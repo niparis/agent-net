@@ -85,6 +85,11 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 				t.Errorf("%s.%s has no description", name, field)
 			}
 		}
+		if name == "worker_profile_add" {
+			if d, _ := props["name"]["description"].(string); !strings.Contains(d, "existing name") {
+				t.Errorf("worker_profile_add.name does not explain replacement: %q", d)
+			}
+		}
 	}
 	wantEnums := map[string]map[string][]string{
 		"edge_set": {

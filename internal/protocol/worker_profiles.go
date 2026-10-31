@@ -2,12 +2,15 @@ package protocol
 
 // WorkerProfile is a named model and harness in the network's worker roster.
 type WorkerProfile struct {
-	Name    string `json:"name"`
-	Harness string `json:"harness"`
-	Model   string `json:"model"`
-	Effort  string `json:"effort,omitempty"`
-	AddedBy string `json:"added_by"`
-	AddedAt int64  `json:"added_at"`
+	Name            string   `json:"name"`
+	Harness         string   `json:"harness"`
+	Model           string   `json:"model"`
+	Effort          string   `json:"effort,omitempty"`
+	AddedBy         string   `json:"added_by"`
+	AddedAt         int64    `json:"added_at"`
+	Available       *bool    `json:"available,omitempty"`
+	Closest         []string `json:"closest,omitempty"`
+	MachinesChecked []string `json:"machines_checked,omitempty"`
 }
 
 type WorkerProfileRequest struct {
