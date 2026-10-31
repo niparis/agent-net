@@ -35,6 +35,8 @@ type Options struct {
 	Logger       *log.Logger
 	// Now is for tests.
 	Now func() time.Time
+	// ToolsPageSize limits the item count per page for tests. Zero uses the normal byte limit.
+	ToolsPageSize int
 	// Version is the agent-net version this gateway runs (served at
 	// /install/version and listed with the nodes).
 	Version string
@@ -723,7 +725,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		return toolsPage(items, p.Offset)
+		return toolsPage(items, p.Offset, g.opts.ToolsPageSize)
 	case "query.tools_item":
 		p, err := decode[struct {
 			Item string `json:"item"`
