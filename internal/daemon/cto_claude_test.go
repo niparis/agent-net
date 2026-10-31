@@ -1,7 +1,9 @@
 package daemon
 
 import (
+	"bytes"
 	"context"
+	"log"
 	"time"
 
 	"encoding/json"
@@ -444,10 +446,10 @@ func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
 	write(`if [ "$1" = --help ]; then echo '--strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
 	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
 	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
-	if err == nil || !strings.Contains(err.Error(), "Claude Code 2.1.289 is too old for the CTO: run `claude update`") {
+	if err == nil || !strings.Contains(err.Error(), "required capability --tools is missing") {
 		t.Fatalf("old Claude: %v", err)
 	}
-	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.316'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
+	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" = --version ]; then echo '2.1.316'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
 	err = d.startClaudeCTOLocked(context.Background(), "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "unknown option --bg") || !strings.Contains(err.Error(), "[REDACTED]") || strings.Contains(err.Error(), "topsecretvalue") || strings.Contains(err.Error(), "third line") {
 		t.Fatalf("startup error: %v", err)
@@ -457,7 +459,7 @@ func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
 func TestClaudeCTOCapabilityCache(t *testing.T) {
 	dir := t.TempDir()
 	bin, log := filepath.Join(dir, "claude"), filepath.Join(dir, "calls")
-	script := "#!/bin/sh\necho called >> " + log + "\nif [ \"$1\" = --version ]; then echo 2.1.316; else echo --bg --strict-mcp-config; fi\n"
+	script := "#!/bin/sh\necho called >> " + log + "\nif [ \"$1\" = --version ]; then echo 2.1.316; else echo --bg --strict-mcp-config --tools; fi\n"
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -503,7 +505,7 @@ func TestClaudeCTOTrustPromptError(t *testing.T) {
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "claude")
 	script := `#!/bin/sh
-if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; elif [ "$1" = --version ]; then echo 2.1.316; else echo 'Accessing workspace'; echo 'Is this a project you created or one you trust?'; exit 1; fi
+if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" = --version ]; then echo 2.1.316; else echo 'Accessing workspace'; echo 'Is this a project you created or one you trust?'; exit 1; fi
 `
 	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
 		t.Fatal(err)
@@ -517,24 +519,75 @@ if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; elif [ "$1" = --vers
 }
 
 func TestCTOExtraBuiltinFailsStartup(t *testing.T) {
-	for _, harness := range []string{"claude", "opencode"} {
-		t.Run(harness, func(t *testing.T) {
-			t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-			t.Setenv("FAKE_CTO_EXTRA_TOOL", "Bash")
-			g := startGateway(t, t.TempDir(), "")
-			n := startClaudeNode(t, g, shortSet)
-			var err error
-			if harness == "claude" {
-				err = n.d.startClaudeCTOLocked(context.Background(), "", "opus")
-			} else {
-				n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
-				err = n.d.startCTOLocked(context.Background())
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	t.Setenv("FAKE_CTO_EXTRA_TOOL", "Bash")
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	err := n.d.startCTOLocked(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "Bash") {
+		t.Fatalf("extra built-in must fail clearly: %v", err)
+	}
+	if n.d.cto.cmd != nil {
+		t.Error("rejected runtime retains CTO access")
+	}
+}
+
+func TestClaudeCTORequiresToolsCapability(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	t.Setenv("FAKE_CLAUDE_NO_TOOLS_FLAG", "1")
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	err := n.d.startClaudeCTOLocked(context.Background(), "", "opus")
+	if err == nil || !strings.Contains(err.Error(), "--tools") {
+		t.Fatalf("missing --tools must fail clearly: %v", err)
+	}
+}
+
+func TestCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	t.Setenv("FAKE_CTO_MISSING_DENY", "read")
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	err := n.d.startCTOLocked(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "read") {
+		t.Fatalf("missing deny must fail clearly: %v", err)
+	}
+	if n.d.cto.cmd != nil {
+		t.Error("rejected runtime retains CTO access")
+	}
+}
+
+func TestClaudeCTOCapabilitiesWithoutVersionGate(t *testing.T) {
+	for _, tc := range []struct {
+		name, help, version, want string
+	}{
+		{"mac version", "--tools --strict-mcp-config", "2.1.289", ""},
+		{"future version", "--tools --strict-mcp-config", "9.0.0", ""},
+		{"unrecognized version", "--tools --strict-mcp-config", "development", ""},
+		{"missing tools", "--strict-mcp-config", "2.1.316", "--tools"},
+		{"missing strict MCP", "--tools", "2.1.316", "--strict-mcp-config"},
+		{"similar flag", "--tools-other --strict-mcp-config", "2.1.316", "--tools"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			bin := filepath.Join(t.TempDir(), "claude")
+			script := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '" + tc.help + "'; else echo '" + tc.version + "'; fi\n"
+			if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+				t.Fatal(err)
 			}
-			if err == nil || !strings.Contains(err.Error(), "Bash") {
-				t.Fatalf("extra built-in must fail clearly: %v", err)
+			var logs bytes.Buffer
+			d := &Daemon{log: log.New(&logs, "", 0)}
+			err := d.checkClaudeCTOCapabilities(context.Background(), bin)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
 			}
-			if n.d.claudeCTO.root.Load() != nil || n.d.cto.cmd != nil {
-				t.Error("rejected runtime retains CTO access")
+			if !strings.Contains(logs.String(), "CTO Claude Code version:") {
+				t.Fatalf("version was not logged: %q", logs.String())
 			}
 		})
 	}

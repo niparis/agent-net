@@ -42,15 +42,25 @@ with a wildcard deny plus explicit deny rules for bash, edit, write, subagent,
 read, glob, grep, list, webfetch and todowrite. Only the private CTO MCP namespace
 is allowed. The general subagent is disabled and owner plugins are not copied.
 
-Startup fails closed on unknown versions or missing effective-tool reports.
-Claude's system init record must list only private CTO MCP tools. OpenCode's
-effective agent permissions must close the default allow with a wildcard deny,
-with no later allow outside that namespace, and no other enabled agents.
-The recognized versions are Claude Code 2.1.316 and OpenCode 2.2.0.
-A missing init record, even on a recognized version, stops the Claude session.
-Fake harnesses test these checks. Real model tool execution and subagent
-inheritance have not been verified; startup never assumes restrictions from
-CLI help or a config file alone.
+Startup checks capabilities instead of a version allowlist. Harness versions
+are logged for diagnosis and do not decide whether the CTO can start.
+Claude's `--help` must list `--tools` and `--strict-mcp-config`; a missing
+flag stops startup. Its tool set is enforced by the start arguments and private
+settings. There is no independent effective-tool enumeration on this path.
+
+An isolated probe of Claude Code 2.1.316 used a temporary HOME, a fake API key,
+an unreachable API URL and no prompt. With the CTO's start arguments it printed
+a plain-text `backgrounded` notice and instructions to attach, read logs and
+stop the session. Standard error said `Starting background service`.
+There was no JSON system init record or effective-tool list. The probe's job
+was stopped afterward. Startup therefore does not depend on such a record.
+
+OpenCode's `GET /api/agent` must report every required deny rule in the CTO's
+effective permissions, including the wildcard deny that closes its default
+allow. No later rule may allow tools outside the private CTO MCP namespace,
+and the general subagent must be absent or disabled. Missing reports or deny
+rules stop startup. Fake harnesses test these checks. Real model tool execution
+and subagent inheritance have not been verified.
 
 The private MCP server exposes the owner operations listed in
 [the CTO parity table](reference.md), including network and conversation reads,

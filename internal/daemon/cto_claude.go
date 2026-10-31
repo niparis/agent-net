@@ -166,10 +166,6 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 		return errors.New("Claude did not return a background session id")
 	}
 	ref := m[1]
-	if err := checkClaudeCTOInit(output); err != nil {
-		(claudeLauncher{}).stopID(d, ref)
-		return err
-	}
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	for {
@@ -207,20 +203,28 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 		return fmt.Errorf("check Claude Code help: %w", err)
 	}
 	version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
-	if versionErr != nil {
-		return fmt.Errorf("check Claude Code version: %w", versionErr)
-	}
 	v := claudeVersionPattern.FindString(string(version))
+	if versionErr != nil || v == "" {
+		v = "(unknown)"
+	}
+	if d.log != nil {
+		d.log.Printf("CTO Claude Code version: %s", v)
+	}
 	var result error
-	if !strings.Contains(string(help), "--bg") || !strings.Contains(string(help), "--strict-mcp-config") {
-		if v == "" {
-			v = "(unknown version)"
+	for _, flag := range []string{"--tools", "--strict-mcp-config"} {
+		present := false
+		for _, word := range strings.Fields(string(help)) {
+			if strings.TrimSuffix(word, ",") == flag {
+				present = true
+				break
+			}
 		}
-		result = fmt.Errorf("Claude Code %s is too old for the CTO: run `claude update`", v)
+		if !present {
+			result = fmt.Errorf("CTO Claude: required capability %s is missing from --help; run `claude update`", flag)
+			break
+		}
 	}
-	if result == nil && v != "2.1.316" {
-		result = fmt.Errorf("CTO Claude: unknown harness version %q; tool isolation is not verified", v)
-	}
+
 	if c.capabilities == nil {
 		c.capabilities = make(map[string]claudeCTOCapability)
 	}
