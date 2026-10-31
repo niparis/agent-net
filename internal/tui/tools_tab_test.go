@@ -185,7 +185,7 @@ func TestToolsEnterOpensPlanFirstAndEscCancels(t *testing.T) {
 		t.Fatal("enter must open a plan")
 	}
 	v := plain(m)
-	for _, want := range []string{"Make every machine use 333333", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter apply", "d exact folders", "esc cancel"} {
+	for _, want := range []string{"Make every machine use v3", "+ research: code-review", "+ Nicolas-MBP: code-review", "enter apply", "d exact folders", "esc cancel"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("plan lacks %q:\n%s", want, v)
 		}
@@ -265,7 +265,7 @@ func TestToolsAllToolsOriginsAndCells(t *testing.T) {
 	for name, wants := range map[string][]string{
 		"tenebrae-library":    {"◆ tenebrae-library", "gateway on research"},
 		"deploy-test-server":  {"⌂ deploy-test-server", "repo sovl-clone"},
-		"using-git-worktrees": {"agent-net 333333"},
+		"using-git-worktrees": {"agent-net v2"},
 	} {
 		v := plain(rowByNameFrom(m, name, ""))
 		for _, want := range wants {
@@ -288,7 +288,7 @@ func TestToolsTurnOffOnAMachineCellPlansAnUninstall(t *testing.T) {
 		t.Fatalf("plans %+v", src.plans)
 	}
 	v := plain(m)
-	if !strings.Contains(v, "Turn off research on research") || !strings.Contains(v, "applies to every machine") {
+	if !strings.Contains(v, "Turn off research on research") || !strings.Contains(v, "only on research") {
 		t.Errorf("plan text:\n%s", v)
 	}
 	m = pressKey(m, "esc")

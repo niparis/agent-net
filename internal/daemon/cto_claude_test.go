@@ -8,6 +8,8 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -184,6 +186,108 @@ func TestCTOHarnessConversations(t *testing.T) {
 	json.Unmarshal(cli.mustCall("cto_send", map[string]string{"text": "claude fresh"}), &again)
 	if again["session_id"] == second["session_id"] {
 		t.Fatal("new Claude conversation reused old id")
+	}
+}
+
+func TestCTOEventsKeepTimelineAcrossHarnessSwitchesAndRestart(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
+		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+	}})
+	cli := cliClient(t, n)
+	set := func(harness, model string) {
+		t.Helper()
+		cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness, Model: &model})
+	}
+	read := func() protocol.CTOEvents {
+		t.Helper()
+		var out protocol.CTOEvents
+		if err := json.Unmarshal(cli.mustCall("cto_events", map[string]int{"index": 0}), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+
+	set("opencode", "fake/m1")
+	cli.mustCall("cto_send", map[string]string{"text": "OpenCode one"})
+	set("claude", "opus")
+	var claude map[string]string
+	if err := json.Unmarshal(cli.mustCall("cto_send", map[string]string{"text": "Claude one"}), &claude); err != nil {
+		t.Fatal(err)
+	}
+	transcriptDir := filepath.Join(filepath.Dir(sessions), "projects", "fake")
+	if err := os.MkdirAll(transcriptDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	claudeAt := time.Now().UTC().Format(time.RFC3339Nano)
+	transcript := `{"type":"user","timestamp":"` + claudeAt + `","message":{"content":"Claude one"}}` + "\n" +
+		`{"type":"assistant","timestamp":"` + claudeAt + `","message":{"content":[{"type":"text","text":"Claude reply"}]}}` + "\n"
+	if err := os.WriteFile(filepath.Join(transcriptDir, claude["session_id"]+".jsonl"), []byte(transcript), 0600); err != nil {
+		t.Fatal(err)
+	}
+	set("opencode", "fake/m1")
+	cli.mustCall("cto_send", map[string]string{"text": "OpenCode two"})
+
+	assertTimeline := func(events protocol.CTOEvents) {
+		t.Helper()
+		type entry struct {
+			at   int64
+			text string
+		}
+		var timeline []entry
+		for _, raw := range events.Messages {
+			var msg struct {
+				Text string `json:"text"`
+				Time struct {
+					Created int64 `json:"created"`
+				} `json:"time"`
+			}
+			if err := json.Unmarshal(raw, &msg); err != nil {
+				t.Fatal(err)
+			}
+			timeline = append(timeline, entry{at: msg.Time.Created * int64(time.Millisecond), text: msg.Text})
+		}
+		for _, action := range events.Actions {
+			timeline = append(timeline, entry{at: action.At, text: action.Text})
+		}
+		sort.SliceStable(timeline, func(i, j int) bool { return timeline[i].at < timeline[j].at })
+		var got []string
+		for _, item := range timeline {
+			got = append(got, item.text)
+		}
+		joined := strings.Join(got, "\n")
+		want := []string{"OpenCode one", "switched to claude · opus ·", "Claude one", "Claude reply", "switched to opencode · fake/m1 ·", "OpenCode two"}
+		for i := range want {
+			if i >= len(got) || (strings.HasPrefix(want[i], "switched") && !strings.HasPrefix(got[i], want[i])) || (!strings.HasPrefix(want[i], "switched") && got[i] != want[i]) {
+				t.Fatalf("timeline order mismatch: got %q, want %q\nfull=%s", got, want, joined)
+			}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("timeline length = %d, want %d: %s", len(got), len(want), joined)
+		}
+		if len(events.Actions) < 2 {
+			t.Fatalf("switch dividers missing: %+v", events.Actions)
+		}
+		if !strings.HasPrefix(events.Actions[0].Text, "switched to claude · opus ·") || !strings.HasPrefix(events.Actions[1].Text, "switched to opencode · fake/m1 ·") {
+			t.Errorf("switch order: %+v", events.Actions)
+		}
+	}
+
+	beforeRestart := read()
+	assertTimeline(beforeRestart)
+	n.restart()
+	cli = cliClient(t, n)
+	var afterRestart protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", map[string]int{"index": 0}), &afterRestart); err != nil {
+		t.Fatal(err)
+	}
+	assertTimeline(afterRestart)
+	if !reflect.DeepEqual(beforeRestart.Messages, afterRestart.Messages) || !reflect.DeepEqual(beforeRestart.Actions, afterRestart.Actions) {
+		t.Fatalf("timeline changed after daemon restart:\nbefore=%+v\nafter=%+v", beforeRestart, afterRestart)
 	}
 }
 

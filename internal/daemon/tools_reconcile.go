@@ -198,6 +198,23 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	return fail("applied", "")
 }
 
+// targetsForThisNode keeps the targets this machine must act on. The gateway
+// already sends only these. The check stays here so that a machine the owner
+// did not choose never changes, whatever it is sent.
+func (d *Daemon) targetsForThisNode(in []protocol.ToolTarget) []protocol.ToolTarget {
+	var out []protocol.ToolTarget
+	for _, t := range in {
+		if t.Target.NodeID != "" && t.Target.NodeID != d.cfg.NodeID {
+			continue
+		}
+		if !t.Revision.Assignment.OnMachine(d.cfg.NodeID) {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 func (d *Daemon) reconcileTools(ctx context.Context) {
 	raw, err := d.call(ctx, "tools.targets", struct{}{})
 	if err != nil {
@@ -207,6 +224,7 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 	if json.Unmarshal(raw, &targets) != nil {
 		return
 	}
+	targets = d.targetsForThisNode(targets)
 	projectConflicts := projectTargets(targets)
 	projects := map[string]bool{}
 	projectsReady := false

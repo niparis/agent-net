@@ -23,9 +23,18 @@ const (
 	toolNodeM = "n_mbp"
 )
 
+// toolLoc is one copy. A project copy is committed (tracked) unless a test
+// says it is local.
 func toolLoc(node, machine, path, scope, project, harness string) protocol.ToolLocation {
 	return protocol.ToolLocation{NodeID: node, Machine: machine, GraphNode: project, InventoryItem: protocol.InventoryItem{
-		Harness: harness, Kind: "skill", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok"}}
+		Harness: harness, Kind: "skill", Scope: scope, Project: project, Location: path, Source: protocol.InventoryNative, State: "ok", Tracked: scope == "project"}}
+}
+
+// toolLocal is a project copy that is not committed.
+func toolLocal(node, machine, path, project, harness string) protocol.ToolLocation {
+	l := toolLoc(node, machine, path, "project", project, harness)
+	l.Tracked = false
+	return l
 }
 
 func toolSkill(name, hash string, locs ...protocol.ToolLocation) protocol.ToolItem {
@@ -37,6 +46,15 @@ func toolSkill(name, hash string, locs ...protocol.ToolLocation) protocol.ToolIt
 
 func toolManaged(it protocol.ToolItem, scope string, projects ...string) protocol.ToolItem {
 	it.Desired = &protocol.ToolRevision{Item: it.ID, Revision: 1, Version: it.Hash, Assignment: protocol.ToolAssignment{Scope: scope, Projects: projects}, State: "pending"}
+	return toolNumbered(it, 1)
+}
+
+// toolNumbered gives an item its store version number, as the gateway does.
+func toolNumbered(it protocol.ToolItem, n int) protocol.ToolItem {
+	it.VersionNo = n
+	for i := range it.Locations {
+		it.Locations[i].VersionNo = n
+	}
 	return it
 }
 
@@ -56,11 +74,11 @@ func toolFixtureNodes() []protocol.NodeView {
 func toolFixtureItems() []protocol.ToolItem {
 	var items []protocol.ToolItem
 	// managed, on both machines
-	items = append(items, toolManaged(userBoth("using-git-worktrees", "sha256:3333333aaaa"), "global"))
+	items = append(items, toolNumbered(toolManaged(userBoth("using-git-worktrees", "sha256:3333333aaaa"), "global"), 2))
 	items = append(items, toolManaged(userBoth("research", "sha256:1111111aaaa"), "global"))
 	// drift: the Mac has another version
-	review := toolManaged(toolSkill("code-review", "sha256:3333333bbbb", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/code-review", "user", "", "claude")), "global")
-	oldReview := toolSkill("code-review", "sha256:1111111cccc", toolLoc(toolNodeM, "Nicolas-MBP", "/Users/n/.claude/skills/code-review", "user", "", "claude"))
+	review := toolNumbered(toolManaged(toolSkill("code-review", "sha256:3333333bbbb", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/code-review", "user", "", "claude")), "global"), 3)
+	oldReview := toolNumbered(toolSkill("code-review", "sha256:1111111cccc", toolLoc(toolNodeM, "Nicolas-MBP", "/Users/n/.claude/skills/code-review", "user", "", "claude")), 1)
 	items = append(items, review, oldReview)
 	// a harness limit
 	diag := userBoth("diagnosing-bugs", "sha256:1111111dddd")
@@ -88,6 +106,8 @@ func toolFixtureItems() []protocol.ToolItem {
 	items = append(items,
 		toolSkill("deploy-test-server", "sha256:6666666aaaa", toolLoc(toolNodeR, "research", "/src/sovl-clone/.claude/skills/deploy-test-server", "project", "sovl-clone", "claude")),
 		toolSkill("estate-runbook", "sha256:7777777aaaa", toolLoc(toolNodeR, "research", "/src/homelab/.claude/skills/estate-runbook", "project", "homelab", "claude")))
+	// a local copy: in a project folder, not committed
+	items = append(items, toolSkill("scratch-notes", "sha256:8888888aaaa", toolLocal(toolNodeR, "research", "/src/homelab/.claude/skills/scratch-notes", "homelab", "claude")))
 	// unmanaged skills: 4 on both machines, the rest only on research
 	for i := 0; i < 26; i++ {
 		name := fmt.Sprintf("found-skill-%02d", i)
@@ -167,6 +187,9 @@ func (f *fakeTools) ToolsPlan(_ context.Context, r protocol.ToolPlanRequest) (pr
 		return plan, nil
 	}
 	for _, n := range []struct{ id, host, dir string }{{toolNodeR, "research", "/home/n"}, {toolNodeM, "Nicolas-MBP", "/Users/n"}} {
+		if !r.Target.OnMachine(n.id) {
+			continue
+		}
 		for _, h := range []string{".claude", ".pi/agent", ".codex"} {
 			plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: n.id, Machine: n.host, Harness: "h", Action: "copy", State: "pending", Destination: n.dir + "/" + h + "/skills/x"})
 		}

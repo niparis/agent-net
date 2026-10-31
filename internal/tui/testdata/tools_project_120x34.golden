@@ -3,18 +3,18 @@
 ╭─By project · what homelab gets on Nicolas-MBP · m machine────────────────────────────────────────────────────────────╮
 │   a2a-ocs             │ FROM THE REPO  1                                                                             │
 │   cogforge            │   ⌂ estate-runbook                committed                                                  │
-│   dotfiles            │ ON FOR THIS PROJECT  0                                                                       │
-│   flood-wargame       │   none · a on All tools adds one                                                             │
+│   dotfiles            │ ON FOR THIS PROJECT  1                                                                       │
+│   flood-wargame       │   ● scratch-notes                 local copy, not committed                                  │
 │ ▸ homelab             │ ON NICOLAS-MBP FOR EVERY PROJECT  9                                                          │
-│   homelab-portal      │   ● clean-architecture-python     agent-net 555555                                           │
-│   infra-game          │   ◐ code-review                   agent-net 333333                                           │
-│   sovl-clone          │   ◐ diagnosing-bugs               agent-net 111111                                           │
+│   homelab-portal      │   ● clean-architecture-python     agent-net v1                                               │
+│   infra-game          │   ◐ code-review                   agent-net v3                                               │
+│   sovl-clone          │   ◐ diagnosing-bugs               agent-net v1                                               │
 │   strategies          │   ○ found-skill-00                not managed                                                │
 │   tenebrae            │   ○ found-skill-01                not managed                                                │
 │   wbg-arch            │   ○ found-skill-02                not managed                                                │
 │   wbg-housing         │   ○ found-skill-03                not managed                                                │
-│   wbg-worldview       │   ● research                      agent-net 111111                                           │
-│                       │   ● using-git-worktrees           agent-net 333333                                           │
+│   wbg-worldview       │   ● research                      agent-net v1                                               │
+│                       │   ● using-git-worktrees           agent-net v2                                               │
 │                       │ MCP SERVERS  1                                                                               │
 │                       │   ◆ tenebrae-library              gateway on research                                        │
 │                       │                                                                                              │

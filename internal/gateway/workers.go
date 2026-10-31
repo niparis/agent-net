@@ -445,6 +445,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		} else {
 			var candidates []protocol.WorkerModelCandidate
 			var skippedProfiles []string
+			resolutionNotes := map[string]string{}
 			for _, h := range node.Harnesses {
 				if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
 					continue
@@ -461,29 +462,28 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 					if profile.Harness != h.Name {
 						continue
 					}
-					installed := false
-					for _, model := range h.Models {
-						if model == profile.Model {
-							installed = true
-							break
-						}
-					}
-					if !installed {
+					resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, h.Models)
+					if resolved == "" {
 						message := fmt.Sprintf("stale profile %q skipped: %s model %s is not listed by %s", profile.Name, h.Name, profile.Model, node.Hostname)
-						if closest := protocol.ClosestModels(profile.Model, h.Models, 3); len(closest) > 0 {
+						if len(ambiguous) > 0 {
+							message = fmt.Sprintf("stale profile %q skipped: %s model %s is ambiguous on %s (%s)", profile.Name, h.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
+						} else if closest := protocol.ClosestModels(profile.Model, h.Models, 3); len(closest) > 0 {
 							message += "; closest: " + strings.Join(closest, ", ")
 						}
 						skippedProfiles = append(skippedProfiles, message)
 						continue
 					}
-					if !protocol.WorkerProviderAllowed(h.Name, profile.Model, providers.Providers, quotas) {
+					if !protocol.WorkerProviderAllowed(h.Name, resolved, providers.Providers, quotas) {
 						continue
 					}
-					model := profile.Model
+					model := resolved
 					if profile.Effort != "" {
 						model += ":" + profile.Effort
 					}
-					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[profile.Model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[resolved], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+					if resolved != profile.Model {
+						resolutionNotes[h.Name+"\x00"+model] = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
+					}
 				}
 			}
 			if len(candidates) == 0 {
@@ -503,6 +503,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = fmt.Sprintf("%s -> %s %s (score %g, %s", difficulty, p.Harness, p.Model, choice.Score, choice.Fit)
+			if note := resolutionNotes[p.Harness+"\x00"+p.Model]; note != "" {
+				automaticNote += "; " + note
+			}
 			if choice.QuotaNote != "" {
 				automaticNote += "; " + choice.QuotaNote
 			}
@@ -533,6 +536,30 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, err
 		}
 		asked := p.Model
+		profileModel, profileEffort := protocol.SplitModelLevel(asked)
+		profiles, err := g.store.WorkerProfiles()
+		if err != nil {
+			return none, err
+		}
+		for _, profile := range profiles {
+			if profile.Harness != p.Harness || profile.Model != profileModel {
+				continue
+			}
+			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, hi.Models)
+			if len(ambiguous) > 0 {
+				return none, reject("worker profile %q model %s is ambiguous on %s (%s)", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
+			}
+			if resolved != "" {
+				if resolved != profile.Model {
+					modelNote = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
+				}
+				asked = resolved
+				if profileEffort != "" {
+					asked += ":" + profileEffort
+				}
+			}
+			break
+		}
 		failedAt, err := g.store.FailedModels(pick.NodeID, p.Harness)
 		if err != nil {
 			return none, err

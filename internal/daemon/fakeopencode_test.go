@@ -420,7 +420,7 @@ func runFakeOpenCode() {
 			http.Error(w, "bad session", 500)
 			return
 		}
-		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text}
+		item := map[string]any{"id": "msg_" + protocol.NewToken(), "type": "user", "text": prompt.Text, "time": map[string]any{"created": time.Now().UnixMilli()}}
 		items = append([]map[string]any{item}, items...)
 		if prompt.Text == "FAKE:ctofail" {
 			items = append([]map[string]any{{"type": "idle", "outcome": "failed", "error": map[string]any{"message": "unknown model"}}}, items...)

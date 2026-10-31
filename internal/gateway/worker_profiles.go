@@ -31,9 +31,10 @@ func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []pr
 	out := append([]protocol.WorkerProfile(nil), profiles...)
 	for i := range out {
 		var checked []string
-		var models []string
+		var closest []string
+		var machineAvailability []protocol.WorkerProfileMachineAvailability
 		seenMachines := map[string]bool{}
-		seenModels := map[string]bool{}
+		seenClosest := map[string]bool{}
 		available := false
 		known := false
 		for _, node := range nodes {
@@ -49,29 +50,57 @@ func withWorkerProfileAvailability(profiles []protocol.WorkerProfile, nodes []pr
 				if machine == "" {
 					machine = node.NodeID
 				}
-				if machine != "" && !seenMachines[machine] {
+				if machine != "" && seenMachines[machine] {
+					continue
+				}
+				if machine != "" {
 					checked = append(checked, machine)
 					seenMachines[machine] = true
 				}
-				for _, model := range harness.Models {
-					if model == out[i].Model {
-						available = true
+				resolved, ambiguous := protocol.ResolveWorkerProfileModel(out[i].Model, harness.Models)
+				status := protocol.WorkerProfileMachineAvailability{Machine: machine}
+				if resolved != "" {
+					status.Available = true
+					available = true
+					if resolved != out[i].Model {
+						status.ResolvedModel = resolved
 					}
-					if !seenModels[model] {
-						models = append(models, model)
-						seenModels[model] = true
+				} else {
+					status.Ambiguous = ambiguous
+					if len(ambiguous) > 0 {
+						status.Closest = append([]string(nil), ambiguous...)
+					} else {
+						status.Closest = protocol.ClosestModels(out[i].Model, harness.Models, 3)
+					}
+					if len(status.Closest) > 3 {
+						status.Closest = status.Closest[:3]
+					}
+					for _, model := range status.Closest {
+						if !seenClosest[model] {
+							closest = append(closest, model)
+							seenClosest[model] = true
+						}
 					}
 				}
+				machineAvailability = append(machineAvailability, status)
 			}
 		}
 		sort.Strings(checked)
+		sort.Slice(machineAvailability, func(i, j int) bool {
+			return machineAvailability[i].Machine < machineAvailability[j].Machine
+		})
+		sort.Strings(closest)
+		if len(closest) > 3 {
+			closest = closest[:3]
+		}
 		out[i].MachinesChecked = checked
+		out[i].MachineAvailability = machineAvailability
 		out[i].Available = nil
 		out[i].Closest = nil
 		if known {
 			out[i].Available = &available
 			if !available {
-				out[i].Closest = protocol.ClosestModels(out[i].Model, models, 3)
+				out[i].Closest = closest
 			}
 		}
 	}

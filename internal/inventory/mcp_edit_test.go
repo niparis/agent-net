@@ -84,6 +84,26 @@ func TestRemoveNativeEntryKeepsEverythingElse(t *testing.T) {
 			in:   "[mcp_servers.a]\ncommand = \"x\"\n\n[ mcp_servers . \"my-srv\" ]\ncommand = \"y\" # why\n",
 			want: "[mcp_servers.a]\ncommand = \"x\"\n\n",
 		},
+		{
+			name: "codex top-level inline table", harness: "codex", scope: "user", rel: ".codex/config.toml", entry: "alpha",
+			in:   "model = \"m1\"\n# keep this comment\nmcp_servers.alpha = { command = \"x\", args = [\"-y\"] } # keep inline comment\n# keep this comment too\nmcp_servers.alpha2 = { command = \"keep\" }\n",
+			want: "model = \"m1\"\n# keep this comment\n # keep inline comment\n# keep this comment too\nmcp_servers.alpha2 = { command = \"keep\" }\n",
+		},
+		{
+			name: "codex inline table in servers table", harness: "codex", scope: "user", rel: ".codex/config.toml", entry: "alpha",
+			in:   "[mcp_servers]\n# keep before\nalpha = { command = \"x\", args = [\"-y\"] }\n# keep after\nalpha2 = { command = \"keep\" }\n",
+			want: "[mcp_servers]\n# keep before\n# keep after\nalpha2 = { command = \"keep\" }\n",
+		},
+		{
+			name: "codex dotted keys with intervening comment and name prefix", harness: "codex", scope: "user", rel: ".codex/config.toml", entry: "alpha",
+			in:   "mcp_servers.alpha.command = \"x\"\n# keep between dotted keys\nmcp_servers.alpha.args = [\"-y\"]\nmcp_servers.alpha2.command = \"keep-prefix\"\nmcp_servers.beta.command = \"keep-other\"\n",
+			want: "# keep between dotted keys\nmcp_servers.alpha2.command = \"keep-prefix\"\nmcp_servers.beta.command = \"keep-other\"\n",
+		},
+		{
+			name: "codex dotted keys inside servers table", harness: "codex", scope: "user", rel: ".codex/config.toml", entry: "alpha",
+			in:   "[mcp_servers]\nalpha.command = \"x\"\n# keep between dotted keys\nalpha.args = [\"-y\"]\nalpha2.command = \"keep-prefix\"\n",
+			want: "[mcp_servers]\n# keep between dotted keys\nalpha2.command = \"keep-prefix\"\n",
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -112,13 +132,6 @@ func TestRemoveNativeEntryRefusals(t *testing.T) {
 	// A duplicate key is ambiguous.
 	if _, err := removeVia(t, "claude", "user", root, ".claude.json", `{"mcpServers": {"a": {"command": "x"}, "a": {"command": "y"}}}`, "a"); err == nil {
 		t.Fatal("duplicate key was accepted")
-	}
-	// A TOML entry in a form the editor does not own is refused, not guessed.
-	if _, err := removeVia(t, "codex", "user", root, ".codex/config.toml", "[mcp_servers]\na = { command = \"x\" }\n", "a"); err == nil {
-		t.Fatal("inline TOML entry was accepted")
-	}
-	if _, err := removeVia(t, "codex", "user", root, ".codex/config.toml", "mcp_servers.a.command = \"x\"\n", "a"); err == nil {
-		t.Fatal("dotted TOML entry was accepted")
 	}
 	// A path that is not a known native source is refused.
 	o := Options{Home: t.TempDir()}

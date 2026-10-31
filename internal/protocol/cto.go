@@ -81,6 +81,8 @@ type CTOSendRequest struct {
 	Text string `json:"text"`
 }
 type CTOEventsRequest struct {
+	// Index is the forward offset; a negative value requests the page before
+	// that offset. Zero returns the newest page.
 	Index int `json:"index"`
 }
 type CTOAction struct {
@@ -95,6 +97,7 @@ type CTOEvents struct {
 	Actions    []CTOAction       `json:"actions"`
 	Messages   []json.RawMessage `json:"messages"`
 	Next       int               `json:"next"`
+	Older      int               `json:"older,omitempty"`
 }
 
 // CTOGraphChange is an attributed graph history entry, oldest first.

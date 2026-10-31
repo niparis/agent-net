@@ -44,6 +44,9 @@ type InventoryItem struct {
 	Reason      string    `json:"reason,omitempty"`
 	Unsupported []string  `json:"unsupported,omitempty"`
 	Files       []string  `json:"files,omitempty"`
+	// Tracked is set for a project skill when the repository lists files under
+	// it: it is part of the repo. An untracked project skill is a local copy.
+	Tracked bool `json:"tracked,omitempty"`
 	// Import says whether a native MCP entry can move into the federation. It
 	// is set only for native MCP entries and holds names, never values.
 	Import *MCPImportInfo `json:"import,omitempty"`
@@ -67,13 +70,21 @@ type ToolLocation struct {
 	NodeID    string `json:"node_id"`
 	Machine   string `json:"machine"`
 	GraphNode string `json:"graph_node,omitempty"`
+	// VersionNo is the agent-net store number (1, 2, ...) of this copy's
+	// content, or 0 when no stored version has this content (it was edited
+	// outside agent-net, or never imported).
+	VersionNo int `json:"version_no,omitempty"`
 	InventoryItem
 }
 type ToolItem struct {
-	ID         string         `json:"id"`
-	Kind       string         `json:"kind"`
-	Name       string         `json:"name"`
-	Hash       string         `json:"hash"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Hash string `json:"hash"`
+	// VersionNo is the number of this content in the agent-net store: v1, v2
+	// and so on, counted per skill name in import order. Zero means the
+	// content is not in the store.
+	VersionNo  int            `json:"version_no,omitempty"`
 	Locations  []ToolLocation `json:"locations"`
 	Global     bool           `json:"global"`
 	Projects   []string       `json:"projects"`
@@ -145,7 +156,27 @@ type ToolVersionRequest struct {
 type ToolAssignment struct {
 	Scope    string   `json:"scope"`
 	Projects []string `json:"projects,omitempty"`
+	// Machines limits the assignment to these machines, by node ID. Empty
+	// means every machine, which is what every assignment meant before
+	// machine scope existed. It combines with global, projects and
+	// uninstalled: "global on research only". Machines the assignment does
+	// not name keep whatever they have.
+	Machines []string `json:"machines,omitempty"`
 }
+
+// OnMachine says whether the assignment applies to a machine.
+func (a ToolAssignment) OnMachine(node string) bool {
+	if len(a.Machines) == 0 {
+		return true
+	}
+	for _, m := range a.Machines {
+		if m == node {
+			return true
+		}
+	}
+	return false
+}
+
 type ToolRevision struct {
 	Item       string         `json:"item"`
 	Revision   int64          `json:"revision"`
@@ -270,6 +301,9 @@ type ToolAuditEvent struct {
 	Targets  []ToolPlanTarget `json:"targets"`
 	Result   string           `json:"result"`
 	At       int64            `json:"at"`
+	// Assignment is the scope the plan or revision asked for, including its
+	// machines. It is empty for events from before machine scope existed.
+	Assignment *ToolAssignment `json:"assignment,omitempty"`
 }
 
 // ToolBackup describes one local backup of an item. It never carries content.

@@ -51,6 +51,16 @@ type Copy struct {
 	Checkout string `json:"checkout,omitempty"`
 	Hash     string `json:"hash"`
 	Name     string `json:"name,omitempty"`
+	// Label is the version of this copy: "v2", "changed" or a short hash.
+	Label string `json:"label,omitempty"`
+}
+
+// Version is the label to show for the copy.
+func (c Copy) Version() string {
+	if c.Label != "" {
+		return c.Label
+	}
+	return Short(c.Hash)
 }
 
 // Action is the one suggested fix, in data. The TUI turns it into a plan.
@@ -139,8 +149,8 @@ func nameList(names []string, max int) string {
 	return strings.Join(names[:max], ", ") + fmt.Sprintf(" and %d more", len(names)-max)
 }
 
-func copyOf(v protocol.ToolItem, l protocol.ToolLocation) Copy {
-	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name}
+func copyOf(g group, v protocol.ToolItem, l protocol.ToolLocation) Copy {
+	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name, Label: g.label(v.VersionNo, v.Hash)}
 }
 
 func skillDiffs(g group, ms []Machine) []Difference {
@@ -151,7 +161,13 @@ func skillDiffs(g group, ms []Machine) []Difference {
 		hashes map[string]Copy
 	}
 	per := map[string]*held{}
+	nodeOf := map[string]string{}
 	var order []string
+	// A machine the desired state does not name is not part of the change:
+	// "on research only" is not drift against the other machines.
+	inScope := func(machine string) bool {
+		return mg == nil || mg.Desired == nil || mg.Desired.Assignment.OnMachine(nodeOf[machine])
+	}
 	for _, v := range g.variants {
 		for _, l := range v.Locations {
 			if l.Scope != protocol.InventoryUser || readOnlySource(l) {
@@ -161,10 +177,11 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			if h == nil {
 				h = &held{hashes: map[string]Copy{}}
 				per[l.Machine] = h
+				nodeOf[l.Machine] = l.NodeID
 				order = append(order, l.Machine)
 			}
 			if _, ok := h.hashes[v.Hash]; !ok {
-				h.hashes[v.Hash] = copyOf(v, l)
+				h.hashes[v.Hash] = copyOf(g, v, l)
 			}
 		}
 	}
@@ -193,7 +210,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 	byHash := map[string][]string{}
 	firstCopy := map[string]Copy{}
 	for _, m := range order {
-		if twoOn[m] {
+		if twoOn[m] || !inScope(m) {
 			continue
 		}
 		for h, c := range per[m].hashes {
@@ -214,15 +231,28 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			}
 			return hs[i] < hs[j]
 		})
-		var parts, machines []string
+		labelOf := map[string]string{}
+		for _, v := range g.variants {
+			labelOf[v.Hash] = g.label(v.VersionNo, v.Hash)
+		}
+		// One part per machine: "Mac on v1, research on v3".
+		hashOf := map[string]string{}
 		for _, h := range hs {
-			parts = append(parts, fmt.Sprintf("%s on %s", Short(h), strings.Join(byHash[h], ", ")))
-			machines = append(machines, byHash[h]...)
+			for _, m := range byHash[h] {
+				hashOf[m] = h
+			}
+		}
+		var parts, machines []string
+		for _, m := range order {
+			if h, ok := hashOf[m]; ok {
+				parts = append(parts, fmt.Sprintf("%s on %s", m, labelOf[h]))
+				machines = append(machines, m)
+			}
 		}
 		d := Difference{Key: "drift:" + g.name, Kind: KindDrift, Severity: SevWarn, Name: g.name, Machines: machines,
 			Title: fmt.Sprintf("%s differs: %s", g.name, strings.Join(parts, ", "))}
 		if mg != nil {
-			d.Fix = "make every machine use " + Short(mg.Hash)
+			d.Fix = "make every machine use " + g.label(mg.VersionNo, mg.Hash)
 			d.Action = Action{Kind: ActAssign, Item: mg.ID, Name: g.name}
 		} else {
 			d.Fix = "compare, then keep one"
@@ -255,17 +285,29 @@ func skillDiffs(g group, ms []Machine) []Difference {
 					continue
 				}
 				p := projectOf(l)
-				if p == "" || seen[p] {
+				mark := p + "\x00" + fmt.Sprint(l.Tracked)
+				if p == "" || seen[mark] {
 					continue
 				}
-				seen[p] = true
+				seen[mark] = true
 				var cs []Copy
 				for _, w := range g.variants {
 					for _, m := range w.Locations {
-						if m.Scope == protocol.InventoryProject && projectOf(m) == p && !userHashes[w.Hash] {
-							cs = append(cs, copyOf(w, m))
+						if m.Scope == protocol.InventoryProject && projectOf(m) == p && m.Tracked == l.Tracked && !userHashes[w.Hash] {
+							cs = append(cs, copyOf(g, w, m))
 						}
 					}
+				}
+				if !l.Tracked {
+					// Not committed, so there is no repo change to plan: it is
+					// a copy on one machine.
+					out = append(out, Difference{
+						Key: "hidden-local:" + g.name + ":" + p, Kind: KindHidden, Severity: SevWarn, Name: g.name, Projects: []string{p},
+						Title:  fmt.Sprintf("%s has its own local copy of %s; it hides yours", p, g.name),
+						Fix:    "turn the local copy off on its row in All tools",
+						Action: Action{Kind: ActNone, Name: g.name, Project: p, Copies: cs},
+					})
+					continue
 				}
 				out = append(out, Difference{
 					Key: "hidden:" + g.name + ":" + p, Kind: KindHidden, Severity: SevWarn, Name: g.name, Projects: []string{p},
@@ -303,7 +345,9 @@ func skillDiffs(g group, ms []Machine) []Difference {
 		}
 		if len(mg.Results) == 0 && mg.Applied == "pending" {
 			for _, m := range ms {
-				waiting = appendOnce(waiting, m.Name)
+				if mg.Desired.Assignment.OnMachine(m.ID) {
+					waiting = appendOnce(waiting, m.Name)
+				}
 			}
 		}
 		if len(failed) > 0 {
@@ -354,7 +398,7 @@ func duplicateDiffs(gs []group) []Difference {
 			ok := false
 			for _, l := range v.Locations {
 				if l.Scope == protocol.InventoryUser && !readOnlySource(l) {
-					c, ok = copyOf(v, l), true
+					c, ok = copyOf(g, v, l), true
 					break
 				}
 			}
@@ -430,7 +474,7 @@ func unmanagedDiffs(gs []group, ms []Machine, skip map[string]bool) []Difference
 					on[l.Machine] = true
 					if !hashes[v.Hash] {
 						hashes[v.Hash] = true
-						cs = append(cs, copyOf(v, l))
+						cs = append(cs, copyOf(g, v, l))
 					}
 				}
 			}

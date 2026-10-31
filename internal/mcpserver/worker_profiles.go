@@ -17,7 +17,7 @@ type profileRemoveIn struct {
 }
 
 func addWorkerProfileTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
-	mcp.AddTool(s, &mcp.Tool{Name: "agent_worker_profiles", Description: "List the network's registered worker profiles. Workers cannot use this tool."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(s, &mcp.Tool{Name: "agent_worker_profiles", Description: "List the network's registered worker profiles, with per-machine model resolution and closest alternatives. Workers cannot use this tool."}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		out, err := run(ctx, protocol.OpWorkerProfiles, struct{}{})
 		return nil, out, err
 	})

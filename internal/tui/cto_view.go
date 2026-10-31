@@ -77,7 +77,8 @@ func (m Model) ctoView(w, h int) []string {
 	}
 	rows := max(h-1, 0)
 	c.pageRows = max(rows-1, 1)
-	c.scroll = min(c.scroll, max(len(lines)-rows, 0))
+	c.scrollMax = max(len(lines)-rows, 0)
+	c.scroll = min(c.scroll, c.scrollMax)
 	end := len(lines) - c.scroll
 	start := max(end-rows, 0)
 	if start > 0 && rows > 1 {

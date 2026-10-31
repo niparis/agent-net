@@ -20,6 +20,7 @@ type fakeCTOSource struct {
 	settings protocol.CTOSettings
 	sent     []string
 	events   protocol.CTOEvents
+	pages    map[int]protocol.CTOEvents
 	fresh    int
 	history  []protocol.CTOGraphChange
 	undone   []int64
@@ -33,6 +34,9 @@ func (f *fakeCTOSource) CTOSend(_ context.Context, text string) error {
 	return nil
 }
 func (f *fakeCTOSource) CTOEvents(_ context.Context, index int) (protocol.CTOEvents, error) {
+	if page, ok := f.pages[index]; ok {
+		return page, nil
+	}
 	return f.events, nil
 }
 func (f *fakeCTOSource) CTOSettings(context.Context) (protocol.CTOSettings, error) {
@@ -631,18 +635,58 @@ func TestCTOGroupsCharterActions(t *testing.T) {
 	}
 }
 
-func TestCTOSwitchKeepsHistoryAndDivider(t *testing.T) {
+func TestCTOMergedTimelineKeepsSwitchDivider(t *testing.T) {
 	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
 	m.cto = &ctoState{generation: 1}
-	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "old", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message"}`)}}})
-	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "claude", model: "opus", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"new message"}`)}}})
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "claude", model: "opus", events: protocol.CTOEvents{
+		Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message","time":{"created":1000}}`), json.RawMessage(`{"type":"assistant","text":"new message","time":{"created":3000}}`)},
+		Actions:  []protocol.CTOAction{{Text: "switched to claude · opus · 14:02", At: 2_000_000_000}},
+	}})
 	joined := strings.Join(m.cto.messages, "|")
-	if !strings.Contains(joined, "old message") || !strings.Contains(joined, "switched to claude · opus") || !strings.Contains(joined, "new message") {
+	if !strings.Contains(joined, "old message") || !strings.Contains(joined, "switched to claude · opus · 14:02") || !strings.Contains(joined, "new message") {
 		t.Fatal(joined)
 	}
-	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "old", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message"}`), json.RawMessage(`{"type":"assistant","text":"later"}`)}}})
-	joined = strings.Join(m.cto.messages, "|")
-	if strings.Count(joined, "old message") != 1 || !strings.Contains(joined, "later") {
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "claude", model: "opus", events: protocol.CTOEvents{
+		Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message","time":{"created":1000}}`), json.RawMessage(`{"type":"assistant","text":"new message","time":{"created":3000}}`)},
+		Actions:  []protocol.CTOAction{{Text: "switched to claude · opus · 14:02", At: 2_000_000_000}},
+	}})
+	if joined = strings.Join(m.cto.messages, "|"); strings.Count(joined, "old message") != 1 || strings.Count(joined, "new message") != 1 {
 		t.Fatal(joined)
+	}
+}
+
+func TestCTOSwitchDividerGolden(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{generation: 1}
+	m.focus = focusCTO
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "claude", model: "opus", events: protocol.CTOEvents{
+		Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"OpenCode message","time":{"created":1793282700000}}`), json.RawMessage(`{"type":"assistant","text":"Claude reply","time":{"created":1793282820000}}`)},
+		Actions:  []protocol.CTOAction{{Text: "switched to claude · opus · 14:07", At: 1793282760000000000}},
+	}})
+	golden(t, "cto_harness_switch_80x10", strings.Join(m.ctoView(80, 10), "\n"))
+}
+
+func TestCTOScrollLoadsOlderTimelinePage(t *testing.T) {
+	src := &fakeCTOSource{fakeSource: &fakeSource{}, pages: map[int]protocol.CTOEvents{
+		-1: {Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"older","time":{"created":1000}}`)}, Older: 0},
+	}}
+	m := New(src)
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "fake/m1", events: protocol.CTOEvents{
+		Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"newer","time":{"created":2000}}`)}, Older: 1,
+	}})
+	m.cto.scrollMax = 0
+	m.cto.pageRows = 1
+	next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyPgUp})
+	if cmd == nil {
+		t.Fatal("scrolling past the oldest loaded entry did not request a page")
+	}
+	m = next.(Model)
+	page := cmd()
+	next, _ = m.Update(page)
+	m = next.(Model)
+	joined := strings.Join(m.cto.messages, "|")
+	if !strings.Contains(joined, "you: older") || !strings.Contains(joined, "you: newer") || m.cto.olderCursor != 0 {
+		t.Fatalf("older page was not added: messages=%q cursor=%d", joined, m.cto.olderCursor)
 	}
 }

@@ -1,5 +1,7 @@
 # Reference
 
+## CTO settings and conversation
+
 The owner-only `cto_settings` operator method reads and saves the active CTO
 harness, its model, the saved model for each harness, and conversation
 auto-compaction rules. The response has `harness`, `model`, `opencode_model` and
@@ -43,7 +45,9 @@ The daemon asks OpenCode 2.2.0 to compact with
 next step boundary. The conversation's messages report the context before a
 compaction. The first reply after it reports the context after. The CTO chat
 shows one line, for example `compacted: 182k -> 14k tokens`; it is stored with
-the other CTO action lines. Action lines are short. Graph change details remain in Map history. The CTO pane keeps visible history when switching harnesses and marks the switch.
+the other CTO action lines. Action lines are short. Graph change details remain
+in Map history. The daemon keeps one displayed timeline across harnesses and
+restarts. A switch adds a dim divider with the harness, model and local time.
 
 The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
 harness on first use. OpenCode runs as a private server. Claude Code runs as a
@@ -54,10 +58,15 @@ projects directory.
 
 Each harness keeps its own conversation ID in daemon state across restarts and
 harness switches. `cto_new` starts a fresh conversation for the selected
-harness only. `cto_events` takes `{"index":0}` and returns messages in
-chronological order and a `next` index for the next poll. Changing harness
-stops the previous runtime; the next send resumes the selected conversation.
-The CTO is not a worker or a network session.
+harness only. When a harness is left, the daemon saves its messages and action
+lines in the local state database. `cto_events` merges that saved history with
+the selected harness's live conversation and the durable switch dividers, in
+chronological order. It returns at most 500 entries per page. An `index` of 0
+returns the newest page. `older` is the cursor for the previous page; the TUI
+sends its negative value as `index` when scrolling reaches the oldest loaded
+entry. `next` remains the forward offset.
+Changing harness stops the previous runtime; the next send resumes the selected
+conversation. The CTO is not a worker or a network session.
 
 Each harness resumes its conversation with its own saved model. For OpenCode,
 the model is resolved against the local inventory. With no preference, the
@@ -151,7 +160,7 @@ The tab never shows harness columns: a tool is on or off for a machine, or on fo
 A harness limit shows as a `◐` cell and a note in the details pane.
 
 - **Differences** (opens first). One line for each thing that differs, with one suggested fix: two machines on different versions, two different copies on one machine, a project's own copy hiding a managed one, the same content under two names, skills only on some machines and not managed, native MCP servers set up by hand, failed targets, and pending targets (info only). `enter` opens the plan of the fix. `x` accepts a difference as it is: the gateway stores the mark (`tools_accept`, table `tool_accepted`), so it stays after a restart. `.` shows accepted ones.
-- **All tools.** NAME, FROM (agent-net store with a version, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. agent-net has no switch for one machine yet: `a` on a machine cell plans the skill for every machine and `u` plans an uninstall everywhere, and the plan says so. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply.
+- **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. `a` or `u` on a machine cell plans the change for that machine only (a global assignment limited to it), and the plan says "only on NAME: other machines are not changed". With a single machine there is no limit to set. A machine the desired state does not name is never reported as drift and never shows a pending cell. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply. A skill inside a project folder is `⌂ repo` only when the repository tracks files under it. One that is not tracked is `local` (shown as `local PROJECT`, with a `PROJECT (local)` project cell): a copy on one machine. A local copy is managed like a copy found on a machine: `a` imports it and turns it on, `u` turns it off, and there is no branch plan.
 - **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
 
 Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences (the computation is `internal/toolsdiff`).
@@ -563,6 +572,8 @@ unassigned identifies project locations that do not match the registry. Offline
 machines retain their last observations as stale. The daemon scans at startup,
 after reconnecting and every five minutes.
 
+A project skill item has `tracked: true` when `git ls-files` lists files under it in the project checkout. The daemon runs one `git ls-files` per project root in each scan (limited to the four project skill folders, no network) and uses the answer for every skill in that root. A folder that is not a Git repository, or a failed `ls-files`, leaves `tracked` off. A scan from a daemon that is older than this field has no `tracked`, so its project skills show as `local` until it is upgraded.
+
 The owner can request a refresh through `inventory_scan`. `inventory_get`
 returns report pages with an `offset` request field and a `next` cursor.
 `tools_items` returns item pages with optional `kind`, `harness`, `project`,
@@ -615,9 +626,21 @@ session. Applying or undoing an assignment makes the gateway send `mcp.changed`
 to every daemon, and each daemon sends `mcp_changed` to its sessions. Claude
 Code gets `notifications/tools/list_changed` only when its tool list really
 changed. Pi hides removed tools and updates its list from the next prompt.
-Codex and OpenCode have not been tested end to end for live updates. They get
-the filtered list when they next read it, and a stale call is still refused at
-the gateway. Removing a server deletes its plans and assignment; adding it
+Pi and OpenCode plugin connections are tested end to end: after the push, the
+next `mcp_tools` is filtered for the session's project. The shipped OpenCode
+plugin does not read `mcp_tools` yet, so an OpenCode session does not get
+federated tools as tools; its connection gets the push and the filtered list,
+and a stale call is refused at the gateway.
+
+Codex starts one `agent-net mcp --codex` process for all threads of its app
+server, and `tools/list` carries no thread. That process has no project, so it
+lists only `global` servers. A server scoped to projects is not listed to Codex
+at all, even for a thread of an assigned project; to use a server from Codex,
+keep it `global`. The process hears `mcp_changed` at once (the same push as other
+sessions) and updates its list, so an assignment change shows in the next
+`tools/list` that Codex asks for. Whether Codex asks again during a running
+session is Codex's choice and is not tested against the real Codex. A call to a
+tool that is no longer listed fails with `unknown tool`. Removing a server deletes its plans and assignment; adding it
 again starts global.
 
 A call (`mcp_call`) is checked again at the gateway, whatever the client
@@ -671,7 +694,14 @@ plan with a conflict cannot be applied. Apply:
 2. runs the same test as `mcp_test`;
 3. compares the tools the server reports with the tools the native entry lists
    (`enabled_tools` in Codex, `enabledTools` or `allowedTools` elsewhere), when it
-   lists any. A listed tool that is missing, or a server with no tools, fails;
+   lists any. A listed tool that is missing, or a server with no tools, fails.
+   When the entry has an allow-list, the federated server gets the same list
+   (`allowed_tools` on the server): the gateway lists and lets through only those
+   tools, even if the server reports more, so a session sees what it saw before.
+   A call to another tool fails with `tool "X" is not exposed by MCP server`, and
+   `mcp test` and health reports never widen the list. When the entry has no
+   allow-list, every tool the server reports is accepted and the import record
+   (`imported.tools`) keeps the list. The record also keeps `allowed_tools`;
 4. enables it. A user-level entry becomes `global` (a per-machine scope cannot be
    expressed); a project-level entry becomes `projects` with that project.
 
@@ -741,7 +771,16 @@ writes a temporary file beside the original, checks the hash again and renames
 it over. For `~/.claude.json` it takes Claude Code's own `.claude.json.lock`
 directory first. After the rename it reads the file again, checks the bytes
 are exactly the planned result, and checks that the entry is gone. A session
-that is running keeps its native tools until it restarts.
+that is running keeps its native tools until it restarts, so the gateway tells
+it. Each online session of the entry's harness on that machine gets one message
+from the owner session: "the MCP server X moved to agent-net; restart this
+session to drop the old copy". A user-level entry reaches every such session; a
+project-level entry reaches the sessions of its project. Sessions of other
+harnesses and other machines are not told. The message needs no reply, and it
+is sent at most once per session for a plan (undo sends nothing). The result
+lists the session IDs in `notified` and adds a note with the count. A session
+that cannot be reached still gets the stored message when it returns. A failure
+to tell a session does not fail the removal.
 
 **Undo.** `undo_plan_id` restores the original file only if the file still has
 the hash of the edit's result. Otherwise it answers `refused` with "changed
@@ -775,6 +814,19 @@ agent-net tools history 'ITEM_ID'
 
 `tools_plan` takes `item` and `target`, where `target.scope` is `global`,
 `projects` or `uninstalled`; projects scope also takes a `projects` array.
+`target.machines` is an optional array of machine names or node IDs that limits
+the change to those machines ("global on research only"). It combines with
+every scope. The gateway stores node IDs, sorted and without duplicates, and
+refuses a name that matches no enrolled machine or more than one. Empty or
+missing means every machine, which is what every assignment stored before this
+field existed means. The plan, its targets and its audit events carry the
+machines (`assignment.machines`). A machine that is not named gets no target,
+and a daemon also ignores any target that names another machine. A machine that
+is not named keeps what it has: the new revision does not remove or restore
+anything there. A registry MCP server runs on its host, so `machines` is refused
+for it. `agent-net tools plan ITEM global --on research --on mac` sets it from
+the command line. The last-copy check counts a copy on an unnamed machine as
+staying.
 It refreshes reachable machines and lists the known machines, harnesses,
 project checkouts, sources, destinations, intended actions and conflicts. Offline machines and unsupported
 harnesses are shown as unresolved. A skill that has not been imported and an
@@ -840,7 +892,8 @@ only if its hash still matches. Every step is journaled.
 `tools_undo` takes an `item` and reverses the item's newest revision. Undo is
 a new audited desired revision, like an apply: it takes the previous
 assignment (or `uninstalled` when there is none) and a plan that reverses only
-the targets that reported `applied`. It answers with the same per-target
+the targets that reported `applied`. Undoing a machine-scoped change therefore
+touches only the machines it changed. It answers with the same per-target
 results as `tools_apply`. Offline machines stay pending and undo when they
 reconnect.
 
@@ -906,6 +959,8 @@ the tar bundle. Export verifies the bundle hash. Import, version listing and
 export require the owner connection. Reimporting the same content hash for an
 item returns the existing version. A saved version remains available when its
 observed locations disappear.
+
+**Version numbers.** Each new content hash that is imported for a skill name gets the next number: v1, v2, and so on. The number is stored with the version (column `number` of `skill_versions`), never changes, and is counted per skill name in import order. An upgrade fills in the numbers of existing versions in import-time order. `tools_versions` returns it as `number`. `tools_items` shows it as `version_no` on an item and on each of its locations; `0` or a missing field means no stored version has this content. The Tools tab writes a stored version as `v3`. A copy of a skill that has stored versions, but whose content is none of them, reads `changed` (it was edited outside agent-net). A skill with no stored version at all shows a short content hash.
 
 The gateway keeps the private bare Git repository in `skills.git` under its
 data directory. Each imported identity has its own directory in the repository;
@@ -1002,7 +1057,11 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   A Codex effort is checked at start against the model's `supported_reasoning_levels` in `codex debug models`. An effort the model does not list is refused, and the error names the levels it does. The model itself goes to `thread/start`; the effort goes to every `turn/start`, so it also holds after `thread/resume` and for a continued worker. The session, the start result and the notices show the full `model:effort`.
 
 - **Difficulty and automatic model choice.** `agent_start` and the CTO's `worker_start` accept `difficulty`: `trivial`, `simple`, `normal`, `hard` or `very_complex`. Empty means `normal`. With an empty model or `auto`, the gateway chooses a registered worker profile whose harness and model are available on the selected machine. The default minimum scores are 0, 20, 30, 40 and 50. A score at least 10 above the minimum is excellent; one at or above the minimum is good; one up to 10 below is poor; a lower score is denied. The gateway ranks fit first, then quota room and recent failures. It skips exhausted providers and windows above 90 percent, and subtracts five quota-room points per running worker on the provider. For a monthly window, it estimates elapsed time from the preceding calendar-month reset. When usable quota readings are absent, equally ranked choices rotate. The result's `model_note` explains the choice. When the roster is empty, the harness default is used and the result says how to register a worker. Explicit model requests keep the resolution rules below.
-- **Worker profiles.** The gateway stores a network roster with each profile's name, harness, model, optional effort, creator session and creation time. `agent-net workers profiles` lists it; `agent-net workers profiles add <harness> <model> [effort]` adds an entry, and `agent-net workers profiles remove <name>` removes one. The CTO can list, add and remove profiles. Non-worker agent sessions have `agent_worker_profiles`, `agent_worker_profile_add` and `agent_worker_profile_remove`; they should change the roster when the owner asks. Model names can be loose and must resolve to a model advertised by a machine for that harness. The default profile name combines the harness, resolved model and effort. A profile is considered for a start only when its harness and model are listed on the selected machine. Adding a profile with an existing name replaces its harness, model and effort in one call; the change is recorded as a profile add. The profile list includes `available: true` when an online machine with that harness lists its model, and `available: false` when online machines with that harness do not list it. `machines_checked` names the online machines checked. For an unavailable profile, `closest` lists up to three similar models. If no online machine reports the harness, availability is unknown and `available` is omitted. Automatic selection skips profiles missing from the selected machine and explains the skipped profile and reason in `model_note`.
+- **Worker profiles.** The gateway stores a network roster with each profile's name, harness, model, optional effort, creator session and creation time. `agent-net workers profiles` lists it; `agent-net workers profiles add <harness> <model> [effort]` adds an entry, and `agent-net workers profiles remove <name>` removes one. The CTO can list, add and remove profiles. Non-worker agent sessions have `agent_worker_profiles`, `agent_worker_profile_add` and `agent_worker_profile_remove`; they should change the roster when the owner asks. Model names can be loose and must resolve to a model advertised by a machine for that harness. The default profile name combines the harness, resolved model and effort. Adding a profile with an existing name replaces its harness, model and effort in one call; the change is recorded as a profile add.
+
+  Each machine resolves the exact model ID first. If that ID is missing, it can use the same model name after the first `/` under another provider, but only when exactly one provider lists that name. Several matches make the profile unavailable on that machine. Automatic selection skips the profile only on machines where it does not resolve. A start result reports a provider change in `model_note`, for example `terra pi: openai-codex/gpt-6.1-terra resolved to openai/gpt-6.1-terra on research`.
+
+  The profile list includes `machine_availability` for online machines reporting the profile's harness. Each entry has the machine name and whether the profile resolves there. `resolved_model` is included when the machine uses a different model ID. Failed entries include up to three `closest` model IDs; `ambiguous` lists all IDs that share the model name under multiple providers. `available` is true when at least one online machine resolves the profile, and false when none do. `machines_checked` names the machines checked. Profile-level `closest` lists up to three alternatives when the profile resolves nowhere. If no online machine reports the harness, availability is unknown and `available` is omitted.
 - **Worker providers.** Automatic selection uses the owner-controlled provider allowlist. When it is unset, Claude and Codex harness models, OpenCode and Pi models from `opencode-go` or `openai`, and providers with a usable quota reading are allowed. Other providers, including OpenRouter, are excluded by default. `agent-net scores providers` displays the setting; `agent-net scores providers codex claude opencode-go` replaces it, and `agent-net scores providers --default` restores the defaults. The CTO can change it on the owner's instruction. An explicit model request keeps its existing behavior. The Quotas tab lists registered profiles and marks those excluded by this filter. Among choices with the same fit and quota room, a recent successful worker ranks ahead of a model without one.
 - **Scores.** The bundled table contains 85 model and effort scores from [Artificial Analysis](https://artificialanalysis.ai/). An effort suffix selects that effort; for a bare model the medium entry is used when no harness default is known, falling back to a default entry. Unknown scores are not candidates for automatic choice. Owner overrides win: `agent-net scores` lists scores, `agent-net scores set <model> <score>` adds an override, and `agent-net scores clear <model>` removes it. The CTO's private `score_set` tool can also change an override on the owner's instruction. The owner-only `difficulty_get` and `difficulty_set` operator methods read and replace the difficulty minimum overrides.
 - **The task** is sent as a message from the caller, after the fixed brief. For Claude Code, Pi and OpenCode the worker ends its work with `agent_handback(report)`. For Codex the daemon does it when a turn ends: status `done` for a finished turn, `failed` for a failed or interrupted one, and `blocked` when Codex asked for an approval (the daemon declines every approval, which should not happen now that the worker runs in a sandbox, and the report names the command, the reason and the Codex thread to open). The caller gets one message with the facts (status, run time, model, tokens, the context at the end, the cost if the harness reports it, the worktree and branch, `git diff --stat`) and the report below them. Tokens come from OpenCode, from the Claude transcript, from Codex, and from Pi's session file. Cost comes from OpenCode only. The context at the end is the tokens of the last assistant message or turn (input plus cache reads and cache writes) and the model's context window. A worker that ends without a hand-back sends the same notice with the status `timed out`, `failed` or `stopped`. A worker that nobody messages for the idle time (60 minutes by default) ends as `timed out`; one that runs longer than 4 hours ends as `timed out` too. A worker is not idle while its harness says its session is busy, or while its token count grows: a long task does not hit the idle limit. An OpenCode worker whose model call fails (a provider, billing or auth error) ends at once as `failed`, and the note holds the error text (one line, secrets masked, cut to 300 characters). The daemon looks at the OpenCode session every few seconds: a run with outcome `failed` ends the worker. Only recognized provider errors demote the model; local and unknown failures do not. Codex reports a failed turn as a hand-back. Claude Code and Pi workers have no such check yet: a model error there shows only as the idle time-out.

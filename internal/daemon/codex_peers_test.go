@@ -350,7 +350,12 @@ type codexShim struct {
 func startCodexShim(t *testing.T, n *node) *codexShim {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=XXX")
-	cmd.Env = append(os.Environ(), envFakeCodexShim+"=1", "AGENT_NET_SOCKET="+n.sock)
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, helperEnv+"=") { // the shim is not the fake MCP server
+			cmd.Env = append(cmd.Env, kv)
+		}
+	}
+	cmd.Env = append(cmd.Env, envFakeCodexShim+"=1", "AGENT_NET_SOCKET="+n.sock)
 	stdin, _ := cmd.StdinPipe()
 	stdout, _ := cmd.StdoutPipe()
 	if err := cmd.Start(); err != nil {

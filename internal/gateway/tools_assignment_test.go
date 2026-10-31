@@ -12,6 +12,37 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func TestRepoRemovalRejectsUntrackedProjectCopy(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := protocol.InventoryItem{Kind: protocol.InventorySkill, Name: "demo", Hash: "abc", State: protocol.InventoryOK, Scope: protocol.InventoryProject, Project: "demo", ProjectRoot: "/repo", Location: "/repo/.claude/skills/demo", Tracked: false}
+	if err = g.store.SetInventory(node, protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.db.Exec(`INSERT INTO projects(node_id,path,name,added_at,checked_at) VALUES(?,?,?,0,0)`, node, "/repo", "demo"); err != nil {
+		t.Fatal(err)
+	}
+	req := protocol.ToolPlanRequest{Item: `["skill","demo","abc"]`, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{"demo"}}, Operation: "repo_remove", Project: "demo", RepoTargets: []protocol.ToolRepoTarget{{NodeID: node, Checkout: "/repo"}}}
+	if _, err = g.repoRemovalTargets(context.Background(), req); err == nil || !strings.Contains(err.Error(), "tracked") {
+		t.Fatalf("repo removal accepted an untracked project copy: %v", err)
+	}
+	obs.Tracked = true
+	if err = g.store.SetInventory(node, protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	targets, err := g.repoRemovalTargets(context.Background(), req)
+	if err != nil || len(targets) != 1 || targets[0].Action != "repo_remove" {
+		t.Fatalf("repo removal rejected a tracked project copy: %+v %v", targets, err)
+	}
+}
+
 func TestToolAssignmentRevisions(t *testing.T) {
 	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
 	if err != nil {

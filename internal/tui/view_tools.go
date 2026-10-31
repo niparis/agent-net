@@ -485,8 +485,10 @@ func (m Model) projectLayers(proj, mach string, rows, width int) []string {
 				name, why, ws, dot = tsStrike.Render(cell(r.Name, 30)), "hidden by the repo's own copy", tsWarn, tsWarn.Render("● ")
 			case toolsdiff.ProjPending:
 				why, ws, dot = "pending: machine offline", tsWarn, tsWarn.Render("● ")
+			case toolsdiff.ProjLocal:
+				why, ws, dot = "local copy, not committed", tsDim, tsDim.Render("● ")
 			}
-			if state == toolsdiff.ProjOn {
+			if state == toolsdiff.ProjOn || state == toolsdiff.ProjLocal {
 				available = append(available, r.Name)
 			}
 			forProj.lines = append(forProj.lines, "  "+dot+name+ws.Render(why))

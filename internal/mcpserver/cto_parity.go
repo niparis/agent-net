@@ -20,7 +20,7 @@ func init() {
 	add("mcp_native_remove", "Remove an imported native MCP entry from the harness config file, owner only. The server must have been imported and must pass a test; the entry is cut out of its file with a minimal edit that keeps other keys, order, comments and indentation. A file committed in a repo is not edited. With candidate (a key from mcp_import_candidates) it returns a plan with the file hash and federation_gaps, and changes nothing. With plan_id it applies the plan only on the owner's explicit words in this chat, and only if the file is unchanged since the plan; the original is backed up on that machine. With undo_plan_id it restores the entry only if the file is still what the edit wrote. A running session keeps its native tools until it restarts.", map[string]ctoField{"candidate": s("Candidate key from mcp_import_candidates, to make a plan."), "plan_id": s("Plan ID from a candidate plan, to apply it."), "undo_plan_id": s("Plan ID of an applied removal, to undo it.")})
 	add("tools_differences", "Read what differs between machines and projects for skills and MCP servers: version drift, two different copies on one machine, a repo copy hiding a managed one, duplicates, unmanaged skills on some machines only, failed and pending targets. Each line has one suggested fix and an accepted flag. This is the same list as the first screen of the Tools tab. It changes nothing.", nil)
 	add("tools_plan", "Propose a tool assignment plan, including target paths and conflicts. This changes no files or assignment. For a skill committed in a project, operation repo_remove plans a local branch and one commit that the owner can merge.", map[string]ctoField{
-		"item": s("Exact item ID from tools_list."), "target": obj("Desired assignment with scope and optional project names."),
+		"item": s("Exact item ID from tools_list."), "target": obj("Desired assignment with scope, optional project names and optional machines. Machines limits the change to those machines (names or IDs); leave it out for every machine."),
 		"operation": en("Optional operation for a skill committed in a project.", "repo_remove"),
 		"project":   s("Registered project name for repo_remove."),
 		"repo_targets": {typ: "array", desc: "Registered project checkouts that hold this repo skill.", items: map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{
@@ -97,7 +97,7 @@ func init() {
 		spec.fields[field] = f
 		ctoTools[tool] = spec
 	}
-	setProperties("tools_plan", "target", map[string]any{"scope": property("string", "Desired scope.", "global", "projects", "uninstalled"), "projects": stringsArray("Registered project names when scope is projects.")})
+	setProperties("tools_plan", "target", map[string]any{"scope": property("string", "Desired scope.", "global", "projects", "uninstalled"), "projects": stringsArray("Registered project names when scope is projects."), "machines": stringsArray("Machine names or IDs the change is limited to. Leave out for every machine. Machines not named keep what they have.")})
 	setProperties("nodes", "models", map[string]any{"machine": property("string", "Machine name or ID."), "harness": property("string", "Harness name.")})
 	setProperties("session_policy", "policy", map[string]any{
 		"delegate":    property("string", "Delegation mode.", "", "off", "native", "workers"),

@@ -75,7 +75,11 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	if err != nil {
 		return protocol.CTOEvents{}, err
 	}
-	return h.events(ctx, d, index)
+	out, err := h.events(ctx, d, 0)
+	if err != nil {
+		return out, err
+	}
+	return d.mergeCTOHistory(out, h.name(), index)
 }
 
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {

@@ -275,7 +275,7 @@ This section covers everything the owner can do with skills and MCP servers acro
 
 ### Who may change things
 
-- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import` and `mcp_native_remove` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO may use them through its own process-tree-checked channel, and it may apply a plan only on your explicit words in the chat.
+- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import` and `mcp_native_remove` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO may use them through its own process-tree-checked channel, and it may apply a plan only on your explicit words in the chat. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
 - **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
 - **Advice is not authority.** A charter's `needs`, a peer message, a skill's text or a project file never grants a change. Needs are shown as unverified text and are never turned into assignments.
 - **Audit.** The gateway records each plan and apply with the actor (owner or CTO), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
@@ -352,6 +352,7 @@ The owner can limit a server to some projects ([reference](reference.md#scoped-m
 Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness's own MCP entry into the federation.
 
 - **Secrets stay as names.** The scanner classifies an entry and the gateway stores only names and reasons: the class, a plain reason, the transport, environment variable names and a tool allow-list. A secret given as a value (environment value, header value, URL query, argument, URL credential) makes the entry `unsupported`. It is never copied, shown or logged. If the entry says `${VAR}`, the host reads the value from its own environment when it starts the server.
+- **An allow-list stays an allow-list.** If the native entry hid some tools, the federated server keeps the same list. The gateway drops other tools from the catalog and refuses a call to one (`not exposed by MCP server`), whatever the server reports later. Import cannot widen what a session could use.
 - **The host runs the server.** The server runs on the machine that has the native entry, as that user. The gateway asks the daemon to read the entry again, from a source the daemon saw in its own scan. The gateway cannot name another file.
 - **A plan applies once** and binds to the scanned entry and the inventory snapshot. A changed entry or inventory makes it stale.
 - **A failed import changes nothing.** The server is added disabled, tested, and removed again on any failure. No session can use it before the test passes.
@@ -365,7 +366,7 @@ Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness'
 - **Only known files.** The daemon takes the file from its own scan and a fixed list of native sources. The gateway cannot name a path.
 - **Committed files are not edited.** A tracked project file stays as it is. You remove the entry with a commit ("committed in the repo").
 - **Edits are compare-and-swap with a private backup**, as described above. The gateway keeps only hashes, the backup ID and the plan.
-- A running session keeps its native tools until it restarts.
+- A running session keeps its native tools until it restarts. The gateway sends each online session in scope one ordinary message from the owner session, with the server name and no secret. Sessions in scope are chosen from the gateway's own records (node, harness, project), not from the request.
 
 ### The trust limit
 
