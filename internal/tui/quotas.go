@@ -283,7 +283,11 @@ func (m Model) quotaModelsView(w int) []string {
 			line = fmt.Sprintf("%-18s %-8s %-26s %-5s %s", cell(sanitize(r.name), 18), cell(r.harness, 8), cell(sanitize(r.model), 26), cell(shortScore, 5), strings.Join(fits, " "))
 		}
 		if len(chosen) > 0 {
-			line += "  " + lipgloss.NewStyle().Foreground(roleAccent).Render("◀ "+strings.Join(chosen, ","))
+			marker := "◀ " + strings.Join(chosen, ",")
+			if w < 100 {
+				marker = "◀"
+			}
+			line += "  " + lipgloss.NewStyle().Foreground(roleAccent).Render(marker)
 		}
 		if !r.available || !r.allowed {
 			line = sDim.Render(stripStyles(line))
