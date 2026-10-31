@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"strings"
 	"testing"
 	"time"
@@ -129,26 +128,24 @@ func TestGraphConnectedNodesSpanRows(t *testing.T) {
 func TestGraphFixtureLabelsStayWithTheirMarkers(t *testing.T) {
 	m := graphModel(120, 34)
 	w, h := m.graphSize()
-	lines := (graphview.Braille{}).Render(graphview.BuildScene(graphview.State{Graph: m.graphState.Graph, Camera: m.graphState.Camera, Now: t0}, graphview.Viewport{Width: float64(w), Height: float64(h)}), graphview.Size{Width: w, Height: h}).Lines
+	out := (graphview.Braille{}).Render(graphview.BuildScene(graphview.State{Graph: m.graphState.Graph, Camera: m.graphState.Camera, Now: t0}, graphview.Viewport{Width: float64(w), Height: float64(h)}), graphview.Size{Width: w, Height: h})
 	for _, node := range m.graphState.Graph.Nodes {
-		x, y := m.graphState.Camera.Project(m.graphState.Graph.Positions[node.Name], w, h)
-		cx := int(math.Round(x*2)) / 2
-		cy := int(math.Round(y*4)) / 4
 		found := false
-		for row, line := range lines {
+		for y, line := range out.Lines {
 			i := strings.Index(line, node.Name)
 			if i < 0 {
 				continue
 			}
 			start := len([]rune(line[:i]))
 			end := start + len([]rune(node.Name))
-			if row == cy && (start == cx+2 || end == cx-1) || absGraph(row-cy) == 1 && start <= cx && end > cx {
-				found = true
-				break
+			for _, x := range []int{start - 2, end + 1} {
+				if x >= 0 && x < w && out.Hits[graphview.Cell{X: x, Y: y}] == node.Name {
+					found = true
+				}
 			}
 		}
 		if !found {
-			t.Errorf("label %q is not adjacent to marker at %d,%d", node.Name, cx, cy)
+			t.Errorf("label %q is not one space from its disc", node.Name)
 		}
 	}
 }
@@ -285,5 +282,17 @@ func TestGraphMouseDisabledWhenLeavingOrFocusingCTO(t *testing.T) {
 		if !found {
 			t.Fatalf("%s did not disable mouse", key.String())
 		}
+	}
+}
+
+func TestGraphQuitDisablesMouseBeforeQuit(t *testing.T) {
+	m := graphModel(120, 34)
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	if cmd == nil {
+		t.Fatal("no quit command")
+	}
+	// A sequence preserves ordering between disabling mouse and stopping Bubble Tea.
+	if fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.Sequence(tea.DisableMouse, tea.Quit)()) {
+		t.Fatal("quit must disable mouse first")
 	}
 }

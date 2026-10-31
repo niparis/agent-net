@@ -314,6 +314,9 @@ func (m Model) bodyCmd(id string) tea.Cmd {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	nm := next.(Model)
+	if m.graphMouseActive() && nm.quitting {
+		return nm, tea.Sequence(tea.DisableMouse, cmd)
+	}
 	// After any change, fetch the top processes the detail pane wants.
 	cmds := []tea.Cmd{cmd}
 	wasMouse := m.graphMouseActive()
