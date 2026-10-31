@@ -31,7 +31,11 @@ type ctoState struct {
 	editing, polling    bool
 	confirming          bool
 	model, harness, err string
+	polledHarness       string
 	messages            []string
+	archived            []string
+	currentAll          []string
+	seen                map[string]map[string]int
 	renderCache         map[ctoRenderKey][]string
 	scroll, pageRows    int
 	history             []protocol.CTOGraphChange
@@ -296,9 +300,22 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		return
 	}
 	c.err = ""
+	if c.polledHarness != "" && r.harness != "" && c.polledHarness != r.harness {
+		c.archived = append(c.archived, c.messages[len(c.archived):]...)
+		if c.seen == nil {
+			c.seen = make(map[string]map[string]int)
+		}
+		counts := make(map[string]int)
+		for _, line := range c.currentAll {
+			counts[line]++
+		}
+		c.seen[c.polledHarness] = counts
+		c.archived = append(c.archived, fmt.Sprintf("switched to %s · %s", r.harness, r.model))
+	}
 	c.configuredModel = r.configuredModel
 	c.model = r.model
 	c.harness = r.harness
+	c.polledHarness = r.harness
 	c.history = r.history
 	type line struct {
 		at   int64
@@ -318,20 +335,6 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 			if strings.HasPrefix(text, "error: ") {
 				polledErrors[text]++
 			}
-		}
-	}
-	for _, h := range r.history {
-		var text string
-		switch h.Kind {
-		case "charter":
-			text = fmt.Sprintf("charter %s.%s: %s -> %s", h.Node, h.Attr, h.OldValue, h.NewValue)
-		case "edge":
-			text = "edge " + h.OldValue + " -> " + h.NewValue
-		case "node":
-			text = "node " + h.Node + ": " + h.OldValue + " -> " + h.NewValue
-		}
-		if text != "" {
-			lines = append(lines, line{h.At, text})
 		}
 	}
 	for _, a := range r.events.Actions {
@@ -366,8 +369,27 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 	c.sendErrors = pendingErrors
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
-	c.messages = nil
-	for _, v := range lines {
+	c.messages = append([]string(nil), c.archived...)
+	c.currentAll = nil
+	skipped := make(map[string]int)
+	for i := 0; i < len(lines); i++ {
+		v := lines[i]
+		node, _, ok := strings.Cut(strings.TrimPrefix(v.text, "charter "), ": ")
+		if strings.HasPrefix(v.text, "charter ") && ok && strings.HasSuffix(v.text, " updated · u to undo") {
+			j := i + 1
+			for j < len(lines) && lines[j].at-v.at <= int64(5e9) && strings.HasPrefix(lines[j].text, "charter "+node+": ") && strings.HasSuffix(lines[j].text, " updated · u to undo") {
+				j++
+			}
+			if j-i > 1 {
+				v.text = fmt.Sprintf("charter %s: %d fields updated · u to undo", node, j-i)
+				i = j - 1
+			}
+		}
+		c.currentAll = append(c.currentAll, v.text)
+		if skipped[v.text] < c.seen[c.polledHarness][v.text] {
+			skipped[v.text]++
+			continue
+		}
 		c.messages = append(c.messages, v.text)
 	}
 }

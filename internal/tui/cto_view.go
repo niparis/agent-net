@@ -120,6 +120,13 @@ type ctoRenderKey struct {
 }
 
 func (c *ctoState) renderMessage(text string, width int) []string {
+	if strings.HasPrefix(text, "switched to ") {
+		lines := wrapCTOLine(text, width)
+		for i := range lines {
+			lines[i] = sDim.Render(lines[i])
+		}
+		return lines
+	}
 	if !strings.HasPrefix(text, "cto: ") {
 		return wrapCTOLine(text, width)
 	}

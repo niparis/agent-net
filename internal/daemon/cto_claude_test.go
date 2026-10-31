@@ -283,4 +283,109 @@ func TestCTOEnterClaude(t *testing.T) {
 	if len(plan.Argv) != 3 || plan.Argv[1] != "attach" || plan.Argv[2] != n.d.claudeCTO.ref {
 		t.Fatalf("plan: %+v", plan)
 	}
+	cfgPath := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json")
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Projects map[string]struct {
+			Accepted bool `json:"hasTrustDialogAccepted"`
+		} `json:"projects"`
+	}
+	dir := filepath.Join(n.cfg.StateDir, "cto", "claude")
+	if json.Unmarshal(raw, &cfg) != nil || !cfg.Projects[dir].Accepted {
+		t.Fatalf("CTO trust: %s", raw)
+	}
+	first := plan.Argv[2]
+	if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Argv) != 3 || plan.Argv[2] != first {
+		t.Fatalf("existing session plan: %+v", plan)
+	}
+}
+
+func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	write := func(script string) {
+		t.Helper()
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`if [ "$1" = --help ]; then echo '--strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
+	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
+	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
+	if err == nil || !strings.Contains(err.Error(), "Claude Code 2.1.289 is too old for the CTO: run `claude update`") {
+		t.Fatalf("old Claude: %v", err)
+	}
+	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.314'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
+	err = d.startClaudeCTOLocked(context.Background(), "", "opus")
+	if err == nil || !strings.Contains(err.Error(), "unknown option --bg") || !strings.Contains(err.Error(), "[REDACTED]") || strings.Contains(err.Error(), "topsecretvalue") || strings.Contains(err.Error(), "third line") {
+		t.Fatalf("startup error: %v", err)
+	}
+}
+
+func TestClaudeCTOCapabilityCache(t *testing.T) {
+	dir := t.TempDir()
+	bin, log := filepath.Join(dir, "claude"), filepath.Join(dir, "calls")
+	script := "#!/bin/sh\necho called >> " + log + "\necho --bg --strict-mcp-config\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{}
+	for i := 0; i < 2; i++ {
+		if err := d.checkClaudeCTOCapabilities(context.Background(), bin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(log)
+	if err != nil || strings.Count(string(raw), "called") != 1 {
+		t.Fatalf("cache: %q %v", raw, err)
+	}
+	other := filepath.Join(dir, "other-claude")
+	if err := os.WriteFile(other, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.checkClaudeCTOCapabilities(context.Background(), other); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.checkClaudeCTOCapabilities(context.Background(), bin); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(log)
+	if err != nil || strings.Count(string(raw), "called") != 2 {
+		t.Fatalf("path cache: %q %v", raw, err)
+	}
+	stamp := time.Now().Add(3 * time.Second)
+	if err := os.Chtimes(bin, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.checkClaudeCTOCapabilities(context.Background(), bin); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(log)
+	if err != nil || strings.Count(string(raw), "called") != 3 {
+		t.Fatalf("mtime: %q %v", raw, err)
+	}
+}
+
+func TestClaudeCTOTrustPromptError(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	script := `#!/bin/sh
+if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; else echo 'Accessing workspace'; echo 'Is this a project you created or one you trust?'; exit 1; fi
+`
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
+	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
+	want := "Claude Code does not trust " + filepath.Join(dir, "cto", "claude")
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %s", err, want)
+	}
 }

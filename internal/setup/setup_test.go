@@ -529,3 +529,68 @@ func TestUninstallRemovesSkillBackupsAndOwnedExclude(t *testing.T) {
 		t.Fatalf("exclude: %q %v", b, err)
 	}
 }
+
+func TestUninstallRemovesCTOClaudeTrust(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	dir := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", dir)
+	cfg := filepath.Join(f.home, "claude-config")
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	if err := os.MkdirAll(cfg, 0700); err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(dir, "cto", "claude")
+	data, _ := json.Marshal(map[string]any{"projects": map[string]any{project: map[string]any{"hasTrustDialogAccepted": true}, "/other": map[string]any{"hasTrustDialogAccepted": true}}})
+	path := filepath.Join(cfg, ".claude.json")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Uninstall(Options{Out: &bytes.Buffer{}, NoService: true}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		Projects map[string]json.RawMessage `json:"projects"`
+	}
+	if json.Unmarshal(raw, &state) != nil || state.Projects[project] != nil || state.Projects["/other"] == nil {
+		t.Fatalf("trust after uninstall: %s", raw)
+	}
+}
+
+func TestPurgeRemovesWorktreeClaudeTrust(t *testing.T) {
+	f := newFixture(t)
+	t.Setenv("PATH", t.TempDir())
+	dir := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", dir)
+	cfg := filepath.Join(f.home, "claude-config")
+	t.Setenv("CLAUDE_CONFIG_DIR", cfg)
+	worktree := filepath.Join(dir, "worktrees", "w_test")
+	if err := os.MkdirAll(worktree, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(cfg, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]any{"projects": map[string]any{worktree: map[string]any{"hasTrustDialogAccepted": true}, "/other": map[string]any{"hasTrustDialogAccepted": true}}})
+	path := filepath.Join(cfg, ".claude.json")
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Uninstall(Options{Out: &bytes.Buffer{}, NoService: true, Purge: true}); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		Projects map[string]json.RawMessage `json:"projects"`
+	}
+	if json.Unmarshal(raw, &state) != nil || state.Projects[worktree] != nil || state.Projects["/other"] == nil {
+		t.Fatalf("trust after purge: %s", raw)
+	}
+}

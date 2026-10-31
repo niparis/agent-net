@@ -10,13 +10,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // claudeCTOState is protected by cto.mu, except pid, which is read by the
@@ -26,6 +30,12 @@ type claudeCTOState struct {
 	starting            atomic.Bool
 	token               string
 	ref, session, model string
+	capabilities        map[string]claudeCTOCapability
+}
+
+type claudeCTOCapability struct {
+	mtime time.Time
+	err   error
 }
 
 type claudeCTORoot struct {
@@ -117,8 +127,14 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if err != nil {
 		return err
 	}
+	if err := d.checkClaudeCTOCapabilities(ctx, bin); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
+	}
+	if err := claudetrust.Set(dir); err != nil {
+		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
 	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
 	args := []string{"--bg", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
@@ -136,6 +152,13 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if claudeTrustPrompt(output) {
+			return fmt.Errorf("Claude Code does not trust %s", dir)
+		}
+		detail := claudeCTOErrorOutput(output)
+		if detail != "" {
+			return fmt.Errorf("start CTO Claude: %s", detail)
+		}
 		return fmt.Errorf("start CTO Claude: %w", err)
 	}
 	m := claudeBgID.FindStringSubmatch(string(output))
@@ -162,6 +185,61 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+var claudeVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)
+
+func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) error {
+	info, err := os.Stat(bin)
+	if err != nil {
+		return fmt.Errorf("check Claude Code: %w", err)
+	}
+	c := &d.claudeCTO
+	if cached, ok := c.capabilities[bin]; ok && cached.mtime.Equal(info.ModTime()) {
+		return cached.err
+	}
+	help, err := exec.CommandContext(ctx, bin, "--help").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("check Claude Code help: %w", err)
+	}
+	var result error
+	if !strings.Contains(string(help), "--bg") || !strings.Contains(string(help), "--strict-mcp-config") {
+		version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+		if versionErr != nil {
+			return fmt.Errorf("check Claude Code version: %w", versionErr)
+		}
+		v := claudeVersionPattern.FindString(string(version))
+		if v == "" {
+			v = "(unknown version)"
+		}
+		result = fmt.Errorf("Claude Code %s is too old for the CTO: run `claude update`", v)
+	}
+	if c.capabilities == nil {
+		c.capabilities = make(map[string]claudeCTOCapability)
+	}
+	c.capabilities[bin] = claudeCTOCapability{mtime: info.ModTime(), err: result}
+	return result
+}
+
+func claudeTrustPrompt(output []byte) bool {
+	text := strings.ToLower(string(output))
+	return strings.Contains(text, "trust") && (strings.Contains(text, "workspace") || strings.Contains(text, "project") || strings.Contains(text, "folder"))
+}
+
+func claudeCTOErrorOutput(output []byte) string {
+	lines := strings.Split(string(output), "\n")
+	if len(lines) > 2 {
+		lines = lines[:2]
+	}
+	for i, line := range lines {
+		lines[i] = redact.Args(strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return ' '
+			}
+			return r
+		}, line)))
+	}
+	return redact.Cut(redact.Secrets(strings.TrimSpace(strings.Join(lines, " · "))), 500)
 }
 
 func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {

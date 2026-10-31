@@ -149,7 +149,7 @@ func TestCTOPaneShowsRecordedActions(t *testing.T) {
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	v := strings.Join(m.cto.messages, "\n")
-	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "read graph", "failed charter_set", "cogforge.maturity: early -> mature"} {
+	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "read graph", "failed charter_set"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
@@ -225,8 +225,8 @@ func TestCTOActionOrderFollowsConversation(t *testing.T) {
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	joined := strings.Join(m.cto.messages, "|")
-	a, b, c, d := strings.Index(joined, "you:"), strings.Index(joined, "charter"), strings.Index(joined, "sent to"), strings.Index(joined, "cto:")
-	if !(a < b && b < c && c < d) {
+	a, c, d := strings.Index(joined, "you:"), strings.Index(joined, "sent to"), strings.Index(joined, "cto:")
+	if strings.Contains(joined, "charter") || !(a < c && c < d) {
 		t.Fatalf("wrong order: %s", joined)
 	}
 }
@@ -518,5 +518,41 @@ func TestCTOMarkdownGoldens(t *testing.T) {
 		m.focus = focusCTO
 		view := strings.Join(m.ctoView(size[0], size[1]), "\n")
 		golden(t, fmt.Sprintf("cto_markdown_%dx%d", size[0], size[1]), view)
+	}
+}
+
+func TestCTOEnterEmptyPlanShowsError(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m, _ = m.onEnter(enterMsg{name: "CTO"})
+	if !m.notice.err || !strings.Contains(m.notice.text, "Cannot enter CTO") {
+		t.Fatalf("empty CTO plan must show an error: %+v", m.notice)
+	}
+}
+
+func TestCTOGroupsCharterActions(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, events: protocol.CTOEvents{Actions: []protocol.CTOAction{
+		{Text: "charter cogforge: purpose updated · u to undo", At: 1},
+		{Text: "charter cogforge: maturity updated · u to undo", At: 2},
+	}}})
+	if len(m.cto.messages) != 1 || m.cto.messages[0] != "charter cogforge: 2 fields updated · u to undo" {
+		t.Fatalf("charter group: %v", m.cto.messages)
+	}
+}
+
+func TestCTOSwitchKeepsHistoryAndDivider(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m.cto = &ctoState{generation: 1}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "old", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message"}`)}}})
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "claude", model: "opus", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"assistant","text":"new message"}`)}}})
+	joined := strings.Join(m.cto.messages, "|")
+	if !strings.Contains(joined, "old message") || !strings.Contains(joined, "switched to claude · opus") || !strings.Contains(joined, "new message") {
+		t.Fatal(joined)
+	}
+	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "old", events: protocol.CTOEvents{Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"old message"}`), json.RawMessage(`{"type":"assistant","text":"later"}`)}}})
+	joined = strings.Join(m.cto.messages, "|")
+	if strings.Count(joined, "old message") != 1 || !strings.Contains(joined, "later") {
+		t.Fatal(joined)
 	}
 }

@@ -923,3 +923,34 @@ func TestAdoptedCodexTurnFinishedWhileDaemonDown(t *testing.T) {
 	}
 	eventually(t, "adopted Codex process ends", func() bool { return !alive(rec.Pid) })
 }
+
+func TestClaudeWorkerWorktreeTrustRemoved(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	c.register(t, repo)
+	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	read := func() map[string]struct {
+		Accepted bool `json:"hasTrustDialogAccepted"`
+	} {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cfg struct {
+			Projects map[string]struct {
+				Accepted bool `json:"hasTrustDialogAccepted"`
+			} `json:"projects"`
+		}
+		if err = json.Unmarshal(raw, &cfg); err != nil {
+			t.Fatal(err)
+		}
+		return cfg.Projects
+	}
+	if !read()[res.Worktree].Accepted {
+		t.Fatalf("worktree not trusted: %s", res.Worktree)
+	}
+	c.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
+	eventually(t, "trust removed", func() bool { _, ok := read()[res.Worktree]; return !ok })
+}

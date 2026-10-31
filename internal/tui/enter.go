@@ -69,6 +69,9 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	case r.err != nil:
 		m.fail("Cannot enter " + r.name + ": " + explain(r.err))
 		return m, nil
+	case len(r.plan.Argv) == 0 && r.name == "CTO":
+		m.fail(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter CTO from here.")))
+		return m, nil
 	case len(r.plan.Argv) == 0:
 		m.say(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter "+r.name+" from here.")))
 		return m, nil

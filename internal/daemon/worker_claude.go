@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/niparis/agent-net/internal/claudetrust"
 )
 
 // The Claude Code worker (decision 0002 W16, decision 0008).
@@ -85,6 +87,14 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	d.wmu.Lock()
+	worktree := w.worktree
+	d.wmu.Unlock()
+	if worktree != "" && filepath.Clean(w.path) == filepath.Clean(worktree) {
+		if err := claudetrust.Set(worktree); err != nil {
+			return fmt.Errorf("trust Claude worker directory: %w", err)
+		}
+	}
 	// Per worker settings, as a JSON string for --settings. They add to the
 	// settings of the user and the project and replace nothing in them.
 	settings, _ := json.Marshal(map[string]any{
@@ -121,6 +131,9 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		logf.Close()
 	}
 	if err != nil {
+		if claudeTrustPrompt(out) {
+			return fmt.Errorf("Claude Code does not trust %s", w.path)
+		}
 		return fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
 	}
 	m := claudeBgID.FindStringSubmatch(string(out))

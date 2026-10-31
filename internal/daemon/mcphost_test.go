@@ -95,6 +95,7 @@ func TestMain(m *testing.M) {
 	}
 	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	os.Setenv("HOME", filepath.Join(fakes, "home"))
+	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(fakes, "claude-config"))
 	config := filepath.Join(fakes, "config")
 	answers := integrations.AllOn()
 	answers.QuotaAXI = false
