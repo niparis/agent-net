@@ -160,7 +160,13 @@ func skillDiffs(g group, ms []Machine) []Difference {
 		hashes map[string]Copy
 	}
 	per := map[string]*held{}
+	nodeOf := map[string]string{}
 	var order []string
+	// A machine the desired state does not name is not part of the change:
+	// "on research only" is not drift against the other machines.
+	inScope := func(machine string) bool {
+		return mg == nil || mg.Desired == nil || mg.Desired.Assignment.OnMachine(nodeOf[machine])
+	}
 	for _, v := range g.variants {
 		for _, l := range v.Locations {
 			if l.Scope != protocol.InventoryUser || readOnlySource(l) {
@@ -170,6 +176,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			if h == nil {
 				h = &held{hashes: map[string]Copy{}}
 				per[l.Machine] = h
+				nodeOf[l.Machine] = l.NodeID
 				order = append(order, l.Machine)
 			}
 			if _, ok := h.hashes[v.Hash]; !ok {
@@ -202,7 +209,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 	byHash := map[string][]string{}
 	firstCopy := map[string]Copy{}
 	for _, m := range order {
-		if twoOn[m] {
+		if twoOn[m] || !inScope(m) {
 			continue
 		}
 		for h, c := range per[m].hashes {
@@ -325,7 +332,9 @@ func skillDiffs(g group, ms []Machine) []Difference {
 		}
 		if len(mg.Results) == 0 && mg.Applied == "pending" {
 			for _, m := range ms {
-				waiting = appendOnce(waiting, m.Name)
+				if mg.Desired.Assignment.OnMachine(m.ID) {
+					waiting = appendOnce(waiting, m.Name)
+				}
 			}
 		}
 		if len(failed) > 0 {

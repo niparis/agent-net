@@ -151,7 +151,7 @@ The tab never shows harness columns: a tool is on or off for a machine, or on fo
 A harness limit shows as a `◐` cell and a note in the details pane.
 
 - **Differences** (opens first). One line for each thing that differs, with one suggested fix: two machines on different versions, two different copies on one machine, a project's own copy hiding a managed one, the same content under two names, skills only on some machines and not managed, native MCP servers set up by hand, failed targets, and pending targets (info only). `enter` opens the plan of the fix. `x` accepts a difference as it is: the gateway stores the mark (`tools_accept`, table `tool_accepted`), so it stays after a restart. `.` shows accepted ones.
-- **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. agent-net has no switch for one machine yet: `a` on a machine cell plans the skill for every machine and `u` plans an uninstall everywhere, and the plan says so. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply.
+- **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. `a` or `u` on a machine cell plans the change for that machine only (a global assignment limited to it), and the plan says "only on NAME: other machines are not changed". With a single machine there is no limit to set. A machine the desired state does not name is never reported as drift and never shows a pending cell. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply.
 - **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
 
 Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo is a change to the repo: the plan offers a new branch with one commit (not available yet) or asking that project's agent through the owner send path (`b`). agent-net never commits to the default branch. The tab uses the owner methods `tools_items`, `tools_plan`, `tools_apply`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences (the computation is `internal/toolsdiff`).
@@ -774,6 +774,19 @@ agent-net tools history 'ITEM_ID'
 
 `tools_plan` takes `item` and `target`, where `target.scope` is `global`,
 `projects` or `uninstalled`; projects scope also takes a `projects` array.
+`target.machines` is an optional array of machine names or node IDs that limits
+the change to those machines ("global on research only"). It combines with
+every scope. The gateway stores node IDs, sorted and without duplicates, and
+refuses a name that matches no enrolled machine or more than one. Empty or
+missing means every machine, which is what every assignment stored before this
+field existed means. The plan, its targets and its audit events carry the
+machines (`assignment.machines`). A machine that is not named gets no target,
+and a daemon also ignores any target that names another machine. A machine that
+is not named keeps what it has: the new revision does not remove or restore
+anything there. A registry MCP server runs on its host, so `machines` is refused
+for it. `agent-net tools plan ITEM global --on research --on mac` sets it from
+the command line. The last-copy check counts a copy on an unnamed machine as
+staying.
 It refreshes reachable machines and lists the known machines, harnesses,
 project checkouts, sources, destinations, intended actions and conflicts. Offline machines and unsupported
 harnesses are shown as unresolved. A skill that has not been imported and an
@@ -839,7 +852,8 @@ only if its hash still matches. Every step is journaled.
 `tools_undo` takes an `item` and reverses the item's newest revision. Undo is
 a new audited desired revision, like an apply: it takes the previous
 assignment (or `uninstalled` when there is none) and a plan that reverses only
-the targets that reported `applied`. It answers with the same per-target
+the targets that reported `applied`. Undoing a machine-scoped change therefore
+touches only the machines it changed. It answers with the same per-target
 results as `tools_apply`. Offline machines stay pending and undo when they
 reconnect.
 

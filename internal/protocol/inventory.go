@@ -153,7 +153,27 @@ type ToolVersionRequest struct {
 type ToolAssignment struct {
 	Scope    string   `json:"scope"`
 	Projects []string `json:"projects,omitempty"`
+	// Machines limits the assignment to these machines, by node ID. Empty
+	// means every machine, which is what every assignment meant before
+	// machine scope existed. It combines with global, projects and
+	// uninstalled: "global on research only". Machines the assignment does
+	// not name keep whatever they have.
+	Machines []string `json:"machines,omitempty"`
 }
+
+// OnMachine says whether the assignment applies to a machine.
+func (a ToolAssignment) OnMachine(node string) bool {
+	if len(a.Machines) == 0 {
+		return true
+	}
+	for _, m := range a.Machines {
+		if m == node {
+			return true
+		}
+	}
+	return false
+}
+
 type ToolRevision struct {
 	Item       string         `json:"item"`
 	Revision   int64          `json:"revision"`
@@ -251,6 +271,9 @@ type ToolAuditEvent struct {
 	Targets  []ToolPlanTarget `json:"targets"`
 	Result   string           `json:"result"`
 	At       int64            `json:"at"`
+	// Assignment is the scope the plan or revision asked for, including its
+	// machines. It is empty for events from before machine scope existed.
+	Assignment *ToolAssignment `json:"assignment,omitempty"`
 }
 
 // ToolBackup describes one local backup of an item. It never carries content.

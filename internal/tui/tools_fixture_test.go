@@ -169,6 +169,9 @@ func (f *fakeTools) ToolsPlan(_ context.Context, r protocol.ToolPlanRequest) (pr
 	f.plans = append(f.plans, r)
 	plan := protocol.ToolPlan{ID: fmt.Sprintf("plan_%d", len(f.plans)), Item: r.Item, Assignment: r.Target}
 	for _, n := range []struct{ id, host, dir string }{{toolNodeR, "research", "/home/n"}, {toolNodeM, "Nicolas-MBP", "/Users/n"}} {
+		if !r.Target.OnMachine(n.id) {
+			continue
+		}
 		for _, h := range []string{".claude", ".pi/agent", ".codex"} {
 			plan.Targets = append(plan.Targets, protocol.ToolPlanTarget{NodeID: n.id, Machine: n.host, Harness: "h", Action: "copy", State: "pending", Destination: n.dir + "/" + h + "/skills/x"})
 		}

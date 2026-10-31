@@ -37,7 +37,7 @@ func (s *Store) auditImport(item, plan, action, actor string, revision int64, ta
 		return err
 	}
 	defer tx.Rollback()
-	if err = auditToolTx(tx, item, plan, action, actor, revision, targets, result, s.now().UnixNano()); err != nil {
+	if err = auditToolTx(tx, item, plan, action, actor, revision, targets, result, s.now().UnixNano(), nil); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -206,7 +206,7 @@ func (s *Store) finishMCPImport(p protocol.MCPImportPlan, actor, session string)
 	if _, err = tx.Exec(`INSERT INTO mcp_imports(name,record) VALUES(?,?)`, name, string(rec)); err != nil {
 		return 0, err
 	}
-	if err = auditToolTx(tx, item, p.ID, "mcp_import", actor, r.Revision, importTarget(c, "applied", ""), "applied", now); err != nil {
+	if err = auditToolTx(tx, item, p.ID, "mcp_import", actor, r.Revision, importTarget(c, "applied", ""), "applied", now, nil); err != nil {
 		return 0, err
 	}
 	if err = tx.Commit(); err != nil {

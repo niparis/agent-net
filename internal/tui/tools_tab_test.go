@@ -288,7 +288,7 @@ func TestToolsTurnOffOnAMachineCellPlansAnUninstall(t *testing.T) {
 		t.Fatalf("plans %+v", src.plans)
 	}
 	v := plain(m)
-	if !strings.Contains(v, "Turn off research on research") || !strings.Contains(v, "applies to every machine") {
+	if !strings.Contains(v, "Turn off research on research") || !strings.Contains(v, "only on research") {
 		t.Errorf("plan text:\n%s", v)
 	}
 	m = pressKey(m, "esc")

@@ -106,12 +106,24 @@ func (m Model) assignTarget(on bool) protocol.ToolAssignment {
 	return protocol.ToolAssignment{Scope: "uninstalled"}
 }
 
+// machineTarget is assignTarget for one machine. With a single machine there
+// is nothing to limit, so the assignment stays "every machine".
+func (m Model) machineTarget(on bool, machine toolsdiff.Machine) protocol.ToolAssignment {
+	a := m.assignTarget(on)
+	if len(m.tl.cat.Machines) > 1 {
+		a.Machines = []string{machine.ID}
+	}
+	return a
+}
+
 // assignJob is one skill to change: import first when it is not in the store.
 type assignJob struct {
 	name   string
 	item   string
 	imp    *toolsdiff.Copy
 	target protocol.ToolAssignment
+	// where names the machine the change is limited to, or "" for every machine.
+	where string
 }
 
 func (j assignJob) off() bool { return j.target.Scope == "uninstalled" }
@@ -153,7 +165,7 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 		m.toolsToast(r.Name + " is already off for " + ms[col].Name)
 		return m, nil
 	}
-	job, err := m.jobFor(r, m.assignTarget(on))
+	job, err := m.jobFor(r, m.machineTarget(on, ms[col]))
 	if err != "" {
 		m.toolsToast(err)
 		return m, nil
@@ -164,9 +176,10 @@ func (m Model) openRowPlan(on bool) (tea.Model, tea.Cmd) {
 		verb = "turn off"
 		title = "Turn off " + r.Name + " on " + ms[col].Name
 	}
-	note := "agent-net has no switch for one machine yet: this applies to every machine"
-	if len(ms) < 2 {
-		note = ""
+	note := ""
+	if len(job.target.Machines) > 0 {
+		job.where = ms[col].Name
+		note = "only on " + ms[col].Name + ": other machines are not changed"
 	}
 	return m.openAssign(title, verb, []assignJob{job}, []string{note})
 }
@@ -274,8 +287,15 @@ func jobLines(jobs []assignJob) []string {
 	if t := jobs[0].target; t.Scope == "projects" {
 		scope = "for " + strings.Join(t.Projects, ", ")
 	}
+	if w := jobs[0].where; w != "" {
+		scope = "on " + w + " only"
+	}
 	if off {
-		out = append(out, tsErr.Render("- ")+listNames(names, 6)+" turned off everywhere (backed up first, removed only if unchanged)")
+		where := "everywhere"
+		if w := jobs[0].where; w != "" {
+			where = "on " + w + " only"
+		}
+		out = append(out, tsErr.Render("- ")+listNames(names, 6)+" turned off "+where+" (backed up first, removed only if unchanged)")
 	} else {
 		out = append(out, tsGood.Render("+ ")+listNames(names, 6)+" "+scope)
 	}

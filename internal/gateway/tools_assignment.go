@@ -33,6 +33,20 @@ func normalizeAssignment(a protocol.ToolAssignment) (protocol.ToolAssignment, er
 	default:
 		return a, errors.New("scope must be global, projects or uninstalled")
 	}
+	if len(a.Machines) == 0 {
+		a.Machines = nil
+		return a, nil
+	}
+	if len(a.Machines) > 200 {
+		return a, errors.New("too many machines")
+	}
+	a.Machines = append([]string(nil), a.Machines...)
+	sort.Strings(a.Machines)
+	for i, m := range a.Machines {
+		if m == "" || len(m) > protocol.ProjectMaxFieldLen || strings.TrimSpace(m) != m || (i > 0 && a.Machines[i-1] == m) {
+			return a, errors.New("invalid machine list")
+		}
+	}
 	return a, nil
 }
 func assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment, actor, source string, now int64) (protocol.ToolRevision, error) {
@@ -59,6 +73,15 @@ func assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment, actor, sou
 		}
 		if exists == 0 {
 			return r, errors.New("project is not registered")
+		}
+	}
+	for _, n := range a.Machines {
+		var exists int
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM nodes WHERE id=?)`, n).Scan(&exists); err != nil {
+			return r, err
+		}
+		if exists == 0 {
+			return r, errors.New("machine is not enrolled")
 		}
 	}
 	var revision int64
@@ -203,6 +226,15 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 			return p, errors.New("project is not registered")
 		}
 	}
+	for _, n := range a.Machines {
+		var exists int
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM nodes WHERE id=?)`, n).Scan(&exists); err != nil {
+			return p, err
+		}
+		if exists == 0 {
+			return p, errors.New("machine is not enrolled")
+		}
+	}
 	var baseRevision int64
 	if err = tx.QueryRow(`SELECT COALESCE(MAX(revision),0) FROM tool_revisions WHERE item=?`, item).Scan(&baseRevision); err != nil {
 		return p, err
@@ -233,7 +265,7 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan) VALUES(?,?,?,?)`, p.ID, item, snapshot, string(raw)); err != nil {
 		return p, err
 	}
-	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, p.BaseRevision, p.Targets, "proposed", p.At); err != nil {
+	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, p.BaseRevision, p.Targets, "proposed", p.At, &p.Assignment); err != nil {
 		return p, err
 	}
 	return p, tx.Commit()
@@ -301,6 +333,10 @@ func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 							assigned = true
 						}
 					}
+					// A machine the assignment does not name keeps its copy.
+					if !p.Assignment.OnMachine(node) {
+						assigned = true
+					}
 					for _, removal := range p.Targets {
 						if removal.Action == "remove" && removal.NodeID == node && removal.Source == obs.Location {
 							assigned = false
@@ -329,22 +365,32 @@ func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 	if _, err = tx.Exec(`UPDATE tool_plans SET applied=1 WHERE id=?`, id); err != nil {
 		return r, err
 	}
-	if err = auditToolTx(tx, p.Item, id, "apply", actor, r.Revision, p.Targets, "pending", r.At); err != nil {
+	if err = auditToolTx(tx, p.Item, id, "apply", actor, r.Revision, p.Targets, "pending", r.At, &p.Assignment); err != nil {
 		return r, err
 	}
 	return r, tx.Commit()
 }
 
-func auditToolTx(tx *sql.Tx, item, plan, action, actor string, revision int64, targets []protocol.ToolPlanTarget, result string, at int64) error {
+// auditToolTx writes one audit event. a is the assignment the event is about,
+// or nil when it has none (an MCP import, for example).
+func auditToolTx(tx *sql.Tx, item, plan, action, actor string, revision int64, targets []protocol.ToolPlanTarget, result string, at int64, a *protocol.ToolAssignment) error {
 	b, err := json.Marshal(targets)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) VALUES(?,?,?,?,?,?,?,?)`, item, plan, action, actor, revision, string(b), result, at)
+	assignment := ""
+	if a != nil {
+		raw, e := json.Marshal(a)
+		if e != nil {
+			return e
+		}
+		assignment = string(raw)
+	}
+	_, err = tx.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at,assignment) VALUES(?,?,?,?,?,?,?,?,?)`, item, plan, action, actor, revision, string(b), result, at, assignment)
 	return err
 }
 func (s *Store) ToolHistory(item string) ([]protocol.ToolAuditEvent, error) {
-	rows, err := s.db.Query(`SELECT id,item,plan_id,action,actor,revision,targets,result,at FROM tool_audit WHERE item=? ORDER BY id`, item)
+	rows, err := s.db.Query(`SELECT id,item,plan_id,action,actor,revision,targets,result,at,assignment FROM tool_audit WHERE item=? ORDER BY id`, item)
 	if err != nil {
 		return nil, err
 	}
@@ -353,9 +399,15 @@ func (s *Store) ToolHistory(item string) ([]protocol.ToolAuditEvent, error) {
 	size := 0
 	for rows.Next() {
 		var e protocol.ToolAuditEvent
-		var raw string
-		if err = rows.Scan(&e.ID, &e.Item, &e.PlanID, &e.Action, &e.Actor, &e.Revision, &raw, &e.Result, &e.At); err != nil {
+		var raw, assignment string
+		if err = rows.Scan(&e.ID, &e.Item, &e.PlanID, &e.Action, &e.Actor, &e.Revision, &raw, &e.Result, &e.At, &assignment); err != nil {
 			return nil, err
+		}
+		if assignment != "" {
+			var a protocol.ToolAssignment
+			if json.Unmarshal([]byte(assignment), &a) == nil {
+				e.Assignment = &a
+			}
 		}
 		if err = json.Unmarshal([]byte(raw), &e.Targets); err != nil {
 			return nil, err
@@ -373,7 +425,7 @@ func (s *Store) recordRefusedToolApply(id, actor string) error {
 	if actor != "owner" && actor != "cto" {
 		return errors.New("owner authority required")
 	}
-	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',? FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
+	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at,assignment) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',?,COALESCE(json_extract(plan,'$.assignment'),'') FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
 	return err
 }
 func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
@@ -487,7 +539,7 @@ func (s *Store) UndoTool(item, actor string) (protocol.ToolRevision, protocol.To
 	if err != nil {
 		return r, p, err
 	}
-	if err = auditToolTx(tx, item, p.ID, "undo", actor, r.Revision, targets, "pending", now); err != nil {
+	if err = auditToolTx(tx, item, p.ID, "undo", actor, r.Revision, targets, "pending", now, &previous); err != nil {
 		return r, p, err
 	}
 	return r, p, tx.Commit()

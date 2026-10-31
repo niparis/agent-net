@@ -271,6 +271,8 @@ CREATE TABLE IF NOT EXISTS tool_accepted (key TEXT PRIMARY KEY, at INTEGER NOT N
 `, `
 ALTER TABLE skill_versions ADD COLUMN number INTEGER NOT NULL DEFAULT 0;
 UPDATE skill_versions SET number=(SELECT COUNT(*) FROM skill_versions o JOIN tool_identities oi ON oi.id=o.item, tool_identities ti WHERE ti.id=skill_versions.item AND oi.kind=ti.kind AND oi.name=ti.name AND (o.imported_at<skill_versions.imported_at OR (o.imported_at=skill_versions.imported_at AND o.item<=skill_versions.item)));
+`, `
+ALTER TABLE tool_audit ADD COLUMN assignment TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
