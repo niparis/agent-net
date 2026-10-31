@@ -1,9 +1,10 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy                        updated 14:05:00
 ╭─Subscriptions · read 40s ago─────────────────────────────────────────────────────────────────────────────────────────╮
+│ no provider protected · select a subscription and press p                                                            │
 │ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS                                           │
-│ claude      max       5h             █████─────  50%      behind    -                                                │
+│ > claude    max       5h             █████─────  50%      behind    -                                                │
 │   (read on Mac; stale reading)                                                                                       │
-│ codex       pro       week           █─────────   8%      ahead     in 2h00                                          │
+│   codex     pro       week           █─────────   8%      ahead     in 2h00                                          │
 │   (read on Mac)                                                                                                      │
 │ 1 more subscription (not used by your agents) · s to show                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -19,7 +20,6 @@
 │ terra pi           pi       gpt-6.1-terra             38.1/medium  E E G P -  unused                                 │
 │   not on research                                                                                                    │
 │ T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now               │
-╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down scroll  s show not set up  tab CTO  1 sessions  ? help  q quit
+up/down scroll/select  p protect  s show not set up  tab CTO  1 sessions  ? help  q quit

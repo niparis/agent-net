@@ -764,7 +764,7 @@ func TestProtectedQuotaGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := newModel(size[0], size[1])
 		m.tab = 2
-		m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}}
+		m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "saved for your orchestrator"}
 		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "claude", Models: []string{"claude-sonnet-4"}}}
 		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet", Harness: "claude", Model: "claude-sonnet-4"}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "claude", Plan: "max", Windows: []protocol.QuotaWindow{{ID: "week", PercentUsed: 30}}}}}
@@ -773,6 +773,12 @@ func TestProtectedQuotaGoldens(t *testing.T) {
 			t.Fatalf("missing subscription or profile lock:\n%s", view)
 		}
 		golden(t, fmt.Sprintf("quotas_protected_%dx%d", size[0], size[1]), m.View())
+		m = keys(m, "p")
+		golden(t, fmt.Sprintf("quotas_unprotect_confirm_%dx%d", size[0], size[1]), m.View())
+		m = keys(m, "n")
+		m.snap.ProtectedProviders = protocol.ProtectedProviders{}
+		m = keys(m, "p")
+		golden(t, fmt.Sprintf("quotas_protect_confirm_%dx%d", size[0], size[1]), m.View())
 	}
 }
 
@@ -811,11 +817,27 @@ func TestQuotaProtectionConfirm(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
 	m = keys(m, "s", "p")
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "workers will use other subscriptions first") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "workers use others first") {
 		t.Fatalf("missing confirmation: %s", v)
 	}
 	m = keys(m, "n")
-	if v := ansi.Strip(m.View()); strings.Contains(v, "workers will use other subscriptions first") {
+	if v := ansi.Strip(m.View()); strings.Contains(v, "workers use others first") {
 		t.Fatal("confirmation did not close")
+	}
+}
+
+func TestQuotaSelectionVisible(t *testing.T) {
+	m := newModel(80, 24)
+	m.tab = 2
+	m.quotaShowUnset = true
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "claude", Windows: []protocol.QuotaWindow{{ID: "week"}}}, {Provider: "codex", Windows: []protocol.QuotaWindow{{ID: "week"}}}}}
+	v := ansi.Strip(m.View())
+	if !strings.Contains(v, "> claude") {
+		t.Fatalf("selection missing: %s", v)
+	}
+	m = keys(m, "down")
+	v = ansi.Strip(m.View())
+	if !strings.Contains(v, "> codex") {
+		t.Fatalf("selection did not move: %s", v)
 	}
 }

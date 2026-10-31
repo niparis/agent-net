@@ -1,7 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy                        updated 14:05:00
 ╭─Subscriptions · read on Mac · read 0s ago────────────────────────────────────────────────────────────────────────────╮
+│ no provider protected · select a subscription and press p                                                            │
 │ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS                                           │
-│ opencode-go           -              -                    -         -                                                │
+│ > opencode…           -              -                    -         -                                                │
 │   (the OpenCode Go login the daemon found was rejected)                                                              │
 │ 1 more subscription (not used by your agents) · s to hide                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
@@ -9,7 +10,6 @@
 │ NAME               HARNESS  MODEL                     SCORE        T S N H V  USED                                   │
 │ T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-
 
 
 
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down scroll  s show not set up  tab CTO  1 sessions  ? help  q quit
+up/down scroll/select  p protect  s show not set up  tab CTO  1 sessions  ? help  q quit

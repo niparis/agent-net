@@ -28,7 +28,7 @@ func (m Model) quotasView(w, h int) []string {
 		subscription = append(subscription, clip(sanitize(n.text), w-4))
 	}
 	if m.mode == modeQuotaConfirm {
-		question := "workers will use other subscriptions first; this provider only when nothing else fits"
+		question := "workers use others first; this provider only when nothing else fits"
 		if m.quotaUnprotect {
 			question = "workers may use this provider freely"
 		}
@@ -164,6 +164,13 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Mon 15:04")
 				} else {
 					reset = t.Format("Jan 02 15:04")
+				}
+			}
+			if i == 0 {
+				if rowIndex == m.quotaSelected {
+					provider = "> " + provider
+				} else {
+					provider = "  " + provider
 				}
 			}
 			providerCell := cell(provider, 11)

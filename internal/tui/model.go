@@ -819,6 +819,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			case "codex":
 				provider = "openai"
 			}
+			m.notice = notice{}
 			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
 			m.mode = modeQuotaConfirm
 		case "s":
