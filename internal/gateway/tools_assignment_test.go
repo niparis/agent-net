@@ -63,6 +63,10 @@ func TestToolPlanRejectsChangedObservation(t *testing.T) {
 	if _, err = s.ApplyToolPlan(plan.ID, "owner"); err == nil || !strings.Contains(err.Error(), "plan out of date") {
 		t.Fatalf("expected stale plan: %v", err)
 	}
+	events, err := s.ToolHistory(id)
+	if err != nil || len(events) != 2 || events[1].Result != "refused" {
+		t.Fatalf("missing refused audit: %+v %v", events, err)
+	}
 }
 
 func TestToolItemsShowDesiredAndPending(t *testing.T) {
@@ -81,5 +85,30 @@ func TestToolItemsShowDesiredAndPending(t *testing.T) {
 	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
 	if err != nil || len(items) != 1 || items[0].Desired == nil || items[0].Desired.Assignment.Scope != "global" || items[0].Applied != "pending" {
 		t.Fatalf("desired: %+v %v", items, err)
+	}
+}
+
+func TestToolPlanAndApplyAudit(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = s.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	targets := []protocol.ToolPlanTarget{{NodeID: "node", Harness: "codex", Destination: "/fixture", Action: "copy", State: "pending"}}
+	p, err := s.SaveToolPlan(id, protocol.ToolAssignment{Scope: "global"}, targets, "cto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ApplyToolPlan(p.ID, "owner"); err != nil {
+		t.Fatal(err)
+	}
+	events, err := s.ToolHistory(id)
+	if err != nil || len(events) != 2 || events[0].Actor != "cto" || events[1].Actor != "owner" || events[1].Revision != 1 || len(events[1].Targets) != 1 {
+		t.Fatalf("history: %+v %v", events, err)
 	}
 }

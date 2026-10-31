@@ -179,3 +179,18 @@ type ToolPlanProbeResult struct {
 	Destination string `json:"destination,omitempty"`
 	Conflict    string `json:"conflict,omitempty"`
 }
+
+type ToolAuditEvent struct {
+	ID       int64            `json:"id"`
+	Item     string           `json:"item"`
+	PlanID   string           `json:"plan_id"`
+	Action   string           `json:"action"`
+	Actor    string           `json:"actor"`
+	Revision int64            `json:"revision,omitempty"`
+	Targets  []ToolPlanTarget `json:"targets"`
+	Result   string           `json:"result"`
+	At       int64            `json:"at"`
+}
+type ToolHistoryRequest struct {
+	Item string `json:"item"`
+}

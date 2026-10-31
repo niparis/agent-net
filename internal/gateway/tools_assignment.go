@@ -204,9 +204,12 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan) VALUES(?,?,?,?)`, p.ID, item, snapshot, string(raw)); err != nil {
 		return p, err
 	}
+	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, 0, p.Targets, "proposed", p.At); err != nil {
+		return p, err
+	}
 	return p, tx.Commit()
 }
-func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
+func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 	var r protocol.ToolRevision
 	if actor != "owner" && actor != "cto" {
 		return r, errors.New("owner authority required")
@@ -242,5 +245,59 @@ func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 	if _, err = tx.Exec(`UPDATE tool_plans SET applied=1 WHERE id=?`, id); err != nil {
 		return r, err
 	}
+	if err = auditToolTx(tx, p.Item, id, "apply", actor, r.Revision, p.Targets, "pending", r.At); err != nil {
+		return r, err
+	}
 	return r, tx.Commit()
+}
+
+func auditToolTx(tx *sql.Tx, item, plan, action, actor string, revision int64, targets []protocol.ToolPlanTarget, result string, at int64) error {
+	b, err := json.Marshal(targets)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) VALUES(?,?,?,?,?,?,?,?)`, item, plan, action, actor, revision, string(b), result, at)
+	return err
+}
+func (s *Store) ToolHistory(item string) ([]protocol.ToolAuditEvent, error) {
+	rows, err := s.db.Query(`SELECT id,item,plan_id,action,actor,revision,targets,result,at FROM tool_audit WHERE item=? ORDER BY id`, item)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.ToolAuditEvent{}
+	size := 0
+	for rows.Next() {
+		var e protocol.ToolAuditEvent
+		var raw string
+		if err = rows.Scan(&e.ID, &e.Item, &e.PlanID, &e.Action, &e.Actor, &e.Revision, &raw, &e.Result, &e.At); err != nil {
+			return nil, err
+		}
+		if err = json.Unmarshal([]byte(raw), &e.Targets); err != nil {
+			return nil, err
+		}
+		size += len(raw) + len(e.Item) + len(e.PlanID) + 128
+		if size > 3<<20 {
+			return nil, errors.New("history exceeds response limit")
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) recordRefusedToolApply(id, actor string) error {
+	if actor != "owner" && actor != "cto" {
+		return errors.New("owner authority required")
+	}
+	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) SELECT item,id,'apply',?,0,json_extract(plan,'$.targets'),'refused',? FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
+	return err
+}
+func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
+	r, err := s.applyToolPlan(id, actor)
+	if err != nil && (actor == "owner" || actor == "cto") {
+		if auditErr := s.recordRefusedToolApply(id, actor); auditErr != nil {
+			return r, auditErr
+		}
+	}
+	return r, err
 }

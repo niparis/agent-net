@@ -574,6 +574,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.applyTool(ctx, p.ID, p.Actor)
+	case "tools.history":
+		p, err := decode[protocol.ToolHistoryRequest](raw)
+		if err != nil || p.Item == "" {
+			return nil, reject("history needs an item")
+		}
+		events, err := st.ToolHistory(p.Item)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"events": events}, nil
 	case "tools.import":
 		p, err := decode[protocol.ToolImport](raw)
 		if err != nil {

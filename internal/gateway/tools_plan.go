@@ -163,22 +163,30 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	}
 	return g.store.saveToolPlan(p.Item, a, targets, actor, snap)
 }
-func (g *Gateway) applyTool(ctx context.Context, id, actor string) (protocol.ToolRevision, error) {
-	var r protocol.ToolRevision
+func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.ToolRevision, err error) {
+	checked := false
+	defer func() {
+		if err != nil && !checked && (actor == "owner" || actor == "cto") {
+			if e := g.store.recordRefusedToolApply(id, actor); e != nil {
+				err = e
+			}
+		}
+	}()
 	var raw string
-	if err := g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE id=?`, id).Scan(&raw); err != nil {
+	if err = g.store.db.QueryRow(`SELECT plan FROM tool_plans WHERE id=?`, id).Scan(&raw); err != nil {
 		return r, errors.New("plan not found")
 	}
 	var p protocol.ToolPlan
 	if json.Unmarshal([]byte(raw), &p) != nil {
 		return r, errors.New("invalid plan")
 	}
-	targets, err := g.toolTargets(ctx, p.Item, p.Assignment)
-	if err != nil {
-		return r, err
+	targets, e := g.toolTargets(ctx, p.Item, p.Assignment)
+	if e != nil {
+		return r, e
 	}
 	if !reflect.DeepEqual(targets, p.Targets) {
 		return r, errors.New("plan out of date")
 	}
+	checked = true
 	return g.store.ApplyToolPlan(id, actor)
 }

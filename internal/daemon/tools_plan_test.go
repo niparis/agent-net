@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -75,5 +76,12 @@ func TestToolsPlanAndApplyOwnerGate(t *testing.T) {
 	}
 	if _, err = cli.call("tools_apply", protocol.ToolPlanID{ID: plan.ID}); err != nil {
 		t.Fatal(err)
+	}
+	raw, err = cli.call("tools_history", protocol.ToolHistoryRequest{Item: item.ID})
+	if err != nil || !strings.Contains(string(raw), `"action":"apply"`) {
+		t.Fatalf("history: %s %v", raw, err)
+	}
+	if _, err = pi.call("tools_history", protocol.ToolHistoryRequest{Item: item.ID}); err == nil {
+		t.Fatal("agent read history")
 	}
 }
