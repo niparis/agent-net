@@ -339,6 +339,12 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	if h.socket != "" {
 		argv = append(argv, "HERDR_SOCKET_PATH="+h.socket)
 	}
+	// The asking machine has a herdr client: focus the pane there, so the
+	// client opens on it. This is best effort; the note names the pane in case
+	// the client opens on another tab.
+	if q.HerdrClient {
+		herdrRun(bin, h.socket, "agent", "focus", pane.PaneID)
+	}
 	switch {
 	case pane.Agent != "" && herdrIDRe.MatchString(pane.PaneID):
 		argv = append(argv, bin, "agent", "attach", pane.PaneID)
@@ -347,8 +353,12 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	default:
 		return note("%s runs in herdr pane %s, which cannot be attached: open its window on %s", name, pane.PaneID, where)
 	}
-	return protocol.EnterPlan{
+	out := protocol.EnterPlan{
 		Argv: argv, Host: plan.Host,
 		Note: fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. If herdr says the terminal already has an attached client, close that other attach first.", name),
-	}, true
+	}
+	if q.HerdrClient && herdrIDRe.MatchString(pane.PaneID) {
+		out.HerdrPane = pane.PaneID
+	}
+	return out, true
 }

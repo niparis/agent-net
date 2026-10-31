@@ -40,6 +40,14 @@ On macOS, process environments may not be readable for Apple-signed programs suc
 - If the note says no candidate Herdr socket answers, check that the Herdr server is running for the same user and that its socket is reachable. Run `herdr pane list` from that user's shell to check the default socket.
 - If agent-net cannot find a Herdr pane, it still checks tmux. If neither multiplexer holds the process, open the session in its existing window.
 
+## Image paste fails after `e` on a session on another machine
+
+With `ssh -t ... herdr agent attach <pane>`, the session on the other machine reads that machine's clipboard. An image copied on this machine cannot be pasted.
+
+Press `e` from a machine that has herdr installed, on `PATH` or in `~/.local/bin/herdr`. agent-net then runs `herdr --remote <ssh-target>`, and herdr carries the clipboard and image paste between the machines. The note names the machine and the pane, because the client can open on another tab. Use `ctrl+b q` to detach.
+
+If the plan still uses ssh, the daemon did not find a herdr binary on this machine. Install herdr, or put it in `~/.local/bin`, and restart the daemon. The ssh target is the machine's name or its entry in `enter_ssh_hosts`, the same as for the ssh plan.
+
 ## `curl ... | sh` of an invite line printed nothing and exited 0
 
 If the download fails, the shell receives an empty script and exits with 0. Look above for a `curl:` error line. Common causes: the gateway is not reachable from this machine, the line was cut when you pasted it (it is one line), or the one-time code expired (10 minutes) or was already used. If the gateway says the link is unknown, expired or already used, run `agent-net invite` again.
