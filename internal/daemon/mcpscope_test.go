@@ -100,6 +100,25 @@ func TestMCPScopedFederationEndToEnd(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
 		t.Fatalf("spoofed call: %v", err)
 	}
+	// A session cannot claim the owner's authority either: the owner ID in
+	// its request is dropped by the daemon.
+	eventually(t, "owner session", func() bool { return work.d.ownerSessionID() != "" })
+	_, err = beta.call("mcp_call", map[string]any{"server": "probe", "tool": "echo", "owner": work.d.ownerSessionID()})
+	if err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
+		t.Fatalf("owner claim from a session: %v", err)
+	}
+	// The owner's own command line calls with the owner's authority, whatever
+	// the project.
+	if out, err := callTool(t, cli, "probe", "echo", map[string]string{"text": "own"}); err != nil || out.Text != "echo: own" {
+		t.Fatalf("owner command line call: %+v %v", out, err)
+	}
+	// A command line run from inside an agent session has no authority: it
+	// sees only global servers.
+	work.d.inSession = func(int) bool { return true }
+	if _, err = callTool(t, cli, "probe", "echo", map[string]string{"text": "in"}); err == nil || !strings.Contains(err.Error(), "not assigned to this project") {
+		t.Fatalf("command line inside a session: %v", err)
+	}
+	work.d.inSession = func(int) bool { return false }
 	// The server's owner view lists the scope.
 	for _, s := range listServers(t, cli) {
 		if s.Name == "probe" && (s.Scope != "projects" || len(s.Projects) != 1 || s.Projects[0] != "alpha") {
