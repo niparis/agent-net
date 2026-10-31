@@ -121,6 +121,57 @@ func TestReadQuotaAXIParsesWindowsAndPace(t *testing.T) {
 	}
 }
 
+func TestRunQuotaAXIReceivesOpenCodeAuthEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"node":      "#!/bin/sh\necho v22.19.0\n",
+		"quota-axi": "#!/bin/sh\nprintf 'HOME=%s\\nXDG_DATA_HOME=%s\\nXDG_CONFIG_HOME=%s\\nOPENCODE_DB=%s\\nPI_CODING_AGENT_DIR=%s\\nQUOTA_AXI_OPENCODE_GO_PI_AUTH=%s\\n' \"$HOME\" \"$XDG_DATA_HOME\" \"$XDG_CONFIG_HOME\" \"$OPENCODE_DB\" \"$PI_CODING_AGENT_DIR\" \"$QUOTA_AXI_OPENCODE_GO_PI_AUTH\"\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for key, value := range map[string]string{
+		"HOME":                          filepath.Join(dir, "home"),
+		"XDG_DATA_HOME":                 filepath.Join(dir, "custom-data"),
+		"XDG_CONFIG_HOME":               filepath.Join(dir, "config"),
+		"OPENCODE_DB":                   "opencode-test.db",
+		"PI_CODING_AGENT_DIR":           filepath.Join(dir, "pi"),
+		"QUOTA_AXI_OPENCODE_GO_PI_AUTH": "true",
+	} {
+		t.Setenv(key, value)
+	}
+	raw, _, err := runQuotaAXI(context.Background(), filepath.Join(dir, "quota-axi"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Join([]string{
+		"HOME=" + filepath.Join(dir, "home"),
+		"XDG_DATA_HOME=" + filepath.Join(dir, "custom-data"),
+		"XDG_CONFIG_HOME=" + filepath.Join(dir, "config"),
+		"OPENCODE_DB=opencode-test.db",
+		"PI_CODING_AGENT_DIR=" + filepath.Join(dir, "pi"),
+		"QUOTA_AXI_OPENCODE_GO_PI_AUTH=true",
+		"",
+	}, "\n")
+	if string(raw) != want {
+		t.Fatalf("quota-axi environment:\n%s\nwant:\n%s", raw, want)
+	}
+}
+
+func TestQuotaAXIExplainsMissingOpenCodeDataHome(t *testing.T) {
+	t.Setenv("XDG_DATA_HOME", "")
+	raw := []byte(`{"providers":[{"provider":"opencode-go","state":{"error":"provider_auth_rejected"}}]}`)
+	q, err := parseQuotaAXI(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, ok := q.Provider("opencode-go")
+	if !ok || !strings.Contains(p.Error, "XDG_DATA_HOME is not set for the daemon") || strings.Contains(p.Error, "provider_auth_rejected") {
+		t.Fatalf("provider error was not explained: %+v", p)
+	}
+}
+
 func TestReadQuotaAXIUsesJSONWhenEveryProviderFailed(t *testing.T) {
 	json := strings.Replace(fakeQuotaJSON,
 		`"state": {"status": "fresh", "stale": false}`,

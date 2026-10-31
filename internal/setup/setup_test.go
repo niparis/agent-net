@@ -21,17 +21,27 @@ import (
 )
 
 func TestSystemdUnit(t *testing.T) {
+	t.Setenv("HOME", "/home/me")
+	t.Setenv("XDG_DATA_HOME", "/home/me/custom data")
+	t.Setenv("XDG_CONFIG_HOME", "/home/me/.config")
+	t.Setenv("XDG_AUTH_TOKEN", "test-secret")
+	t.Setenv("OPENCODE_DB", "opencode-test.db")
+	t.Setenv("QUOTA_AXI_OPENCODE_GO_PI_AUTH", "true")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
 	d := SystemdUnit(Service{Name: "daemon", Args: []string{"daemon"}}, "/home/me/.local/bin/agent-net")
-	for _, want := range []string{"ExecStart=/home/me/.local/bin/agent-net daemon\n", "Restart=always", "After=agent-net-gateway.service", "WantedBy=default.target"} {
+	for _, want := range []string{"ExecStart=/home/me/.local/bin/agent-net daemon\n", "Restart=always", "After=agent-net-gateway.service", "WantedBy=default.target", `Environment="XDG_DATA_HOME=/home/me/custom data"`, "Environment=XDG_CONFIG_HOME=/home/me/.config", "Environment=OPENCODE_DB=opencode-test.db", "Environment=QUOTA_AXI_OPENCODE_GO_PI_AUTH=true", "Environment=HOME=/home/me"} {
 		if !strings.Contains(d, want) {
 			t.Errorf("daemon unit lacks %q:\n%s", want, d)
 		}
+	}
+	if strings.Contains(d, "AWS_SECRET_ACCESS_KEY") || strings.Contains(d, "XDG_AUTH_TOKEN") {
+		t.Errorf("service unit copied an unrelated secret:\n%s", d)
 	}
 	if !strings.Contains(d, "KillMode=process") {
 		t.Errorf("daemon unit must not kill the workers when it stops:\n%s", d)
 	}
 	g := SystemdUnit(Service{Name: "gateway", Args: []string{"gateway", "--listen", "0.0.0.0:7420", "--dist", "/a b/dist"}}, "/x/agent-net")
-	if !strings.Contains(g, `ExecStart=/x/agent-net gateway --listen 0.0.0.0:7420 --dist "/a b/dist"`+"\n") || !strings.Contains(g, "Restart=on-failure") {
+	if !strings.Contains(g, `ExecStart=/x/agent-net gateway --listen 0.0.0.0:7420 --dist "/a b/dist"`+"\n") || !strings.Contains(g, "Restart=on-failure") || strings.Contains(g, "XDG_DATA_HOME") {
 		t.Errorf("gateway unit:\n%s", g)
 	}
 	if (Service{Name: "daemon"}).UnitName() != "agent-net-daemon.service" {
@@ -43,6 +53,10 @@ func TestLaunchdPlist(t *testing.T) {
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("no python3")
 	}
+	t.Setenv("XDG_DATA_HOME", "/Users/me/custom & data")
+	t.Setenv("XDG_AUTH_TOKEN", "test-secret")
+	t.Setenv("OPENCODE_DB", "opencode-test.db")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
 	s := Service{Name: "daemon", Args: []string{"daemon"}}
 	plist := LaunchdPlist(s, "/Users/me & co/.local/bin/agent-net", "/Users/me & co")
 	script := `import plistlib, sys
@@ -53,6 +67,11 @@ assert d["KeepAlive"] is True and d["RunAtLoad"] is True
 assert d["StandardErrorPath"] == "/Users/me & co/Library/Logs/agent-net-daemon.log", d
 assert d["StandardOutPath"] == d["StandardErrorPath"]
 assert d["AbandonProcessGroup"] is True, d
+assert d["EnvironmentVariables"]["HOME"] == "/Users/me & co", d
+assert d["EnvironmentVariables"]["XDG_DATA_HOME"] == "/Users/me/custom & data", d
+assert d["EnvironmentVariables"]["OPENCODE_DB"] == "opencode-test.db", d
+assert "AWS_SECRET_ACCESS_KEY" not in d["EnvironmentVariables"], d
+assert "XDG_AUTH_TOKEN" not in d["EnvironmentVariables"], d
 `
 	cmd := exec.Command("python3", "-I", "-c", script)
 	cmd.Stdin = strings.NewReader(plist)
