@@ -17,7 +17,7 @@ import (
 // specOf is the part of a server that is stored as JSON in the spec column.
 func specOf(s protocol.MCPServer) []byte {
 	keep := protocol.MCPServer{Transport: s.Transport, Command: s.Command, Args: s.Args, Env: s.Env,
-		URL: s.URL, Headers: s.Headers, TimeoutSec: s.TimeoutSec}
+		URL: s.URL, Headers: s.Headers, TimeoutSec: s.TimeoutSec, AllowedTools: s.AllowedTools}
 	b, _ := json.Marshal(keep)
 	return b
 }
@@ -40,6 +40,7 @@ func scanMCP(sc interface{ Scan(...any) error }) (protocol.MCPServer, error) {
 	}
 	s.Transport, s.Command, s.Args, s.Env = kept.Transport, kept.Command, kept.Args, kept.Env
 	s.URL, s.Headers, s.TimeoutSec = kept.URL, kept.Headers, kept.TimeoutSec
+	s.AllowedTools = kept.AllowedTools
 	s.Enabled = enabled == 1
 	if err := json.Unmarshal([]byte(tools), &s.Tools); err != nil {
 		return s, err
@@ -62,6 +63,7 @@ func (s *Store) addMCPServer(srv protocol.MCPServer, enabled bool) error {
 	if err := srv.Validate(); err != nil {
 		return reject("%v", err)
 	}
+	srv.Tools = srv.AllowedOnly(srv.Tools)
 	sort.Slice(srv.Tools, func(i, j int) bool { return srv.Tools[i].Name < srv.Tools[j].Name })
 	tools, _ := json.Marshal(srv.Tools)
 	if srv.Tools == nil {
@@ -182,6 +184,7 @@ func (s *Store) SetMCPReport(name, health, detail string, tools []protocol.MCPTo
 	if tools == nil {
 		tools = srv.Tools
 	}
+	tools = srv.AllowedOnly(tools)
 	sort.Slice(tools, func(i, j int) bool { return tools[i].Name < tools[j].Name })
 	old, _ := json.Marshal(srv.Tools)
 	cur, _ := json.Marshal(tools)

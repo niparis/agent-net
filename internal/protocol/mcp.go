@@ -15,6 +15,8 @@ const (
 	// MCPMaxResultBytes caps what one tool call may return. The host cuts the
 	// result and says so.
 	MCPMaxResultBytes = 512 * 1024
+	// MCPMaxAllowedTools caps the allow-list of a server.
+	MCPMaxAllowedTools = 256
 	// MCPMaxArgsBytes caps the arguments of one tool call.
 	MCPMaxArgsBytes = 256 * 1024
 	MCPMaxNameLen   = 24
@@ -64,6 +66,10 @@ type MCPServer struct {
 	// TimeoutSec is the per-call timeout; 0 means the default.
 	TimeoutSec int  `json:"timeout_sec,omitempty"`
 	Enabled    bool `json:"enabled"`
+	// AllowedTools, when not empty, is the only set of the server's tools that
+	// the gateway lists and lets through. An import sets it from the native
+	// entry's allow-list. Tools it does not name are neither listed nor called.
+	AllowedTools []string `json:"allowed_tools,omitempty"`
 
 	AddedByNode    string `json:"added_by_node,omitempty"`
 	AddedBySession string `json:"added_by_session,omitempty"`
@@ -82,6 +88,35 @@ type MCPServer struct {
 	// from the owner's assignment; they are never stored in the spec.
 	Scope    string   `json:"scope,omitempty"`
 	Projects []string `json:"projects,omitempty"`
+}
+
+// ToolAllowed reports whether the gateway exposes the tool: always when the
+// server has no allow-list.
+func (s MCPServer) ToolAllowed(tool string) bool {
+	if len(s.AllowedTools) == 0 {
+		return true
+	}
+	for _, t := range s.AllowedTools {
+		if t == tool {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowedOnly returns the tools the allow-list names (all of them when there
+// is no list).
+func (s MCPServer) AllowedOnly(tools []MCPTool) []MCPTool {
+	if len(s.AllowedTools) == 0 {
+		return tools
+	}
+	out := []MCPTool{}
+	for _, t := range tools {
+		if s.ToolAllowed(t.Name) {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Timeout returns the per-call timeout.
@@ -165,6 +200,14 @@ func (s *MCPServer) Validate() error {
 		}
 	default:
 		return fmt.Errorf("transport must be stdio, http or sse")
+	}
+	if len(s.AllowedTools) > MCPMaxAllowedTools {
+		return fmt.Errorf("an allow-list holds at most %d tools", MCPMaxAllowedTools)
+	}
+	for _, t := range s.AllowedTools {
+		if t == "" || len(t) > 128 {
+			return fmt.Errorf("an allow-list entry must be 1-128 bytes")
+		}
 	}
 	if s.TimeoutSec < 0 || time.Duration(s.TimeoutSec)*time.Second > MCPMaxTimeout {
 		return fmt.Errorf("timeout must be between 1 s and %s", MCPMaxTimeout)

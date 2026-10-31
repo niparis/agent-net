@@ -682,7 +682,14 @@ plan with a conflict cannot be applied. Apply:
 2. runs the same test as `mcp_test`;
 3. compares the tools the server reports with the tools the native entry lists
    (`enabled_tools` in Codex, `enabledTools` or `allowedTools` elsewhere), when it
-   lists any. A listed tool that is missing, or a server with no tools, fails;
+   lists any. A listed tool that is missing, or a server with no tools, fails.
+   When the entry has an allow-list, the federated server gets the same list
+   (`allowed_tools` on the server): the gateway lists and lets through only those
+   tools, even if the server reports more, so a session sees what it saw before.
+   A call to another tool fails with `tool "X" is not exposed by MCP server`, and
+   `mcp test` and health reports never widen the list. When the entry has no
+   allow-list, every tool the server reports is accepted and the import record
+   (`imported.tools`) keeps the list. The record also keeps `allowed_tools`;
 4. enables it. A user-level entry becomes `global` (a per-machine scope cannot be
    expressed); a project-level entry becomes `projects` with that project.
 

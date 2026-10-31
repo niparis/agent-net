@@ -335,6 +335,9 @@ func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall)
 	if !srv.Enabled {
 		return nil, reject("MCP server %q is disabled", p.Server)
 	}
+	if !srv.ToolAllowed(p.Tool) {
+		return nil, reject("tool %q is not exposed by MCP server %q", p.Tool, p.Server)
+	}
 	if len(p.Arguments) > protocol.MCPMaxArgsBytes {
 		return nil, reject("arguments are larger than %d bytes", protocol.MCPMaxArgsBytes)
 	}

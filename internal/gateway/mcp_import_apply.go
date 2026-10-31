@@ -97,6 +97,9 @@ func (g *Gateway) importBuild(ctx context.Context, e nativeMCP, failed map[strin
 		server = spec.Server
 		server.NodeID, server.Hostname, server.Enabled = c.NodeID, c.Machine, false
 		server.Health, server.Tools = protocol.HealthUnknown, nil
+		// The native entry's allow-list becomes the federated server's, so a
+		// session sees exactly the tools it saw before.
+		server.AllowedTools = g.expectedTools(c)
 	}
 	assign := protocol.ToolAssignment{Scope: "global"}
 	if c.Scope == protocol.InventoryProject {
@@ -180,7 +183,7 @@ func (g *Gateway) expectedTools(c protocol.MCPImportCandidate) []string {
 
 // finishMCPImport enables the tested server, gives it the native entry's scope,
 // records where it came from and audits it, in one transaction.
-func (s *Store) finishMCPImport(p protocol.MCPImportPlan, actor, session string) (int64, error) {
+func (s *Store) finishMCPImport(p protocol.MCPImportPlan, reported []string, actor, session string) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -202,7 +205,8 @@ func (s *Store) finishMCPImport(p protocol.MCPImportPlan, actor, session string)
 	}
 	c := p.Candidate
 	rec, _ := json.Marshal(protocol.MCPImportRecord{Server: name, NodeID: c.NodeID, Machine: c.Machine, Harness: c.Harness, Scope: c.Scope,
-		Project: c.Project, Location: c.Location, Name: c.Name, PlanID: p.ID, Actor: actor, At: now, NativeStillPresent: true})
+		Project: c.Project, Location: c.Location, Name: c.Name, PlanID: p.ID, Actor: actor, At: now, NativeStillPresent: true,
+		Tools: reported, AllowedTools: p.Server.AllowedTools})
 	if _, err = tx.Exec(`INSERT INTO mcp_imports(name,record) VALUES(?,?)`, name, string(rec)); err != nil {
 		return 0, err
 	}
@@ -290,6 +294,7 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 		return fail("the test could not run: " + err.Error())
 	}
 	m, _ := res.(map[string]any)
+	reported, _ := m["tools"].([]protocol.MCPTool)
 	if ok, _ := m["ok"].(bool); !ok {
 		detail, _ := m["detail"].(string)
 		return fail("the test failed: " + detail)
@@ -298,29 +303,36 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 	if err != nil {
 		return out, err
 	}
-	have := map[string]bool{}
 	for _, t := range srv.Tools {
-		have[t.Name] = true
 		out.Tools = append(out.Tools, t.Name)
 	}
-	if len(srv.Tools) == 0 {
+	if len(reported) == 0 {
 		return fail("the server reports no tools; the federation carries tools only")
+	}
+	reportedNames := make([]string, 0, len(reported))
+	for _, t := range reported {
+		reportedNames = append(reportedNames, t.Name)
+	}
+	sort.Strings(reportedNames)
+	haveReported := map[string]bool{}
+	for _, n := range reportedNames {
+		haveReported[n] = true
 	}
 	if len(p.ExpectedTools) > 0 {
 		var missing []string
 		for _, t := range p.ExpectedTools {
-			if !have[t] {
+			if !haveReported[t] {
 				missing = append(missing, t)
 			}
 		}
 		if len(missing) > 0 {
 			return fail("the server does not report the tools the native entry lists: " + strings.Join(missing, ", "))
 		}
-		out.Compared = fmt.Sprintf("all %d tools the native entry lists are present", len(p.ExpectedTools))
+		out.Compared = fmt.Sprintf("all %d tools the native entry lists are present; the allow-list is kept, so only those are exposed (the server reports %d)", len(p.ExpectedTools), len(reportedNames))
 	} else {
 		out.Compared = fmt.Sprintf("the native entry lists no tools, so the tool list was not compared; the server reports %d tools", len(srv.Tools))
 	}
-	if _, err = g.store.finishMCPImport(p, actor, session); err != nil {
+	if _, err = g.store.finishMCPImport(p, reportedNames, actor, session); err != nil {
 		g.store.RemoveMCPServer(name, p.Candidate.NodeID, session)
 		return out, err
 	}
