@@ -505,3 +505,11 @@ func TestCTOMarkdownGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("cto_markdown_%dx%d", size[0], size[1]), view)
 	}
 }
+
+func TestCTOEnterEmptyPlanShowsError(t *testing.T) {
+	m := New(&fakeCTOSource{fakeSource: &fakeSource{}})
+	m, _ = m.onEnter(enterMsg{name: "CTO"})
+	if !m.notice.err || !strings.Contains(m.notice.text, "Cannot enter CTO") {
+		t.Fatalf("empty CTO plan must show an error: %+v", m.notice)
+	}
+}

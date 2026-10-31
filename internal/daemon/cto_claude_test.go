@@ -283,4 +283,11 @@ func TestCTOEnterClaude(t *testing.T) {
 	if len(plan.Argv) != 3 || plan.Argv[1] != "attach" || plan.Argv[2] != n.d.claudeCTO.ref {
 		t.Fatalf("plan: %+v", plan)
 	}
+	first := plan.Argv[2]
+	if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &plan); err != nil {
+		t.Fatal(err)
+	}
+	if len(plan.Argv) != 3 || plan.Argv[2] != first {
+		t.Fatalf("existing session plan: %+v", plan)
+	}
 }
