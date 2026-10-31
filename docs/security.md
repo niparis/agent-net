@@ -22,7 +22,7 @@ Worker profiles are stored at the gateway. The owner CLI, the private CTO tools 
 The OpenCode CTO server binds only to localhost and requires a random password.
 Its data, state, configuration and cache are private to the daemon. The OpenCode
 agent-net plugin is disabled in that process. The private configuration copies
-the owner's OpenCode provider and other general settings and non-agent-net plugins.
+the owner's OpenCode provider and other general settings, without plugins.
 It excludes the owner's agents, MCP servers, permissions and instructions to keep
 the CTO's tools private. The Claude Code CTO uses the
 owner's Claude login and a background session in a private working directory.
@@ -34,6 +34,23 @@ the CTO go to the owner session and are also forwarded to the active CTO
 conversation as peer model output. The daemon checks the gateway's stored CTO
 marker on the conversation root and quotes the peer's body as data. Replies to
 personal owner messages are not forwarded.
+
+The CTO has no built-in shell, file, search, web, scheduling or subagent tools.
+Claude uses `--tools ""`, empty settings sources, disabled hooks, no enabled
+plugins and strict MCP configuration. OpenCode denies every built-in action
+with a wildcard deny plus explicit deny rules for bash, edit, write, subagent,
+read, glob, grep, list, webfetch and todowrite. Only the private CTO MCP namespace
+is allowed. The general subagent is disabled and owner plugins are not copied.
+
+Startup fails closed on unknown versions or missing effective-tool reports.
+Claude's system init record must list only private CTO MCP tools. OpenCode's
+effective agent permissions must close the default allow with a wildcard deny,
+with no later allow outside that namespace, and no other enabled agents.
+The recognized versions are Claude Code 2.1.316 and OpenCode 2.2.0.
+A missing init record, even on a recognized version, stops the Claude session.
+Fake harnesses test these checks. Real model tool execution and subagent
+inheritance have not been verified; startup never assumes restrictions from
+CLI help or a config file alone.
 
 The private MCP server exposes the owner operations listed in
 [the CTO parity table](reference.md), including network and conversation reads,

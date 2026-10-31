@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func ctoTestSession(t *testing.T) *mcp.ClientSession {
@@ -119,7 +120,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	}
 }
 
-func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
+func TestCTOCharterSetWarnsWithoutRefusing(t *testing.T) {
 	cs := ctoTestSession(t)
 	list, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
@@ -137,10 +138,8 @@ func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
 	}
 	props, _ := ctoToolSchema(t, charter)
 	value := props["value"]["description"].(string)
-	for _, want := range []string{"1200", "6", "40", "accepts", "refuses", "escalate"} {
-		if !strings.Contains(value, want) {
-			t.Errorf("charter summary misses %q", want)
-		}
+	if strings.Contains(value, "1200") {
+		t.Error("guide text remains in schema")
 	}
 
 	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "charter_set", Arguments: map[string]any{
@@ -351,8 +350,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 		sizes = append(sizes, size{tool.Name, len(data)})
 		if tool.Name == "charter_set" {
 			foundCharter = true
-			if strings.Count(string(data), "1200") != 1 {
-				t.Error("charter summary must occur once")
+			if strings.Contains(string(data), "1200") {
+				t.Error("charter guide must not occur in schema")
 			}
 		}
 	}
@@ -363,7 +362,28 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	for _, item := range sizes[:10] {
 		t.Logf("%s: %d bytes", item.name, item.bytes)
 	}
-	if len(schema) > 23984 {
-		t.Errorf("CTO schema is %d bytes, budget 23984", len(schema))
+	if len(schema) > 23973 {
+		t.Errorf("CTO schema is %d bytes, budget 23973", len(schema))
+	}
+}
+
+func TestCTOCharterGuideView(t *testing.T) {
+	cs := ctoTestSession(t)
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "charter_guide"})
+	if err != nil || result.IsError {
+		t.Fatalf("guide: %v %v", result, err)
+	}
+	text := result.Content[0].(*mcp.TextContent).Text
+	if text != protocol.CharterGuideText() {
+		t.Fatalf("guide missing: %s", text)
+	}
+	list, _ := cs.ListTools(context.Background(), nil)
+	for _, tool := range list.Tools {
+		if tool.Name == "charter_set" {
+			raw, _ := json.Marshal(tool)
+			if strings.Contains(string(raw), "1200") {
+				t.Error("guide text in charter_set schema")
+			}
+		}
 	}
 }

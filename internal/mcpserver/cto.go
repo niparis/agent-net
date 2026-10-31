@@ -41,6 +41,7 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
+	"charter_guide":         {desc: "Read charter guide.", fields: map[string]ctoField{}},
 	"notification_settings": {desc: "Read or set notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true; omit to read."}}},
 	"charter_suggestions":   {desc: "Read charter suggestions.", fields: map[string]ctoField{}},
 	"graph_get": {
@@ -52,7 +53,7 @@ var ctoTools = map[string]ctoToolDef{
 		fields: map[string]ctoField{
 			"node":  {typ: "string", desc: "Node."},
 			"attr":  {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
-			"value": {typ: "string", desc: "2 KiB max; empty clears; budget 1200 characters per charter, at most 6 items in accepts, refuses and escalate, and 40 characters of accepts and refuses visible to neighbors."},
+			"value": {typ: "string", desc: "2 KiB max; empty clears."},
 		},
 	},
 	"charter_history": {
@@ -208,6 +209,9 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		tool := &mcp.Tool{Name: name, Description: toolDescription, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if method == "charter_guide" {
+				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: protocol.CharterGuideText()}}}, nil
+			}
 			raw, err := call(ctx, method, req.Params.Arguments)
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil

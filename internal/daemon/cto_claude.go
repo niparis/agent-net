@@ -136,8 +136,8 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
-	args := []string{"--bg", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
+	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
+	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
 	if id != "" {
 		args = append(args, "--resume", id)
 	}
@@ -166,6 +166,10 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 		return errors.New("Claude did not return a background session id")
 	}
 	ref := m[1]
+	if err := checkClaudeCTOInit(output); err != nil {
+		(claudeLauncher{}).stopID(d, ref)
+		return err
+	}
 	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 	for {
@@ -202,17 +206,20 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 	if err != nil {
 		return fmt.Errorf("check Claude Code help: %w", err)
 	}
+	version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+	if versionErr != nil {
+		return fmt.Errorf("check Claude Code version: %w", versionErr)
+	}
+	v := claudeVersionPattern.FindString(string(version))
 	var result error
 	if !strings.Contains(string(help), "--bg") || !strings.Contains(string(help), "--strict-mcp-config") {
-		version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
-		if versionErr != nil {
-			return fmt.Errorf("check Claude Code version: %w", versionErr)
-		}
-		v := claudeVersionPattern.FindString(string(version))
 		if v == "" {
 			v = "(unknown version)"
 		}
 		result = fmt.Errorf("Claude Code %s is too old for the CTO: run `claude update`", v)
+	}
+	if result == nil && v != "2.1.316" {
+		result = fmt.Errorf("CTO Claude: unknown harness version %q; tool isolation is not verified", v)
 	}
 	if c.capabilities == nil {
 		c.capabilities = make(map[string]claudeCTOCapability)

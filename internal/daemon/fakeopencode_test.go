@@ -113,7 +113,18 @@ func runFakeOpenCode() {
 			http.Error(w, `{"_tag":"UnauthorizedError"}`, 401)
 			return
 		}
-		fmt.Fprint(w, `{"version":"fake"}`)
+		fmt.Fprint(w, `{"version":"2.2.0"}`)
+	})
+	mux.HandleFunc("GET /api/agent", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(r) {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		rules := ctoPermissions()
+		if extra := os.Getenv("FAKE_CTO_EXTRA_TOOL"); extra != "" {
+			rules = append(rules, ctoPermission{extra, "*", "allow"})
+		}
+		json.NewEncoder(w).Encode(map[string]any{"data": []any{map[string]any{"name": "cto", "permissions": rules}}})
 	})
 	mux.HandleFunc("GET /api/model", func(w http.ResponseWriter, r *http.Request) {
 		if !auth(r) {

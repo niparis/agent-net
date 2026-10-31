@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// ctoOwnerConfig copies settings but never the owner's agents or MCP servers:
+// ctoOwnerConfig copies settings but never agents, plugins or MCP servers:
 // those could expose tools outside the CTO's private MCP boundary.
 func ctoOwnerConfig(private string) (map[string]any, error) {
 	root := os.Getenv("XDG_CONFIG_HOME")
@@ -46,47 +46,12 @@ func ctoOwnerConfig(private string) (map[string]any, error) {
 			cfg[k] = v
 		}
 	}
-	for _, k := range []string{"agent", "agents", "mcp", "permission", "instructions", "server", "autoupdate"} {
+	for _, k := range []string{"agent", "agents", "mcp", "permission", "permissions", "plugin", "plugins", "instructions", "server", "autoupdate"} {
 		delete(cfg, k)
 	}
-	if plugins, ok := cfg["plugin"].([]any); ok {
-		filtered := make([]any, 0, len(plugins))
-		for _, p := range plugins {
-			s, ok := p.(string)
-			if !ok || !isAgentNetPlugin(s) {
-				filtered = append(filtered, p)
-			}
-		}
-		cfg["plugin"] = filtered
-	}
-	for _, name := range []string{"plugin", "plugins"} {
-		target := filepath.Join(private, "opencode", name)
-		if err := os.RemoveAll(target); err != nil {
-			return nil, err
-		}
-		entries, err := os.ReadDir(filepath.Join(owner, name))
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		for _, e := range entries {
-			if e.IsDir() || isAgentNetPlugin(e.Name()) {
-				continue
-			}
-			if err := os.MkdirAll(target, 0700); err != nil {
-				return nil, err
-			}
-			if err := os.Symlink(filepath.Join(owner, name, e.Name()), filepath.Join(target, e.Name())); err != nil {
-				return nil, err
-			}
-		}
-	}
+
 	return cfg, nil
 }
-
-func isAgentNetPlugin(s string) bool { return strings.Contains(strings.ToLower(s), "agent-net") }
 
 // cleanJSONC removes comments and trailing commas without changing strings.
 func cleanJSONC(b []byte) []byte {

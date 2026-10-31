@@ -130,11 +130,11 @@ type fakeClaudeInit struct {
 func fakeClaudeCLI() {
 	dir := os.Getenv(envFakeClaudeSessions)
 	if os.Args[1] == "--help" {
-		fmt.Println("--bg --strict-mcp-config")
+		fmt.Println("--bg --strict-mcp-config --tools --setting-sources")
 		return
 	}
 	if os.Args[1] == "--version" {
-		fmt.Println("2.1.314")
+		fmt.Println("2.1.316")
 		return
 	}
 	if os.Args[1] == "stop" {
@@ -182,6 +182,14 @@ func fakeClaudeCLI() {
 	deadline := time.Now().Add(scaled(5 * time.Second))
 	for time.Now().Before(deadline) {
 		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && sf.JobID != "" {
+			if argValue(os.Args, "--name") == "agent-net-cto" {
+				tools := []string{"mcp__agent-net-cto__graph_get"}
+				if extra := os.Getenv("FAKE_CTO_EXTRA_TOOL"); extra != "" {
+					tools = append(tools, extra)
+				}
+				init, _ := json.Marshal(map[string]any{"type": "system", "subtype": "init", "claude_code_version": "2.1.316", "tools": tools})
+				fmt.Println(string(init))
+			}
 			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
 				sf.JobID, argValue(os.Args, "--name"), sf.JobID, sf.JobID)
 			return

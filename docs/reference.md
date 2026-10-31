@@ -88,8 +88,8 @@ title shows the active harness and its model.
 OpenCode uses private XDG data, state, config and cache directories under `cto`
 in the daemon state directory.
 Its credentials are copied with its auth export and import commands at start.
-The private configuration copies the owner's general OpenCode settings and plugins,
-except the agent-net plugin, and uses only the CTO's agent and MCP server. The
+The private configuration copies the owner's general OpenCode settings, with no
+plugins, and uses only the CTO's agent and MCP server. The
 owner's agents, MCP servers, permissions, instructions, server and autoupdate
 settings are excluded. A config that cannot be read falls back to private defaults
 and is reported in the daemon log.
@@ -98,6 +98,23 @@ Claude Code uses a private working directory under `cto/claude` in daemon
 state. The daemon passes a private MCP configuration with `--mcp-config` and
 `--strict-mcp-config`; the only MCP server in it is `agent-net cto-mcp`. The
 ordinary agent-net MCP tools are not registered for this session.
+Claude starts with `--tools ""` and `--setting-sources ""`. Private settings
+disable all hooks and enable no plugins.
+
+The CTO has no built-in tools. OpenCode uses plural `permissions` rules denying
+`bash`, `edit`, `write`, `subagent`, `read`, `glob`, `grep`, `list`,
+`webfetch` and `todowrite`, plus a wildcard deny for future built-ins. Only the
+private CTO MCP namespace is allowed. The `general` subagent is disabled.
+At startup, Claude must report its effective tools in a system init record.
+OpenCode must report effective agent permissions through `GET /api/agent`.
+Missing reports, extra tools or enabled agents, and unknown versions stop startup
+before an owner prompt is sent. The recognized versions are Claude Code 2.1.316
+and OpenCode 2.2.0. A recognized version still needs a valid effective report;
+a background launch that omits the init record is refused. These checks have
+fake-harness coverage; no model call was used to verify runtime enforcement.
+
+The `charter_guide` CTO tool returns the charter writing guide on demand.
+The `charter_set` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
 process-tree check, then use the same daemon implementations as the owner's

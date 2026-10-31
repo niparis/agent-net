@@ -35,20 +35,13 @@ func TestCTOOwnerConfig(t *testing.T) {
 	if cfg["provider"] == nil || cfg["model"] != "openai/test" {
 		t.Fatalf("missing owner settings: %#v", cfg)
 	}
-	b, _ := json.Marshal(cfg["plugin"])
-	if string(b) != `["auth-plugin"]` {
-		t.Fatalf("plugins: %s", b)
-	}
-	for _, k := range []string{"mcp", "agent", "permission"} {
+	for _, k := range []string{"mcp", "agent", "permission", "plugin", "plugins"} {
 		if _, ok := cfg[k]; ok {
-			t.Fatalf("retained %s", k)
+			t.Errorf("retained %s", k)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(dst, "opencode", "plugins", "auth.ts")); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(filepath.Join(dst, "opencode", "plugins", "agent-net.ts")); !os.IsNotExist(err) {
-		t.Fatal("agent-net plugin retained")
+	if _, err := os.Stat(filepath.Join(dst, "opencode", "plugins")); !os.IsNotExist(err) {
+		t.Fatal("owner plugins copied")
 	}
 }
 
@@ -91,5 +84,38 @@ func TestCTOConfigFallback(t *testing.T) {
 	}
 	if strings.Count(logs.String(), "\n") != 1 || !strings.Contains(logs.String(), "using private defaults") {
 		t.Fatalf("log: %q", logs.String())
+	}
+}
+
+func TestCTONoBuiltinConfig(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("OPENCODE_CONFIG", "")
+	d := &Daemon{log: log.New(&bytes.Buffer{}, "", 0)}
+	raw, err := d.ctoConfigData(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Agents map[string]struct {
+			Disable     bool
+			Permissions []struct{ Action, Resource, Effect string }
+		}
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Agents["general"].Disable {
+		t.Error("general subagent enabled")
+	}
+	for _, action := range []string{"*", "bash", "edit", "write", "subagent", "read", "glob", "grep", "list", "webfetch", "todowrite"} {
+		found := false
+		for _, rule := range cfg.Agents["cto"].Permissions {
+			if rule.Action == action && rule.Resource == "*" && rule.Effect == "deny" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("missing deny: %s", action)
+		}
 	}
 }
