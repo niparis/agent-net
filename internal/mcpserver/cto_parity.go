@@ -17,8 +17,8 @@ func init() {
 	add("ui_show", "Show a tab, selection and filter in every open local TUI, with a short explanation.", map[string]ctoField{"tab": en("Tab to show.", "sessions", "messages", "quotas", "map"), "select": s("Session ID, exact session name or project node to select."), "filter": s("Text to filter the view."), "why": s("Short reason shown to the owner.")})
 	add("ui_notice", "Show a short one-line notice in every open local TUI; returns no TUI open when none is connected.", map[string]ctoField{"text": s("Notice text.")})
 	add("info", "Read this daemon's connection, machine, owner session and local session information.", nil)
-	add("nodes", "List network machines, installed harnesses, worker track records, playbook notes and subscription quotas.", nil)
-	add("projects", "List registered and observed projects across machines, optionally filtered by exact name.", map[string]ctoField{"name": s("Exact project name, or omit for all.")})
+	add("nodes", "List compact machine summaries, or one harness model list with models.", map[string]ctoField{"models": obj("Select one machine and harness model list.")})
+	add("projects", "List registered and observed projects across machines, optionally filtered by exact name.", map[string]ctoField{"name": s("Exact project name, or omit for all."), "limit": n("Page size, default 20, maximum 50."), "before": s("Cursor from next_before.")})
 	add("project_add", "Register repositories on this machine as projects. Scan with dry_run first; do this only on the owner's instruction.", map[string]ctoField{"paths": arr("Absolute repository paths on this machine."), "dir": s("Directory to scan on this machine."), "scan": b("Scan dir for repositories."), "depth": n("Maximum scan depth, default 3 and at most 8."), "dry_run": b("Preview without registering.")})
 	add("project_remove", "Remove a registered project from this machine on the owner's instruction.", map[string]ctoField{"name": s("Registered project name."), "path": s("Registered project path.")})
 	add("reply", "Reply as the owner's CTO to a message addressed to the owner, preserving CTO attribution.", map[string]ctoField{"message_id": s("Message ID addressed to the owner."), "body": s("Reply text.")})
@@ -80,6 +80,7 @@ func init() {
 		spec.fields[field] = f
 		ctoTools[tool] = spec
 	}
+	setProperties("nodes", "models", map[string]any{"machine": property("string", "Machine name or ID."), "harness": property("string", "Harness name.")})
 	setProperties("session_policy", "policy", map[string]any{
 		"delegate":    property("string", "Delegation mode.", "", "off", "native", "workers"),
 		"coder_model": property("string", "Coder model name."), "main_model": property("string", "Main model name."),

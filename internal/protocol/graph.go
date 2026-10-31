@@ -22,6 +22,18 @@ type Charter struct {
 	Notes           string `json:"notes,omitempty"`
 }
 
+type GraphLocation struct {
+	Machine string `json:"machine"`
+	Path    string `json:"path"`
+}
+
+type GraphSession struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Machine string `json:"machine"`
+	Status  string `json:"status"`
+}
+
 // Node is a component or an architect. Components can be implicit projects.
 type Node struct {
 	Name      string  `json:"name"`
@@ -30,7 +42,10 @@ type Node struct {
 	Charter   Charter `json:"charter"`
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
-	Settings map[string]string `json:"settings,omitempty"`
+	Settings     map[string]string `json:"settings,omitempty"`
+	Locations    []GraphLocation   `json:"locations,omitempty"`
+	Sessions     []GraphSession    `json:"sessions,omitempty"`
+	SessionCount int               `json:"session_count,omitempty"`
 }
 
 // CharterChange is an immutable charter history entry.

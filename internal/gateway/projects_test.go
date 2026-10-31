@@ -2,6 +2,8 @@ package gateway
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -256,4 +258,43 @@ func TestMigration5AddsProjectsToAnOlderDatabase(t *testing.T) {
 	if res, err := s.AddProjects("n_1", protocol.ProjectAdd{Projects: []protocol.ProjectEntry{entry("a", "/c/a")}}); err != nil || len(res.Added) != 1 {
 		t.Fatalf("%v %+v", err, res)
 	}
+}
+
+func TestGraphIncludesProjectLocationsAndLiveSessions(t *testing.T) {
+	s, _ := newTestStore(t)
+	n, _, _ := s.CreateNode("box", "linux")
+	if _, err := s.AddProjects(n, protocol.ProjectAdd{Projects: []protocol.ProjectEntry{entry("cogforge", "/src/cogforge")}}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 6; i++ {
+		_, err := s.UpsertSession(n, protocol.SessionInfo{Harness: "pi", NativeID: fmt.Sprint(i), Name: "builder", Status: "busy", Cwd: "/src/cogforge", Repo: protocol.RepoInfo{Root: "/src/cogforge", Project: "cogforge"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	g, err := s.visibleGraph(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(g)
+	var v struct {
+		Nodes []struct {
+			Name         string                                       `json:"name"`
+			Locations    []struct{ Machine, Path string }             `json:"locations"`
+			Sessions     []struct{ ID, Name, Machine, Status string } `json:"sessions"`
+			SessionCount int                                          `json:"session_count"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatal(err)
+	}
+	for _, node := range v.Nodes {
+		if node.Name == "cogforge" {
+			if len(node.Locations) != 1 || node.Locations[0].Machine != "box" || node.Locations[0].Path != "/src/cogforge" || len(node.Sessions) != 5 || node.SessionCount != 6 || node.Sessions[0].ID == "" || node.Sessions[0].Machine != "box" {
+				t.Fatalf("node: %+v", node)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing project: %s", b)
 }

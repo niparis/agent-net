@@ -86,10 +86,13 @@ func (s *Store) graphView(project string, historyPerNode int, all bool) (protoco
 // visibleGraph hides inactive implicit nodes from owner-facing graph reads.
 func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
 	g, err := s.Graph()
-	if err != nil || all {
+	if err != nil {
 		return g, err
 	}
-	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT node FROM graph_charter WHERE value<>'' UNION SELECT source FROM graph_edges UNION SELECT target FROM graph_edges UNION SELECT repo_project FROM sessions WHERE repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
+	if all {
+		return s.graphContext(g)
+	}
+	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT name FROM projects WHERE graph_excluded<>1 UNION SELECT node FROM graph_charter WHERE value<>'' UNION SELECT source FROM graph_edges UNION SELECT target FROM graph_edges UNION SELECT repo_project FROM sessions WHERE repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
 	if err != nil {
 		return g, err
 	}
@@ -112,5 +115,43 @@ func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
 		}
 	}
 	g.Nodes = nodes
+	return s.graphContext(g)
+}
+
+// graphContext supplies the registered and observed locations and online sessions.
+func (s *Store) graphContext(g protocol.Graph) (protocol.Graph, error) {
+	projects, err := s.Projects("")
+	if err != nil {
+		return g, err
+	}
+	agents, err := s.Agents(protocol.QueryAgents{OnlineOnly: true, IncludeOwners: true})
+	if err != nil {
+		return g, err
+	}
+	byName := make(map[string]*protocol.Node, len(g.Nodes))
+	for i := range g.Nodes {
+		if g.Nodes[i].Kind == "component" {
+			byName[g.Nodes[i].Name] = &g.Nodes[i]
+		}
+	}
+	for _, p := range projects {
+		if n := byName[p.Name]; n != nil {
+			n.Locations = append(n.Locations, protocol.GraphLocation{Machine: p.Hostname, Path: p.Path})
+		}
+	}
+	for _, a := range agents {
+		n := byName[a.Repo.Project]
+		if n == nil {
+			continue
+		}
+		n.SessionCount++
+		if len(n.Sessions) < 5 {
+			name := a.Profile.Name
+			if name == "" {
+				name = a.Title
+			}
+			n.Sessions = append(n.Sessions, protocol.GraphSession{ID: a.SessionID, Name: name, Machine: a.Hostname, Status: a.Status})
+		}
+	}
 	return g, nil
 }

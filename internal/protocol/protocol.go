@@ -392,8 +392,9 @@ type (
 	// network, never message bodies. AfterID 0 returns the newest Limit events;
 	// a larger AfterID returns the events after it, oldest first.
 	QueryEvents struct {
-		AfterID int64 `json:"after_id,omitempty"`
-		Limit   int   `json:"limit,omitempty"`
+		AfterID  int64 `json:"after_id,omitempty"`
+		BeforeID int64 `json:"before_id,omitempty"`
+		Limit    int   `json:"limit,omitempty"`
 	}
 	MsgDeliver struct {
 		Message Message `json:"message"`

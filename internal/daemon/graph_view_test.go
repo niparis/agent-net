@@ -39,12 +39,12 @@ func TestGraphViewReadsTheGatewayGraph(t *testing.T) {
 	if err := json.Unmarshal(raw, &view); err != nil {
 		t.Fatal(err)
 	}
-	if len(view.Nodes) != 2 || len(view.Edges) != 1 {
+	if len(view.Nodes) != 3 || len(view.Edges) != 1 {
 		t.Fatalf("graph through the daemon: %#v", view)
 	}
 	found := false
 	for _, node := range view.Nodes {
-		if node.Name == "cogforge" && node.Charter.Maturity == "early - prototype" {
+		if node.Name == "cogforge" && node.Charter.Maturity == "early - prototype" && len(node.Locations) == 1 && node.Locations[0].Path == "/w/cogforge" {
 			found = true
 		}
 	}
