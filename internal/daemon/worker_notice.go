@@ -346,6 +346,10 @@ func (d *Daemon) sendNotice(ctx context.Context, w *worker, n protocol.WorkerNot
 // another message than the owner's last request. Empty to and replyTo mean the
 // owner and its last request.
 func (d *Daemon) sendNoticeTo(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo string) (json.RawMessage, error) {
+	return d.sendNoticeToKey(ctx, w, n, report, to, replyTo, "")
+}
+
+func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo, noticeKey string) (json.RawMessage, error) {
 	d.wmu.Lock()
 	sid, owner, parent := w.sessionID, w.owner, w.taskMsg
 	d.wmu.Unlock()
@@ -358,8 +362,11 @@ func (d *Daemon) sendNoticeTo(ctx context.Context, w *worker, n protocol.WorkerN
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
+	if noticeKey == "" {
+		noticeKey = protocol.NewID("k")
+	}
 	p := protocol.MsgSend{Sender: sid, Recipient: owner, Type: protocol.TypeNotification,
-		Body: protocol.FormatWorkerNotice(n, report), IdempotencyKey: protocol.NewID("k")}
+		Body: protocol.FormatWorkerNotice(n, report), IdempotencyKey: noticeKey}
 	if parent != "" {
 		p.Type, p.ParentID = protocol.TypeReply, parent
 	}
@@ -608,6 +615,15 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 		return false, false
 	}
 	if !w.turnActive {
+		w.idleNoticeSince = time.Time{}
+		w.idleNoticeSent = false
+		w.idleNoticePending = false
+		w.idleNoticeGeneration++
+		w.idleNoticeReport = ""
+		w.idleNoticeKey = ""
+		if err := d.st.deleteWorkerIdleNotice(w.id); err != nil {
+			d.Logf("worker %s: reset idle notice: %v", w.id, err)
+		}
 		w.turnActive = true
 		return false, false
 	}

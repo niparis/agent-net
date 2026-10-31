@@ -350,8 +350,23 @@ func (codexLauncher) adopt(ctx context.Context, d *Daemon, w *worker) error {
 		cc.close()
 		return err
 	}
+	d.wmu.Lock()
+	hasIdleNotice := !w.idleNoticeSince.IsZero()
+	d.wmu.Unlock()
 	if thread.Status.Type == "active" {
+		if hasIdleNotice {
+			d.resetIdleNotice(w)
+		}
 		d.setCodexStatus(w, "busy")
+		return nil
+	}
+	if hasIdleNotice {
+		// The turn already ended and its automatic hand-back failed. Keep the
+		// saved idle period instead of handing back again on adoption.
+		cc.mu.Lock()
+		cc.running, cc.cur = false, nil
+		cc.mu.Unlock()
+		d.setCodexStatus(w, "idle")
 		return nil
 	}
 	turn := thread.Turns[len(thread.Turns)-1]
@@ -441,15 +456,20 @@ func (d *Daemon) registerCodexSession(ctx context.Context, w *worker, wait bool)
 
 // setCodexStatus changes the status of the worker's session (idle or busy).
 func (d *Daemon) setCodexStatus(w *worker, status string) {
+	if ls := d.changeCodexStatus(w, status); ls != nil {
+		d.pushSession(ls)
+	}
+}
+
+func (d *Daemon) changeCodexStatus(w *worker, status string) *localSession {
 	d.mu.Lock()
+	defer d.mu.Unlock()
 	ls := d.sessions[key("codex", w.nativeID)]
 	if ls == nil || ls.info.Status == status {
-		d.mu.Unlock()
-		return
+		return nil
 	}
 	ls.info.Status = status
-	d.mu.Unlock()
-	d.pushSession(ls)
+	return ls
 }
 
 // ---- delivery ----
@@ -859,6 +879,7 @@ func (cc *codexConn) submit(j codexJob) bool {
 }
 
 func (cc *codexConn) startTurn(j codexJob) {
+	cc.d.resetIdleNotice(cc.w)
 	cc.mu.Lock()
 	cc.cur = &j
 	cc.final, cc.texts, cc.blocked = "", nil, nil
@@ -929,14 +950,27 @@ func (cc *codexConn) finishTurn(turnStatus, errMsg string) {
 		}
 		cc.mu.Lock()
 		var next *codexJob
+		var idleSession *localSession
 		if len(cc.queue) > 0 {
 			n := cc.queue[0]
 			cc.queue = cc.queue[1:]
 			next = &n
+		} else if err != nil {
+			// Do not admit the next turn until the failed hand-back's idle
+			// period is recorded and the old turn is marked idle.
+			cc.d.noteCodexIdle(cc.w, final)
+			idleSession = cc.d.changeCodexStatus(cc.w, "idle")
+			cc.running = false
 		} else {
 			cc.ending = make(chan struct{})
 		}
 		cc.mu.Unlock()
+		if next == nil && err != nil {
+			if idleSession != nil {
+				go cc.d.pushSession(idleSession)
+			}
+			return
+		}
 		if next != nil {
 			cc.d.wmu.Lock()
 			cc.w.doneStatus = ""

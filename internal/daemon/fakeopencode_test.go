@@ -308,7 +308,7 @@ func runFakeOpenCode() {
 			return
 		}
 		items := []map[string]any{
-			{"id": "msg_assistant", "type": "assistant", "tokens": map[string]any{
+			{"id": "msg_assistant", "type": "assistant", "content": []map[string]any{{"type": "text", "text": "finished without hand-back"}}, "tokens": map[string]any{
 				"input": 80000, "output": 2000, "reasoning": 0, "cache": map[string]any{"read": 3000, "write": 1000},
 			}},
 			{"id": "msg_user", "type": "user", "text": "task"},
