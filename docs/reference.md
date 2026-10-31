@@ -111,6 +111,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `graph_get`, `charter_set`, `charter_history`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `edge_history`, `graph_undo` | Same names; request rules are on `edge_set` |
 | `node_settings_get`, `node_settings_set`, `playbook_get`, `playbook_set` | Same names |
 | `agent_learn` | `learn` |
+| `mcp_import_candidates`, `mcp_import` | Same names; see [importing native MCP servers](#importing-native-mcp-servers) |
 | `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
 | `cto_settings` | `cto_settings` |
 | `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
@@ -599,6 +600,64 @@ the call fails with `host NAME offline` and the tools stay listed, marked
 `unavailable: host NAME offline` in their description. The assignment is not
 changed. `agent_mcp_list` and `mcp list` are the registry view of the owner and
 of agents: they show every server and its `scope`.
+
+### Importing native MCP servers
+
+An MCP server that a harness has in its own config (`~/.claude.json` and
+`.mcp.json` for Claude Code, `config.toml` for Codex, `opencode.json` for
+OpenCode, `mcp.json` for Pi) can move into the federation. Import is explicit:
+nothing is imported by a scan. See [decision 0027](decisions/0027-skills-and-mcp-management.md).
+
+**Candidates.** `mcp_import_candidates` (daemon method and CTO read tool) lists
+every native entry on every machine. A request takes optional `machine`,
+`harness`, `project`, `class` and `offset`. A page holds at most 30 entries and
+`next` is the next offset. Each entry has a `key`, the machine, harness, scope
+(`user` or `project`), project, file, name, and a `class`:
+
+- `importable`: a stdio, http or sse server that the machine can run, whose
+  secrets are given by environment variable names. The scan cannot know if the
+  command exists; the test at import time finds out.
+- `unsupported`, with a plain `reason`. The reasons are: the entry uses OAuth;
+  it serves resources or prompts only; it hides some tools natively; it sets a
+  working directory; an argument depends on the client's working directory, `~`
+  or variable expansion (the server would need to run on every client); a
+  secret is given as a value (environment value, header value, URL query,
+  argument or URL credential) instead of a variable name; the transport is not
+  stdio, http or sse; the entry is switched off; the name cannot be a server
+  name; or it is agent-net's own server. Extension-provided MCP and entries
+  from a machine that does not judge entries yet are `unsupported` too, so they
+  stay visible. Names and reasons only: no value is ever returned.
+
+An environment value counts as a variable name only when it is empty or a
+plain reference to the same name (`"API_TOKEN": "${API_TOKEN}"`). The
+federation runs the server on its host with the host's own environment.
+
+**Plan and apply.** `mcp_import` (daemon method, owner only; CTO tool) takes
+either a `candidate` key and answers a plan, or a `plan_id` and applies it. A
+plan changes nothing. It shows the server that would be registered (command,
+arguments, variable names), the scope, and any conflict (an existing server of
+that name, an offline machine, a changed entry, an unregistered project). A
+plan with a conflict cannot be applied. Apply:
+
+1. registers the server on the machine that has the native entry, disabled, so
+   no session sees it;
+2. runs the same test as `mcp_test`;
+3. compares the tools the server reports with the tools the native entry lists
+   (`enabled_tools` in Codex, `enabledTools` or `allowedTools` elsewhere), when it
+   lists any. A listed tool that is missing, or a server with no tools, fails;
+4. enables it. A user-level entry becomes `global` (a per-machine scope cannot be
+   expressed); a project-level entry becomes `projects` with that project.
+
+If the test or the comparison fails, the server is removed again and nothing else
+changed. The answer says `state: failed` and why. A plan applies once.
+
+**What import does not change.** It writes no harness config file. The native
+entry stays, so the server is now defined twice. The federated item shows
+`imported` (where it came from), `native_still_present`, and a conflict that
+names the machine and harness; the native item shows a conflict too. Removing
+the native entry is a later step. Import does not carry resources, prompts,
+OAuth or a hidden-tool list. The audit (`tools_history` of the federated item)
+records the plan, the actor and the result.
 
 ### Desired tool assignments
 
