@@ -429,10 +429,14 @@ func TestSubscriptionPanelAndUsageRoles(t *testing.T) {
 	m.tab = 2
 	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{{Provider: "test", Windows: []protocol.QuotaWindow{{ID: "low", PercentUsed: 30, Pace: protocol.QuotaPaceBehind}, {ID: "mid", PercentUsed: 70, Pace: protocol.QuotaPaceAhead}, {ID: "high", PercentUsed: 90}}}}}
 	v := strings.Join(m.quotasView(120, 40), "\n")
-	for _, want := range []string{"read 40s ago", quotaBar(.3, 10, roleGood), quotaBar(.7, 10, roleWarning), quotaBar(.9, 10, roleError)} {
+	plain := ansi.Strip(v)
+	for _, want := range []string{"read 40s ago", "LEFT", "70%", "30%", "10%", quotaBar(.7, 10, roleGood), quotaBar(.3, 10, roleWarning), quotaBar(.1, 10, roleError)} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q", want)
 		}
+	}
+	if strings.Contains(plain, "USAGE") {
+		t.Fatalf("quota column still reports usage: %s", plain)
 	}
 }
 
@@ -670,6 +674,24 @@ func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
 	}
 	m = keys(m, "s")
 	if v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n")); !strings.Contains(v, "copilot") {
+		t.Fatal(v)
+	}
+}
+
+func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{
+		{Provider: "cursor", Plan: "Premium", Windows: []protocol.QuotaWindow{{ID: "month", PercentUsed: 100, Exhausted: true}}},
+		{Provider: "cursor", Plan: "api", Error: "credential_unavailable"},
+	}}
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if strings.Contains(v, "providers not set up") || !strings.Contains(v, "2 more subscriptions (not used by your agents) · s to show") {
+		t.Fatal(v)
+	}
+	m = keys(m, "s")
+	v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if !strings.Contains(v, "cursor") || !strings.Contains(v, "exhausted") || !strings.Contains(v, "credential_unavailable") {
 		t.Fatal(v)
 	}
 }

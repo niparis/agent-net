@@ -349,6 +349,45 @@ func NodeExecEnv(path string) ([]string, error) {
 	return nil, ErrNeedNode
 }
 
+// ServiceEnvironment returns the non-secret path settings that the daemon's
+// service needs to find the same local quota stores as the setup shell. System
+// services do not inherit variables exported by a shell profile. Provider
+// credential variables are deliberately excluded.
+func ServiceEnvironment(home string) []string {
+	values := map[string]string{}
+	xdgPathKeys := map[string]bool{
+		"XDG_CACHE_HOME":  true,
+		"XDG_CONFIG_HOME": true,
+		"XDG_DATA_HOME":   true,
+		"XDG_RUNTIME_DIR": true,
+		"XDG_STATE_HOME":  true,
+	}
+	for _, item := range os.Environ() {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok {
+			continue
+		}
+		if xdgPathKeys[key] || key == "OPENCODE_DB" || key == "PI_CODING_AGENT_DIR" || key == "QUOTA_AXI_OPENCODE_GO_PI_AUTH" {
+			if value != "" {
+				values[key] = value
+			}
+		}
+	}
+	if home != "" {
+		values["HOME"] = home
+	}
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	env := make([]string, 0, len(keys))
+	for _, key := range keys {
+		env = append(env, key+"="+values[key])
+	}
+	return env
+}
+
 func prependPath(env []string, dir string) []string {
 	sep := string(os.PathListSeparator)
 	out := make([]string, 0, len(env)+1)

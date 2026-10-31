@@ -28,7 +28,7 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	if len(rows) > 0 {
-		subscription = append(subscription, sBold.Render("PROVIDER    PLAN      WINDOW         USAGE                PACE      RESETS"))
+		subscription = append(subscription, sBold.Render("PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS"))
 	}
 	if len(rows) == 0 && len(errors) == 0 {
 		empty := "No machine reads quotas yet: quota-axi is not installed on any machine (see docs/setup.md, Quota)."
@@ -46,10 +46,17 @@ func (m Model) quotasView(w, h int) []string {
 	var newest int64
 	var configured, unset, unused []quotaRow
 	relevant := m.quotaRelevantProviders()
+	providersWithQuota := map[string]bool{}
 	for _, r := range rows {
-		if quotaNotSetUp(r.provider) {
+		if len(r.provider.Windows) > 0 {
+			providersWithQuota[strings.ToLower(r.provider.Provider)] = true
+		}
+	}
+	for _, r := range rows {
+		provider := strings.ToLower(r.provider.Provider)
+		if quotaNotSetUp(r.provider) && !providersWithQuota[provider] {
 			unset = append(unset, r)
-		} else if !relevant[strings.ToLower(r.provider.Provider)] {
+		} else if !relevant[provider] {
 			unused = append(unused, r)
 		} else {
 			configured = append(configured, r)
@@ -85,23 +92,24 @@ func (m Model) quotasView(w, h int) []string {
 			if pace == "" || pace == "unknown" {
 				pace = "-"
 			}
-			pct := fmt.Sprintf("%3.0f%%", window.PercentUsed)
+			left := min(max(100-window.PercentUsed, 0), 100)
+			pct := fmt.Sprintf("%3.0f%%", left)
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pct = "exhausted"
 			}
 			color := roleGood
-			if window.PercentUsed >= 60 {
+			if left <= 40 {
 				color = roleWarning
 			}
-			if window.PercentUsed > 85 || window.Exhausted {
+			if left < 15 || window.Exhausted {
 				color = roleError
 			}
 			pctText := pct
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pctText = sBad.Render(pct)
 			}
-			usage := quotaBar(window.PercentUsed/100, 10, color) + " " + pctText
-			usage = padStyled(usage, 20)
+			remaining := quotaBar(left/100, 10, color) + " " + pctText
+			remaining = padStyled(remaining, 20)
 
 			paceStyle := sDim
 			if window.Pace == protocol.QuotaPaceAhead {
@@ -128,7 +136,7 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("%-11s %-9s %-14s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), usage, pace, reset)
+			line := fmt.Sprintf("%-11s %-9s %-14s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), remaining, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}

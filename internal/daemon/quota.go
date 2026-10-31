@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -369,7 +370,7 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 	for _, p := range in.Providers {
 		qp := protocol.QuotaProvider{Provider: p.Provider, Plan: p.Plan, Stale: p.State.Stale || strings.EqualFold(p.State.Status, "stale")}
 		if p.State.Error != "" {
-			qp.Error = p.State.Error
+			qp.Error = quotaAXIProviderError(p.Provider, p.State.Error)
 		}
 		// Per-window pace facts.
 		for _, w := range p.Windows {
@@ -405,6 +406,16 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 		out.Providers = append(out.Providers, qp)
 	}
 	return out, nil
+}
+
+func quotaAXIProviderError(provider, message string) string {
+	if strings.EqualFold(provider, "opencode-go") && strings.EqualFold(message, "provider_auth_rejected") {
+		if strings.TrimSpace(os.Getenv("XDG_DATA_HOME")) == "" {
+			return "OpenCode Go login was rejected. XDG_DATA_HOME is not set for the daemon; set it if OpenCode uses a custom data folder."
+		}
+		return "OpenCode Go login was rejected; check the local OpenCode Go credentials."
+	}
+	return message
 }
 
 // quotaPercent prefers percentUsed when quota-axi sends it and otherwise

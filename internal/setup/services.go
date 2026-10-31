@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/niparis/agent-net/internal/quotaaxi"
 )
 
 // Service is one long-running agent-net process.
@@ -54,6 +56,12 @@ func SystemdUnit(s Service, exe string) string {
 		after = "After=network-online.target\n"
 		restart = "on-failure"
 	}
+	var environment strings.Builder
+	if s.Name == "daemon" {
+		for _, item := range quotaaxi.ServiceEnvironment(os.Getenv("HOME")) {
+			fmt.Fprintf(&environment, "Environment=%s\n", systemdQuote(item))
+		}
+	}
 	return fmt.Sprintf(`[Unit]
 Description=agent-net %s
 %s
@@ -64,7 +72,7 @@ RestartSec=2
 
 [Install]
 WantedBy=default.target
-`, s.Name, after, strings.Join(cmd, " "), kill, restart)
+`, s.Name, after, strings.Join(cmd, " "), kill+environment.String(), restart)
 }
 
 const killModeLine = "KillMode=process"
@@ -105,6 +113,15 @@ func LaunchdPlist(s Service, exe, home string) string {
 	if s.Name == "daemon" {
 		abandon = "  <key>AbandonProcessGroup</key>\n  <true/>\n"
 	}
+	var environment strings.Builder
+	if s.Name == "daemon" {
+		environment.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
+		for _, item := range quotaaxi.ServiceEnvironment(home) {
+			key, value, _ := strings.Cut(item, "=")
+			fmt.Fprintf(&environment, "    <key>%s</key>\n    <string>%s</string>\n", xmlEscape(key), xmlEscape(value))
+		}
+		environment.WriteString("  </dict>\n")
+	}
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -126,5 +143,5 @@ func LaunchdPlist(s Service, exe, home string) string {
   <string>%s</string>
 </dict>
 </plist>
-`, s.Label(), args.String(), abandon, log, log)
+`, s.Label(), args.String(), abandon+environment.String(), log, log)
 }
