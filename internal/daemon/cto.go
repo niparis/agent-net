@@ -31,7 +31,7 @@ Workers on the orchestrator's subscription spend the limit it needs to keep work
 
 When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.
 
-To learn about a project, find it with the projects and agents tools or its graph node (machine, folder, live sessions). You can read files only on your own machine; for a project elsewhere, or to draft its charter, send its live session a request and use its answer. Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.
+To learn about a project, find it with the projects and agents tools or its graph node (machine, folder, live sessions). You have no built-in tools. For file work or to draft a charter, send its live session a request and use its answer. Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.
 
 Offer charter_suggestions to the owner as diffs; apply them with charter_set only after the owner says yes.
 
@@ -196,7 +196,11 @@ func (d *Daemon) startCTOLocked(ctx context.Context) error {
 		exited := c.exited
 		go func() { cmd.Wait(); c.pid.CompareAndSwap(int64(cmd.Process.Pid), 0); close(exited) }()
 		for {
-			if _, err = c.api(startup, "GET", "/api/info", nil); err == nil {
+			if info, infoErr := c.api(startup, "GET", "/api/info", nil); infoErr == nil {
+				if err := d.checkOpenCodeCTOTools(startup, info); err != nil {
+					c.stopLocked()
+					return err
+				}
 				d.startCTOCompactionLoop()
 				return nil
 			}
@@ -221,7 +225,10 @@ func (d *Daemon) ctoConfigData(config string) ([]byte, error) {
 		d.log.Printf("CTO OpenCode config: %v; using private defaults", configErr)
 		ownerConfig = make(map[string]any)
 	}
-	ownerConfig["agents"] = map[string]any{"cto": map[string]any{"mode": "primary", "description": "The owner's CTO", "system": ctoBrief}}
+	ownerConfig["agents"] = map[string]any{
+		"cto":     map[string]any{"mode": "primary", "description": "The owner's CTO", "system": ctoBrief, "permissions": ctoPermissions()},
+		"general": map[string]any{"disable": true},
+	}
 	ownerConfig["mcp"] = map[string]any{"servers": map[string]any{"agent-net-cto": map[string]any{"type": "local", "command": []string{d.cfg.Exe, "cto-mcp"}, "environment": map[string]string{"AGENT_NET_SOCKET": d.cfg.SocketPath}}}}
 	return json.Marshal(ownerConfig)
 }

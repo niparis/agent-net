@@ -136,8 +136,8 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
-	args := []string{"--bg", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
+	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
+	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
 	if id != "" {
 		args = append(args, "--resume", id)
 	}
@@ -202,18 +202,29 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 	if err != nil {
 		return fmt.Errorf("check Claude Code help: %w", err)
 	}
-	var result error
-	if !strings.Contains(string(help), "--bg") || !strings.Contains(string(help), "--strict-mcp-config") {
-		version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
-		if versionErr != nil {
-			return fmt.Errorf("check Claude Code version: %w", versionErr)
-		}
-		v := claudeVersionPattern.FindString(string(version))
-		if v == "" {
-			v = "(unknown version)"
-		}
-		result = fmt.Errorf("Claude Code %s is too old for the CTO: run `claude update`", v)
+	version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+	v := claudeVersionPattern.FindString(string(version))
+	if versionErr != nil || v == "" {
+		v = "(unknown)"
 	}
+	if d.log != nil {
+		d.log.Printf("CTO Claude Code version: %s", v)
+	}
+	var result error
+	for _, flag := range []string{"--tools", "--strict-mcp-config"} {
+		present := false
+		for _, word := range strings.Fields(string(help)) {
+			if strings.TrimSuffix(word, ",") == flag {
+				present = true
+				break
+			}
+		}
+		if !present {
+			result = fmt.Errorf("CTO Claude: required capability %s is missing from --help; run `claude update`", flag)
+			break
+		}
+	}
+
 	if c.capabilities == nil {
 		c.capabilities = make(map[string]claudeCTOCapability)
 	}

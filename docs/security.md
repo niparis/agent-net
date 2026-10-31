@@ -22,7 +22,7 @@ Worker profiles are stored at the gateway. The owner CLI, the private CTO tools 
 The OpenCode CTO server binds only to localhost and requires a random password.
 Its data, state, configuration and cache are private to the daemon. The OpenCode
 agent-net plugin is disabled in that process. The private configuration copies
-the owner's OpenCode provider and other general settings and non-agent-net plugins.
+the owner's OpenCode provider and other general settings, without plugins.
 It excludes the owner's agents, MCP servers, permissions and instructions to keep
 the CTO's tools private. The Claude Code CTO uses the
 owner's Claude login and a background session in a private working directory.
@@ -34,6 +34,33 @@ the CTO go to the owner session and are also forwarded to the active CTO
 conversation as peer model output. The daemon checks the gateway's stored CTO
 marker on the conversation root and quotes the peer's body as data. Replies to
 personal owner messages are not forwarded.
+
+The CTO has no built-in shell, file, search, web, scheduling or subagent tools.
+Claude uses `--tools ""`, empty settings sources, disabled hooks, no enabled
+plugins and strict MCP configuration. OpenCode denies every built-in action
+with a wildcard deny plus explicit deny rules for bash, edit, write, subagent,
+read, glob, grep, list, webfetch and todowrite. Only the private CTO MCP namespace
+is allowed. The general subagent is disabled and owner plugins are not copied.
+
+Startup checks capabilities instead of a version allowlist. Harness versions
+are logged for diagnosis and do not decide whether the CTO can start.
+Claude's `--help` must list `--tools` and `--strict-mcp-config`; a missing
+flag stops startup. Its tool set is enforced by the start arguments and private
+settings. There is no independent effective-tool enumeration on this path.
+
+An isolated probe of Claude Code 2.1.316 used a temporary HOME, a fake API key,
+an unreachable API URL and no prompt. With the CTO's start arguments it printed
+a plain-text `backgrounded` notice and instructions to attach, read logs and
+stop the session. Standard error said `Starting background service`.
+There was no JSON system init record or effective-tool list. The probe's job
+was stopped afterward. Startup therefore does not depend on such a record.
+
+OpenCode's `GET /api/agent` must report every required deny rule in the CTO's
+effective permissions, including the wildcard deny that closes its default
+allow. No later rule may allow tools outside the private CTO MCP namespace,
+and the general subagent must be absent or disabled. Missing reports or deny
+rules stop startup. Fake harnesses test these checks. Real model tool execution
+and subagent inheritance have not been verified.
 
 The private MCP server exposes the owner operations listed in
 [the CTO parity table](reference.md), including network and conversation reads,
