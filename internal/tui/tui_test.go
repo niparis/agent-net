@@ -1102,3 +1102,10 @@ func TestNameColumnGrowsOnlyForLongNames(t *testing.T) {
 		t.Fatalf("very long names: NAME is %d wide, want 32", w)
 	}
 }
+
+func TestMessageBodyOfflineExplanation(t *testing.T) {
+	err := client.RemoteError("body held on laptop, offline")
+	if got := bodyError(err); got != "body held on laptop, offline" {
+		t.Fatalf("got %q", got)
+	}
+}
