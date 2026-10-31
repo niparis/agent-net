@@ -27,17 +27,25 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	}
 	d.toolsMu.Lock()
 	var observed *protocol.InventoryItem
+	managed := false
 	for _, v := range d.toolsReport.Items {
 		if v.Kind == protocol.InventorySkill && v.Name == t.Name && v.Location == source {
+			if v.Source != protocol.InventoryNative {
+				managed = true
+			}
 			v := v
 			observed = &v
-			break
 		}
 	}
 	d.toolsMu.Unlock()
 	root := d.cfg.InventoryHome
 	if t.Target.Checkout != "" {
 		root = filepath.Clean(t.Target.Checkout)
+	} else if filepath.IsAbs(d.cfg.CodexHome) {
+		codexRel, e := filepath.Rel(filepath.Join(d.cfg.CodexHome, "skills"), source)
+		if e == nil && codexRel != ".." && !strings.HasPrefix(codexRel, ".."+string(os.PathSeparator)) {
+			root = d.cfg.CodexHome
+		}
 	}
 	rel, err := filepath.Rel(root, source)
 	if err != nil || !filepath.IsAbs(root) || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
@@ -62,7 +70,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if observed == nil {
 		return fail("conflict", "source is no longer observed")
 	}
-	if observed.Source != protocol.InventoryNative {
+	if managed {
 		return fail("manual", "source is managed externally")
 	}
 	if observed.Hash != t.Revision.Version {

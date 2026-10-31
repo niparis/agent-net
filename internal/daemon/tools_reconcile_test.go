@@ -348,3 +348,50 @@ func TestRemoveSkillHonorsPlanConflict(t *testing.T) {
 		t.Fatalf("plan conflict ignored: %+v", r)
 	}
 }
+
+func TestRemoveSkillFromSeparateCodexHome(t *testing.T) {
+	home, codex, state := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", codex)
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(codex, "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	d := &Daemon{cfg: Config{InventoryHome: home, CodexHome: codex, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("codex source: %+v", r)
+	}
+}
+
+func TestRemoveSkillRefusesMixedSystemObservation(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(home, ".agents", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, _ := inventory.SkillHash(path)
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Location: path, Hash: hash, Source: protocol.InventoryNative}
+	sys := obs
+	sys.Source = protocol.InventorySystem
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{obs, sys}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "manual" {
+		t.Fatalf("system source: %+v", r)
+	}
+}
