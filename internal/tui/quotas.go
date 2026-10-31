@@ -318,6 +318,9 @@ func (m Model) quotaModelsView(w int) []string {
 		}
 	}
 	key := "T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now"
+	if w < 110 {
+		key = "T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now"
+	}
 	body = append(body, sDim.Render(clip(key, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	out := panel(title, body, w, roleAccent)
