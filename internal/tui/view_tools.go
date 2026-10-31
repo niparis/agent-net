@@ -652,8 +652,18 @@ func (m Model) modalBox(w, h int) []string {
 	case md.picker != nil && !md.loading && !md.done:
 		body = pickerLines(md.picker, bw-4, max(h-8, 4))
 	default:
-		for _, l := range md.lines {
-			body = append(body, wrapStyled(l, bw-4)...)
+		for i := 0; i < len(md.lines); i++ {
+			l := md.lines[i]
+			if strings.HasSuffix(l, " differ:") && i+1 < len(md.lines) && strings.HasPrefix(md.lines[i+1], "    ") {
+				var items []string
+				for i+1 < len(md.lines) && strings.HasPrefix(md.lines[i+1], "    ") {
+					i++
+					items = append(items, strings.TrimPrefix(md.lines[i], "    "))
+				}
+				body = append(body, wrapDifferenceItems(l, items, bw-4)...)
+			} else {
+				body = append(body, wrapStyled(l, bw-4)...)
+			}
 		}
 		if len(md.compareFiles) > 0 {
 			body = append(body, tsDim.Render("  selected file: "+sanitize(md.compareFiles[md.compareIndex])))
@@ -685,16 +695,84 @@ func (m Model) modalBox(w, h int) []string {
 	for i := 0; i+1 < len(md.foot); i += 2 {
 		foot = append(foot, md.foot[i], md.foot[i+1])
 	}
-	body = append(body, wrapStyled(keyHints(foot...), bw-4)...)
+	body = append(body, wrapHints(foot, bw-4)...)
 	return panelWithBorder(md.title, body, bw, roleAccent, roleAccent)
 }
 
-// wrapStyled wraps a styled line at width, keeping short lines as they are.
+// wrapDifferenceItems wraps between file differences, preserving each item.
+func wrapDifferenceItems(header string, items []string, width int) []string {
+	line := header
+	var out []string
+	for _, item := range items {
+		sep := ", "
+		if line == header {
+			sep = " "
+		}
+		if ansi.StringWidth(line)+len(sep)+ansi.StringWidth(item) <= width {
+			line += sep + item
+			continue
+		}
+		out = append(out, line)
+		line = "    " + item
+		if ansi.StringWidth(line) > width {
+			wrapped := wrapStyled(line, width)
+			out = append(out, wrapped[:len(wrapped)-1]...)
+			line = wrapped[len(wrapped)-1]
+		}
+	}
+	return append(out, line)
+}
+
+// wrapStyled keeps continuation lines indented under the text they continue.
 func wrapStyled(s string, width int) []string {
 	if ansi.StringWidth(s) <= width {
 		return []string{s}
 	}
-	return strings.Split(ansi.Wrap(s, width, ""), "\n")
+	plain := ansi.Strip(s)
+	// File locations are one phrase: move the entire phrase to the next line
+	// when it cannot fit beside the file name.
+	if strings.HasPrefix(s, "    ") {
+		if at := strings.LastIndex(s, " only on "); at >= 0 {
+			prefix, phrase := s[:at], strings.TrimSpace(s[at:])
+			if ansi.StringWidth(phrase)+6 <= width {
+				return append(wrapStyled(prefix, width), "      "+phrase)
+			}
+		}
+	}
+	indent := len(plain) - len(strings.TrimLeft(plain, " "))
+	indent = max(indent, 2)
+	indent = min(indent, max(width-1, 0))
+	lines := strings.Split(ansi.Wrap(s, max(width-indent, 1), ""), "\n")
+	for i := 1; i < len(lines); i++ {
+		lines[i] = strings.Repeat(" ", indent) + strings.TrimLeft(lines[i], " ")
+	}
+	return lines
+}
+
+// wrapHints keeps each key and its label together when the footer wraps.
+func wrapHints(parts []string, width int) []string {
+	var lines []string
+	line := ""
+	for i := 0; i+1 < len(parts); i += 2 {
+		hint := keyHints(parts[i], parts[i+1])
+		if ansi.StringWidth(hint) > width-2 {
+			continue
+		}
+		sep := "  "
+		if line == "" {
+			sep = ""
+		}
+		if line != "" && ansi.StringWidth(line)+len(sep)+ansi.StringWidth(hint) > width {
+			lines = append(lines, line)
+			line = "  " + hint
+		} else {
+			line += sep + hint
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 func pickerLines(p *projPicker, width, rows int) []string {

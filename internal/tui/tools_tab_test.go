@@ -690,3 +690,51 @@ func TestChooseReportsOversizedManifest(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestToolsPlanWrapsItemsAndHintsAt80Columns(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	m = pressKey(m, "enter")
+	v := plain(m)
+	for _, item := range []string{"28 Oct", "25 Oct", "scripts/run.sh only on claude", "v view diff", "esc cancel", "selected file: SKILL.md", "goes into agent-net"} {
+		if !strings.Contains(v, item) {
+			t.Errorf("item split or missing %q:\n%s", item, v)
+		}
+	}
+	panel := strings.SplitN(strings.SplitN(v, "╭─Keep the newer one in both places", 2)[1], "╰", 2)[0]
+	for _, line := range strings.Split(panel, "\n") {
+		if !strings.HasPrefix(line, "│ ") {
+			continue
+		}
+		text := strings.TrimRight(strings.TrimPrefix(line, "│ "), " │")
+		if text == "" || strings.HasPrefix(text, "a  ") || strings.HasPrefix(text, "b  ") || strings.HasPrefix(text, "enter ") {
+			continue
+		}
+		if !strings.HasPrefix(text, "  ") {
+			t.Errorf("line starts at border: %q", line)
+		}
+	}
+	for _, bad := range []string{"│ 28 Oct", "│ Oct ", "│ claude ", "│ view diff "} {
+		if strings.Contains(v, bad) {
+			t.Errorf("continuation at border %q:\n%s", bad, v)
+		}
+	}
+}
+
+func TestLongDifferenceKeepsLocationPhraseTogether(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{}}}
+	b := toolsdiff.Copy{Machine: "beta-machine-with-a-long-name", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: strings.Repeat("a", 50), Fingerprint: "new"}}}}
+	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
+	v := plain(model.(Model))
+	if !strings.Contains(v, "only on beta-machine-with-a-long-name") {
+		t.Fatalf("location phrase split:\n%s", v)
+	}
+}
+
+func TestModalWrapUsesHangingIndent(t *testing.T) {
+	for _, line := range wrapStyled("  this sentence has several words and must wrap underneath its first words", 28)[1:] {
+		if !strings.HasPrefix(ansi.Strip(line), "  ") {
+			t.Fatalf("missing hanging indent: %q", line)
+		}
+	}
+}

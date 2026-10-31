@@ -1,8 +1,10 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 1 busy             updated 14:05:00
  Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Keep the newer one in both places────────────────────────────────────────────────────────────────────────────────────╮
-│ a  keep the copy on research (claude) - 3 files, 430 B, changed 1 day ago, 28 Oct (newer)                            │
-│ b  keep the copy on research (pi) - 2 files, 240 B, changed 4 days ago, 25 Oct                                       │
+│ a  keep the copy on research (claude)                                                                                │
+│      3 files, 430 B, changed 1 day ago (28 Oct) (newer)                                                              │
+│ b  keep the copy on research (pi)                                                                                    │
+│      2 files, 240 B, changed 4 days ago (25 Oct)                                                                     │
 │   3 files differ: SKILL.md changed, notes.md changed, scripts/run.sh only on claude                                  │
 │   suggest: keep claude's copy (newer, has every file)                                                                │
 │   the one you keep goes into agent-net and to research                                                               │
@@ -14,8 +16,6 @@
 │                                                                                                                      │
 │ enter keep newer  a keep claude's copy  b keep pi's copy  n/p select file  v view diff  d exact folders  esc cancel  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │

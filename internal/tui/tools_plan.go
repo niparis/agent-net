@@ -1102,7 +1102,10 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		if len(act.Copies) == 2 && act.Copies[0].Machine == act.Copies[1].Machine && c.Harness != "" {
 			who += " (" + sanitize(c.Harness) + ")"
 		}
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+who+copySummary(c, act.Copies, m.now()))
+		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+who)
+		if summary := copySummary(c, act.Copies, m.now()); summary != "" {
+			md.lines = append(md.lines, "     "+summary)
+		}
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
 		label := sanitize(c.Machine)
 		sameMachine, sameHarness := 0, 0
@@ -1250,7 +1253,7 @@ func copySummary(c toolsdiff.Copy, copies []toolsdiff.Copy, now time.Time) strin
 	for _, f := range m.Files {
 		size += f.Size
 	}
-	detail := fmt.Sprintf(" - %s, %d B", nounCount(len(m.Files), "file", "files"), size)
+	detail := fmt.Sprintf("%s, %d B", nounCount(len(m.Files), "file", "files"), size)
 	if !m.Newest.IsZero() {
 		age := now.Sub(m.Newest)
 		when := "just now"
@@ -1261,7 +1264,7 @@ func copySummary(c toolsdiff.Copy, copies []toolsdiff.Copy, now time.Time) strin
 		} else if age >= time.Minute {
 			when = nounCount(int(age.Minutes()), "minute", "minutes") + " ago"
 		}
-		detail += ", changed " + when + ", " + m.Newest.Format("2 Jan")
+		detail += ", changed " + when + " (" + m.Newest.Format("2 Jan") + ")"
 		if len(copies) == 2 && copies[0].Manifest != nil && copies[1].Manifest != nil && !copies[0].Manifest.TooLarge && !copies[1].Manifest.TooLarge && !copies[0].Manifest.Newest.IsZero() && !copies[1].Manifest.Newest.IsZero() {
 			other := copies[0].Manifest.Newest
 			if m == copies[0].Manifest {
@@ -1299,7 +1302,13 @@ func chooseComparison(a, b toolsdiff.Copy) []string {
 	for _, p := range removed {
 		parts = append(parts, sanitize(p)+" only on "+label(a))
 	}
-	lines := []string{fmt.Sprintf("  %s differ: %s", nounCount(len(parts), "file", "files"), listNames(parts, 5))}
+	lines := []string{fmt.Sprintf("  %s differ:", nounCount(len(parts), "file", "files"))}
+	for _, part := range parts[:min(len(parts), 5)] {
+		lines = append(lines, "    "+part)
+	}
+	if len(parts) > 5 {
+		lines = append(lines, fmt.Sprintf("    and %d more", len(parts)-5))
+	}
 	if !a.Manifest.Newest.IsZero() && !b.Manifest.Newest.IsZero() {
 		switch {
 		case a.Manifest.Newest.After(b.Manifest.Newest) && len(added) == 0:
