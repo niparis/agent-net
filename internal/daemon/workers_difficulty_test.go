@@ -23,6 +23,29 @@ func TestWorkerAutomaticDifficulty(t *testing.T) {
 	}
 }
 
+func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "terra pi", Harness: "opencode", Model: "fake/deleted", AddedBy: w.ownerID()}); err != nil {
+		t.Fatal(err)
+	}
+	score := 51.0
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
+	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
+	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1"})
+
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Task: "x"})
+	if err != nil || res.Model != "fake/m1" {
+		t.Fatalf("choice: %+v, %v", res, err)
+	}
+	for _, want := range []string{"stale profile", "terra pi", "fake/deleted", "not listed"} {
+		if !strings.Contains(res.ModelNote, want) {
+			t.Errorf("model note %q does not explain stale profile %q", res.ModelNote, want)
+		}
+	}
+}
+
 func TestWorkerUnscoredFallback(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)

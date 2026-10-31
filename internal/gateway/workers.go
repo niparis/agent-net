@@ -444,6 +444,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			automaticNote = "no registered workers; add one with the CTO or agent_worker_profile_add"
 		} else {
 			var candidates []protocol.WorkerModelCandidate
+			var skippedProfiles []string
 			for _, h := range node.Harnesses {
 				if !protocol.WorkerHarnessSupported(h.Name) || p.Harness != "" && p.Harness != h.Name {
 					continue
@@ -467,7 +468,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 							break
 						}
 					}
-					if !installed || !protocol.WorkerProviderAllowed(h.Name, profile.Model, providers.Providers, quotas) {
+					if !installed {
+						message := fmt.Sprintf("stale profile %q skipped: %s model %s is not listed by %s", profile.Name, h.Name, profile.Model, node.Hostname)
+						if closest := protocol.ClosestModels(profile.Model, h.Models, 3); len(closest) > 0 {
+							message += "; closest: " + strings.Join(closest, ", ")
+						}
+						skippedProfiles = append(skippedProfiles, message)
+						continue
+					}
+					if !protocol.WorkerProviderAllowed(h.Name, profile.Model, providers.Providers, quotas) {
 						continue
 					}
 					model := profile.Model
@@ -478,7 +487,11 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				}
 			}
 			if len(candidates) == 0 {
-				return none, reject("no registered workers are available on an allowed worker provider on %s", node.Hostname)
+				reason := fmt.Sprintf("no registered workers are available on an allowed worker provider on %s", node.Hostname)
+				if len(skippedProfiles) > 0 {
+					reason += "; " + strings.Join(skippedProfiles, "; ")
+				}
+				return none, reject("%s", reason)
 			}
 			g.mu.Lock()
 			rotation := g.modelRotation
@@ -492,6 +505,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			automaticNote = fmt.Sprintf("%s -> %s %s (score %g, %s", difficulty, p.Harness, p.Model, choice.Score, choice.Fit)
 			if choice.QuotaNote != "" {
 				automaticNote += "; " + choice.QuotaNote
+			}
+			if len(skippedProfiles) > 0 {
+				automaticNote += "; " + strings.Join(skippedProfiles, "; ")
 			}
 			automaticNote += ")"
 		}
