@@ -129,6 +129,10 @@ func (lc *localConn) writeJSON(v any) error {
 
 // push sends a message to a plugin and waits for its confirmation.
 func (lc *localConn) push(ctx context.Context, m protocol.Message, timeout time.Duration) Result {
+	return lc.pushWithConfirmation(ctx, m, timeout, false)
+}
+
+func (lc *localConn) pushWithConfirmation(ctx context.Context, m protocol.Message, timeout time.Duration, required bool) Result {
 	ch := make(chan ack, 1)
 	lc.mu.Lock()
 	lc.acks[m.ID] = ch
@@ -144,14 +148,26 @@ func (lc *localConn) push(ctx context.Context, m protocol.Message, timeout time.
 	select {
 	case a := <-ch:
 		if a.ok {
+			if required && a.detail != "pi worker turn started" {
+				return Result{Detail: "Pi extension did not confirm the worker turn; update the extension"}
+			}
 			return Result{Delivered: true, Detail: a.detail}
 		}
 		return Result{Detail: "plugin refused: " + a.detail}
 	case <-time.After(timeout):
+		if required {
+			return Result{Detail: "plugin did not confirm the worker turn"}
+		}
 		return Result{Delivered: true, Detail: "unconfirmed"}
 	case <-lc.closed:
+		if required {
+			return Result{Detail: "plugin connection closed before confirmation"}
+		}
 		return Result{Delivered: true, Detail: "unconfirmed"}
 	case <-ctx.Done():
+		if required {
+			return Result{Detail: "delivery canceled before confirmation"}
+		}
 		return Result{Delivered: true, Detail: "unconfirmed"}
 	}
 }

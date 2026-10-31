@@ -596,7 +596,23 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 			continue
 		}
 		msg := m.Params.Message
-		send("delivered", map[string]any{"message_id": msg.ID, "ok": true})
+		if client == "pi" && os.Getenv("FAKE_PI_DROP_FIRST") != "" {
+			marker := filepath.Join(cwd, "fake-pi-dropped")
+			if _, err := os.Stat(marker); os.IsNotExist(err) {
+				os.WriteFile(marker, []byte(msg.ID), 0600)
+				continue
+			}
+			f, _ := os.OpenFile(filepath.Join(cwd, "fake-pi-turns"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+			if f != nil {
+				fmt.Fprintln(f, msg.ID)
+				f.Close()
+			}
+		}
+		detail := ""
+		if client == "pi" {
+			detail = "pi worker turn started"
+		}
+		send("delivered", map[string]any{"message_id": msg.ID, "ok": true, "detail": detail})
 		body := msg.Body
 		if location.Load() <= previous && location.Load() != 1<<60 {
 			continue

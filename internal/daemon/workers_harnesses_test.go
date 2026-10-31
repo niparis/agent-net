@@ -954,3 +954,16 @@ func TestClaudeWorkerWorktreeTrustRemoved(t *testing.T) {
 	c.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "trust removed", func() bool { _, ok := read()[res.Worktree]; return !ok })
 }
+
+func TestPiWorkerFirstTaskRetriedAfterDrop(t *testing.T) {
+	t.Setenv("FAKE_PI_DROP_FIRST", "1")
+	g := startGateway(t, t.TempDir(), "")
+	w := startPiNode(t, g, shortSet)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	eventually(t, "Pi receives the first task", func() bool {
+		b, _ := os.ReadFile(filepath.Join(res.Worktree, "fake-pi-turns"))
+		return strings.TrimSpace(string(b)) == res.Task.ID
+	})
+}

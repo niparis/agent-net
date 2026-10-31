@@ -185,3 +185,20 @@ func TestShortWorkerDoesNotHoldTheGap(t *testing.T) {
 		t.Fatalf("the next start was held by the short worker: %+v", res)
 	}
 }
+
+func TestContinueResolvesLooseCodexModel(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startCodexNodeWithModels(t, g, shortSet, []string{"gpt-6.1-terra"})
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
+	w.workerStopped(t, g, protocol.StopRequested)
+	res, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID, Harness: "codex", Model: "terra"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Model != "gpt-6.1-terra" {
+		t.Fatalf("continued model = %q", res.Model)
+	}
+}

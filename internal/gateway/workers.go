@@ -550,84 +550,13 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	if p.RequireReadOnly && (!automatic || !protocol.WorkerReadOnlySupported(p.Harness) || p.Model == "" || isProtected(p.Harness, p.Model, protected)) {
 		return none, reject("no safe automatic read-only worker is available")
 	}
-	// A loose model name is resolved against the machine's own list (W17).
-	// Without a list (claude, or a harness that cannot list), it passes through.
 	modelNote := automaticNote
 	quotas := g.nodeQuotas(pick.NodeID)
-	if !automatic && p.Model != "" && len(hi.Models) > 0 {
-		usage, err := g.store.ModelUsage(pick.NodeID, p.Harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
+	if !automatic {
+		p.Model, modelNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, modelNote)
 		if err != nil {
 			return none, err
 		}
-		asked := p.Model
-		profileModel, profileEffort := protocol.SplitModelLevel(asked)
-		profiles, err := g.store.WorkerProfiles()
-		if err != nil {
-			return none, err
-		}
-		for _, profile := range profiles {
-			if profile.Harness != p.Harness || profile.Model != profileModel {
-				continue
-			}
-			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, hi.Models)
-			if len(ambiguous) > 0 {
-				return none, reject("worker profile %q model %s is ambiguous on %s (%s)", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
-			}
-			if resolved != "" {
-				if resolved != profile.Model {
-					modelNote = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
-				}
-				asked = resolved
-				if profileEffort != "" {
-					asked += ":" + profileEffort
-				}
-			}
-			break
-		}
-		failedAt, err := g.store.FailedModels(pick.NodeID, p.Harness)
-		if err != nil {
-			return none, err
-		}
-		succeededAt, err := g.store.SucceededModels(pick.NodeID, p.Harness)
-		if err != nil {
-			return none, err
-		}
-		res, err := protocol.ResolveModelRankedQuota(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), failedSet(succeededAt), quotas)
-		if err != nil {
-			var nm *protocol.NoModelMatchError
-			if errors.As(err, &nm) {
-				msg := fmt.Sprintf("no %s model matches %q on %s", p.Harness, asked, node.Hostname)
-				if len(nm.Closest) > 0 {
-					msg += "; closest: " + strings.Join(nm.Closest, ", ")
-				}
-				return none, reject("%s", msg)
-			}
-			return none, reject("model on %s: %v", node.Hostname, err)
-		}
-		resolved := res.Model
-		if resolved != asked || len(res.Demoted) > 0 {
-			modelNote = asked + " -> " + resolved
-		}
-		if res.QuotaNote != "" {
-			if modelNote == "" {
-				modelNote = asked + " (" + res.QuotaNote + ")"
-			} else {
-				modelNote += " (" + res.QuotaNote + ")"
-			}
-		}
-		if len(res.Demoted) > 0 {
-			var parts []string
-			for _, m := range res.Demoted {
-				parts = append(parts, fmt.Sprintf("%s failed a worker at %s", m, failedAt[m].Format("15:04 on 2006-01-02")))
-			}
-			sort.Strings(parts)
-			if failedAt[resolved].IsZero() {
-				modelNote += " (" + strings.Join(parts, "; ") + ", so it ranks last for " + fmt.Sprint(protocol.ModelFailureHours) + " hours)"
-			} else {
-				modelNote += " (" + strings.Join(parts, "; ") + ": no other model matched)"
-			}
-		}
-		p.Model = resolved
 	}
 	if !automatic && isProtected(p.Harness, p.Model, protected) {
 		if modelNote != "" {
@@ -714,6 +643,87 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		Track: track, Playbooks: books}, nil
 }
 
+// resolveWorkerModel applies the machine's model inventory and ranking to an explicit name.
+func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.HarnessInfo, harness, model, modelNote string) (string, string, error) {
+	quotas := g.nodeQuotas(node.NodeID)
+	if model != "" && len(hi.Models) > 0 {
+		usage, err := g.store.ModelUsage(node.NodeID, harness, time.Duration(protocol.ModelUsageDays)*24*time.Hour)
+		if err != nil {
+			return "", "", err
+		}
+		asked := model
+		profileModel, profileEffort := protocol.SplitModelLevel(asked)
+		profiles, err := g.store.WorkerProfiles()
+		if err != nil {
+			return "", "", err
+		}
+		for _, profile := range profiles {
+			if profile.Harness != harness || profile.Model != profileModel {
+				continue
+			}
+			resolved, ambiguous := protocol.ResolveWorkerProfileModel(profile.Model, hi.Models)
+			if len(ambiguous) > 0 {
+				return "", "", reject("worker profile %q model %s is ambiguous on %s (%s)", profile.Name, profile.Model, node.Hostname, strings.Join(ambiguous, ", "))
+			}
+			if resolved != "" {
+				if resolved != profile.Model {
+					modelNote = fmt.Sprintf("%s: %s resolved to %s on %s", profile.Name, profile.Model, resolved, node.Hostname)
+				}
+				asked = resolved
+				if profileEffort != "" {
+					asked += ":" + profileEffort
+				}
+			}
+			break
+		}
+		failedAt, err := g.store.FailedModels(node.NodeID, harness)
+		if err != nil {
+			return "", "", err
+		}
+		succeededAt, err := g.store.SucceededModels(node.NodeID, harness)
+		if err != nil {
+			return "", "", err
+		}
+		res, err := protocol.ResolveModelRankedQuota(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), failedSet(succeededAt), quotas)
+		if err != nil {
+			var nm *protocol.NoModelMatchError
+			if errors.As(err, &nm) {
+				msg := fmt.Sprintf("no %s model matches %q on %s", harness, asked, node.Hostname)
+				if len(nm.Closest) > 0 {
+					msg += "; closest: " + strings.Join(nm.Closest, ", ")
+				}
+				return "", "", reject("%s", msg)
+			}
+			return "", "", reject("model on %s: %v", node.Hostname, err)
+		}
+		resolved := res.Model
+		if resolved != asked || len(res.Demoted) > 0 {
+			modelNote = asked + " -> " + resolved
+		}
+		if res.QuotaNote != "" {
+			if modelNote == "" {
+				modelNote = asked + " (" + res.QuotaNote + ")"
+			} else {
+				modelNote += " (" + res.QuotaNote + ")"
+			}
+		}
+		if len(res.Demoted) > 0 {
+			var parts []string
+			for _, m := range res.Demoted {
+				parts = append(parts, fmt.Sprintf("%s failed a worker at %s", m, failedAt[m].Format("15:04 on 2006-01-02")))
+			}
+			sort.Strings(parts)
+			if failedAt[resolved].IsZero() {
+				modelNote += " (" + strings.Join(parts, "; ") + ", so it ranks last for " + fmt.Sprint(protocol.ModelFailureHours) + " hours)"
+			} else {
+				modelNote += " (" + strings.Join(parts, "; ") + ": no other model matched)"
+			}
+		}
+		model = resolved
+	}
+	return model, modelNote, nil
+}
+
 // workerContinue starts a new worker from an ended one. The gateway knows the
 // node of each worker session, so it asks the machine that ran the old worker.
 // The machine holds the old task and branch and checks the owner again.
@@ -761,6 +771,34 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 	g.mu.Unlock()
 	if target == nil {
 		return none, reject("machine %s is offline, so worker %s cannot be continued", old.Hostname, old.SessionID)
+	}
+	if p.Model != "" {
+		harness := p.Harness
+		if harness == "" {
+			harness = old.Harness
+		}
+		info, err := g.NodesInfo()
+		if err != nil {
+			return none, err
+		}
+		for i := range info.Nodes {
+			node := &info.Nodes[i]
+			if node.NodeID != old.NodeID {
+				continue
+			}
+			for j := range node.Harnesses {
+				hi := &node.Harnesses[j]
+				if hi.Name != harness {
+					continue
+				}
+				p.Model, _, err = g.resolveWorkerModel(node, hi, harness, p.Model, "")
+				if err != nil {
+					return none, err
+				}
+				break
+			}
+			break
+		}
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
