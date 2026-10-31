@@ -172,7 +172,7 @@ func TestInventoryMigrationBackfillsReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-8 FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
+	if _, err = s.db.Exec(`DROP TABLE tool_results; DROP TABLE tool_audit; DROP TABLE tool_plans; DROP TABLE tool_revisions; DROP TABLE skill_versions; DROP TABLE tool_locations; DROP TABLE tool_identities; DELETE FROM schema_version WHERE version >= (SELECT MAX(version)-9 FROM schema_version); INSERT INTO inventory_reports VALUES('node','{"state":"ok","items":[{"kind":"skill","name":"demo","hash":"abc"}]}')`); err != nil {
 		t.Fatal(err)
 	}
 	if err = s.migrate(); err != nil {
