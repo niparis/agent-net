@@ -7,11 +7,11 @@
 │                                                                              │
 │ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-│   ◐ imnplementing-clean-architecture looks like a copy of clean-architectur… │
+│   ◐ imnplementing-clean-architecture looks like a copy of                    │
+│     clean-architecture-python                                                │
 │     fix: remove imnplementing-clean-architecture                             │
 │   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours      │
 │     fix: remove the repo copy                                                │
-│                                                                              │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

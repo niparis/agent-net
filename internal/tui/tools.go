@@ -218,7 +218,11 @@ func (m Model) shownDiffs() []toolsdiff.Difference {
 		}
 		key := d.Key
 		if d.Name != "" && !m.tl.accepted[d.Key] && d.Kind != toolsdiff.KindUnmanaged {
-			key = "group:" + d.Kind + ":" + strings.Replace(d.Title, d.Name, "{name}", 1)
+			if d.Kind == toolsdiff.KindTwoCopies && len(d.Machines) == 1 {
+				key = fmt.Sprintf("group:%s:%s:%d", d.Kind, d.Machines[0], len(d.Action.Copies))
+			} else {
+				key = "group:" + d.Kind + ":" + strings.Replace(d.Title, d.Name, "{name}", 1)
+			}
 		}
 		if _, ok := groups[key]; !ok {
 			order = append(order, key)
@@ -234,7 +238,9 @@ func (m Model) shownDiffs() []toolsdiff.Difference {
 		}
 		d := group[0]
 		tail := strings.TrimPrefix(d.Title, d.Name+" ")
-		if strings.HasPrefix(tail, "has ") {
+		if d.Kind == toolsdiff.KindTwoCopies && len(d.Machines) == 1 {
+			d.Title = fmt.Sprintf("%d skills have %d different copies on %s", len(group), len(d.Action.Copies), d.Machines[0])
+		} else if strings.HasPrefix(tail, "has ") {
 			d.Title = fmt.Sprintf("%d skills have %s", len(group), strings.TrimPrefix(tail, "has "))
 		} else {
 			d.Title = fmt.Sprintf("%d items share a difference (%s)", len(group), d.Kind)

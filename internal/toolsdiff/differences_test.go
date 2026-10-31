@@ -3,6 +3,7 @@ package toolsdiff
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -252,5 +253,49 @@ func TestSkillCopiesWithMatchingContentFingerprintDoNotDiffer(t *testing.T) {
 	b.Locations[0].ContentFingerprint = "content"
 	if d := find(Differences([]protocol.ToolItem{a, b}, machines), KindTwoCopies, "demo"); d != nil {
 		t.Fatalf("same content reported as different: %+v", d)
+	}
+}
+
+func TestTwoCopiesDescribeNewerAndFileChanges(t *testing.T) {
+	older := skill("demo", "old", loc("n_r", "research", "/home/test/.pi/agent/skills/demo", "user", ""))
+	newer := skill("demo", "new", loc("n_r", "research", "/home/test/.claude/skills/demo", "user", ""))
+	older.Locations[0].Harness = "pi"
+	newer.Locations[0].Harness = "claude"
+	older.Locations[0].Manifest = &protocol.SkillManifest{Newest: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}, {Path: "removed", Fingerprint: "x"}}}
+	newer.Locations[0].Manifest = &protocol.SkillManifest{Newest: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "added", Fingerprint: "y"}}}
+	d := find(Differences([]protocol.ToolItem{older, newer}, machines), KindTwoCopies, "demo")
+	if d == nil || !strings.Contains(d.Title, "Claude") || !strings.Contains(d.Title, "newer than Pi") || !strings.Contains(d.Title, "3 files differ") || d.Fix != "keep the newer one in both places" {
+		t.Fatalf("difference: %+v", d)
+	}
+	if d.Action.Copies[0].Manifest == nil {
+		t.Fatal("missing manifest in action")
+	}
+}
+
+func TestCompareFilesAndUnavailableManifest(t *testing.T) {
+	old := Copy{Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "gone", Fingerprint: "1"}, {Path: "change", Fingerprint: "1"}, {Path: "same", Fingerprint: "a"}}}}
+	next := Copy{Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "add", Fingerprint: "2"}, {Path: "change", Fingerprint: "2"}, {Path: "same", Fingerprint: "a"}}}}
+	added, removed, changed, ok := CompareFiles(old, next)
+	if !ok || strings.Join(added, ",") != "add" || strings.Join(removed, ",") != "gone" || strings.Join(changed, ",") != "change" {
+		t.Fatalf("%v %v %v %v", added, removed, changed, ok)
+	}
+	next.Manifest.TooLarge = true
+	if _, _, _, ok := CompareFiles(old, next); ok {
+		t.Fatal("oversize manifest compared")
+	}
+	next.Manifest = nil
+	if _, _, _, ok := CompareFiles(old, next); ok {
+		t.Fatal("missing manifest compared")
+	}
+}
+
+func TestTwoCopiesTooLargeToCompare(t *testing.T) {
+	a := skill("demo", "a", loc("n_r", "research", "/a", "user", ""))
+	b := skill("demo", "b", loc("n_r", "research", "/b", "user", ""))
+	a.Locations[0].Manifest = &protocol.SkillManifest{TooLarge: true}
+	b.Locations[0].Manifest = &protocol.SkillManifest{}
+	d := find(Differences([]protocol.ToolItem{a, b}, machines), KindTwoCopies, "demo")
+	if d == nil || !strings.Contains(d.Title, "too large to compare") {
+		t.Fatalf("missing limit: %+v", d)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -44,13 +45,15 @@ const (
 
 // Copy is one place a skill lives: enough to import it.
 type Copy struct {
-	Item     string `json:"item"`
-	NodeID   string `json:"node_id"`
-	Machine  string `json:"machine"`
-	Location string `json:"location"`
-	Checkout string `json:"checkout,omitempty"`
-	Hash     string `json:"hash"`
-	Name     string `json:"name,omitempty"`
+	Item     string                  `json:"item"`
+	NodeID   string                  `json:"node_id"`
+	Machine  string                  `json:"machine"`
+	Location string                  `json:"location"`
+	Checkout string                  `json:"checkout,omitempty"`
+	Hash     string                  `json:"hash"`
+	Name     string                  `json:"name,omitempty"`
+	Harness  string                  `json:"harness,omitempty"`
+	Manifest *protocol.SkillManifest `json:"manifest,omitempty"`
 	// Label is the version of this copy: "v2", "changed" or a short hash.
 	Label string `json:"label,omitempty"`
 }
@@ -150,7 +153,7 @@ func nameList(names []string, max int) string {
 }
 
 func copyOf(g group, v protocol.ToolItem, l protocol.ToolLocation) Copy {
-	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name, Label: g.label(v.VersionNo, v.Hash)}
+	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name, Harness: l.Harness, Manifest: l.Manifest, Label: g.label(v.VersionNo, v.Hash)}
 }
 
 func skillDiffs(g group, ms []Machine) []Difference {
@@ -225,11 +228,26 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			cs = append(cs, c)
 		}
 		sort.Slice(cs, func(i, j int) bool { return cs[i].Location < cs[j].Location })
+		title := fmt.Sprintf("%s has %d different copies on %s", g.name, len(cs), m)
+		fix := "compare, then keep one"
+		for _, c := range cs {
+			if c.Manifest != nil && c.Manifest.TooLarge {
+				title += "; too large to compare"
+				break
+			}
+		}
+		if len(cs) == 2 && cs[0].Manifest != nil && cs[1].Manifest != nil && !cs[0].Manifest.TooLarge && !cs[1].Manifest.TooLarge && !cs[0].Manifest.Newest.IsZero() && !cs[1].Manifest.Newest.IsZero() && !cs[0].Manifest.Newest.Equal(cs[1].Manifest.Newest) {
+			if cs[1].Manifest.Newest.After(cs[0].Manifest.Newest) {
+				cs[0], cs[1] = cs[1], cs[0]
+			}
+			added, removed, changed, _ := CompareFiles(cs[1], cs[0])
+			count := len(added) + len(removed) + len(changed)
+			title = fmt.Sprintf("%s: %s's copy (%s) is newer than %s's (%s), %d files differ", g.name, harnessName(cs[0].Harness), skillParent(cs[0].Location), harnessName(cs[1].Harness), skillParent(cs[1].Location), count)
+			fix = "keep the newer one in both places"
+		}
 		out = append(out, Difference{
 			Key: "two-copies:" + g.name + ":" + m, Kind: KindTwoCopies, Severity: SevErr, Name: g.name, Machines: []string{m},
-			Title:  fmt.Sprintf("%s has %d different copies on %s", g.name, len(cs), m),
-			Fix:    "compare, then keep one",
-			Action: Action{Kind: ActChoose, Name: g.name, Copies: cs},
+			Title: title, Fix: fix, Action: Action{Kind: ActChoose, Name: g.name, Copies: cs},
 		})
 	}
 	// versions that differ between machines
@@ -586,4 +604,61 @@ func Counts(ds []Difference, accepted map[string]bool) int {
 		}
 	}
 	return n
+}
+
+// CompareFiles compares source to destination. Missing or oversized manifests
+// are unknown and must never be presented as an empty diff.
+func CompareFiles(before, after Copy) (added, removed, changed []string, ok bool) {
+	if before.Manifest == nil || after.Manifest == nil || before.Manifest.TooLarge || after.Manifest.TooLarge {
+		return nil, nil, nil, false
+	}
+	a, b := map[string]protocol.SkillFile{}, map[string]protocol.SkillFile{}
+	for _, f := range before.Manifest.Files {
+		a[f.Path] = f
+	}
+	for _, f := range after.Manifest.Files {
+		b[f.Path] = f
+	}
+	for path, f := range b {
+		old, exists := a[path]
+		if !exists {
+			added = append(added, path)
+		} else if old.Fingerprint != f.Fingerprint || old.Size != f.Size {
+			changed = append(changed, path)
+		}
+	}
+	for path := range a {
+		if _, exists := b[path]; !exists {
+			removed = append(removed, path)
+		}
+	}
+	sort.Strings(added)
+	sort.Strings(removed)
+	sort.Strings(changed)
+	return added, removed, changed, true
+}
+func harnessName(h string) string {
+	switch h {
+	case "claude":
+		return "Claude"
+	case "pi":
+		return "Pi"
+	case "codex":
+		return "Codex"
+	case "opencode":
+		return "OpenCode"
+	}
+	if h == "" {
+		return "Unknown"
+	}
+	return h
+}
+func skillParent(path string) string {
+	parent := filepath.ToSlash(filepath.Dir(path))
+	for _, root := range []string{"/.claude/skills", "/.pi/agent/skills", "/.agents/skills", "/.config/opencode/skills", "/.codex/skills"} {
+		if strings.HasSuffix(parent, root) {
+			return "~" + root
+		}
+	}
+	return parent
 }

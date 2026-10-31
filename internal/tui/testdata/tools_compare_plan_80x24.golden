@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+╭─Keep demo new────────────────────────────────────────────────────────────────╮
+│ + 1 skill go into the agent-net store as new versions (the files stay where  │
+│ they are)                                                                    │
+│ + demo on research only                                                      │
+│   the gateway makes the exact plan for each one when you press enter         │
+│   Compared with research /home/test/.pi/agent/skills/demo:                   │
+│   added: added.txt                                                           │
+│   removed: removed.txt                                                       │
+│   changed: SKILL.md                                                          │
+│   a different copy in the way shows as a conflict in the result              │
+│                                                                              │
+│ enter apply  d exact folders  esc cancel                                     │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept as is  . accepted  [ ] screen  tab CTO  ? help
