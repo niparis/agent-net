@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"net"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ func TestWorkerRetriesPortCollision(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer ln.Close()
+			go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "occupied", http.StatusServiceUnavailable) }))
 			occupied := ln.Addr().(*net.TCPAddr).Port
 			calls := 0
 			g := startGateway(t, t.TempDir(), "")
@@ -52,6 +54,7 @@ func TestCTORetriesPortCollision(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln.Close()
+	go http.Serve(ln, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { http.Error(w, "occupied", http.StatusServiceUnavailable) }))
 	occupied := ln.Addr().(*net.TCPAddr).Port
 	calls := 0
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
