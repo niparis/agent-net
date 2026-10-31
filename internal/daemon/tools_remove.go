@@ -133,6 +133,16 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	}); err != nil {
 		return fail("conflict", "source contains a symlink or cannot be inspected")
 	}
+	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "remove", Target: source, BeforeHash: t.Revision.Version, Step: "prepared"})
+	if err != nil {
+		return fail("failed", "cannot write skill journal")
+	}
+	retain := false
+	defer func() {
+		if !retain {
+			_ = j.finish()
+		}
+	}()
 	top, gitErr := projectGit(filepath.Dir(source), "rev-parse", "--show-toplevel")
 	if gitErr == nil {
 		gitRoot := strings.TrimSpace(string(top))
@@ -187,9 +197,20 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		os.RemoveAll(stamp)
 		return fail("failed", "cannot create backup")
 	}
+	// The opened backup directory can be a descriptor path. Store the stable
+	// path in the journal so a later daemon can find the preimage.
+	j.record.Backup = filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp), strings.TrimPrefix(source, string(os.PathSeparator)))
+	if err = j.advance("backing_up"); err != nil {
+		retain = true
+		return fail("failed", "skill operation interrupted")
+	}
 	if err = os.Rename(anchored, dest); err != nil {
 		os.RemoveAll(stamp)
 		return fail("failed", "cannot move source to backup")
+	}
+	retain = true
+	if err = j.advance("backed_up"); err != nil {
+		return fail("failed", "skill operation interrupted")
 	}
 	hash, err = inventory.SkillHash(dest)
 	if err != nil || hash != t.Revision.Version {
@@ -210,6 +231,10 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if err = d.forgetSkill(source); err != nil {
 		return fail("failed", "cannot update skill manifest or Git exclude")
 	}
+	if err = j.advance("forgotten"); err != nil {
+		return fail("failed", "skill operation interrupted")
+	}
+	retain = false
 	return fail("applied", "")
 }
 

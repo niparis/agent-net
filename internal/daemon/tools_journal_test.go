@@ -97,3 +97,49 @@ func TestSkillJournalCopyStaged(t *testing.T) {
 		t.Fatalf("finished journal: %v %v", entries, err)
 	}
 }
+
+func TestRemoveSkillJournalAfterBackup(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	source := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("original"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := inventory.SkillHash(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: source, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: source}}
+	skillJournalHook = func(step string) error {
+		if step == "backed_up" {
+			return os.ErrInvalid
+		}
+		return nil
+	}
+	defer func() { skillJournalHook = nil }()
+	if r := d.removeSkill(target); r.State != "failed" {
+		t.Fatalf("got %+v", r)
+	}
+	entries, err := os.ReadDir(filepath.Join(state, "skill-journal"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("journal: %v %v", entries, err)
+	}
+	b, err := os.ReadFile(filepath.Join(state, "skill-journal", entries[0].Name()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec skillJournalRecord
+	if err = json.Unmarshal(b, &rec); err != nil {
+		t.Fatal(err)
+	}
+	if rec.Operation != "remove" || rec.Step != "backed_up" || rec.Target != source || rec.BeforeHash != hash {
+		t.Fatalf("record: %+v", rec)
+	}
+	if h, e := inventory.SkillHash(rec.Backup); e != nil || h != hash {
+		t.Fatalf("backup hash %q: %v", h, e)
+	}
+}
