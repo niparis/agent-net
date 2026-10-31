@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
+	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -192,6 +193,7 @@ func New(opts Options) (*Gateway, error) {
 	}
 	g := &Gateway{opts: opts, store: store, ca: ca, cert: cert, fp: fp, pin: pin, logger: logger,
 		adminToken: protocol.NewToken(), conns: map[string]*nodeConn{}, timers: map[string]*time.Timer{}}
+	store.phraseCleaner = phrasing.New(phraseWorker{g}, phraseLimiter{store})
 	skills, err := openSkillStore(opts.DataDir, store)
 	if err != nil {
 		store.Close()
@@ -257,6 +259,23 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 					g.dispatchPending(ctx, id, false)
 				}
 			}
+		}
+	}
+}
+
+// RunLearning processes suggestions independently of message expiry because a
+// phrasing worker can take up to three minutes to finish.
+func (g *Gateway) RunLearning(ctx context.Context) {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		if err := g.store.ProcessLearnedContext(ctx); err != nil && ctx.Err() == nil {
+			g.logLine("error", "where", "learned suggestions", "err", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
 		}
 	}
 }
@@ -1090,6 +1109,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return st.Signals()
+
+	case "learned.list", "learned.answer", "learned.view":
+		var p struct {
+			Owner  string `json:"owner"`
+			ID     int64  `json:"suggestion_id"`
+			Node   string `json:"node"`
+			Action string `json:"action"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		switch typ {
+		case "learned.list":
+			return st.OwnerLearned()
+		case "learned.answer":
+			return map[string]bool{"ok": true}, st.DecideLearned(p.ID, p.Action)
+		default:
+			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
+		}
 
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)

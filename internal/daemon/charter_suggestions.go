@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -17,8 +18,9 @@ type charterSuggestion struct {
 	MessageIDs    []string `json:"message_ids"`
 }
 type charterSuggestionResult struct {
-	Suggestions []charterSuggestion      `json:"suggestions"`
-	Evidence    []protocol.CharterSignal `json:"evidence"`
+	Suggestions   []charterSuggestion          `json:"suggestions"`
+	Evidence      []protocol.CharterSignal     `json:"evidence"`
+	PendingMajors []protocol.LearnedSuggestion `json:"pending_majors,omitempty"`
 }
 
 var ownerJob = regexp.MustCompile(`(?i)\b(?:all\s+)?(?:this\s+)?([^.!?;]{1,100}?)\s+(?:is|are)\s+(?:his|its)(?:\s+job)?\b`)
@@ -63,6 +65,25 @@ func charterSuggestions(g protocol.Graph, signals []protocol.CharterSignal) char
 		nodes[n.Name] = n
 	}
 	index := map[string]int{}
+	redirects := map[string]map[string]bool{}
+	now := time.Now()
+	for i, v := range signals {
+		if i >= 40 {
+			break
+		}
+		if v.Outcome != "redirect" || v.At < now.Add(-7*24*time.Hour).UnixNano() || v.At > now.UnixNano() {
+			continue
+		}
+		target, task := signalTask(v)
+		if target == "" || task == "" || v.MessageID == "" {
+			continue
+		}
+		key := v.To + "\x00" + target + "\x00" + strings.ToLower(task)
+		if redirects[key] == nil {
+			redirects[key] = map[string]bool{}
+		}
+		redirects[key][v.MessageID] = true
+	}
 	for _, v := range signals {
 		if len(result.Evidence) >= 40 {
 			break
@@ -80,6 +101,13 @@ func charterSuggestions(g protocol.Graph, signals []protocol.CharterSignal) char
 		v.RedirectTo = cut(v.RedirectTo, 100)
 		result.Evidence = append(result.Evidence, v)
 		target, task := signalTask(v)
+		if v.Outcome == "redirect" && v.Prompt == "" {
+			key := v.To + "\x00" + target + "\x00" + strings.ToLower(task)
+			if len(redirects[key]) < 2 || !redirects[key][v.MessageID] {
+				continue
+			}
+			v.From = v.To
+		}
 		if target == "" || task == "" || target == v.From {
 			continue
 		}
@@ -112,7 +140,9 @@ func charterSuggestions(g protocol.Graph, signals []protocol.CharterSignal) char
 			index[key] = len(result.Suggestions)
 			result.Suggestions = append(result.Suggestions, charterSuggestion{Node: node, Field: field, OldValue: old, ProposedValue: proposed, MessageIDs: []string{v.MessageID}})
 		}
-		add(target, "accepts", targetNode.Charter.Accepts, task)
+		if v.Outcome != "redirect" || v.Prompt != "" {
+			add(target, "accepts", targetNode.Charter.Accepts, task)
+		}
 		if sourceOK {
 			add(v.From, "needs", sourceNode.Charter.Needs, target+" for "+task)
 		}

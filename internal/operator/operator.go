@@ -95,6 +95,7 @@ type Snapshot struct {
 	Nodes              []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.
 	Outcomes []protocol.OutcomeInboxEntry
+	Learned  []protocol.LearnedSuggestion
 	Agents   []protocol.AgentView
 	Held     []protocol.Message
 	Edges    []protocol.Edge

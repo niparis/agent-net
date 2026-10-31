@@ -567,7 +567,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		return m.key(msg)
+		next, cmd := m.key(msg)
+		if m.mapOn {
+			if changed, ok := next.(Model); ok && (!changed.mapOn || changed.quitting) {
+				mark := m.markMapViewed(m.mp.selected)
+				if changed.quitting && mark != nil {
+					return next, tea.Sequence(mark, cmd)
+				}
+				return next, tea.Batch(mark, cmd)
+			}
+		}
+		return next, cmd
 	}
 	return m, nil
 }
@@ -840,6 +850,28 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	m.notice = notice{} // the result of the last action goes with the next key
 	if m.focus == focusSessions {
+		for _, suggestion := range m.snap.Learned {
+			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && (k.String() == "a" || k.String() == "r") {
+				c, ok := m.src.(inboxCaller)
+				if !ok {
+					m.fail("Learned suggestion actions unavailable.")
+					return m, nil
+				}
+				action := "accept"
+				if k.String() == "r" {
+					action = "reject"
+				}
+				return m, func() tea.Msg {
+					ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+					defer cancel()
+					_, err := c.Call(ctx, "learned_answer", map[string]any{"suggestion_id": suggestion.ID, "action": action})
+					if err != nil {
+						return actionMsg{err: err}
+					}
+					return actionMsg{text: "Suggestion " + action + "ed."}
+				}
+			}
+		}
 		for _, held := range m.snap.Held {
 			if held.ID == m.selected && (k.String() == "a" || k.String() == "A" || k.String() == "r" || k.String() == "R") {
 				answerer, ok := m.src.(interface {

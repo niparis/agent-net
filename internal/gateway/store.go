@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/dbfile"
+	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
 	_ "modernc.org/sqlite"
 )
@@ -37,8 +38,10 @@ type Store struct {
 	// message body to it.
 	logf func(event string, kv ...any)
 
-	mu      sync.Mutex
-	buckets map[string]*bucket
+	mu            sync.Mutex
+	buckets       map[string]*bucket
+	learnMu       sync.Mutex
+	phraseCleaner *phrasing.Cleaner
 	// hiddenMu serializes reads that prune expired session entries with writes.
 	hiddenMu sync.Mutex
 }
@@ -279,6 +282,27 @@ ALTER TABLE tool_results ADD COLUMN commit_hash TEXT NOT NULL DEFAULT '';
 `, `
 CREATE TABLE IF NOT EXISTS signal_prompts (session_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS charter_signals (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, prompt TEXT NOT NULL, at INTEGER NOT NULL);
+`, `
+CREATE TABLE IF NOT EXISTS learned_suggestions (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT NOT NULL, field TEXT NOT NULL,
+ edge_kind TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, phrase TEXT NOT NULL,
+ evidence TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', severity TEXT NOT NULL,
+ created_at INTEGER NOT NULL, ready_at INTEGER NOT NULL, decided_at INTEGER NOT NULL DEFAULT 0,
+ CHECK(status IN ('pending','applied','rejected','undone')),
+ CHECK(kind IN ('add','remove')), CHECK(severity IN ('minor','major'))
+);
+CREATE INDEX IF NOT EXISTS learned_pending ON learned_suggestions(node,field,phrase,status);
+CREATE TABLE IF NOT EXISTS learned_message_flow (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, excerpt TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS learned_flow_pair ON learned_message_flow(source,target,at);
+`, `
+CREATE TABLE IF NOT EXISTS learned_suggestion_details (suggestion_id INTEGER PRIMARY KEY, origin TEXT NOT NULL DEFAULT '', history_id INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO learned_suggestion_details(suggestion_id,origin)
+ SELECT id,'owner' FROM learned_suggestions WHERE field='accepts';
+`, `
+CREATE TABLE IF NOT EXISTS learned_phrase_state (suggestion_id INTEGER PRIMARY KEY, raw_phrase TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL);
+`, `
+CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1273,7 +1297,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	}
 	if p.Outcome != "" {
 		var from, to string
-		if err := tx.QueryRow(`SELECT a.repo_project,b.repo_project FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient WHERE q.id=? AND q.type=?`, p.ParentID, protocol.TypeRequest).Scan(&from, &to); err != nil {
+		if err := tx.QueryRow(`SELECT COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,'') FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE q.id=? AND q.type=?`, p.ParentID, protocol.TypeRequest).Scan(&from, &to); err != nil {
 			return msg, false, reject("outcome requires a request parent")
 		}
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
@@ -1405,10 +1429,26 @@ func (s *Store) ApplyDelivery(id, state, detail string) error {
 		return reject("delivery state must be delivered or failed")
 	}
 	now := s.now().UnixNano()
-	if _, err := s.db.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`, id, state, detail, now); err != nil {
+	tx, err := s.db.Begin()
+	if err != nil {
 		return err
 	}
-	res, err := s.db.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
+	defer tx.Rollback()
+	if _, err := tx.Exec(`INSERT INTO deliveries (message_id, state, detail, at) VALUES (?,?,?,?)`, id, state, detail, now); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`UPDATE messages SET state = ? WHERE id = ? AND state IN ('stored','dispatched')`, state, id)
+	if err != nil {
+		return err
+	}
+	if state == protocol.StateDelivered {
+		if err = s.learnDelivery(tx, id, now); err != nil {
+			return err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
 	s.Event("msg."+state, "", s.recipientOf(id), id, detail)
 	note := ""
 	if err == nil {

@@ -11,8 +11,8 @@ Keys ─────────────────────────
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
-  4/M                  map: charters and edges (read only); z switches overview
-  map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll charter, h hide, H show hidden; ov…
+  4/M                  map: charters and edges; z switches overview
+  map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, …
   5 Tools              [ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first
   C, tab               focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model
   N                    name the machine of the session (every machine sees it; empty resets)

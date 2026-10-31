@@ -133,7 +133,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 		{method: protocol.OpAgents, params: protocol.QueryAgents{IncludeOwners: true}, required: true},
 		{method: protocol.OpNodes}, {method: protocol.OpWorkerProfiles},
 		{method: protocol.OpWorkerProvidersGet}, {method: protocol.OpProtectedProvidersGet},
-		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: "outcome_inbox"},
+		{method: protocol.OpScoresGet}, {method: "difficulty_get"}, {method: "outcome_inbox"}, {method: "learned_list"},
 		{method: protocol.OpHeldList}, {method: protocol.OpGraphGet},
 		{method: protocol.OpProjects, params: protocol.QueryProjects{}},
 	}
@@ -190,6 +190,8 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 				}
 				err = json.Unmarshal(c.raw, &v)
 				snap.Outcomes = v.Entries
+			case "learned_list":
+				err = json.Unmarshal(c.raw, &snap.Learned)
 			case protocol.OpHeldList:
 				var v struct {
 					Messages []protocol.Message `json:"messages"`

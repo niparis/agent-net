@@ -759,8 +759,12 @@ func fakeCodex() {
 					if strings.Contains(text, "FAKE:fail") {
 						status, errObj = "failed", map[string]any{"message": "model overloaded"}
 					}
+					report := "codex done in " + cwd + " (" + strconv.Itoa(len(text)) + " bytes)"
+					if strings.Contains(text, "Turn each phrase in the JSON array below") {
+						report = `{"backups":"daily backup operations","ops for backups":"ops for backup operations"}`
+					}
 					write(map[string]any{"method": "item/completed", "params": map[string]any{"threadId": thread, "turnId": turn,
-						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": "codex done in " + cwd + " (" + strconv.Itoa(len(text)) + " bytes)"}}})
+						"item": map[string]any{"type": "agentMessage", "id": "m1", "phase": "final_answer", "text": report}}})
 					write(map[string]any{"method": "thread/tokenUsage/updated", "params": map[string]any{"threadId": thread, "turnId": turn,
 						"tokenUsage": map[string]any{
 							"last":               map[string]any{"totalTokens": 1700, "inputTokens": 1500, "cachedInputTokens": 1000, "cacheWriteInputTokens": 0, "outputTokens": 200, "reasoningOutputTokens": 0},

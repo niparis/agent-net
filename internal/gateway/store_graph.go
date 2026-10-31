@@ -161,15 +161,22 @@ func (s *Store) RemoveArchitect(name, actor string) error {
 
 // SetCharter sets or clears one charter attribute, preserving its history.
 func (s *Store) SetCharter(node, attr, value, actor string) error {
-	value, err := protocol.CleanCharterValue(attr, value)
-	if err != nil {
-		return reject("%v", err)
-	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
+	if err = setCharterTx(tx, node, attr, value, actor, s.now().UnixNano()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error {
+	value, err := protocol.CleanCharterValue(attr, value)
+	if err != nil {
+		return reject("%v", err)
+	}
 	kind, err := graphKind(tx, node)
 	if err != nil {
 		return err
@@ -182,7 +189,6 @@ func (s *Store) SetCharter(node, attr, value, actor string) error {
 	if old == value {
 		return nil
 	}
-	now := s.now().UnixNano()
 	if _, err = tx.Exec(`INSERT OR IGNORE INTO graph_nodes VALUES(?,?,?)`, node, kind, now); err != nil {
 		return err
 	}
@@ -194,10 +200,7 @@ func (s *Store) SetCharter(node, attr, value, actor string) error {
 	if err != nil {
 		return err
 	}
-	if err = graphRecord(tx, "charter", node, attr, old, value, actor, now); err != nil {
-		return err
-	}
-	return tx.Commit()
+	return graphRecord(tx, "charter", node, attr, old, value, actor, now)
 }
 
 // SetNodeSetting sets or clears one node override of the maturity defaults
@@ -344,12 +347,12 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 	}
 	defer tx.Rollback()
 	var typ, node, attr, old, value string
-	query := `SELECT type,node,attr,old_value,new_value FROM graph_history WHERE id=?`
+	query := `SELECT id,type,node,attr,old_value,new_value FROM graph_history WHERE id=?`
 	if id == 0 {
-		query = `SELECT type,node,attr,old_value,new_value FROM graph_history ORDER BY id DESC LIMIT 1`
-		err = tx.QueryRow(query).Scan(&typ, &node, &attr, &old, &value)
+		query = `SELECT id,type,node,attr,old_value,new_value FROM graph_history ORDER BY id DESC LIMIT 1`
+		err = tx.QueryRow(query).Scan(&id, &typ, &node, &attr, &old, &value)
 	} else {
-		err = tx.QueryRow(query, id).Scan(&typ, &node, &attr, &old, &value)
+		err = tx.QueryRow(query, id).Scan(&id, &typ, &node, &attr, &old, &value)
 	}
 	if err != nil {
 		return err
@@ -463,11 +466,26 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 	if err = graphRecord(tx, typ, node, attr, value, old, actor, now); err != nil {
 		return err
 	}
+	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='undone',decided_at=? WHERE status='applied' AND id IN (SELECT suggestion_id FROM learned_suggestion_details WHERE history_id=?)`, now, id); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
 // SetEdge validates and stores a directed graph edge.
 func (s *Store) SetEdge(e protocol.Edge, actor string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = setEdgeTx(tx, e, actor, s.now().UnixNano()); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 	if e.From == e.To {
 		return reject("self edge")
 	}
@@ -486,11 +504,7 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	if e.Kind == "governs" && e.Mode != "advisor" && e.Mode != "arbiter" && e.Mode != "owner" {
 		return reject("invalid mode")
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
+	var err error
 	from := "component"
 	if e.From != "*" {
 		from, err = graphKind(tx, e.From)
@@ -526,10 +540,10 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	if _, err = tx.Exec(`INSERT INTO graph_edges VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET mode=excluded.mode,rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
 		return err
 	}
-	if err = graphRecord(tx, "edge", e.From, e.Kind, previous, string(b), actor, s.now().UnixNano()); err != nil {
+	if err = graphRecord(tx, "edge", e.From, e.Kind, previous, string(b), actor, now); err != nil {
 		return err
 	}
-	return tx.Commit()
+	return nil
 }
 
 // RemoveEdge deletes an edge and records its previous value.

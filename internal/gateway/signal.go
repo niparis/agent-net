@@ -61,17 +61,25 @@ func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 		return nil
 	}
 	if !mentionsName(prompt, to) && !mentionsName(prompt, project) && !mentionsName(prompt, name) && !mentionsName(prompt, sessionName) {
-		return nil
+		// Learn explicit assignments privately without attaching the owner's
+		// prompt to a message addressed to another project.
+		return s.learnOwner(tx, from, to, m.ID, prompt, m.CreatedAt.UnixNano())
 	}
 	_, err = tx.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES(?,?,?,?,?)`, m.ID, from, to, prompt, m.CreatedAt.UnixNano())
-	return err
+	if err != nil {
+		return err
+	}
+	return s.learnOwner(tx, from, to, m.ID, prompt, m.CreatedAt.UnixNano())
 }
 
 func (s *Store) signalOutcome(tx *sql.Tx, m protocol.Message, p protocol.MsgSend) error {
 	// Keep outcomes even without a prompt: redirects are evidence too.
 	_, err := tx.Exec(`INSERT OR IGNORE INTO charter_signals(message_id,source,target,prompt,at)
  SELECT q.id,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),'',? FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE q.id=?`, m.CreatedAt.UnixNano(), p.ParentID)
-	return err
+	if err != nil {
+		return err
+	}
+	return s.learnOutcome(tx, m.ID, m.CreatedAt.UnixNano())
 }
 
 func (s *Store) Signals() ([]protocol.CharterSignal, error) {

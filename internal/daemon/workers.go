@@ -457,6 +457,9 @@ func (d *Daemon) startWorker(ctx context.Context, l protocol.WorkerLaunch) (out 
 	if d.cfg.NoLaunch {
 		return refuse("this machine does not accept workers (it was set up with --no-launch)")
 	}
+	if l.RequireReadOnly && (l.Permissions != protocol.WorkersReadOnly || !protocol.WorkerReadOnlySupported(l.Harness)) {
+		return refuse("worker cannot enforce read-only access")
+	}
 	ln := d.launchers[l.Harness]
 	if ln == nil {
 		return refuse("this daemon cannot start %q workers", l.Harness)

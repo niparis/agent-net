@@ -342,7 +342,8 @@ func (m Model) mapFocusView(w, h int) []string {
 	rows := h - len(head) - 1
 	out := head
 	if rows > 0 {
-		all := mapCharterBlock(node.Charter, w)
+		all := m.mapLearnedLines(node.Name, w)
+		all = append(all, mapCharterBlock(node.Charter, w)...)
 		if len(all) == 0 {
 			all = []string{sDim.Render("no charter set")}
 		}
