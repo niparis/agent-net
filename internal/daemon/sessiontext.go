@@ -39,7 +39,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpProjectDisplayGet: true, protocol.OpProjectDisplaySet: true,
 	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
-	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true,
+	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true, "onboarding_get": true, "onboarding_set": true, "onboarding_restart": true,
 	protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
@@ -641,6 +641,16 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if err == nil {
 			d.Logf("integrations.set on=%d", in.CountOn())
 		}
+	case "onboarding_get":
+		res, err = d.call(ctx, "onboarding.get", nil)
+	case "onboarding_set":
+		var update protocol.OnboardingUpdate
+		if json.Unmarshal(raw, &update) != nil {
+			return nil, true, errors.New("bad onboarding update")
+		}
+		res, err = d.call(ctx, "onboarding.set", update)
+	case "onboarding_restart":
+		res, err = d.call(ctx, "onboarding.restart", nil)
 	case protocol.OpHiddenGet:
 		res, err = d.call(ctx, "hidden.get", nil)
 	case protocol.OpHiddenSet:

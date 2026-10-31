@@ -216,6 +216,10 @@ interfaces.
   its preference. The gateway drops the entry after that session has stayed
   offline for 30 days. Project node names remain until the owner unhides them.
 
+Onboarding progress is also stored in gateway owner settings. Its operator
+methods use the same owner gate. The CTO restart tool uses the CTO process-tree
+check. As with hidden items, an enrolled machine can change the gateway entry.
+
 ## Delegation policy
 
 A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegation-policy.md)) is text that agent-net adds to a session's context on every turn: hand code changes to a subagent or a worker, or do them yourself. It is your standing instruction to the session, so who can set it matters.

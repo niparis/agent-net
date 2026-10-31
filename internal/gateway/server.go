@@ -1061,6 +1061,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return st.NodeSettings(p.Node)
+	case "onboarding.get":
+		return st.Onboarding()
+	case "onboarding.set":
+		p, err := decode[protocol.OnboardingUpdate](raw)
+		if err != nil {
+			return nil, reject("bad onboarding.set")
+		}
+		return st.UpdateOnboarding(p, false)
+	case "onboarding.restart":
+		return st.UpdateOnboarding(protocol.OnboardingUpdate{}, true)
 	case "hidden.get":
 		return st.HiddenItems()
 	case "hidden.set":
