@@ -1,18 +1,12 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 5 nodes, 3 edges                                               updated 14:05
-  architect           0│
-▸ a2a-ocs             0│
-  cogforge            0│
-  shop                1│
-  tenebrae            1│
-                       │                                    ╔══════════════════════╗
-                       │                                    ║a2a-ocs               ║
-                       │                                    ║- ○ 0                 ║
-                       │                                    ╚══════════════════════╝
-                       │no edges yet · ask the CTO to connect it (c)
-                       │purpose: -
-                       │accepts: -
-                       │refuses: -
-                       │last change: -
+  architect            │a2a-ocs
+▸ a2a-ocs              │no purpose set
+  cogforge             │○ no live sessions
+  shop                ●│
+  tenebrae            ●│no edges yet · ask the CTO to connect it (c)
+                       │
+                       │Charter ────────────────────────────────────────────────────────────────────────────────────────
+                       │no charter set
                        │
                        │
                        │
@@ -20,6 +14,12 @@
                        │
                        │
                        │
+                       │
+                       │
+                       │
+                       │
+                       │
+                       │RECENT  no changes yet
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down projects  left/right follow  / find  z overview  enter sessions  c CTO  ? help  q quit
+up/down projects  left/right follow  / find  z overview  [ ] charter  enter sessions  c CTO  ? help  q quit

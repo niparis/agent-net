@@ -1,25 +1,25 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges                                               updated 14:05
-  api-architect       0│                                    ╭──────────────────────╮
-  trading-architect   0│                                    │trading-architect     │
-  wbg-architect       0│                                    │mature ○ 0            │
-▸ cogforge            0│                                    ╰──────────────────────╯
-  homelab             0│                                    ▼ governs owner normal
-  shop                1│╭──────────────────────╮depends ask ╔══════════════════════╗depends auto╭──────────────────────╮
-  tenebrae            1││tenebrae              │            ║cogforge              ║            │shop                  │
-                       ││growing ● 1 busy      │┄┄┄┄┄┄┄┄┄┄┄▶║early ○ 0             ║━━━━━━━━━━━▶│mature ○ 0            │
-                       │╰──────────────────────╯            ╚══════════════════════╝            ╰──────────────────────╯
-                       │purpose: Document and evidence API.
-                       │accepts: Generic endpoints and bug fixes.
-                       │refuses: Client-specific endpoints.
-                       │last change: maturity: early - prototype
+  api-architect        │cogforge  early
+  trading-architect    │Document and evidence API.
+  wbg-architect        │○ no live sessions
+▸ cogforge             │governed by: trading-architect (owner)
+  homelab              │
+  shop                ●│IN 1                                             OUT 1
+  tenebrae            ●│tenebrae ──▶ depends ask                         ──▶ shop depends auto
+                       │
+                       │Charter ────────────────────────────────────────────────────────────────────────────────────────
+                       │purpose          Document and evidence API.
+                       │maturity         early - prototype
+                       │accepts          Generic endpoints and bug fixes.
+                       │refuses          Client-specific endpoints.
+                       │consumers        tenebrae, shop
+                       │escalate         Breaking API changes.
+                       │needs            MCP: tenebrae-library
+                       │notes            Deploy through homelab.
                        │
                        │
                        │
-                       │
-                       │
-                       │
-                       │
-                       │
+                       │RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down projects  left/right follow  / find  z overview  enter sessions  c CTO  ? help  q quit
+up/down projects  left/right follow  / find  z overview  [ ] charter  enter sessions  c CTO  ? help  q quit

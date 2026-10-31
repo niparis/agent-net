@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 7 edges                                               updated 14:05
+  api-architect        │tenebrae  mature
+  trading-architect    │Research platform that turns papers, figures and strategies into a searchable library for the
+  wbg-architect        │trading desk, with citations kept for every claim.
+  cogforge             │● 1 session, 1 busy
+  homelab              │governed by: wbg-architect (advisor)
+  shop                ●│
+▸ tenebrae            ●│IN 2                                             OUT 2
+                       │all projects ──▶ depends                         ──▶ cogforge depends ask
+                       │homelab ──▶ deploys auto                         ──▶ homelab depends ask
+                       │
+                       │Charter 1-9/11  [ ] scroll ─────────────────────────────────────────────────────────────────────
+                       │purpose          Research platform that turns papers, figures and strategies into a searchable
+                       │                 library for the trading desk, with citations kept for every claim.
+                       │maturity         mature - stable since spring
+                       │accepts          New document sources, retrieval fixes, and schema changes that keep old ids
+                       │                 working.
+                       │refuses          Anything that writes to the trading accounts; one-off client reports.
+                       │feature_requests Open an issue in the repo; the architect triages them every Monday.
+                       │consumers        cogforge, shop, the nightly report job
+                       │escalate         Data loss, or a change of the public ids.
+                       │RECENT  3h ago maturity by trading-architect
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down projects  left/right follow  / find  z overview  [ ] charter  enter sessions  c CTO  ? help  q quit

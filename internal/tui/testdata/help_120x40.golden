@@ -12,7 +12,7 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
   4/M                  map: charters and edges (read only); z switches overview
-  map arrows           focus: up/down projects, left/right edges, / find; overview: arrows, pgup/pgdn, enter
+  map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll charter; overview: arrows, pgup/pg…
   C                    focus CTO chat; o opens full UI, n starts new, u undoes, m changes model
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support

@@ -86,7 +86,7 @@ func TestMapGroupsNodesByArchitect(t *testing.T) {
 func TestMapShowsTheSelectedNodesCharterEdgesAndHistory(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
 	m.mp.selected = "cogforge"
-	for _, want := range []string{"cogforge", "trading-architect", "tenebrae", "shop", "purpose", "Document and evidence API.", "accepts", "refuses", "governs", "owner", "depends", "ask", "auto", "last change"} {
+	for _, want := range []string{"cogforge", "trading-architect", "tenebrae", "shop", "purpose", "Document and evidence API.", "accepts", "refuses", "governed by", "owner", "depends", "ask", "auto", "RECENT"} {
 		if !strings.Contains(m.View(), want) {
 			t.Errorf("focus missing %q", want)
 		}
@@ -393,7 +393,7 @@ func TestMapCompactBoxesKeepMaturityAndSessionCount(t *testing.T) {
 	m := openMap(t, mapModel(80, 24, fakeGraph()))
 	m.mp.selected = "cogforge"
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "growing ●1") || !strings.Contains(v, "mature ○0") {
+	if !strings.Contains(v, "cogforge  early") || !strings.Contains(v, "no live sessions") {
 		t.Fatal(v)
 	}
 }

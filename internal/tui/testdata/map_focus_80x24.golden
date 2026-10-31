@@ -1,19 +1,19 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 4 edges       updated 14:05
-  api-architect 0│                        ╭─────────────────╮
-  trading-arch… 0│                        │trading-architect│
-  wbg-architect 0│                        │mature ○ 0       │
-▸ cogforge      0│                        ╰─────────────────╯
-  homelab       0│                        ▼ governs owner normal
-  shop          1│╭──────────╮depends ask ╔══════════╗depends auto╭──────────╮
-  tenebrae      1││tenebrae  │            ║cogforge  ║            │shop      │
-                 ││growing ●1│┄┄┄┄┄┄┄┄┄┄┄▶║early ○0  ║━━━━━━━━━━━▶│mature ○0 │
-                 │╰──────────╯            ╚══════════╝            ╰──────────╯
-                 │purpose: Document and evidence API.
-                 │accepts: Generic endpoints and bug fixes.
-                 │refuses: Client-specific endpoints.
-                 │last change: maturity: early - prototype
-                 │
-                 │
+  api-architect  │cogforge  early
+  trading-arch…  │Document and evidence API.
+  wbg-architect  │○ no live sessions
+▸ cogforge       │governed by: trading-architect (owner)
+  homelab        │
+  shop          ●│IN 1                            OUT 1
+  tenebrae      ●│tenebrae ──▶ depends ask        ──▶ shop depends auto
+                 │Charter 1-6/8  [ ] scroll ────────────────────────────────────
+                 │purpose          Document and evidence API.
+                 │maturity         early - prototype
+                 │accepts          Generic endpoints and bug fixes.
+                 │refuses          Client-specific endpoints.
+                 │consumers        tenebrae, shop
+                 │escalate         Breaking API changes.
+                 │RECENT  2h ago maturity by you (on Mac)
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
