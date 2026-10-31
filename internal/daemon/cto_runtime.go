@@ -97,7 +97,7 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 		if e != nil {
 			return plan, e
 		}
-		model := settings.Model
+		model := settings.ClaudeModel
 		if model == "" {
 			model = "opus"
 		}

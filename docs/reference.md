@@ -1,18 +1,25 @@
 # Reference
 
-The owner-only `cto_settings` operator method reads and saves the network-wide
-CTO harness, model and conversation auto-compaction rules. Pass
-`{"harness":"claude","model":"opus"}` for Claude Code, or
-`{"harness":"opencode","model":"provider/model"}` for OpenCode. The harness
-defaults to `opencode`; an empty model selects the default. Pass a `compaction`
-object to change the rules. Saving one field keeps the others. The gateway
-stores all of it with the other owner settings. Saving them does not start a
-CTO runtime.
+The owner-only `cto_settings` operator method reads and saves the active CTO
+harness, its model, the saved model for each harness, and conversation
+auto-compaction rules. The response has `harness`, `model`, `opencode_model` and
+`claude_model`. A set request with `harness` and `model` saves the model for
+that harness and makes it active. A request with only `harness` switches the
+active harness without changing either model. An empty model selects that
+harness's default.
+
+The active harness and both model preferences are stored in the local daemon
+state. A legacy single model is moved to `opencode_model` when it has a
+provider prefix such as `opencode-go/deepseek-v4.1-flash`; otherwise it is moved
+to `claude_model`. OpenCode uses its inventory default when its saved model is
+empty. Claude Code uses `opus` when its saved model is empty. Pass a `compaction`
+object to change the auto-compaction rules; the gateway stores those rules with
+the other owner settings. Saving settings does not start a CTO runtime.
 
 Run `agent-net cto` to show the settings, `agent-net cto harness claude` or
-`agent-net cto harness opencode` to change the harness, and `agent-net cto model
-opus` to set the model. Pass an empty argument (`agent-net cto model ""`) to
-restore the default model.
+`agent-net cto harness opencode` to change the harness, and
+`agent-net cto model opus` to set the model for the active harness. Pass an
+empty argument (`agent-net cto model ""`) to restore that harness's default.
 
 ```json
 {"compaction":{"threshold_percent":70,"floor_tokens":40000,
@@ -52,13 +59,17 @@ chronological order and a `next` index for the next poll. Changing harness
 stops the previous runtime; the next send resumes the selected conversation.
 The CTO is not a worker or a network session.
 
-For OpenCode, the model is resolved against the local inventory. With no
-preference, the daemon tries GPT 6.1, Opus 5.5, then DeepSeek v4 Pro using the
-model resolver. If none is available, it uses the first model in the inventory.
-If the owner picks another model in OpenCode's full interface, the next send
-saves that live selection as the CTO model setting and records an action line.
-A model changed through the `m` form or `agent-net cto model` takes effect on
-the next send. The CTO box title shows the model in use by the session.
+Each harness resumes its conversation with its own saved model. For OpenCode,
+the model is resolved against the local inventory. With no preference, the
+daemon tries GPT 6.1, Opus 5.5, then DeepSeek v4 Pro using the model resolver. If
+none is available, it uses the first model in the inventory. If the owner picks
+another model in OpenCode's full interface, the next send saves that live
+selection in `opencode_model` and records an action line. A model changed
+through the `m` form or `agent-net cto model` takes effect on the next send.
+The `m` form shows the saved model for the selected harness, a dim `default`
+when that model is empty, and suggestions from the local harness inventory.
+Claude suggestions include `opus`, `sonnet`, `haiku` and `fable`. The CTO box
+title shows the active harness and its model.
 OpenCode uses private XDG data, state, config and cache directories under `cto`
 in the daemon state directory.
 Its credentials are copied with its auth export and import commands at start.

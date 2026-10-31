@@ -359,6 +359,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cto.err = ""
 				m.cto.harness = msg.settings.Harness
 				m.cto.configuredModel = msg.settings.Model
+				m.cto.opencodeModel = msg.settings.OpenCodeModel
+				m.cto.claudeModel = msg.settings.ClaudeModel
+				if m.cto.opencodeModel == "" && m.cto.claudeModel == "" && msg.settings.Model != "" {
+					if msg.settings.Harness == "claude" {
+						m.cto.claudeModel = msg.settings.Model
+					} else {
+						m.cto.opencodeModel = msg.settings.Model
+					}
+				}
 				m.cto.model = msg.settings.Model
 				if m.cto.harness == "" {
 					m.cto.harness = "opencode"

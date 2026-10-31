@@ -249,7 +249,7 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	if err != nil {
 		return nil, err
 	}
-	model := settings.Model
+	model := settings.ClaudeModel
 	if model == "" {
 		model = "opus"
 	}
@@ -337,7 +337,7 @@ func (claudeCTOHarness) events(ctx context.Context, d *Daemon, index int) (proto
 	if err != nil {
 		return out, err
 	}
-	out.Model = settings.Model
+	out.Model = settings.ClaudeModel
 	if out.Model == "" {
 		out.Model = "opus"
 	}
