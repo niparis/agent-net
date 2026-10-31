@@ -1266,7 +1266,7 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err != nil {
 		return msg, false, err
 	}
-	if !m.FromCTO {
+	if m.ParentID == "" && !m.FromCTO {
 		if err := s.signalRequest(tx, m); err != nil {
 			return msg, false, err
 		}

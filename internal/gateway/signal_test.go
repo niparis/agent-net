@@ -192,3 +192,26 @@ func TestSignalOwnerInstructionOnMessage(t *testing.T) {
 		t.Fatalf("message %+v: %v", got, err)
 	}
 }
+
+func TestSignalReplyDoesNotConsumePrompt(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	incoming, _, err := s.StoreMessage(protocol.MsgSend{Sender: b, Recipient: a, Body: "question"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RememberOwnerPrompt(a, "ask bob"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, ParentID: incoming.ID, Body: "reply"}); err != nil {
+		t.Fatal(err)
+	}
+	send, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "request"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signals, err := s.Signals()
+	if err != nil || len(signals) != 1 || signals[0].MessageID != send.ID {
+		t.Fatalf("signals %+v: %v", signals, err)
+	}
+}
