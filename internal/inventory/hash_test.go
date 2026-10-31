@@ -23,8 +23,8 @@ func TestSkillHashDeterministicAndSensitive(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, err = SkillHash(root)
-	if err != nil || a != b {
-		t.Fatalf("mode changed hash: %q %q %v", a, b, err)
+	if err != nil || a == b {
+		t.Fatalf("mode ignored: %q %q %v", a, b, err)
 	}
 }
 
@@ -64,20 +64,30 @@ func TestSkillHashInTreeLinkAndSizeLimit(t *testing.T) {
 	}
 }
 
-func TestSkillHashIgnoresEditorNoise(t *testing.T) {
+func TestContentFingerprintIgnoresNoiseAndMode(t *testing.T) {
 	root := t.TempDir()
-	os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("skill"), 0600)
-	before, err := SkillHash(root)
+	if err := os.WriteFile(filepath.Join(root, "SKILL.md"), []byte("content"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := os.OpenRoot(root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{".DS_Store", "Thumbs.db", ".SKILL.md.swp", "file.swo", "file~"} {
-		if err := os.WriteFile(filepath.Join(root, name), []byte(name), 0600); err != nil {
+	defer dir.Close()
+	before, err := skillContentFingerprintRoot(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(filepath.Join(root, "SKILL.md"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{".DS_Store", "Thumbs.db", ".SKILL.md.swp", "file.swo", "file~"} {
+		if err := os.WriteFile(filepath.Join(root, n), []byte(n), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	after, err := SkillHash(root)
+	after, err := skillContentFingerprintRoot(dir)
 	if err != nil || before != after {
-		t.Fatalf("noise changed hash: %s %s %v", before, after, err)
+		t.Fatalf("content fingerprint changed: %s %s %v", before, after, err)
 	}
 }

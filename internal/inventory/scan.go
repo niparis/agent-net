@@ -121,6 +121,7 @@ func Scan(o Options) protocol.InventoryReport {
 			p := filepath.Join(path, e.Name())
 			actual := p
 			var alias string
+			var targetInfo os.FileInfo
 			if e.Type()&os.ModeSymlink != 0 {
 				target, resolveErr := filepath.EvalSymlinks(p)
 				if resolveErr != nil || !safePath(o.Home, target) {
@@ -132,13 +133,33 @@ func Scan(o Options) protocol.InventoryReport {
 				if statErr != nil || !info.IsDir() {
 					continue
 				}
-				actual, alias = target, p
+				actual, alias, targetInfo = target, p, info
 			} else if !e.IsDir() {
 				continue
 			}
 			var skillRoot *os.Root
 			if alias != "" {
-				skillRoot, err = os.OpenRoot(actual)
+				homeRoot, openErr := os.OpenRoot(o.Home)
+				if openErr != nil {
+					err = openErr
+				} else {
+					relTarget, relErr := filepath.Rel(o.Home, actual)
+					if relErr != nil {
+						err = relErr
+					} else {
+						skillRoot, err = homeRoot.OpenRoot(relTarget)
+					}
+					homeRoot.Close()
+					if err == nil {
+						opened, statErr := skillRoot.Stat(".")
+						again, resolveErr := filepath.EvalSymlinks(p)
+						if statErr != nil || resolveErr != nil || again != actual || !os.SameFile(targetInfo, opened) {
+							skillRoot.Close()
+							skillRoot = nil
+							err = errors.New("skill target changed during scan")
+						}
+					}
+				}
 			} else {
 				skillRoot, err = sourceRoot.OpenRoot(e.Name())
 			}
@@ -163,6 +184,10 @@ func Scan(o Options) protocol.InventoryReport {
 				continue
 			}
 			hash, err := skillHashRoot(skillRoot)
+			fingerprint, fpErr := skillContentFingerprintRoot(skillRoot)
+			if err == nil {
+				err = fpErr
+			}
 			files, filesErr := skillFilesRoot(skillRoot)
 			if err == nil {
 				err = filesErr
@@ -175,7 +200,22 @@ func Scan(o Options) protocol.InventoryReport {
 			index := len(report.Items)
 			add(h, protocol.InventorySkill, scope, project, root, actual, e.Name(), hash, protocol.InventoryOK, "")
 			if alias != "" && index < len(report.Items) {
+				if totalFields+len(alias) > 256<<10 {
+					report.State = protocol.InventoryError
+					report.Reason = "inventory exceeds report limit"
+					return
+				}
+				totalFields += len(alias)
 				report.Items[index].Aliases = []string{alias}
+			}
+			if index < len(report.Items) {
+				if totalFields+len(fingerprint) > 256<<10 {
+					report.State = protocol.InventoryError
+					report.Reason = "inventory exceeds report limit"
+					return
+				}
+				report.Items[index].ContentFingerprint = fingerprint
+				totalFields += len(fingerprint)
 			}
 			attachFiles(index, files)
 		}
@@ -288,6 +328,10 @@ func Scan(o Options) protocol.InventoryReport {
 					continue
 				}
 				hash, err := skillHashRoot(skillRoot)
+				fingerprint, fpErr := skillContentFingerprintRoot(skillRoot)
+				if err == nil {
+					err = fpErr
+				}
 				files, filesErr := skillFilesRoot(skillRoot)
 				if err == nil {
 					err = filesErr
@@ -299,6 +343,15 @@ func Scan(o Options) protocol.InventoryReport {
 				} else {
 					index := len(report.Items)
 					add("pi", protocol.InventorySkill, scope, project, root, filepath.Dir(source), name, hash, protocol.InventoryOK, "")
+					if index < len(report.Items) {
+						if totalFields+len(fingerprint) > 256<<10 {
+							report.State = protocol.InventoryError
+							report.Reason = "inventory exceeds report limit"
+							return
+						}
+						report.Items[index].ContentFingerprint = fingerprint
+						totalFields += len(fingerprint)
+					}
 					attachFiles(index, files)
 				}
 				continue

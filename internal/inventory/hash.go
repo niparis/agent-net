@@ -17,7 +17,7 @@ import (
 const maxFiles = 10000
 const maxBytes = 64 << 20
 
-// SkillHash hashes a sorted manifest of paths, file contents,
+// SkillHash hashes a sorted manifest of paths, file contents, executable bits,
 // and in-tree symlink targets. It refuses special files and oversized bundles.
 func SkillHash(root string) (string, error) {
 	root, err := filepath.Abs(root)
@@ -39,7 +39,11 @@ func SkillHash(root string) (string, error) {
 	return skillHashRoot(dir)
 }
 
-func skillHashRoot(dir *os.Root) (string, error) {
+func skillHashRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, false) }
+
+func skillContentFingerprintRoot(dir *os.Root) (string, error) { return hashSkillRoot(dir, true) }
+
+func hashSkillRoot(dir *os.Root, contentOnly bool) (string, error) {
 	var paths []string
 	err := fs.WalkDir(dir.FS(), ".", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -48,7 +52,7 @@ func skillHashRoot(dir *os.Root) (string, error) {
 		if path == "." {
 			return nil
 		}
-		if skillNoise(filepath.Base(path)) {
+		if contentOnly && skillNoise(filepath.Base(path)) {
 			if entry.IsDir() {
 				return fs.SkipDir
 			}
@@ -105,6 +109,9 @@ func skillHashRoot(dir *os.Root) (string, error) {
 				return "", fmt.Errorf("skill changed during scan")
 			}
 			write([]byte("file"))
+			if !contentOnly {
+				write([]byte{byte(info.Mode() & 0111)})
+			}
 			write(data)
 		case info.IsDir():
 			write([]byte("directory"))
