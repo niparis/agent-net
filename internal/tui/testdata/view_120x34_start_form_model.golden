@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) cpu ? mem ? disk ?                                                                                     │
-│  ● build-vm   cpu ? mem ? disk ?   no claude · no opencode                                                           │
-│  ○ old-box    cpu ? mem ? disk ?                                                                                     │
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
   Project    tenebrae   on Mac

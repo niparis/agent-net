@@ -257,7 +257,7 @@ func TestHeavyTrees(t *testing.T) {
 
 func TestSharedTreeIsNotARowAndTopUsesHighestSessionCPU(t *testing.T) {
 	snap, u := openCodeSnapshot()
-	m := modelWith(snap, u, 120, 40)
+	m := modelWith(snap, u, 160, 40)
 	v := m.View()
 	if strings.Contains(v, "service, shared by") {
 		t.Fatalf("the shared service still has a row of its own:\n%s", v)

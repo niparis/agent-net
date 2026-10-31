@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online  14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) cpu ? mem ? disk ?                                             │
-│  ● build-vm   cpu ? mem ? disk ?   no claude · no opencode                   │
-│  ○ old-box    cpu ? mem ? disk ?                                             │
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────

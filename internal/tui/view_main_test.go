@@ -114,6 +114,77 @@ func TestMachineCPUAt100Fits(t *testing.T) {
 	}
 }
 
+func TestMachineRowsShowAgentNetVersions(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Nodes[0].Version = "v0.4.30"
+	snap.Nodes[1].Version = "v0.4.29"
+	snap.Nodes[2].Version = "v0.4.1"
+	m := modelWith(snap, fakeUsage(), 120, 34)
+	rows := m.machineRows()
+	for _, tc := range []struct{ node, name, version string }{
+		{"n_mac", "Mac (here)", "v0.4.30"},
+		{"n_vm", "build-vm", "v0.4.29"},
+		{"n_old", "old-box", "v0.4.1"},
+	} {
+		var row string
+		for _, r := range rows {
+			if r.nodeID == tc.node {
+				row = ansi.Strip(m.machineLine(r, 116, machineNameWidth(rows, m.snap.NodeID)))
+				break
+			}
+		}
+		nameAt, versionAt, cpuAt := strings.Index(row, tc.name), strings.Index(row, tc.version), strings.Index(row, "cpu ")
+		if row == "" || nameAt < 0 || versionAt <= nameAt || cpuAt <= versionAt {
+			t.Errorf("%s row does not show %s after its name and before CPU: %q", tc.node, tc.version, row)
+		}
+	}
+}
+
+func TestMachineVersionColorsCompareOnlineNodes(t *testing.T) {
+	old := lipgloss.ColorProfile()
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	defer lipgloss.SetColorProfile(old)
+
+	snap := fakeSnapshot()
+	snap.Nodes[0].Version = "v0.4.30"
+	snap.Nodes[1].Version = "v0.4.29"
+	snap.Nodes[2].Version = "v99.0.0"
+	m := modelWith(snap, fakeUsage(), 120, 34)
+	rows := m.machineRows()
+	for _, tc := range []struct {
+		node, version string
+		style         lipgloss.Style
+	}{{"n_mac", "v0.4.30", sDim}, {"n_vm", "v0.4.29", sNeeds}, {"n_old", "v99.0.0", sDim}} {
+		for _, r := range rows {
+			if r.nodeID != tc.node {
+				continue
+			}
+			line := m.machineLine(r, 116, machineNameWidth(rows, m.snap.NodeID))
+			if !strings.Contains(line, tc.style.Render(cell(tc.version, 7))) {
+				t.Errorf("%s version lacks expected color: %q", tc.node, line)
+			}
+		}
+	}
+}
+
+func TestMachineVersionFitsAt80Columns(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Nodes[0].Version = "v0.4.30"
+	m := modelWith(snap, fakeUsage(), 80, 24)
+	rows := m.machineRows()
+	for _, r := range rows {
+		if r.nodeID != "n_mac" {
+			continue
+		}
+		line := ansi.Strip(m.machineLine(r, 76, machineNameWidth(rows, m.snap.NodeID)))
+		if !strings.Contains(line, "v0.4.30") {
+			t.Fatalf("80-column machine row lost its version: %q", line)
+		}
+		return
+	}
+	t.Fatal("local machine missing")
+}
+
 func TestOnlineMachinesShowOnlyMissingHarnessNotes(t *testing.T) {
 	m := newModel(160, 24)
 	for _, r := range m.machineRows() {
@@ -192,9 +263,9 @@ func TestMachineColumnsAlignAndDropInOrderAtNarrowWidths(t *testing.T) {
 	m := modelWith(snap, fakeUsage(), 160, 34)
 	var linesByNode = map[string]string{}
 	for _, r := range m.machineRows() {
-		linesByNode[r.nodeID] = ansi.Strip(m.machineLine(r, 116, machineNameWidth(m.machineRows(), m.snap.NodeID)))
+		linesByNode[r.nodeID] = ansi.Strip(m.machineLine(r, 156, machineNameWidth(m.machineRows(), m.snap.NodeID)))
 	}
-	for _, field := range []string{"cpu ", "mem ", "disk ", "top:"} {
+	for _, field := range []string{"v0.4.0", "cpu ", "mem ", "disk ", "top:"} {
 		start := func(line string) int {
 			i := strings.Index(line, field)
 			if i < 0 {
@@ -211,7 +282,7 @@ func TestMachineColumnsAlignAndDropInOrderAtNarrowWidths(t *testing.T) {
 		width        int
 		want, absent []string
 	}{
-		{width: 76, want: []string{"disk "}, absent: []string{"top:", "workers"}},
+		{width: 110, want: []string{"disk "}, absent: []string{"top:", "workers"}},
 		{width: 60, want: []string{"cpu ", "mem "}, absent: []string{"disk ", "workers", "top:"}},
 	} {
 		line := ansi.Strip(m.machineLine(m.machineRows()[0], tc.width, machineNameWidth(m.machineRows(), m.snap.NodeID)))
@@ -229,7 +300,7 @@ func TestMachineColumnsAlignAndDropInOrderAtNarrowWidths(t *testing.T) {
 }
 
 func TestMachineOptionalColumnsDropTopThenWorkersThenDisk(t *testing.T) {
-	rows := []machineRow{{nodeID: "n"}}
+	rows := []machineRow{{nodeID: "n", version: "v0.4.30"}}
 	figures := map[string]machineFigures{"n": {
 		cpu: "cpu ████████ 100% of 16", mem: "mem ████ 32/32G", disk: "disk 31G free",
 		workers: "5 workers · 2.1G", top: "top: a2a-ocs worker 4 106%",
@@ -237,7 +308,7 @@ func TestMachineOptionalColumnsDropTopThenWorkersThenDisk(t *testing.T) {
 	for _, tc := range []struct {
 		width              int
 		top, workers, disk bool
-	}{{90, false, true, true}, {70, false, false, true}, {60, false, false, false}} {
+	}{{98, false, true, true}, {80, false, false, true}, {65, false, false, false}} {
 		got := machineRowWidths(rows, figures, tc.width, 8)
 		if got.showTop != tc.top || got.showWorkers != tc.workers || got.showDisk != tc.disk {
 			t.Errorf("width %d: top/workers/disk = %v/%v/%v, want %v/%v/%v", tc.width, got.showTop, got.showWorkers, got.showDisk, tc.top, tc.workers, tc.disk)
