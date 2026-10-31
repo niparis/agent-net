@@ -144,7 +144,7 @@ func TestTableShowsTheNewColumnsAndNotTheMovedOnes(t *testing.T) {
 
 // ---- order ----
 
-func TestSessionsAreOrderedByFirstSeenAndStay(t *testing.T) {
+func TestSessionsAreOrderedByActivityAndStay(t *testing.T) {
 	snap := fakeSnapshot()
 	snap.Agents = nil
 	at := t0.Add(-time.Hour)
@@ -161,7 +161,7 @@ func TestSessionsAreOrderedByFirstSeenAndStay(t *testing.T) {
 	if got := strings.Join(names(m), ","); got != "first,second,third" {
 		t.Fatalf("order %s", got)
 	}
-	// Activity does not re-order: only the first seen counts.
+	// Entering the busy band moves the session to its top.
 	for i := range snap.Agents {
 		if snap.Agents[i].Profile.Name == "third" {
 			snap.Agents[i].LastSeen = t0.Add(-time.Minute).Unix()
@@ -169,7 +169,7 @@ func TestSessionsAreOrderedByFirstSeenAndStay(t *testing.T) {
 		}
 	}
 	m = refresh(m, &fakeSource{snap: snap, events: fakeEvents()})
-	if got := strings.Join(names(m), ","); got != "first,second,third" {
+	if got := strings.Join(names(m), ","); got != "third,first,second" {
 		t.Fatalf("order after activity %s", got)
 	}
 }
@@ -189,21 +189,20 @@ func TestMachinesAreThisOneFirstThenByName(t *testing.T) {
 	}
 }
 
-func TestNewSessionAppearsAtTheBottomOfItsMachine(t *testing.T) {
+func TestNewSessionAppearsAtTopOfItsBand(t *testing.T) {
 	m := newModel(120, 34)
-	before := names(m)
 	src := &fakeSource{snap: fakeSnapshot(), events: fakeEvents()}
 	src.snap.Agents = append(src.snap.Agents, agent("s_00000000000000f1", "n_mac", "Mac", "pi", "just-started", func(a *protocol.AgentView) {
 		a.FirstSeen, a.LastSeen = t0.Unix(), t0.Unix()
 	}))
 	m = refresh(m, src)
-	// It is in the Mac group, after web, before the other machine.
+	// The busy session stays first; the new idle session leads its band.
 	var mac []string
 	for _, a := range m.groups()[0].agents {
 		mac = append(mac, a.Profile.Name)
 	}
-	if strings.Join(mac, ",") != strings.Join(before[:3], ",")+",just-started" {
-		t.Fatalf("Mac group %v, want %v plus the new one", mac, before[:3])
+	if strings.Join(mac, ",") != "tenebrae-53,just-started,strategies,web" {
+		t.Fatalf("Mac group %v", mac)
 	}
 }
 
