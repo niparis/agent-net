@@ -12,6 +12,7 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a form)
   I                    integrations for all machines: six checkboxes (a form)
   4/M                  map: charters and edges; z switches overview
+  map D                name project (empty clears)
   map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, …
   5 Tools              [ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first
   C, tab               focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model
@@ -36,5 +37,4 @@ Keys ─────────────────────────
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
   shared               one process many sessions share; its figures are on the machine line
   dim row              offline, or idle for more than an hour
-  ?                    a figure that is missing or older than 45 seconds
 esc close help  q quit

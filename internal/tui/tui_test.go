@@ -157,6 +157,7 @@ type fakeSource struct {
 	trusts           []trustCall
 	trustErr         error
 	renames          []renameCall
+	projectNames     []renameCall
 	renameErr        error
 	policyFn         func(protocol.SessionPolicyRequest) (protocol.SessionPolicyResult, error)
 	policyErr        error
@@ -1167,5 +1168,6 @@ func (f *fakeSource) ProjectDisplayName(_ context.Context, project string) (prot
 	return protocol.ProjectDisplayResult{Project: project}, nil
 }
 func (f *fakeSource) SetProjectDisplayName(_ context.Context, project, name string) (protocol.ProjectDisplayResult, error) {
+	f.projectNames = append(f.projectNames, renameCall{project, name})
 	return protocol.ProjectDisplayResult{Project: project, Name: name}, nil
 }

@@ -125,7 +125,7 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 		// Who started it matters most, so it comes first. Its ID is on the id
 		// line: the table shows the task instead (decision 0017).
 		out = append(out, kv("worker", fmt.Sprintf("started by %s, %s, project %s", m.who(a.Worker.Owner),
-			m.clock(time.Unix(a.Worker.StartedAt, 0)), dashIfEmpty(a.Worker.Project))))
+			m.clock(time.Unix(a.Worker.StartedAt, 0)), dashIfEmpty(m.projectName(a.Worker.Project)))))
 		context := protocol.ContextText(a.Worker.ContextTokens, a.Worker.ContextLimit)
 		tokens := protocol.CompactTokens(a.Worker.Tokens)
 		switch {

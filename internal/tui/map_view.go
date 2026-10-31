@@ -183,7 +183,7 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 		}
 		return out[:rows]
 	}
-	title := node.Name
+	title := m.projectName(node.Name)
 	if node.Kind != "" {
 		title += " · " + node.Kind
 	}
@@ -290,7 +290,7 @@ func (m Model) mapEdgeLines(node string, width int) []string {
 	byPeer(out, false)
 	var lines []string
 	add := func(dir string, e protocol.Edge) {
-		head := fmt.Sprintf("  %-3s  %s -> %s", dir, sanitize(e.From), sanitize(e.To))
+		head := fmt.Sprintf("  %-3s  %s -> %s", dir, m.projectName(e.From), m.projectName(e.To))
 		lines = append(lines, clip(head, width))
 		detail := sanitize(e.Kind)
 		if e.Mode != "" {
@@ -374,10 +374,10 @@ func (m Model) mapFocusWithList(w, h int) []string {
 				countText = sBusy.Render("●")
 			}
 			nameW := max(left-ansi.StringWidth(lead)-ansi.StringWidth(countText)-1, 1)
-			name := clip(displayNode(n.Name), nameW)
+			name := clip(m.projectName(n.Name), nameW)
 			if count := m.mapUnseen(n.Name); count > 0 {
 				badge := fmt.Sprintf("● %d learned", count)
-				name = clip(displayNode(n.Name), max(nameW-ansi.StringWidth(badge)-1, 1)) + " " + badge
+				name = clip(m.projectName(n.Name), max(nameW-ansi.StringWidth(badge)-1, 1)) + " " + badge
 			}
 			if n.Charter == (protocol.Charter{}) {
 				name = sDim.Render(name)

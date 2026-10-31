@@ -140,9 +140,9 @@ func (m Model) hints() []hint {
 	case m.conv != nil:
 		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
-		return []hint{{"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"?", "help", 2}}
+		return []hint{{"D", "name", 0}, {"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"?", "help", 2}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 1}, {"[ ]", "charter", 3}, {"U/u", "learned/undo", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"D", "name", 0}, {"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 0}, {"[ ]", "charter", 3}, {"U/u", "learned/undo", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -200,6 +200,8 @@ func (m Model) helpLine(w int) string {
 		return clip("Protect "+m.quotaConfirm+"? y/n", w)
 	case modeConfirm:
 		return clip(sBold.Render("Stop worker "+m.confirmName+"? y/n"), w)
+	case modeProjectRename:
+		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
 	case modeRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty resets, esc cancels"), w)
 	case modeTrust:
@@ -266,6 +268,7 @@ func (m Model) helpView(w, h int) []string {
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"4/M", "map: charters and edges; z switches overview"},
+		{"map D", "name project (empty clears)"},
 		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h hide, H show hidden"},
 		{"5 Tools", "[ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first"},
 		{"C, tab", "focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model"},

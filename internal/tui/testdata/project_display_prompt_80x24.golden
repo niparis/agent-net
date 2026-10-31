@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 nodes, 4 edges
+  api-architect  │Evidence API  early
+  trading-arch…  │Document and evidence API.
+  wbg-architect  │○ no live sessions
+▸ Evidence API   │governed by: trading-architect (owner)
+  homelab        │
+  shop          ●│IN 1                            OUT 1
+  tenebrae      ●│tenebrae ──▶ depends ask        ──▶ shop depends auto
+                 │Charter 1-6/8  [ ] scroll ────────────────────────────────────
+                 │purpose          Document and evidence API.
+                 │maturity         early - prototype
+                 │accepts          Generic endpoints and bug fixes.
+                 │refuses          Client-specific endpoints.
+                 │consumers        tenebrae, shop
+                 │escalate         Breaking API changes.
+                 │RECENT  2h ago maturity by you (on Mac)
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+name for cogforge> Evidence API    enter saves, empty clears, esc cancels

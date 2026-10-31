@@ -21,4 +21,4 @@ Isolated: api-architect, homelab
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select/scroll  left/right select  pgup/pgdn scroll  h hide  H hidden
+D name  up/down select/scroll  left/right select  h hide  H hidden
