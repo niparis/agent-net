@@ -111,7 +111,10 @@ func (m Model) quotasView(w, h int) []string {
 			if window.Exhausted || window.PercentUsed >= 100 {
 				pctText = sBad.Render(pct)
 			}
-			remaining := quotaBar(left/100, 10, color) + " " + pctText
+			remaining := "-"
+			if len(p.Windows) > 0 {
+				remaining = quotaBar(left/100, 10, color) + " " + pctText
+			}
 			remaining = padStyled(remaining, 20)
 
 			paceStyle := sDim
@@ -156,7 +159,9 @@ func (m Model) quotasView(w, h int) []string {
 			notes = append(notes, sanitize(p.Error))
 		}
 		if len(notes) > 0 {
-			subscription = append(subscription, sDim.Render(clip("  ("+strings.Join(notes, "; ")+")", w-4)))
+			for _, line := range wrap("("+strings.Join(notes, "; ")+")", w-6) {
+				subscription = append(subscription, sDim.Render("  "+line))
+			}
 		}
 	}
 	if len(unset) > 0 {

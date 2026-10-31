@@ -159,7 +159,7 @@ func TestRunQuotaAXIReceivesOpenCodeAuthEnvironment(t *testing.T) {
 	}
 }
 
-func TestQuotaAXIExplainsMissingOpenCodeDataHome(t *testing.T) {
+func TestQuotaAXIExplainsRejectedOpenCodeLogin(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", "")
 	raw := []byte(`{"providers":[{"provider":"opencode-go","state":{"error":"provider_auth_rejected"}}]}`)
 	q, err := parseQuotaAXI(raw)
@@ -167,7 +167,7 @@ func TestQuotaAXIExplainsMissingOpenCodeDataHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, ok := q.Provider("opencode-go")
-	if !ok || !strings.Contains(p.Error, "XDG_DATA_HOME is not set for the daemon") || strings.Contains(p.Error, "provider_auth_rejected") {
+	if !ok || p.Error != "the OpenCode Go login the daemon found was rejected" || strings.Contains(p.Error, "provider_auth_rejected") {
 		t.Fatalf("provider error was not explained: %+v", p)
 	}
 }
