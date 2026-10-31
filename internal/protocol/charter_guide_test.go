@@ -40,7 +40,6 @@ func TestCharterValueWarningForTooDetailedValues(t *testing.T) {
 		t.Fatal("needs guide missing")
 	}
 	for _, value := range []string{
-		strings.Repeat("a", 201),
 		"Reach 192.168.50.65 for the service",
 		"Reach 2001:db8::1 for the service",
 		"Use bearer sk-abcdefghijklmnopqrstuvwxyz123456",
@@ -60,5 +59,28 @@ func TestCharterValueWarningForTooDetailedValues(t *testing.T) {
 	}
 	if warning := CharterValueWarning("unknown", "value"); warning != "" {
 		t.Errorf("unexpected warning for unknown attribute: %q", warning)
+	}
+}
+
+func TestCharterBudgetWarnings(t *testing.T) {
+	cases := []struct {
+		name    string
+		charter Charter
+		want    string
+	}{
+		{"total", Charter{Needs: strings.Repeat("é", 1201)}, "the whole charter exceeds 1200 characters: the project's agent reads it every turn"},
+		{"purpose", Charter{Purpose: strings.Repeat("a", 161)}, "purpose exceeds 160 characters: the owner reads it on the Map card"},
+		{"items", Charter{Escalate: "a;b;c;d;e;f\ng"}, "escalate has more than 6 items: use short categories so the agent can scan them"},
+		{"first", Charter{Accepts: strings.Repeat("a", 161) + "; b"}, "neighbors see only the first 160 characters of accepts: put the main item first"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := strings.Join(CharterWarnings(tc.charter), "\n"); !strings.Contains(got, tc.want) {
+				t.Fatalf("warnings = %q, want %q", got, tc.want)
+			}
+		})
+	}
+	if got := CharterWarnings(Charter{Purpose: strings.Repeat("a", 160), Refuses: "a;b;c;d;e;f", Needs: strings.Repeat("n", 201)}); len(got) != 0 {
+		t.Fatalf("unexpected warnings: %v", got)
 	}
 }

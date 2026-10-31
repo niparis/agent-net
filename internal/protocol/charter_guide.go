@@ -77,10 +77,47 @@ func CharterValueWarning(attr, value string) string {
 	if !ok || value == "" {
 		return ""
 	}
-	if utf8.RuneCountInString(value) <= 200 && !containsIPAddress(value) && !containsTokenLikeString(value) && !containsAbsolutePath(value) {
+	if !containsIPAddress(value) && !containsTokenLikeString(value) && !containsAbsolutePath(value) {
 		return ""
 	}
 	return fmt.Sprintf("too long/too detailed for a charter: keep it to %s; put detail in AGENTS.md", guide.Size)
+}
+
+// CharterWarnings returns advisory warnings for the saved charter.
+func CharterWarnings(c Charter) []string {
+	fields := []struct{ name, value string }{
+		{"purpose", c.Purpose}, {"maturity", c.Maturity}, {"accepts", c.Accepts}, {"refuses", c.Refuses}, {"feature_requests", c.FeatureRequests}, {"consumers", c.Consumers}, {"escalate", c.Escalate}, {"needs", c.Needs}, {"notes", c.Notes},
+	}
+	var warnings []string
+	total := 0
+	for _, field := range fields {
+		total += utf8.RuneCountInString(field.value)
+		if warning := CharterValueWarning(field.name, field.value); warning != "" {
+			warnings = append(warnings, field.name+": "+warning)
+		}
+	}
+	if total > 1200 {
+		warnings = append(warnings, "the whole charter exceeds 1200 characters: the project's agent reads it every turn")
+	}
+	if utf8.RuneCountInString(c.Purpose) > 160 {
+		warnings = append(warnings, "purpose exceeds 160 characters: the owner reads it on the Map card")
+	}
+	for _, field := range []struct{ name, value string }{{"accepts", c.Accepts}, {"refuses", c.Refuses}, {"escalate", c.Escalate}} {
+		items := strings.FieldsFunc(field.value, func(r rune) bool { return r == ';' || r == '\n' })
+		var nonempty []string
+		for _, item := range items {
+			if item = strings.TrimSpace(item); item != "" {
+				nonempty = append(nonempty, item)
+			}
+		}
+		if len(nonempty) > 6 {
+			warnings = append(warnings, field.name+" has more than 6 items: use short categories so the agent can scan them")
+		}
+		if (field.name == "accepts" || field.name == "refuses") && len(nonempty) > 0 && utf8.RuneCountInString(nonempty[0]) > 160 {
+			warnings = append(warnings, "neighbors see only the first 160 characters of "+field.name+": put the main item first")
+		}
+	}
+	return warnings
 }
 
 func containsIPAddress(value string) bool {
