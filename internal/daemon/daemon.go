@@ -171,16 +171,19 @@ type localSession struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	toolsMu       sync.Mutex
-	toolsReport   protocol.InventoryReport
-	toolsWake     chan struct{}
-	ctoDispatchMu sync.Mutex
-	cto           ctoRuntime
-	claudeCTO     claudeCTOState
-	cfg           Config
-	log           *log.Logger
-	st            *state
-	client        *http.Client
+	toolsMu          sync.Mutex
+	toolsReport      protocol.InventoryReport
+	toolsWake        chan struct{}
+	toolsPlanKeyOnce sync.Once
+	toolsPlanKey     [32]byte
+	toolsPlanKeyErr  error
+	ctoDispatchMu    sync.Mutex
+	cto              ctoRuntime
+	claudeCTO        claudeCTOState
+	cfg              Config
+	log              *log.Logger
+	st               *state
+	client           *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
 	ctoNow          func() time.Time

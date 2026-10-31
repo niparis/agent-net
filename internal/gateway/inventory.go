@@ -61,7 +61,7 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 			return err
 		}
 	}
-	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id)`); err != nil {
+	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM tool_revisions WHERE item=tool_identities.id)`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -209,6 +209,61 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	retained, err := s.db.Query(`SELECT i.id,i.kind,i.name,i.hash FROM tool_identities i WHERE NOT EXISTS (SELECT 1 FROM tool_locations l WHERE l.identity_id=i.id) AND (EXISTS (SELECT 1 FROM skill_versions v WHERE v.item=i.id) OR EXISTS (SELECT 1 FROM tool_revisions r WHERE r.item=i.id)) ORDER BY i.kind,i.name,i.hash`)
+	if err != nil {
+		return nil, err
+	}
+	for retained.Next() {
+		var id, kind, name, hash string
+		if err = retained.Scan(&id, &kind, &name, &hash); err != nil {
+			retained.Close()
+			return nil, err
+		}
+		key := kind + "\x00" + name
+		if variants[key] == nil {
+			variants[key] = map[string]bool{}
+		}
+		variants[key][id] = true
+		all[id] = &protocol.ToolItem{ID: id, Kind: kind, Name: name, Hash: hash, Locations: []protocol.ToolLocation{}, Unassigned: true, State: "unobserved"}
+		order = append(order, id)
+		if (f.Kind == "" || f.Kind == kind) && f.Harness == "" && f.Project == "" && (f.State == "" || f.State == "unobserved") {
+			matched[id] = true
+		}
+	}
+	err = retained.Err()
+	retained.Close()
+	if err != nil {
+		return nil, err
+	}
+	revisions, err := s.db.Query(`SELECT r.item,r.revision,r.assignment,r.version,r.actor,r.source,r.at FROM tool_revisions r WHERE r.revision=(SELECT MAX(t.revision) FROM tool_revisions t WHERE t.item=r.item)`)
+	if err != nil {
+		return nil, err
+	}
+	for revisions.Next() {
+		var r protocol.ToolRevision
+		var raw string
+		if err = revisions.Scan(&r.Item, &r.Revision, &raw, &r.Version, &r.Actor, &r.Source, &r.At); err != nil {
+			revisions.Close()
+			return nil, err
+		}
+		if err = json.Unmarshal([]byte(raw), &r.Assignment); err != nil {
+			revisions.Close()
+			return nil, err
+		}
+		r.State = "pending"
+		if item := all[r.Item]; item != nil {
+			item.Desired = &r
+			item.Applied = "pending"
+		}
+	}
+	err = revisions.Err()
+	revisions.Close()
+	if err != nil {
+		return nil, err
+	}
 	out := make([]protocol.ToolItem, 0, len(order))
 	for _, id := range order {
 		item := all[id]
@@ -218,6 +273,16 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		item.Variants = len(variants[item.Kind+"\x00"+item.Name])
 		out = append(out, *item)
 	}
+	sort.Slice(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		return a.Hash < b.Hash
+	})
 	return out, nil
 }
 func appendUnique(list []string, value string) []string {

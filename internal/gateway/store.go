@@ -247,6 +247,13 @@ INSERT INTO tool_locations(node_id,ordinal,identity_id,observation)
 SELECT r.node_id, CAST(j.key AS INTEGER), json_array(COALESCE(json_extract(j.value,'$.kind'),''),COALESCE(json_extract(j.value,'$.name'),''),COALESCE(json_extract(j.value,'$.hash'),'')), j.value FROM inventory_reports r, json_each(r.report,'$.items') j;
 `, `
 CREATE TABLE skill_versions (item TEXT NOT NULL, hash TEXT NOT NULL, commit_id TEXT NOT NULL, node_id TEXT NOT NULL, location TEXT NOT NULL, imported_at INTEGER NOT NULL, PRIMARY KEY(item,hash));
+`, `
+CREATE TABLE tool_revisions (item TEXT NOT NULL, revision INTEGER NOT NULL, assignment TEXT NOT NULL, version TEXT NOT NULL, actor TEXT NOT NULL, source TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(item, revision));
+`, `
+CREATE TABLE tool_plans (id TEXT PRIMARY KEY, item TEXT NOT NULL, snapshot TEXT NOT NULL, plan TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0);
+`, `
+CREATE TABLE tool_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, item TEXT NOT NULL, plan_id TEXT NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, targets TEXT NOT NULL, result TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX tool_audit_item ON tool_audit(item,id);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

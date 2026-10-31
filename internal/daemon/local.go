@@ -103,6 +103,7 @@ type localConn struct {
 	// peerPID is the process ID of the other end, read in hello.
 	peerPID int
 	tui     bool // an owner-gated TUI subscribed to interface pushes
+	cto     bool // private CTO process-tree gate
 	// tx holds the session_text requests sent to this plugin (sessiontext.go).
 	tx textState
 }

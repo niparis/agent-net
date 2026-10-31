@@ -79,6 +79,8 @@ type ToolItem struct {
 	Machines   []string       `json:"machines"`
 	Variants   int            `json:"variants"`
 	State      string         `json:"state"`
+	Desired    *ToolRevision  `json:"desired,omitempty"`
+	Applied    string         `json:"applied,omitempty"`
 }
 type ToolsPage struct {
 	Items []ToolItem `json:"items"`
@@ -117,4 +119,88 @@ type SkillBundle struct {
 type ToolVersionRequest struct {
 	Item    string `json:"item"`
 	Version string `json:"version,omitempty"`
+}
+
+// ToolAssignment is the owner's desired scope, separate from observations.
+type ToolAssignment struct {
+	Scope    string   `json:"scope"`
+	Projects []string `json:"projects,omitempty"`
+}
+type ToolRevision struct {
+	Item       string         `json:"item"`
+	Revision   int64          `json:"revision"`
+	Assignment ToolAssignment `json:"assignment"`
+	Version    string         `json:"version"`
+	Actor      string         `json:"actor"`
+	Source     string         `json:"source"`
+	At         int64          `json:"at"`
+	State      string         `json:"state"`
+}
+
+type ToolPlanTarget struct {
+	NodeID      string `json:"node_id"`
+	Machine     string `json:"machine"`
+	Harness     string `json:"harness"`
+	Project     string `json:"project,omitempty"`
+	Checkout    string `json:"checkout,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Action      string `json:"action"`
+	State       string `json:"state"`
+	Conflict    string `json:"conflict,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+type ToolPlan struct {
+	ID           string           `json:"id"`
+	Item         string           `json:"item"`
+	Version      string           `json:"version"`
+	BaseRevision int64            `json:"base_revision"`
+	Assignment   ToolAssignment   `json:"assignment"`
+	Targets      []ToolPlanTarget `json:"targets"`
+	Conflicts    []string         `json:"conflicts"`
+	State        string           `json:"state"`
+	Actor        string           `json:"actor"`
+	At           int64            `json:"at"`
+}
+type ToolPlanRequest struct {
+	Item   string         `json:"item"`
+	Target ToolAssignment `json:"target"`
+}
+type ToolPlanID struct {
+	ID string `json:"plan_id"`
+}
+
+type ToolPlanProbe struct {
+	Name     string `json:"name"`
+	Harness  string `json:"harness"`
+	Checkout string `json:"checkout,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Hash     string `json:"hash,omitempty"`
+}
+type ToolPlanProbeResult struct {
+	Destination string `json:"destination,omitempty"`
+	Conflict    string `json:"conflict,omitempty"`
+	Fingerprint string `json:"fingerprint,omitempty"`
+}
+
+type ToolAuditEvent struct {
+	ID       int64            `json:"id"`
+	Item     string           `json:"item"`
+	PlanID   string           `json:"plan_id"`
+	Action   string           `json:"action"`
+	Actor    string           `json:"actor"`
+	Revision int64            `json:"revision,omitempty"`
+	Targets  []ToolPlanTarget `json:"targets"`
+	Result   string           `json:"result"`
+	At       int64            `json:"at"`
+}
+type ToolHistoryRequest struct {
+	Item string `json:"item"`
+}
+
+// ToolNeed is advisory charter text whose satisfaction is not inferred.
+type ToolNeed struct {
+	Node  string `json:"node"`
+	Text  string `json:"text"`
+	State string `json:"state"`
 }
