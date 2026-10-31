@@ -45,6 +45,9 @@ func TestRepoSkillRemovalUsesTemporaryWorktreeAndKeepsBranch(t *testing.T) {
 	if count, err := gitOut(context.Background(), repo, "rev-list", "--count", "main.."+got.Branch); err != nil || count != "1" {
 		t.Fatalf("branch commit count %q, %v", count, err)
 	}
+	if parent, err := gitOut(context.Background(), repo, "show", "-s", "--format=%P", got.Commit); err != nil || parent != target.Target.BaseCommit {
+		t.Fatalf("branch base %q, %v", parent, err)
+	}
 	if author, err := gitOut(context.Background(), repo, "show", "-s", "--format=%an <%ae>", got.Commit); err != nil || author != "Repo Owner <owner@example.test>" {
 		t.Fatalf("commit author %q, %v", author, err)
 	}

@@ -321,22 +321,27 @@ func TestToolsRepoSkillRemovalOffersBranchAndAsksTheAgent(t *testing.T) {
 	m = rowByNameFrom(m, "deploy-test-server", "repo")
 	m = pressKey(m, "u")
 	v := plain(m)
-	for _, want := range []string{"Remove deploy-test-server from the sovl-clone repo", "agent-net/remove-deploy-test-server", "not available yet", "ask sovl-clone's agent"} {
+	for _, want := range []string{"Remove deploy-test-server from the sovl-clone repo", "agent-net/remove-deploy-test-server", "ask sovl-clone's agent", "uncommitted changes in this skill folder", ".agents/skills/deploy-test-server/SKILL.md", ".claude/skills/deploy-test-server/SKILL.md"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("repo plan lacks %q:\n%s", want, v)
 		}
 	}
 	m = pressKey(m, "a")
-	if m.tl.modal != nil || !strings.Contains(m.tl.toast, "not available yet") || len(src.sent) != 0 {
-		t.Fatalf("a must say not available yet: toast %q sent %v", m.tl.toast, src.sent)
+	if m.tl.modal == nil || len(src.applied) != 1 || len(src.plans) != 1 || src.plans[0].Operation != "repo_remove" {
+		t.Fatalf("a must create the planned branch: modal %+v plans %+v applied %v", m.tl.modal, src.plans, src.applied)
 	}
+	if got := plain(m); !strings.Contains(got, "branch agent-net/remove-deploy-test-server created in sovl-clone: merge it when ready") || !strings.Contains(got, "commit "+strings.Repeat("a", 40)) {
+		t.Fatalf("branch result:\n%s", got)
+	}
+	m = pressKey(m, "esc")
+	m = rowByNameFrom(m, "deploy-test-server", "repo")
 	m = pressKey(m, "u")
 	m = pressKey(m, "b")
 	if len(src.sent) != 1 || !strings.HasPrefix(src.sent[0], "s_sovl: ") || !strings.Contains(src.sent[0], "deploy-test-server") || !strings.Contains(src.sent[0], "Do not commit to the default branch") {
 		t.Fatalf("sent %v", src.sent)
 	}
-	if len(src.plans) != 0 || len(src.applied) != 0 {
-		t.Error("a repo removal must not use the assignment backend")
+	if len(src.plans) != 2 || src.plans[1].Operation != "repo_remove" || len(src.applied) != 1 {
+		t.Errorf("repo removal should use the repo operation without changing the assignment: plans=%+v applied=%v", src.plans, src.applied)
 	}
 }
 

@@ -101,7 +101,7 @@ func (d *Daemon) probeRepoSkillRemoval(p protocol.ToolPlanProbe) protocol.ToolPl
 	if len(out.Files) == 0 {
 		return conflict("skill is not committed on the default branch")
 	}
-	statusArgs := []string{"status", "--porcelain", "--untracked-files=all", "--"}
+	statusArgs := []string{"status", "--porcelain", "--untracked-files=all", "--ignored=matching", "--"}
 	statusArgs = append(statusArgs, paths...)
 	status, err := gitOut(context.Background(), p.Checkout, statusArgs...)
 	if err != nil {

@@ -48,6 +48,7 @@ type Copy struct {
 	NodeID   string `json:"node_id"`
 	Machine  string `json:"machine"`
 	Location string `json:"location"`
+	Checkout string `json:"checkout,omitempty"`
 	Hash     string `json:"hash"`
 	Name     string `json:"name,omitempty"`
 }
@@ -139,7 +140,7 @@ func nameList(names []string, max int) string {
 }
 
 func copyOf(v protocol.ToolItem, l protocol.ToolLocation) Copy {
-	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name}
+	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name}
 }
 
 func skillDiffs(g group, ms []Machine) []Difference {
