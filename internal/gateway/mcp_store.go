@@ -70,6 +70,8 @@ func (s *Store) AddMCPServer(srv protocol.MCPServer) error {
 		srv.Name, srv.NodeID, specOf(srv), 1, srv.AddedByNode, srv.AddedBySession, srv.AddedByHarness,
 		s.now().UnixNano(), srv.Health, srv.HealthDetail, s.now().UnixNano(), tools)
 	if err != nil {
+		// The store has one connection: end the transaction before reading.
+		tx.Rollback()
 		if _, ok, _ := s.MCPServer(srv.Name); ok {
 			return reject("an MCP server named %q already exists", srv.Name)
 		}
