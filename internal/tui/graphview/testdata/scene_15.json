@@ -502,13 +502,58 @@
   ],
   "Paused": false,
   "Hints": [
-    "zoom",
-    "pan",
-    "fit",
-    "select",
-    "orbit",
-    "open",
-    "pause",
-    "help"
+    {
+      "Keys": [
+        "+",
+        "-"
+      ],
+      "Action": "zoom"
+    },
+    {
+      "Keys": [
+        "h",
+        "j",
+        "k",
+        "l"
+      ],
+      "Action": "pan"
+    },
+    {
+      "Keys": [
+        "0"
+      ],
+      "Action": "fit"
+    },
+    {
+      "Keys": [
+        "[",
+        "]"
+      ],
+      "Action": "select"
+    },
+    {
+      "Keys": [
+        "o"
+      ],
+      "Action": "orbit"
+    },
+    {
+      "Keys": [
+        "enter"
+      ],
+      "Action": "open"
+    },
+    {
+      "Keys": [
+        "space"
+      ],
+      "Action": "pause"
+    },
+    {
+      "Keys": [
+        "?"
+      ],
+      "Action": "help"
+    }
   ]
 }

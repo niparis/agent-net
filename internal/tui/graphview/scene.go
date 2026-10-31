@@ -25,6 +25,11 @@ type SceneComet struct {
 	Trail    []Point
 }
 
+type KeyHint struct {
+	Keys   []string
+	Action string
+}
+
 // Scene contains semantic elements in normalized viewport coordinates.
 type Scene struct {
 	Nodes  []SceneNode
@@ -33,12 +38,12 @@ type Scene struct {
 	Level  string
 	Feed   []Message
 	Paused bool
-	Hints  []string
+	Hints  []KeyHint
 }
 
 // BuildScene derives a renderer-independent view without changing state.
 func BuildScene(s State, viewport Viewport) Scene {
-	scene := Scene{Level: s.Camera.Level(), Paused: s.Paused, Hints: []string{"zoom", "pan", "fit", "select", "orbit", "open", "pause", "help"}}
+	scene := Scene{Level: s.Camera.Level(), Paused: s.Paused, Hints: []KeyHint{{Keys: []string{"+", "-"}, Action: "zoom"}, {Keys: []string{"h", "j", "k", "l"}, Action: "pan"}, {Keys: []string{"0"}, Action: "fit"}, {Keys: []string{"[", "]"}, Action: "select"}, {Keys: []string{"o"}, Action: "orbit"}, {Keys: []string{"enter"}, Action: "open"}, {Keys: []string{"space"}, Action: "pause"}, {Keys: []string{"?"}, Action: "help"}}}
 	if s.Graph == nil || viewport.Width <= 0 || viewport.Height <= 0 {
 		return scene
 	}

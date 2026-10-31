@@ -45,6 +45,9 @@ func TestSceneFixture(t *testing.T) {
 	if s.Nodes[0].Card.Maturity != "growing" || s.Nodes[0].Card.Purpose != "coordinates work" || s.Nodes[0].Card.Sessions != 1 || s.Nodes[0].Card.Outgoing != 1 || s.Nodes[3].Card.Incoming != 2 {
 		t.Fatalf("missing card details: %+v %+v", s.Nodes[0].Card, s.Nodes[3].Card)
 	}
+	if len(s.Hints) == 0 || len(s.Hints[0].Keys) == 0 || s.Hints[0].Action != "zoom" {
+		t.Fatalf("missing key hints: %+v", s.Hints)
+	}
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		t.Fatal(err)
