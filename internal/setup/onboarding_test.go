@@ -254,6 +254,21 @@ func TestSetupOpenQuestionRunsTUIOnDefaultAccept(t *testing.T) {
 	}
 }
 
+func TestSetupOpenQuestionIgnoresTerminalEscapeLine(t *testing.T) {
+	oldTTY, oldExec := openTTY, execSetupTUI
+	t.Cleanup(func() { openTTY, execSetupTUI = oldTTY, oldExec })
+	openTTY = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("\x1b]11;rgb:0000/0000/0000\x1b\\\ny\n")), nil
+	}
+	called := false
+	execSetupTUI = func(string) error { called = true; return nil }
+	r := &runner{Options: Options{Out: io.Discard}, interactive: true}
+	r.openQuestion()
+	if !called {
+		t.Fatal("TUI was not opened after ignoring the terminal escape reply")
+	}
+}
+
 func TestSetupOpenQuestionDefaultsToNoWhenJoining(t *testing.T) {
 	oldTTY, oldExec := openTTY, execSetupTUI
 	t.Cleanup(func() { openTTY, execSetupTUI = oldTTY, oldExec })

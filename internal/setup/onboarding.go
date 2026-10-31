@@ -568,7 +568,7 @@ func (r *runner) openQuestion() {
 		choice = "[y/N]"
 	}
 	fmt.Fprintln(r.Out, question+r.colors.label(choice))
-	answer, _ := bufio.NewReader(tty).ReadString('\n')
+	answer := readPromptLine(bufio.NewReader(tty))
 	answer = strings.ToLower(strings.TrimSpace(answer))
 	open := answer == "y" || answer == "yes" || (answer == "" && acceptDefault)
 	if !open {
@@ -576,5 +576,18 @@ func (r *runner) openQuestion() {
 	}
 	if err := execSetupTUI(r.Exe); err != nil {
 		r.hint("could not open the TUI: %v; run agent-net", err)
+	}
+}
+
+func readPromptLine(reader *bufio.Reader) string {
+	for {
+		line, err := reader.ReadString('\n')
+		if strings.HasPrefix(line, "\x1b") {
+			if err != nil {
+				return ""
+			}
+			continue
+		}
+		return line
 	}
 }
