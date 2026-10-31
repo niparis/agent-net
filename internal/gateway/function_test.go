@@ -173,7 +173,7 @@ func TestMigration8AddsDescription(t *testing.T) {
 		db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1)
 	}
 	db.Exec(`INSERT INTO nodes (id, hostname, os, token_hash, created_at) VALUES ('n_1','old','linux','h',1)`)
-	db.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, cwd, last_seen, online) VALUES ('s_1','n_1','claude','x','/w/p',5,0)`)
+	db.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, last_seen, online) VALUES ('s_1','n_1','claude','x','n','/w/p',5,0)`)
 	db.Exec(`INSERT INTO profiles (session_id, name, function, task, updated_at) VALUES ('s_1','n','model text','t',1)`)
 	db.Close()
 

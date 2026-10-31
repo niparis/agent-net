@@ -305,7 +305,11 @@ CREATE TABLE IF NOT EXISTS learned_phrase_state (suggestion_id INTEGER PRIMARY K
 CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL);
 `, `
 CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
-`, `SELECT 1 /* project identity migration */;`, `CREATE TABLE IF NOT EXISTS project_display_names (project TEXT PRIMARY KEY, name TEXT NOT NULL);`}
+`, `SELECT 1 /* project identity migration */;`, `CREATE TABLE IF NOT EXISTS project_display_names (project TEXT PRIMARY KEY, name TEXT NOT NULL);`, `
+-- Names set by announce are cleared: only the owner renames a session now
+-- (decision 0032). A session shows its automatic name at its next report.
+UPDATE profiles SET name = '';
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {

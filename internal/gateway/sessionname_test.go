@@ -1,7 +1,10 @@
 package gateway
 
 import (
+	"database/sql"
 	"encoding/json"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -221,6 +224,58 @@ func TestAnnounceIgnoresAnOlderClientsName(t *testing.T) {
 	}
 	if got := agentOf(t, s, id).Profile.Name; got != "shop" {
 		t.Fatalf("name after a report %q", got)
+	}
+}
+
+// An older gateway stored the name an agent announced. The migration clears
+// those names, so every session shows its automatic project name again at its
+// next report (decision 0032).
+func TestMigrationClearsAnnounceNames(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gw.db")
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`CREATE TABLE schema_version (version INTEGER NOT NULL)`)
+	clear := -1
+	for i, m := range migrations {
+		if strings.Contains(m, "UPDATE profiles SET name") {
+			clear = i
+			break
+		}
+	}
+	if clear < 0 {
+		t.Fatal("no migration clears announce names")
+	}
+	for i := 0; i < clear; i++ {
+		if _, err := db.Exec(migrations[i]); err != nil {
+			t.Fatal(err)
+		}
+		db.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1)
+	}
+	db.Exec(`INSERT INTO nodes (id, hostname, os, token_hash, created_at) VALUES ('n_1','old','linux','h',1)`)
+	db.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, cwd, last_seen, online) VALUES ('s_1','n_1','claude','x','shop','/code/shop',5,1)`)
+	db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at) VALUES ('s_1','reviewer','','','[]','t',1)`)
+	db.Close()
+
+	s, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	a := agentOf(t, s, "s_1")
+	if a.Profile.Name != "shop" {
+		t.Fatalf("the announced name survived the migration: %q", a.Profile.Name)
+	}
+	if a.Profile.Task != "t" {
+		t.Fatalf("the migration erased the task: %+v", a.Profile)
+	}
+	// A later report keeps the automatic name.
+	if _, err := s.UpsertSession("n_1", protocol.SessionInfo{Harness: "claude", NativeID: "x", Cwd: "/code/shop"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := agentOf(t, s, "s_1").Profile.Name; got != "shop" {
+		t.Fatalf("name after a report: %q", got)
 	}
 }
 
