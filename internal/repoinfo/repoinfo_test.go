@@ -305,3 +305,21 @@ func TestSubmoduleKeepsItsOwnProject(t *testing.T) {
 		t.Fatalf("submodule: %+v", got)
 	}
 }
+
+func TestProjectNameFromOrigin(t *testing.T) {
+	for _, remote := range []string{"https://example.com/team/agent-net.git", "git@example.com:team/agent-net.git", "ssh://git@example.com/team/agent-net"} {
+		t.Run(remote, func(t *testing.T) {
+			root := t.TempDir()
+			runIn(t, root, "init")
+			runIn(t, root, "remote", "add", "origin", remote)
+			r := New()
+			if got := r.Lookup(root).Project; got != "agent-net" {
+				t.Errorf("Lookup project = %q", got)
+			}
+			e, err := r.Inspect(root)
+			if err != nil || e.Name != "agent-net" {
+				t.Errorf("Inspect = %+v, %v", e, err)
+			}
+		})
+	}
+}

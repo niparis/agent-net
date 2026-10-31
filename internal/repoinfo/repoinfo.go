@@ -123,9 +123,36 @@ func (r *Resolver) readAll(ctx context.Context, cwd string) protocol.RepoInfo {
 	info.Project = filepath.Base(info.Root)
 	if remote, err := r.git(ctx, cwd, "config", "--get", "remote.origin.url"); err == nil {
 		info.Remote = StripCredentials(remote)
+		if name := projectFromRemote(info.Remote); name != "" {
+			info.Project = name
+		}
 	}
 	info.Branch = r.readBranch(ctx, cwd)
 	return info
+}
+
+// projectFromRemote extracts the repository name from URL, scp-style, and
+// local path remotes. An empty or unusable remote leaves the folder fallback.
+func projectFromRemote(remote string) string {
+	remote = strings.TrimSpace(remote)
+	if strings.Contains(remote, "://") {
+		u, err := url.Parse(remote)
+		if err != nil {
+			return ""
+		}
+		remote = u.Path
+	} else if i := strings.IndexByte(remote, ':'); i >= 0 {
+		remote = remote[i+1:]
+	}
+	remote = strings.TrimRight(remote, "/")
+	if remote == "" {
+		return ""
+	}
+	name := strings.TrimSuffix(filepath.Base(remote), ".git")
+	if name == "." || name == ".." {
+		return ""
+	}
+	return name
 }
 
 // mainTree returns the main working tree of the repository that worktree
