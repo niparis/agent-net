@@ -142,6 +142,7 @@ func TestGoldenLearnedMapAndNeeds(t *testing.T) {
 	n := needsModel(100, 30)
 	n.snap.Learned = []protocol.LearnedSuggestion{{ID: 7, Node: "ops", Field: "refuses", Phrase: "deploys", Kind: "add", NewValue: "deploys", Evidence: []protocol.LearnedEvidence{{Excerpt: "ops refuses deploys"}}, Status: "pending", Severity: "major"}}
 	n.selected = "learned:7"
+	n.ensureSelection()
 	golden(t, "view_needs_learned_100x30", n.View())
 }
 

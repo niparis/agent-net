@@ -127,6 +127,7 @@ func TestGoldenOpenCodeSharedTree(t *testing.T) {
 	golden(t, "shared_80x24", modelWith(snap, u, 80, 24).View())
 	m := modelWith(snap, u, 120, 40)
 	m.selected = "s_0000000000000003" // web, on the shared tree
+	m.ensureSelection()
 	m = settle(m)
 	golden(t, "shared_120x40", m.View())
 }

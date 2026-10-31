@@ -809,12 +809,19 @@ func (m Model) sessionsTable(w, n int) []string {
 			}
 		}
 	}
+	visibleIndex := len(m.needsRows())
+	for i := 0; i < top; i++ {
+		if !rows[i].header {
+			visibleIndex++
+		}
+	}
 	for i := top; i < len(rows) && len(out) < n+1; i++ {
 		r := rows[i]
 		if r.header {
 			out = append(out, m.groupLine(r.g, w))
 		} else {
-			out = append(out, m.sessionLine(r.agent, r.mark, cols, w))
+			out = append(out, m.sessionLine(r.agent, r.mark, cols, w, visibleIndex))
+			visibleIndex++
 		}
 	}
 	// A table with fewer rows than room keeps its height.
@@ -892,8 +899,8 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 	return cells
 }
 
-func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w int) string {
-	selected := a.SessionID == m.selected
+func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int) string {
+	selected := a.SessionID == m.selected && (m.selIdx == visibleIndex && !m.selNeeds || m.selNeeds && m.selIdx >= maxNeedsRows)
 	marker := "  "
 	if selected {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "

@@ -36,6 +36,107 @@ func needsModel(w, h int) Model {
 	return settle(refresh(m, src))
 }
 
+const cogforgeMaintenanceID = "s_00000000000000c1"
+
+func waitingTableModel() (Model, *fakeSource) {
+	snap := fakeSnapshot()
+	snap.Agents = append(snap.Agents, agent(cogforgeMaintenanceID, "n_vm", "build-vm", "claude", "cogforge-maintenance", func(a *protocol.AgentView) {
+		a.Status, a.Model = "busy", "anthropic/claude-sonnet-5"
+		a.FirstSeen = t0.Add(-19 * time.Minute).Unix()
+		waiting(a, -time.Minute, protocol.WaitingQuestion, "Continue maintenance?")
+	}))
+	src := &fakeSource{snap: snap, events: fakeEvents()}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	return settle(refresh(m, src)), src
+}
+
+func tableOrdinal(m Model, id string) int {
+	ordinal := 0
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			if a.SessionID == id {
+				return ordinal
+			}
+			ordinal++
+		}
+	}
+	return -1
+}
+
+func TestWaitingSessionTableRowCanBeReached(t *testing.T) {
+	m, _ := waitingTableModel()
+	ordinal := tableOrdinal(m, cogforgeMaintenanceID)
+	if ordinal <= 0 {
+		t.Fatalf("waiting row has no row above it: %d", ordinal)
+	}
+	var above protocol.AgentView
+	seen := 0
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			if seen == ordinal-1 {
+				above = a
+			}
+			seen++
+		}
+	}
+	m.selected = above.SessionID
+	m.ensureSelection()
+	m.move(1)
+	if m.selected != cogforgeMaintenanceID {
+		t.Fatalf("down from %q skipped the table row and selected %q", above.Profile.Name, m.selected)
+	}
+	want := len(m.needsRows()) + ordinal
+	if m.selIdx != want {
+		t.Fatalf("selected position %d, want table position %d", m.selIdx, want)
+	}
+}
+
+func TestWaitingSelectionMarkerShowsOnOneRow(t *testing.T) {
+	m, _ := waitingTableModel()
+	m.selected = cogforgeMaintenanceID
+	m.selIdx = len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
+	m.selNeeds = false
+	if got := strings.Count(m.View(), "▸ "); got != 1 {
+		t.Fatalf("selection marker appears on %d rows, want one:\n%s", got, m.View())
+	}
+}
+
+func TestRefreshKeepsWaitingTableRowSelected(t *testing.T) {
+	m, src := waitingTableModel()
+	m.selected = cogforgeMaintenanceID
+	m.selIdx = len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
+	m.selNeeds = false
+	// A new waiting row shifts the table section down without changing the
+	// selected session's section.
+	newWait := agent("s_00000000000000c2", "n_mac", "Mac", "pi", "other-wait", func(a *protocol.AgentView) {
+		a.Status = "busy"
+		waiting(a, -2*time.Minute, protocol.WaitingPermission, "Allow command?")
+	})
+	src.snap.Agents = append(src.snap.Agents, newWait)
+	m = refresh(m, src)
+	want := len(m.needsRows()) + tableOrdinal(m, cogforgeMaintenanceID)
+	if m.selected != cogforgeMaintenanceID || m.selIdx != want {
+		t.Fatalf("refresh selected %q at %d, want table row %q at %d", m.selected, m.selIdx, cogforgeMaintenanceID, want)
+	}
+}
+
+func TestNeedsAndTableRowsAreVisitedOnceInOrder(t *testing.T) {
+	m, _ := waitingTableModel()
+	vis := m.visible()
+	if got := strings.Count(strings.Join(ids(m), ","), cogforgeMaintenanceID); got != 2 {
+		t.Fatalf("waiting session appears %d times in visible rows, want needs and table rows", got)
+	}
+	m.move(-1 << 20)
+	for i, want := range vis {
+		if m.selIdx != i || m.selected != want.SessionID {
+			t.Fatalf("row %d selected position=%d session=%q, want %q", i, m.selIdx, m.selected, want.SessionID)
+		}
+		m.move(1)
+	}
+}
+
 func TestNeedsSectionIsAboveTheMachinesAndOldestFirst(t *testing.T) {
 	m := needsModel(100, 30)
 	text := m.View()
@@ -116,7 +217,8 @@ func TestNeedsStatusCell(t *testing.T) {
 }
 
 func TestViewGoldenNeeds(t *testing.T) {
-	golden(t, "view_needs_100x30", needsModel(100, 30).View())
+	m := needsModel(100, 30)
+	golden(t, "view_needs_100x30", m.View())
 }
 
 func TestNeedsViewFitsEverySize(t *testing.T) {
