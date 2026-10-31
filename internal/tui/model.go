@@ -123,6 +123,8 @@ type Model struct {
 	// is its data (map.go).
 	mapOn bool
 	mp    mapState
+	// tl is the Tools tab (tools.go).
+	tl toolsState
 	// help shows the key overlay; learned shows the playbook notes; expand
 	// gives the detail pane the room of the message feed.
 	help    bool
@@ -454,6 +456,17 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyMap(msg)
 		return m, nil
 
+	case toolsMsg:
+		m.applyTools(msg)
+		return m, nil
+
+	case toolsAcceptMsg:
+		m.onToolsAccept(msg)
+		return m, nil
+
+	case toolsModalMsg:
+		return m.onToolsModal(msg)
+
 	case enterMsg:
 		return m.onEnter(msg)
 
@@ -617,6 +630,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.mapOn && m.mp.finding {
 		return m.mapKey(k)
 	}
+	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
+		return m.toolsKey(k)
+	}
 	if k.String() == "C" && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
 		m.open, m.conv = nil, nil
@@ -631,9 +647,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cto.editing = true
 		return m, m.cto.input.Focus()
 	}
-	if !m.filtering && m.conv == nil && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4") {
+	if !m.filtering && m.conv == nil && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5") {
 		if k.String() == "4" {
 			return m.startMap()
+		}
+		if k.String() == "5" {
+			return m.startTools()
 		}
 		m.mapOn = false
 	}
@@ -696,6 +715,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+	}
+	if m.tab == toolsTab {
+		return m.toolsKey(k)
 	}
 	if m.tab == 2 {
 		switch k.String() {
@@ -1318,6 +1340,13 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		m.focus = focusFeed
 	case "quotas":
 		m.tab = 2
+	case "tools":
+		m.tab = toolsTab
+		if !m.tl.loading {
+			var model tea.Model
+			model, cmd = m.loadTools()
+			m = model.(Model)
+		}
 	case "map":
 		m.tab = 0
 		m.mapOn = true

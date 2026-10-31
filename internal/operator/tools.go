@@ -52,6 +52,12 @@ func (s *Client) ToolsAccept(ctx context.Context, key string, accepted bool) err
 	return err
 }
 
+// ToolsRescan scans this machine's skills and MCP servers now.
+func (s *Client) ToolsRescan(ctx context.Context) error {
+	_, err := s.action(ctx, "inventory_scan", struct{}{})
+	return err
+}
+
 // ToolsNeeds lists the charters' needs lines.
 func (s *Client) ToolsNeeds(ctx context.Context) ([]protocol.ToolNeed, error) {
 	return decodeCall[[]protocol.ToolNeed](s.action(ctx, "tools_needs", struct{}{}))

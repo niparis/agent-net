@@ -151,18 +151,25 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "conversation", 1}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
 	case m.tab == 2:
 		return []hint{{"up/down", "scroll", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
+	case m.tab == toolsTab:
+		return m.toolsHints()
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
 			return []hint{{"c", "recipient", 1}, {"R", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"1/2/3/4", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+	return []hint{{"1-5", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 2}, {"t", "trust", 5}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
 func (m Model) helpLine(w int) string {
+	if m.tab == toolsTab && !m.mapOn && !m.help {
+		if line, ok := m.toolsHelpLine(w); ok {
+			return line
+		}
+	}
 	if m.mapOn && m.mp.finding {
 		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
 	}
@@ -221,7 +228,7 @@ func (m Model) helpLine(w int) string {
 func (m Model) helpView(w, h int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
-		{"1/2/3/4", "switch between Sessions, Messages, Quotas and Map"},
+		{"1-5", "switch between Sessions, Messages, Quotas, Map and Tools"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
 		{"enter or c", "open the conversation of the session"},
@@ -234,13 +241,13 @@ func (m Model) helpView(w, h int) []string {
 		{"I", "integrations for all machines: six checkboxes (a form)"},
 		{"4/M", "map: charters and edges (read only); z switches overview"},
 		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll charter; overview: arrows, pgup/pgdn, enter"},
-		{"C", "focus CTO chat; o opens full UI, n starts new, u undoes, m changes model"},
+		{"5 Tools", "[ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first"},
+		{"C, tab", "focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
-		{"tab, C", "focus the CTO box; tab or esc returns to sessions"},
 		{"Messages", "up/down: conversation; left/right: message; v: body; e/l: events"},
 		{"r", "refresh now"},
 		{"", ""},

@@ -648,7 +648,7 @@ func TestDaemonDownBanner(t *testing.T) {
 		t.Fatalf("problem %v", m.problem)
 	}
 	// The last data stays.
-	for _, want := range []string{"tenebrae-53", "Mac (here)", "updated 14:05:00", "sonnet-5-5"} {
+	for _, want := range []string{"tenebrae-53", "Mac (here)", "14:05:00", "sonnet-5-5"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("lost %q while the daemon is down", want)
 		}
