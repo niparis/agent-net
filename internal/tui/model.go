@@ -81,6 +81,7 @@ type Model struct {
 	sessionOrder              map[string]sessionOrder
 	sessionNext, sessionFront int64
 	orderFrozenUntil          time.Time
+	frozenOrder               map[string]int
 	selected                  string // session ID
 	selIdx                    int    // position in the visible list, to move on when the session leaves
 	tableTop                  int    // first table row on screen
@@ -570,6 +571,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		m.frozenOrder = make(map[string]int)
+		for i, a := range m.visible() {
+			m.frozenOrder[a.SessionID] = i
+		}
 		m.orderFrozenUntil = m.now().Add(3 * time.Second)
 		return m.key(msg)
 	}
@@ -1201,6 +1206,16 @@ func (m Model) groups() []group {
 	for _, g := range order {
 		sort.SliceStable(g.agents, func(i, j int) bool {
 			a, b := g.agents[i], g.agents[j]
+			if m.now().Before(m.orderFrozenUntil) {
+				ia, oka := m.frozenOrder[a.SessionID]
+				ib, okb := m.frozenOrder[b.SessionID]
+				if oka != okb {
+					return oka
+				}
+				if oka && ia != ib {
+					return ia < ib
+				}
+			}
 			oa, oka := m.sessionOrder[a.SessionID]
 			ob, okb := m.sessionOrder[b.SessionID]
 			if oka && okb {

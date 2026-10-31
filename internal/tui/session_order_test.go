@@ -92,3 +92,15 @@ func TestNewSessionEntersTopOfBand(t *testing.T) {
 		t.Fatalf("new session order: %s", got)
 	}
 }
+
+func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Agents = []protocol.AgentView{agent("first", "n_mac", "Mac", "claude", "first", nil)}
+	m := treeModel(80, 24, snap)
+	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	snap.Agents = append(snap.Agents, agent("second", "n_mac", "Mac", "claude", "second", func(a *protocol.AgentView) { a.Status = "busy" }))
+	m = refresh(m, &fakeSource{snap: snap})
+	if got := strings.Join(names(m), ","); got != "first,second" {
+		t.Fatalf("frozen order: %s", got)
+	}
+}
