@@ -8,8 +8,6 @@ import (
 	"runtime"
 	"strings"
 	"time"
-
-	"github.com/niparis/agent-net/internal/loginpath"
 )
 
 func systemdDir() string { return filepath.Join(home(), ".config", "systemd", "user") }
@@ -88,7 +86,7 @@ func RefreshDaemonUnit() {
 	}
 	if runtime.GOOS == "darwin" {
 		path := filepath.Join(launchAgentsDir(), Service{Name: "daemon"}.PlistName())
-		EnsureDaemonServicePath(path, true, loginpath.Path())
+		EnsureDaemonServiceEnvironment(path, true, daemonEnvironment(home()))
 		return
 	}
 	if runtime.GOOS != "linux" || os.Getenv("INVOCATION_ID") == "" {
@@ -96,7 +94,7 @@ func RefreshDaemonUnit() {
 	}
 	path := filepath.Join(systemdDir(), Service{Name: "daemon"}.UnitName())
 	changed, _ := EnsureWorkersSurviveUnit(path)
-	pathChanged, _ := EnsureDaemonServicePath(path, false, loginpath.Path())
+	pathChanged, _ := EnsureDaemonServiceEnvironment(path, false, daemonEnvironment(home()))
 	if changed || pathChanged {
 		if _, err := exec.LookPath("systemctl"); err == nil {
 			runCmd("", "systemctl", "--user", "daemon-reload")

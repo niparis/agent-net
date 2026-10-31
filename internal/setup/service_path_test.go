@@ -9,7 +9,7 @@ import (
 
 func TestServiceLoginPath(t *testing.T) {
 	shell := filepath.Join(t.TempDir(), "shell")
-	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '/test/bin:/other/bin'\n"), 0755); err != nil {
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '/test/bin:/other/bin' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("SHELL", shell)
@@ -59,6 +59,53 @@ func TestLoginPathFallback(t *testing.T) {
 	for _, dir := range []string{"/test/current", "/opt/homebrew/bin", "/usr/local/bin", ".local/bin"} {
 		if !strings.Contains(got, dir) {
 			t.Errorf("missing %s: %s", dir, got)
+		}
+	}
+}
+
+func TestServiceUsesLoginEnvironment(t *testing.T) {
+	shell := filepath.Join(t.TempDir(), "shell")
+	script := `#!/bin/sh
+printf '%s\0' '/login/bin' '/login/cache' '/login/config' '/login/data & more' '/login/runtime' '/login/state' '/login/db' '/login/pi' '1'
+`
+	if err := os.WriteFile(shell, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	t.Setenv("XDG_DATA_HOME", "/wrong")
+	t.Setenv("QUOTA_AXI_OPENCODE_GO_PI_AUTH", "wrong")
+	for _, got := range []string{SystemdUnit(Service{Name: "daemon"}, "/bin/a"), LaunchdPlist(Service{Name: "daemon"}, "/bin/a", "/home/test")} {
+		for _, want := range []string{"/login/bin", "/login/cache", "/login/config", "/login/data", "/login/runtime", "/login/state", "/login/db", "/login/pi", "QUOTA_AXI_OPENCODE_GO_PI_AUTH"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q in %s", want, got)
+			}
+		}
+		if strings.Contains(got, "/wrong") || strings.Contains(got, "wrong") {
+			t.Errorf("inherited process environment: %s", got)
+		}
+	}
+}
+
+func TestUpgradeAddsMissingLoginEnvironment(t *testing.T) {
+	for _, plist := range []bool{false, true} {
+		path := filepath.Join(t.TempDir(), "service")
+		content := "[Service]\nEnvironment=PATH=/old\nExecStart=/bin/a\n"
+		if plist {
+			content = "<plist><dict><key>EnvironmentVariables</key><dict><key>PATH</key><string>/old</string></dict></dict></plist>"
+		}
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+		values := []string{"PATH=/new", "QUOTA_AXI_OPENCODE_GO_PI_AUTH=1"}
+		if changed, err := EnsureDaemonServiceEnvironment(path, plist, values); err != nil || !changed {
+			t.Fatalf("changed %v err %v", changed, err)
+		}
+		if changed, err := EnsureDaemonServiceEnvironment(path, plist, values); err != nil || changed {
+			t.Fatalf("second changed %v err %v", changed, err)
+		}
+		b, _ := os.ReadFile(path)
+		if !strings.Contains(string(b), "/old") || strings.Contains(string(b), "/new") || !strings.Contains(string(b), "QUOTA_AXI_OPENCODE_GO_PI_AUTH") {
+			t.Fatalf("service: %s", b)
 		}
 	}
 }

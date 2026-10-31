@@ -59,7 +59,7 @@ func SystemdUnit(s Service, exe string) string {
 	}
 	var environment strings.Builder
 	if s.Name == "daemon" {
-		for _, item := range append(quotaaxi.ServiceEnvironment(os.Getenv("HOME")), "PATH="+loginpath.Path()) {
+		for _, item := range daemonEnvironment(os.Getenv("HOME")) {
 			fmt.Fprintf(&environment, "Environment=%s\n", systemdQuote(item))
 		}
 	}
@@ -117,7 +117,7 @@ func LaunchdPlist(s Service, exe, home string) string {
 	var environment strings.Builder
 	if s.Name == "daemon" {
 		environment.WriteString("  <key>EnvironmentVariables</key>\n  <dict>\n")
-		for _, item := range append(quotaaxi.ServiceEnvironment(home), "PATH="+loginpath.Path()) {
+		for _, item := range daemonEnvironment(home) {
 			key, value, _ := strings.Cut(item, "=")
 			fmt.Fprintf(&environment, "    <key>%s</key>\n    <string>%s</string>\n", xmlEscape(key), xmlEscape(value))
 		}
@@ -147,39 +147,67 @@ func LaunchdPlist(s Service, exe, home string) string {
 `, s.Label(), args.String(), abandon+environment.String(), log, log)
 }
 
-// EnsureDaemonServicePath adds PATH to an older service without replacing other settings.
+// daemonEnvironment captures the login settings once for each service file.
+func daemonEnvironment(home string) []string {
+	captured := loginpath.Environment()
+	env := quotaaxi.ServiceEnvironment(home, captured)
+	for _, item := range captured {
+		if strings.HasPrefix(item, "PATH=") {
+			env = append(env, item)
+			break
+		}
+	}
+	return env
+}
+
+// EnsureDaemonServicePath is kept for callers migrating only PATH.
 func EnsureDaemonServicePath(path string, plist bool, value string) (bool, error) {
+	return EnsureDaemonServiceEnvironment(path, plist, []string{"PATH=" + value})
+}
+
+// EnsureDaemonServiceEnvironment adds missing entries without replacing settings.
+func EnsureDaemonServiceEnvironment(path string, plist bool, values []string) (bool, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return false, nil
 	}
 	text := string(raw)
-	if plist {
-		if strings.Contains(text, "<key>PATH</key>") {
-			return false, nil
+	changed := false
+	for _, item := range values {
+		key, value, ok := strings.Cut(item, "=")
+		if !ok || key == "" || value == "" {
+			continue
 		}
-		entry := "    <key>PATH</key>\n    <string>" + xmlEscape(value) + "</string>\n"
-		if strings.Contains(text, "<key>EnvironmentVariables</key>") {
-			start := strings.Index(text, "<key>EnvironmentVariables</key>")
-			i := strings.Index(text[start:], "<dict>")
-			if i < 0 {
-				return false, nil
+		if plist {
+			if strings.Contains(text, "<key>"+key+"</key>") {
+				continue
 			}
-			i += start + len("<dict>")
-			text = text[:i] + "\n" + entry + text[i:]
-		} else if strings.Contains(text, "</dict>") {
-			text = strings.Replace(text, "</dict>", "  <key>EnvironmentVariables</key>\n  <dict>\n"+entry+"  </dict>\n</dict>", 1)
+			entry := "    <key>" + xmlEscape(key) + "</key>\n    <string>" + xmlEscape(value) + "</string>\n"
+			if start := strings.Index(text, "<key>EnvironmentVariables</key>"); start >= 0 {
+				i := strings.Index(text[start:], "<dict>")
+				if i < 0 {
+					continue
+				}
+				i += start + len("<dict>")
+				text = text[:i] + "\n" + entry + text[i:]
+			} else if strings.Contains(text, "</dict>") {
+				text = strings.Replace(text, "</dict>", "  <key>EnvironmentVariables</key>\n  <dict>\n"+entry+"  </dict>\n</dict>", 1)
+			} else {
+				continue
+			}
 		} else {
-			return false, nil
+			if strings.Contains(text, "Environment="+key+"=") || strings.Contains(text, "Environment=\""+key+"=") {
+				continue
+			}
+			if !strings.Contains(text, "\nExecStart=") {
+				continue
+			}
+			text = strings.Replace(text, "\nExecStart=", "\nEnvironment="+systemdQuote(item)+"\nExecStart=", 1)
 		}
-	} else {
-		if strings.Contains(text, "Environment=PATH=") || strings.Contains(text, "Environment=\"PATH=") {
-			return false, nil
-		}
-		if !strings.Contains(text, "\nExecStart=") {
-			return false, nil
-		}
-		text = strings.Replace(text, "\nExecStart=", "\nEnvironment="+systemdQuote("PATH="+value)+"\nExecStart=", 1)
+		changed = true
+	}
+	if !changed {
+		return false, nil
 	}
 	return true, os.WriteFile(path, []byte(text), 0644)
 }
