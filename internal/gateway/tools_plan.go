@@ -2,8 +2,10 @@ package gateway
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"time"
@@ -16,7 +18,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	if err := g.store.db.QueryRow(`SELECT kind,name,hash FROM tool_identities WHERE id=?`, item).Scan(&kind, &name, &hash); err != nil {
 		return nil, errors.New("tool item not found")
 	}
-	nodes, err := g.store.Nodes()
+	nodes, err := g.store.toolPlanNodes()
 	if err != nil {
 		return nil, err
 	}
@@ -29,13 +31,18 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 		return nil, err
 	}
 	targets := []protocol.ToolPlanTarget{}
-	var imported int
+	source := ""
 	if kind == protocol.InventorySkill {
-		if err = g.store.db.QueryRow(`SELECT EXISTS(SELECT 1 FROM skill_versions WHERE item=? AND hash=?)`, item, hash).Scan(&imported); err != nil {
+		var commit string
+		err = g.store.db.QueryRow(`SELECT commit_id FROM skill_versions WHERE item=? AND hash=?`, item, hash).Scan(&commit)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return nil, err
 		}
+		if err == nil {
+			source = filepath.Join(g.opts.DataDir, "skills.git") + "@" + commit + ":" + skillPath(item)
+		}
 	}
-	if kind == protocol.InventorySkill && imported == 0 {
+	if kind == protocol.InventorySkill && source == "" {
 		targets = append(targets, protocol.ToolPlanTarget{Action: "import", State: "conflict", Conflict: "skill version has not been imported"})
 	}
 	if kind != protocol.InventorySkill {
@@ -73,7 +80,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 					continue
 				}
 				for _, h := range node.Harnesses {
-					t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Harness: h.Name, Project: checkout.Name, Checkout: checkout.Path, Source: "gateway version " + hash, Action: "copy", State: "pending"}
+					t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Harness: h.Name, Project: checkout.Name, Checkout: checkout.Path, Source: source, Action: "copy", State: "pending"}
 					if kind != protocol.InventorySkill {
 						t.Action = "manual"
 						t.State = "conflict"
@@ -222,4 +229,24 @@ func (g *Gateway) validToolOwner(nc *nodeConn, id string) bool {
 	}
 	a, ok, err := g.store.Agent(id)
 	return err == nil && ok && a.NodeID == nc.id && a.Harness == protocol.OwnerHarness && a.Online
+}
+
+// toolPlanNodes also includes enrolled nodes that have never reported a hello.
+func (s *Store) toolPlanNodes() ([]protocol.NodeView, error) {
+	rows, err := s.db.Query(`SELECT id,hostname,harnesses FROM nodes ORDER BY hostname,id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	nodes := []protocol.NodeView{}
+	for rows.Next() {
+		var n protocol.NodeView
+		var harnesses string
+		if err = rows.Scan(&n.NodeID, &n.Hostname, &harnesses); err != nil {
+			return nil, err
+		}
+		n.Harnesses = decodeHarnesses(harnesses)
+		nodes = append(nodes, n)
+	}
+	return nodes, rows.Err()
 }

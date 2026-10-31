@@ -258,3 +258,70 @@ func TestManagedToolRemainsListedWithoutLocations(t *testing.T) {
 		t.Fatalf("stored item missing: %+v %v", items, err)
 	}
 }
+
+func TestToolPlanNamesStoredSourceCommit(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = g.store.SetNodeHello(node, "fixture", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.store.SetNodeHarnesses(node, []protocol.HarnessInfo{{Name: "codex"}}); err != nil {
+		t.Fatal(err)
+	}
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	id := `["skill","demo","abc"]`
+	repo, err := g.skillRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := repo.put(id, "abc", []byte("fixture"), node, "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: id, Target: protocol.ToolAssignment{Scope: "global"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range p.Targets {
+		if target.Action == "copy" && strings.Contains(target.Source, v.Commit) && strings.Contains(target.Source, "skills.git") {
+			return
+		}
+	}
+	t.Fatalf("source commit missing: %+v", p.Targets)
+}
+
+func TestToolPlanIncludesUnseenEnrolledMachines(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("fixture", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = g.store.SetInventory(node, protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: `["skill","demo","abc"]`, Target: protocol.ToolAssignment{Scope: "global"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range p.Targets {
+		if target.NodeID == node && target.Conflict != "" {
+			return
+		}
+	}
+	t.Fatalf("missing unseen node: %+v", p.Targets)
+}
