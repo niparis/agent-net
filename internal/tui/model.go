@@ -142,9 +142,10 @@ type Model struct {
 	tl toolsState
 	// help shows the key overlay; learned shows the playbook notes; expand
 	// gives the detail pane the room of the message feed.
-	help    bool
-	learned bool
-	expand  bool
+	help       bool
+	helpScroll int
+	learned    bool
+	expand     bool
 }
 
 // New returns a model that reads from src.
@@ -703,7 +704,22 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "esc", "?", "enter", "backspace":
 			m.help = false
+			m.helpScroll = 0
+		case "down", "j":
+			m.helpScroll++
+		case "up", "k":
+			m.helpScroll--
+		case "pgdown":
+			m.helpScroll += max(m.height-4, 1)
+		case "pgup":
+			m.helpScroll -= max(m.height-4, 1)
+		case "home", "g":
+			m.helpScroll = 0
+		case "end", "G":
+			m.helpScroll = len(m.helpContent(max(m.width, 40)))
 		}
+		room := max(max(m.height, 10)-4, 1)
+		m.helpScroll = min(max(m.helpScroll, 0), max(len(m.helpContent(max(m.width, 40)))-room, 0))
 		return m, nil
 	}
 	if m.learned {

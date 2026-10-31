@@ -1,4 +1,5 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
  Sessions
   1-6                  switch between Sessions, Messages, Quotas, Map, Tools and Graph
   up/down, j/k         select a session
@@ -13,7 +14,8 @@ Keys ─────────────────────────
   I                    integrations for all machines: six checkboxes (a form)
   4/M                  map: charters and edges; z switches overview
   map D                name project (empty clears)
-  map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, …
+  map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h
+                       hide, H show hidden
   5 Tools              [ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first
   C, tab               focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model
   N                    name the machine of the session (every machine sees it; empty resets)
@@ -23,18 +25,16 @@ Keys ─────────────────────────
   a                    active only: hide sessions idle for over an hour
   Messages             up/down: conversation; left/right: message; v: body; e/l: events
   r                    refresh now
-  states               messages: pending … delivered ✓ replied ↩ failed ✗
+  states               messages: pending ... delivered ✓ replied ↩ failed ✗
+
  Conversation
   up/down, pgup/pgdn   scroll; at the top, older entries load
   g                    go to the oldest loaded entry
   G, end, f            back to the end and follow new entries
   esc                  back to the sessions
+
  Everywhere
   ?                    this help
   q, ctrl+c            quit
- Reading the screen
-  CPU                  machine: all cores. session: one core. (x%): 5 min avg
-  red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
-  shared               one process many sessions share; its figures are on the machine line
-  dim row              offline, or idle for more than an hour
-esc close help  q quit
+  more below
+up/down scroll  esc close help  q quit

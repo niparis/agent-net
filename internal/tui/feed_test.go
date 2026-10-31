@@ -316,7 +316,7 @@ func TestGoldenFeedSnippets(t *testing.T) {
 
 func TestHelpListsTheMessageStates(t *testing.T) {
 	out := keys(newModel(120, 40), "?").View()
-	for _, want := range []string{"pending", "delivered", "replied", "failed", "…", "✓", "↩", "✗"} {
+	for _, want := range []string{"pending", "delivered", "replied", "failed", "...", "✓", "↩", "✗"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("the help lacks %q", want)
 		}

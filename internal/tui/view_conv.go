@@ -136,7 +136,7 @@ type hint struct {
 func (m Model) hints() []hint {
 	switch {
 	case m.help:
-		return []hint{{"esc", "close help", 1}, {"q", "quit", 1}}
+		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.conv != nil:
 		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
@@ -233,27 +233,8 @@ func (m Model) helpLine(w int) string {
 	return clip(keyHints(parts...), w)
 }
 
-// helpView is the overlay that lists every key.
-func (m Model) helpView(w, h int) []string {
-	if m.tab == toolsTab && !m.mapOn {
-		rows := []string{section("Tools keys", w),
-			"  [ ]          switch screens",
-			"  left/right   switch screens (on All tools, select a machine or projects)",
-			"  j/k          select a difference, tool or project",
-			"  enter        open the selected fix or plan",
-			"  x            accept a difference as it is",
-			"  .            show accepted differences",
-			"  a/u          turn on or turn off for the selected machine or projects",
-			"  m            change the machine on By project",
-			"  /            search or filter", "  r            rescan", "  esc or ?     close help"}
-		for i := range rows {
-			rows[i] = clip(rows[i], w)
-		}
-		if len(rows) > h {
-			rows = rows[:h]
-		}
-		return rows
-	}
+// helpContent builds all help lines so none are lost on a small screen.
+func (m Model) helpContent(w int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
@@ -279,7 +260,7 @@ func (m Model) helpView(w, h int) []string {
 		{"a", "active only: hide sessions idle for over an hour"},
 		{"Messages", "up/down: conversation; left/right: message; v: body; e/l: events"},
 		{"r", "refresh now"},
-		{"states", "messages: pending … delivered ✓ replied ↩ failed ✗"},
+		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
 		{"Conversation", ""},
 		{"up/down, pgup/pgdn", "scroll; at the top, older entries load"},
@@ -300,7 +281,21 @@ func (m Model) helpView(w, h int) []string {
 		{"└", "a reply, under the message it answers"},
 		{"\"...\"", "the first line of the body, when this machine is in the conversation"},
 	}
-	out := []string{section("Keys", w)}
+	if m.tab == toolsTab && !m.mapOn {
+		rows = [][2]string{
+			{"[ ]", "switch screens"},
+			{"left/right", "switch screens (on All tools, select a machine or projects)"},
+			{"j/k", "select a difference, tool or project"},
+			{"enter", "open the selected fix or plan"},
+			{"x", "accept a difference as it is"},
+			{".", "show accepted differences"},
+			{"a/u", "turn on or turn off for the selected machine or projects"},
+			{"m", "change the machine on By project"},
+			{"/", "search or filter"}, {"r", "rescan"}, {"esc or ?", "close help"},
+		}
+	}
+	var out []string
+	const indent = 23
 	for _, r := range rows {
 		switch {
 		case r[0] == "" && r[1] == "":
@@ -308,21 +303,40 @@ func (m Model) helpView(w, h int) []string {
 		case r[1] == "":
 			out = append(out, " "+sBold.Render(r[0]))
 		default:
-			out = append(out, clip("  "+sTitle.Render(cell(r[0], 20))+" "+r[1], w))
-		}
-	}
-	if len(out) > h {
-		// A small screen: drop the blank lines between the groups.
-		var tight []string
-		for _, l := range out {
-			if l != "" {
-				tight = append(tight, l)
+			lines := wrap(r[1], max(w-indent, 8))
+			out = append(out, "  "+sTitle.Render(cell(r[0], 20))+" "+lines[0])
+			for _, line := range lines[1:] {
+				out = append(out, strings.Repeat(" ", indent)+line)
 			}
 		}
-		out = tight
 	}
-	if len(out) > h {
-		out = out[:h]
+	return out
+}
+
+// helpView keeps the heading and reserves rows for scroll indicators.
+func (m Model) helpView(w, h int) []string {
+	title := "Keys"
+	if m.tab == toolsTab && !m.mapOn {
+		title = "Tools keys"
+	}
+	out := []string{section(title, w)}
+	lines := m.helpContent(w)
+	if len(lines) <= h-1 {
+		return append(out, lines...)
+	}
+	room := max(h-3, 1)
+	start := min(max(m.helpScroll, 0), max(len(lines)-room, 0))
+	if start > 0 {
+		out = append(out, sDim.Render("  more above"))
+	} else {
+		out = append(out, "")
+	}
+	end := min(start+room, len(lines))
+	out = append(out, lines[start:end]...)
+	if end < len(lines) {
+		out = append(out, sDim.Render("  more below"))
+	} else {
+		out = append(out, "")
 	}
 	return out
 }

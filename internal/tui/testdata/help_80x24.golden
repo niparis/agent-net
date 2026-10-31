@@ -1,24 +1,24 @@
 Keys ───────────────────────────────────────────────────────────────────────────
+
  Sessions
-  1-6                  switch between Sessions, Messages, Quotas, Map, Tools an…
+  1-6                  switch between Sessions, Messages, Quotas, Map, Tools and
+                       Graph
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
   enter or c           open the conversation of the session
   e                    enter the session (ctrl+] to return)
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
-  x, h, H              stop worker; h hides/unhides; H shows hidden sessions (d…
+  x, h, H              stop worker; h hides/unhides; H shows hidden sessions
+                       (dim)
   t                    cycle request rule: normal, ask, auto
-  p                    delegation policy: subagent or worker for code changes (…
+  p                    delegation policy: subagent or worker for code changes (a
+                       form)
   I                    integrations for all machines: six checkboxes (a form)
   4/M                  map: charters and edges; z switches overview
   map D                name project (empty clears)
-  map arrows           focus: up/down projects, left/right edges, / find, [ ] s…
-  5 Tools              [ ] screens; enter fix, x accept, a/u turn on/off, m mac…
-  C, tab               focus CTO chat (tab or esc returns); o opens full UI, n …
-  N                    name the machine of the session (every machine sees it; …
-  L                    what the network learned: playbook notes and their suppo…
-  /                    filter (words match name, project, branch, model, ...)
-  o, d                 show offline sessions; toggle selected session details
-  a                    active only: hide sessions idle for over an hour
-esc close help  q quit
+  map arrows           focus: up/down projects, left/right edges, / find, [ ]
+                       scroll, U select learned change, u undo, h hide, H show
+                       hidden
+  more below
+up/down scroll  esc close help  q quit
