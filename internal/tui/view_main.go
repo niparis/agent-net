@@ -1083,6 +1083,7 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
+	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO", w)))
 	filter := "conversations"
 	switch m.events {
 	case eventsAll:
@@ -1096,7 +1097,7 @@ func (m Model) messagesView(w, h int) []string {
 	listW := w - 4
 	chatW := w - 4
 	if w >= 100 {
-		listW = max(w*2/5-4, 1)
+		listW = max(w*55/100-4, 1)
 		chatW = max(w-(listW+4)-4, 1)
 	}
 	for i, r := range rows {
@@ -1111,10 +1112,20 @@ func (m Model) messagesView(w, h int) []string {
 			list = append(list, sDim.Render(line))
 		}
 	}
-	footer := fmt.Sprintf("%d system events · e to show", m.systemEventCount())
+	eventAction := "e to show"
 	if m.messageShowEvents {
-		footer = fmt.Sprintf("%d system events · e to hide", m.systemEventCount())
+		eventAction = "e to hide"
 	}
+	workerAction := "w hide workers"
+	if m.hideWorkerThreads {
+		workerAction = "w show workers"
+	}
+	eventCount := m.systemEventCount()
+	eventWord := "events"
+	if eventCount == 1 {
+		eventWord = "event"
+	}
+	footer := fmt.Sprintf("%d system %s · %s · %s", eventCount, eventWord, eventAction, workerAction)
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)
@@ -1129,7 +1140,7 @@ func (m Model) messagesView(w, h int) []string {
 		}
 	}
 	if w >= 100 {
-		height := max(h-3, 0)
+		height := max(h-4, 0)
 		list = messageFit(list, max(height-1, 0), selected)
 		list = append(list, sDim.Render(clip(footer, listW)))
 		chat = messageFit(chat, height, chatSelected)
@@ -1140,7 +1151,7 @@ func (m Model) messagesView(w, h int) []string {
 		}
 		return out
 	}
-	available := max(h-5, 0)
+	available := max(h-6, 0)
 	listHeight := min(max((available+2)/2, 1), len(list)+1)
 	chatHeight := max(available-listHeight, 0)
 	list = messageFit(list, max(listHeight-1, 0), selected)

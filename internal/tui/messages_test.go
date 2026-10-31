@@ -2,12 +2,15 @@ package tui
 
 import (
 	"fmt"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/x/ansi"
-	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestMessageConversationsGroupAndSort(t *testing.T) {
@@ -22,13 +25,92 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 	})
 	m.feed.byMsg["one"].Snippet = "first topic"
 	m.feed.byMsg["two"].Snippet = "second topic"
+	m.feed.byMsg["three"].Snippet = "latest topic"
 	rows := m.messageConversations()
 	if len(rows) != 2 || rows[0].id != "a" || len(rows[0].items) != 2 {
 		t.Fatalf("rows: %+v", rows)
 	}
 	v := ansi.Strip(strings.Join(m.messagesView(120, 20), "\n"))
-	if !strings.Contains(v, "first") || !strings.Contains(v, "secon") {
+	if !strings.Contains(v, "latest") || !strings.Contains(v, "secon") {
 		t.Fatal(v)
+	}
+}
+
+func TestMessageThreadShowsLongBriefAndShortReply(t *testing.T) {
+	const a, b = "remote-a", "remote-b"
+	brief := "Worker brief: " + strings.Repeat("run the checks and report what changed; ", 40)
+	events := []protocol.FeedEvent{
+		ev(1, -2*time.Minute, "msg.stored", "brief", a, b, "request", func(e *protocol.FeedEvent) { e.ConversationID = "thread" }),
+		ev(2, -time.Minute, "msg.stored", "reply", b, a, "reply", func(e *protocol.FeedEvent) { e.ConversationID = "thread"; e.Parent = "brief" }),
+	}
+	m, src := feedModel(events, map[string]protocol.Message{
+		"brief": {ID: "brief", Body: brief},
+		"reply": {ID: "reply", Body: "Checks passed."},
+	})
+	// The owner can read a thread between two remote sessions through the
+	// message_status relay, even though neither end runs on this machine.
+	m.tab = 1
+	m.snap.OwnerSession = ownerID
+	src.snap.OwnerSession = ownerID
+	m = drainSnippets(t, m)
+	if got := m.feed.byMsg["brief"].Snippet; !strings.HasPrefix(got, "Worker brief: ") || !strings.HasSuffix(got, "…") {
+		t.Fatalf("long first line should keep real text and end in an ellipsis, got %q", got)
+	}
+	rows := m.messageConversations()
+	if len(rows) != 1 {
+		t.Fatalf("got %d threads", len(rows))
+	}
+	chat := strings.Join(m.conversationChat(rows[0], 80), "\n")
+	for _, want := range []string{"Worker brief: ", "Checks passed."} {
+		if !strings.Contains(chat, want) {
+			t.Errorf("thread is missing %q:\n%s", want, chat)
+		}
+	}
+}
+
+func TestConversationExplainsMessageBodyFetchError(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.OwnerSession = ownerID
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "held", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
+	m.applySnippet(snippetMsg{id: "held", err: fmt.Errorf("body held on build-vm, offline")})
+	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
+	if !strings.Contains(chat, "body held on build-vm, offline") {
+		t.Fatalf("the thread did not explain why its body is unavailable:\n%s", chat)
+	}
+	if strings.Contains(chat, "loading body") {
+		t.Fatalf("a fetch error should not look like a body is still loading:\n%s", chat)
+	}
+}
+
+func TestConversationShowsLoadingBodyUntilFetched(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.snap.OwnerSession = ownerID
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "loading", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
+	m.feed.byMsg["loading"].Snip = snipLoading
+	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
+	if !strings.Contains(chat, "loading body") {
+		t.Fatalf("the thread should explain that the body fetch is in progress:\n%s", chat)
+	}
+}
+
+func TestMessagePartiesNeverShowRawSessionIDs(t *testing.T) {
+	const owner = "s_owner_fixture"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.snap.OwnerSession = owner
+	const nameless = "s_nameless_fixture"
+	m.snap.Agents = append(m.snap.Agents, agent(nameless, "n_mac", "Mac", "pi", "", nil))
+	if got := m.conversationName(nameless); got != "unknown session" {
+		t.Fatalf("a session without a name should be labeled unknown, got %q", got)
+	}
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "unknown-party", Time: t0}, ConversationID: "unknown-party", From: "s_missing_fixture", To: owner, Type: "request"}})
+	line := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 110, false))
+	if !strings.Contains(line, "unknown session ↔ you") || strings.Contains(line, "s_missing_fixture") || strings.Contains(line, owner) {
+		t.Fatalf("message parties should use safe session labels, got %q", line)
 	}
 }
 
@@ -44,6 +126,129 @@ func TestMessageConversationNavigation(t *testing.T) {
 	m = keys(m, "down")
 	if got := m.feed.items[m.feedCur].MsgID; got != "first" {
 		t.Fatalf("selected %s", got)
+	}
+}
+
+func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) {
+	const a, b = "s_0000000000000001", "s_0000000000000002"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		ev(1, -5*time.Minute, "msg.stored", "one", a, b, "request", nil),
+		ev(2, -3*time.Minute, "msg.delivered", "one", a, b, "request", nil),
+		ev(3, -2*time.Minute, "msg.stored", "two", b, a, "reply", nil),
+		ev(4, -time.Minute, "msg.delivered", "two", b, a, "reply", nil),
+	})
+	m.feed.byMsg["one"].Snippet = "First request"
+	m.feed.byMsg["two"].Snippet = "Latest reply"
+	rows := m.messageConversations()
+	if len(rows) != 1 || len(rows[0].items) != 2 {
+		t.Fatalf("messages without a conversation ID should group by session pair: %+v", rows)
+	}
+	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	for _, want := range []string{"Latest reply", "2 messages", "1m ago"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("thread summary is missing %q: %q", want, line)
+		}
+	}
+	m = keys(m, "enter")
+	if m.open != nil || m.conv != nil || m.feedCur != rows[0].items[1] {
+		t.Fatalf("enter should open the latest message in the thread pane, got open=%+v conv=%+v cursor=%d", m.open, m.conv, m.feedCur)
+	}
+}
+
+func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
+	const owner, other, w1, w2 = "s_owner", "s_other", "s_worker1", "s_worker2"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.snap = Snapshot{NodeID: "n", Agents: []protocol.AgentView{
+		agent(owner, "n", "Mac", "claude", "a2a-ocs", nil),
+		agent(other, "n", "Mac", "pi", "reviewer", nil),
+		agent(w1, "n", "Mac", "opencode", "shop worker 6", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_6", Owner: owner} }),
+		agent(w2, "n", "Mac", "opencode", "shop worker 7", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_7", Owner: owner} }),
+	}}
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		ev(1, -4*time.Minute, "msg.stored", "agent", owner, other, "request", nil),
+		ev(2, -3*time.Minute, "msg.stored", "w1a", owner, w1, "request", nil),
+		ev(3, -2*time.Minute, "msg.stored", "w1b", w1, owner, "reply", func(e *protocol.FeedEvent) { e.Parent = "w1a" }),
+		ev(4, -time.Minute, "msg.stored", "w1c", owner, w1, "request", nil),
+		ev(5, -time.Second, "msg.stored", "w2a", owner, w2, "request", nil),
+	})
+	m.feed.byMsg["w1c"].Body = "[agent-net worker notice]\nstatus: done"
+	rows := m.messageConversations()
+	if len(rows) != 3 || rows[0].worker || !rows[1].worker || !rows[2].worker {
+		t.Fatalf("expected agent thread first, followed by two collapsed worker threads: %+v", rows)
+	}
+	var workerRow *messageConversation
+	for i := range rows {
+		if rows[i].workerSession == w1 {
+			workerRow = &rows[i]
+		}
+	}
+	if workerRow == nil {
+		t.Fatal("worker 6 was not listed")
+	}
+	line := ansi.Strip(m.messageConversationLine(*workerRow, 110, false))
+	for _, want := range []string{"a2a-ocs → worker 6", "3 messages", "done"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("worker summary is missing %q: %q", want, line)
+		}
+	}
+	m = keys(m, "w")
+	if got := m.messageConversations(); len(got) != 1 || got[0].worker {
+		t.Fatalf("w should hide worker threads, got %+v", got)
+	}
+	m = keys(m, "w")
+	if got := m.messageConversations(); len(got) != 3 {
+		t.Fatalf("w should show worker threads again, got %+v", got)
+	}
+}
+
+func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
+	const owner, a, b, worker = "s_owner", "s_agent", "s_other", "s_worker"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.now = func() time.Time { return t0 }
+	m.snap = Snapshot{NodeID: "n", Agents: []protocol.AgentView{
+		agent(owner, "n", "Mac", "owner", "you", nil),
+		agent(a, "n", "Mac", "claude", "a2a-ocs", nil),
+		agent(b, "n", "Mac", "pi", "reviewer", nil),
+		agent(worker, "n", "Mac", "opencode", "shop worker 6", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_6", Owner: owner} }),
+	}}
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		ev(1, -10*time.Minute, "msg.stored", "instruction", owner, a, "request", func(e *protocol.FeedEvent) { e.ConversationID = "instruction" }),
+		ev(2, -2*time.Minute, "msg.stored", "older", a, b, "notification", func(e *protocol.FeedEvent) { e.ConversationID = "older" }),
+		ev(3, -time.Minute, "msg.stored", "recent", a, b, "request", func(e *protocol.FeedEvent) { e.ConversationID = "recent" }),
+		ev(4, -time.Second, "msg.stored", "worker-task", owner, worker, "request", func(e *protocol.FeedEvent) { e.ConversationID = "worker-task" }),
+	})
+	m.feed.byMsg["instruction"].OwnerInstruction = "please inspect the failing check"
+	m.feed.byMsg["instruction"].Snippet = "Inspect the failing check"
+	m.feed.byMsg["older"].Snippet = "Older agent note"
+	m.feed.byMsg["recent"].Snippet = "Waiting on test"
+	rows := m.messageConversations()
+	if len(rows) != 4 || rows[0].id != "instruction" || rows[1].id != "recent" || rows[2].id != "older" || !rows[3].worker {
+		t.Fatalf("instruction, recent agent threads, then worker threads expected: %+v", rows)
+	}
+	old := lipgloss.ColorProfile()
+	defer lipgloss.SetColorProfile(old)
+	lipgloss.SetColorProfile(termenv.TrueColor)
+	line := m.messageConversationLine(rows[0], 110, false)
+	if !strings.Contains(ansi.Strip(line), "you→") {
+		t.Fatalf("owner instruction marker missing: %s", line)
+	}
+	warning := lipgloss.NewStyle().Foreground(roleWarning).Render("a2a-ocs ↔ reviewer · Waiting on test")
+	if !strings.Contains(m.messageConversationLine(rows[1], 110, false), warning) {
+		t.Fatal("a request without a reply is not orange")
+	}
+	view := ansi.Strip(strings.Join(m.messagesView(120, 22), "\n"))
+	if !strings.Contains(view, "orange: waiting for a reply") || !strings.Contains(view, "you→") {
+		t.Fatalf("the screen does not explain its marker and orange lines:\n%s", view)
 	}
 }
 
@@ -74,7 +279,12 @@ func TestMessageSystemEventsToggle(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "node.connected", Hostname: "build", Time: t0}}})
 	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
-	if !strings.Contains(v, "1 system events · e to show") || strings.Contains(v, "build connected") {
+	if !strings.Contains(v, "1 system event · e to show") || strings.Contains(v, "build connected") {
+		t.Fatal(v)
+	}
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 2, Kind: "node.connected", Hostname: "test", Time: t0}}})
+	v = ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
+	if !strings.Contains(v, "2 system events · e to show") {
 		t.Fatal(v)
 	}
 	m = keys(m, "e")
@@ -123,7 +333,7 @@ func TestConversationScreens(t *testing.T) {
 		worker := snap.Agents[0]
 		worker.SessionID = "s_worker"
 		worker.Profile.Name = "build worker 8"
-		worker.Worker = &protocol.WorkerInfo{ID: "w_8"}
+		worker.Worker = &protocol.WorkerInfo{ID: "w_8", Owner: "s_0000000000000001", Task: "Polish the sessions panel"}
 		snap.Agents = append(snap.Agents, worker)
 		a, b := "s_0000000000000001", "s_0000000000000002"
 		events := []protocol.FeedEvent{
@@ -148,6 +358,13 @@ func TestConversationScreens(t *testing.T) {
 		m = refresh(m, src)
 		m = drainSnippets(t, m)
 		m = keys(m, "2")
+		for _, row := range m.messageConversations() {
+			if row.worker {
+				m.feedCur = row.items[0]
+				break
+			}
+		}
+		m = keys(m, "enter")
 		v := m.View()
 		if !strings.Contains(ansi.Strip(v), "Polish") {
 			t.Fatal(v)
@@ -194,7 +411,7 @@ func TestConversationAgeUsesLastMessageTime(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m", Time: t0.Add(-5 * time.Minute)}, ConversationID: "c"}, {Event: protocol.Event{ID: 2, Kind: "msg.delivered", MessageID: "m", Time: t0.Add(-time.Minute)}, ConversationID: "c"}})
 	v := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 80, false))
-	if !strings.Contains(v, "5m ago") {
+	if !strings.Contains(v, "1m ago") {
 		t.Fatal(v)
 	}
 }

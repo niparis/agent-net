@@ -1,18 +1,18 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online  14:05:00
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages · conversations─────────────────────────────────────────────────────╮
-│ ▸ tenebrae-53 ↔ s_00000000 · …                                        1m ago │
-│   tenebrae-53 ↔ ci-runner · …                                         3m ago │
-│   ci-runner ↔ tenebrae-53 · …                                         4m ago │
-│   tenebrae-53 ↔ strategies · …                                        8m ago │
-│ 1 system events · e to show                                                  │
+│   tenebrae-53 ↔ unknown session · Which environment shou… 1 message · 1m ago │
+│   ci-runner ↔ tenebrae-53 · Rollback is ready if we nee… 2 messages · 2m ago │
+│ ▸ tenebrae-53 ↔ strategies · The deployment plan looks … 2 messages · 8m ago │
+│ 1 system event · e to show · w hide workers                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
-│ ▸ 14:04 tenebrae-53                                                          │
-│ …                                                                            │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
+│ ▸ 13:56 tenebrae-53                                                          │
+│ Can you check the latest deployment plan?                                    │
+│ The release is planned for tonight.                                          │
+│   13:57 strategies                                                           │
+│ The deployment plan looks good.                                              │
+│ I checked the rollback steps too.                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  left/right message  enter conversation  v body  tab CTO
+up/down select  left/right message  enter thread  w workers  v body  tab CTO

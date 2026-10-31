@@ -64,6 +64,7 @@ type Model struct {
 	quotaUnprotect    bool
 	quotaShowUnset    bool
 	messageShowEvents bool
+	hideWorkerThreads bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap            Snapshot
@@ -926,6 +927,23 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.startEnter()
+	case "w":
+		if m.tab == 1 {
+			m.hideWorkerThreads = !m.hideWorkerThreads
+			rows := m.messageConversations()
+			selected := false
+			for _, row := range rows {
+				for _, i := range row.items {
+					if i == m.feedCur {
+						selected = true
+					}
+				}
+			}
+			if !selected && len(rows) > 0 {
+				m.feedCur = rows[0].items[0]
+			}
+			return m, nil
+		}
 	case "x":
 		return m.startConfirm()
 	case "h":
@@ -1046,13 +1064,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if it == nil || !it.isMessage() {
 				return m, nil
 			}
-			// Open the conversation of the end on this machine; when there is
-			// none, the message body explains why it cannot be read here.
-			if id := m.feedConvID(it); id != "" {
-				return m, m.openConvFor(id)
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				row := rows[m.conversationIndex(rows)]
+				m.feedCur = row.items[len(row.items)-1]
 			}
-			m.open = &openMsg{id: it.MsgID, loading: true}
-			return m, m.bodyCmd(it.MsgID)
+			return m, nil
 		}
 		return m, m.openConv()
 	}

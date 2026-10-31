@@ -12,11 +12,15 @@ import (
 )
 
 type messageConversation struct {
-	id    string
-	items []int
-	at    time.Time
-	cto   bool
-	event bool
+	id               string
+	items            []int
+	at               time.Time
+	cto              bool
+	event            bool
+	worker           bool
+	workerSession    string
+	workerOwner      string
+	ownerInstruction bool
 }
 
 func (m Model) messageConversations() []messageConversation {
@@ -26,20 +30,30 @@ func (m Model) messageConversations() []messageConversation {
 		if !it.isMessage() {
 			continue
 		}
-		id := it.ConversationID
-		if id == "" {
-			id = parentIDs[it.Parent]
-		}
-		if id == "" {
-			id = it.MsgID
+		workerSession, workerOwner, worker := m.workerPair(it)
+		id := ""
+		if worker {
+			id = "worker:" + workerSession
+		} else {
+			id = it.ConversationID
+			if id == "" {
+				id = parentIDs[it.Parent]
+			}
+			if id == "" {
+				id = messagePairID(it.From, it.To)
+			}
+			if id == "" {
+				id = it.MsgID
+			}
 		}
 		parentIDs[it.MsgID] = id
 		g := groups[id]
 		if g == nil {
-			g = &messageConversation{id: id}
+			g = &messageConversation{id: id, worker: worker, workerSession: workerSession, workerOwner: workerOwner}
 			groups[id] = g
 		}
 		g.items = append(g.items, i)
+		g.ownerInstruction = g.ownerInstruction || it.OwnerInstruction != ""
 		activity := it.At
 		if it.Updated.After(activity) {
 			activity = it.Updated
@@ -51,6 +65,9 @@ func (m Model) messageConversations() []messageConversation {
 	}
 	out := make([]messageConversation, 0, len(groups))
 	for _, g := range groups {
+		if g.worker && m.hideWorkerThreads {
+			continue
+		}
 		if firstNonEmpty(m.uiFilter, m.filter) != "" {
 			var b strings.Builder
 			for _, i := range g.items {
@@ -78,12 +95,37 @@ func (m Model) messageConversations() []messageConversation {
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		rank := func(c messageConversation) int {
+			switch {
+			case c.event:
+				return 3
+			case c.worker:
+				return 2
+			case c.ownerInstruction:
+				return 0
+			default:
+				return 1
+			}
+		}
+		if rank(out[i]) != rank(out[j]) {
+			return rank(out[i]) < rank(out[j])
+		}
 		if out[i].at.Equal(out[j].at) {
 			return out[i].items[len(out[i].items)-1] > out[j].items[len(out[j].items)-1]
 		}
 		return out[i].at.After(out[j].at)
 	})
 	return out
+}
+
+func (m Model) workerPair(it *feedItem) (workerSession, workerOwner string, ok bool) {
+	for _, pair := range [][2]string{{it.From, it.To}, {it.To, it.From}} {
+		a, exists := m.agentByID(pair[0])
+		if exists && a.Worker != nil && a.Worker.Owner == pair[1] {
+			return pair[0], pair[1], true
+		}
+	}
+	return "", "", false
 }
 
 func (m Model) conversationIndex(rows []messageConversation) int {
@@ -96,7 +138,21 @@ func (m Model) conversationIndex(rows []messageConversation) int {
 	}
 	return 0
 }
+
+func messagePairID(from, to string) string {
+	if from == "" || to == "" {
+		return ""
+	}
+	if from > to {
+		from, to = to, from
+	}
+	return "pair:" + from + "\x00" + to
+}
+
 func (m Model) messageConversationLine(c messageConversation, w int, selected bool) string {
+	if c.worker {
+		return m.workerConversationLine(c, w, selected)
+	}
 	if c.event {
 		it := m.feed.items[c.items[0]]
 		line := sDim.Render(clip("  "+m.clock(it.At)+" "+m.infoText(it), w))
@@ -106,18 +162,18 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		return line
 	}
 	first := m.feed.items[c.items[0]]
-	last := m.feed.items[c.items[len(c.items)-1]]
+	latest := m.feed.items[c.items[len(c.items)-1]]
 	from := m.conversationName(first.From)
 	if first.FromCTO {
 		from = "CTO"
 	}
 	to := m.conversationName(first.To)
 	names := from + " ↔ " + to
-	topic := first.Snippet
+	topic := latest.Snippet
 	if topic == "" {
-		topic = "…"
+		topic = m.missingMessageBody(latest)
 	}
-	age := m.now().Sub(last.At)
+	age := m.now().Sub(c.at)
 	if age < 0 {
 		age = 0
 	}
@@ -133,24 +189,107 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	content := names + " · " + topic
+	messageWord := "messages"
+	if len(c.items) == 1 {
+		messageWord = "message"
+	}
+	suffix := fmt.Sprintf("%d %s · %s", len(c.items), messageWord, ageText)
 	marker := ""
-	if first.OwnerInstruction != "" {
+	if c.ownerInstruction {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
 	}
 	style := lipgloss.NewStyle().Foreground(roleText)
 	if c.cto {
 		style = lipgloss.NewStyle().Foreground(roleCTO)
-	} else if last.State == protocol.StateFailed || last.State == protocol.StateExpired {
+	} else if latest.State == protocol.StateFailed || latest.State == protocol.StateExpired {
 		style = lipgloss.NewStyle().Foreground(roleError)
-	} else if last.Type == protocol.TypeRequest && last.State != protocol.StateReplied {
+	} else if latest.Type == protocol.TypeRequest && latest.State != protocol.StateReplied {
 		style = lipgloss.NewStyle().Foreground(roleWarning)
 	}
-	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(ageText)-1, 0)
-	line := lead + marker + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(ageText)
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(suffix)-1, 0)
+	line := lead + marker + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(suffix)
 	if selected {
 		line = selectedRow(line)
 	}
 	return clip(line, w)
+}
+
+func (m Model) workerConversationLine(c messageConversation, w int, selected bool) string {
+	lead := "  "
+	if selected {
+		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
+	}
+	status := m.workerThreadStatus(c)
+	statusStyle := lipgloss.NewStyle().Foreground(roleText)
+	if status == "done" {
+		statusStyle = sBusy
+	} else if status == "failed" || status == "blocked" || status == "timed out" {
+		statusStyle = sBad
+	} else {
+		latest := m.feed.items[c.items[len(c.items)-1]]
+		if latest.Type == protocol.TypeRequest && latest.State != protocol.StateReplied && latest.State != protocol.StateFailed && latest.State != protocol.StateExpired {
+			statusStyle = lipgloss.NewStyle().Foreground(roleWarning)
+		}
+	}
+	content := m.conversationName(c.workerOwner) + " → " + m.conversationName(c.workerSession)
+	messageWord := "messages"
+	if len(c.items) == 1 {
+		messageWord = "message"
+	}
+	suffix := fmt.Sprintf("%d %s · %s", len(c.items), messageWord, status)
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(suffix)-1, 0)
+	line := lead + padStyled(clip(content, room), room) + " " + sDim.Render(fmt.Sprintf("%d %s · ", len(c.items), messageWord)) + statusStyle.Render(status)
+	if selected {
+		line = selectedRow(line)
+	}
+	return clip(line, w)
+}
+
+func (m Model) workerThreadStatus(c messageConversation) string {
+	for i := len(c.items) - 1; i >= 0; i-- {
+		if status, ok := workerNoticeStatus(m.feed.items[c.items[i]].Body); ok {
+			return status
+		}
+	}
+	if a, ok := m.agentByID(c.workerSession); ok {
+		if a.Online {
+			return "running"
+		}
+		return "ended"
+	}
+	return "unknown"
+}
+
+func workerNoticeStatus(body string) (string, bool) {
+	if !strings.HasPrefix(strings.TrimSpace(body), "[agent-net worker notice]") {
+		return "", false
+	}
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "status: ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "status: ")), true
+		}
+	}
+	return "stopped", true
+}
+
+func (m Model) missingMessageBody(it *feedItem) string {
+	if it.BodyError != "" {
+		return "body unavailable: " + it.BodyError
+	}
+	switch it.Snip {
+	case snipLoading:
+		return "loading body"
+	case snipFailed:
+		return "body unavailable"
+	case snipDone:
+		return "empty message"
+	default:
+		if m.localEnd(it) || m.snap.OwnerSession != "" {
+			return "loading body"
+		}
+		return "body unavailable here"
+	}
 }
 
 func workerNoticeLine(body string) (string, bool) {
@@ -222,11 +361,7 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 			continue
 		}
 		if it.Body == "" {
-			text := "…"
-			if it.Snip == snipFailed {
-				text = "body unavailable"
-			}
-			out = append(out, sDim.Render(text))
+			out = append(out, sDim.Render(clip(m.missingMessageBody(it), w)))
 			continue
 		}
 		lines := strings.Split(it.Body, "\n")
@@ -264,8 +399,24 @@ func (m Model) systemEventCount() int {
 }
 
 func (m Model) conversationName(id string) string {
+	if id == "" {
+		return "unknown session"
+	}
+	if m.snap.OwnerSession != "" && id == m.snap.OwnerSession {
+		return "you"
+	}
+	a, ok := m.agentByID(id)
+	if !ok {
+		return "unknown session"
+	}
+	if protocol.IsOwner(a.Harness) {
+		return "you"
+	}
+	if strings.TrimSpace(a.Profile.Name) == "" {
+		return "unknown session"
+	}
 	name := m.feedName(id)
-	if a, ok := m.agentByID(id); ok && a.Worker != nil {
+	if a.Worker != nil {
 		if i := strings.LastIndex(name, "worker "); i >= 0 {
 			return name[i:]
 		}

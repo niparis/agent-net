@@ -1,25 +1,25 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy                        updated 14:05:00
-╭─Messages · conversations─────────────────────╮╭─Conversation─────────────────────────────────────────────────────────╮
-│ ▸ tenebrae-53 ↔ s_00000000 · …        1m ago ││ ▸ 14:04 tenebrae-53                                                  │
-│   tenebrae-53 ↔ ci-runner · …         3m ago ││ …                                                                    │
-│   ci-runner ↔ tenebrae-53 · …         4m ago ││                                                                      │
-│   tenebrae-53 ↔ strategies · …        8m ago ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│ 1 system events · e to show                  ││                                                                      │
-╰──────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────╯
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
+╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
+│   tenebrae-53 ↔ unknown session · Which en… 1 message · 1m ago ││ ▸ 13:56 tenebrae-53                                │
+│   ci-runner ↔ tenebrae-53 · Rollback is r… 2 messages · 2m ago ││ Can you check the latest deployment plan?          │
+│ ▸ tenebrae-53 ↔ strategies · The deployme… 2 messages · 8m ago ││ The release is planned for tonight.                │
+│                                                                ││   13:57 strategies                                 │
+│                                                                ││ The deployment plan looks good.                    │
+│                                                                ││ I checked the rollback steps too.                  │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│ 1 system event · e to show · w hide workers                    ││                                                    │
+╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  left/right message  enter conversation  v body  e events  l filter  tab CTO  ? help
+up/down select  left/right message  enter thread  w workers  v body  e events  l filter  tab CTO  ? help

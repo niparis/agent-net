@@ -1,17 +1,17 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages · conversations─────────────────────────────────────────────────────╮
-│ ▸ tenebrae-53 ↔ worker 8 · Polish the sessions panel                  1m ago │
+│   tenebrae-53 ↔ strategies · The deploy is ready.         1 message · 6m ago │
+│ ▸ tenebrae-53 → worker 8                                   4 messages · done │
 │   14:00 build disconnected                                                   │
-│   tenebrae-53 ↔ strategies · The deploy is ready.                     6m ago │
-│   tenebrae-53 ↔ worker 8 · Review the change                          7m ago │
 │   13:55 build connected                                                      │
-│ 2 system events · e to hide                                                  │
+│ 2 system events · e to hide · w hide workers                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
-│ ▸ 14:02 tenebrae-53                                                          │
+│   14:02 tenebrae-53                                                          │
 │ Polish the sessions panel                                                    │
 │ Run the checks.                                                              │
-│   14:04 worker 8                                                             │
+│ ▸ 14:04 worker 8                                                             │
 │ ✓ done · 12m · 3 files                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  left/right message  enter conversation  v body  tab CTO
+up/down select  left/right message  enter thread  w workers  v body  tab CTO

@@ -185,12 +185,16 @@ func TestConversationOpensWithEnterOrC(t *testing.T) {
 			t.Fatalf("%s: esc did not close", k)
 		}
 	}
-	// Enter in the feed opens the conversation of the end on this machine.
+	// Enter in Messages selects the latest message in the right-hand thread pane.
 	m, _ := convModel(100, 30, newTranscript(5))
 	m = pressKey(m, "2")
 	m = pressKey(m, "enter")
-	if m.conv == nil || m.conv.id != "s_0000000000000001" {
-		t.Fatalf("enter in the feed opened %+v", m.conv)
+	if m.conv != nil || m.open != nil {
+		t.Fatalf("enter in Messages opened another view: conv=%+v body=%+v", m.conv, m.open)
+	}
+	row := m.messageConversations()[m.conversationIndex(m.messageConversations())]
+	if m.feedCur != row.items[len(row.items)-1] || !strings.Contains(m.View(), "Conversation") {
+		t.Fatalf("enter did not select the latest message in its thread: cursor=%d row=%+v", m.feedCur, row)
 	}
 }
 
