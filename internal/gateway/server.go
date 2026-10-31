@@ -664,12 +664,12 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return toolsPage(items, p.Offset)
 	case "query.tools_item":
 		p, err := decode[struct {
-			ID string `json:"id"`
+			Item string `json:"item"`
 		}](raw)
-		if err != nil || p.ID == "" {
+		if err != nil || p.Item == "" {
 			return nil, reject("bad query.tools_item")
 		}
-		detail, err := st.ToolsItem(p.ID, func(id string) bool { return g.conn(id) != nil })
+		detail, err := st.ToolsItem(p.Item, func(id string) bool { return g.conn(id) != nil })
 		if err != nil {
 			return nil, err
 		}

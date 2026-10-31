@@ -67,14 +67,17 @@ func (d *Daemon) toolsLoop(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	d.scanTools(ctx)
+	d.reconcileTools(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
 			d.scanTools(ctx)
+			d.reconcileTools(ctx)
 		case <-d.toolsWake:
 			d.scanTools(ctx)
+			d.reconcileTools(ctx)
 		}
 	}
 }

@@ -194,7 +194,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case "tools_items":
 		res, err = d.call(ctx, "query.tools_items", json.RawMessage(raw))
 	case "tools_item":
-		res, err = d.call(ctx, "query.tools_item", json.RawMessage(raw))
+		var p struct {
+			ID string `json:"id"`
+		}
+		if err = json.Unmarshal(raw, &p); err == nil {
+			res, err = d.call(ctx, "query.tools_item", struct {
+				Item string `json:"item"`
+			}{p.ID})
+		}
 	case "tools_import":
 		res, err = d.call(withCallWait(ctx, 90*time.Second), "tools.import", json.RawMessage(raw))
 	case "tools_versions":
