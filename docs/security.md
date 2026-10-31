@@ -273,6 +273,19 @@ Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness'
 - **No config is written.** Import never edits a harness config file. The native entry stays, so the server can be defined twice until the owner removes the native entry; this is shown as a conflict on both items.
 - **Audit.** Plans, applies, refusals and failures are recorded with actor and result, without values.
 
+### Removing a native MCP entry
+
+`mcp_native_remove` ([reference](reference.md#removing-a-native-mcp-entry)) is the one place agent-net edits a harness's own MCP config file. Rules:
+
+- **Owner gate.** Plan, apply and undo are owner methods, served like `mcp_import`: the owner's connection, or the CTO on the owner's words. An agent session is refused at the daemon and at the gateway, which checks the owner session of the node.
+- **Only an imported, tested entry.** The gateway refuses an entry whose server was not imported from that exact entry, and it tests the federated server again before the daemon edits anything. A native entry with no working replacement is never removed.
+- **Compare-and-swap.** The plan records the hash of the file. The daemon edits only a file that still has that hash, reads it again under Claude Code's config lock, and checks the hash once more just before the rename. A file that changed gives "changed since plan" and is left alone.
+- **Minimal edit.** Only the entry's bytes are cut. The daemon parses the old and new text and proves nothing else changed. A file it cannot edit this way is refused, never rewritten. The daemon takes the file from its own scan and its fixed list of native sources; the gateway cannot name another path.
+- **Committed files are not edited.** A tracked project file stays as it is; remove the entry with a commit.
+- **Backups contain secrets.** Before the edit the daemon saves the whole original file under `mcp-backups` in its state directory. A native config can hold literal credentials that import refuses, so the backup can too. Backups are local only: never uploaded, never shown in the TUI, `tools_history` or to the CTO. Folders are mode 0700 and files 0600. The daemon keeps the newest 20 per item and none older than 30 days, and never prunes one that an unfinished journal record names. Uninstall deletes them. The gateway keeps only hashes, the backup ID and the plan.
+- **Undo never overwrites.** Undo restores the original only if the file still equals what the edit wrote. After a later edit it stops with "changed since apply".
+- **Audit.** Plans, applies, refusals and undo are recorded with actor, machine, path and result, without file content or values.
+
 ## Project registry
 
 A registered project is a folder where workers may start sessions (see [decision 0002](decisions/0002-workers.md)). Registering one widens that set, so it is controlled like this:

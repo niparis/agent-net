@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 )
 
-// RemoveSkillState releases owned exclude lines and deletes local skill backups
-// and the operation journal.
+// RemoveSkillState releases owned exclude lines and deletes local skill backups,
+// the backups of native MCP config files and the operation journal.
 // Call only after the daemon has stopped.
 func RemoveSkillState(state string) error {
 	manifest := filepath.Join(state, "skill-manifest.json")
