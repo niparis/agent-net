@@ -35,8 +35,15 @@ const (
 	modeIntegrations  // the setup integrations of the whole network (integrations.go)
 )
 
-// noticeTTL is how long a result line stays when no key clears it.
-const noticeTTL = 30 * time.Second
+// A result is shown in the key line at full brightness for its hold, then
+// fades through three colour steps and gives the hints back. No key is needed.
+const (
+	noticeHold     = 4 * time.Second
+	noticeHoldErr  = 8 * time.Second
+	noticeFade     = time.Second
+	noticeFadeStep = noticeFade / 3
+	noticeAnimStep = 250 * time.Millisecond
+)
 
 // notice is the result of the last action.
 type notice struct {
@@ -44,6 +51,15 @@ type notice struct {
 	err  bool
 	at   time.Time
 }
+
+func (n notice) hold() time.Duration {
+	if n.err {
+		return noticeHoldErr
+	}
+	return noticeHold
+}
+
+func (n notice) life() time.Duration { return n.hold() + noticeFade }
 
 // actionMsg is the end of an action that ran in the background.
 type actionMsg struct {
@@ -58,9 +74,10 @@ func (m *Model) fail(text string) {
 	m.notice = notice{text: text, err: true, at: m.now()}
 }
 
-// activeNotice returns the notice to show, or nil when there is none or it is old.
+// activeNotice returns the notice to show, or nil when there is none or its
+// hold and fade are over.
 func (m Model) activeNotice() *notice {
-	if m.notice.text == "" || m.now().Sub(m.notice.at) > noticeTTL {
+	if m.notice.text == "" || m.now().Sub(m.notice.at) >= m.notice.life() {
 		return nil
 	}
 	return &m.notice

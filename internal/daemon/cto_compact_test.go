@@ -190,10 +190,16 @@ func TestCTOCompactionLoopRunsAfterAReply(t *testing.T) {
 func TestCTOCompactionIdleBeforeCacheExpiry(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
-	// 50k is below the 70% threshold but above the 40k floor.
+	// Record the session's base context: 45k is below the 70% threshold.
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply", 50_000), ctoUser("work")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The next turn grows it by 70k, above the default 60k.
+	f.send(t, "more")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 115_000), ctoUser("more"), ctoAssistant("msg_base", 45_000), ctoUser("work")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -216,12 +222,78 @@ func TestCTOCompactionIdleBeforeCacheExpiry(t *testing.T) {
 	}
 }
 
-func TestCTOCompactionFloor(t *testing.T) {
+// The base context of the CTO conversation (instructions, tools, graph) is
+// already near the old 40k floor. An idle pause alone must not compact it.
+func TestCTOCompactionIdleIgnoresTheBaseContext(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	ctx := context.Background()
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply", 39_000), ctoUser("work")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.clock.Advance(5 * time.Minute)
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 0 {
+		t.Fatalf("idle compacted the base context: %d", got)
+	}
+}
+
+// Idle compaction now needs at least the growth setting above the context
+// recorded at the last compaction (or at session start), and only once per
+// idle period.
+func TestCTOCompactionIdleAfterGrowth(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The next turn grows the context by 70k, above the default 60k.
+	f.send(t, "more")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 115_000), ctoUser("more"), ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 0 {
+		t.Fatalf("compacted before the idle window: %d", got)
+	}
+	f.clock.Advance(5 * time.Minute)
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 1 {
+		t.Fatalf("growth above the baseline did not compact: %d", got)
+	}
+	f.clock.Advance(5 * time.Minute)
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.compactCount(t); got != 1 {
+		t.Fatalf("compacted twice in one idle period: %d", got)
+	}
+}
+
+// The floor still applies on top of the growth rule: a small growth on a
+// conversation below the floor does not compact.
+func TestCTOCompactionFloor(t *testing.T) {
+	f := startCTOCompactionFixture(t)
+	ctx := context.Background()
+	settings := protocol.CTOCompactionSettings{FloorTokens: 40_000, GrowthTokens: 10_000}
+	f.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Compaction: &settings})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
+	f.send(t, "work")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 5_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.send(t, "more")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 30_000), ctoUser("more"), ctoAssistant("msg_base", 5_000), ctoUser("work")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +311,13 @@ func TestCTOCompactionOncePerIdlePeriod(t *testing.T) {
 	ctx := context.Background()
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply", 50_000), ctoUser("work")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The first idle period grows by 70k and compacts once.
+	f.send(t, "more")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 115_000), ctoUser("more"), ctoAssistant("msg_base", 45_000), ctoUser("work")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -257,9 +335,14 @@ func TestCTOCompactionOncePerIdlePeriod(t *testing.T) {
 	if got := f.compactCount(t); got != 1 {
 		t.Fatalf("compacted twice in one idle period: %d", got)
 	}
-	// A new turn starts a new idle period.
+	// The reply after the compaction sets the new baseline.
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_after", 14_000), ctoCompactionDone(), ctoAssistant("msg_grown", 115_000), ctoUser("more")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// A new turn starts a new idle period, and another 70k of growth compacts.
 	f.send(t, "again")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply2", 50_000), ctoUser("again")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown2", 84_000), ctoUser("again"), ctoAssistant("msg_after", 14_000), ctoCompactionDone(), ctoAssistant("msg_grown", 115_000), ctoUser("more")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +386,12 @@ func TestCTOCompactionChatLineWhenTheNextSendComesFirst(t *testing.T) {
 	ctx := context.Background()
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply", 50_000), ctoUser("work")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.send(t, "more")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 115_000), ctoUser("more"), ctoAssistant("msg_base", 45_000), ctoUser("work")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -318,12 +406,12 @@ func TestCTOCompactionChatLineWhenTheNextSendComesFirst(t *testing.T) {
 	// compaction. That reply still reports it, and the line must not be lost
 	// when the turn ends.
 	f.send(t, "next")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_after", 14_000), ctoCompactionDone(), ctoAssistant("msg_reply", 50_000), ctoUser("work")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_after", 14_000), ctoCompactionDone(), ctoAssistant("msg_grown", 115_000), ctoUser("more")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}
 	joined := strings.Join(f.actions(t), "|")
-	if !strings.Contains(joined, "compacted: 50k -> 14k tokens") {
+	if !strings.Contains(joined, "compacted: 115k -> 14k tokens") {
 		t.Fatalf("chat line lost after the next send: %s", joined)
 	}
 }
@@ -365,14 +453,25 @@ func TestCTOCompactionSettings(t *testing.T) {
 	settings := protocol.CTOCompactionSettings{
 		ThresholdPercent: 90,
 		FloorTokens:      60_000,
+		GrowthTokens:     20_000,
 		CacheWindowSeconds: map[string]int{
 			"fake": 60,
 		},
 	}
 	f.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Compaction: &settings})
+	var saved protocol.CTOSettings
+	if err := json.Unmarshal(f.cli.mustCall("cto_settings", nil), &saved); err != nil || saved.Compaction.GrowthTokens != 20_000 {
+		t.Fatalf("growth setting did not round-trip: %+v %v", saved.Compaction, err)
+	}
 	f.writeMessages(t, []map[string]any{ctoAssistant("msg_old", 1000), ctoUser("start")})
 	f.send(t, "work")
-	f.writeMessages(t, []map[string]any{ctoAssistant("msg_reply", 70_000), ctoUser("work")})
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_base", 45_000), ctoUser("work")})
+	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// The next turn grows by 25k, above the configured 20k growth.
+	f.send(t, "more")
+	f.writeMessages(t, []map[string]any{ctoAssistant("msg_grown", 70_000), ctoUser("more"), ctoAssistant("msg_base", 45_000), ctoUser("work")})
 	if err := f.n.d.ctoCompactOnce(ctx); err != nil {
 		t.Fatal(err)
 	}

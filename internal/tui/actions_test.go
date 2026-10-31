@@ -186,7 +186,7 @@ func TestSendCancelAndErrors(t *testing.T) {
 	if n := m.activeNotice(); n == nil || !n.err || !strings.Contains(n.text, "Not sent to tenebrae (Mac): only the owner") {
 		t.Errorf("error notice: %+v", n)
 	}
-	if l := lines(m.View())[1]; !strings.HasPrefix(l, "! Not sent to") {
+	if l := lastLine(m.View()); !strings.HasPrefix(l, "! Not sent to") {
 		t.Errorf("error line: %q", l)
 	}
 	// An offline session and an empty selection say why they cannot get a message.

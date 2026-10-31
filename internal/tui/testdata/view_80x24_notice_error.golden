@@ -1,6 +1,4 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
-! Worker not started: machine build-vm does not accept workers (it was set up
-  with --no-launch)
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
@@ -14,6 +12,8 @@
   web          opencode shop      sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
+  scratch      pi       -         -          shell  -         ?     ?
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open session  m msg  x stop  h/H hide/show  q quit
+! Worker not started: machine build-vm does not accept workers (it was set up w…

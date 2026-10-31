@@ -67,6 +67,7 @@ type ctoCompactState struct {
 	lastAssistant  string
 	idleSince      time.Time
 	compactedIdle  bool
+	baseline       int64 // context at session start or right after a compaction
 	pendingBefore  int64
 	settings       protocol.CTOSettings
 	settingsLoaded time.Time
@@ -78,6 +79,7 @@ func (s *ctoCompactState) reset(sessionID string) {
 	s.lastAssistant = ""
 	s.idleSince = time.Time{}
 	s.compactedIdle = false
+	s.baseline = 0
 	s.pendingBefore = 0
 }
 
@@ -642,8 +644,10 @@ func ctoSessionBusy(ctx context.Context, base, password, session string) (bool, 
 }
 
 // ctoCompactOnce applies the two rules: compact at once after a reply above
-// the threshold, and compact a large idle conversation shortly before the
-// provider's prompt cache expires. One compaction is allowed per idle period.
+// the threshold, and compact an idle conversation that grew enough since the
+// last compaction, shortly before the provider's prompt cache expires. The
+// base context alone never triggers the idle rule. One compaction is allowed
+// per idle period.
 func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	c := &d.cto
 	c.mu.Lock()
@@ -683,6 +687,11 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 			if cs.pendingBefore > 0 {
 				line = fmt.Sprintf("compacted: %s -> %s tokens", protocol.CompactTokens(cs.pendingBefore), protocol.CompactTokens(state.Tokens))
 				cs.pendingBefore = 0
+				cs.baseline = state.Tokens
+			}
+			if cs.baseline == 0 {
+				// The session's first context is the baseline for its growth.
+				cs.baseline = state.Tokens
 			}
 			cs.lastAssistant = state.AssistantID
 		}
@@ -691,6 +700,9 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 		if state.Tokens > 0 {
 			cs.lastAssistant = state.AssistantID
 			cs.idleSince = now
+			if cs.baseline == 0 {
+				cs.baseline = state.Tokens
+			}
 		}
 	}
 
@@ -698,7 +710,8 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	if !cs.turn && !busy && state.Tokens > 0 && !cs.compactedIdle {
 		if state.Limit > 0 && state.Tokens*100 >= state.Limit*int64(settings.ThresholdPercent) {
 			reason = "threshold"
-		} else if state.Tokens >= settings.FloorTokens && !cs.idleSince.IsZero() {
+		} else if state.Tokens >= settings.FloorTokens && cs.baseline > 0 &&
+			state.Tokens-cs.baseline >= settings.GrowthTokens && !cs.idleSince.IsZero() {
 			provider, _, _ := strings.Cut(state.Model, "/")
 			lead := settings.CacheWindow(provider) - 30*time.Second
 			if lead < 0 {

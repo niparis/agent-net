@@ -234,6 +234,16 @@ func tick() tea.Cmd {
 	return tea.Tick(tickDelay, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
+// nextTick refreshes faster while a result is on the key line, so its fade is
+// visible. The normal refresh is too slow for three colour steps.
+func (m Model) nextTick() tea.Cmd {
+	delay := tickDelay
+	if m.activeNotice() != nil {
+		delay = noticeAnimStep
+	}
+	return tea.Tick(delay, func(time.Time) tea.Msg { return tickMsg{} })
+}
+
 // fetchCmd reads a snapshot and the new events. One runs at a time.
 func (m Model) fetchCmd() tea.Cmd {
 	src, after := m.src, m.feed.lastID
@@ -385,7 +395,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
-		cmds := []tea.Cmd{tick()}
+		cmds := []tea.Cmd{m.nextTick()}
 		if m.tab == 5 && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
 			m.graphTalkLoading = true
 			m.graphTalkPending = nil
@@ -629,6 +639,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Any key dismisses a result at once, on every screen.
+		m.notice = notice{}
 		m.frozenOrder = make(map[string]int)
 		for i, a := range m.visible() {
 			m.frozenOrder[a.SessionID] = i
@@ -964,7 +976,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	}
-	m.notice = notice{} // the result of the last action goes with the next key
 	if m.focus == focusSessions {
 		for _, suggestion := range m.snap.Learned {
 			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && (k.String() == "a" || k.String() == "r") {
