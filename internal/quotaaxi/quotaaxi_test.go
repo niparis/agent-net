@@ -352,3 +352,20 @@ func TestFindMacOSNVMAndNPMGlobalCopies(t *testing.T) {
 		t.Fatalf("npm global copy: %q %v", got, ok)
 	}
 }
+
+func TestExecEnvFindsCompatibleNVMNode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", t.TempDir())
+	quotaDir := t.TempDir()
+	fakeNode(t, quotaDir, "20.0.0")
+	nvm := filepath.Join(home, ".nvm", "versions", "node", "v22.19.0", "bin")
+	if err := os.MkdirAll(nvm, 0755); err != nil {
+		t.Fatal(err)
+	}
+	fakeNode(t, nvm, "22.19.0")
+	env := ExecEnv(filepath.Join(quotaDir, "quota-axi"))
+	if !strings.Contains(strings.Join(env, "\n"), "PATH="+nvm+string(os.PathListSeparator)) {
+		t.Fatal("compatible Node was not prepended to PATH")
+	}
+}

@@ -180,6 +180,10 @@ func InstalledVersion(path string) (string, error) {
 	var parseErr error
 	if runErr != nil {
 		parseErr = fmt.Errorf("run --version: %w", runErr)
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) && exitErr.ExitCode() == 127 {
+			parseErr = ErrNeedNode
+		}
 	} else if match := versionPattern.FindStringSubmatch(strings.TrimSpace(string(out))); match == nil {
 		parseErr = fmt.Errorf("could not parse semantic version from --version output")
 	} else {
@@ -317,9 +321,16 @@ func logSkipped(path, version string, logf func(format string, args ...any)) {
 // nvm or npm folder uses the Node it belongs to.
 func ExecEnv(path string) []string {
 	env := os.Environ()
-	dir := filepath.Dir(path)
-	if usable(filepath.Join(dir, "node")) {
-		return prependPath(env, dir)
+	dirs := append([]string{filepath.Dir(path)}, nvmBins()...)
+	dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
+	if node, err := exec.LookPath("node"); err == nil {
+		dirs = append(dirs, filepath.Dir(node))
+	}
+	for _, dir := range dirs {
+		node := filepath.Join(dir, "node")
+		if usable(node) && nodeVersionOK(node) {
+			return prependPath(env, dir)
+		}
 	}
 	return env
 }

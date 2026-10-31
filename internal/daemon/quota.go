@@ -289,6 +289,10 @@ func runQuotaAXI(ctx context.Context, path string) ([]byte, []byte, error) {
 }
 
 func quotaAXIFailure(err error, stderr []byte) error {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 127 && strings.Contains(string(stderr), "node") {
+		return quotaaxi.ErrNeedNode
+	}
 	message := fmt.Sprintf("it failed: %v", err)
 	line := firstStderrLine(stderr)
 	if line != "" {
