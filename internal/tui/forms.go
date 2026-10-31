@@ -28,10 +28,11 @@ const (
 	modeForm              // the start-a-worker form
 	modeConfirm           // asking y/n before stopping a worker
 	modeQuotaConfirm
-	modeTrust        // asking y/n before trusting a session with peer requests
-	modePolicy       // the delegation policy form (policy.go)
-	modeRename       // typing a display name for the selected session's machine
-	modeIntegrations // the setup integrations of the whole network (integrations.go)
+	modeTrust         // asking y/n before trusting a session with peer requests
+	modePolicy        // the delegation policy form (policy.go)
+	modeRename        // typing a display name for the selected session's machine
+	modeProjectRename // typing the selected project display name
+	modeIntegrations  // the setup integrations of the whole network (integrations.go)
 )
 
 // noticeTTL is how long a result line stays when no key clears it.
@@ -680,4 +681,51 @@ func firstNames(rows []protocol.ProjectView, n int) []string {
 		}
 	}
 	return out
+}
+
+func (m Model) startProjectRename() (Model, tea.Cmd) {
+	node, ok := m.mapNode(m.mp.selected)
+	if !ok || node.Kind == "architect" {
+		m.fail("Pick a project to name.")
+		return m, nil
+	}
+	m.mode = modeProjectRename
+	m.rename = textinput.New()
+	m.rename.Prompt = "name for " + sanitize(node.Name) + "> "
+	m.rename.CharLimit = protocol.ProjectMaxFieldLen
+	m.rename.Cursor.SetMode(cursor.CursorHide)
+	shown := m.projectName(node.Name)
+	if shown != node.Name {
+		m.rename.SetValue(shown)
+	}
+	m.rename.CursorEnd()
+	m.renameNode = node.Name
+	m.notice = notice{}
+	return m, m.rename.Focus()
+}
+
+func (m Model) projectRenameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.Type {
+	case tea.KeyEsc:
+		m.mode = modeNormal
+		m.say("Project name unchanged.")
+		return m, nil
+	case tea.KeyEnter:
+		project, name := m.renameNode, strings.TrimSpace(m.rename.Value())
+		m.mode = modeNormal
+		m.say("Saving the project name...")
+		src := m.src
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_, err := src.SetProjectDisplayName(ctx, project, name)
+			if err != nil {
+				return actionMsg{err: fmt.Errorf("Project name not changed: %s", explain(err))}
+			}
+			return actionMsg{text: "Project name saved."}
+		}
+	}
+	var cmd tea.Cmd
+	m.rename, cmd = m.rename.Update(k)
+	return m, cmd
 }

@@ -300,6 +300,30 @@ func firstNonEmpty(a, b string) string {
 
 // ---- detail ----
 
+// projectName returns an owner's display name while preserving identity for actions.
+func (m Model) projectName(identity string) string {
+	if identity == "*" {
+		return "all projects"
+	}
+	for _, p := range m.snap.Projects {
+		if p.Name == identity && p.DisplayName != "" {
+			return sanitize(p.DisplayName)
+		}
+	}
+	for _, a := range m.snap.Agents {
+		if firstNonEmpty(a.Repo.Project, a.Profile.Project) == identity && a.ProjectDisplayName != "" {
+			return sanitize(a.ProjectDisplayName)
+		}
+	}
+	return sanitize(identity)
+}
+func (m Model) agentProjectName(a protocol.AgentView) string {
+	if a.ProjectDisplayName != "" {
+		return sanitize(a.ProjectDisplayName)
+	}
+	return m.projectName(firstNonEmpty(a.Repo.Project, a.Profile.Project))
+}
+
 // projectSource says where the project of a session is known from: registered
 // (someone added it with agent-net projects add), seen (a session ran there)
 // or both. It is empty when the project list has no entry for the session's
@@ -350,7 +374,7 @@ func (m Model) who(id string) string {
 		if protocol.IsOwner(a.Harness) {
 			return dashIfEmpty(a.Profile.Name) // already "you (on host)"
 		}
-		return fmt.Sprintf("%s (%s)", dashIfEmpty(a.Profile.Name), m.nodeName(a.NodeID, a.Hostname))
+		return fmt.Sprintf("%s (%s)", dashIfEmpty(m.feedName(id)), m.nodeName(a.NodeID, a.Hostname))
 	}
 	return shortID(id)
 }
@@ -544,13 +568,13 @@ func (m Model) infoText(it *feedItem) string {
 	case "worker.started":
 		d := parseDetail(it.Detail)
 		return fmt.Sprintf("worker started: %s %s in %s for %s", m.feedName(it.Session), sanitize(dashIfEmpty(d["harness"])),
-			sanitize(dashIfEmpty(d["project"])), m.feedName(d["owner"]))
+			dashIfEmpty(m.projectName(d["project"])), m.feedName(d["owner"]))
 	case "worker.stopped":
 		d := parseDetail(it.Detail)
 		return fmt.Sprintf("worker stopped: %s (%s)", m.feedName(it.Session), sanitize(strings.ReplaceAll(dashIfEmpty(d["reason"]), "_", " ")))
 	case "worker.refused":
 		d := parseDetail(it.Detail)
-		return fmt.Sprintf("worker refused in %s: %s", sanitize(dashIfEmpty(d["project"])), sanitize(detailReason(it.Detail)))
+		return fmt.Sprintf("worker refused in %s: %s", dashIfEmpty(m.projectName(d["project"])), sanitize(detailReason(it.Detail)))
 	}
 	return sanitize(it.Kind)
 }

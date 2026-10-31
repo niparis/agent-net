@@ -44,3 +44,28 @@ func TestSetPeerTrustOnAnOldDaemonSaysSo(t *testing.T) {
 		t.Errorf("error: %v", err)
 	}
 }
+
+func TestProjectDisplayOperator(t *testing.T) {
+	d, path := startFake(t, func(method string, params json.RawMessage) (any, string) {
+		if method == "hello" {
+			return map[string]any{}, ""
+		}
+		if method == "project_display_set" || method == "project_display_get" {
+			return map[string]string{"project": "agent-net", "name": "Agent Network"}, ""
+		}
+		return nil, "unknown method"
+	})
+	c := New(path)
+	defer c.Close()
+	if _, err := c.SetProjectDisplayName(context.Background(), "agent-net", "Agent Network"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.ProjectDisplayName(context.Background(), "agent-net")
+	if err != nil || out.Name != "Agent Network" {
+		t.Fatalf("%+v %v", out, err)
+	}
+	var p map[string]string
+	if err = json.Unmarshal(d.params["project_display_set"], &p); err != nil || p["project"] != "agent-net" || p["name"] != "Agent Network" {
+		t.Fatalf("params %v %v", p, err)
+	}
+}

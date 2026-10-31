@@ -413,6 +413,10 @@ A timer deletes older data once at start and then every hour. A period of `0` ke
 
 **Back up the gateway data folder.** It is the only copy of the CA, the server key and the database. If you lose it, every node has to join again (new invites, one for each machine), and all message history is gone. Copy the whole folder (`~/.local/state/agent-net/gateway/`) while the gateway is stopped, or use `sqlite3 gateway.db ".backup ..."` for the database, and keep the copy private: it holds `ca.key` and `server-key.pem`.
 
+## Project display names
+
+The owner-only `project_display_get` and `project_display_set` methods use the daemon's owner gate. Agent clients and command lines inside an agent session are refused. The CTO can call them through its process-tree-checked private channel. As with other owner operations, the gateway trusts enrolled daemons to send the corresponding frames. Display names are visible in project and agent listings to enrolled machines and agents. They are not a secret store. The gateway limits a name to 4096 bytes and rejects non-printable characters. An empty name clears it.
+
 ## Machine names
 
 The owner can give a machine a display name ([decision 0015](decisions/0015-machine-display-name.md), key `N` in the TUI, `agent-net nodes rename`). It is the name every machine, every agent and every hint sees for that machine, so who sets it and what it may hold matter.

@@ -33,6 +33,8 @@ type Store struct {
 	db                *sql.DB
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
+	identityMerges    [][2]string
+	identityConflicts [][2]string
 	now               func() time.Time
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
@@ -303,7 +305,7 @@ CREATE TABLE IF NOT EXISTS learned_phrase_state (suggestion_id INTEGER PRIMARY K
 CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL);
 `, `
 CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
-`}
+`, `SELECT 1 /* project identity migration */;`, `CREATE TABLE IF NOT EXISTS project_display_names (project TEXT PRIMARY KEY, name TEXT NOT NULL);`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -352,6 +354,14 @@ func (s *Store) migrate() error {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
+		var merges, conflicts [][2]string
+		if strings.Contains(migrations[i], "project identity migration") {
+			merges, conflicts, err = migrateProjectIdentities(tx)
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
 		if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1); err != nil {
 			tx.Rollback()
 			return err
@@ -359,6 +369,8 @@ func (s *Store) migrate() error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		s.identityMerges = append(s.identityMerges, merges...)
+		s.identityConflicts = append(s.identityConflicts, conflicts...)
 		if strings.Contains(migrations[i], "DELETE FROM graph_nodes") {
 			s.graphJunkRemoved, _ = result.RowsAffected()
 			s.graphJunkMigrated = true
@@ -993,7 +1005,7 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.sta
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),'')
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -1007,7 +1019,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.Status, &online, &lastSeen,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting)
+		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName)
 	if err != nil {
 		return a, err
 	}

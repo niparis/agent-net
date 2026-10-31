@@ -67,7 +67,7 @@ func (m Model) overviewLines(w int) []overviewLine {
 	if len(isolated) > 0 {
 		names := make([]string, 0, len(isolated))
 		for _, n := range isolated {
-			name := sanitize(n.Name)
+			name := m.projectName(n.Name)
 			if m.hiddenNodes[n.Name] {
 				name = "[hidden] " + name
 			}
@@ -100,7 +100,7 @@ func (m Model) overviewBox(n protocol.Node, w int) string {
 	level := maturityLevel(n.Charter.Maturity)
 	suffix := " · " + level + " · " + ansi.Strip(status)
 	room := max(w-4-ansi.StringWidth(suffix), 1)
-	nameText := sanitize(n.Name)
+	nameText := m.projectName(n.Name)
 	if m.hiddenNodes[n.Name] {
 		nameText = "[hidden] " + nameText
 	}
@@ -147,7 +147,7 @@ func (m Model) mapOverviewView(w, h int) ([]string, bool) {
 	edgeStart := min(max(m.mp.overviewEdgeScroll, 0), max(len(eligible)-1, 0))
 	edgeEnd := min(edgeStart+remaining, len(eligible))
 	for _, e := range eligible[edgeStart:edgeEnd] {
-		line := sanitize(e.From) + " " + linkArrow([]mapLink{{edge: e}}, 0, 4) + " " + sanitize(e.To) + sDim.Render(" · "+sanitize(e.Kind)+" "+sanitize(e.Rule))
+		line := m.projectName(e.From) + " " + linkArrow([]mapLink{{edge: e}}, 0, 4) + " " + m.projectName(e.To) + sDim.Render(" · "+sanitize(e.Kind)+" "+sanitize(e.Rule))
 		out = append(out, clip(line, w))
 	}
 	off := len(m.mp.edges) - (edgeEnd - edgeStart)

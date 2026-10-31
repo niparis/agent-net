@@ -435,6 +435,9 @@ func (m Model) feedName(id string) string {
 		return "you"
 	}
 	if n := strings.TrimSpace(a.Profile.Name); n != "" {
+		if n == firstNonEmpty(a.Repo.Project, a.Profile.Project) {
+			return m.agentProjectName(a)
+		}
 		return sanitize(n)
 	}
 	return shortID(id)

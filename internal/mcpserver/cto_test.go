@@ -289,3 +289,21 @@ func TestProtectedProvidersTools(t *testing.T) {
 		t.Fatal("setter must say to ask the owner")
 	}
 }
+
+func TestCTOProjectDisplayTool(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range list.Tools {
+		if tool.Name == "project_display_set" {
+			props, _ := ctoToolSchema(t, tool)
+			if props["project"] == nil || props["name"] == nil {
+				t.Fatalf("properties %v", props)
+			}
+			return
+		}
+	}
+	t.Fatal("project_display_set missing")
+}

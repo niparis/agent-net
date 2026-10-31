@@ -114,7 +114,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `workers`, `worker_start`, `agent_start`, `worker_stop`, `agent_stop` | `workers`, `worker_start`, `worker_stop` |
 | `owner_send`, `agent_send`, `agent_reply` | `send`, `reply` (reply to messages addressed to the owner) |
 | `usage`, `usage_top`, `counts`, `graph_view`, `session_enter` | Same names |
-| `session_trust`, `session_policy`, `node_rename` | Same names; read a session policy with `get` |
+| `session_trust`, `session_policy`, `node_rename`, `project_display_get`, `project_display_set` | Same names; read a session policy with `get` |
 | `integrations_get`, `integrations_set` | Same names |
 | `held_list`, `held_answer`, `inbox_list`, `inbox_answer`, `outcome_inbox`, `outcome_overrule` | Same names |
 | `graph_get`, `charter_set`, `charter_history`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `edge_history`, `graph_undo` | Same names; request rules are on `edge_set` |
@@ -359,6 +359,8 @@ The gateway writes one line per event to stderr (the systemd journal, or the lau
 | `session.new` | The first time the gateway sees a session. | `session`, `node`, `host`, `harness`, `name` (the automatic name), `title` (the harness name, which TASK shows until the agent announces), `pid`, `cwd`, `project`, `git_root`, `worktree`, `remote`, `branch` |
 | `node.harnesses` | The harnesses installed on a machine changed (or it reported for the first time). | `node`, `host`, `change`, `installed` |
 | `project.added` | A project was registered. One line per project. | `node`, `host`, `session` (empty for the CLI), `harness` (`cli` for the CLI), `name`, `path`, `remote` |
+| `project.identity_merge` | Existing project charters were merged during identity migration. | `from`, `to` |
+| `project.identity_conflict` | Migration left a project pair unchanged because their graph controls conflict. | `from`, `to` |
 | `project.removed` | A registration was removed. | `node` (who asked), `target` (the machine it was on), `host`, `name`, `path` |
 | `node.connected`, `node.disconnected` | A machine's link came up or went down. | `node`, `host`, `remote` |
 | `retention` | Old data was deleted. | `messages`, `deliveries`, `events`, `sessions` |
@@ -461,8 +463,8 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 
 - `root`: the main working tree of the repository. Empty if the folder is not in a git repository. A linked git worktree has the root of the main tree it belongs to, found with `git rev-parse --git-common-dir`.
 - `worktree`: the working tree the session's folder is in. It is the same as `root`, except in a linked git worktree.
-- `project`: the base name of `root`, or of the folder if there is no git repository. So a worktree is not a project of its own: the sessions of `tenebrae` and of its worktrees `agent-a76c...` are all in project `tenebrae`.
-- The name of every session is its project name ([0024](decisions/0024-session-names.md)). A session in a worktree is named after the main tree, not the worktree folder; a folder that is not a repository gives its own name. The git remote plays no part. Two live sessions with the same name on the network get ` 2`, ` 3` (the lowest free number), and a worker is `<project> worker <n>`. A worker's TASK is the first line of its task. The name a harness gives the session (a Codex thread name, a Claude session title, an OpenCode session title) is not the name: it goes to TASK when the session announced no task.
+- `project`: the last path part of the `origin` remote, without a trailing `.git`. With no usable origin, the main tree folder name is used. Outside a repository, the session folder name is used. Linked worktrees share their repository identity.
+- The name of every session is its project name ([0024](decisions/0024-session-names.md)). The project name follows the origin repository when present, and a linked worktree uses the same name. A folder that is not a repository gives its own name. Two live sessions with the same name on the network get ` 2`, ` 3` (the lowest free number), and a worker is `<project> worker <n>`. A worker's TASK is the first line of its task. The name a harness gives the session (a Codex thread name, a Claude session title, an OpenCode session title) is not the name: it goes to TASK when the session announced no task.
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
 - `description`: the one-line description of the project, read from `AGENTS.md` (else `CLAUDE.md`) in the main working tree, or in the session's folder when there is no repository. See "FUNCTION and the task" below.
@@ -999,7 +1001,13 @@ new data directory before starting it. It never replaces a live data directory.
 
 Without a registry, a project exists only after a session ran in it. The registry lets you (or an agent, when you ask) say "this repository is a project" ahead of time. Workers (see [decision 0002](decisions/0002-workers.md)) start sessions only in known projects, and a registered project is known even if no session ever ran there.
 
-Each entry has the machine, the path of the main working tree, the name (its base name), the `origin` remote without credentials, the default branch (the branch `origin/HEAD` points to, when the clone has it), who added it (`cli`, or the harness and session), when it was added and when it was last checked. The gateway keeps entries in the `projects` table of `gateway.db`. `agent-net projects` merges them with the projects found from sessions, one row per repository per machine. SOURCE says where a row comes from: `registered`, `seen` (only sessions) or `both`. Registered projects stay when their sessions are deleted by retention.
+Each entry has the machine, the path of the main working tree, the identity derived from the `origin` remote, the `origin` remote without credentials, the default branch (the branch `origin/HEAD` points to, when the clone has it), who added it (`cli`, or the harness and session), when it was added and when it was last checked. The gateway keeps entries in the `projects` table of `gateway.db`. `agent-net projects` merges them with the projects found from sessions, one row per repository per machine. SOURCE says where a row comes from: `registered`, `seen` (only sessions) or `both`. Registered projects stay when their sessions are deleted by retention.
+
+**Project identity and display name.** The last part of the `origin` URL, without `.git`, is the project identity. For example, `https://example.com/team/agent-net.git` gives `agent-net` even when the checkout folder has another name. With no usable origin, the main tree folder name is used. Repositories with the same last remote path part share an identity, even when their owners or hosts differ.
+
+The gateway stores an optional display name for each identity. In Map, select a project and press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, or `project_display_get` with `project`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
+
+On upgrade, the gateway uses stored origin URLs to move old folder-based project data to the repository identity. When charters meet, both texts are kept and `project.identity_merge` is logged. If graph controls conflict, that pair is left unchanged, `project.identity_conflict` is logged with `from` and `to`, and the gateway continues with other projects. Ambiguous folder names that point to different repository identities are left alone. This migration runs once; logged conflicts and ambiguous mappings need review.
 
 **Registration runs on the machine that holds the folder.** The daemon of that machine checks each path and sends the gateway the checked entry:
 

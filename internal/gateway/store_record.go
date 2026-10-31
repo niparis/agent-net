@@ -46,6 +46,11 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 		}
 	}
 	for i := range out {
+		display, err := s.ProjectDisplayName(out[i].Name)
+		if err != nil {
+			return nil, err
+		}
+		out[i].DisplayName = display.Name
 		out[i].Permissions, err = s.WorkerPermissions(out[i].NodeID, out[i].Name)
 		if err != nil {
 			return nil, err

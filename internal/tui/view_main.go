@@ -171,7 +171,7 @@ func (m Model) View() string {
 	}
 	// CTO notices must also be visible on the map, messages and quotas views.
 	if (m.tab != 0 || m.mapOn || m.inboxOn || m.help || m.learned || m.conv != nil) && len(out) > 0 {
-		if n := m.activeNotice(); n != nil && strings.HasPrefix(n.text, "CTO: ") {
+		if n := m.activeNotice(); n != nil && (m.mapOn || strings.HasPrefix(n.text, "CTO: ")) {
 			line := sIdle.Render(clip("  "+sanitize(n.text), w))
 			out = append(out[:1], append([]string{line}, out[1:]...)...)
 		}
@@ -935,7 +935,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
 			nameWant = max(nameWant, utf8.RuneCountInString(nameText(a, g.marks[a.SessionID], 1<<20)))
-			projectWant = max(projectWant, ansi.StringWidth(sanitize(firstNonEmpty(a.Repo.Project, a.Profile.Project))))
+			projectWant = max(projectWant, ansi.StringWidth(m.agentProjectName(a)))
 			policy = policy || policyBadge(a.Delegation) != ""
 		}
 	}
@@ -1114,7 +1114,7 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "AGENT":
 			v = a.Harness
 		case "PROJECT":
-			v = firstNonEmpty(a.Repo.Project, a.Profile.Project)
+			v = m.agentProjectName(a)
 		case "MODEL":
 			v = shortModel(a.Model)
 		case "STATUS":

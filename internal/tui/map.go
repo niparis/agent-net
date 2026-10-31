@@ -134,6 +134,8 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "/":
 		m.mp.finding = true
 		m.mp.findQuery = ""
+	case "D":
+		return m.startProjectRename()
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
@@ -349,7 +351,7 @@ func (m Model) mapProjectNodes() []protocol.Node {
 	})
 	var out []protocol.Node
 	for _, n := range nodes {
-		if (m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter))) && (!m.mp.finding || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.mp.findQuery))) {
+		if (m.uiFilter == "" || strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.uiFilter))) && (!m.mp.finding || (strings.Contains(strings.ToLower(n.Name), strings.ToLower(m.mp.findQuery)) || strings.Contains(strings.ToLower(m.projectName(n.Name)), strings.ToLower(m.mp.findQuery)))) {
 			out = append(out, n)
 		}
 	}

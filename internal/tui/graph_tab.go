@@ -96,13 +96,17 @@ func (m Model) graphView(w, h int) []string {
 	gw, gh := max(w-4, 1), max(h-4, 1)
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
+	for i := range scene.Nodes {
+		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
+		scene.Nodes[i].Card.Name = m.projectName(scene.Nodes[i].Name)
+	}
 	renderer := graphview.Braille{Styled: true}
 	for _, line := range renderer.Render(scene, graphview.Size{Width: gw, Height: gh}).Lines {
 		out = append(out, "  "+line)
 	}
 	feed := []string{}
 	for _, msg := range scene.Feed {
-		feed = append(feed, fmt.Sprintf("%s → %s %s", sanitize(msg.From), sanitize(msg.To), sanitize(msg.Kind)))
+		feed = append(feed, fmt.Sprintf("%s → %s %s", m.projectName(msg.From), m.projectName(msg.To), sanitize(msg.Kind)))
 	}
 	if len(feed) == 0 {
 		feed = append(feed, "no messages yet")

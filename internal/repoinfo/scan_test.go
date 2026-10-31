@@ -90,7 +90,7 @@ func TestInspectSubmoduleIsItsOwnProject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Path != filepath.Join(app, "vendored-lib") || e.Name != "vendored-lib" {
+	if e.Path != filepath.Join(app, "vendored-lib") || e.Name != "lib" {
 		t.Fatalf("submodule: %+v", e)
 	}
 }

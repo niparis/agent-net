@@ -228,16 +228,17 @@ type AgentCharter struct {
 }
 
 type AgentView struct {
-	Charter   AgentCharter `json:"charter"`
-	SessionID string       `json:"session_id"`
-	NodeID    string       `json:"node_id"`
-	Hostname  string       `json:"hostname"`
-	Harness   string       `json:"harness"`
-	Cwd       string       `json:"cwd"`
-	Status    string       `json:"status"`
-	Online    bool         `json:"online"`
-	LastSeen  int64        `json:"last_seen"`
-	Profile   Profile      `json:"profile"`
+	ProjectDisplayName string       `json:"project_display_name,omitempty"`
+	Charter            AgentCharter `json:"charter"`
+	SessionID          string       `json:"session_id"`
+	NodeID             string       `json:"node_id"`
+	Hostname           string       `json:"hostname"`
+	Harness            string       `json:"harness"`
+	Cwd                string       `json:"cwd"`
+	Status             string       `json:"status"`
+	Online             bool         `json:"online"`
+	LastSeen           int64        `json:"last_seen"`
+	Profile            Profile      `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
 	// Mode and Model are what the session's daemon reported. Empty from an
@@ -517,6 +518,7 @@ type FeedEvent struct {
 
 // ProjectView is one project folder on one machine, built from stored sessions.
 type ProjectView struct {
+	DisplayName string `json:"display_name,omitempty"`
 	Permissions string `json:"permissions"`
 	Name        string `json:"name"`
 	NodeID      string `json:"node_id"`

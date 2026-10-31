@@ -69,13 +69,13 @@ func (m Model) mapSessionDots(project string) (dots []string, busy int) {
 
 // mapEdgeEntry draws one edge of the selected node: the peer, an arrow in the
 // color of the kind, the kind, and the rule when it is not "normal".
-func mapEdgeEntry(e protocol.Edge, incoming bool) string {
+func (m Model) mapEdgeEntry(e protocol.Edge, incoming bool) string {
 	peer := e.To
 	if incoming {
 		peer = e.From
 	}
 	arrow := edgeKindStyle(e.Kind).Render("──▶")
-	text := displayNode(peer)
+	text := m.projectName(peer)
 	if peer == wildcardNode {
 		text = sDim.Render(text)
 	}
@@ -123,7 +123,7 @@ func (m Model) mapEdgeColumns(node string, w, room int) []string {
 				lines = append(lines, sDim.Render(fmt.Sprintf("+%d more", len(list)-i)))
 				break
 			}
-			lines = append(lines, mapEdgeEntry(e, incoming))
+			lines = append(lines, m.mapEdgeEntry(e, incoming))
 		}
 		return lines
 	}
@@ -291,7 +291,7 @@ func (m Model) mapFocusView(w, h int) []string {
 		return append(head, sDim.Render("  no nodes yet"), sDim.Render("  no node selected"))
 	}
 	node, _ := m.mapNode(m.mp.selected)
-	title := sBold.Render(clip(displayNode(node.Name), max(w-24, 8)))
+	title := sBold.Render(clip(m.projectName(node.Name), max(w-24, 8)))
 	if level := maturityLevel(node.Charter.Maturity); level != "-" {
 		title += "  " + mapLevelStyle(level).Render(level)
 	}
@@ -324,7 +324,7 @@ func (m Model) mapFocusView(w, h int) []string {
 	var gov []string
 	for _, e := range m.mp.edges {
 		if e.Kind == "governs" && e.To == node.Name {
-			gov = append(gov, sanitize(e.From)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
+			gov = append(gov, m.projectName(e.From)+" ("+dashIfEmpty(sanitize(e.Mode))+")")
 		}
 	}
 	sort.Strings(gov)
