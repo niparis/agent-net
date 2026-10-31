@@ -531,7 +531,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T trivial S simple N normal H hard V very complex",
 		"E strong G ok P weak - too weak",
-		"luna codex: picked for trivial, simple and normal",
+		"terra codex: picked for trivial, simple, normal and hard",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {
@@ -547,6 +547,30 @@ func TestWorkersPanelRedesign(t *testing.T) {
 	for _, line := range strings.Split(plain, "\n") {
 		if strings.Contains(line, "T trivial S simple") && ansi.StringWidth(line) > 120 {
 			t.Fatalf("key line exceeds panel width: %q", line)
+		}
+	}
+}
+
+func TestWorkersPanelShowsRotationShares(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai-codex/gpt-6.1-terra", "openai/gpt-6-luna"}}}
+	m.snap.Nodes[0].Harnesses[0].ModelDefaultEfforts = map[string]string{"openai-codex/gpt-6.1-terra": "high", "openai/gpt-6-luna": "xhigh"}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{
+		{Name: "terra codex", Harness: "codex", Model: "openai-codex/gpt-6.1-terra", Effort: "high"},
+		{Name: "luna codex", Harness: "codex", Model: "openai/gpt-6-luna", Effort: "xhigh"},
+	}
+	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6.1-terra", Effort: "high", Score: 42.3}, {Match: "gpt-6-luna", Effort: "xhigh", Score: 30}}
+	m.snap.WorkerProviders = []string{"codex"}
+	terra := protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: "codex", Model: "openai-codex/gpt-6.1-terra:high"})
+	luna := protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: "codex", Model: "openai/gpt-6-luna:xhigh"})
+	m.snap.WorkerRotation = protocol.WorkerRotation{Levels: map[string]*protocol.WorkerRotationLevel{
+		"normal": {Recent: []string{terra, terra, luna}},
+	}}
+	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	for _, want := range []string{"(next start)", "of the last 3 normal starts", "terra codex: 2", "luna codex: 1"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("missing %q in:\n%s", want, view)
 		}
 	}
 }

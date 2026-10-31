@@ -99,6 +99,7 @@ type Snapshot struct {
 	ProtectedProviders protocol.ProtectedProviders
 	Scores             []protocol.ModelScore
 	DifficultyMinimums map[string]float64
+	WorkerRotation     protocol.WorkerRotation
 	Nodes              []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.
 	Outcomes []protocol.OutcomeInboxEntry

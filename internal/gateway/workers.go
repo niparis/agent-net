@@ -515,11 +515,17 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				}
 				return none, reject("%s", reason)
 			}
-			g.mu.Lock()
-			rotation := g.modelRotation
-			g.modelRotation++
-			g.mu.Unlock()
-			choice, protectionNote, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, rotation, protected)
+			g.rotationMu.Lock()
+			rotation, err := g.store.WorkerRotation()
+			if err != nil {
+				g.rotationMu.Unlock()
+				return none, err
+			}
+			choice, protectionNote, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
+			if err == nil {
+				err = g.store.saveWorkerRotation(rotation)
+			}
+			g.rotationMu.Unlock()
 			if err != nil {
 				return none, reject("%v", err)
 			}
@@ -1079,6 +1085,12 @@ func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidate
 		note += "; " + choice.QuotaNote
 	} else {
 		note += "; no quota pace reading"
+	}
+	if choice.Weight > 0 {
+		note += fmt.Sprintf("; rotation weight %.2f", choice.Weight)
+	}
+	if choice.ShareNote != "" {
+		note += "; " + choice.ShareNote
 	}
 	for _, c := range candidates {
 		n := c.Track.Complete + c.Track.Partial + c.Track.Failed

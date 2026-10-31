@@ -17,7 +17,7 @@ func isProtected(harness, model string, setting protocol.ProtectedProviders) boo
 	return false
 }
 
-func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, rotation int, setting protocol.ProtectedProviders) (protocol.WorkerModelChoice, string, error) {
+func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level string, scores []protocol.ModelScore, minimums map[string]float64, quotas *protocol.Quotas, running map[string]int, rotation *protocol.WorkerRotation, setting protocol.ProtectedProviders) (protocol.WorkerModelChoice, string, error) {
 	if len(setting.Providers) == 0 {
 		c, err := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, rotation)
 		return c, "", err

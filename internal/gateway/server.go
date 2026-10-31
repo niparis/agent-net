@@ -66,11 +66,11 @@ type Gateway struct {
 	// usage holds the newest CPU and memory report of each node (usage.go).
 	usage usageTable
 
-	mu            sync.Mutex
-	conns         map[string]*nodeConn
-	timers        map[string]*time.Timer
-	closed        bool
-	modelRotation int
+	mu         sync.Mutex
+	conns      map[string]*nodeConn
+	timers     map[string]*time.Timer
+	closed     bool
+	rotationMu sync.Mutex
 }
 
 type nodeConn struct {
@@ -324,6 +324,7 @@ func (g *Gateway) Handler() http.Handler {
 	mux.HandleFunc("PUT /v1/difficulty", g.handleDifficulty)
 	mux.HandleFunc("GET /v1/scores", g.handleScoresGet)
 	mux.HandleFunc("PUT /v1/scores", g.handleScoresSet)
+	mux.HandleFunc("GET /v1/worker-rotation", g.handleWorkerRotation)
 	mux.HandleFunc("GET /v1/cto-settings", g.handleCTOSettingsGet)
 	mux.HandleFunc("PUT /v1/cto-settings", g.handleCTOSettingsSet)
 	mux.HandleFunc("GET /v1/integrations", g.handleIntegrationsGet)

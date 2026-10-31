@@ -89,6 +89,33 @@ func (d *Daemon) difficulty(ctx context.Context, change map[string]float64) (map
 	return out, err
 }
 
+func (d *Daemon) workerRotation(ctx context.Context) (protocol.WorkerRotation, error) {
+	c, ok := d.integrationsClient()
+	if !ok {
+		return protocol.WorkerRotation{}, errNotConnected
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.URL, "/")+"/v1/worker-rotation", nil)
+	if err != nil {
+		return protocol.WorkerRotation{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Token)
+	hc := c.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return protocol.WorkerRotation{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return protocol.WorkerRotation{}, fmt.Errorf("gateway answered %s", resp.Status)
+	}
+	var out protocol.WorkerRotation
+	err = json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
+	return out, err
+}
+
 func (d *Daemon) workerProviders(ctx context.Context, change *protocol.WorkerProviders) (protocol.WorkerProviders, error) {
 	c, ok := d.integrationsClient()
 	if !ok {
