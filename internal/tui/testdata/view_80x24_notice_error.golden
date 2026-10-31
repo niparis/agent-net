@@ -2,9 +2,9 @@
 ! Worker not started: machine build-vm does not accept workers (it was set up
   with --no-launch)
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) cpu ? mem ? disk ? - -                                         │
-│  ● build-vm   cpu ? mem ? disk ? - - no claude · no opencode                 │
-│  ○ old-box    cpu ? mem ? disk ? - -                                         │
+│  ● Mac (here) cpu ? mem ? disk ?                                             │
+│  ● build-vm   cpu ? mem ? disk ?   no claude · no opencode                   │
+│  ○ old-box    cpu ? mem ? disk ?                                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────

@@ -168,6 +168,24 @@ func TestMachineRowsShowCapacityDiskWorkersAndTop(t *testing.T) {
 	}
 }
 
+func TestMachineRowsHaveNoLoneDashCells(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		for _, line := range lines(m.View()) {
+			plain := strings.TrimSpace(ansi.Strip(line))
+			if !strings.Contains(plain, "cpu ") {
+				continue
+			}
+			plain = strings.TrimSpace(strings.Trim(plain, "│"))
+			for _, cell := range strings.Fields(plain) {
+				if cell == "-" {
+					t.Errorf("%dx%d Machines row has a lone dash cell: %s", size[0], size[1], plain)
+				}
+			}
+		}
+	}
+}
+
 func TestMachineColumnsAlignAndDropInOrderAtNarrowWidths(t *testing.T) {
 	snap := fakeSnapshot()
 	snap.Nodes[1].Hostname = "東京"

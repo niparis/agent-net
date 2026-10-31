@@ -1,8 +1,8 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 10 sessions, 9 online · 2 busy · workers 4 running, 0 queued
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) cpu ? mem ? disk ? - -                                                                                 │
-│  ● build-vm   cpu ? mem ? disk ? - - no claude · no opencode                                                         │
-│  ○ old-box    cpu ? mem ? disk ? - -                                                                                 │
+│  ● Mac (here) cpu ? mem ? disk ?                                                                                     │
+│  ● build-vm   cpu ? mem ? disk ?   no claude · no opencode                                                           │
+│  ○ old-box    cpu ? mem ? disk ?                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME                             AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 7 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────

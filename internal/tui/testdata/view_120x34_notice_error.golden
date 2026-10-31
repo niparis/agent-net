@@ -1,9 +1,9 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
 ! Worker not started: machine build-vm does not accept workers (it was set up with --no-launch)
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│  ● Mac (here) cpu ? mem ? disk ? - -                                                                                 │
-│  ● build-vm   cpu ? mem ? disk ? - - no claude · no opencode                                                         │
-│  ○ old-box    cpu ? mem ? disk ? - -                                                                                 │
+│  ● Mac (here) cpu ? mem ? disk ?                                                                                     │
+│  ● build-vm   cpu ? mem ? disk ?   no claude · no opencode                                                           │
+│  ○ old-box    cpu ? mem ? disk ?                                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
   NAME               AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────

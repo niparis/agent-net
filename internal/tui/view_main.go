@@ -500,11 +500,11 @@ func (m Model) machineLineFor(r machineRow, rows []machineRow, w, nameW int) str
 	if layout.showNote && fig.note != "" {
 		line += " " + sDim.Render(cell(fig.note, layout.noteW))
 	}
-	return clip(line, w)
+	return clip(strings.TrimRight(line, " "), w)
 }
 
 func (m Model) machineFigures(r machineRow, rows []machineRow) machineFigures {
-	f := machineFigures{cpu: "cpu ?", mem: "mem ?", disk: "disk ?", workers: "-", top: "-", note: m.machineHarnessNote(r, rows)}
+	f := machineFigures{cpu: "cpu ?", mem: "mem ?", disk: "disk ?", note: m.machineHarnessNote(r, rows)}
 	if !r.online {
 		return f
 	}
@@ -653,15 +653,12 @@ func (m Model) machineDiskCell(f machineFigures) string {
 
 func (m Model) machineWorkersCell(f machineFigures) string {
 	if f.workerCount == 0 {
-		return sDim.Render(f.workers)
+		return ""
 	}
 	return f.workers
 }
 
 func (m Model) machineTopCell(f machineFigures) string {
-	if f.top == "-" {
-		return sDim.Render(f.top)
-	}
 	return f.top
 }
 
