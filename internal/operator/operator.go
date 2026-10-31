@@ -65,6 +65,10 @@ type Operator interface {
 	Integrations(ctx context.Context) (protocol.IntegrationsResult, error)
 	// SetIntegrations stores the setup answers for every machine. Owner only.
 	SetIntegrations(ctx context.Context, in protocol.Integrations) (protocol.IntegrationsResult, error)
+	// HiddenItems reads the owner's shared TUI visibility preference. Owner only.
+	HiddenItems(ctx context.Context) (protocol.HiddenItems, error)
+	// SetHiddenItems stores the owner's shared TUI visibility preference.
+	SetHiddenItems(ctx context.Context, in protocol.HiddenItems) (protocol.HiddenItems, error)
 	// Counts is how many sessions are online and offline. Owner only.
 	Counts(ctx context.Context) (protocol.SessionCounts, error)
 	Close()

@@ -54,6 +54,10 @@ const (
 	// tool: the answers decide what runs with the owner's consent.
 	OpIntegrationsGet = "integrations_get" // answers IntegrationsResult
 	OpIntegrationsSet = "integrations_set" // takes Integrations, answers IntegrationsResult
+	// OpHiddenGet and OpHiddenSet read and write the owner's hidden TUI items
+	// for the whole network. Owner only, no agent tool.
+	OpHiddenGet = "hidden_get" // answers HiddenItems
+	OpHiddenSet = "hidden_set" // takes and answers HiddenItems
 
 	// Actions. Only the owner at the keyboard may use OpSend (see OwnerName);
 	// OpWorkerStart and OpWorkerStop are also open to agent sessions, with
@@ -103,7 +107,14 @@ var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, 
 	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
+
+// HiddenItems is the owner's shared TUI visibility preference. Session IDs
+// remain hidden across machines; node names identify graph items on Map.
+type HiddenItems struct {
+	Sessions []string `json:"sessions,omitempty"`
+	Nodes    []string `json:"nodes,omitempty"`
+}
 
 // UsageResult answers OpUsage: this machine's own sample, and what the gateway
 // has for every machine.

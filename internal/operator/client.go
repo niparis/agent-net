@@ -332,6 +332,24 @@ func (s *Client) SetIntegrations(ctx context.Context, in protocol.Integrations) 
 	return out, json.Unmarshal(raw, &out)
 }
 
+func (s *Client) HiddenItems(ctx context.Context) (protocol.HiddenItems, error) {
+	var out protocol.HiddenItems
+	raw, err := s.action(ctx, protocol.OpHiddenGet, nil)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) SetHiddenItems(ctx context.Context, in protocol.HiddenItems) (protocol.HiddenItems, error) {
+	var out protocol.HiddenItems
+	raw, err := s.action(ctx, protocol.OpHiddenSet, in)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Counts(ctx context.Context) (protocol.SessionCounts, error) {
 	var out protocol.SessionCounts
 	raw, err := s.action(ctx, protocol.OpCounts, nil)
