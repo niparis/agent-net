@@ -67,13 +67,12 @@ func indexOfID(l []string, id string) int {
 func TestTreeOrder(t *testing.T) {
 	m := treeModel(120, 34, treeFixture())
 	g := m.groups()
-	// The Mac group: strategies and its three workers right after it, by start
-	// time (the one on the other machine too), then the rest as before.
+	// Workers stay below strategies in start order, including the remote worker.
 	var mac []string
 	for _, a := range g[0].agents {
 		mac = append(mac, a.Profile.Name)
 	}
-	want := []string{"strategies", "backtest-a", "backtest-b", "backtest-on-a-remote-machine", "tenebrae", "tenebrae-53", "web"}
+	want := []string{"tenebrae", "tenebrae-53", "strategies", "backtest-a", "backtest-b", "backtest-on-a-remote-machine", "web"}
 	if strings.Join(mac, ",") != strings.Join(want, ",") {
 		t.Fatalf("mac group %v, want %v", mac, want)
 	}

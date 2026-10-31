@@ -5,15 +5,15 @@
 │  ○ old-box    v0.3.2 offline                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 Selected session ───────────────────────────────────────────────────────────────
-  strategies  claude  idle    CPU 240% (5m 180%)  RAM 4.6G (4.6G)  34 procs
-  id       s_0000000000000002 pid 4300    │     PID   CPU   RAM by CPU
-  folder   …s/.claude/worktrees/agent-a7  │    4301  180%  900M node /srv/app/d…
-  branch   feature/risk-model             │    4300   40%  600M claude --resume
-  model    claude-sonnet-5-5, background  │    4402   18%  1.2G python3 backtes…
-  function trading strategies             │    4410    2%  300M cargo watch -x …
-  task     backtest v2                    │    4500    0%    1M sleep 600
-  remote   git@git.example.com:team/stra… │
-  worktree …s/.claude/worktrees/agent-a7… │
+  tenebrae-53  claude  busy    CPU 38% (5m 20%)  RAM 1.2G (1.2G)  14 procs
+  id       s_0000000000000001 pid 4242    │     PID   CPU   RAM by CPU
+  folder   /Users/n/code/tenebrae         │    4301  180%  900M node /srv/app/d…
+  branch   main                           │    4300   40%  600M claude --resume
+  model    claude-opus-5-5, foreground    │    4402   18%  1.2G python3 backtes…
+  function research                       │    4410    2%  300M cargo watch -x …
+  remote   https://git.example.com/team/… │    4500    0%    1M sleep 600
+  project source: seen in a session and … │
+  messages 14:04  -> s_00000000  request… │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
