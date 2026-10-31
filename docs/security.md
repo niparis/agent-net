@@ -284,6 +284,7 @@ This section covers everything the owner can do with skills and MCP servers acro
 
 The daemon scans its own machine at start, after it reconnects and every five minutes. It never runs a skill or a server. It sends the gateway names, paths, hashes and plain reasons, not skill contents and not raw MCP configuration. MCP fingerprints leave out environment and header values, URL queries and unknown argument values. Scan limits:
 
+- Skill-entry symlinks are followed only when their resolved folder is inside the home. The scanner opens the folder within the home root and rechecks the target. A separate comparison fingerprint omits executable bits and common editor noise; integrity operations use the strict hash.
 - A skill bundle: at most 10,000 entries and 64 MiB of regular file data. Special files, absolute or escaping symlinks and files that change while being read are rejected.
 - Pi source discovery: at most 10,000 directories and 32 path components.
 - MCP and settings files: 1 MiB. A report: 10,000 entries and 256 KiB of field text. Reads are paged to 240 KiB.
