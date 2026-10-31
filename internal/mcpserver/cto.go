@@ -17,6 +17,7 @@ type ctoField struct {
 	desc       string
 	enum       []string
 	properties map[string]any
+	items      map[string]any
 }
 
 // ctoToolDef is one CTO tool: its description and its input fields.
@@ -184,7 +185,11 @@ func NewCTO(call Caller, version string) *mcp.Server {
 				prop["additionalProperties"] = false
 			}
 			if f.typ == "array" {
-				prop["items"] = map[string]any{"type": "string"}
+				if f.items != nil {
+					prop["items"] = f.items
+				} else {
+					prop["items"] = map[string]any{"type": "string"}
+				}
 			}
 			if len(f.enum) > 0 {
 				prop["enum"] = f.enum

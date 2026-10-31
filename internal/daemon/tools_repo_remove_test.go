@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -88,9 +89,68 @@ func TestRepoSkillRemovalPlanListsTrackedFilesAndLocalEdits(t *testing.T) {
 	}
 }
 
+func TestToolsRepoRemovalPlanApplyAndOwnerGate(t *testing.T) {
+	repo := initRepoSkill(t)
+	localSkill := filepath.Join(repo, ".claude/skills/x/SKILL.md")
+	if err := os.WriteFile(localSkill, []byte("owner's uncommitted edit\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	home := t.TempDir()
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{repo}})
+	cli.mustCall("inventory_scan", map[string]any{})
+	project := filepath.Base(repo)
+	var item protocol.ToolItem
+	eventually(t, "project skill inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"project": project})
+		if err != nil {
+			return false
+		}
+		var page protocol.ToolsPage
+		if json.Unmarshal(raw, &page) != nil {
+			return false
+		}
+		for _, candidate := range page.Items {
+			if candidate.Name == "x" {
+				item = candidate
+				return true
+			}
+		}
+		return false
+	})
+	req := protocol.ToolPlanRequest{Item: item.ID, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{project}},
+		Operation: "repo_remove", Project: project, RepoTargets: []protocol.ToolRepoTarget{{NodeID: n.cfg.NodeID, Checkout: repo}}}
+	raw := cli.mustCall("tools_plan", req)
+	var plan protocol.ToolPlan
+	mustJSON(t, raw, &plan)
+	if plan.Operation != "repo_remove" || len(plan.Targets) != 1 || plan.Targets[0].Action != "repo_remove" || plan.Targets[0].Branch != "agent-net/remove-x" || len(plan.Targets[0].Files) != 2 || !plan.Targets[0].Dirty {
+		t.Fatalf("repo removal plan: %+v", plan)
+	}
+	if _, err := gitOut(context.Background(), repo, "branch", "agent-net/remove-x"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.call("tools_apply", protocol.ToolPlanID{ID: plan.ID}); err == nil || err.Error() != "branch exists" {
+		t.Fatalf("expected branch exists refusal, got %v", err)
+	}
+	if _, err := gitOut(context.Background(), repo, "branch", "-D", "agent-net/remove-x"); err != nil {
+		t.Fatal(err)
+	}
+	raw = cli.mustCall("tools_apply", protocol.ToolPlanID{ID: plan.ID})
+	var applied protocol.ToolApplyResult
+	mustJSON(t, raw, &applied)
+	if len(applied.Targets) != 1 || applied.Targets[0].State != "ok" || applied.Targets[0].Branch != "agent-net/remove-x" || len(applied.Targets[0].Commit) != 40 {
+		t.Fatalf("repo removal result: %+v", applied)
+	}
+	if got, err := os.ReadFile(localSkill); err != nil || string(got) != "owner's uncommitted edit\n" {
+		t.Fatalf("owner checkout changed: %q %v", got, err)
+	}
+}
+
 func initRepoSkill(t *testing.T) string {
 	t.Helper()
-	repo := t.TempDir()
+	repo := filepath.Join(t.TempDir(), "repo")
 	for _, args := range [][]string{{"init", "-b", "main", repo}, {"-C", repo, "config", "user.name", "Repo Owner"}, {"-C", repo, "config", "user.email", "owner@example.test"}} {
 		cmd := exec.Command("git", args...)
 		if out, err := cmd.CombinedOutput(); err != nil {
@@ -110,6 +170,12 @@ func initRepoSkill(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if _, err := gitOut(context.Background(), repo, "commit", "-m", "Add skill"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOut(context.Background(), repo, "update-ref", "refs/remotes/origin/main", "HEAD"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := gitOut(context.Background(), repo, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main"); err != nil {
 		t.Fatal(err)
 	}
 	return repo

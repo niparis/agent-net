@@ -268,6 +268,9 @@ CREATE TABLE IF NOT EXISTS mcp_imports (name TEXT PRIMARY KEY, record TEXT NOT N
 CREATE TABLE IF NOT EXISTS mcp_native_plans (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL, plan TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');
 `, `
 CREATE TABLE IF NOT EXISTS tool_accepted (key TEXT PRIMARY KEY, at INTEGER NOT NULL);
+`, `
+ALTER TABLE tool_results ADD COLUMN branch TEXT NOT NULL DEFAULT '';
+ALTER TABLE tool_results ADD COLUMN commit_hash TEXT NOT NULL DEFAULT '';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

@@ -56,8 +56,16 @@ func (d *Daemon) probeRepoSkillRemoval(p protocol.ToolPlanProbe) protocol.ToolPl
 	if p.Operation != "repo_remove" || p.Project == "" || p.Checkout == "" || !filepath.IsAbs(p.Checkout) || p.DefaultBranch == "" || p.Branch != branch {
 		return conflict("project details unavailable")
 	}
-	if _, err = gitOut(context.Background(), p.Checkout, "rev-parse", "--show-toplevel"); err != nil {
+	top, err := gitOut(context.Background(), p.Checkout, "rev-parse", "--show-toplevel")
+	if err != nil {
 		return conflict("project checkout unavailable")
+	}
+	checkout, checkoutErr := filepath.Abs(p.Checkout)
+	if checkoutErr != nil || filepath.Clean(checkout) != filepath.Clean(top) {
+		return conflict("project checkout is not a repository root")
+	}
+	if _, err = gitOut(context.Background(), p.Checkout, "check-ref-format", "--branch", branch); err != nil {
+		return conflict("invalid skill name")
 	}
 	if _, err = gitOut(context.Background(), p.Checkout, "check-ref-format", "--branch", p.DefaultBranch); err != nil {
 		return conflict("invalid default branch")

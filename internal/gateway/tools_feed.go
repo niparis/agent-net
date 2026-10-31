@@ -80,7 +80,7 @@ func (s *Store) ReportToolResult(node string, r protocol.ToolResult) error {
 	if r.Index >= len(p.Targets) || p.Targets[r.Index].NodeID != node || node == "" {
 		return errors.New("target does not belong to node")
 	}
-	_, err = tx.Exec(`INSERT INTO tool_results(item,revision,target_index,node_id,state,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(item,revision,target_index) DO UPDATE SET state=excluded.state,reason=excluded.reason`, r.Item, r.Revision, r.Index, node, r.State, r.Reason)
+	_, err = tx.Exec(`INSERT INTO tool_results(item,revision,target_index,node_id,state,reason,branch,commit_hash) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(item,revision,target_index) DO UPDATE SET state=excluded.state,reason=excluded.reason,branch=excluded.branch,commit_hash=excluded.commit_hash`, r.Item, r.Revision, r.Index, node, r.State, r.Reason, r.Branch, r.Commit)
 	if err != nil {
 		return err
 	}
@@ -93,17 +93,17 @@ func (s *Store) toolOutcomes(r protocol.ToolRevision, targets []protocol.ToolPla
 	out.ToolRevision = r
 	out.Targets = []protocol.ToolTargetOutcome{}
 	reported := map[int]protocol.ToolResult{}
-	if rows, err := s.db.Query(`SELECT target_index,state,reason FROM tool_results WHERE item=? AND revision=?`, r.Item, r.Revision); err == nil {
+	if rows, err := s.db.Query(`SELECT target_index,state,reason,branch,commit_hash FROM tool_results WHERE item=? AND revision=?`, r.Item, r.Revision); err == nil {
 		for rows.Next() {
 			var v protocol.ToolResult
-			if rows.Scan(&v.Index, &v.State, &v.Reason) == nil {
+			if rows.Scan(&v.Index, &v.State, &v.Reason, &v.Branch, &v.Commit) == nil {
 				reported[v.Index] = v
 			}
 		}
 		rows.Close()
 	}
 	for i, t := range targets {
-		o := protocol.ToolTargetOutcome{NodeID: t.NodeID, Machine: t.Machine, Harness: t.Harness, Project: t.Project, Checkout: t.Checkout, Source: t.Source, Destination: t.Destination, Action: t.Action}
+		o := protocol.ToolTargetOutcome{NodeID: t.NodeID, Machine: t.Machine, Harness: t.Harness, Project: t.Project, Checkout: t.Checkout, Source: t.Source, Destination: t.Destination, Action: t.Action, Branch: t.Branch}
 		if t.Action == "federate" {
 			// Enforced at the gateway, so it is in effect as soon as it is recorded.
 			o.State, o.Reason = "ok", "in effect at the gateway"
@@ -111,7 +111,10 @@ func (s *Store) toolOutcomes(r protocol.ToolRevision, targets []protocol.ToolPla
 				o.Reason = "in effect at the gateway; host " + t.Machine + " is offline, so the tools are unavailable until it returns"
 			}
 		} else if v, ok := reported[i]; ok {
-			o.Reason = v.Reason
+			o.Reason, o.Commit = v.Reason, v.Commit
+			if v.Branch != "" {
+				o.Branch = v.Branch
+			}
 			switch v.State {
 			case "applied":
 				o.State = "ok"

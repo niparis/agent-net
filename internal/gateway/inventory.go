@@ -298,13 +298,13 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err != nil {
 		return nil, err
 	}
-	resultRows, err = s.db.Query(`SELECT item,revision,target_index,node_id,state,reason FROM tool_results ORDER BY item,target_index`)
+	resultRows, err = s.db.Query(`SELECT item,revision,target_index,node_id,state,reason,branch,commit_hash FROM tool_results ORDER BY item,target_index`)
 	if err != nil {
 		return nil, err
 	}
 	for resultRows.Next() {
 		var r protocol.ToolResult
-		if err = resultRows.Scan(&r.Item, &r.Revision, &r.Index, &r.NodeID, &r.State, &r.Reason); err != nil {
+		if err = resultRows.Scan(&r.Item, &r.Revision, &r.Index, &r.NodeID, &r.State, &r.Reason, &r.Branch, &r.Commit); err != nil {
 			resultRows.Close()
 			return nil, err
 		}

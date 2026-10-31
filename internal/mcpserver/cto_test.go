@@ -265,4 +265,13 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 	if !strings.Contains(found["tools_apply"].Description, "explicit") || !strings.Contains(found["mcp_import"].Description, "explicit") || !strings.Contains(found["mcp_native_remove"].Description, "explicit") {
 		t.Fatal("apply description lacks owner instruction requirement")
 	}
+	planProps, _ := ctoToolSchema(t, found["tools_plan"])
+	if !strings.Contains(found["tools_plan"].Description, "local branch") || !strings.Contains(strings.Join(enumStrings(planProps["operation"]["enum"]), ","), "repo_remove") {
+		t.Fatalf("repo removal missing from tools_plan: %s", found["tools_plan"].Description)
+	}
+	targets := planProps["repo_targets"]
+	items, _ := targets["items"].(map[string]any)
+	if items["type"] != "object" {
+		t.Fatalf("repo_targets must contain checkout objects: %+v", targets)
+	}
 }

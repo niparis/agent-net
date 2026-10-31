@@ -127,9 +127,12 @@ func TestGatewayToolPlanRequiresOwnerSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw := []byte(`{"item":"x","target":{"scope":"global"},"actor":"owner"}`)
+	raw := []byte(`{"item":"x","target":{"scope":"projects","projects":["demo"]},"operation":"repo_remove","project":"demo","repo_targets":[{"node_id":"node","checkout":"/repo"}],"actor":"owner"}`)
 	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "tools.plan", raw); err == nil || !strings.Contains(err.Error(), "owner authority") {
 		t.Fatalf("gateway accepted unauthenticated owner: %v", err)
+	}
+	if _, err = g.handle(context.Background(), &nodeConn{id: node}, "tools.apply", []byte(`{"plan_id":"plan_missing","actor":"owner"}`)); err == nil || !strings.Contains(err.Error(), "owner authority") {
+		t.Fatalf("gateway accepted unauthenticated apply: %v", err)
 	}
 }
 
