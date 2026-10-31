@@ -169,24 +169,19 @@ func (b Braille) Render(scene Scene, size Size) Output {
 	// where nodes overlap, and marker cells always remain visible.
 	for _, n := range scene.Nodes {
 		x, y := point(n.Position)
-		radius := max(1, min(n.Activity, 5)) * 2
+		cx, cy := x/2, y/4
 		touched := map[Cell]bool{}
-		for dy := -radius * 2; dy <= radius*2; dy++ {
-			for dx := -radius; dx <= radius; dx++ {
-				if dx*dx*4+dy*dy > radius*radius*4 {
-					continue
-				}
-				px, py := x+dx, y+dy
-				if px < 0 || py < 0 || px >= width*2 || py >= height*4 {
-					continue
-				}
-				c := Cell{px / 2, py / 4}
-				if cells[c.Y*width+c.X].occupied {
-					continue
-				}
-				dot(px, py, "node")
-				touched[c] = true
+		// Fill a compact two-row halo in sub-cell steps around the marker.
+		offsets := [][2]int{{-1, 0}, {1, 0}, {0, -1}, {-1, -1}, {1, -1}}
+		for i := 0; i < max(1, min(n.Activity, 5)); i++ {
+			px, py := cx+offsets[i][0], cy+offsets[i][1]
+			if px < 0 || py < 0 || px >= width || py >= height || cells[py*width+px].occupied {
+				continue
 			}
+			for d := 0; d < 4; d++ {
+				dot(px*2+d%2, py*4+1+d/2, "node")
+			}
+			touched[Cell{px, py}] = true
 		}
 		for c := range touched {
 			cell := &cells[c.Y*width+c.X]
@@ -201,9 +196,8 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		x, y := point(n.Position)
 		cx, cy := x/2, y/4
-		r := max(1, min(n.Activity, 5))
-		if !put(cx-r-1, cy, '▸', "selected") {
-			put(cx, cy-(r+1)/2-1, '▾', "selected")
+		if !put(cx-2, cy, '▸', "selected") {
+			put(cx, cy-2, '▾', "selected")
 		}
 	}
 
@@ -211,6 +205,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		x, y := point(n.Position)
 		cx, cy := x/2, y/4
 		label := n.Label
+		if label == "" {
+			continue
+		}
 		if scene.Level == "cards" {
 			label = "[" + label + "]"
 		}
@@ -222,8 +219,8 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			labelRole = "label"
 		}
 		rs := []rune(label)
-		radiusX := max(1, min(n.Activity, 5)) + 1
-		radiusY := (max(1, min(n.Activity, 5))+1)/2 + 1
+		radiusX := 1
+		radiusY := 1
 		candidates := [][2]int{{cx + radiusX + 1, cy}, {cx - len(rs) - radiusX, cy}, {cx - len(rs)/2, cy - radiusY - 1}, {cx - len(rs)/2, cy + radiusY + 1}}
 		placed := false
 		labelX, labelY := 0, 0

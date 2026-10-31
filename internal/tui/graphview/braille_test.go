@@ -184,18 +184,25 @@ func TestCharterMarkersAndLabels(t *testing.T) {
 	}
 }
 
-func TestActivityDiscGrows(t *testing.T) {
-	count := func(level int) int {
-		out := (Braille{}).Render(Scene{Nodes: []SceneNode{{Name: "x", Label: "x", Activity: level, Position: Point{.5, .5}}}}, Size{Width: 50, Height: 20})
-		n := 0
-		for _, r := range strings.Join(out.Lines, "") {
-			if r >= 0x2801 && r <= 0x28ff {
-				n++
+func TestActivityDiscBoundsAndLevels(t *testing.T) {
+	previous := -1
+	for level := 1; level <= 5; level++ {
+		out := (Braille{}).Render(Scene{Nodes: []SceneNode{{Name: "x", Activity: level, Position: Point{.5, .5}}}}, Size{Width: 50, Height: 20})
+		minX, maxX, minY, maxY, dots := 50, 0, 20, 0, 0
+		for c := range out.Hits {
+			minX, maxX = min(minX, c.X), max(maxX, c.X)
+			minY, maxY = min(minY, c.Y), max(maxY, c.Y)
+			r := []rune(out.Lines[c.Y])[c.X]
+			if r >= 0x2800 && r <= 0x28ff {
+				dots += bits.OnesCount8(uint8(r - 0x2800))
 			}
 		}
-		return n
-	}
-	if count(5) <= count(1) {
-		t.Fatalf("disc did not grow: %d <= %d", count(5), count(1))
+		if maxX-minX+1 > 3 || maxY-minY+1 > 2 {
+			t.Errorf("level %d bounds %dx%d", level, maxX-minX+1, maxY-minY+1)
+		}
+		if dots <= previous {
+			t.Errorf("level %d dots %d after %d", level, dots, previous)
+		}
+		previous = dots
 	}
 }
