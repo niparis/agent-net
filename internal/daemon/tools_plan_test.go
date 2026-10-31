@@ -273,3 +273,13 @@ func TestToolDestinationFingerprintDetectsSameMetadataContentChange(t *testing.T
 		t.Fatal("content change with restored metadata was missed")
 	}
 }
+
+func TestToolPlanReportsMissingCheckout(t *testing.T) {
+	home := t.TempDir()
+	d := &Daemon{cfg: Config{InventoryHome: home}}
+	missing := filepath.Join(home, "missing-checkout")
+	r := d.probeToolDestination(protocol.ToolPlanProbe{Name: "demo", Harness: "codex", Checkout: missing})
+	if r.Conflict == "" {
+		t.Fatalf("missing checkout not reported: %+v", r)
+	}
+}

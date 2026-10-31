@@ -77,6 +77,10 @@ func (d *Daemon) probeToolDestination(p protocol.ToolPlanProbe) protocol.ToolPla
 		info, err := os.Lstat(cur)
 		if err != nil {
 			if os.IsNotExist(err) {
+				if cur == base {
+					out.Conflict = "destination root is unavailable"
+					return out
+				}
 				break
 			}
 			out.Conflict = "cannot inspect destination"
