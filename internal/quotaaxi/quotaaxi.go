@@ -144,7 +144,7 @@ func Discover(configured string) []Copy {
 		}
 	}
 	// Some shells supply additional matches through their which implementation.
-	if which, err := exec.LookPath("which"); err == nil {
+	if which := findOnPath("which", path); which != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		cmd := exec.CommandContext(ctx, which, "-a", quotaCommand)
 		cmd.Env = append(os.Environ(), "PATH="+path)
@@ -158,13 +158,16 @@ func Discover(configured string) []Copy {
 	for _, dir := range append(append([]string{filepath.Join(home(), ".local", "bin")}, nvmBins()...), systemNodeDirs...) {
 		add(filepath.Join(dir, quotaCommand))
 	}
+	if dir := npmGlobalBinOnPath(path); dir != "" {
+		add(filepath.Join(dir, quotaCommand))
+	}
 	if dir := npmGlobalBin(); dir != "" {
 		add(filepath.Join(dir, quotaCommand))
 	}
 	add(Binary())
 	copies := make([]Copy, 0, len(paths))
 	for _, p := range paths {
-		version, err := InstalledVersion(p)
+		version, err := installedVersion(p, false)
 		copies = append(copies, Copy{Path: p, Version: version, Runs: err == nil, Private: p == Binary()})
 	}
 	return copies
@@ -224,14 +227,16 @@ func logCallback(logf []func(format string, args ...any)) func(format string, ar
 
 // InstalledVersion runs the fast version command and caches its parsed
 // semantic version until the executable's modification time changes.
-func InstalledVersion(path string) (string, error) {
+func InstalledVersion(path string) (string, error) { return installedVersion(path, true) }
+
+func installedVersion(path string, cachedOK bool) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 	mtime := info.ModTime().UnixNano()
 	versionCache.Lock()
-	if cached, ok := versionCache.byPath[path]; ok && cached.mtime == mtime {
+	if cached, ok := versionCache.byPath[path]; cachedOK && ok && cached.mtime == mtime {
 		versionCache.Unlock()
 		return cached.version, cached.err
 	}
@@ -264,7 +269,9 @@ func InstalledVersion(path string) (string, error) {
 	}
 
 	versionCache.Lock()
-	versionCache.byPath[path] = cachedVersion{mtime: mtime, version: version, err: parseErr}
+	if parseErr == nil {
+		versionCache.byPath[path] = cachedVersion{mtime: mtime, version: version, err: parseErr}
+	}
 	versionCache.Unlock()
 	return version, parseErr
 }
@@ -403,6 +410,7 @@ func NodeExecEnv(path string) ([]string, error) {
 	env := os.Environ()
 	dirs := append([]string{filepath.Dir(path)}, nvmBins()...)
 	dirs = append(dirs, systemNodeDirs...)
+	dirs = append(dirs, filepath.SplitList(loginpath.Path())...)
 	if node, err := exec.LookPath("node"); err == nil {
 		dirs = append(dirs, filepath.Dir(node))
 	}
@@ -519,14 +527,29 @@ func versionOf(dir string) int {
 
 // npmGlobalBin asks npm where its global packages are. It is used on macOS,
 // where a global npm prefix is not always on a daemon's PATH.
-func npmGlobalBin() string {
-	npm, err := exec.LookPath("npm")
-	if err != nil {
+func npmGlobalBin() string { return npmGlobalBinOnPath(os.Getenv("PATH")) }
+
+func findOnPath(name, path string) string {
+	for _, dir := range filepath.SplitList(path) {
+		if dir != "" {
+			if p := filepath.Join(dir, name); usable(p) {
+				return p
+			}
+		}
+	}
+	return ""
+}
+
+func npmGlobalBinOnPath(path string) string {
+	npm := findOnPath("npm", path)
+	if npm == "" {
 		return ""
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, npm, "prefix", "-g").Output()
+	cmd := exec.CommandContext(ctx, npm, "prefix", "-g")
+	cmd.Env = append(os.Environ(), "PATH="+path)
+	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}

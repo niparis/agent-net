@@ -386,6 +386,16 @@ func TestVersionReportsMissingNode(t *testing.T) {
 	}
 }
 
+func fakeLoginPath(t *testing.T, path string) {
+	t.Helper()
+	shell := filepath.Join(t.TempDir(), "shell")
+	body := "#!/bin/sh\nprintf '%s\\0' '" + path + "' '' '' '' '' '' '' '' ''\n"
+	if err := os.WriteFile(shell, []byte(body), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+}
+
 func TestDiscoverFindsAllCopies(t *testing.T) {
 	oldDirs := systemNodeDirs
 	systemNodeDirs = nil
@@ -402,7 +412,7 @@ func TestDiscoverFindsAllCopies(t *testing.T) {
 		}
 	}
 	t.Setenv("PATH", first+string(os.PathListSeparator)+second+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("SHELL", "")
+	fakeLoginPath(t, os.Getenv("PATH"))
 	copies := Discover("")
 	if len(copies) != 3 {
 		t.Fatalf("got copies: %+v", copies)
@@ -411,5 +421,155 @@ func TestDiscoverFindsAllCopies(t *testing.T) {
 		if !copy.Runs || copy.Version != "0.1.66" {
 			t.Errorf("bad copy: %+v", copy)
 		}
+	}
+}
+
+func TestDiscoverLoginAndInstallLocations(t *testing.T) {
+	home, _ := setupPath(t, "22.19.0")
+	oldDirs := systemNodeDirs
+	systemNodeDirs = []string{filepath.Join(home, "brew", "bin")}
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	login := filepath.Join(home, "login")
+	npmBin := filepath.Join(home, "npm-prefix", "bin")
+	dirs := []string{login, systemNodeDirs[0], npmBin, filepath.Join(home, ".nvm", "versions", "node", "v22.19.0", "bin"), filepath.Join(home, ".local", "bin"), filepath.Dir(Binary())}
+	for _, dir := range dirs {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "quota-axi"), []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shell := filepath.Join(home, "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+login+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	t.Setenv("FAKE_NPM_PREFIX", filepath.Dir(npmBin))
+	found := map[string]Copy{}
+	for _, c := range Discover("") {
+		found[c.Path] = c
+	}
+	for _, dir := range dirs {
+		path := filepath.Join(dir, "quota-axi")
+		c, ok := found[path]
+		if !ok || !c.Runs || c.Version != "0.1.66" || c.Private != (path == Binary()) {
+			t.Errorf("%s: %+v, found %v", path, c, ok)
+		}
+	}
+}
+
+func TestDiscoverReportsMissingNode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("PATH", t.TempDir())
+	fakeLoginPath(t, os.Getenv("PATH"))
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	dir := filepath.Join(home, ".local", "bin")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/usr/bin/env node\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	copies := Discover("")
+	if len(copies) != 1 || copies[0].Path != path || copies[0].Runs {
+		t.Fatalf("got %+v", copies)
+	}
+}
+
+func TestDiscoverUsesLoginPathForNPMAndNode(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("PATH", t.TempDir())
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	login := filepath.Join(home, "login")
+	global := filepath.Join(home, "global", "bin")
+	for _, dir := range []string{login, global} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fakeNode(t, login, "22.19.0")
+	if err := os.WriteFile(filepath.Join(login, "npm"), []byte("#!/bin/sh\necho '"+filepath.Dir(global)+"'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(global, "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	shell := filepath.Join(home, "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+login+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	copies := Discover("")
+	if len(copies) != 1 || copies[0].Path != path || !copies[0].Runs {
+		t.Fatalf("got %+v", copies)
+	}
+}
+
+func TestDiscoverFindsWhichMatches(t *testing.T) {
+	home, _ := setupPath(t, "22.19.0")
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	login := filepath.Join(home, "login")
+	extra := filepath.Join(home, "extra")
+	for _, dir := range []string{login, extra} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(extra, "quota-axi")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho 0.1.66\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(login, "which"), []byte("#!/bin/sh\nprintf '%s\\n' '"+path+"'\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	shell := filepath.Join(home, "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\nprintf '%s\\0' '"+login+"' '' '' '' '' '' '' '' ''\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	copies := Discover("")
+	if len(copies) != 1 || copies[0].Path != path || !copies[0].Runs {
+		t.Fatalf("got %+v", copies)
+	}
+}
+
+func TestDiscoverRechecksWorkingCopy(t *testing.T) {
+	home, _ := setupPath(t, "22.19.0")
+	fakeLoginPath(t, os.Getenv("PATH"))
+	oldDirs := systemNodeDirs
+	systemNodeDirs = nil
+	t.Cleanup(func() { systemNodeDirs = oldDirs })
+	path := filepath.Join(home, ".local", "bin", "quota-axi")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(home, "working")
+	if err := os.WriteFile(marker, []byte("yes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n[ -f '"+marker+"' ] || exit 1\necho 0.1.66\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if got := Discover(""); len(got) != 1 || !got[0].Runs {
+		t.Fatalf("first: %+v", got)
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if got := Discover(""); len(got) != 1 || got[0].Runs {
+		t.Fatalf("second: %+v", got)
 	}
 }
