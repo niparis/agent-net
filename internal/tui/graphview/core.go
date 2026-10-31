@@ -44,7 +44,11 @@ type Renderer interface {
 	Render(Scene, Size) Output
 }
 type Size struct{ Width, Height int }
-type Output struct{ Lines []string }
+type Cell struct{ X, Y int }
+type Output struct {
+	Lines []string
+	Hits  map[Cell]string
+}
 
 type Graph struct {
 	Nodes     []protocol.Node

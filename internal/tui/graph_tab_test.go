@@ -236,3 +236,54 @@ func TestGraphHelpDescribesNavigation(t *testing.T) {
 		}
 	}
 }
+
+func TestGraphMouseSelectsLabelAndIgnoresEmpty(t *testing.T) {
+	m := graphModel(120, 34)
+	w, h := m.graphSize()
+	scene := graphview.BuildScene(m.graphState, graphview.Viewport{Width: float64(w), Height: float64(h)})
+	for i := range scene.Nodes {
+		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
+	}
+	out := (graphview.Braille{}).Render(scene, graphview.Size{Width: w, Height: h})
+	var cell graphview.Cell
+	target := ""
+	for p, id := range out.Hits {
+		if id != m.graphState.Graph.Selected() && []rune(out.Lines[p.Y])[p.X] != '●' && []rune(out.Lines[p.Y])[p.X] != '○' && []rune(out.Lines[p.Y])[p.X] != '◆' {
+			cell, target = p, id
+			break
+		}
+	}
+	if target == "" {
+		t.Fatal("no label cell")
+	}
+	next, _ := m.Update(tea.MouseMsg{X: cell.X + 2, Y: cell.Y + 1, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	m = next.(Model)
+	if m.graphState.Graph.Selected() != target {
+		t.Fatalf("selected %q, want %q", m.graphState.Graph.Selected(), target)
+	}
+	next, _ = m.Update(tea.MouseMsg{X: 0, Y: 0, Button: tea.MouseButtonLeft, Action: tea.MouseActionPress})
+	if next.(Model).graphState.Graph.Selected() != target {
+		t.Fatal("empty click changed selection")
+	}
+}
+
+func TestGraphMouseDisabledWhenLeavingOrFocusingCTO(t *testing.T) {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'1'}}, {Type: tea.KeyTab}} {
+		m := graphModel(120, 34)
+		_, cmd := m.Update(key)
+		if cmd == nil {
+			t.Fatal("missing mouse command")
+		}
+		msg := cmd()
+		batch, _ := msg.(tea.BatchMsg)
+		found := fmt.Sprintf("%T", msg) == fmt.Sprintf("%T", tea.DisableMouse())
+		for _, c := range batch {
+			if fmt.Sprintf("%T", c()) == fmt.Sprintf("%T", tea.DisableMouse()) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s did not disable mouse", key.String())
+		}
+	}
+}

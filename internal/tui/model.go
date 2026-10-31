@@ -316,6 +316,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	nm := next.(Model)
 	// After any change, fetch the top processes the detail pane wants.
 	cmds := []tea.Cmd{cmd}
+	wasMouse := m.graphMouseActive()
+	isMouse := nm.graphMouseActive() && !nm.quitting
+	if wasMouse != isMouse {
+		if isMouse {
+			cmds = append(cmds, tea.EnableMouseCellMotion)
+		} else {
+			cmds = append(cmds, tea.DisableMouse)
+		}
+	}
+
 	if !nm.mapOn {
 		if c := nm.wantTop(); c != nil {
 			cmds = append(cmds, c)
@@ -329,6 +339,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.MouseMsg:
+		if m.graphMouseActive() && msg.Button == tea.MouseButtonLeft && msg.Action == tea.MouseActionPress && !m.graphHelp && m.graphState.Graph != nil {
+			w, h := m.graphSize()
+			scene := graphview.BuildScene(m.graphState, graphview.Viewport{Width: float64(w), Height: float64(h)})
+			for i := range scene.Nodes {
+				scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
+			}
+			hit := (graphview.Braille{}).Render(scene, graphview.Size{Width: w, Height: h}).Hits[graphview.Cell{X: msg.X - 2, Y: msg.Y - 1}]
+			if hit != "" {
+				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: hit})
+			}
+		}
+		return m, nil
 	case protocol.UIRequest:
 		return m.applyCTOUI(msg)
 	case tea.WindowSizeMsg:
@@ -1710,4 +1733,8 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 	}
 	m.say("CTO: " + q.Why)
 	return m, cmd
+}
+
+func (m Model) graphMouseActive() bool {
+	return m.tab == 5 && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.learned && m.conv == nil
 }

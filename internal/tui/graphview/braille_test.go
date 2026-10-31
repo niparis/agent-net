@@ -154,3 +154,19 @@ func TestTalkDensityAndEdgePriority(t *testing.T) {
 		t.Fatalf("edge should cover talk: %v", roles)
 	}
 }
+
+func TestHitMapIncludesLabelCells(t *testing.T) {
+	scene := Scene{Nodes: []SceneNode{{Name: "alpha", Label: "alpha", Position: Point{.5, .5}}}}
+	out := (Braille{}).Render(scene, Size{Width: 40, Height: 10})
+	for y, line := range out.Lines {
+		for x, r := range []rune(line) {
+			if r == 'a' {
+				if got := out.Hits[Cell{X: x, Y: y}]; got != "alpha" {
+					t.Fatalf("label hit %q", got)
+				}
+				return
+			}
+		}
+	}
+	t.Fatal("label missing")
+}

@@ -27,6 +27,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		return Output{}
 	}
 	cells := make([]cell, width*height)
+	hits := make(map[Cell]string)
 	put := func(x, y int, r rune, role string) bool {
 		if x < 0 || y < 0 || x >= width || y >= height {
 			return false
@@ -162,7 +163,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if n.Flashing {
 			role = "flash"
 		}
-		put(x/2, y/4, marker, role)
+		if put(x/2, y/4, marker, role) {
+			hits[Cell{x / 2, y / 4}] = n.Name
+		}
 	}
 	for _, n := range scene.Nodes {
 		if !n.Selected {
@@ -204,7 +207,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 				continue
 			}
 			for i, r := range rs {
-				put(pos[0]+i, pos[1], r, "label")
+				if put(pos[0]+i, pos[1], r, "label") {
+					hits[Cell{pos[0] + i, pos[1]}] = n.Name
+				}
 			}
 			// Keep the cell between a marker and a label on its row blank,
 			// even when an edge or arrow passes through it.
@@ -239,7 +244,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 						continue
 					}
 					for i, r := range short {
-						put(pos[0]+i, pos[1], r, "label")
+						if put(pos[0]+i, pos[1], r, "label") {
+							hits[Cell{pos[0] + i, pos[1]}] = n.Name
+						}
 					}
 					placed = true
 					labelX, labelY = pos[0], pos[1]
@@ -318,7 +325,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		out[y] = s.String()
 	}
-	return Output{Lines: out}
+	return Output{Lines: out, Hits: hits}
 }
 func abs(n int) int {
 	if n < 0 {

@@ -26,6 +26,7 @@ type ZoomIn struct{}
 type ZoomOut struct{}
 type Pan struct{ DX, DY float64 }
 type Fit struct{ Viewport Viewport }
+type SelectNode struct{ Name string }
 type SelectDirection struct {
 	DX, DY   float64
 	Viewport Viewport
@@ -53,6 +54,7 @@ func (ZoomIn) graphAction()          {}
 func (ZoomOut) graphAction()         {}
 func (Pan) graphAction()             {}
 func (Fit) graphAction()             {}
+func (SelectNode) graphAction()      {}
 func (SelectDirection) graphAction() {}
 func (SelectNext) graphAction()      {}
 func (SelectPrev) graphAction()      {}
@@ -100,6 +102,17 @@ func Update(s State, action Action) (State, Effect) {
 	case Fit:
 		if s.Graph != nil {
 			s.Camera = s.Graph.Fit(int(a.Viewport.Width), int(a.Viewport.Height))
+		}
+	case SelectNode:
+		if s.Graph != nil {
+			for i, n := range s.Graph.Nodes {
+				if n.Name == a.Name {
+					s.Graph.selected = i
+					s.neighbourAnchor = ""
+					s.neighbourLast = ""
+					break
+				}
+			}
 		}
 	case SelectDirection:
 		if s.Graph != nil {
