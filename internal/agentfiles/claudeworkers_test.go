@@ -67,6 +67,44 @@ func TestWriteClaudeWorkersWritesTheEmbeddedFiles(t *testing.T) {
 	}
 }
 
+func TestWriteClaudeWorkersVersionTracksPluginFiles(t *testing.T) {
+	fakeHome(t)
+	originalRegister := append([]byte(nil), agentnetworkers.Register...)
+	t.Cleanup(func() { agentnetworkers.Register = originalRegister })
+
+	writeWithRegister := func(register string) string {
+		t.Helper()
+		agentnetworkers.Register = []byte(register)
+		if _, err := WriteClaudeWorkers(); err != nil {
+			t.Fatal(err)
+		}
+		b, err := os.ReadFile(filepath.Join(ClaudeWorkersPluginDir(), ".claude-plugin", "plugin.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var manifest struct {
+			Version string `json:"version"`
+		}
+		if err := json.Unmarshal(b, &manifest); err != nil {
+			t.Fatal(err)
+		}
+		return manifest.Version
+	}
+
+	first := writeWithRegister("first register content")
+	second := writeWithRegister("second register content")
+	firstAgain := writeWithRegister("first register content")
+	if first == "0.1.0" || second == "0.1.0" {
+		t.Fatalf("written plugin version did not include a content hash: first=%q second=%q", first, second)
+	}
+	if first == second {
+		t.Fatalf("different plugin contents have the same version %q", first)
+	}
+	if first != firstAgain {
+		t.Fatalf("same plugin contents have different versions %q and %q", first, firstAgain)
+	}
+}
+
 // An upgrade rewrites the folder, so a session reloads the mod of this binary.
 func TestSyncClaudeWorkersRefreshesAnOldCopy(t *testing.T) {
 	fakeHome(t)
