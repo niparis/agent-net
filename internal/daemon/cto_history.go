@@ -125,16 +125,17 @@ func (d *Daemon) mergeCTOHistory(out protocol.CTOEvents, active string, index in
 	rows.Close()
 
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].at < entries[j].at })
-	if len(entries) > ctoHistoryLimit {
-		entries = entries[len(entries)-ctoHistoryLimit:]
-	}
-	if index < 0 {
-		index = 0
+	start, end := 0, len(entries)
+	if index <= 0 {
+		start = max(len(entries)-ctoHistoryLimit, 0)
+	} else {
+		end = min(index, len(entries))
+		start = max(end-ctoHistoryLimit, 0)
 	}
 	out.Messages = []json.RawMessage{}
 	out.Actions = []protocol.CTOAction{}
-	out.Next = len(entries)
-	for i := index; i < len(entries); i++ {
+	out.Next = start
+	for i := start; i < end; i++ {
 		entry := entries[i]
 		if entry.isMsg {
 			out.Messages = append(out.Messages, entry.message)

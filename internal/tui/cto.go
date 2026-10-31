@@ -36,6 +36,11 @@ type ctoState struct {
 	messages            []string
 	renderCache         map[ctoRenderKey][]string
 	scroll, pageRows    int
+	scrollMax           int
+	olderCursor         int
+	olderLoading        bool
+	olderPages          []protocol.CTOEvents
+	lastPoll            ctoPollMsg
 	history             []protocol.CTOGraphChange
 	local               []protocol.CTOAction
 	sendErrors          []ctoLocalError
@@ -66,6 +71,12 @@ type ctoPollMsg struct {
 	harness         string
 	err             error
 	generation      int
+	olderPage       bool
+}
+type ctoOlderMsg struct {
+	events     protocol.CTOEvents
+	err        error
+	generation int
 }
 type ctoLocalError struct {
 	text     string
@@ -137,6 +148,28 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		return ctoPollMsg{events: events, history: history, model: model, harness: harness, configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
 	}
 }
+func (m Model) ctoOlderCmd() tea.Cmd {
+	src := m.src.(ctoSource)
+	generation, index := m.cto.generation, m.cto.olderCursor
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		events, err := src.CTOEvents(ctx, index)
+		return ctoOlderMsg{events: events, err: err, generation: generation}
+	}
+}
+
+func mergeCTOEventPages(older []protocol.CTOEvents, latest protocol.CTOEvents) protocol.CTOEvents {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	for _, page := range older {
+		out.Messages = append(out.Messages, page.Messages...)
+		out.Actions = append(out.Actions, page.Actions...)
+	}
+	out.Messages = append(out.Messages, latest.Messages...)
+	out.Actions = append(out.Actions, latest.Actions...)
+	return out
+}
+
 func ctoMessage(raw json.RawMessage) string {
 	var v struct {
 		Type    string          `json:"type"`
@@ -210,6 +243,10 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch k.Type {
 	case tea.KeyPgUp, tea.KeyCtrlU:
 		c.scroll += max(c.pageRows, 1)
+		if c.scroll >= c.scrollMax && c.olderCursor > 0 && !c.olderLoading {
+			c.olderLoading = true
+			return m, m.ctoOlderCmd()
+		}
 		return m, nil
 	case tea.KeyPgDown, tea.KeyCtrlD:
 		c.scroll = max(c.scroll-max(c.pageRows, 1), 0)
@@ -311,6 +348,11 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		return
 	}
 	c.err = ""
+	if !r.olderPage {
+		c.lastPoll = r
+		c.olderCursor = r.events.Next
+	}
+	events := mergeCTOEventPages(c.olderPages, r.events)
 	c.configuredModel = r.configuredModel
 	c.opencodeModel = r.opencodeModel
 	c.claudeModel = r.claudeModel
@@ -323,7 +365,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	}
 	var lines []line
 	polledErrors := make(map[string]int)
-	for _, raw := range r.events.Messages {
+	for _, raw := range events.Messages {
 		if text := ctoMessage(raw); text != "" {
 			var v struct {
 				Time struct {
@@ -337,13 +379,13 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 			}
 		}
 	}
-	for _, a := range r.events.Actions {
+	for _, a := range events.Actions {
 		lines = append(lines, line{a.At, a.Text})
 	}
 	var pending []protocol.CTOAction
 	for _, a := range c.local {
 		found := false
-		for _, saved := range r.events.Actions {
+		for _, saved := range events.Actions {
 			if saved.Text == a.Text {
 				found = true
 				break
