@@ -70,6 +70,8 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			return nil, err
 		}
 		return map[string]any{"items": page.Items, "next": page.Next, "unmet_needs": advisory}, nil
+	case "tools_differences":
+		return d.toolDifferences(ctx)
 	case "ui_show", "ui_notice":
 		var q protocol.UIRequest
 		if json.Unmarshal(raw, &q) != nil {
@@ -77,8 +79,8 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		}
 		q.Tab, q.Select, q.Filter, q.Why, q.Text = cleanLine(q.Tab), cleanLine(q.Select), cleanLine(q.Filter), cleanLine(q.Why), cleanLine(q.Text)
 		if name == "ui_show" {
-			if q.Tab != "sessions" && q.Tab != "messages" && q.Tab != "quotas" && q.Tab != "map" {
-				return nil, errors.New("ui_show tab must be sessions, messages, quotas or map")
+			if q.Tab != "sessions" && q.Tab != "messages" && q.Tab != "quotas" && q.Tab != "map" && q.Tab != "tools" {
+				return nil, errors.New("ui_show tab must be sessions, messages, quotas, map or tools")
 			}
 			q.Text = ""
 			if q.Why == "" {

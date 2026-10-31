@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 7 sessions, 6 online · 1 busy                      updated 14:05:00
+ Differences   All tools   By project   [ ] switch   / search
+╭─All tools · on or off per machine, or for chosen projects────────────────────────────────────────────────────────────╮
+│   NAME                      FROM                  Nicolas-MBP  research PROJECTS              NOTE                   │
+│ ▸ clean-architecture-python agent-net 555555     [●]           ●        -                                            │
+│   code-review               agent-net 333333      111111       ●        -                     Nicolas-MBP on anothe… │
+│   ⌂ deploy-test-server      repo sovl-clone       ·            ·        ⌂ sovl-clone                                 │
+│   design-taste-frontend     your machines         ·            ○        -                     two different copies   │
+│   diagnosing-bugs           agent-net 111111      ◐            ●        -                     limited on one harness │
+│   ⌂ estate-runbook          repo homelab          ·            ·        ⌂ homelab                                    │
+│   found-skill-00            your machines         ○            ○        -                                            │
+│   found-skill-01            your machines         ○            ○        -                                            │
+│   found-skill-02            your machines         ○            ○        -                                            │
+│   found-skill-03            your machines         ○            ○        -                                            │
+│   found-skill-04            your machines         ·            ○        -                                            │
+│   found-skill-05            your machines         ·            ○        -                                            │
+│ 1-12 of 40                                                                                                           │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─Details · clean-architecture-python──────────────────────────────────────────────────────────────────────────────────╮
+│ agent-net 555555 on every project on: Nicolas-MBP, research. agent-net handles where each harness reads skills.      │
+│                                                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
+│ > write to the CTO...                                                                                                │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+j/k item  h/l machine  a turn on  u turn off  / search  [ ] screen  r rescan  tab CTO  ? help  q quit

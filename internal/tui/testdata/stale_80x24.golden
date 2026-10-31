@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Map │ 12 online · 1 busy  updated 14:05:00
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 12 online · 1 busy  14:05:00
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  (s…  claude  opencode  pi │
 │  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?  (stale)  pi               │
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-1/2/3/4 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
+1-5 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

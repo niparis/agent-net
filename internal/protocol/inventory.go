@@ -283,3 +283,10 @@ type ToolResult struct {
 	State    string `json:"state"`
 	Reason   string `json:"reason,omitempty"`
 }
+
+// ToolAccept marks one difference as accepted as it is, or takes the mark off.
+// Key is the stable key of the difference (see internal/toolsdiff).
+type ToolAccept struct {
+	Key      string `json:"key"`
+	Accepted bool   `json:"accepted"`
+}

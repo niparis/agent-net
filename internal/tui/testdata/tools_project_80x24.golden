@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 7 sessions, 6 online · 1 busy
+ Differences   All tools   By project   [ ] switch   / search
+╭─By project · what homelab gets on Nicolas-MBP · m machine────────────────────╮
+│   a2a-ocs           │ FROM THE REPO  1                                       │
+│   cogforge          │   ⌂ estate-runbook                committed            │
+│   dotfiles          │ ON FOR THIS PROJECT  0                                 │
+│   flood-wargame     │   none · a on All tools adds one                       │
+│ ▸ homelab           │ ON NICOLAS-MBP FOR EVERY PROJECT  9                    │
+│   homelab-portal    │   ● clean-architecture-python     agent-net 555555     │
+│   infra-game        │   ◐ code-review                   agent-net 333333     │
+│   sovl-clone        │   ◐ diagnosing-bugs               agent-net 111111     │
+│   strategies        │   + 6 more                                             │
+│   tenebrae          │ MCP SERVERS  1                                         │
+│   wbg-arch          │   ◆ tenebrae-library              gateway on research  │
+│   wbg-housing       │ needs: a deploy runbook skill - estate-runbook         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k project  m machine  / filter  [ ] screen  r rescan  tab CTO  ? help  q quit

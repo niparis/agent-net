@@ -131,8 +131,8 @@ charter attributes. Node settings can override merge authority and worker
 sandbox defaults. The tool schemas describe the other fields and fixed values.
 
 
-`ui_show` switches every open local TUI to `sessions`, `messages`, `quotas`
-or `map`, with an optional session ID, exact session name or project node,
+`ui_show` switches every open local TUI to `sessions`, `messages`, `quotas`,
+`map` or `tools`, with an optional session ID, exact session name or project node,
 filter text and a short reason. `ui_notice` shows a short note. Both show a
 `CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
 
@@ -144,6 +144,17 @@ Type in the focused input and press Enter to send. When the input is empty,
 and Esc returns focus to the session list. The chat polls once per second and shows recorded CTO
 tool calls, including reads and failures, plus graph diffs; a graph change
 refreshes an open map.
+
+Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
+It has three screens. Digits stay the global tabs and `tab` goes to the CTO box, so `[` and `]` switch screens.
+The tab never shows harness columns: a tool is on or off for a machine, or on for chosen projects.
+A harness limit shows as a `◐` cell and a note in the details pane.
+
+- **Differences** (opens first). One line for each thing that differs, with one suggested fix: two machines on different versions, two different copies on one machine, a project's own copy hiding a managed one, the same content under two names, skills only on some machines and not managed, native MCP servers set up by hand, failed targets, and pending targets (info only). `enter` opens the plan of the fix. `x` accepts a difference as it is: the gateway stores the mark (`tools_accept`, table `tool_accepted`), so it stays after a restart. `.` shows accepted ones.
+- **All tools.** NAME, FROM (agent-net store with a version, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. agent-net has no switch for one machine yet: `a` on a machine cell plans the skill for every machine and `u` plans an uninstall everywhere, and the plan says so. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply.
+- **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
+
+Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo is a change to the repo: the plan offers a new branch with one commit (not available yet) or asking that project's agent through the owner send path (`b`). agent-net never commits to the default branch. The tab uses the owner methods `tools_items`, `tools_plan`, `tools_apply`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences (the computation is `internal/toolsdiff`).
 
 Press `4` or `M` to open the Map tab. The focus view shows the selected
 project as a card: name, maturity, the start of the purpose, and its live sessions

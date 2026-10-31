@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Map
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools
   Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?  claude  opencode  pi      │
@@ -21,4 +21,4 @@
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-1/2/3/4 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit
+1-5 tabs  up/down select  enter conversation  m msg  s start  x stop  q quit

@@ -696,6 +696,14 @@ func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 	}
 }
 
+func TestCTOBriefToolsWorkflow(t *testing.T) {
+	for _, want := range []string{"tools_differences", "wait for the owner's explicit words", "pending or failed target with the recovery step"} {
+		if !strings.Contains(ctoBrief, want) {
+			t.Errorf("CTO brief lacks %q", want)
+		}
+	}
+}
+
 func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
 	want := "Each graph node lists where its project lives and its live sessions: use that before searching any filesystem."
 	if !strings.Contains(ctoBrief, want) {
