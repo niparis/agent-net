@@ -160,7 +160,56 @@ func TestGraphTalkCountsSevenDays(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(talk) != 2 || talk[0].From != "cogforge" || talk[0].To != "shop" || talk[0].Count != 1 || talk[0].HasEdge || talk[1].Count != 2 || !talk[1].HasEdge {
+	if len(talk) != 3 || talk[0].From != protocol.GraphVoiceOwner || !talk[0].Voice || talk[0].Count != 0 || talk[1].From != "cogforge" || talk[1].To != "shop" || talk[1].Count != 1 || talk[1].HasEdge || talk[2].Count != 2 || !talk[2].HasEdge {
 		t.Fatalf("talk: %+v", talk)
+	}
+}
+
+func TestGraphTalkVoice(t *testing.T) {
+	s := graphTestStore(t)
+	now := s.now().UnixNano()
+	for _, v := range []struct{ id, project, harness string }{{"a", "cogforge", "claude"}, {"b", "tenebrae", "claude"}, {"c", "shop", "claude"}, {"owner", "", "owner"}} {
+		if _, err := s.db.Exec(`INSERT INTO sessions (id,node_id,harness,native_id,repo_project,last_seen) VALUES (?,?,?,?,?,?)`, v.id, "n_test", v.harness, v.id, v.project, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i, v := range []struct {
+		from, to string
+		cto      bool
+	}{{"a", "b", false}, {"a", "c", false}, {"owner", "b", true}, {"owner", "c", false}} {
+		id := fmt.Sprint(i)
+		if _, err := s.db.Exec(`INSERT INTO messages (id,conversation_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state,sender_cto) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, id, "conv", v.from, v.to, "request", "", 0, id, now, now, "stored", v.cto); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES ('0','cogforge','tenebrae','owner prompt',?)`, now); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"0", "1", "2", "3"} {
+		if _, err := s.db.Exec(`INSERT INTO events (at,kind,message_id) VALUES (?, 'msg.stored', ?)`, now, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	feed, err := s.FeedEvents(0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	flags := map[string]bool{}
+	for _, event := range feed {
+		flags[event.MessageID] = event.Voice
+	}
+	if !flags["0"] || flags["1"] || !flags["2"] || !flags["3"] {
+		t.Fatalf("feed voice: %+v", flags)
+	}
+	result, err := s.GraphTalkSnapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]bool{}
+	for _, pair := range result.Counts {
+		got[pair.From+":"+pair.To] = pair.Voice
+	}
+	if !got["cogforge:tenebrae"] || !got[protocol.GraphVoiceOwner+":tenebrae"] || got["cogforge:shop"] || !got[protocol.GraphVoiceOwner+":shop"] {
+		t.Fatalf("voice: %+v", result.Counts)
 	}
 }

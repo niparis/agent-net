@@ -179,3 +179,30 @@ func TestActivitySnapshotAndFeed(t *testing.T) {
 		t.Fatalf("activity: %+v, original: %+v, talk: %+v", next.Activity, s.Activity, next.Talk)
 	}
 }
+
+func TestVoiceFeedReplaysAndAnimates(t *testing.T) {
+	now := time.Unix(1000, 0)
+	g := New(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}}})
+	s, _ := Update(State{Graph: g}, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "a", To: "b", Count: 1}}, Activity: map[string]int{"a": 1, "b": 1}})
+	ev := []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 1, Kind: "msg.stored", Time: now}, From: "one", To: "two", Voice: true},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", Time: now}, From: "owner", To: "two", SenderOwner: true},
+	}
+	next, _ := Update(s, FeedEvents{Events: ev, Now: now, Projects: map[string]string{"one": "a", "two": "b"}})
+	if !next.Talk[0].Voice || next.Talk[0].Count != 2 || next.Activity["b"] != 3 {
+		t.Fatalf("replay: %+v %+v", next.Talk, next.Activity)
+	}
+	scene := BuildScene(State{Graph: next.Graph, Camera: next.Graph.Fit(80, 20), Now: now.Add(time.Second)}, Viewport{Width: 80, Height: 20})
+	ownerVisible := false
+	for _, node := range scene.Nodes {
+		if node.Name == protocol.GraphVoiceOwner && node.Label == "you" {
+			ownerVisible = true
+		}
+	}
+	if !ownerVisible {
+		t.Fatal("owner origin missing")
+	}
+	if len(scene.Comets) != 2 || !scene.Comets[0].Voice || !scene.Comets[1].Voice {
+		t.Fatalf("pulses: %+v", scene.Comets)
+	}
+}

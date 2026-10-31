@@ -202,6 +202,12 @@ func Update(s State, action Action) (State, Effect) {
 		} else {
 			s.Graph.Update(a.Graph)
 		}
+		for _, pair := range s.Talk {
+			if pair.From == protocol.GraphVoiceOwner || pair.To == protocol.GraphVoiceOwner {
+				ensureVoiceOwner(s.Graph)
+				break
+			}
+		}
 	case TalkLoaded:
 		s.Talk = append([]protocol.GraphTalkCount(nil), a.Counts...)
 		s.Activity = a.Activity
@@ -212,6 +218,12 @@ func Update(s State, action Action) (State, Effect) {
 			}
 		}
 		s.TalkReady = true
+		for _, pair := range s.Talk {
+			if pair.From == protocol.GraphVoiceOwner || pair.To == protocol.GraphVoiceOwner {
+				ensureVoiceOwner(s.Graph)
+				break
+			}
+		}
 	case FeedEvents:
 		{
 			projects := make(map[string]string)
@@ -229,17 +241,26 @@ func Update(s State, action Action) (State, Effect) {
 				if event.ID <= a.LastID || event.Kind != "msg.stored" {
 					continue
 				}
+				senderOwner := event.SenderOwner || event.FromCTO
 				if s.TalkReady && event.ID > a.CountAfter && !event.Time.IsZero() && !event.Time.Before(a.Now.Add(-7*24*time.Hour)) && !event.Time.After(a.Now) {
 					from, to := projects[event.From], projects[event.To]
 					if s.Activity != nil {
-						if from != "" {
+						if from != "" && !senderOwner {
 							s.Activity[from]++
 						}
-						if to != "" && to != from {
+						if to != "" && !event.RecipientOwner && (to != from || senderOwner) {
 							s.Activity[to]++
 						}
 					}
-					if from != "" && to != "" && from != to {
+					if senderOwner {
+						from = protocol.GraphVoiceOwner
+						ensureVoiceOwner(s.Graph)
+					}
+					if event.RecipientOwner && (event.Voice || event.FromCTO) {
+						to = protocol.GraphVoiceOwner
+						ensureVoiceOwner(s.Graph)
+					}
+					if from != "" && to != "" && from != to && (event.Voice || senderOwner || (!senderOwner && !event.RecipientOwner)) {
 						if from > to {
 							from, to = to, from
 						}
@@ -261,7 +282,10 @@ func Update(s State, action Action) (State, Effect) {
 							}
 							s.Talk = append(s.Talk, item)
 						}
-						s.Talk[i].Count++
+						if !senderOwner && !event.RecipientOwner {
+							s.Talk[i].Count++
+						}
+						s.Talk[i].Voice = s.Talk[i].Voice || event.Voice || senderOwner
 					}
 				}
 				if a.CountsOnly || s.Graph == nil {
@@ -271,13 +295,23 @@ func Update(s State, action Action) (State, Effect) {
 				if at.IsZero() || at.Before(a.Now.Add(-travelTime)) {
 					at = a.Now
 				}
-				s.Graph.Message(projects[event.From], projects[event.To], event.Type, at)
+				from, to := projects[event.From], projects[event.To]
+				voice := event.Voice || senderOwner
+				if senderOwner {
+					from = protocol.GraphVoiceOwner
+					ensureVoiceOwner(s.Graph)
+				}
+				if event.RecipientOwner && voice {
+					to = protocol.GraphVoiceOwner
+					ensureVoiceOwner(s.Graph)
+				}
+				s.Graph.Message(from, to, event.Type, at, voice, senderOwner)
 			}
 		}
 	case MessageEvent:
 		if s.Graph != nil {
 			m := a.Message
-			s.Graph.Message(m.From, m.To, m.Kind, m.At)
+			s.Graph.Message(m.From, m.To, m.Kind, m.At, m.Voice)
 		}
 	}
 	return s, effect
@@ -388,4 +422,23 @@ func selectNeighbour(s State, viewport Viewport, direction int) State {
 		}
 	}
 	return s
+}
+
+// The owner is a graph origin, not a project or a selectable graph node.
+func ensureVoiceOwner(g *Graph) {
+	if g == nil {
+		return
+	}
+	if _, ok := g.Positions[protocol.GraphVoiceOwner]; ok {
+		return
+	}
+	if len(g.Positions) == 0 {
+		return
+	}
+	minX, minY := math.Inf(1), math.Inf(1)
+	for _, p := range g.Positions {
+		minX = math.Min(minX, p.X)
+		minY = math.Min(minY, p.Y)
+	}
+	g.Positions[protocol.GraphVoiceOwner] = Point{X: minX, Y: minY}
 }

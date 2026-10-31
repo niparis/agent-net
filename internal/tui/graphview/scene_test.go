@@ -99,3 +99,29 @@ func TestActivityLevelsUseVisibleNodeQuantiles(t *testing.T) {
 		}
 	}
 }
+
+func TestVoiceSceneAndRenderer(t *testing.T) {
+	now := time.Unix(100, 0)
+	g := New(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}}, Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}}})
+	s, _ := Update(State{Graph: g}, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "a", To: "b", Count: 1, Voice: true}}})
+	s, _ = Update(s, MessageEvent{Message: Message{From: "a", To: "b", Kind: "request", At: now, Voice: true}})
+	s.Now = now.Add(time.Second)
+	scene := BuildScene(s, Viewport{Width: 80, Height: 20})
+	if len(scene.Talk) != 1 || !scene.Talk[0].Voice || len(scene.Comets) != 1 || !scene.Comets[0].Voice {
+		t.Fatalf("voice scene: %+v %+v", scene.Talk, scene.Comets)
+	}
+	seenLine, seenPulse := false, false
+	(Braille{Color: func(role, value string) string {
+		if role == "voice" {
+			if value == "•" {
+				seenPulse = true
+			} else {
+				seenLine = true
+			}
+		}
+		return value
+	}}).Render(scene, Size{Width: 80, Height: 20})
+	if !seenLine || !seenPulse {
+		t.Fatalf("voice line %v pulse %v", seenLine, seenPulse)
+	}
+}

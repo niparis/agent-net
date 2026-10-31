@@ -514,6 +514,9 @@ type FeedEvent struct {
 	// as replied, which has no event of its own.
 	Parent         string `json:"parent_message_id,omitempty"`
 	FromCTO        bool   `json:"sender_cto,omitempty"`
+	Voice          bool   `json:"voice,omitempty"`
+	SenderOwner    bool   `json:"sender_owner,omitempty"`
+	RecipientOwner bool   `json:"recipient_owner,omitempty"`
 	ConversationID string `json:"conversation_id,omitempty"`
 }
 

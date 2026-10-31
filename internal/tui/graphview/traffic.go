@@ -8,6 +8,8 @@ const flashTime = 700 * time.Millisecond
 type Message struct {
 	From, To, Kind string
 	At             time.Time
+	Voice          bool
+	FromOwner      bool
 }
 type Comet struct {
 	Message
@@ -16,14 +18,16 @@ type Comet struct {
 }
 
 // Message records a real message, including replies as separate events.
-func (g *Graph) Message(from, to, kind string, at time.Time) {
+func (g *Graph) Message(from, to, kind string, at time.Time, voice ...bool) {
 	if _, ok := g.Positions[from]; !ok {
 		return
 	}
 	if _, ok := g.Positions[to]; !ok {
 		return
 	}
-	g.messages = append(g.messages, Message{from, to, kind, at})
+	v := len(voice) > 0 && voice[0]
+	owner := len(voice) > 1 && voice[1]
+	g.messages = append(g.messages, Message{From: from, To: to, Kind: kind, At: at, Voice: v, FromOwner: owner})
 	if len(g.messages) > 100 {
 		g.messages = g.messages[len(g.messages)-100:]
 	}

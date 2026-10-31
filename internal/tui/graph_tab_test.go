@@ -37,7 +37,7 @@ func graphModel(w, h int) Model {
 	m := mapModel(w, h, graphFixture())
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
 	m.tab = 5
-	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true}, {From: "project-07", To: "project-11", Count: 23}}})
+	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true, Voice: true}, {From: "project-07", To: "project-11", Count: 23}}})
 	gw, gh := m.graphSize()
 	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
 	m.graphState.Graph.Message("project-01", "project-02", "request", t0.Add(-time.Second))
@@ -304,5 +304,27 @@ func TestGraphQuitDisablesMouseBeforeQuit(t *testing.T) {
 	// A sequence preserves ordering between disabling mouse and stopping Bubble Tea.
 	if fmt.Sprintf("%T", cmd()) != fmt.Sprintf("%T", tea.Sequence(tea.DisableMouse, tea.Quit)()) {
 		t.Fatal("quit must disable mouse first")
+	}
+}
+
+func TestGraphVoiceLegend(t *testing.T) {
+	if legend := graphLegend(52); !strings.Contains(legend, "gold: your words") || strings.Contains(legend, "pink:") || ansi.StringWidth(legend) > 52 {
+		t.Fatalf("narrow legend: %q", legend)
+	}
+	for _, w := range []int{80, 120} {
+		lines := graphModel(w, 34).graphView(w, 20)
+		found := false
+		for _, line := range lines {
+			line = ansi.Strip(line)
+			if strings.Contains(line, "gold: your words") {
+				found = true
+				if ansi.StringWidth(line) > w || strings.Contains(line, "…") {
+					t.Fatalf("legend: %q", line)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("voice legend missing at %d", w)
+		}
 	}
 }

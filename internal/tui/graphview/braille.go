@@ -60,13 +60,13 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		role string
 	}
 	var arrows []arrow
-	// Talk is painted first so declared relationships keep their own color.
-	for _, talk := range scene.Talk {
+	// Paint ordinary talk below relationships and voice above them.
+	drawTalk := func(talk SceneTalk) {
 		x0, y0 := point(talk.From)
 		x1, y1 := point(talk.To)
 		dx, dy := abs(x1-x0), -abs(y1-y0)
 		if dx-dy > 10000 {
-			continue
+			return
 		}
 		sx, sy := -1, -1
 		if x0 < x1 {
@@ -78,6 +78,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		role := "talkFaint"
 		if talk.NoRule {
 			role = "talk"
+		}
+		if talk.Voice {
+			role = "voice"
 		}
 		spacing := 8
 		if talk.Bucket == 2 {
@@ -104,6 +107,12 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			}
 		}
 	}
+	for _, talk := range scene.Talk {
+		if !talk.Voice {
+			drawTalk(talk)
+		}
+	}
+
 	for _, e := range scene.Edges {
 		x0, y0 := point(e.From)
 		x1, y1 := point(e.To)
@@ -146,6 +155,12 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			}
 		}
 	}
+	for _, talk := range scene.Talk {
+		if talk.Voice {
+			drawTalk(talk)
+		}
+	}
+
 	for _, n := range scene.Nodes {
 		x, y := point(n.Position)
 		marker := '○'
@@ -312,13 +327,17 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		put(a.x, a.y, a.r, a.role)
 	}
 	for _, c := range scene.Comets {
+		role, trailRole := "comet", "trail"
+		if c.Voice {
+			role, trailRole = "voice", "voice"
+		}
 		for _, p := range c.Trail {
-			dot(int(p.X*float64(width)*2), int(p.Y*float64(height)*4), "trail")
+			dot(int(p.X*float64(width)*2), int(p.Y*float64(height)*4), trailRole)
 		}
 		cx, cy := int(c.Position.X*float64(width)), int(c.Position.Y*float64(height))
-		if !put(cx, cy, '•', "comet") {
+		if !put(cx, cy, '•', role) {
 			for _, offset := range [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
-				if put(cx+offset[0], cy+offset[1], '•', "comet") {
+				if put(cx+offset[0], cy+offset[1], '•', role) {
 					break
 				}
 			}
@@ -362,6 +381,8 @@ func abs(n int) int {
 func colorRole(role, text string) string {
 	color := lipgloss.AdaptiveColor{Light: "#596171", Dark: "#6f7889"}
 	switch role {
+	case "voice":
+		color = voiceColor
 	case "talk":
 		color = talkColor
 	case "talkFaint":

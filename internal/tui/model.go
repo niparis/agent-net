@@ -694,15 +694,11 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		m.feed.apply(r.events)
 		projects := make(map[string]string)
 		for _, a := range r.snap.Agents {
-			if a.Harness == "owner" {
-				projects[a.SessionID] = ""
-			} else {
-				p := a.Repo.Project
-				if p == "" {
-					p = a.Profile.Project
-				}
-				projects[a.SessionID] = p
+			p := a.Repo.Project
+			if p == "" {
+				p = a.Profile.Project
 			}
+			projects[a.SessionID] = p
 		}
 		events := graphview.FeedEvents{Events: r.events, LastID: lastID, CountAfter: m.graphTalkLastID, Now: r.at, Projects: projects}
 		if m.graphTalkLoading {

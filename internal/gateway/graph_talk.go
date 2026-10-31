@@ -8,7 +8,8 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// GraphTalkCounts counts both directions together and excludes owner sessions.
+// GraphTalkCounts counts inter-project messages in both directions. Owner
+// sends add voice-only links without changing the talk counts.
 func (s *Store) GraphTalkCounts() ([]protocol.GraphTalkCount, error) {
 	result, err := s.GraphTalkSnapshot()
 	return result.Counts, err
@@ -26,7 +27,7 @@ func (s *Store) GraphTalkSnapshot() (protocol.GraphTalkResult, error) {
 		return result, err
 	}
 	now := s.now()
-	rows, err := tx.Query(`SELECT COALESCE(NULLIF(src.repo_project,''),sp.project,''), COALESCE(NULLIF(dst.repo_project,''),dp.project,''), src.harness, dst.harness, COUNT(*)
+	rows, err := tx.Query(`SELECT COALESCE(NULLIF(src.repo_project,''),sp.project,''), COALESCE(NULLIF(dst.repo_project,''),dp.project,''), src.harness, dst.harness, COUNT(*), MAX(CASE WHEN m.sender_cto <> 0 OR src.harness = 'owner' OR EXISTS (SELECT 1 FROM charter_signals cs WHERE cs.message_id=m.id AND cs.prompt <> '') THEN 1 ELSE 0 END)
  FROM messages m JOIN sessions src ON src.id=m.sender JOIN sessions dst ON dst.id=m.recipient
  LEFT JOIN profiles sp ON sp.session_id=src.id LEFT JOIN profiles dp ON dp.session_id=dst.id
  WHERE m.created_at>=? AND m.created_at<=?
@@ -35,11 +36,12 @@ func (s *Store) GraphTalkSnapshot() (protocol.GraphTalkResult, error) {
 		return result, err
 	}
 	counts := map[[2]string]int{}
+	voices := map[[2]string]bool{}
 	result.Activity = map[string]int{}
 	for rows.Next() {
 		var a, b, ah, bh string
-		var n int
-		if err := rows.Scan(&a, &b, &ah, &bh, &n); err != nil {
+		var n, voice int
+		if err := rows.Scan(&a, &b, &ah, &bh, &n, &voice); err != nil {
 			rows.Close()
 			return result, err
 		}
@@ -50,13 +52,27 @@ func (s *Store) GraphTalkSnapshot() (protocol.GraphTalkResult, error) {
 		if bh != "owner" && b != "" && (a != b || ah == "owner") {
 			result.Activity[b] += n
 		}
-		if ah == "owner" || bh == "owner" || a == "" || b == "" || a == b {
+		if ah == "owner" {
+			a = protocol.GraphVoiceOwner
+		}
+		if bh == "owner" && voice != 0 {
+			b = protocol.GraphVoiceOwner
+		}
+		if a == "" || b == "" || a == b {
 			continue
 		}
 		if a > b {
 			a, b = b, a
 		}
-		counts[[2]string{a, b}] += n
+		pair := [2]string{a, b}
+		if voice != 0 {
+			voices[pair] = true
+		}
+		if ah != "owner" && bh != "owner" {
+			counts[pair] += n
+		} else if voice != 0 {
+			counts[pair] += 0
+		}
 	}
 	err = rows.Err()
 	rows.Close()
@@ -72,7 +88,7 @@ func (s *Store) GraphTalkSnapshot() (protocol.GraphTalkResult, error) {
 	}
 	out := make([]protocol.GraphTalkCount, 0, len(counts))
 	for pair, n := range counts {
-		item := protocol.GraphTalkCount{From: pair[0], To: pair[1], Count: n}
+		item := protocol.GraphTalkCount{From: pair[0], To: pair[1], Count: n, Voice: voices[pair]}
 		for _, edge := range graph.Edges {
 			if edge.From == pair[0] && edge.To == pair[1] || edge.From == pair[1] && edge.To == pair[0] {
 				item.HasEdge = true
