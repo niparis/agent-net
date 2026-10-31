@@ -665,6 +665,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return inventoryPage(reports, p.Offset)
 
+	case "query.mcp_import_candidates":
+		p, err := decode[protocol.MCPImportCandidatesRequest](raw)
+		if err != nil || p.Offset < 0 {
+			return nil, reject("bad query.mcp_import_candidates")
+		}
+		return g.mcpImportCandidates(p)
+
 	case "query.tools_items":
 		p, err := decode[protocol.ToolsFilter](raw)
 		if err != nil || p.Offset < 0 {

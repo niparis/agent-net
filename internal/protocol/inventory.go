@@ -44,6 +44,9 @@ type InventoryItem struct {
 	Reason      string    `json:"reason,omitempty"`
 	Unsupported []string  `json:"unsupported,omitempty"`
 	Files       []string  `json:"files,omitempty"`
+	// Import says whether a native MCP entry can move into the federation. It
+	// is set only for native MCP entries and holds names, never values.
+	Import *MCPImportInfo `json:"import,omitempty"`
 }
 
 // InventoryPage bounds each owner response. Next is zero at the end.
@@ -91,6 +94,13 @@ type ToolItem struct {
 	ScopeProjects []string `json:"scope_projects,omitempty"`
 	Host          string   `json:"host,omitempty"`
 	HostOnline    bool     `json:"host_online,omitempty"`
+	// Imported says this server came from a native entry. NativeStillPresent
+	// is true while that entry is still in the harness config. Conflicts lists
+	// a native entry and a federated server that share a name, so the same
+	// server is not registered twice without the owner seeing it.
+	Imported           *MCPImportRecord `json:"imported,omitempty"`
+	NativeStillPresent bool             `json:"native_still_present,omitempty"`
+	Conflicts          []string         `json:"conflicts,omitempty"`
 }
 type ToolsPage struct {
 	Items []ToolItem `json:"items"`

@@ -352,6 +352,9 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err = s.fillFederatedItems(all, f, matched, online); err != nil {
 		return nil, err
 	}
+	if err = s.markMCPConflicts(all); err != nil {
+		return nil, err
+	}
 	out := make([]protocol.ToolItem, 0, len(order))
 	for _, id := range order {
 		item := all[id]
