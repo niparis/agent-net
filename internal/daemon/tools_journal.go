@@ -9,6 +9,19 @@ import (
 
 // skillJournalRecord describes the durable progress of a local skill operation.
 // Paths and hashes refer to local data only; journal records are never uploaded.
+var skillJournalHook func(string) error
+
+func (j *skillJournal) advance(step string) error {
+	j.record.Step = step
+	if err := j.save(); err != nil {
+		return err
+	}
+	if skillJournalHook != nil {
+		return skillJournalHook(step)
+	}
+	return nil
+}
+
 type skillJournalRecord struct {
 	Operation  string `json:"operation"`
 	Target     string `json:"target"`

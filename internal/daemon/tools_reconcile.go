@@ -113,13 +113,23 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	if root == "" || !filepath.IsAbs(root) || d.cfg.StateDir == "" {
 		return fail("failed", "local directories unavailable")
 	}
+	manifestDest := filepath.Join(root, rel, t.Name)
+	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "copy", Target: manifestDest, AfterHash: t.Revision.Version, Step: "prepared"})
+	if err != nil {
+		return fail("failed", "cannot write skill journal")
+	}
+	retain := false
+	defer func() {
+		if !retain {
+			_ = j.finish()
+		}
+	}()
 	cur, closeRoot, err := openSkillRoot(root, rel)
 	if err != nil {
 		return fail("conflict", "skill root cannot be opened safely")
 	}
 	defer closeRoot()
 	dest := filepath.Join(cur, t.Name)
-	manifestDest := filepath.Join(root, rel, t.Name)
 	if _, err = os.Lstat(dest); err == nil {
 		hash, e := inventory.SkillHash(dest)
 		if e != nil || hash != t.Revision.Version {
@@ -132,11 +142,21 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	} else if !os.IsNotExist(err) {
 		return fail("failed", "cannot inspect destination")
 	}
-	stage, err := os.MkdirTemp(cur, ".agent-net-stage-")
-	if err != nil {
+	stageName := ".agent-net-stage-" + filepath.Base(j.path)
+	stage := filepath.Join(cur, stageName)
+	j.record.Stage = filepath.Join(root, rel, stageName)
+	if err = j.advance("staging"); err != nil {
+		retain = true
+		return fail("failed", "cannot update skill journal")
+	}
+	if err = os.Mkdir(stage, 0700); err != nil {
 		return fail("failed", "cannot create staging directory")
 	}
-	defer os.RemoveAll(stage)
+	defer func() {
+		if !retain {
+			_ = os.RemoveAll(stage)
+		}
+	}()
 	if err = inventory.UnpackSkill(bundle, stage); err != nil {
 		return fail("failed", "invalid skill bundle")
 	}
@@ -144,14 +164,27 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	if err != nil || hash != t.Revision.Version {
 		return fail("failed", "skill hash mismatch")
 	}
+	if err = j.advance("staged"); err != nil {
+		retain = true
+		return fail("failed", "skill operation interrupted")
+	}
 	if err = renameSkillNoReplace(stage, dest); err != nil {
 		if errors.Is(err, os.ErrExist) {
 			return fail("conflict", "destination appeared during copy")
 		}
 		return fail("failed", "cannot install skill")
 	}
+	if err = j.advance("installed"); err != nil {
+		retain = true
+		return fail("failed", "skill operation interrupted")
+	}
 	if err = d.recordSkill(t, manifestDest, true); err != nil {
+		retain = true
 		return fail("failed", "cannot record manifest")
+	}
+	if err = j.advance("recorded"); err != nil {
+		retain = true
+		return fail("failed", "skill operation interrupted")
 	}
 	return fail("applied", "")
 }
