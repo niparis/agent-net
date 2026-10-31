@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 // The map is a read-only screen of the component graph (decision 0022, step
@@ -87,6 +88,13 @@ func (m *Model) applyMap(r mapMsg) {
 	if r.err != nil {
 		m.mp.err = mapError(r.err)
 		return
+	}
+	if m.graph == nil {
+		m.graph = graphview.New(r.view)
+		w, h := m.graphSize()
+		m.graphCamera = m.graph.Fit(w, h)
+	} else {
+		m.graph.Update(r.view)
 	}
 	m.mp.nodes, m.mp.edges, m.mp.changes = r.view.Nodes, r.view.Edges, r.view.Changes
 	m.mp.at, m.mp.loaded, m.mp.err = r.at, true, ""

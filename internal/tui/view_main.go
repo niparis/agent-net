@@ -145,6 +145,8 @@ func (m Model) View() string {
 		case m.mapOn:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.mapView(w, contentHeight-1)...)
+		case m.tab == 5:
+			out = append(out, m.graphView(w, contentHeight)...)
 		case m.tab == toolsTab:
 			out = append(out, m.toolsView(w, contentHeight)...)
 		case m.tab == 1:
@@ -250,7 +252,7 @@ func (m Model) mainView(w, h int) []string {
 	return out
 }
 
-var tabNames = []string{"Sessions", "Messages", "Quotas", "Map", "Tools"}
+var tabNames = []string{"Sessions", "Messages", "Quotas", "Map", "Tools", "Graph"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 func (m Model) titleLine(w int) string {
@@ -349,10 +351,16 @@ func (m Model) titleLine(w int) string {
 	if used > w && !m.haveData && ansi.StringWidth(left)+3+ansi.StringWidth(right) <= w {
 		return clip(left+" │ "+sDim.Render(right), w)
 	}
-	// Five tabs fill most of 80 columns: say just the time before dropping it.
+	// The tabs fill most of 80 columns: say just the time before dropping it.
 	if used > w && strings.HasPrefix(right, "updated ") {
 		right = strings.TrimPrefix(right, "updated ")
 		used = ansi.StringWidth(left) + 3 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	}
+	if used > w && w <= 80 && m.usage.counts != nil && len(filters) == 0 && !m.mapOn && right != "" {
+		short := fmt.Sprintf("%d online", m.usage.counts.Online)
+		if ansi.StringWidth(left)+3+ansi.StringWidth(short)+2+ansi.StringWidth(right) <= w {
+			return clip(left+" │ "+short+"  "+sDim.Render(right), w)
+		}
 	}
 	if used > w {
 		right = ""

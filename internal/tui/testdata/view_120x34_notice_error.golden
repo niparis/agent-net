@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued  14:05:00
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
 ! Worker not started: machine build-vm does not accept workers (it was set up with --no-launch)
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 online  cpu ?  mem ?  load ?                              claude  opencode  pi                  │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-5 tabs  up/down select  enter conversation  m msg  s start  x stop  h/H hide/show  t trust  tab CTO  ? help  q quit
+1-6 tabs  up/down select  enter conversation  m msg  s start  x stop  h/H hide/show  t trust  tab CTO  ? help  q quit

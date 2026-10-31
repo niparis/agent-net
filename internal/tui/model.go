@@ -15,6 +15,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 // RefreshEvery is how often the screen asks the daemon for news.
@@ -62,13 +63,18 @@ type Model struct {
 	messageShowEvents bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap     Snapshot
-	haveData bool
-	lastOK   time.Time
-	problem  Problem
-	problemT string // text of the last error
-	feed     feed
-	fetching bool
+	snap                               Snapshot
+	haveData                           bool
+	lastOK                             time.Time
+	problem                            Problem
+	problemT                           string // text of the last error
+	graph                              *graphview.Graph
+	graphCamera                        graphview.Camera
+	graphOrbit, graphPaused, graphHelp bool
+	graphPausedAt                      time.Time
+	graphGeneration                    int
+	feed                               feed
+	fetching                           bool
 
 	// What the person chose.
 	selected           string // session ID
@@ -313,9 +319,15 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fixScroll()
 		return m, nil
 
+	case graphTickMsg:
+		if m.tab == 5 && !m.mapOn && msg.generation == m.graphGeneration {
+			return m, graphTick(m.graphGeneration)
+		}
+		return m, nil
+
 	case tickMsg:
 		cmds := []tea.Cmd{tick()}
-		if m.mapOn && !m.mp.loading {
+		if (m.mapOn || m.tab == 5) && !m.mp.loading {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
 		}
@@ -598,7 +610,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		// Any other error shows up as a problem on the next refresh.
 	} else {
 		wasLast := m.feedCur >= m.feedLastVisible()
+		lastID := m.feed.lastID
 		m.feed.apply(r.events)
+		m.graphEvents(r.events, lastID, r.at)
 		if m.focus != focusFeed || wasLast {
 			m.feedCur = m.feedLastVisible()
 		} else {
@@ -699,7 +713,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.cto.editing = true
 		return m, m.cto.input.Focus()
 	}
-	if !m.filtering && m.conv == nil && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5") {
+	if !m.filtering && m.conv == nil && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5" || k.String() == "6") {
+		if k.String() == "6" {
+			m.tab, m.mapOn, m.focus = 5, false, focusSessions
+			m.graphGeneration++
+			animation := graphTick(m.graphGeneration)
+			if m.mp.loading {
+				return m, animation
+			}
+			m.mp.loading = true
+			return m, tea.Batch(m.mapCmd(), animation)
+		}
 		if k.String() == "4" {
 			return m.startMap()
 		}
@@ -767,6 +791,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
+	}
+	if m.tab == 5 {
+		return m.graphKey(k)
 	}
 	if m.tab == toolsTab {
 		return m.toolsKey(k)

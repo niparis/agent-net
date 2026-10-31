@@ -151,6 +151,8 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "conversation", 1}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
 	case m.tab == 2:
 		return []hint{{"up/down", "scroll", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
+	case m.tab == 5:
+		return []hint{{"1-6", "tabs", 1}, {"tab", "CTO", 1}, {"?", "keys", 1}, {"q", "quit", 1}}
 	case m.tab == toolsTab:
 		return m.toolsHints()
 	}
@@ -159,7 +161,7 @@ func (m Model) hints() []hint {
 			return []hint{{"c", "recipient", 1}, {"R", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"1-5", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 1}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+	return []hint{{"1-6", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 1}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
@@ -228,7 +230,7 @@ func (m Model) helpLine(w int) string {
 func (m Model) helpView(w, h int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
-		{"1-5", "switch between Sessions, Messages, Quotas, Map and Tools"},
+		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
 		{"enter or c", "open the conversation of the session"},
