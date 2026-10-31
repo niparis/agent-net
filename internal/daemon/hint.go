@@ -27,11 +27,13 @@ const (
 )
 
 type hintState struct {
-	mu       sync.Mutex
-	last     map[string]time.Time // self|candidate -> when it was suggested
-	lastSess map[string]time.Time // self -> when it got any hint
-	agents   []protocol.AgentView
-	agentsAt time.Time
+	mu         sync.Mutex
+	last       map[string]time.Time // self|candidate -> when it was suggested
+	lastSess   map[string]time.Time // self -> when it got any hint
+	agents     []protocol.AgentView
+	agentsAt   time.Time
+	machines   []string
+	machinesAt time.Time
 	// now is replaced in tests.
 	now func() time.Time
 }
@@ -67,6 +69,43 @@ func (d *Daemon) hintAgents(ctx context.Context) []protocol.AgentView {
 	h.agents, h.agentsAt = r.Agents, h.clock()
 	h.mu.Unlock()
 	return r.Agents
+}
+
+// hintMachines returns enrolled machine names from a cache up to agentsMaxAge
+// old. Offline machines matter too: their names should not match another
+// session's description or expertise.
+func (d *Daemon) hintMachines(ctx context.Context) []string {
+	h := &d.hints
+	h.mu.Lock()
+	fresh := h.machines != nil && h.clock().Sub(h.machinesAt) < agentsMaxAge
+	cached := h.machines
+	h.mu.Unlock()
+	if fresh {
+		return cached
+	}
+	cctx, cancel := context.WithTimeout(ctx, hintFetchWait)
+	defer cancel()
+	data, err := d.call(cctx, "query.nodes", nil)
+	if err != nil {
+		return cached
+	}
+	var r protocol.NodesInfo
+	if json.Unmarshal(data, &r) != nil {
+		return cached
+	}
+	names := make([]string, 0, len(r.Nodes)*2)
+	for _, n := range r.Nodes {
+		if n.Hostname != "" {
+			names = append(names, n.Hostname)
+		}
+		if n.Reported != "" && n.Reported != n.Hostname {
+			names = append(names, n.Reported)
+		}
+	}
+	h.mu.Lock()
+	h.machines, h.machinesAt = names, h.clock()
+	h.mu.Unlock()
+	return names
 }
 
 func candidatesOf(agents []protocol.AgentView) []hint.Candidate {
@@ -108,8 +147,20 @@ func (d *Daemon) hintFor(ctx context.Context, self *localSession, p protocol.Hin
 		return protocol.HintResult{}
 	}
 	h.mu.Unlock()
-	agents := d.hintAgents(ctx)
-	found := hint.Suggest(p.Text, hint.Self{SessionID: sid, Project: info.Repo.Project, Hostname: d.hostName()}, candidatesOf(agents))
+	var agents []protocol.AgentView
+	var machines []string
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		agents = d.hintAgents(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		machines = d.hintMachines(ctx)
+	}()
+	wg.Wait()
+	found := hint.Suggest(p.Text, hint.Self{SessionID: sid, Project: info.Repo.Project, Hostname: d.hostName(), MachineNames: machines}, candidatesOf(agents))
 	var keep []hint.Suggestion
 	h.mu.Lock()
 	defer h.mu.Unlock()
