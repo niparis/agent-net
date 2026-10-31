@@ -31,3 +31,21 @@ func TestProtectedChooserQuotaFallback(t *testing.T) {
 		t.Fatalf("fallback: %+v %q %v", c, note, err)
 	}
 }
+
+func TestWorkerChoiceNote(t *testing.T) {
+	choice := protocol.WorkerModelChoice{WorkerModelCandidate: protocol.WorkerModelCandidate{Harness: "opencode", Model: "deepseek"}, Score: 32.5, Fit: "good", QuotaNote: "opencode-go 20% behind pace"}
+	got := workerChoiceNote("normal", choice, []protocol.WorkerModelCandidate{{Harness: "codex", Model: "terra"}}, []protocol.ModelScore{{Match: "terra", Score: 42.3}}, nil)
+	for _, want := range []string{"normal -> opencode deepseek", "32.5, good enough", "20% behind pace", "terra kept for harder work"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("note %q lacks %q", got, want)
+		}
+	}
+}
+
+func TestWorkerChoiceNotePoorRecord(t *testing.T) {
+	choice := protocol.WorkerModelChoice{WorkerModelCandidate: protocol.WorkerModelCandidate{Model: "strong"}, Score: 42}
+	c := []protocol.WorkerModelCandidate{{Model: "cheap", Track: protocol.TrackRecord{Complete: 1, Partial: 4}}}
+	if got := workerChoiceNote("normal", choice, c, nil, nil); !strings.Contains(got, "cheap has a poor track record") {
+		t.Fatalf("note %q", got)
+	}
+}

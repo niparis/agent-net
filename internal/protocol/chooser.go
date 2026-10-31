@@ -28,8 +28,8 @@ type WorkerModelChoice struct {
 	QuotaNote string
 }
 
-// ChooseWorkerModel ranks eligible models by fit, quota room and recent failure.
-// Rotation selects among equally ranked choices when no quota readings exist.
+// ChooseWorkerModel ranks adequate models by track record, quota pace and score.
+// Rotation selects among equally ranked choices.
 func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation int) (WorkerModelChoice, error) {
 	if level == "" {
 		level = "normal"
@@ -155,7 +155,13 @@ func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
 		current := elapsed - w.PercentUsed
 		if !measured || current < room {
 			room = current
-			note = fmt.Sprintf("%s %s %.0f%% used at %.0f%% elapsed", provider, QuotaWindowName(w), w.PercentUsed, elapsed)
+			pace := "on pace"
+			if current > 0.05 {
+				pace = fmt.Sprintf("%.0f%% behind pace", current)
+			} else if current < -0.05 {
+				pace = fmt.Sprintf("%.0f%% ahead of pace", -current)
+			}
+			note = fmt.Sprintf("%s %s (%s, %.0f%% used at %.0f%% elapsed)", provider, pace, QuotaWindowName(w), w.PercentUsed, elapsed)
 			measured = true
 		}
 	}
