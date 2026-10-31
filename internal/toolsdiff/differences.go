@@ -236,15 +236,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 				break
 			}
 		}
-		if len(cs) == 2 && cs[0].Manifest != nil && cs[1].Manifest != nil && !cs[0].Manifest.TooLarge && !cs[1].Manifest.TooLarge && !cs[0].Manifest.Newest.IsZero() && !cs[1].Manifest.Newest.IsZero() && !cs[0].Manifest.Newest.Equal(cs[1].Manifest.Newest) {
-			if cs[1].Manifest.Newest.After(cs[0].Manifest.Newest) {
-				cs[0], cs[1] = cs[1], cs[0]
-			}
-			added, removed, changed, _ := CompareFiles(cs[1], cs[0])
-			count := len(added) + len(removed) + len(changed)
-			title = fmt.Sprintf("%s: %s's copy (%s) is newer than %s's (%s), %d files differ", g.name, harnessName(cs[0].Harness), skillParent(cs[0].Location), harnessName(cs[1].Harness), skillParent(cs[1].Location), count)
-			fix = "keep the newer one in both places"
-		}
+
 		out = append(out, Difference{
 			Key: "two-copies:" + g.name + ":" + m, Kind: KindTwoCopies, Severity: SevErr, Name: g.name, Machines: []string{m},
 			Title: title, Fix: fix, Action: Action{Kind: ActChoose, Name: g.name, Copies: cs},
