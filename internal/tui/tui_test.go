@@ -1126,3 +1126,25 @@ func TestMessageBodyOfflineExplanation(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// PROJECT grows to fit the longest project name (up to 16) before TASK takes
+// the rest; it used to stay at 9 and cut names like "homelab-portal".
+func TestProjectColumnFitsLongestName(t *testing.T) {
+	width := func(cols []column, name string) int {
+		for _, c := range cols {
+			if c.name == name {
+				return c.width
+			}
+		}
+		return -1
+	}
+	if w := width(columnsForProject(160, 12, 14, false), "PROJECT"); w != 14 {
+		t.Fatalf("PROJECT is %d wide, want 14", w)
+	}
+	if w := width(columnsForProject(160, 12, 40, false), "PROJECT"); w != 16 {
+		t.Fatalf("PROJECT is %d wide, want the 16 maximum", w)
+	}
+	if w := width(columnsForProject(160, 12, 3, false), "PROJECT"); w != 9 {
+		t.Fatalf("PROJECT is %d wide, want the 9 minimum", w)
+	}
+}

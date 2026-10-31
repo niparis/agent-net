@@ -4,16 +4,16 @@
 │  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi                                    │
 │  ○ old-box    v0.3.2 offline                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME               AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 5 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  docs               opencode -         -          idle   -     shared
-  api                opencode -         -          busy   -     shared
-  strategies         claude   strategi… sonnet-5-5 idle   -      240%  4.6G backtest v2
-  tenebrae-53        claude   tenebrae  opus-5-5   busy   -       38%  1.2G
-▸ web                opencode shop      sonnet-5   idle   -     shared
+  docs               opencode -          -          idle   -     shared
+  api                opencode -          -          busy   -     shared
+  strategies         claude   strategies sonnet-5-5 idle   -      240%  4.6G backtest v2
+  tenebrae-53        claude   tenebrae   opus-5-5   busy   -       38%  1.2G
+▸ web                opencode shop       sonnet-5   idle   -     shared
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net gpt-6      idle   -        5%  300M
-  scratch            pi       -         -          shell  -       <1%   80M
+  ci-runner          pi       agent-net  gpt-6      idle   -        5%  300M
+  scratch            pi       -          -          shell  -       <1%   80M
 
 
 
