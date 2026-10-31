@@ -263,3 +263,12 @@ func TestLearnedInvalidCandidateDoesNotBlockOthers(t *testing.T) {
 		t.Fatalf("stale candidate: %+v", v)
 	}
 }
+
+func TestLearnedNarrowingWordsRequireReview(t *testing.T) {
+	for _, phrase := range []string{"only backups", "backups except production", "never deploy", "restricted to staging"} {
+		v := LearnedSuggestion{Field: "accepts", Kind: "add", Origin: "owner", Phrase: phrase}
+		if got := learnedClass(v); got != "major" {
+			t.Errorf("%q classified %s", phrase, got)
+		}
+	}
+}

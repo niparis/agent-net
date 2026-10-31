@@ -2,16 +2,22 @@ package gateway
 
 import (
 	"database/sql"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+var learnedRestriction = regexp.MustCompile(`(?i)\b(only|exclusively|solely|except|excluding|unless|without|never|cannot|can't|restricted|restrict|prohibited|refuse|must|ask)\b`)
+
 // learnedClass defaults to major. Only the explicitly allowed additions can
 // be applied without an owner decision.
 func learnedClass(v LearnedSuggestion) string {
 	if v.Kind != "add" {
+		return "major"
+	}
+	if v.Field != "edge" && learnedRestriction.MatchString(v.Phrase) {
 		return "major"
 	}
 	switch v.Field {
