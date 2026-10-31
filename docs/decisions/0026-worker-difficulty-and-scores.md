@@ -13,3 +13,9 @@ Automatic choices use the owner's worker provider allowlist, or subscription and
 ## Protected providers
 
 The owner may protect providers used by the orchestrator, because workers on the same subscription spend the limit the orchestrator needs to keep working. When protection is set, automatic selection first considers unprotected profiles at or above the difficulty minimum, then protected profiles if none qualify or all are out of quota. The result explains the choice. Explicit model requests remain available and carry a note. The owner can change the list and reason; setup only suggests it.
+
+## Good enough and spread the load
+
+Automatic selection requires a score at or above the difficulty minimum, treating good and excellent as adequate. Unprotected providers still come first. A model with fewer than half complete among at least five complete, partial and failed runs in the recent track record ranks behind other adequate candidates. Stopped and timed-out runs do not count in this ratio.
+
+Next, the chooser prefers the provider furthest behind its quota pace, using the most constrained measured window and subtracting five points for each running worker. A missing or stale reading is on pace. Exhausted windows and windows above 90 percent remain ineligible. Equal pace favors the lowest adequate score, keeping stronger models available for harder work. A strong track record and recent success break remaining ties, then equal choices rotate. The start note explains the score, quota pace and any protected-provider fallback.

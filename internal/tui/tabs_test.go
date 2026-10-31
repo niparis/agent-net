@@ -511,7 +511,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T trivial S simple N normal H hard V very complex",
 		"E strong G ok P weak - too weak",
-		"terra codex: picked for",
+		"luna codex: picked for trivial, simple and normal",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {
@@ -868,5 +868,18 @@ func TestQuotaCopyShownBeforeFirstReading(t *testing.T) {
 	m.usage.raw.Local.QuotaError = "it failed"
 	if view := ansi.Strip(m.View()); !strings.Contains(view, "quota-axi 0.1.66 · yours (/opt/homebrew/bin)") {
 		t.Fatal(view)
+	}
+}
+
+func TestWorkerPanelUsesTrackRecordForPicks(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a", "fake/b"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "cheap", Harness: "codex", Model: "fake/a"}, {Name: "strong", Harness: "codex", Model: "fake/b"}}
+	m.snap.WorkerProviders = []string{"codex"}
+	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 32}, {Match: "fake/b", Score: 42}}
+	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "fake/a", Runs: 5, Complete: 1, Partial: 4}}
+	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	if !strings.Contains(v, "strong codex: picked for") {
+		t.Fatalf("track record not used for picks: %s", v)
 	}
 }
