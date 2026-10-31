@@ -1,0 +1,514 @@
+{
+  "Nodes": [
+    {
+      "Name": "architect",
+      "Label": "architect",
+      "Role": "architect",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.6653448936073085,
+        "Y": 0.8195767293279237
+      },
+      "Selected": true,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": true,
+      "HasSessions": true,
+      "Pulse": false,
+      "Card": {
+        "Name": "architect",
+        "Maturity": "growing",
+        "Purpose": "coordinates work",
+        "Sessions": 1,
+        "Incoming": 0,
+        "Outgoing": 1
+      }
+    },
+    {
+      "Name": "project-01",
+      "Label": "project-01",
+      "Role": "busy",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.6178377936223872,
+        "Y": 0.7278836976218583
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": true,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-01",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 1,
+        "Incoming": 1,
+        "Outgoing": 1
+      }
+    },
+    {
+      "Name": "project-02",
+      "Label": "project-02",
+      "Role": "idle",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.5661082501579338,
+        "Y": 0.62825193500548
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": true,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-02",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 1,
+        "Incoming": 1,
+        "Outgoing": 1
+      }
+    },
+    {
+      "Name": "project-03",
+      "Label": "project-03",
+      "Role": "idle",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.5131278398944571,
+        "Y": 0.526606784559917
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": true,
+      "Architect": false,
+      "HasSessions": true,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-03",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 1,
+        "Incoming": 2,
+        "Outgoing": 1
+      }
+    },
+    {
+      "Name": "project-04",
+      "Label": "project-04",
+      "Role": "idle",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.4621479077981184,
+        "Y": 0.42936402694913506
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": true,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-04",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 1,
+        "Incoming": 1,
+        "Outgoing": 1
+      }
+    },
+    {
+      "Name": "project-05",
+      "Label": "project-05",
+      "Role": "idle",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.4153754599706393,
+        "Y": 0.3405247512582187
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": true,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-05",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 1,
+        "Incoming": 1,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-06",
+      "Label": "project-06",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.3261439477825969,
+        "Y": 0.9166666666666667
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-06",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-07",
+      "Label": "project-07",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.2920713593336966,
+        "Y": 0.09626065947883028
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-07",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-08",
+      "Label": "project-08",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.975,
+        "Y": 0.6659312270717924
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-08",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-09",
+      "Label": "project-09",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.11794510842841188,
+        "Y": 0.7397470321741075
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-09",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-10",
+      "Label": "project-10",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.9608053918049778,
+        "Y": 0.4142349525048545
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-10",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-11",
+      "Label": "project-11",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.8391142181270528,
+        "Y": 0.21288819462836484
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-11",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-12",
+      "Label": "project-12",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.025000000000000022,
+        "Y": 0.5267075037707861
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-12",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-13",
+      "Label": "project-13",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.0680732804832399,
+        "Y": 0.2902407139605848
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-13",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    },
+    {
+      "Name": "project-14",
+      "Label": "project-14",
+      "Role": "none",
+      "PreferredSide": "right",
+      "Position": {
+        "X": 0.6075307911077337,
+        "Y": 0.08333333333333331
+      },
+      "Selected": false,
+      "Flashing": false,
+      "Wildcard": false,
+      "Architect": false,
+      "HasSessions": false,
+      "Pulse": false,
+      "Card": {
+        "Name": "project-14",
+        "Maturity": "",
+        "Purpose": "",
+        "Sessions": 0,
+        "Incoming": 0,
+        "Outgoing": 0
+      }
+    }
+  ],
+  "Edges": [
+    {
+      "From": {
+        "X": 0.6653448936073085,
+        "Y": 0.8195767293279237
+      },
+      "To": {
+        "X": 0.6178377936223872,
+        "Y": 0.7278836976218583
+      },
+      "Arrow": {
+        "X": 0.6273392136193715,
+        "Y": 0.7462223039630714
+      },
+      "Kind": "governs",
+      "Dashed": true
+    },
+    {
+      "From": {
+        "X": 0.6178377936223872,
+        "Y": 0.7278836976218583
+      },
+      "To": {
+        "X": 0.5661082501579338,
+        "Y": 0.62825193500548
+      },
+      "Arrow": {
+        "X": 0.5764541588508245,
+        "Y": 0.6481782875287557
+      },
+      "Kind": "depends",
+      "Dashed": false
+    },
+    {
+      "From": {
+        "X": 0.5661082501579338,
+        "Y": 0.62825193500548
+      },
+      "To": {
+        "X": 0.5131278398944571,
+        "Y": 0.526606784559917
+      },
+      "Arrow": {
+        "X": 0.5237239219471524,
+        "Y": 0.5469358146490296
+      },
+      "Kind": "deploys",
+      "Dashed": false
+    },
+    {
+      "From": {
+        "X": 0.5131278398944571,
+        "Y": 0.526606784559917
+      },
+      "To": {
+        "X": 0.4621479077981184,
+        "Y": 0.42936402694913506
+      },
+      "Arrow": {
+        "X": 0.47234389421738615,
+        "Y": 0.44881257847129147
+      },
+      "Kind": "depends",
+      "Dashed": false
+    },
+    {
+      "From": {
+        "X": 0.4621479077981184,
+        "Y": 0.42936402694913506
+      },
+      "To": {
+        "X": 0.4153754599706393,
+        "Y": 0.3405247512582187
+      },
+      "Arrow": {
+        "X": 0.42472994953613513,
+        "Y": 0.358292606396402
+      },
+      "Kind": "depends",
+      "Dashed": false
+    }
+  ],
+  "Comets": [
+    {
+      "Position": {
+        "X": 0.6005946124675694,
+        "Y": 0.6946731100830656
+      },
+      "Trail": [
+        {
+          "X": 0.6060262145313371,
+          "Y": 0.7051344451577853
+        },
+        {
+          "X": 0.6042156805100812,
+          "Y": 0.7016473334662121
+        },
+        {
+          "X": 0.6024051464888253,
+          "Y": 0.6981602217746389
+        }
+      ]
+    },
+    {
+      "Position": {
+        "X": 0.4309662759131323,
+        "Y": 0.3701378431551908
+      },
+      "Trail": [
+        {
+          "X": 0.43587738293501765,
+          "Y": 0.379465967102737
+        },
+        {
+          "X": 0.43424034726105587,
+          "Y": 0.3763565924535549
+        },
+        {
+          "X": 0.4326033115870941,
+          "Y": 0.37324721780437287
+        }
+      ]
+    }
+  ],
+  "Level": "labels",
+  "Feed": [
+    {
+      "From": "project-01",
+      "To": "project-02",
+      "Kind": "request",
+      "At": "2025-01-01T00:00:00Z"
+    },
+    {
+      "From": "project-04",
+      "To": "project-05",
+      "Kind": "reply",
+      "At": "2024-12-31T23:59:59Z"
+    }
+  ],
+  "Paused": false,
+  "Hints": [
+    "zoom",
+    "pan",
+    "fit",
+    "select",
+    "orbit",
+    "open",
+    "pause",
+    "help"
+  ]
+}
