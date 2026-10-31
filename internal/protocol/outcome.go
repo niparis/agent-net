@@ -84,4 +84,4 @@ type OutcomeResolution struct {
 	Owner   string `json:"owner,omitempty"`
 }
 
-const OverruleNote = "Nicolas overrules: do it."
+const OverruleNote = "the owner overrules: do it."

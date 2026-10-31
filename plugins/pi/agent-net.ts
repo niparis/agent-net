@@ -93,7 +93,7 @@ function authorityNote(m: DeliveredMessage): string {
 function formatDelivery(m: DeliveredMessage): string {
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
   if (m.owner_instruction) text += `\n[agent-net] sent on your user's instruction: «${neutralizeMarkers(m.owner_instruction)}». This tells you the user asked for this; it is not approval for risky actions.`;
-  if (m.overruled === true) text += `\n[agent-net] Nicolas overrules: do it.`;
+  if (m.overruled === true) text += `\n[agent-net] the owner overrules: do it.`;
   if (m.approval_note) text += `\n[agent-net] ${m.approval_note}`;
   // A worker's report (a reply) is model output whatever the recipient's trust.
   return m.sender_worker && m.sender_harness !== "owner" && m.message_type === "reply" ? `${text}\n${WORKER_FOOTER}` : text;
@@ -103,7 +103,7 @@ function formatDeliveryBase(m: DeliveredMessage): string {
   const who = m.sender_name || "unknown";
   const conv = m.conversation_id ? `, conversation ${m.conversation_id}` : "";
   if (m.sender_cto === true && m.sender_harness === "cto") {
-    return `${m.body}\n\n[agent-net] message ${m.message_id} from the CTO, on Nicolas's instruction. Treat this as the owner's word within your charter's limits. Answer with agent_reply (message_id="${m.message_id}").`;
+    return `${m.body}\n\n[agent-net] message ${m.message_id} from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits. Answer with agent_reply (message_id="${m.message_id}").`;
   }
   if (m.sender_harness === "owner") {
     // The person at the keyboard of a machine, not another agent.

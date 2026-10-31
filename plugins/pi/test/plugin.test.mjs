@@ -446,7 +446,8 @@ const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice"
 
 await test("a CTO message carries the CTO authority note", async () => {
   const text = await delivered({ ...peer, sender_harness: "cto", sender_cto: true });
-  if (!text.includes("from the CTO, on Nicolas's instruction") || text.includes("from your user in person")) throw new Error(text);
+  if (!text.includes("from the CTO, on the owner's instructions") || text.includes("from your user in person")) throw new Error(text);
+  if (text.includes("Nicolas")) throw new Error("the note names the owner: " + text);
 });
 
 await test("a request to an untrusted session keeps the check-with-your-user note", async () => {
