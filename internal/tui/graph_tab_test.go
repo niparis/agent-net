@@ -99,3 +99,18 @@ func TestGraphAnimationTick(t *testing.T) {
 		t.Fatal("animation continued on another tab")
 	}
 }
+
+func TestGraphConnectedNodesSpanRows(t *testing.T) {
+	m := graphModel(120, 34)
+	w, h := m.graphSize()
+	low, high := h, 0
+	for _, n := range []string{"architect", "project-01", "project-02", "project-03", "project-04", "project-05"} {
+		_, y := m.graphCamera.Project(m.graph.Positions[n], w, h)
+		row := int(y)
+		low = min(low, row)
+		high = max(high, row)
+	}
+	if high-low < 4 {
+		t.Fatalf("connected nodes span only %d rows (%d to %d)", high-low+1, low, high)
+	}
+}

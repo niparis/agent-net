@@ -99,14 +99,14 @@ func (g *Graph) layout() {
 	if n == 0 {
 		return
 	}
-	r := rand.New(rand.NewSource(7))
+	r := rand.New(rand.NewSource(11))
 	p := make([]Point, n)
 	index := map[string]int{}
 	for i, node := range g.Nodes {
 		index[node.Name] = i
-		p[i] = Point{(r.Float64()*2 - 1) * 1.9, r.Float64()*2 - 1}
+		p[i] = Point{(r.Float64()*2 - 1), r.Float64()*2 - 1}
 	}
-	k := math.Sqrt(7.6/float64(n)) * 0.95
+	k := math.Sqrt(4/float64(n)) * 0.95
 	temp := 0.35
 	for it := 0; it < 600; it++ {
 		d := make([]Point, n)
@@ -136,8 +136,8 @@ func (g *Graph) layout() {
 			d[b].Y += dy * f
 		}
 		for i := range p {
-			d[i].X -= p[i].X / 1.9 * 0.9 * k
-			d[i].Y -= p[i].Y * 0.9 * k * 1.9 / 1.4
+			d[i].X -= p[i].X * 0.9 * k
+			d[i].Y -= p[i].Y * 0.9 * k
 			dist := math.Hypot(d[i].X, d[i].Y)
 			if dist > 0 {
 				f := math.Min(dist, temp) / dist
