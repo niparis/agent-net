@@ -13,11 +13,14 @@ import (
 )
 
 type skillManifestEntry struct {
-	Item     string `json:"item"`
-	Path     string `json:"path"`
-	Hash     string `json:"hash"`
-	Revision int64  `json:"revision"`
-	Owned    bool   `json:"owned"`
+	Item         string `json:"item"`
+	Path         string `json:"path"`
+	Hash         string `json:"hash"`
+	Revision     int64  `json:"revision"`
+	Owned        bool   `json:"owned"`
+	Exclude      string `json:"exclude,omitempty"`
+	ExcludeLine  string `json:"exclude_line,omitempty"`
+	ExcludeOwned bool   `json:"exclude_owned,omitempty"`
 }
 
 func (d *Daemon) recordSkill(t protocol.ToolTarget, dest string, owned bool) error {
@@ -37,13 +40,14 @@ func (d *Daemon) recordSkill(t protocol.ToolTarget, dest string, owned bool) err
 			if entries[i].Item == t.Revision.Item && entries[i].Owned {
 				owned = true
 			}
-			entries[i] = skillManifestEntry{t.Revision.Item, dest, t.Revision.Version, t.Revision.Revision, owned}
+			previous := entries[i]
+			entries[i] = skillManifestEntry{Item: t.Revision.Item, Path: dest, Hash: t.Revision.Version, Revision: t.Revision.Revision, Owned: owned, Exclude: previous.Exclude, ExcludeLine: previous.ExcludeLine, ExcludeOwned: previous.ExcludeOwned}
 			found = true
 			break
 		}
 	}
 	if !found {
-		entries = append(entries, skillManifestEntry{t.Revision.Item, dest, t.Revision.Version, t.Revision.Revision, owned})
+		entries = append(entries, skillManifestEntry{Item: t.Revision.Item, Path: dest, Hash: t.Revision.Version, Revision: t.Revision.Revision, Owned: owned})
 	}
 	b, err = json.Marshal(entries)
 	if err != nil {
