@@ -135,8 +135,8 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"worker_profile_list": {desc: "List all registered worker profiles, with their harness, model, effort, creator and time."},
-	"worker_profile_add": {desc: "Register a worker profile only when the owner asks; model names resolve against installed harness model lists.", fields: map[string]ctoField{
-		"name": {typ: "string", desc: "Optional profile name; defaults to the harness and resolved model."}, "harness": {typ: "string", desc: "Installed worker harness.", enum: []string{"opencode", "claude", "pi", "codex"}}, "model": {typ: "string", desc: "Model ID or loose model name."}, "effort": {typ: "string", desc: "Optional reasoning or thinking effort."},
+	"worker_profile_add": {desc: "Register a worker profile only when the owner asks; model names resolve against installed harness model lists. Using an existing profile name replaces its model or effort in one call.", fields: map[string]ctoField{
+		"name": {typ: "string", desc: "Optional profile name; use an existing name to replace that profile's model or effort. Defaults to the harness and resolved model."}, "harness": {typ: "string", desc: "Installed worker harness."}, "model": {typ: "string", desc: "Model ID or loose model name."}, "effort": {typ: "string", desc: "Optional reasoning or thinking effort."},
 	}},
 	"worker_profile_remove": {desc: "Remove a registered worker profile by name only when the owner asks for that removal.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name of the registered profile to remove."}}},
 	"worker_providers_set": {

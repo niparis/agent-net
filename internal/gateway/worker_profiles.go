@@ -93,9 +93,11 @@ func (s *Store) AddWorkerProfile(p protocol.WorkerProfile) error {
 	if err != nil {
 		return err
 	}
-	for _, other := range profiles {
+	for i, other := range profiles {
 		if strings.EqualFold(other.Name, p.Name) {
-			return reject("worker profile %q already exists", p.Name)
+			p.Name = other.Name
+			profiles[i] = p
+			return s.saveWorkerProfiles(profiles)
 		}
 	}
 	return s.saveWorkerProfiles(append(profiles, p))

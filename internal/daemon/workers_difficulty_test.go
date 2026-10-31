@@ -128,10 +128,21 @@ func TestWorkerProfilesAgentManagement(t *testing.T) {
 	if err = json.Unmarshal(raw, &p); err != nil || p.Model != "fake/m1" || p.AddedBy != id || p.Effort != "high" {
 		t.Fatalf("profile: %s %v", raw, err)
 	}
+	replacedRaw, err := pi.call(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: p.Name, Harness: "opencode", Model: "m2", Effort: "low"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var replaced protocol.WorkerProfile
+	if err = json.Unmarshal(replacedRaw, &replaced); err != nil || replaced.Name != p.Name || replaced.Model != "fake/m2" || replaced.Effort != "low" {
+		t.Fatalf("replacement: %s %v", replacedRaw, err)
+	}
 	raw = pi.mustCall(protocol.OpWorkerProfiles, nil)
 	var profiles []protocol.WorkerProfile
-	if err = json.Unmarshal(raw, &profiles); err != nil || len(profiles) != 1 {
+	if err = json.Unmarshal(raw, &profiles); err != nil || len(profiles) != 1 || profiles[0].Name != p.Name || profiles[0].Model != "fake/m2" {
 		t.Fatalf("list %s %v", raw, err)
+	}
+	if events, _ := g.gw.Store().Events("worker_profile.add"); len(events) != 2 {
+		t.Errorf("replacement should be audited as an add: %v", events)
 	}
 	pi.mustCall(protocol.OpWorkerProfileRemove, protocol.WorkerProfileRequest{Name: p.Name})
 	if _, err = pi.call(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "missing-model"}); err == nil {

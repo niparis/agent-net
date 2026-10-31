@@ -46,8 +46,14 @@ func TestWorkerProfileRoster(t *testing.T) {
 	if err != nil || len(profiles) != 1 || !reflect.DeepEqual(profiles[0], p) {
 		t.Fatalf("list %+v %v", profiles, err)
 	}
-	if err := s.AddWorkerProfile(p); err == nil {
-		t.Fatal("duplicate accepted")
+	replacement := p
+	replacement.Model = "fake/m2"
+	if err := s.AddWorkerProfile(replacement); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	profiles, err = s.WorkerProfiles()
+	if err != nil || len(profiles) != 1 || profiles[0].Model != "fake/m2" {
+		t.Fatalf("after replacement %+v %v", profiles, err)
 	}
 	if err := s.RemoveWorkerProfile(p.Name); err != nil {
 		t.Fatal(err)
