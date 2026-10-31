@@ -961,9 +961,10 @@ func (s *Store) SetNodeOffline(nodeID string) error {
 }
 
 // Announce stores what an agent says about itself: its current task, and
-// optionally a name, a project and capability tags. Empty fields keep what is
-// stored, so announcing a new task does not erase the rest. The function is
-// not taken from the agent: it comes from the project's AGENTS.md (see
+// optionally a project and capability tags. Empty fields keep what is stored,
+// so announcing a new task does not erase the rest. The name is not announce's
+// to set: only the owner renames a session (decision 0032). The function is
+// not taken from the agent either: it comes from the project's AGENTS.md (see
 // RepoInfo.Description), so a "function" in the request is ignored.
 func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Profile, error) {
 	owner, err := s.SessionNode(p.SessionID)
@@ -973,7 +974,6 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 	if owner != nodeID {
 		return protocol.Profile{}, reject("unknown session %q", p.SessionID)
 	}
-	p.Name = strings.TrimSpace(p.Name)
 	p.Task = strings.TrimSpace(p.Task)
 	p.Expertise = protocol.CleanExpertise(p.Expertise)
 	caps := "[]"
@@ -982,15 +982,14 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 		caps = string(b)
 	}
 	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise)
-		VALUES (?,?,'',?,?,?,?,?)
+		VALUES (?,'','',?,?,?,?,?)
 		ON CONFLICT (session_id) DO UPDATE SET
-		name=CASE WHEN excluded.name='' THEN profiles.name ELSE excluded.name END,
 		project=CASE WHEN excluded.project='' THEN profiles.project ELSE excluded.project END,
 		capabilities=CASE WHEN ? THEN profiles.capabilities ELSE excluded.capabilities END,
 		task=CASE WHEN excluded.task='' THEN profiles.task ELSE excluded.task END,
 		expertise=CASE WHEN excluded.expertise='' THEN profiles.expertise ELSE excluded.expertise END,
 		updated_at=excluded.updated_at`,
-		p.SessionID, p.Name, p.Project, caps, p.Task, s.now().UnixNano(), p.Expertise, p.Capabilities == nil)
+		p.SessionID, p.Project, caps, p.Task, s.now().UnixNano(), p.Expertise, p.Capabilities == nil)
 	if err != nil {
 		return protocol.Profile{}, err
 	}

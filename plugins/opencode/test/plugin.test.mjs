@@ -1029,6 +1029,9 @@ await test("agent_announce asks for a task, and tool results end with the remind
   if (ask[1].kind !== "question" || !ask[1].explicit || ask[1].text !== "Merge?" || ask[1].options[0] !== "Yes") throw new Error(JSON.stringify(ask));
   const announce = tools.find((t) => t.name === "agent_announce");
   if (JSON.stringify(announce.input.required) !== '["task"]') throw new Error("required: " + JSON.stringify(announce.input.required));
+  // Only the owner renames a session (decision 0032).
+  if ("name" in announce.input.properties) throw new Error("agent_announce still takes a name");
+  if (/rename/i.test(announce.description)) throw new Error("agent_announce still mentions renaming: " + announce.description);
   for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {
     if (!announce.description.includes(want)) throw new Error("description misses " + JSON.stringify(want));
   }

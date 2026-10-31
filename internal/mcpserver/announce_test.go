@@ -181,6 +181,49 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 	t.Fatal("no agent_announce tool")
 }
 
+// A session cannot rename itself (decision 0032): agent_announce has no name
+// parameter and its description does not mention one.
+func TestAnnounceHasNoNameParameter(t *testing.T) {
+	ctx := context.Background()
+	st, ct := mcp.NewInMemoryTransports()
+	ss, err := New(func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }, "").Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	tools, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tl := range tools.Tools {
+		if tl.Name != "agent_announce" {
+			continue
+		}
+		b, _ := json.Marshal(tl.InputSchema)
+		var schema struct {
+			Properties map[string]any `json:"properties"`
+		}
+		if json.Unmarshal(b, &schema) != nil {
+			t.Fatalf("schema: %s", b)
+		}
+		if _, ok := schema.Properties["name"]; ok {
+			t.Errorf("agent_announce still takes a name: %s", b)
+		}
+		for _, word := range []string{"rename", "name unless"} {
+			if strings.Contains(tl.Description, word) {
+				t.Errorf("agent_announce description still mentions %q: %s", word, tl.Description)
+			}
+		}
+		return
+	}
+	t.Fatal("no agent_announce tool")
+}
+
 func TestAskOwnerPassesQuestion(t *testing.T) {
 	var got protocol.WaitingRequest
 	cs := connect(t, func(_ context.Context, method string, params any) (json.RawMessage, error) {

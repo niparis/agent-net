@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -177,9 +178,10 @@ func TestHarnessTitleIsNotTheName(t *testing.T) {
 	}
 }
 
-// A name set by hand still wins over the automatic name. The harness title
+// An announce from an older client still carries a name. The gateway ignores
+// it: only the owner renames a session (decision 0032). The harness title
 // stays apart.
-func TestAnnouncedNameWinsOverTheAutomaticName(t *testing.T) {
+func TestAnnounceIgnoresAnOlderClientsName(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")
 	in := protocol.SessionInfo{
@@ -190,10 +192,26 @@ func TestAnnouncedNameWinsOverTheAutomaticName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Announce(node, protocol.ProfileAnnounce{SessionID: id, Name: "reviewer"}); err != nil {
+	// The frame an older daemon sends, name and all.
+	var old protocol.ProfileAnnounce
+	payload := `{"session_id":"` + id + `","name":"x","task":"second"}`
+	if err := json.Unmarshal([]byte(payload), &old); err != nil {
 		t.Fatal(err)
 	}
-	// A later report, and another session in the same project, do not change it.
+	if _, err := s.Announce(node, old); err != nil {
+		t.Fatal(err)
+	}
+	a := agentOf(t, s, id)
+	if a.Profile.Name != "shop" {
+		t.Fatalf("an announce renamed the session to %q", a.Profile.Name)
+	}
+	if a.Profile.Task != "second" {
+		t.Fatalf("task %q", a.Profile.Task)
+	}
+	if a.Title != "tenebrae-53" {
+		t.Fatalf("title %q", a.Title)
+	}
+	// A later report and another session in the same project keep the name.
 	if _, err := s.UpsertSession(node, in); err != nil {
 		t.Fatal(err)
 	}
@@ -201,24 +219,8 @@ func TestAnnouncedNameWinsOverTheAutomaticName(t *testing.T) {
 		Repo: protocol.RepoInfo{Root: "/code/shop", Project: "shop"}}); err != nil {
 		t.Fatal(err)
 	}
-	a := agentOf(t, s, id)
-	if a.Profile.Name != "reviewer" {
-		t.Fatalf("the announced name was replaced by %q", a.Profile.Name)
-	}
-	if a.Title != "tenebrae-53" {
-		t.Fatalf("title %q", a.Title)
-	}
-	// The automatic name is not reserved twice: the other session got "shop".
-	ag, err := s.Agents(protocol.QueryAgents{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	seen := map[string]bool{}
-	for _, v := range ag {
-		seen[v.Profile.Name] = true
-	}
-	if !seen["shop"] || !seen["reviewer"] {
-		t.Fatalf("names %v", seen)
+	if got := agentOf(t, s, id).Profile.Name; got != "shop" {
+		t.Fatalf("name after a report %q", got)
 	}
 }
 

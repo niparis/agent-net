@@ -729,7 +729,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, err
 		}
 		var p protocol.ProfileAnnounce
-		if json.Unmarshal(raw, &p) != nil || (strings.TrimSpace(p.Task) == "" && strings.TrimSpace(p.Name) == "") {
+		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Task) == "" {
 			return nil, errors.New("announce needs a task")
 		}
 		p.SessionID = sid
