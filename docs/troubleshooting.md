@@ -133,3 +133,10 @@ Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent
 If a worker worktree fails because `git-lfs` is not found, install git-lfs in a
 directory on the login shell PATH, then run `agent-net setup` to refresh the
 daemon service environment. Restart the daemon to use the updated PATH.
+
+
+## A quota provider needs attention
+
+If a provider rejects its login, or the Quotas tab says it needs you once, run `agent-net setup --quota` on the machine that reads that provider's quota. Setup shows which local credential sources it found and which need attention. A found source can still be rejected by the provider. Check that you can sign in through that provider's own app or CLI if it remains rejected.
+
+On macOS, setup offers a Keychain prompt. If you agree, answer the dialog and choose Always Allow if you want future reads without another dialog. The check does not refresh credentials. The Subscriptions panel shows which quota-axi copy made the reading; the daemon keeps using its recorded copy until it stops working. Run setup again after correcting the login. The next quota reading can take up to five minutes.
