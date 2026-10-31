@@ -188,3 +188,37 @@ func TestEventFeed(t *testing.T) {
 		t.Fatal("a node outside the conversation read a message")
 	}
 }
+
+func TestMessageBodyOwnerRelay(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	holder := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
+	a, _ := helloPi(t, holder, "relay-a", "/w/a", true)
+	_, bid := helloPi(t, holder, "relay-b", "/w/b", true)
+	msg := sendResult(t, a.mustCall("send", map[string]any{"to": bid, "body": "private relay body"}))
+	eventually(t, "message delivered", func() bool { return messageState(t, a, msg.ID) == protocol.StateDelivered })
+	viewer := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
+	owner := cliClient(t, viewer)
+	t.Run("owner", func(t *testing.T) {
+		raw, err := owner.call("message_status", map[string]any{"message_id": msg.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got protocol.MessageResult
+		if err := json.Unmarshal(raw, &got); err != nil || got.Message.Body != "private relay body" {
+			t.Fatalf("message: %+v, %v", got, err)
+		}
+	})
+	t.Run("agent refused", func(t *testing.T) {
+		agent, _ := helloPi(t, viewer, "relay-viewer", "/w/c", true)
+		if _, err := agent.call("message_status", map[string]any{"message_id": msg.ID}); err == nil {
+			t.Fatal("agent read another node's message")
+		}
+	})
+	t.Run("offline", func(t *testing.T) {
+		holder.d.Stop()
+		eventually(t, "holder offline", func() bool {
+			_, err := owner.call("message_status", map[string]any{"message_id": msg.ID})
+			return err != nil && strings.Contains(err.Error(), "body held on ") && strings.Contains(err.Error(), ", offline")
+		})
+	})
+}
