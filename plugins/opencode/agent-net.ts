@@ -774,7 +774,7 @@ function formatProjectAdd(r: any): string {
 const ANNOUNCE_RULE =
   "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
   "Call it again whenever your task changes. " +
-  "When you stop to wait for your user's decision or answer, call agent_announce with waiting set to the question in one line. " +
+  "When you end a turn waiting for your user's decision or input, call agent_ask_owner with the question in one line. " +
   "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
 const ASK_PEER_RULE =
