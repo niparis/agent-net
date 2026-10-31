@@ -196,3 +196,21 @@ func TestSnapshotIncludesOwnersAndWorkers(t *testing.T) {
 		t.Fatalf("snapshot: %+v %v", snap, err)
 	}
 }
+
+func TestGraphTalkClient(t *testing.T) {
+	_, path := startFake(t, func(method string, _ json.RawMessage) (any, string) {
+		if method == "hello" {
+			return map[string]any{}, ""
+		}
+		if method == "graph_talk" {
+			return protocol.GraphTalkResult{Counts: []protocol.GraphTalkCount{{From: "alpha", To: "beta", Count: 3}}, LastID: 7}, ""
+		}
+		return nil, "unexpected method"
+	})
+	c := New(path)
+	defer c.Close()
+	got, err := c.GraphTalk(context.Background())
+	if err != nil || len(got.Counts) != 1 || got.Counts[0].Count != 3 || got.LastID != 7 {
+		t.Fatalf("graph talk: %+v %v", got, err)
+	}
+}

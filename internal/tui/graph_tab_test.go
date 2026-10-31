@@ -162,3 +162,18 @@ func TestGraphEnterOpensEmptyMap(t *testing.T) {
 		t.Fatal("enter should open the map even without a selected node")
 	}
 }
+
+func TestGraphTalkSnapshotReplaysOnlyNewerFeed(t *testing.T) {
+	m := graphModel(80, 24)
+	m.graphTalkLoading = true
+	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 1}}})
+	m.graphTalkPending = []graphview.FeedEvents{{Now: t0, Events: []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 4, Kind: "msg.stored", Time: t0}, From: "session-1", To: "session-2"},
+		{Event: protocol.Event{ID: 6, Kind: "msg.stored", Time: t0}, From: "session-1", To: "session-2"},
+	}}}
+	next, _ := m.Update(graphTalkMsg{at: t0, result: protocol.GraphTalkResult{LastID: 5, Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 4}}}})
+	got := next.(Model).graphState.Talk
+	if len(got) != 1 || got[0].Count != 5 {
+		t.Fatalf("snapshot replay: %+v", got)
+	}
+}

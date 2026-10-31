@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"fmt"
+	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"time"
 
@@ -109,4 +111,29 @@ func (m Model) graphView(w, h int) []string {
 	}
 	out = append(out, sDim.Render(clip(hint, w)))
 	return out
+}
+
+// graphTalkSource is optional for compatibility with older sources.
+type graphTalkSource interface {
+	GraphTalk(context.Context) (protocol.GraphTalkResult, error)
+}
+type graphTalkMsg struct {
+	result protocol.GraphTalkResult
+	at     time.Time
+	err    error
+}
+
+func (m Model) graphTalkCmd() tea.Cmd {
+	src, now := m.src, m.now
+	return func() tea.Msg {
+		at := now()
+		s, ok := src.(graphTalkSource)
+		if !ok {
+			return graphTalkMsg{at: at, err: ErrFeedUnavailable}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		result, err := s.GraphTalk(ctx)
+		return graphTalkMsg{result: result, at: at, err: err}
+	}
 }
