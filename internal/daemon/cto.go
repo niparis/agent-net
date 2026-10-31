@@ -615,16 +615,18 @@ func (d *Daemon) cacheCTOSettings(settings protocol.CTOSettings) {
 	cs.mu.Unlock()
 }
 
-// ctoSessionBusy says whether OpenCode is running a turn for the conversation.
+// openCodeSessionBusy says whether OpenCode is running a turn for the conversation.
 // The second result is false when the answer is unknown, and the caller must
 // not compact on a guess.
-func ctoSessionBusy(ctx context.Context, base, password, session string) (bool, bool) {
+func openCodeSessionBusy(ctx context.Context, base, password, session string) (bool, bool) {
 	req, err := http.NewRequestWithContext(ctx, "GET", base+"/api/session/active", nil)
 	if err != nil {
 		return false, false
 	}
-	req.SetBasicAuth("opencode", password)
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if password != "" {
+		req.SetBasicAuth("opencode", password)
+	}
+	resp, err := (&http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
 	if err != nil {
 		return false, false
 	}
@@ -637,7 +639,7 @@ func ctoSessionBusy(ctx context.Context, base, password, session string) (bool, 
 			Type string `json:"type"`
 		} `json:"data"`
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&page) != nil {
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&page) != nil || page.Data == nil {
 		return false, false
 	}
 	return page.Data[session].Type == "running", true
@@ -656,7 +658,7 @@ func (d *Daemon) ctoCompactOnce(ctx context.Context) error {
 	if base == "" || session == "" {
 		return nil
 	}
-	busy, known := ctoSessionBusy(ctx, base, password, session)
+	busy, known := openCodeSessionBusy(ctx, base, password, session)
 	if !known {
 		return nil
 	}

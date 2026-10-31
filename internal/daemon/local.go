@@ -695,7 +695,20 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			return nil, errors.New("only plugin clients report their status")
 		}
 		d.mu.Lock()
+		statusSession := ls.sessionID
+		d.mu.Unlock()
+		if p.Status == "idle" && d.openCodeTurnIdle(statusSession) {
+			p.Status = "busy"
+		} else if p.Status == "busy" {
+			if w := d.workerBySession(statusSession); w != nil && w.harness == "opencode" {
+				d.wmu.Lock()
+				w.turnAwaitingStart = false
+				d.wmu.Unlock()
+			}
+		}
+		d.mu.Lock()
 		if p.Status != "" {
+			ls.statusRevision++
 			ls.info.Status = p.Status
 			if p.Status == "busy" {
 				// Working again: the user answered, or the session moved on.
@@ -711,16 +724,13 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if p.Name != nil && ls.info.Worker == nil {
 			ls.info.Name = d.pluginTitle(*p.Name, ls.info.Cwd)
 		}
-		cwd, statusSession := ls.info.Cwd, ls.sessionID
+		cwd := ls.info.Cwd
 		d.mu.Unlock()
 		repo := d.repo.Refresh(cwd)
 		d.mu.Lock()
 		ls.info.Repo = repo
 		d.mu.Unlock()
 		d.pushSession(ls)
-		if p.Status == "idle" {
-			d.openCodeTurnIdle(statusSession)
-		}
 		return nil, nil
 
 	case "request_approval", "propose_idea":

@@ -125,6 +125,7 @@ type worker struct {
 	stopping                                 bool
 	turnActive                               bool
 	turnHandbackIdle                         bool
+	turnAwaitingStart                        bool
 	turnQueue                                []protocol.Message
 	dir                                      string
 	logPath                                  string
@@ -1034,6 +1035,7 @@ func (d *Daemon) workerLoop(ctx context.Context) {
 		case <-c.C:
 			d.cleanupWorkers(ctx)
 		case <-t.C:
+			d.reconcileOpenCode(ctx)
 			d.checkWorkers(ctx)
 		}
 	}

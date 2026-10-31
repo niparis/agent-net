@@ -2,8 +2,15 @@ package daemon
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func helloOpenCode(t *testing.T, n *node, sessionID, cwd string) (*localClient, string) {
@@ -143,5 +150,51 @@ func TestValidStatusIncludesDormant(t *testing.T) {
 	}
 	if validStatus("napping") || validStatus("") {
 		t.Fatal("bad status accepted")
+	}
+}
+
+func TestOpenCodeSessionIdleAfterMissedEndEvent(t *testing.T) {
+	state := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", state)
+	var running atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != "opencode" || pass != "test-pass" {
+			http.Error(w, "unauthorized", 401)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/session/active":
+			if running.Load() {
+				fmt.Fprint(w, `{"data":{"ses_shared":{"type":"running"}}}`)
+			} else {
+				fmt.Fprint(w, `{"data":{}}`)
+			}
+		case "/api/session/ses_shared":
+			fmt.Fprint(w, `{"data":{"id":"ses_shared"}}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	if err := os.MkdirAll(filepath.Join(state, "opencode"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(map[string]string{"url": server.URL, "password": "test-pass"})
+	if err := os.WriteFile(filepath.Join(state, "opencode", "service.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	lc, id := helloOpenCode(t, w.node, "ses_shared", t.TempDir())
+	lc.mustCall("status", map[string]string{"status": "busy"})
+	eventually(t, "shared OpenCode session idle", func() bool { ls := w.d.sessionByID(id); return ls != nil && w.d.infoOf(ls).Status == "idle" })
+	running.Store(true)
+	eventually(t, "shared OpenCode session busy again", func() bool { ls := w.d.sessionByID(id); return ls != nil && w.d.infoOf(ls).Status == "busy" })
+	other, otherID := helloOpenCode(t, w.node, "ses_other_server", t.TempDir())
+	other.mustCall("status", map[string]string{"status": "busy"})
+	time.Sleep(300 * time.Millisecond)
+	if status := w.d.infoOf(w.d.sessionByID(otherID)).Status; status != "busy" {
+		t.Fatalf("session absent from the shared server was marked %s", status)
 	}
 }
