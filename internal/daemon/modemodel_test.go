@@ -183,9 +183,11 @@ func TestEventFeed(t *testing.T) {
 		}
 	}
 
-	// The body stays private to the two nodes: the third node cannot fetch it.
-	if _, err := cli.call("message_status", map[string]any{"message_id": m.ID}); err == nil {
-		t.Fatal("a node outside the conversation read a message")
+	// The owner on a third node may read the body through the participant relay.
+	rawBody := cli.mustCall("message_status", map[string]any{"message_id": m.ID})
+	var body protocol.MessageResult
+	if json.Unmarshal(rawBody, &body) != nil || body.Message.Body != secret {
+		t.Fatal("owner could not read body")
 	}
 }
 
@@ -212,6 +214,13 @@ func TestMessageBodyOwnerRelay(t *testing.T) {
 		agent, _ := helloPi(t, viewer, "relay-viewer", "/w/c", true)
 		if _, err := agent.call("message_status", map[string]any{"message_id": msg.ID}); err == nil {
 			t.Fatal("agent read another node's message")
+		}
+	})
+	t.Run("command line inside agent refused", func(t *testing.T) {
+		viewer.d.inSession = func(int) bool { return true }
+		defer func() { viewer.d.inSession = func(int) bool { return false } }()
+		if _, err := owner.call("message_status", map[string]any{"message_id": msg.ID}); err == nil {
+			t.Fatal("command line inside agent read another node's message")
 		}
 	})
 	t.Run("offline", func(t *testing.T) {

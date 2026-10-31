@@ -838,7 +838,14 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
 			return nil, errors.New("message_status needs message_id")
 		}
-		return d.call(ctx, "query.message", p)
+		data, err := d.call(ctx, "query.message", p)
+		if err == nil || !strings.Contains(err.Error(), "unknown message") {
+			return data, err
+		}
+		if gateErr := lc.operatorGate("message_status"); gateErr != nil {
+			return nil, err
+		}
+		return d.call(ctx, "query.owner_message", p)
 	}
 	if res, ok, err := lc.dispatchMCP(ctx, client, method, raw); ok {
 		return res, err

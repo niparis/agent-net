@@ -487,8 +487,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // bodyError explains why a body is not there, in plain words.
 func bodyError(err error) string {
 	var re client.RemoteError
+	if errors.As(err, &re) && strings.HasPrefix(err.Error(), "body held on ") {
+		return sanitize(err.Error())
+	}
 	if errors.As(err, &re) && strings.Contains(err.Error(), "unknown message") {
-		return "The body is not available here. Only the machines with a session in the conversation can read it, and old messages are deleted."
+		return "The body is not available here. Old messages are deleted."
 	}
 	if ClassifyError(err) == ProblemDaemon {
 		return "The daemon cannot be reached."

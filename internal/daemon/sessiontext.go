@@ -665,6 +665,24 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 	var data any
 	var err error
 	switch typ {
+	case "node.message_body":
+		var q protocol.QueryMessage
+		if json.Unmarshal(raw, &q) != nil || q.MessageID == "" {
+			err = errors.New("not found")
+			break
+		}
+		var body json.RawMessage
+		body, err = d.call(ctx, "query.message", q)
+		if err != nil {
+			err = errors.New("not found")
+			break
+		}
+		var result protocol.MessageResult
+		if json.Unmarshal(body, &result) != nil || result.Message.ID != q.MessageID || len(result.Message.Body) > protocol.MaxBodyBytes {
+			err = errors.New("not found")
+			break
+		}
+		data = result
 	case "node.usage_top":
 		var p protocol.QueryUsageTop
 		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {

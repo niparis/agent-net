@@ -217,13 +217,19 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 
 // isRelay tells whether a frame is a request that waits for another node.
 func isRelay(typ string) bool {
-	return typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter"
+	return typ == "query.owner_message" || typ == "query.usage_top" || typ == "query.session_text" || typ == "query.session_enter"
 }
 
 // serveRelay answers a relayed request. It runs in its own goroutine because
 // it waits for another node while this node's read loop must keep going.
 func (g *Gateway) serveRelay(ctx context.Context, nc *nodeConn, h protocol.Header, raw []byte) {
-	data, err := g.relay(ctx, h.Type, raw)
+	var data json.RawMessage
+	var err error
+	if h.Type == "query.owner_message" {
+		data, err = g.relayMessageBody(ctx, raw)
+	} else {
+		data, err = g.relay(ctx, h.Type, raw)
+	}
 	if err != nil {
 		var rj Rejection
 		if !errors.As(err, &rj) {
@@ -293,4 +299,57 @@ func clip(s string, n int) string {
 		return s[:n]
 	}
 	return s
+}
+
+// relayMessageBody asks a participant's daemon for the body. The gateway does
+// not keep a copy of the relay response.
+func (g *Gateway) relayMessageBody(ctx context.Context, raw []byte) (json.RawMessage, error) {
+	var q protocol.QueryMessage
+	if json.Unmarshal(raw, &q) != nil || q.MessageID == "" {
+		return nil, reject("not found")
+	}
+	msg, ok, err := g.store.Message(q.MessageID)
+	if err != nil {
+		return nil, err
+	}
+	if !ok || (!msg.ExpiresAt.IsZero() && !msg.ExpiresAt.After(time.Now())) {
+		return nil, reject("unknown message %q", q.MessageID)
+	}
+	var offline string
+	connected := false
+	seen := map[string]bool{}
+	for _, sid := range []string{msg.From, msg.To} {
+		a, found, e := g.store.Agent(sid)
+		if e != nil {
+			return nil, e
+		}
+		if !found || seen[a.NodeID] {
+			continue
+		}
+		seen[a.NodeID] = true
+		if offline == "" {
+			offline = a.Hostname
+			if offline == "" {
+				offline = a.NodeID
+			}
+		}
+		target := g.conn(a.NodeID)
+		if target == nil {
+			continue
+		}
+		connected = true
+		data, e := target.request(ctx, "node.message_body", q, relayUsageTopWait)
+		if e != nil {
+			continue
+		}
+		var result protocol.MessageResult
+		if json.Unmarshal(data, &result) != nil || result.Message.ID != q.MessageID || len(result.Message.Body) > protocol.MaxBodyBytes {
+			continue
+		}
+		return data, nil
+	}
+	if offline != "" && !connected {
+		return nil, reject("body held on %s, offline", offline)
+	}
+	return nil, reject("unknown message %q", q.MessageID)
 }
