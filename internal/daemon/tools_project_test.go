@@ -331,3 +331,50 @@ func TestProjectTargetsRefuseImpossibleCompatibilityOverlap(t *testing.T) {
 		t.Fatal("accepted incompatible visibility")
 	}
 }
+
+func TestProjectMatchingForeignCopyIsNotExcluded(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q")
+	dest := filepath.Join(checkout, ".claude/skills/demo")
+	if err := os.MkdirAll(dest, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dest, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exclude := filepath.Join(checkout, ".git/info/exclude")
+	before, err := os.ReadFile(exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := d.copyProjectSkill(target, bundle); r.State != "applied" {
+		t.Fatalf("result: %+v", r)
+	}
+	after, err := os.ReadFile(exclude)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("foreign copy hidden: %q %v", after, err)
+	}
+}
+
+func TestProjectIgnoreOverrideLeavesExcludeUnchanged(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q")
+	rules := "!.claude/\n!.claude/skills/\n!.claude/skills/demo/\n!.claude/skills/demo/SKILL.md\n"
+	if err := os.WriteFile(filepath.Join(checkout, ".gitignore"), []byte(rules), 0600); err != nil {
+		t.Fatal(err)
+	}
+	exclude := filepath.Join(checkout, ".git/info/exclude")
+	before, err := os.ReadFile(exclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r := d.copyProjectSkill(target, bundle); r.State != "pending" {
+		t.Fatalf("result: %+v", r)
+	}
+	after, err := os.ReadFile(exclude)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("exclude changed: %q %v", after, err)
+	}
+}

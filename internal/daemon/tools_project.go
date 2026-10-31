@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,9 +17,15 @@ import (
 )
 
 func projectGit(checkout string, args ...string) ([]byte, error) {
+	return projectGitConfig(checkout, "", args...)
+}
+func projectGitConfig(checkout, excludes string, args ...string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	all := []string{"-C", checkout, "-c", "core.fsmonitor=false"}
+	if excludes != "" {
+		all = append(all, "-c", "core.excludesFile="+excludes)
+	}
 	if len(args) > 0 && args[0] == "ls-files" {
 		all = append(all, "--literal-pathspecs")
 	}
@@ -157,6 +164,13 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 			if e != nil || h != t.Revision.Version {
 				return fail("conflict", "destination differs")
 			}
+			owned, e := d.projectSkillOwned(cur, t.Revision.Item)
+			if e != nil {
+				return fail("failed", "cannot read manifest")
+			}
+			if !owned {
+				return d.copySkillAt(t, bundle, checkout, root)
+			}
 		}
 	}
 	excludeBytes, err := projectGit(checkout, "rev-parse", "--git-path", "info/exclude")
@@ -185,7 +199,40 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 			break
 		}
 	}
+	checkFiles := func(excludes string) error {
+		return filepath.WalkDir(stage, func(path string, entry fs.DirEntry, e error) error {
+			if e != nil {
+				return e
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			sub, e := filepath.Rel(stage, path)
+			if e != nil {
+				return e
+			}
+			_, e = projectGitConfig(checkout, excludes, "check-ignore", "--no-index", "-q", "--", filepath.Join(rel, sub))
+			return e
+		})
+	}
 	if !present {
+		candidate, e := os.CreateTemp(d.cfg.StateDir, ".project-ignore-")
+		if e != nil {
+			return fail("failed", "cannot inspect ignore rules")
+		}
+		candidatePath := candidate.Name()
+		defer os.Remove(candidatePath)
+		if _, e = candidate.WriteString(pattern + "\n"); e == nil {
+			e = candidate.Close()
+		} else {
+			candidate.Close()
+		}
+		if e != nil {
+			return fail("failed", "cannot inspect ignore rules")
+		}
+		if e = checkFiles(candidatePath); e != nil {
+			return fail("pending", "managed path is not ignored by Git")
+		}
 		addition := []byte(pattern + "\n")
 		if len(before) > 0 && before[len(before)-1] != '\n' {
 			addition = append([]byte("\n"), addition...)
@@ -194,9 +241,10 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 			return fail("pending", "cannot update Git exclude")
 		}
 	}
-	if _, err = projectGit(checkout, "check-ignore", "--no-index", "-q", "--", filepath.Join(rel, "SKILL.md")); err != nil {
+	if err = checkFiles(""); err != nil {
 		return fail("pending", "managed path is not ignored by Git")
 	}
+
 	result := d.copySkillAt(t, bundle, checkout, root)
 	if result.State != "applied" {
 		return result
@@ -321,4 +369,24 @@ func projectTargets(targets []protocol.ToolTarget) map[string]string {
 		}
 	}
 	return conflicts
+}
+
+func (d *Daemon) projectSkillOwned(path, item string) (bool, error) {
+	b, err := os.ReadFile(filepath.Join(d.cfg.StateDir, "skill-manifest.json"))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var entries []skillManifestEntry
+	if err = json.Unmarshal(b, &entries); err != nil {
+		return false, err
+	}
+	for _, e := range entries {
+		if e.Path == path && e.Item == item && e.Owned {
+			return true, nil
+		}
+	}
+	return false, nil
 }
