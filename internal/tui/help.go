@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/x/ansi"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The key line and the help overlay. The model (model.go) supplies the state;
@@ -130,7 +133,6 @@ func (m Model) helpContent(w int) []string {
 	}
 
 	rows := [][2]string{
-		{"n", "desktop notifications: " + state + " (toggle)"},
 		{"Sessions", ""},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
@@ -142,7 +144,7 @@ func (m Model) helpContent(w int) []string {
 		{"x, h, H", "stop worker; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
-		{"I", "integrations for all machines: six checkboxes (a form)"},
+		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
 		{"4/M", "map: charters and edges; z switches overview"},
 		{"map D", "name project (empty clears)"},
 		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h hide, H show hidden"},
@@ -158,6 +160,7 @@ func (m Model) helpContent(w int) []string {
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
 		{"Everywhere", ""},
+		{"n", "desktop notifications: " + state + " (toggle)"},
 		{"?", "this help"},
 		{"q, ctrl+c", "quit"},
 		{"", ""},

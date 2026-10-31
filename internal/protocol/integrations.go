@@ -1,6 +1,6 @@
 package protocol
 
-// The six setup integrations. They are the owner's answers for the whole
+// The setup integrations. They are the owner's answers for the whole
 // network: the gateway keeps them, and every machine applies them. A machine may
 // keep a local answer for one item, made with a per-item setup flag.
 
