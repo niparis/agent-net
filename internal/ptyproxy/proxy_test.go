@@ -102,7 +102,34 @@ func TestEntryNoticeBeforeChildStarts(t *testing.T) {
 }
 
 func TestEscapeMatcher(t *testing.T) {
-	for _, seq := range []string{"\x1d", "\x1b[93;5u", "\x1b[93;5:1u", "\x1b[27;5;93~"} {
+	// Every form of ctrl+] a terminal may send, including the kitty keyboard
+	// protocol with Caps Lock and Num Lock bits (64 and 128) added to the
+	// modifier value, alternate keys, associated text, and the control code 29.
+	for _, seq := range []string{
+		"\x1d",
+		"\x1b[93;5u",
+		"\x1b[93;5:1u",
+		"\x1b[27;5;93~",
+		"\x1b[93;69u",  // Caps Lock
+		"\x1b[93;133u", // Num Lock
+		"\x1b[93;197u", // both
+		"\x1b[93;69:1u",
+		"\x1b[93;133:1u",
+		"\x1b[93;197:1u",
+		"\x1b[27;69;93~",
+		"\x1b[27;133;93~",
+		"\x1b[27;197;93~",
+		"\x1b[93:125;5u",    // shifted alternate key
+		"\x1b[93::93;5u",    // base-layout alternate key
+		"\x1b[93:125;69u",   // alternate key and Caps Lock
+		"\x1b[93;5;29u",     // associated text
+		"\x1b[93;5;93u",     // associated text for the key itself
+		"\x1b[93;5;29:93u",  // several text codepoints
+		"\x1b[93:125;5;29u", // alternate key and text
+		"\x1b[29;5u",        // the control code instead of the key
+		"\x1b[29;69u",
+		"\x1b[29;5:1u",
+	} {
 		for split := 0; split <= len(seq); split++ {
 			t.Run(fmt.Sprintf("%q/split%d", seq, split), func(t *testing.T) {
 				var m escapeMatcher
@@ -122,16 +149,93 @@ func TestEscapeMatcher(t *testing.T) {
 	}
 }
 
-func TestEscapeMatcherOtherInput(t *testing.T) {
-	var m escapeMatcher
-	var out bytes.Buffer
-	for _, part := range []string{"a\x1b[93;5:", "3ub\x1b[97;5u\x1b[<0;12;4M", "paste"} {
-		if m.write(&out, []byte(part)) {
-			t.Fatal("unexpected escape")
+func TestEscapeMatcherSwallowsRepeatAndRelease(t *testing.T) {
+	// Repeat (2) and release (3) events of ctrl+] must not reach the child and
+	// must not trigger the escape.
+	for _, seq := range []string{
+		"\x1b[93;5:3u",
+		"\x1b[93;5:2u",
+		"\x1b[93;69:3u",
+		"\x1b[93;133:2u",
+		"\x1b[93;197:3u",
+		"\x1b[93;5:3;29u",
+		"\x1b[93;5:2;29u",
+		"\x1b[93:125;5:3u",
+		"\x1b[29;5:3u",
+		"\x1b[29;69:2u",
+	} {
+		for split := 0; split <= len(seq); split++ {
+			t.Run(fmt.Sprintf("%q/split%d", seq, split), func(t *testing.T) {
+				var m escapeMatcher
+				var out bytes.Buffer
+				if m.write(&out, []byte("before"+seq[:split])) {
+					t.Fatal("escaped on a repeat or release")
+				}
+				if m.write(&out, []byte(seq[split:]+"after")) {
+					t.Fatal("escaped on a repeat or release")
+				}
+				if got, want := out.String(), "beforeafter"; got != want {
+					t.Fatalf("forwarded %q, want %q", got, want)
+				}
+			})
 		}
 	}
-	if got, want := out.String(), "ab\x1b[97;5u\x1b[<0;12;4Mpaste"; got != want {
+}
+
+func TestEscapeMatcherOtherInput(t *testing.T) {
+	// Everything that is not ctrl+] passes through byte for byte.
+	for _, seq := range []string{
+		"]",
+		"\x1b[93;6u",    // ctrl+shift+]
+		"\x1b[93;70u",   // ctrl+shift+] with Caps Lock
+		"\x1b[27;6;93~", // modifyOtherKeys ctrl+shift+]
+		"\x1b[97;5u",    // kitty ctrl+a
+		"\x1b[97;69u",   // kitty ctrl+a with Caps Lock
+		"\x1b[27;5;97~", // modifyOtherKeys ctrl+a
+		"\x1b[A",        // up arrow
+		"\x1b[93;5:4u",  // unknown event type
+		"\x1b[93;5x",    // malformed sequence
+	} {
+		for split := 0; split <= len(seq); split++ {
+			t.Run(fmt.Sprintf("%q/split%d", seq, split), func(t *testing.T) {
+				var m escapeMatcher
+				var out bytes.Buffer
+				if m.write(&out, []byte("before"+seq[:split])) {
+					t.Fatal("unexpected escape")
+				}
+				if m.write(&out, []byte(seq[split:]+"after")) {
+					t.Fatal("unexpected escape")
+				}
+				if got, want := out.String(), "before"+seq+"after"; got != want {
+					t.Fatalf("got %q, want %q", got, want)
+				}
+			})
+		}
+	}
+}
+
+func TestEscapeMatcherSequenceBeforeEscape(t *testing.T) {
+	var m escapeMatcher
+	var out bytes.Buffer
+	if !m.write(&out, []byte("a\x1b[93;5:3ub\x1d")) {
+		t.Fatal("did not escape")
+	}
+	if got, want := out.String(), "ab"; got != want {
 		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestEscapeMatcherFlushPartial(t *testing.T) {
+	for _, partial := range []string{"\x1b", "\x1b[93;5", "\x1b[27;5;"} {
+		var m escapeMatcher
+		var out bytes.Buffer
+		if m.write(&out, []byte(partial)) {
+			t.Fatalf("%q triggered early", partial)
+		}
+		m.flush(&out)
+		if got := out.String(); got != partial {
+			t.Fatalf("got %q, want %q", got, partial)
+		}
 	}
 }
 
