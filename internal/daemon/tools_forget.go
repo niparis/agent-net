@@ -32,6 +32,15 @@ func RemoveSkillState(state string) error {
 			return err
 		}
 	}
+	// A crash can leave a temporary file or folder of an unfinished operation.
+	for _, prefix := range []string{".skill-manifest-", ".project-verify-", ".project-ignore-"} {
+		left, _ := filepath.Glob(filepath.Join(state, prefix+"*"))
+		for _, p := range left {
+			if err = os.RemoveAll(p); err != nil {
+				return err
+			}
+		}
+	}
 	if err = os.RemoveAll(filepath.Join(state, "skill-journal")); err != nil {
 		return err
 	}

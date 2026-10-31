@@ -133,11 +133,11 @@ Machines accept workers (agent sessions that other sessions, or you, start there
 ## Remove a machine
 
 ```
-agent-net uninstall          # services, Claude MCP entry, the crossSessionInbound value agent-net set, the Codex config block, Pi extension, guidance blocks
+agent-net uninstall          # services, Claude MCP entry, the crossSessionInbound value agent-net set, the Codex config block, Pi extension, guidance blocks, skill and MCP management backups, journal and manifest
 agent-net uninstall --purge  # also ~/.config/agent-net and the daemon state
 ```
 
-The binary and the gateway data are kept.
+The binary and the gateway data are kept. So are skills the owner assigned to a machine and any native MCP file the daemon edited: undo those first if you want them back. See [what setup changes](reference.md#what-setup-changes-on-your-machine).
 
 ## Options and tests
 

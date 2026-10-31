@@ -110,6 +110,22 @@ Claude Code does this when the sender and the receiver run in different permissi
 
 Setup does not change a value that is already set. `agent-net setup` prints the current one on the `claude peer messages` line. If it says `hold` or `refuse`, change or remove the key yourself. A `hold` in a managed (organization) setting or in a repository's `.claude/settings.json` overrides your `accept`.
 
+## Skills and MCP management
+
+These messages come from `agent-net tools ...`, the MCP import and native removal tools, and the CTO. A target ends as `ok`, `pending`, `conflict`, `manual` or `failed`. See [reference](reference.md#tools-inventory) and [security](security.md#skills-and-mcp-management).
+
+- **`pending`, or `machine offline; applies when it reconnects`**: the machine is not connected, or has not reported yet. Nothing is wrong. The daemon applies the change when it comes back. Check `agent-net nodes`.
+- **`this is the last copy and it is not imported: import it first`** (or `this entry was not imported; import it first`): the plan would remove the only copy of a skill, or the native MCP entry has no federated twin. Import the skill with `tools_import` (the source machine must be online), or import the MCP entry with `mcp_import`, then plan again.
+- **`changed since plan`**: the file, skill or inventory changed between the plan and the apply. Nothing was touched. Make a new plan and read it again.
+- **`changed since apply`**: you asked for an undo, but the files are no longer what the apply left, usually because someone edited them. Undo never overwrites a later edit. Look at the files, then put them back by hand or fix them and undo again.
+- **`committed in the repo: remove it with a commit`**: Git tracks that project file (for example `.mcp.json`). agent-net does not edit tracked files. Remove the entry in a normal commit.
+- **`owner must choose an ignore mechanism`**: the project checkout is not a Git repository, so agent-net has no safe place to hide the copy. The target stays `pending` until you choose one.
+- **`host NAME offline`** (an MCP call) or `unavailable: host NAME offline` (in a tool description): the machine that runs that MCP server is not connected. The assignment is kept. The tools work again when the host returns.
+- **`not assigned to this project`**: the server is scoped to other projects, or is `uninstalled`. Ask the owner to change its scope with `agent-net tools plan`. A session may need `/mcp` to refresh its list.
+- **`conflict` with `interrupted operation ...`**: the daemon crashed in the middle of a skill change and the files no longer match its journal record. It leaves them alone and logs `skill journal conflict`. Check the path, then delete the record file in `~/.local/state/agent-net/daemon/skill-journal/` once you know the state is fine.
+- **A conflict about a name shown twice or shadowed**: two harness folders would show the same skill, or another source already provides it. Remove or rename one by hand, or choose another target.
+- **A skill or MCP server is applied but a running session does not see it**: sessions load skills and native MCP config at start. Reload or restart the session. Federated MCP tools update live in Claude Code and Pi only.
+
 ## Still stuck
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues) with the output of `agent-net version`, `agent-net status`, the relevant log lines and your OS.

@@ -637,3 +637,32 @@ func TestUninstallRemovesSkillJournal(t *testing.T) {
 		t.Fatalf("journal remains: %v", err)
 	}
 }
+
+func TestUninstallRemovesCrashLeftovers(t *testing.T) {
+	f := newFixture(t)
+	state := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	var left []string
+	for _, name := range []string{".skill-manifest-1", ".project-verify-2", ".project-ignore-3"} {
+		p := filepath.Join(state, name)
+		if err := os.MkdirAll(p, 0700); err != nil {
+			t.Fatal(err)
+		}
+		left = append(left, p)
+	}
+	keep := filepath.Join(state, "daemon.db")
+	if err := os.WriteFile(keep, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Uninstall(Options{Out: &bytes.Buffer{}, NoService: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range left {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s remains: %v", p, err)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Fatalf("daemon.db must stay without --purge: %v", err)
+	}
+}
