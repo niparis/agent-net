@@ -238,11 +238,17 @@ func (g *Gateway) Close() error {
 func (g *Gateway) RunExpiry(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
+	if err := g.store.ProcessLearned(); err != nil {
+		g.logLine("error", "where", "learned suggestions", "err", err)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if err := g.store.ProcessLearned(); err != nil {
+				g.logLine("error", "where", "learned suggestions", "err", err)
+			}
 			// Expire writes one log line per message.
 			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)

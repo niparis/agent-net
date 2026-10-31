@@ -491,7 +491,9 @@ The Claude Code `UserPromptSubmit` policy hook sends the first 300 characters of
 
 Only the owner authority path and the private CTO tool can read instruction signals. The daemon restricts the CTO channel to its checked process tree, and the gateway verifies an owner session on the requesting node. As with other owner-gated operations, the gateway trusts enrolled daemons; a compromised enrolled machine can impersonate its owner session. Protect the gateway database and its backups, which contain the prompt excerpts. Reply outcomes and reasons also have their existing visibility described in [Request outcome decisions](#request-outcome-decisions).
 
-Signals and suggestions are evidence, not authority. They never change a charter. The CTO may apply a suggested diff with `charter_set` only after the owner says yes.
+The gateway may automatically add an item to `accepts` from an owner instruction, add an item to `needs` or `consumers`, or add a `depends` edge. It waits for two quiet minutes and applies at most three changes per node in a rolling 24 hours. A change beyond that cap is held for the owner. Removals, refusals, escalation and maturity changes, request and deploy rules, governance and deployment edges, and changes involving a critical node are held for the owner. A rejected suggestion is not offered again for the same node, field and phrase. Automatic changes are recorded with actor `learned` and can be reversed with `graph_undo`.
+
+These rules use matched excerpts and reply outcomes as evidence. Matching does not prove the owner intended a particular send, and peer replies can influence `needs` and dependency suggestions. The gateway keeps suggestion evidence in its database; message-flow records used for detection are removed after seven days. Protect the database and backups accordingly.
 
 ## Graph foundation
 

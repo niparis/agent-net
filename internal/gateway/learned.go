@@ -26,6 +26,8 @@ type LearnedSuggestion struct {
 	Evidence  []LearnedEvidence `json:"evidence"`
 	Status    string            `json:"status"`
 	Severity  string            `json:"severity"`
+	Origin    string            `json:"origin,omitempty"`
+	HistoryID int64             `json:"history_id,omitempty"`
 	CreatedAt int64             `json:"created_at"`
 	ReadyAt   int64             `json:"ready_at"`
 	DecidedAt int64             `json:"decided_at,omitempty"`
@@ -34,7 +36,7 @@ type LearnedSuggestion struct {
 // LearnedSuggestions returns pending and decided candidates, optionally limited
 // to pending candidates whose node has been quiet for two minutes.
 func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) {
-	query := `SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at FROM learned_suggestions`
+	query := `SELECT id,node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at,decided_at,COALESCE((SELECT origin FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),''),COALESCE((SELECT history_id FROM learned_suggestion_details d WHERE d.suggestion_id=learned_suggestions.id),0) FROM learned_suggestions`
 	args := []any{}
 	if readyOnly {
 		query += ` WHERE status='pending' AND ready_at<=?`
@@ -50,7 +52,7 @@ func (s *Store) LearnedSuggestions(readyOnly bool) ([]LearnedSuggestion, error) 
 	for rows.Next() {
 		var v LearnedSuggestion
 		var evidence string
-		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt); err != nil {
+		if err = rows.Scan(&v.ID, &v.Node, &v.Field, &v.EdgeKind, &v.Kind, &v.Phrase, &evidence, &v.Status, &v.Severity, &v.CreatedAt, &v.ReadyAt, &v.DecidedAt, &v.Origin, &v.HistoryID); err != nil {
 			return nil, err
 		}
 		if err = json.Unmarshal([]byte(evidence), &v.Evidence); err != nil {
@@ -99,7 +101,7 @@ func learnedTouch(tx *sql.Tx, at int64, nodes ...string) error {
 	}
 	return nil
 }
-func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity string, evidence []LearnedEvidence) error {
+func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity, origin string, evidence []LearnedEvidence) error {
 	if node == "" || phrase == "" || len(evidence) == 0 {
 		return nil
 	}
@@ -116,6 +118,13 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity st
 			}
 			return err
 		}
+	}
+	var rejected int
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM learned_suggestions WHERE node=? AND field=? AND phrase=? COLLATE NOCASE AND status='rejected')`, node, field, phrase).Scan(&rejected); err != nil {
+		return err
+	}
+	if rejected != 0 {
+		return nil
 	}
 	var existing string
 	var id int64
@@ -157,7 +166,15 @@ func learnedAdd(tx *sql.Tx, at int64, node, field, edgeKind, phrase, severity st
 	if maturity == "critical" || strings.HasPrefix(maturity, "critical - ") {
 		severity = "major"
 	}
-	_, err = tx.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES(?,?,?,'add',?,?,'pending',?,?,?)`, node, field, edgeKind, phrase, string(data), severity, at, at+int64(2*time.Minute))
+	res, err := tx.Exec(`INSERT INTO learned_suggestions(node,field,edge_kind,kind,phrase,evidence,status,severity,created_at,ready_at) VALUES(?,?,?,'add',?,?,'pending',?,?,?)`, node, field, edgeKind, phrase, string(data), severity, at, at+int64(2*time.Minute))
+	if err != nil {
+		return err
+	}
+	id, err = res.LastInsertId()
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO learned_suggestion_details(suggestion_id,origin) VALUES(?,?)`, id, origin)
 	return err
 }
 
@@ -201,13 +218,13 @@ func (s *Store) learnOwner(tx *sql.Tx, from, to, id, prompt string, at int64) er
 		return err
 	}
 	ev := []LearnedEvidence{{ID: id, Excerpt: prompt}}
-	if err := learnedAdd(tx, at, target, "accepts", "", phrase, "minor", ev); err != nil {
+	if err := learnedAdd(tx, at, target, "accepts", "", phrase, "minor", "owner", ev); err != nil {
 		return err
 	}
 	if target == from {
 		return nil
 	}
-	return learnedAdd(tx, at, from, "needs", "", target+" for "+phrase, "minor", ev)
+	return learnedAdd(tx, at, from, "needs", "", target+" for "+phrase, "minor", "owner", ev)
 }
 
 func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
@@ -266,15 +283,15 @@ func (s *Store) learnOutcome(tx *sql.Tx, replyID string, at int64) error {
 		if len(ev) < 3 {
 			return nil
 		}
-		return learnedAdd(tx, at, to, "refuses", "", phrase, "major", ev)
+		return learnedAdd(tx, at, to, "refuses", "", phrase, "major", "outcome", ev)
 	}
 	if len(ev) < 2 || to == redirect {
 		return nil
 	}
-	if err = learnedAdd(tx, at, to, "needs", "", redirect+" for "+phrase, "minor", ev); err != nil {
+	if err = learnedAdd(tx, at, to, "needs", "", redirect+" for "+phrase, "minor", "outcome", ev); err != nil {
 		return err
 	}
-	return learnedAdd(tx, at, to, "edge", "depends", redirect, "minor", ev)
+	return learnedAdd(tx, at, to, "edge", "depends", redirect, "minor", "outcome", ev)
 }
 
 func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
@@ -338,5 +355,5 @@ func (s *Store) learnDelivery(tx *sql.Tx, id string, at int64) error {
 	if err == nil {
 		from, to = existingNode, existingTarget
 	}
-	return learnedAdd(tx, at, from, "edge", "depends", to, "minor", ev)
+	return learnedAdd(tx, at, from, "edge", "depends", to, "minor", "flow", ev)
 }

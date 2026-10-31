@@ -291,6 +291,10 @@ CREATE TABLE IF NOT EXISTS learned_suggestions (
 CREATE INDEX IF NOT EXISTS learned_pending ON learned_suggestions(node,field,phrase,status);
 CREATE TABLE IF NOT EXISTS learned_message_flow (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, excerpt TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS learned_flow_pair ON learned_message_flow(source,target,at);
+`, `
+CREATE TABLE IF NOT EXISTS learned_suggestion_details (suggestion_id INTEGER PRIMARY KEY, origin TEXT NOT NULL DEFAULT '', history_id INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO learned_suggestion_details(suggestion_id,origin)
+ SELECT id,'owner' FROM learned_suggestions WHERE field='accepts';
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
