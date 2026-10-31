@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -31,7 +32,7 @@ func TestCharterSuggestionsRedirectAndRejection(t *testing.T) {
 	signals := []protocol.CharterSignal{{From: "app", To: "other", MessageID: "m1", Outcome: "redirect", RedirectTo: "ops", Reason: "deployment belongs in ops"}, {From: "app", To: "other", MessageID: "m2", Outcome: "reject", Reason: "already in main"}}
 	got := charterSuggestions(g, signals)
 	b, _ := json.Marshal(got)
-	if len(got.Suggestions) != 2 || !strings.Contains(string(b), "deployment") || !strings.Contains(string(b), "already in main") {
+	if len(got.Suggestions) != 0 || !strings.Contains(string(b), "deployment") || !strings.Contains(string(b), "already in main") {
 		t.Fatalf("%s", b)
 	}
 }
@@ -112,5 +113,22 @@ func TestCharterSuggestionsExtractJobAndDeduplicate(t *testing.T) {
 		if len(v.MessageIDs) != 1 {
 			t.Fatalf("duplicate evidence: %+v", v)
 		}
+	}
+}
+
+func TestCharterSuggestionsRedirectRequiresRepeatedRecentEvidence(t *testing.T) {
+	g := protocol.Graph{Nodes: []protocol.Node{{Name: "app"}, {Name: "other"}, {Name: "ops"}}}
+	now := time.Now()
+	one := protocol.CharterSignal{From: "app", To: "other", MessageID: "m1", Outcome: "redirect", RedirectTo: "ops", Reason: "deployment belongs in ops", At: now.UnixNano()}
+	two := one
+	two.MessageID = "m2"
+	two.At = now.Add(-8 * 24 * time.Hour).UnixNano()
+	if got := charterSuggestions(g, []protocol.CharterSignal{one, two}); len(got.Suggestions) != 0 {
+		t.Fatalf("old evidence must not count: %+v", got.Suggestions)
+	}
+	two.At = now.Add(-time.Hour).UnixNano()
+	got := charterSuggestions(g, []protocol.CharterSignal{one, two})
+	if len(got.Suggestions) != 1 || got.Suggestions[0].Node != "other" || got.Suggestions[0].Field != "needs" || len(got.Suggestions[0].MessageIDs) != 2 {
+		t.Fatalf("redirect suggestion: %+v", got.Suggestions)
 	}
 }
