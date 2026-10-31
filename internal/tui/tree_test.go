@@ -162,9 +162,4 @@ func TestTreeSelectionInDisplayOrder(t *testing.T) {
 	if o := ids(m); o[indexOfID(o, callerID)+1] != kidC {
 		t.Errorf("order %v", o)
 	}
-	// Keys act on the worker, and c opens its conversation.
-	m = keys(m, "c")
-	if m.conv == nil || m.conv.id != kidB {
-		t.Errorf("conv %+v", m.conv)
-	}
 }

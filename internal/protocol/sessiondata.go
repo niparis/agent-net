@@ -226,6 +226,12 @@ type EnterRequest struct {
 	// runs inside herdr (HERDR_ENV=1), else "". The plan then names the detach
 	// key that works inside herdr.
 	HerdrSocket string `json:"herdr_socket,omitempty"`
+	// HerdrClient is set by the daemon of the asking machine when it has a
+	// herdr binary that can run `herdr --remote`. A session on another machine
+	// then answers a herdr pane for it, so the asking machine can use herdr's
+	// own remote client instead of an ssh attach. The TUI and the CLI do not
+	// set it.
+	HerdrClient bool `json:"herdr_client,omitempty"`
 }
 
 // EnterPlan answers OpSessionEnter. A front end runs Argv in Dir with Env added
@@ -246,6 +252,11 @@ type EnterPlan struct {
 	// as "On build-box run: ...". It is set when Argv uses ssh, so a front end
 	// can show it when ssh cannot connect (exit status 255).
 	Fallback string `json:"fallback,omitempty"`
+	// HerdrPane is the herdr pane of the session. It is set when the session
+	// runs in herdr and the asking machine said it has a herdr client
+	// (EnterRequest.HerdrClient). That machine then opens the pane with
+	// `herdr --remote` instead of running the ssh attach command.
+	HerdrPane string `json:"herdr_pane,omitempty"`
 }
 
 // TextEntry is one step of a session: a prompt, a reply, a tool call or a tool

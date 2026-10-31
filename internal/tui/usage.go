@@ -146,7 +146,7 @@ func (m Model) usageDue() bool {
 // wantTop returns the command that fetches the top processes of the selected
 // session, when they are not cached or are older than topEvery.
 func (m *Model) wantTop() tea.Cmd {
-	if m.conv != nil || m.help {
+	if m.help {
 		return nil
 	}
 	a, ok := m.selectedAgent()

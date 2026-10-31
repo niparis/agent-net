@@ -171,7 +171,7 @@ type fakeSource struct {
 	hiddenSetErr     error
 	hiddenSaved      []protocol.HiddenItems
 
-	// CPU, memory, counts, top lists and conversations. Nil means the daemon
+	// CPU, memory, counts, top lists and session text. Nil means the daemon
 	// is older than the feature.
 	usage   *Usage
 	counts  *protocol.SessionCounts
@@ -920,11 +920,10 @@ func TestOpenMessageBody(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 30})
 	m = refresh(m, src)
 
-	// Enter on a session opens its conversation, not a message body.
-	if next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); next.(Model).open != nil || next.(Model).conv == nil {
+	// Enter on a session enters it; it does not open a message body.
+	if next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); next.(Model).open != nil || cmd == nil {
 		t.Fatal("enter on the sessions table opened the wrong thing")
 	}
-	m = keys(m, "esc") // back to the lists
 	m = keys(m, "2")
 	m = selectFeedMessage(m, "m_3")
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})

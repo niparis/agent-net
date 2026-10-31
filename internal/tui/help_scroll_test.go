@@ -27,7 +27,7 @@ func TestHelpScrollsAndWrapsAt80(t *testing.T) {
 			t.Errorf("help line unreachable: %q", line)
 		}
 	}
-	for _, want := range []string{"more below", "more above", "delegation policy:", "Messages", "left/right: message", "Conversation", "Everywhere", "Reading the screen", "a figure that is missing", "the first line of the body"} {
+	for _, want := range []string{"more below", "more above", "delegation policy:", "Messages", "left/right: message", "Everywhere", "Reading the screen", "a figure that is missing", "the first line of the body"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("help did not show %q", want)
 		}
@@ -55,7 +55,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 
 func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
-	for _, want := range []string{"desktop notifications: on (toggle)", "answer a waiting session, else open its conversation", "open the conversation"} {
+	for _, want := range []string{"desktop notifications: on (toggle)", "enter the selected session (ctrl+] to return)", "alias for Enter"} {
 		if !strings.Contains(ansi.Strip(m.View()), want) {
 			t.Errorf("help lacks %q", want)
 		}

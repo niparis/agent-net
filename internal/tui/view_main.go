@@ -133,10 +133,6 @@ func (m Model) View() string {
 		for _, s := range m.learnedView(w, h-1) {
 			add(s)
 		}
-	case m.conv != nil:
-		for _, s := range m.convView(w, h-1) {
-			add(s)
-		}
 	default:
 		box := min(max((h-1)/3, 6), max(h-4, 1))
 		if m.tab == 2 && h <= 24 && box > 6 {
@@ -170,7 +166,7 @@ func (m Model) View() string {
 
 	}
 	// CTO notices must also be visible on the map, messages and quotas views.
-	if (m.tab != 0 || m.mapOn || m.inboxOn || m.help || m.learned || m.conv != nil) && len(out) > 0 {
+	if (m.tab != 0 || m.mapOn || m.inboxOn || m.help || m.learned) && len(out) > 0 {
 		if n := m.activeNotice(); n != nil && (m.mapOn || strings.HasPrefix(n.text, "CTO: ")) {
 			line := sIdle.Render(clip("  "+sanitize(n.text), w))
 			out = append(out[:1], append([]string{line}, out[1:]...)...)

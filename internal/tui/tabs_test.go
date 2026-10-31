@@ -349,13 +349,8 @@ func TestLayoutGoldens(t *testing.T) {
 	}
 }
 
-func TestCTOFocusFromConversationAndBody(t *testing.T) {
+func TestCTOFocusFromMessageBody(t *testing.T) {
 	m := newModel(80, 24)
-	m.conv = &convState{id: "session"}
-	m = keys(m, "C")
-	if m.focus != focusCTO || m.conv != nil || m.tab != 0 {
-		t.Fatal("C did not leave conversation for CTO")
-	}
 	m = keys(m, "esc", "2")
 	m.open = &openMsg{id: "message"}
 	m = keys(m, "C")

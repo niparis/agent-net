@@ -138,8 +138,6 @@ type Model struct {
 	usage usageData
 	// top caches the top processes of sessions that were selected.
 	top map[string]*topEntry
-	// conv is the open conversation, or nil (conv.go).
-	conv *convState
 	// mapOn shows the read-only graph map instead of the session list, and mp
 	// is its data (map.go).
 	mapOn bool
@@ -401,9 +399,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cto.polling = true
 			cmds = append(cmds, m.ctoPollCmd())
 		}
-		if m.conv != nil && m.conv.loaded {
-			cmds = append(cmds, m.convCmd(convNewer)) // follow, even while a refresh runs
-		}
 		if !m.fetching {
 			m.fetching = true
 			cmds = append(cmds, m.fetchCmd())
@@ -530,10 +525,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case convMsg:
-		m.applyConv(msg)
-		return m, nil
-
 	case topMsg:
 		if e := m.top[msg.id]; e != nil {
 			e.loading, e.at = false, msg.at
@@ -841,19 +832,19 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if k.String() == "C" && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
-		m.open, m.conv = nil, nil
+		m.open = nil
 		if m.cto == nil {
 			return m.startCTO()
 		}
 		m.cto.editing = true
 		return m, m.cto.input.Focus()
 	}
-	if k.String() == "tab" && m.cto != nil && !m.filtering && m.conv == nil && m.open == nil {
+	if k.String() == "tab" && m.cto != nil && !m.filtering && m.open == nil {
 		m.focus = focusCTO
 		m.cto.editing = true
 		return m, m.cto.input.Focus()
 	}
-	if !m.filtering && m.conv == nil && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5" || k.String() == "6") {
+	if !m.filtering && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5" || k.String() == "6") {
 		if k.String() == "6" {
 			m.tab, m.mapOn, m.focus = 5, false, focusSessions
 			m.graphGeneration++
@@ -880,9 +871,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.mapOn {
 		return m.mapKey(k)
-	}
-	if m.conv != nil {
-		return m.convKey(k)
 	}
 	if m.filtering {
 		switch k.Type {
@@ -1093,14 +1081,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "d":
 		m.expand = !m.expand
 		m.fixScroll()
-	case "c":
-		return m, m.openConv()
-	case "R":
-		for _, e := range m.snap.Outcomes {
-			if m.selected == "outcome:"+e.ReplyID {
-				return m, m.openConvFor(e.Sender)
-			}
-		}
 	case "/":
 		m.filtering = true
 		m.input.SetValue(m.filter)
@@ -1191,43 +1171,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if a, ok := m.selectedAgent(); ok && a.Waiting != nil && protocol.ValidWaitingKind(a.Waiting.Kind) {
-			var cmd tea.Cmd
-			m, cmd = m.startCompose()
-			if m.mode == modeCompose && len(a.Waiting.Options) > 0 {
-				m.compose.SetValue(a.Waiting.Options[0])
-				m.compose.CursorEnd()
-			}
-			return m, cmd
+		if m.tab == 0 {
+			// Enter enters the session, the same action as e. The owner
+			// answers a waiting session inside the session itself.
+			return m.startEnter()
 		}
-		return m, m.openConv()
-	}
-	return m, nil
-}
-
-// convKey handles the keys of the conversation view.
-func (m Model) convKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	c := m.conv
-	switch k.String() {
-	case "q":
-		m.quitting = true
-		return m, tea.Quit
-	case "esc", "backspace", "c":
-		m.conv = nil
-	case "?":
-		m.help = true
-	case "up", "k":
-		return m, m.convScroll(1)
-	case "down", "j":
-		return m, m.convScroll(-1)
-	case "pgup", "ctrl+u":
-		return m, m.convScroll(m.convRows() - 1)
-	case "pgdown", "ctrl+d":
-		return m, m.convScroll(-(m.convRows() - 1))
-	case "home", "g":
-		return m, m.convScroll(1 << 20)
-	case "end", "G", "f":
-		c.back = 0
 	}
 	return m, nil
 }
@@ -1659,7 +1607,7 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.inboxOn, m.help, m.learned, m.mapOn = false, false, false, false
-	m.conv, m.open = nil, nil
+	m.open = nil
 	m.mode = modeNormal
 	m.filtering = false
 	m.uiFilter = q.Filter
