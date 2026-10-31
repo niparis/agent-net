@@ -1,5 +1,7 @@
 # Reference
 
+## CTO settings and conversation
+
 The owner-only `cto_settings` operator method reads and saves the active CTO
 harness, its model, the saved model for each harness, and conversation
 auto-compaction rules. The response has `harness`, `model`, `opencode_model` and
@@ -43,7 +45,9 @@ The daemon asks OpenCode 2.2.0 to compact with
 next step boundary. The conversation's messages report the context before a
 compaction. The first reply after it reports the context after. The CTO chat
 shows one line, for example `compacted: 182k -> 14k tokens`; it is stored with
-the other CTO action lines. Action lines are short. Graph change details remain in Map history. The CTO pane keeps visible history when switching harnesses and marks the switch.
+the other CTO action lines. Action lines are short. Graph change details remain
+in Map history. The daemon keeps one displayed timeline across harnesses and
+restarts. A switch adds a dim divider with the harness, model and local time.
 
 The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
 harness on first use. OpenCode runs as a private server. Claude Code runs as a
@@ -54,10 +58,13 @@ projects directory.
 
 Each harness keeps its own conversation ID in daemon state across restarts and
 harness switches. `cto_new` starts a fresh conversation for the selected
-harness only. `cto_events` takes `{"index":0}` and returns messages in
-chronological order and a `next` index for the next poll. Changing harness
-stops the previous runtime; the next send resumes the selected conversation.
-The CTO is not a worker or a network session.
+harness only. When a harness is left, the daemon saves its messages and action
+lines in the local state database. `cto_events` merges that saved history with
+the selected harness's live conversation and the durable switch dividers, in
+chronological order. It returns at most 500 entries per page. `next` is the
+cursor for the older page; the TUI loads that page when scrolling reaches the
+oldest loaded entry. Changing harness stops the previous runtime; the next send
+resumes the selected conversation. The CTO is not a worker or a network session.
 
 Each harness resumes its conversation with its own saved model. For OpenCode,
 the model is resolved against the local inventory. With no preference, the
