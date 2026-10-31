@@ -44,41 +44,23 @@ func mentionsName(text, name string) bool {
 }
 
 func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
-	var prompt, from, to, name string
+	var prompt, from, to, name, sessionName, project string
 	var at int64
-	err := tx.QueryRow(`SELECT p.prompt,p.at,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),COALESCE(NULLIF(bp.name,''),b.name,'') FROM signal_prompts p JOIN sessions a ON a.id=p.session_id JOIN sessions b ON b.id=? LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE p.session_id=?`, m.To, m.From).Scan(&prompt, &at, &from, &to, &name)
+	err := tx.QueryRow(`SELECT p.prompt,p.at,COALESCE(NULLIF(a.repo_project,''),ap.project,''),COALESCE(NULLIF(b.repo_project,''),bp.project,''),COALESCE(bp.name,''),COALESCE(b.name,''),COALESCE(bp.project,'') FROM signal_prompts p JOIN sessions a ON a.id=p.session_id JOIN sessions b ON b.id=? LEFT JOIN profiles ap ON ap.session_id=a.id LEFT JOIN profiles bp ON bp.session_id=b.id WHERE p.session_id=?`, m.To, m.From).Scan(&prompt, &at, &from, &to, &name, &sessionName, &project)
 	if err == sql.ErrNoRows {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+	// A prompt can explain at most the first send, even when it names someone else.
+	if _, err = tx.Exec(`DELETE FROM signal_prompts WHERE session_id=?`, m.From); err != nil {
+		return err
+	}
 	if m.CreatedAt.UnixNano()-at < 0 || m.CreatedAt.UnixNano()-at > int64(10*time.Minute) {
 		return nil
 	}
-	matched := mentionsName(prompt, to) || mentionsName(prompt, name)
-	if !matched {
-		rows, e := tx.Query(`SELECT name FROM graph_nodes WHERE name<>? UNION SELECT COALESCE(NULLIF(p.name,''),s.name,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id<>? UNION SELECT COALESCE(NULLIF(s.repo_project,''),p.project,'') FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id WHERE s.id<>?`, from, m.From, m.From)
-		if e != nil {
-			return e
-		}
-		for rows.Next() {
-			var candidate string
-			if e = rows.Scan(&candidate); e != nil {
-				rows.Close()
-				return e
-			}
-			if candidate != from && mentionsName(prompt, candidate) {
-				matched = true
-			}
-		}
-		e = rows.Err()
-		rows.Close()
-		if e != nil {
-			return e
-		}
-	}
-	if !matched {
+	if !mentionsName(prompt, to) && !mentionsName(prompt, project) && !mentionsName(prompt, name) && !mentionsName(prompt, sessionName) {
 		return nil
 	}
 	_, err = tx.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES(?,?,?,?,?)`, m.ID, from, to, prompt, m.CreatedAt.UnixNano())
