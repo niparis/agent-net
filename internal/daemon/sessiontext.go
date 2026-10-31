@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
+	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
@@ -203,6 +203,24 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.call(ctx, "tools.export", json.RawMessage(raw))
 	case "gateway_backup":
 		res, err = d.call(withCallWait(ctx, 10*time.Minute), "gateway.backup", json.RawMessage(raw))
+	case "tools_plan":
+		var p protocol.ToolPlanRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad tools_plan")
+		}
+		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.plan", struct {
+			protocol.ToolPlanRequest
+			Actor string `json:"actor"`
+		}{p, "owner"})
+	case "tools_apply":
+		var p protocol.ToolPlanID
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad tools_apply")
+		}
+		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.apply", struct {
+			protocol.ToolPlanID
+			Actor string `json:"actor"`
+		}{p, "owner"})
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":

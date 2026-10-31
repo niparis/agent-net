@@ -413,7 +413,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "tools.import" || h.Type == "gateway.backup" {
+		if h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -556,6 +556,24 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]bool{"ok": true}, nil
 
+	case "tools.plan":
+		p, err := decode[struct {
+			protocol.ToolPlanRequest
+			Actor string `json:"actor"`
+		}](raw)
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") {
+			return nil, reject("owner authority required")
+		}
+		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
+	case "tools.apply":
+		p, err := decode[struct {
+			protocol.ToolPlanID
+			Actor string `json:"actor"`
+		}](raw)
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") {
+			return nil, reject("owner authority required")
+		}
+		return g.applyTool(ctx, p.ID, p.Actor)
 	case "tools.import":
 		p, err := decode[protocol.ToolImport](raw)
 		if err != nil {

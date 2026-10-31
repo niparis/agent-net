@@ -209,6 +209,35 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err = rows.Err(); err != nil {
 		return nil, err
 	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	revisions, err := s.db.Query(`SELECT r.item,r.revision,r.assignment,r.version,r.actor,r.source,r.at FROM tool_revisions r WHERE r.revision=(SELECT MAX(t.revision) FROM tool_revisions t WHERE t.item=r.item)`)
+	if err != nil {
+		return nil, err
+	}
+	for revisions.Next() {
+		var r protocol.ToolRevision
+		var raw string
+		if err = revisions.Scan(&r.Item, &r.Revision, &raw, &r.Version, &r.Actor, &r.Source, &r.At); err != nil {
+			revisions.Close()
+			return nil, err
+		}
+		if err = json.Unmarshal([]byte(raw), &r.Assignment); err != nil {
+			revisions.Close()
+			return nil, err
+		}
+		r.State = "pending"
+		if item := all[r.Item]; item != nil {
+			item.Desired = &r
+			item.Applied = "pending"
+		}
+	}
+	err = revisions.Err()
+	revisions.Close()
+	if err != nil {
+		return nil, err
+	}
 	out := make([]protocol.ToolItem, 0, len(order))
 	for _, id := range order {
 		item := all[id]

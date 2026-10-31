@@ -1,7 +1,9 @@
 package gateway
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -85,4 +87,160 @@ func (s *Store) AssignTool(item string, a protocol.ToolAssignment, actor, source
 	}
 	err = tx.Commit()
 	return r, err
+}
+
+// toolSnapshot binds plans to registry, observations, versions and revisions.
+func toolSnapshot(tx *sql.Tx) (string, error) {
+	h := sha256.New()
+	for _, query := range []string{
+		`SELECT id,hostname,os,version,seen_at,harnesses FROM nodes ORDER BY id`,
+		`SELECT node_id,path,name,remote,default_branch FROM projects ORDER BY node_id,path`,
+		`SELECT node_id,report FROM inventory_reports ORDER BY node_id`,
+		`SELECT id,kind,name,hash FROM tool_identities ORDER BY id`,
+		`SELECT item,hash,commit_id FROM skill_versions ORDER BY item,hash`,
+		`SELECT item,revision,assignment,version FROM tool_revisions ORDER BY item,revision`,
+		`SELECT node_id,harness,repo_root,repo_worktree,repo_project FROM sessions WHERE repo_root<>'' AND repo_worktree<>'' ORDER BY node_id,harness,repo_root,repo_worktree,repo_project`,
+	} {
+		rows, err := tx.Query(query)
+		if err != nil {
+			return "", err
+		}
+		cols, err := rows.Columns()
+		if err != nil {
+			rows.Close()
+			return "", err
+		}
+		for rows.Next() {
+			vals := make([]any, len(cols))
+			ptrs := make([]any, len(cols))
+			for i := range vals {
+				ptrs[i] = &vals[i]
+			}
+			if err = rows.Scan(ptrs...); err != nil {
+				rows.Close()
+				return "", err
+			}
+			b, err := json.Marshal(vals)
+			if err != nil {
+				rows.Close()
+				return "", err
+			}
+			h.Write(b)
+			h.Write([]byte{0})
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return "", err
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+func (s *Store) ToolSnapshot() (string, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	v, err := toolSnapshot(tx)
+	if err != nil {
+		return "", err
+	}
+	return v, tx.Commit()
+}
+func (s *Store) SaveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor string) (protocol.ToolPlan, error) {
+	return s.saveToolPlan(item, a, targets, actor, "")
+}
+func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected string) (protocol.ToolPlan, error) {
+	var p protocol.ToolPlan
+	if actor != "owner" && actor != "cto" {
+		return p, errors.New("owner authority required")
+	}
+	a, err := normalizeAssignment(a)
+	if err != nil {
+		return p, err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return p, err
+	}
+	defer tx.Rollback()
+	var version string
+	if err = tx.QueryRow(`SELECT hash FROM tool_identities WHERE id=?`, item).Scan(&version); err != nil {
+		return p, errors.New("tool item not found")
+	}
+	for _, name := range a.Projects {
+		var exists int
+		if err = tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM projects WHERE name=?)`, name).Scan(&exists); err != nil {
+			return p, err
+		}
+		if exists == 0 {
+			return p, errors.New("project is not registered")
+		}
+	}
+	snapshot, err := toolSnapshot(tx)
+	if err != nil {
+		return p, err
+	}
+	if expected != "" && snapshot != expected {
+		return p, errors.New("plan out of date")
+	}
+	if targets == nil {
+		targets = []protocol.ToolPlanTarget{}
+	}
+	p = protocol.ToolPlan{ID: protocol.NewID("plan"), Item: item, Version: version, Assignment: a, Targets: targets, Conflicts: []string{}, State: "pending", Actor: actor, At: s.now().UnixNano()}
+	for _, target := range targets {
+		if target.Conflict != "" {
+			p.Conflicts = append(p.Conflicts, target.Conflict)
+		}
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return p, err
+	}
+	if len(raw) > 1<<20 {
+		return p, errors.New("plan exceeds limit")
+	}
+	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan) VALUES(?,?,?,?)`, p.ID, item, snapshot, string(raw)); err != nil {
+		return p, err
+	}
+	return p, tx.Commit()
+}
+func (s *Store) ApplyToolPlan(id, actor string) (protocol.ToolRevision, error) {
+	var r protocol.ToolRevision
+	if actor != "owner" && actor != "cto" {
+		return r, errors.New("owner authority required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return r, err
+	}
+	defer tx.Rollback()
+	var snapshot, raw string
+	var applied int
+	if err = tx.QueryRow(`SELECT snapshot,plan,applied FROM tool_plans WHERE id=?`, id).Scan(&snapshot, &raw, &applied); err != nil {
+		return r, errors.New("plan not found")
+	}
+	if applied != 0 {
+		return r, errors.New("plan already applied")
+	}
+	current, err := toolSnapshot(tx)
+	if err != nil {
+		return r, err
+	}
+	if snapshot != current {
+		return r, errors.New("plan out of date")
+	}
+	var p protocol.ToolPlan
+	if err = json.Unmarshal([]byte(raw), &p); err != nil {
+		return r, err
+	}
+	r, err = assignToolTx(tx, p.Item, p.Assignment, actor, "plan:"+id, s.now().UnixNano())
+	if err != nil {
+		return r, err
+	}
+	if _, err = tx.Exec(`UPDATE tool_plans SET applied=1 WHERE id=?`, id); err != nil {
+		return r, err
+	}
+	return r, tx.Commit()
 }

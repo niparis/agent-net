@@ -79,6 +79,8 @@ type ToolItem struct {
 	Machines   []string       `json:"machines"`
 	Variants   int            `json:"variants"`
 	State      string         `json:"state"`
+	Desired    *ToolRevision  `json:"desired,omitempty"`
+	Applied    string         `json:"applied,omitempty"`
 }
 type ToolsPage struct {
 	Items []ToolItem `json:"items"`
@@ -133,4 +135,47 @@ type ToolRevision struct {
 	Source     string         `json:"source"`
 	At         int64          `json:"at"`
 	State      string         `json:"state"`
+}
+
+type ToolPlanTarget struct {
+	NodeID      string `json:"node_id"`
+	Machine     string `json:"machine"`
+	Harness     string `json:"harness"`
+	Project     string `json:"project,omitempty"`
+	Checkout    string `json:"checkout,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Action      string `json:"action"`
+	State       string `json:"state"`
+	Conflict    string `json:"conflict,omitempty"`
+}
+type ToolPlan struct {
+	ID         string           `json:"id"`
+	Item       string           `json:"item"`
+	Version    string           `json:"version"`
+	Assignment ToolAssignment   `json:"assignment"`
+	Targets    []ToolPlanTarget `json:"targets"`
+	Conflicts  []string         `json:"conflicts"`
+	State      string           `json:"state"`
+	Actor      string           `json:"actor"`
+	At         int64            `json:"at"`
+}
+type ToolPlanRequest struct {
+	Item   string         `json:"item"`
+	Target ToolAssignment `json:"target"`
+}
+type ToolPlanID struct {
+	ID string `json:"plan_id"`
+}
+
+type ToolPlanProbe struct {
+	Name     string `json:"name"`
+	Harness  string `json:"harness"`
+	Checkout string `json:"checkout,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Hash     string `json:"hash,omitempty"`
+}
+type ToolPlanProbeResult struct {
+	Destination string `json:"destination,omitempty"`
+	Conflict    string `json:"conflict,omitempty"`
 }
