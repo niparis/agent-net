@@ -113,6 +113,9 @@ func (m Model) graphView(w, h int) []string {
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
 	for i := range scene.Nodes {
+		if scene.Nodes[i].Name == protocol.GraphVoiceOwner {
+			continue
+		}
 		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
 		scene.Nodes[i].Card.Name = m.projectName(scene.Nodes[i].Name)
 	}
@@ -122,13 +125,17 @@ func (m Model) graphView(w, h int) []string {
 	}
 	feed := []string{}
 	for _, msg := range scene.Feed {
-		feed = append(feed, fmt.Sprintf("%s → %s %s", m.projectName(msg.From), m.projectName(msg.To), sanitize(msg.Kind)))
+		from := m.projectName(msg.From)
+		if msg.FromOwner {
+			from = "you"
+		}
+		feed = append(feed, fmt.Sprintf("%s → %s %s", from, m.projectName(msg.To), sanitize(msg.Kind)))
 	}
 	if len(feed) == 0 {
 		feed = append(feed, "no messages yet")
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
-	out = append(out, sDim.Render(clip("  ● charter  ○ no charter  ·  pink: talked, no rule set", w)))
+	out = append(out, sDim.Render(graphLegend(w)))
 	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
 	return out
 }
@@ -184,4 +191,17 @@ func graphHintLine(w int, paused bool) string {
 		hs = append(hs[:worst:worst], hs[worst+1:]...)
 	}
 	return text()
+}
+
+// graphLegend drops whole items from the end when the viewport is narrow.
+func graphLegend(w int) string {
+	items := []string{"● charter", "○ no charter", "gold: your words", "pink: talked, no rule set"}
+	for len(items) > 0 {
+		line := "  " + strings.Join(items, "  ·  ")
+		if ansi.StringWidth(line) <= w {
+			return line
+		}
+		items = items[:len(items)-1]
+	}
+	return ""
 }

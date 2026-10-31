@@ -19,12 +19,16 @@ type GraphView struct {
 	Changes []CharterChange `json:"changes"`
 }
 
+// GraphVoiceOwner identifies the owner origin in graph traffic.
+const GraphVoiceOwner = "\x00owner"
+
 // GraphTalkCount summarizes messages between two projects in the past week.
 type GraphTalkCount struct {
 	From    string `json:"from"`
 	To      string `json:"to"`
 	Count   int    `json:"count"`
 	HasEdge bool   `json:"has_edge"`
+	Voice   bool   `json:"voice,omitempty"`
 }
 
 // GraphTalkResult identifies the feed position included in the snapshot.

@@ -493,7 +493,8 @@
           "X": 0.6024051464888253,
           "Y": 0.6981602217746389
         }
-      ]
+      ],
+      "Voice": false
     },
     {
       "Position": {
@@ -513,7 +514,8 @@
           "X": 0.4326033115870941,
           "Y": 0.37324721780437287
         }
-      ]
+      ],
+      "Voice": false
     }
   ],
   "Level": "labels",
@@ -522,13 +524,17 @@
       "From": "project-01",
       "To": "project-02",
       "Kind": "request",
-      "At": "2025-01-01T00:00:00Z"
+      "At": "2025-01-01T00:00:00Z",
+      "Voice": false,
+      "FromOwner": false
     },
     {
       "From": "project-04",
       "To": "project-05",
       "Kind": "reply",
-      "At": "2024-12-31T23:59:59Z"
+      "At": "2024-12-31T23:59:59Z",
+      "Voice": false,
+      "FromOwner": false
     }
   ],
   "Paused": false,

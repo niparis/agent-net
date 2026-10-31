@@ -309,8 +309,8 @@ func (s *Store) feedEventsBefore(afterID, beforeID int64, limit int) ([]protocol
 	}
 	args = append(args, limit)
 	rows, err := s.db.Query(`SELECT e.id, e.at, e.kind, e.node_id, COALESCE(n.hostname,''), e.session_id, e.message_id, e.detail,
-		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,''), COALESCE(m.parent_id,''), COALESCE(m.sender_cto,0), COALESCE(m.conversation_id,'')
-		FROM events e LEFT JOIN nodes n ON n.id = e.node_id LEFT JOIN messages m ON m.id = e.message_id AND e.message_id != ''
+		COALESCE(m.sender,''), COALESCE(m.recipient,''), COALESCE(m.type,''), COALESCE(m.parent_id,''), COALESCE(m.sender_cto,0), COALESCE(m.conversation_id,''), COALESCE(m.sender_cto,0) <> 0 OR COALESCE(src.harness,'') = 'owner' OR EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id=m.id AND cs.prompt <> ''), COALESCE(src.harness,'') = 'owner', COALESCE(dst.harness,'') = 'owner'
+		FROM events e LEFT JOIN nodes n ON n.id = e.node_id LEFT JOIN messages m ON m.id = e.message_id AND e.message_id != '' LEFT JOIN sessions src ON src.id=m.sender LEFT JOIN sessions dst ON dst.id=m.recipient
 		WHERE `+where+` ORDER BY e.id `+order+` LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
@@ -321,7 +321,7 @@ func (s *Store) feedEventsBefore(afterID, beforeID int64, limit int) ([]protocol
 		var e protocol.FeedEvent
 		var at int64
 		if err := rows.Scan(&e.ID, &at, &e.Kind, &e.NodeID, &e.Hostname, &e.SessionID, &e.MessageID, &e.Detail,
-			&e.From, &e.To, &e.Type, &e.Parent, &e.FromCTO, &e.ConversationID); err != nil {
+			&e.From, &e.To, &e.Type, &e.Parent, &e.FromCTO, &e.ConversationID, &e.Voice, &e.SenderOwner, &e.RecipientOwner); err != nil {
 			return nil, err
 		}
 		e.Time = time.Unix(0, at).UTC()

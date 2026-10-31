@@ -29,10 +29,12 @@ type SceneTalk struct {
 	From, To Point
 	Bucket   int
 	NoRule   bool
+	Voice    bool
 }
 type SceneComet struct {
 	Position Point
 	Trail    []Point
+	Voice    bool
 }
 
 type KeyHint struct {
@@ -59,13 +61,30 @@ func BuildScene(s State, viewport Viewport) Scene {
 		return scene
 	}
 	g := *s.Graph
+	_, ownerVisible := g.Positions[protocol.GraphVoiceOwner]
 	if s.Orbit {
 		g.Positions = orbitPositions(&g)
+	} else {
+		positions := make(map[string]Point, len(g.Positions))
+		for name, p := range g.Positions {
+			positions[name] = p
+		}
+		g.Positions = positions
 	}
 	cam := s.Camera
 	if cam.Zoom <= 0 {
 		cam = g.Fit(int(viewport.Width), int(viewport.Height))
 		scene.Level = cam.Level()
+	}
+	if ownerVisible {
+		sx, sy := cam.ScaleX, cam.ScaleY
+		if sx == 0 {
+			sx = 1
+		}
+		if sy == 0 {
+			sy = 1
+		}
+		g.Positions[protocol.GraphVoiceOwner] = Point{X: cam.Center.X - .4*viewport.Width/(cam.Zoom*2*sx), Y: cam.Center.Y - .35*viewport.Height/(cam.Zoom*sy)}
 	}
 	project := func(p Point) Point {
 		sx, sy := cam.ScaleX, cam.ScaleY
@@ -116,6 +135,9 @@ func BuildScene(s State, viewport Viewport) Scene {
 		}
 		scene.Nodes = append(scene.Nodes, node)
 	}
+	if p, ok := g.Positions[protocol.GraphVoiceOwner]; ok {
+		scene.Nodes = append(scene.Nodes, SceneNode{Name: protocol.GraphVoiceOwner, Label: "you", Role: "none", Position: project(p), Activity: 1})
+	}
 	counts := map[string]int{}
 	for _, t := range s.Talk {
 		if t.Count > 0 {
@@ -145,7 +167,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 		for _, talk := range s.Talk {
 			a, ok := g.Positions[talk.From]
 			b, ok2 := g.Positions[talk.To]
-			if !ok || !ok2 || talk.Count <= 0 {
+			if !ok || !ok2 || talk.Count <= 0 && !talk.Voice {
 				continue
 			}
 			bucket := 1
@@ -161,7 +183,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 					break
 				}
 			}
-			scene.Talk = append(scene.Talk, SceneTalk{From: project(a), To: project(b), Bucket: bucket, NoRule: !hasEdge})
+			scene.Talk = append(scene.Talk, SceneTalk{From: project(a), To: project(b), Bucket: bucket, NoRule: !hasEdge, Voice: talk.Voice})
 		}
 	}
 	for _, e := range g.Edges {
@@ -174,7 +196,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 		scene.Edges = append(scene.Edges, SceneEdge{From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Dashed: e.Kind == "governs"})
 	}
 	for _, c := range comets {
-		comet := SceneComet{Position: project(c.Position)}
+		comet := SceneComet{Position: project(c.Position), Voice: c.Voice}
 		a, b := g.Positions[c.From], g.Positions[c.To]
 		for i := 3; i >= 1; i-- {
 			u := c.Progress - float64(i)*0.035
