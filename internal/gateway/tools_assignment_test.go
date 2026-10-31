@@ -3,10 +3,12 @@ package gateway
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -350,4 +352,57 @@ func TestUninstallPlanShowsOfflineMachinesWithoutObservedCopies(t *testing.T) {
 		}
 	}
 	t.Fatalf("offline machine missing: %+v", p.Targets)
+}
+
+func TestToolApplyRejectsCorruptStoredVersion(t *testing.T) {
+	data := t.TempDir()
+	g, err := New(Options{DataDir: data})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	dir := t.TempDir()
+	if err = os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := inventory.SkillHash(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bundle, err := inventory.PackSkill(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: hash, State: "ok"}
+	if err = g.store.SetInventory("node", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	idBytes, _ := json.Marshal([]string{"skill", "demo", hash})
+	id := string(idBytes)
+	repo, err := g.skillRepository()
+	if err != nil {
+		t.Fatal(err)
+	}
+	version, err := repo.put(id, hash, bundle, "node", "fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: id, Target: protocol.ToolAssignment{Scope: "uninstalled"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := repo.git(nil, "rev-parse", version.Commit+":"+skillPath(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	object := filepath.Join(data, "skills.git", "objects", blob[:2], blob[2:])
+	if err = os.Chmod(object, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(object, []byte("corrupt"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = g.applyTool(context.Background(), p.ID, "owner"); err == nil || !strings.Contains(err.Error(), "plan out of date") {
+		t.Fatalf("corrupt version accepted: %v", err)
+	}
 }

@@ -50,6 +50,14 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	}
 	if kind == protocol.InventorySkill && source == "" {
 		targets = append(targets, protocol.ToolPlanTarget{Action: "import", State: "conflict", Conflict: "skill version has not been imported"})
+	} else if kind == protocol.InventorySkill {
+		repo, e := g.skillRepository()
+		if e != nil {
+			return nil, errors.New("skill repository unavailable")
+		}
+		if _, e = repo.read(item, hash); e != nil {
+			targets = append(targets, protocol.ToolPlanTarget{Source: source, Action: "verify", State: "conflict", Conflict: "stored skill version failed verification"})
+		}
 	}
 	if kind != protocol.InventorySkill {
 		targets = append(targets, protocol.ToolPlanTarget{Action: "manual", State: "conflict", Conflict: "MCP assignment requires federation support"})
