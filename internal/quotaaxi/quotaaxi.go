@@ -173,8 +173,12 @@ func InstalledVersion(path string) (string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	env, err := NodeExecEnv(path)
+	if err != nil {
+		return "", err
+	}
 	cmd := exec.CommandContext(ctx, path, "--version")
-	cmd.Env = ExecEnv(path)
+	cmd.Env = env
 	out, runErr := cmd.Output()
 	var version string
 	var parseErr error
@@ -320,6 +324,12 @@ func logSkipped(path, version string, logf func(format string, args ...any)) {
 // node binary sits next to it, that folder goes first on PATH, so a copy in an
 // nvm or npm folder uses the Node it belongs to.
 func ExecEnv(path string) []string {
+	env, _ := NodeExecEnv(path)
+	return env
+}
+
+// NodeExecEnv finds a supported Node for quota-axi without requiring npm.
+func NodeExecEnv(path string) ([]string, error) {
 	env := os.Environ()
 	dirs := append([]string{filepath.Dir(path)}, nvmBins()...)
 	dirs = append(dirs, "/opt/homebrew/bin", "/usr/local/bin")
@@ -329,10 +339,10 @@ func ExecEnv(path string) []string {
 	for _, dir := range dirs {
 		node := filepath.Join(dir, "node")
 		if usable(node) && nodeVersionOK(node) {
-			return prependPath(env, dir)
+			return prependPath(env, dir), nil
 		}
 	}
-	return env
+	return nil, ErrNeedNode
 }
 
 func prependPath(env []string, dir string) []string {

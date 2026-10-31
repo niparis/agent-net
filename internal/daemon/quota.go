@@ -277,8 +277,12 @@ func readQuotaAXIOnce(ctx context.Context, path string) (*protocol.Quotas, error
 }
 
 func runQuotaAXI(ctx context.Context, path string) ([]byte, []byte, error) {
+	env, err := quotaaxi.NodeExecEnv(path)
+	if err != nil {
+		return nil, nil, err
+	}
 	cmd := exec.CommandContext(ctx, path, quotaArgs...)
-	cmd.Env = quotaaxi.ExecEnv(path)
+	cmd.Env = env
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	// A shell wrapper can leave a child holding stdout after the context kills
@@ -289,6 +293,9 @@ func runQuotaAXI(ctx context.Context, path string) ([]byte, []byte, error) {
 }
 
 func quotaAXIFailure(err error, stderr []byte) error {
+	if errors.Is(err, quotaaxi.ErrNeedNode) {
+		return err
+	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) && exitErr.ExitCode() == 127 && strings.Contains(string(stderr), "node") {
 		return quotaaxi.ErrNeedNode

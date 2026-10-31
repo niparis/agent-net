@@ -374,7 +374,7 @@ func TestVersionReportsMissingNode(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", t.TempDir())
 	path := filepath.Join(t.TempDir(), "quota-axi")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 127\n"), 0755); err != nil {
+	if err := os.WriteFile(path, []byte("#!/bin/sh\necho quota-axi 1.0.0\n"), 0755); err != nil {
 		t.Fatal(err)
 	}
 	_, err := InstalledVersion(path)
