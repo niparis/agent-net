@@ -158,6 +158,96 @@ func TestCTORuntime(t *testing.T) {
 	n.d.mu.Unlock()
 }
 
+func TestCTOAdoptsModelSelectedInOpenCode(t *testing.T) {
+	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	model := "fake/m1"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
+	cli.mustCall("cto_send", map[string]string{"text": "first"})
+
+	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if _, err := n.d.cto.api(context.Background(), "POST", "/api/session/"+rec.SessionID+"/model", map[string]any{"model": map[string]string{"providerID": "fake", "id": "m2"}}); err != nil {
+		t.Fatal(err)
+	}
+	var events protocol.CTOEvents
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &events); err != nil || events.Model != "fake/m2" {
+		t.Fatalf("events did not report the live model: %+v %v", events, err)
+	}
+	cli.mustCall("cto_send", map[string]string{"text": "use my selected model"})
+	var settings protocol.CTOSettings
+	if err := json.Unmarshal(cli.mustCall("cto_settings", nil), &settings); err != nil || settings.Model != "fake/m2" {
+		t.Fatalf("full-screen model was not saved: %+v %v", settings, err)
+	}
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &events); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, action := range events.Actions {
+		if action.Text == "model set to fake/m2 (picked in the full screen)" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("model adoption action missing: %+v", events.Actions)
+	}
+	rec = readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if rec.ModelCalls != 1 {
+		t.Fatalf("adopted model was redundantly set by agent-net: %+v", rec)
+	}
+
+	// An explicit model setting survives a runtime reset even though the
+	// OpenCode session still reports the previous model.
+	model = "fake/m1"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
+	n.d.cto.mu.Lock()
+	n.d.cto.session, n.d.cto.model = "", ""
+	n.d.cto.mu.Unlock()
+	cli.mustCall("cto_send", map[string]string{"text": "use the saved setting"})
+	if err := json.Unmarshal(cli.mustCall("cto_settings", nil), &settings); err != nil || settings.Model != "fake/m1" {
+		t.Fatalf("explicit model setting was replaced: %+v %v", settings, err)
+	}
+	rec = readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if got := rec.SessionBody["model"].(map[string]any)["id"]; got != "m1" {
+		t.Fatalf("explicit model was not applied after restart: %+v", rec.SessionBody)
+	}
+	if rec.ModelCalls != 2 {
+		t.Fatalf("changed saved model was not applied exactly once: %+v", rec)
+	}
+}
+
+func TestCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO(t *testing.T) {
+	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	cli.mustCall("cto_send", map[string]string{"text": "first"})
+	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if rec.AgentCalls != 0 {
+		t.Fatalf("new CTO session was redundantly switched: %+v", rec)
+	}
+	n.d.cto.mu.Lock()
+	n.d.cto.session, n.d.cto.model = "", ""
+	n.d.cto.mu.Unlock()
+	cli.mustCall("cto_send", map[string]string{"text": "after restart"})
+	rec = readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if rec.AgentCalls != 0 {
+		t.Fatalf("already selected CTO agent was switched after restart: %+v", rec)
+	}
+	if _, err := n.d.cto.api(context.Background(), "POST", "/api/session/"+rec.SessionID+"/agent", map[string]string{"agent": "build"}); err != nil {
+		t.Fatal(err)
+	}
+	callsBefore := readFake(t, filepath.Join(n.cfg.StateDir, "cto")).AgentCalls
+	cli.mustCall("cto_send", map[string]string{"text": "restore the CTO agent"})
+	rec = readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if rec.AgentCalls != callsBefore+1 || rec.SessionBody["agent"] != "cto" {
+		t.Fatalf("non-CTO agent was not switched once: %+v", rec)
+	}
+}
+
 func TestCTOMethodsOwnerGate(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")

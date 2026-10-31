@@ -55,8 +55,12 @@ The CTO is not a worker or a network session.
 For OpenCode, the model is resolved against the local inventory. With no
 preference, the daemon tries GPT 6.1, Opus 5.5, then DeepSeek v4 Pro using the
 model resolver. If none is available, it uses the first model in the inventory.
-A changed model takes effect on the next send. OpenCode uses private XDG data,
-state, config and cache directories under `cto` in the daemon state directory.
+If the owner picks another model in OpenCode's full interface, the next send
+saves that live selection as the CTO model setting and records an action line.
+A model changed through the `m` form or `agent-net cto model` takes effect on
+the next send. The CTO box title shows the model in use by the session.
+OpenCode uses private XDG data, state, config and cache directories under `cto`
+in the daemon state directory.
 Its credentials are copied with its auth export and import commands at start.
 The private configuration copies the owner's general OpenCode settings and plugins,
 except the agent-net plugin, and uses only the CTO's agent and MCP server. The

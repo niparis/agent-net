@@ -109,9 +109,9 @@ func (m Model) ctoPollCmd() tea.Cmd {
 			return ctoPollMsg{err: err, generation: generation}
 		}
 		history, err := src.CTOGraphHistory(ctx, events.GraphAfter)
-		model := settings.Model
-		if model == "" && events.Model != "" {
-			model = events.Model
+		model := events.Model
+		if model == "" {
+			model = settings.Model
 		}
 		if model == "" {
 			model = "default"

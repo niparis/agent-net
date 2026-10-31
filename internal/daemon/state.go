@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"cto", "claude_session_id", "claude_session_id TEXT NOT NULL DEFAULT ''"},
 		{"cto", "claude_graph_after", "claude_graph_after INTEGER NOT NULL DEFAULT 0"},
 		{"cto", "active_harness", "active_harness TEXT NOT NULL DEFAULT 'opencode'"},
+		{"cto", "opencode_model", "opencode_model TEXT NOT NULL DEFAULT ''"},
 		{"cto_actions", "harness", "harness TEXT NOT NULL DEFAULT 'opencode'"},
 	} {
 		var has int
