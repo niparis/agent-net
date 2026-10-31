@@ -370,7 +370,7 @@ func TestQuotaModelPicksDemoteRecentFailure(t *testing.T) {
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
 	v := ansi.Strip(m.View())
-	if !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed  ◀ T,S,N,H,V") {
+	if !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed    ◀ T,S,N,H,V") {
 		t.Fatalf("choice ignored failed run:\n%s", v)
 	}
 }
@@ -393,7 +393,7 @@ func TestQuotaModelPicksPreferRecentSuccess(t *testing.T) {
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}, {Name: "b", Harness: "codex", Model: "fake/b"}}
 	m.snap.Nodes[0].RecentModelSuccesses = map[string]map[string]bool{"codex": {"fake/b": true}}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "owner"}, {Match: "fake/b", Score: 51, Source: "owner"}}
-	if v := ansi.Strip(m.View()); !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed  ◀ T,S,N,H,V") {
+	if v := ansi.Strip(m.View()); !strings.Contains(v, "b                  codex    fake/b                     51          E E E E G  0 runs 0 done 0 failed    ◀ T,S,N,H,V") {
 		t.Fatalf("choice ignored success:\n%s", v)
 	}
 }

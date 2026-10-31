@@ -273,6 +273,7 @@ func (m Model) quotaModelsView(w int) []string {
 		usage := fmt.Sprintf("%d runs", r.used)
 		if w >= 100 {
 			usage += " " + sBusy.Render(fmt.Sprintf("%d done", r.done)) + " " + sBad.Render(fmt.Sprintf("%d failed", r.failedRuns))
+			usage = padStyled(usage, 24)
 		}
 		line := fmt.Sprintf("%-*s %-*s %-*s %-11s %s  %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(r.model), modelWidth), cell(score, 11), strings.Join(fits, " "), usage)
 		if w < 100 {
