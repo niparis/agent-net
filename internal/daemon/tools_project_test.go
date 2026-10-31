@@ -378,3 +378,54 @@ func TestProjectIgnoreOverrideLeavesExcludeUnchanged(t *testing.T) {
 		t.Fatalf("exclude changed: %q %v", after, err)
 	}
 }
+
+func TestProjectExcludeParentSymlinkRefused(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q")
+	info := filepath.Join(checkout, ".git/info")
+	if err := os.Remove(filepath.Join(info, "exclude")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(info); err != nil {
+		t.Fatal(err)
+	}
+	foreign := t.TempDir()
+	exclude := filepath.Join(foreign, "exclude")
+	if err := os.WriteFile(exclude, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(foreign, info); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.copyProjectSkill(target, bundle); r.State == "applied" {
+		t.Fatalf("accepted symlink: %+v", r)
+	}
+	if b, err := os.ReadFile(exclude); err != nil || len(b) != 0 {
+		t.Fatalf("modified symlink target: %q %v", b, err)
+	}
+	if _, err := os.Stat(exclude + ".agent-net.lock"); !os.IsNotExist(err) {
+		t.Fatalf("created lock through symlink: %v", err)
+	}
+}
+
+func TestProjectGitWorktreeSymlinkRefused(t *testing.T) {
+	d, target, bundle := projectFixture(t)
+	checkout := target.Target.Checkout
+	gitIn(t, checkout, "init", "-q", "-b", "main")
+	gitIn(t, checkout, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "--allow-empty", "-qm", "initial")
+	other := filepath.Join(t.TempDir(), "other")
+	gitIn(t, checkout, "worktree", "add", "-qb", "other", other)
+	link := filepath.Join(checkout, ".git/worktrees")
+	moved := filepath.Join(t.TempDir(), "moved")
+	if err := os.Rename(link, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(moved, link); err != nil {
+		t.Fatal(err)
+	}
+	target.Target.Checkout = other
+	if r := d.copyProjectSkill(target, bundle); r.State == "applied" {
+		t.Fatalf("accepted symlinked Git metadata: %+v", r)
+	}
+}

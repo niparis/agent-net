@@ -130,8 +130,26 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 	if err != nil {
 		return fail("failed", "cannot inspect Git worktree")
 	}
-	gitDir := strings.TrimSpace(string(gitDirBytes))
-	indexLock := filepath.Join(gitDir, "index.lock")
+	gitDir := filepath.Clean(strings.TrimSpace(string(gitDirBytes)))
+	commonBytes, e := projectGit(checkout, "rev-parse", "--git-common-dir")
+	if e != nil {
+		return fail("failed", "cannot locate common Git directory")
+	}
+	common := strings.TrimSpace(string(commonBytes))
+	if !filepath.IsAbs(common) {
+		common = filepath.Join(checkout, common)
+	}
+	common = filepath.Clean(common)
+	gitRel, e := filepath.Rel(common, gitDir)
+	if e != nil || gitRel == ".." || strings.HasPrefix(gitRel, ".."+string(os.PathSeparator)) {
+		return fail("conflict", "Git worktree directory is unsafe")
+	}
+	gitRoot, closeGit, e := openSkillRoot(common, gitRel)
+	if e != nil {
+		return fail("conflict", "Git worktree directory is unsafe")
+	}
+	defer closeGit()
+	indexLock := filepath.Join(gitRoot, "index.lock")
 	f, err := os.OpenFile(indexLock, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return fail("pending", "Git index is locked")
@@ -182,13 +200,28 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 		exclude = filepath.Join(checkout, exclude)
 	}
 	exclude = filepath.Clean(exclude)
-	unlock, err := lockSkillExclude(exclude)
+	// Anchor all exclude access in the actual common Git directory. Never
+	// traverse a replaced or symlinked info directory while writing.
+	if exclude != filepath.Join(common, "info", "exclude") {
+		return fail("conflict", "Git exclude path is not supported")
+	}
+	info, e := os.Lstat(filepath.Join(common, "info"))
+	if e != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return fail("conflict", "Git exclude directory is unsafe")
+	}
+	anchored, closeInfo, e := openSkillRoot(common, "info")
+	if e != nil {
+		return fail("conflict", "Git exclude directory is unsafe")
+	}
+	defer closeInfo()
+	safeExclude := filepath.Join(anchored, "exclude")
+	unlock, err := lockSkillExclude(safeExclude)
 	if err != nil {
 		return fail("pending", "cannot lock Git exclude")
 	}
 	defer unlock()
 	pattern := projectExcludePattern(rel)
-	before, err := readSkillExclude(exclude)
+	before, err := readSkillExclude(safeExclude)
 	if err != nil {
 		return fail("pending", "cannot read Git exclude")
 	}
@@ -237,7 +270,7 @@ func (d *Daemon) copyProjectSkill(t protocol.ToolTarget, bundle []byte) protocol
 		if len(before) > 0 && before[len(before)-1] != '\n' {
 			addition = append([]byte("\n"), addition...)
 		}
-		if err = appendSkillExclude(exclude, addition); err != nil {
+		if err = appendSkillExclude(safeExclude, addition); err != nil {
 			return fail("pending", "cannot update Git exclude")
 		}
 	}
