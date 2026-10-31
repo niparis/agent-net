@@ -19,15 +19,9 @@ func (d *Daemon) integrationsClient() (integrations.Client, bool) {
 	if d.cfg.GatewayURL == "" || d.cfg.Token == "" {
 		return integrations.Client{}, false
 	}
-	c := integrations.Client{URL: d.cfg.GatewayURL, Token: d.cfg.Token, HTTP: d.client}
-	if len(d.cfg.CAPEM) > 0 {
-		hc, err := PinnedClient(d.cfg.CAPEM)
-		if err != nil {
-			return integrations.Client{}, false
-		}
-		c.HTTP = hc
-	}
-	return c, true
+	// d.client already trusts only the gateway CA. Building a new pinned
+	// client here on every call leaked one idle connection per call.
+	return integrations.Client{URL: d.cfg.GatewayURL, Token: d.cfg.Token, HTTP: d.client}, true
 }
 
 func (d *Daemon) integrationsLoop(ctx context.Context) {

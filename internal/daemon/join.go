@@ -190,8 +190,11 @@ func PinnedClient(caPEM []byte) (*http.Client, error) {
 		return nil, errors.New("bad CA certificate")
 	}
 	return &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}},
+		Timeout: 15 * time.Second,
+		// An idle timeout, so a client that is dropped does not hold its
+		// connection to the gateway open forever.
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12},
+			IdleConnTimeout: 90 * time.Second, MaxIdleConnsPerHost: 4},
 	}, nil
 }
 
