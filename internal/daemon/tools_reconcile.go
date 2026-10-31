@@ -13,11 +13,14 @@ import (
 )
 
 type skillManifestEntry struct {
-	Item     string `json:"item"`
-	Path     string `json:"path"`
-	Hash     string `json:"hash"`
-	Revision int64  `json:"revision"`
-	Owned    bool   `json:"owned"`
+	Item         string `json:"item"`
+	Path         string `json:"path"`
+	Hash         string `json:"hash"`
+	Revision     int64  `json:"revision"`
+	Owned        bool   `json:"owned"`
+	Exclude      string `json:"exclude,omitempty"`
+	ExcludeLine  string `json:"exclude_line,omitempty"`
+	ExcludeOwned bool   `json:"exclude_owned,omitempty"`
 }
 
 func (d *Daemon) recordSkill(t protocol.ToolTarget, dest string, owned bool) error {
@@ -35,15 +38,18 @@ func (d *Daemon) recordSkill(t protocol.ToolTarget, dest string, owned bool) err
 	for i := range entries {
 		if entries[i].Path == dest {
 			if entries[i].Item == t.Revision.Item && entries[i].Owned {
-				owned = true
+				if info, err := os.Lstat(dest); err == nil && info.IsDir() {
+					owned = true
+				}
 			}
-			entries[i] = skillManifestEntry{t.Revision.Item, dest, t.Revision.Version, t.Revision.Revision, owned}
+			previous := entries[i]
+			entries[i] = skillManifestEntry{Item: t.Revision.Item, Path: dest, Hash: t.Revision.Version, Revision: t.Revision.Revision, Owned: owned, Exclude: previous.Exclude, ExcludeLine: previous.ExcludeLine, ExcludeOwned: previous.ExcludeOwned}
 			found = true
 			break
 		}
 	}
 	if !found {
-		entries = append(entries, skillManifestEntry{t.Revision.Item, dest, t.Revision.Version, t.Revision.Revision, owned})
+		entries = append(entries, skillManifestEntry{Item: t.Revision.Item, Path: dest, Hash: t.Revision.Version, Revision: t.Revision.Revision, Owned: owned})
 	}
 	b, err = json.Marshal(entries)
 	if err != nil {
@@ -79,13 +85,7 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 	if t.Target.Conflict != "" && t.Target.Conflict != "destination already exists and is not owned" && t.Target.Conflict != "machine offline; destination cannot be inspected" {
 		return fail("conflict", "plan target requires inspection")
 	}
-	if t.Name == "" || t.Name == "." || t.Name == ".." || filepath.Base(t.Name) != t.Name || strings.ContainsAny(t.Name, "/\\\x00") {
-		return fail("conflict", "invalid skill name")
-	}
 	root := d.cfg.InventoryHome
-	if root == "" || !filepath.IsAbs(root) || d.cfg.StateDir == "" {
-		return fail("failed", "local directories unavailable")
-	}
 	var rel string
 	switch t.Target.Harness {
 	case "claude":
@@ -98,6 +98,20 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 		rel = ".pi/agent/skills"
 	default:
 		return fail("manual", "unsupported harness")
+	}
+	return d.copySkillAt(t, bundle, root, rel)
+}
+
+// copySkillAt stages and installs a verified bundle under the given root.
+// Callers must verify that the root and destination are authorized.
+func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel string) protocol.ToolResult {
+	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index}
+	fail := func(state, reason string) protocol.ToolResult { r.State = state; r.Reason = reason; return r }
+	if t.Name == "" || t.Name == "." || t.Name == ".." || filepath.Base(t.Name) != t.Name || strings.ContainsAny(t.Name, "/\\\x00") {
+		return fail("conflict", "invalid skill name")
+	}
+	if root == "" || !filepath.IsAbs(root) || d.cfg.StateDir == "" {
+		return fail("failed", "local directories unavailable")
 	}
 	cur, closeRoot, err := openSkillRoot(root, rel)
 	if err != nil {
@@ -151,6 +165,23 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 	if json.Unmarshal(raw, &targets) != nil {
 		return
 	}
+	projectConflicts := projectTargets(targets)
+	projects := map[string]bool{}
+	projectsReady := false
+	if raw, e := d.call(ctx, "query.projects", struct{}{}); e == nil {
+		var result protocol.ProjectsResult
+		if json.Unmarshal(raw, &result) == nil {
+			projectsReady = true
+			for _, p := range result.Projects {
+				if p.NodeID == d.cfg.NodeID && (p.Source == protocol.SourceRegistered || p.Source == protocol.SourceBoth) {
+					projects[p.Name+"\x00"+filepath.Clean(p.Path)] = true
+					for _, wt := range p.Worktrees {
+						projects[p.Name+"\x00"+filepath.Clean(wt)] = true
+					}
+				}
+			}
+		}
+	}
 	blocked := map[string]bool{}
 	for _, t := range targets {
 		if t.Target.Action == "inspect" && t.Target.Conflict != "" {
@@ -162,7 +193,15 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 		if blocked[t.Revision.Item] {
 			result.State = "conflict"
 			result.Reason = "plan requires inspection"
-		} else if t.Revision.Assignment.Scope == "global" && t.Target.Action == "copy" && t.Target.Checkout == "" {
+		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && !projectsReady {
+			result.Reason = "project registry unavailable"
+		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && !projects[t.Target.Project+"\x00"+filepath.Clean(t.Target.Checkout)] {
+			result.State = "conflict"
+			result.Reason = "checkout is no longer registered"
+		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout] != "" {
+			result.State = "conflict"
+			result.Reason = projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout]
+		} else if t.Target.Action == "copy" && ((t.Revision.Assignment.Scope == "global" && t.Target.Checkout == "") || (t.Revision.Assignment.Scope == "projects" && t.Target.Checkout != "")) {
 			raw, err = d.call(ctx, "tools.export", protocol.ToolVersionRequest{Item: t.Revision.Item, Version: t.Revision.Version})
 			if err != nil {
 				result.State = "failed"
@@ -173,7 +212,21 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 					result.State = "failed"
 					result.Reason = "invalid stored bundle"
 				} else {
-					result = d.copyGlobalSkill(t, b.Data)
+					if t.Revision.Assignment.Scope == "projects" {
+						if t.Target.Destination == "" {
+							var names []string
+							for _, v := range targets {
+								if v.Revision.Item == t.Revision.Item && v.Target.Checkout == t.Target.Checkout && v.Target.Action == "copy" {
+									names = append(names, v.Target.Harness)
+								}
+							}
+							root, _ := inventory.ProjectSkillRoot(t.Target.Harness, names)
+							t.Target.Destination = filepath.Join(t.Target.Checkout, root, t.Name)
+						}
+						result = d.copyProjectSkill(t, b.Data)
+					} else {
+						result = d.copyGlobalSkill(t, b.Data)
+					}
 				}
 			}
 		}

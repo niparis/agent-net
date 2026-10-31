@@ -452,7 +452,7 @@ targets and result. Charter needs are untrusted advisory text, not authorization
 or assignment. Plan and audit records may include machine and filesystem paths;
 they do not include skill contents or native MCP credential values.
 
-### Global skill copies
+### Skill copies
 
 For an owner-applied global assignment, the daemon fetches the stored bundle and
 checks its content hash before installation. It stages the copy beside the
@@ -460,4 +460,10 @@ destination and uses an atomic no-replace rename. It refuses a different
 existing destination and refuses symlinked destination parents. The local
 owner-only skill manifest records the path, hash, revision and whether the
 daemon created the directory. Matching pre-existing directories are recorded
-as not owned. Project copies and removals are not yet performed.
+as not owned. For projects, the daemon checks the registered checkout, Git's
+tracked paths and ignore rules before installing. It locks the local Git
+exclude file and records its exact owned exclusion lines in the manifest;
+linked worktrees share the line. Symlinked exclusion files are refused. Git
+index files and `.gitignore` are not changed. Non-Git checkouts stay pending.
+The daemon refuses compatibility roots that would expose duplicate copies or
+shadow a skill. Removals are not yet performed.

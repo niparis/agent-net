@@ -220,6 +220,9 @@ type ToolResult struct {
 	Revision int64  `json:"revision"`
 	Index    int    `json:"index"`
 	NodeID   string `json:"node_id,omitempty"`
+	Harness  string `json:"harness,omitempty"`
+	Project  string `json:"project,omitempty"`
+	Checkout string `json:"checkout,omitempty"`
 	State    string `json:"state"`
 	Reason   string `json:"reason,omitempty"`
 }

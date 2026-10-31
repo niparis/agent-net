@@ -551,7 +551,17 @@ daemon pulls its own targets again after reconnecting and on the regular scan
 interval. For global skills it fetches the stored version, verifies its hash
 and installs a missing destination using a temporary directory beside it and an
 atomic no-replace rename. A different existing destination is a conflict.
-Project copies and removals remain pending; applying does not remove files.
+For project assignments it also copies into registered Git checkouts. The plan
+uses shared compatibility roots where harnesses can read the same copy. A
+combination that would expose the name twice, or an existing shadowing source,
+is a conflict. Non-Git checkouts stay pending until the owner chooses an ignore
+mechanism. Removals remain pending; applying does not remove files.
+
+Before a project copy, the daemon checks for tracked files and Git ignore rules.
+It locks and adds the exact managed directory to the path returned by
+`git rev-parse --git-path info/exclude`. Linked worktrees can share that file;
+the daemon records references to the shared line in its manifest. It does not
+change `.gitignore` or the Git index. Matching foreign copies are left alone.
 
 Daemons report each target as applied, pending, conflict, manual or failed.
 `tools_items` and `tools_item` show the desired revision and reported results.
