@@ -546,8 +546,19 @@ unmanaged destination are conflicts. Review the plan before applying it.
 
 `tools_apply` takes `plan_id`. It refuses an out-of-date plan if its inventory,
 registered projects, item version, assignments or inspected paths have changed.
-Applying records a new desired revision and does not copy or remove files.
-`tools_items` and the CLI show desired state separately from pending application.
+Applying records a new desired revision and nudges connected daemons. Each
+daemon pulls its own targets again after reconnecting and on the regular scan
+interval. For global skills it fetches the stored version, verifies its hash
+and installs a missing destination using a temporary directory beside it and an
+atomic no-replace rename. A different existing destination is a conflict.
+Project copies and removals remain pending; applying does not remove files.
+
+Daemons report each target as applied, pending, conflict, manual or failed.
+`tools_items` and `tools_item` show the desired revision and reported results.
+A missing report stays pending, including while a machine is offline. The
+daemon records installed paths, hashes and revisions in its owner-only
+`skill-manifest.json` in the daemon state directory. Uninstall removes this
+manifest but does not remove installed skills.
 A stored item with no remaining observed locations stays listed as `unobserved`.
 `tools_history` takes `item` and returns plans and apply attempts with their
 actors, targets and results. These methods require an owner connection.

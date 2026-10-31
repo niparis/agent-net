@@ -84,6 +84,9 @@ func TestCopyGlobalSkillRejectsSymlinkParentAndBadBundle(t *testing.T) {
 
 func TestGlobalSkillReconcilesThroughGateway(t *testing.T) {
 	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
 	source := filepath.Join(home, ".claude", "skills", "demo")
 	if err := os.MkdirAll(source, 0700); err != nil {
 		t.Fatal(err)
