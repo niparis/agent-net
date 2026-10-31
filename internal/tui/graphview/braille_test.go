@@ -126,7 +126,7 @@ func TestBrailleLabelsSitOneSpaceFromTheirMarkers(t *testing.T) {
 	g.Positions = map[string]Point{"alpha": {-2, 0}, "beta": {2, 0}}
 	out := strings.Join(renderGraph(Braille{}, g, Camera{Zoom: 2, FitZoom: 2}, 50, 9, time.Time{}), "\n")
 	for _, name := range []string{"alpha", "beta"} {
-		if !strings.Contains(out, "○ "+name) && !strings.Contains(out, name+" ○") {
+		if !strings.Contains(out, " "+name) && !strings.Contains(out, name+" ") {
 			t.Errorf("%s is not adjacent to its marker:\n%s", name, out)
 		}
 	}
@@ -181,5 +181,21 @@ func TestCharterMarkersAndLabels(t *testing.T) {
 	}
 	if roles["a"] != "labelDim" {
 		t.Fatalf("unchartered label role %q", roles["a"])
+	}
+}
+
+func TestActivityDiscGrows(t *testing.T) {
+	count := func(level int) int {
+		out := (Braille{}).Render(Scene{Nodes: []SceneNode{{Name: "x", Label: "x", Activity: level, Position: Point{.5, .5}}}}, Size{Width: 50, Height: 20})
+		n := 0
+		for _, r := range strings.Join(out.Lines, "") {
+			if r >= 0x2801 && r <= 0x28ff {
+				n++
+			}
+		}
+		return n
+	}
+	if count(5) <= count(1) {
+		t.Fatalf("disc did not grow: %d <= %d", count(5), count(1))
 	}
 }

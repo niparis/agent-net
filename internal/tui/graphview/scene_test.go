@@ -86,3 +86,16 @@ func TestTalkSceneBucketsAndToggle(t *testing.T) {
 		t.Fatal("toggle did not hide talk")
 	}
 }
+
+func TestActivityLevelsUseVisibleNodeQuantiles(t *testing.T) {
+	g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}, {Name: "e"}, {Name: "f"}}})
+	g.Positions = map[string]Point{"a": {-5, 0}, "b": {-3, 0}, "c": {-1, 0}, "d": {1, 0}, "e": {3, 0}, "f": {5, 0}}
+	s := State{Graph: g, Camera: Camera{Zoom: 1, FitZoom: 1}, Talk: []protocol.GraphTalkCount{{From: "b", To: "x", Count: 1}, {From: "c", To: "x", Count: 2}, {From: "d", To: "x", Count: 3}, {From: "e", To: "x", Count: 4}, {From: "f", To: "x", Count: 5}}}
+	scene := BuildScene(s, Viewport{80, 20})
+	for i, n := range scene.Nodes {
+		want := max(1, i)
+		if n.Activity != want {
+			t.Errorf("%s level %d want %d", n.Name, n.Activity, want)
+		}
+	}
+}

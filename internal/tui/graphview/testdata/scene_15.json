@@ -1,6 +1,7 @@
 {
   "Nodes": [
     {
+      "Activity": 1,
       "Name": "architect",
       "Label": "architect",
       "Role": "architect",
@@ -26,6 +27,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-01",
       "Label": "project-01",
       "Role": "busy",
@@ -51,6 +53,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-02",
       "Label": "project-02",
       "Role": "idle",
@@ -76,6 +79,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-03",
       "Label": "project-03",
       "Role": "idle",
@@ -101,6 +105,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-04",
       "Label": "project-04",
       "Role": "idle",
@@ -126,6 +131,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-05",
       "Label": "project-05",
       "Role": "idle",
@@ -151,6 +157,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-06",
       "Label": "project-06",
       "Role": "none",
@@ -176,6 +183,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-07",
       "Label": "project-07",
       "Role": "none",
@@ -201,6 +209,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-08",
       "Label": "project-08",
       "Role": "none",
@@ -226,6 +235,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-09",
       "Label": "project-09",
       "Role": "none",
@@ -251,6 +261,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-10",
       "Label": "project-10",
       "Role": "none",
@@ -276,6 +287,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-11",
       "Label": "project-11",
       "Role": "none",
@@ -301,6 +313,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-12",
       "Label": "project-12",
       "Role": "none",
@@ -326,6 +339,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-13",
       "Label": "project-13",
       "Role": "none",
@@ -351,6 +365,7 @@
       }
     },
     {
+      "Activity": 1,
       "Name": "project-14",
       "Label": "project-14",
       "Role": "none",

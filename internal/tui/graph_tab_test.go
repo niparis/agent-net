@@ -248,7 +248,7 @@ func TestGraphMouseSelectsLabelAndIgnoresEmpty(t *testing.T) {
 	var cell graphview.Cell
 	target := ""
 	for p, id := range out.Hits {
-		if id != m.graphState.Graph.Selected() && []rune(out.Lines[p.Y])[p.X] != '●' && []rune(out.Lines[p.Y])[p.X] != '○' && []rune(out.Lines[p.Y])[p.X] != '◆' {
+		if id != m.graphState.Graph.Selected() && strings.ContainsRune("abcdefghijklmnopqrstuvwxyz0123456789", []rune(out.Lines[p.Y])[p.X]) {
 			cell, target = p, id
 			break
 		}

@@ -3,11 +3,13 @@ package graphview
 import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"math"
+	"sort"
 )
 
 // Viewport describes the shape of a view in abstract units.
 type Viewport struct{ Width, Height float64 }
 type SceneNode struct {
+	Activity                                  int
 	Name, Label, Role, PreferredSide          string
 	Position                                  Point
 	Selected, Flashing, Wildcard              bool
@@ -113,6 +115,28 @@ func BuildScene(s State, viewport Viewport) Scene {
 			}
 		}
 		scene.Nodes = append(scene.Nodes, node)
+	}
+	counts := map[string]int{}
+	for _, t := range s.Talk {
+		if t.Count > 0 {
+			counts[t.From] += t.Count
+			counts[t.To] += t.Count
+		}
+	}
+	var values []int
+	for _, n := range scene.Nodes {
+		if n.Position.X >= 0 && n.Position.X < 1 && n.Position.Y >= 0 && n.Position.Y < 1 && counts[n.Name] > 0 {
+			values = append(values, counts[n.Name])
+		}
+	}
+	sort.Ints(values)
+	for i := range scene.Nodes {
+		count := counts[scene.Nodes[i].Name]
+		scene.Nodes[i].Activity = 1
+		if count > 0 && len(values) > 1 {
+			rank := sort.SearchInts(values, count)
+			scene.Nodes[i].Activity = 1 + rank*4/(len(values)-1)
+		}
 	}
 	if !s.HideTalk {
 		for _, talk := range s.Talk {

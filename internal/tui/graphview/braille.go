@@ -165,14 +165,45 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			hits[Cell{x / 2, y / 4}] = n.Name
 		}
 	}
+	// Reserve each disc's cells before labels are placed. Earlier discs win
+	// where nodes overlap, and marker cells always remain visible.
+	for _, n := range scene.Nodes {
+		x, y := point(n.Position)
+		radius := max(1, min(n.Activity, 5)) * 2
+		touched := map[Cell]bool{}
+		for dy := -radius * 2; dy <= radius*2; dy++ {
+			for dx := -radius; dx <= radius; dx++ {
+				if dx*dx*4+dy*dy > radius*radius*4 {
+					continue
+				}
+				px, py := x+dx, y+dy
+				if px < 0 || py < 0 || px >= width*2 || py >= height*4 {
+					continue
+				}
+				c := Cell{px / 2, py / 4}
+				if cells[c.Y*width+c.X].occupied {
+					continue
+				}
+				dot(px, py, "node")
+				touched[c] = true
+			}
+		}
+		for c := range touched {
+			cell := &cells[c.Y*width+c.X]
+			cell.text = rune(0x2800 + int(cell.dots))
+			cell.occupied = true
+			hits[c] = n.Name
+		}
+	}
 	for _, n := range scene.Nodes {
 		if !n.Selected {
 			continue
 		}
 		x, y := point(n.Position)
 		cx, cy := x/2, y/4
-		if !put(cx-1, cy, '▸', "selected") {
-			put(cx, cy-1, '▾', "selected")
+		r := max(1, min(n.Activity, 5))
+		if !put(cx-r-1, cy, '▸', "selected") {
+			put(cx, cy-(r+1)/2-1, '▾', "selected")
 		}
 	}
 
@@ -191,7 +222,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			labelRole = "label"
 		}
 		rs := []rune(label)
-		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
+		radiusX := max(1, min(n.Activity, 5)) + 1
+		radiusY := (max(1, min(n.Activity, 5))+1)/2 + 1
+		candidates := [][2]int{{cx + radiusX + 1, cy}, {cx - len(rs) - radiusX, cy}, {cx - len(rs)/2, cy - radiusY - 1}, {cx - len(rs)/2, cy + radiusY + 1}}
 		placed := false
 		labelX, labelY := 0, 0
 		for _, pos := range candidates {
@@ -216,9 +249,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			// Keep the cell between a marker and a label on its row blank,
 			// even when an edge or arrow passes through it.
 			if pos[1] == cy {
-				gap := cx + 1
+				gap := pos[0] - 1
 				if pos[0] < cx {
-					gap = cx - 1
+					gap = pos[0] + len(rs)
 				}
 				if gap >= 0 && gap < width {
 					cells[cy*width+gap] = cell{text: ' ', role: "label", occupied: true}
@@ -231,7 +264,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if !placed {
 			for length := len(rs) - 1; length >= 2 && !placed; length-- {
 				short := append(append([]rune(nil), rs[:length-1]...), '…')
-				for _, pos := range [][2]int{{cx + 1, cy}, {cx - length, cy}, {cx - length/2, cy - 1}, {cx - length/2, cy + 1}} {
+				for _, pos := range [][2]int{{cx + radiusX + 1, cy}, {cx - length - radiusX, cy}, {cx - length/2, cy - radiusY - 1}, {cx - length/2, cy + radiusY + 1}} {
 					if pos[0] < 0 || pos[1] < 0 || pos[0]+length > width || pos[1] >= height {
 						continue
 					}
