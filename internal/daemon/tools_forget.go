@@ -129,7 +129,12 @@ func removeOwnedExclude(path, line string) error {
 	if count != 1 {
 		return nil
 	}
-	after := bytes.Replace(before, []byte(line+"\n"), nil, 1)
+	var after []byte
+	for _, entry := range lines {
+		if !bytes.Equal(entry, []byte(line+"\n")) {
+			after = append(after, entry...)
+		}
+	}
 	f, err := os.CreateTemp(root, ".agent-net-exclude-")
 	if err != nil {
 		return err

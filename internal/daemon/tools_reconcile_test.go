@@ -395,3 +395,27 @@ func TestRemoveSkillRefusesMixedSystemObservation(t *testing.T) {
 		t.Fatalf("system source: %+v", r)
 	}
 }
+
+func TestRemoveOwnedExcludeKeepsSimilarLines(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(home, "state"))
+	dir := filepath.Join(home, ".git", "info")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "exclude")
+	line := "/.agents/skills/demo/"
+	if err := os.WriteFile(path, []byte("# "+line+"\nkeep\n"+line+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeOwnedExclude(path, line); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "# "+line+"\nkeep\n" {
+		t.Fatalf("changed another line: %q", b)
+	}
+}
