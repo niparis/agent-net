@@ -8,7 +8,8 @@ import (
 	"path/filepath"
 )
 
-// RemoveSkillState releases owned exclude lines and deletes local skill backups.
+// RemoveSkillState releases owned exclude lines and deletes local skill backups
+// and the operation journal.
 // Call only after the daemon has stopped.
 func RemoveSkillState(state string) error {
 	manifest := filepath.Join(state, "skill-manifest.json")
@@ -30,6 +31,9 @@ func RemoveSkillState(state string) error {
 		if err = os.Remove(manifest); err != nil && !os.IsNotExist(err) {
 			return err
 		}
+	}
+	if err = os.RemoveAll(filepath.Join(state, "skill-journal")); err != nil {
+		return err
 	}
 	return os.RemoveAll(filepath.Join(state, "skill-backups"))
 }

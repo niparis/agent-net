@@ -175,6 +175,7 @@ type Daemon struct {
 	toolsMu          sync.Mutex
 	toolsReport      protocol.InventoryReport
 	toolsWake        chan struct{}
+	skillConflicts   map[string]string
 	toolsPlanKeyOnce sync.Once
 	toolsPlanKey     [32]byte
 	toolsPlanKeyErr  error

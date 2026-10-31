@@ -594,3 +594,23 @@ func TestPurgeRemovesWorktreeClaudeTrust(t *testing.T) {
 		t.Fatalf("trust after purge: %s", raw)
 	}
 }
+
+func TestUninstallRemovesSkillJournal(t *testing.T) {
+	f := newFixture(t)
+	state := filepath.Join(f.home, "state")
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	journal := filepath.Join(state, "skill-journal")
+	if err := os.MkdirAll(journal, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(journal, ".journal-id-1.json"), []byte(`{"operation":"remove"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	if err := Uninstall(Options{Out: &out, NoService: true}); err != nil {
+		t.Fatalf("uninstall: %v %s", err, out.String())
+	}
+	if _, err := os.Stat(journal); !os.IsNotExist(err) {
+		t.Fatalf("journal remains: %v", err)
+	}
+}

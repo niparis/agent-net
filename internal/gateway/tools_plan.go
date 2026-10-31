@@ -244,7 +244,8 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	return g.store.saveToolPlan(p.Item, a, targets, actor, snap)
 }
 
-func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.ToolRevision, err error) {
+func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol.ToolApplyResult, err error) {
+	var r protocol.ToolRevision
 	checked := false
 	defer func() {
 		if err != nil && !checked && (actor == "owner" || actor == "cto") {
@@ -255,50 +256,88 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 	}()
 	var raw, snapshot string
 	if err = g.store.db.QueryRow(`SELECT plan,snapshot FROM tool_plans WHERE id=?`, id).Scan(&raw, &snapshot); err != nil {
-		return r, errors.New("plan not found")
+		return out, errors.New("plan not found")
 	}
 	failed, e := g.refreshToolObservations(ctx)
 	if e != nil {
-		return r, e
+		return out, e
 	}
 	current, e := g.store.ToolSnapshot()
 	if e != nil {
-		return r, e
+		return out, e
 	}
 	if snapshot != current {
-		return r, errors.New("plan out of date")
+		return out, errors.New("plan out of date")
 	}
 	var p protocol.ToolPlan
 	if json.Unmarshal([]byte(raw), &p) != nil {
-		return r, errors.New("invalid plan")
+		return out, errors.New("invalid plan")
 	}
 	targets, e := g.toolTargets(ctx, p.Item, p.Assignment, failed)
 	if e != nil {
 		if e.Error() == "tool item not found" {
-			return r, errors.New("plan out of date")
+			return out, errors.New("plan out of date")
 		}
-		return r, e
+		return out, e
 	}
 	if !reflect.DeepEqual(targets, p.Targets) {
-		return r, errors.New("plan out of date")
+		return out, errors.New("plan out of date")
 	}
 	checked = true
 	r, err = g.store.ApplyToolPlan(id, actor)
 	if err == nil {
-		frame, e := protocol.EncodeRequest("node.tools_changed", protocol.NewID("d"), struct{}{})
-		if e == nil {
-			seen := map[string]bool{}
-			for _, t := range p.Targets {
-				if !seen[t.NodeID] {
-					seen[t.NodeID] = true
-					if c := g.conn(t.NodeID); c != nil {
-						_ = c.write(ctx, frame)
-					}
-				}
+		g.notifyToolNodes(ctx, p.Targets)
+		out = g.toolOutcome(ctx, r, p.Targets)
+	}
+	return out, err
+}
+
+// toolOutcome builds the per-target answer. It waits briefly for connected
+// machines to report, so a fast local apply shows its real result. Machines
+// that are offline or slow stay pending.
+func (g *Gateway) toolOutcome(ctx context.Context, r protocol.ToolRevision, targets []protocol.ToolPlanTarget) protocol.ToolApplyResult {
+	deadline := time.Now().Add(toolOutcomeWait)
+	for {
+		out, waiting := g.store.toolOutcomes(r, targets, func(node string) bool { return g.conn(node) != nil })
+		if !waiting || time.Now().After(deadline) || ctx.Err() != nil {
+			return out
+		}
+		select {
+		case <-ctx.Done():
+			return out
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// toolOutcomeWait bounds how long apply and undo wait for machine results.
+const toolOutcomeWait = 3 * time.Second
+
+// notifyToolNodes wakes every connected node that owns a target.
+func (g *Gateway) notifyToolNodes(ctx context.Context, targets []protocol.ToolPlanTarget) {
+	frame, e := protocol.EncodeRequest("node.tools_changed", protocol.NewID("d"), struct{}{})
+	if e != nil {
+		return
+	}
+	seen := map[string]bool{}
+	for _, t := range targets {
+		if !seen[t.NodeID] {
+			seen[t.NodeID] = true
+			if c := g.conn(t.NodeID); c != nil {
+				_ = c.write(ctx, frame)
 			}
 		}
 	}
-	return r, err
+}
+
+// undoTool reverses the item's newest revision as a new audited revision.
+func (g *Gateway) undoTool(ctx context.Context, item, actor string) (protocol.ToolApplyResult, error) {
+	r, p, err := g.store.UndoTool(item, actor)
+	if err != nil {
+		return protocol.ToolApplyResult{}, err
+	}
+	g.notifyToolNodes(ctx, p.Targets)
+	return g.toolOutcome(ctx, r, p.Targets), nil
 }
 
 func (g *Gateway) validToolOwner(nc *nodeConn, id string) bool {

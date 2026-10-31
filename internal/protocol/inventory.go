@@ -162,10 +162,40 @@ type ToolPlan struct {
 	State        string           `json:"state"`
 	Actor        string           `json:"actor"`
 	At           int64            `json:"at"`
+	// UndoOf is the revision that this plan reverses. It is zero for a plan
+	// that the owner proposed.
+	UndoOf int64 `json:"undo_of,omitempty"`
 }
 type ToolPlanRequest struct {
 	Item   string         `json:"item"`
 	Target ToolAssignment `json:"target"`
+}
+
+// ToolTargetOutcome is one target's result in an apply or undo answer. State is
+// ok, pending, conflict or failed. Reason says why when it is not ok.
+type ToolTargetOutcome struct {
+	NodeID      string `json:"node_id"`
+	Machine     string `json:"machine"`
+	Harness     string `json:"harness,omitempty"`
+	Project     string `json:"project,omitempty"`
+	Checkout    string `json:"checkout,omitempty"`
+	Source      string `json:"source,omitempty"`
+	Destination string `json:"destination,omitempty"`
+	Action      string `json:"action"`
+	State       string `json:"state"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// ToolApplyResult answers tools_apply and tools_undo: the new revision and
+// what each target reported when the answer was built.
+type ToolApplyResult struct {
+	ToolRevision
+	Targets []ToolTargetOutcome `json:"targets"`
+}
+
+// ToolUndoRequest asks to reverse an item's newest applied revision.
+type ToolUndoRequest struct {
+	Item string `json:"item"`
 }
 type ToolPlanID struct {
 	ID string `json:"plan_id"`
@@ -194,6 +224,13 @@ type ToolAuditEvent struct {
 	Targets  []ToolPlanTarget `json:"targets"`
 	Result   string           `json:"result"`
 	At       int64            `json:"at"`
+}
+
+// ToolBackup describes one local backup of an item. It never carries content.
+type ToolBackup struct {
+	Time   int64  `json:"time"`
+	Size   int64  `json:"size"`
+	Source string `json:"source"`
 }
 type ToolHistoryRequest struct {
 	Item string `json:"item"`

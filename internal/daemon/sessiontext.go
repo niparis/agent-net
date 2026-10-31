@@ -32,7 +32,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_history": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
+	"inventory_scan": true, "inventory_get": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
@@ -238,6 +238,20 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}{p, actor, d.ownerSessionID()})
+	case "tools_undo":
+		actor := "owner"
+		if lc.cto {
+			actor = "cto"
+		}
+		var p protocol.ToolUndoRequest
+		if json.Unmarshal(raw, &p) != nil || p.Item == "" {
+			return nil, true, errors.New("tools_undo needs item")
+		}
+		res, err = d.call(withCallWait(ctx, 2*time.Minute), "tools.undo", struct {
+			protocol.ToolUndoRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}{p, actor, d.ownerSessionID()})
 	case "tools_history":
 		var p protocol.ToolHistoryRequest
 		if json.Unmarshal(raw, &p) != nil || p.Item == "" {
@@ -247,6 +261,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			protocol.ToolHistoryRequest
 			Owner string `json:"owner"`
 		}{p, d.ownerSessionID()})
+		if err == nil {
+			res = d.withLocalBackups(res, p.Item)
+		}
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
 	case "inbox_answer":

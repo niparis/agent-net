@@ -84,3 +84,49 @@ func (s *Store) ReportToolResult(node string, r protocol.ToolResult) error {
 	}
 	return tx.Commit()
 }
+
+// toolOutcomes maps each plan target to ok, pending, conflict or failed.
+// waiting is true while a target on a connected machine has not reported yet.
+func (s *Store) toolOutcomes(r protocol.ToolRevision, targets []protocol.ToolPlanTarget, online func(string) bool) (out protocol.ToolApplyResult, waiting bool) {
+	out.ToolRevision = r
+	out.Targets = []protocol.ToolTargetOutcome{}
+	reported := map[int]protocol.ToolResult{}
+	if rows, err := s.db.Query(`SELECT target_index,state,reason FROM tool_results WHERE item=? AND revision=?`, r.Item, r.Revision); err == nil {
+		for rows.Next() {
+			var v protocol.ToolResult
+			if rows.Scan(&v.Index, &v.State, &v.Reason) == nil {
+				reported[v.Index] = v
+			}
+		}
+		rows.Close()
+	}
+	for i, t := range targets {
+		o := protocol.ToolTargetOutcome{NodeID: t.NodeID, Machine: t.Machine, Harness: t.Harness, Project: t.Project, Checkout: t.Checkout, Source: t.Source, Destination: t.Destination, Action: t.Action}
+		if v, ok := reported[i]; ok {
+			o.Reason = v.Reason
+			switch v.State {
+			case "applied":
+				o.State = "ok"
+			case "pending":
+				o.State = "pending"
+			case "failed":
+				o.State = "failed"
+			default:
+				o.State = "conflict"
+			}
+		} else if t.Action == "inspect" || t.Action == "import" || t.Action == "manual" {
+			o.State = "conflict"
+			o.Reason = t.Conflict
+		} else {
+			o.State = "pending"
+			if online(t.NodeID) {
+				waiting = true
+				o.Reason = "waiting for the machine to report"
+			} else {
+				o.Reason = "machine offline; applies when it reconnects"
+			}
+		}
+		out.Targets = append(out.Targets, o)
+	}
+	return out, waiting
+}
