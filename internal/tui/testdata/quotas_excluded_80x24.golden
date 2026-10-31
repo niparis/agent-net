@@ -5,15 +5,15 @@
 │   (read on Mac; stale reading)                                               │
 │ codex       pro       week           █████████─  92%      ahead     in 2h00  │
 │   (read on Mac)                                                              │
-│ cursor      business  month          ██████████ exhausted -         -        │
-│   (read on Mac)                                                              │
+│ 1 more subscriptions (not used by your agents) · s to show                   │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 4 registered · scores: Artificial Analysis─────────────────────────╮
-│ NAME   HARNESS MODEL             SCORE       T S N H V  USED                 │
-│ opus   claude claude-opus-5-5:… 51.7/high   E E E E G  12 runs  ◀ T,S,N,H,V  │
-│ router openc… openrouter/anthr… 51.7/high   E E E E G  0 runs                │
+│ NAME               HARNESS  MODEL                      SCORE T S N H V       │
+│ opus               claude   claude-opus-5-5:high       51.7  E E E E G  ◀ T… │
+│ router             opencode openrouter/anthropic/clau… 51.7  E E E E G       │
 │   (not a worker provider)                                                    │
-│ sol    codex  gpt-6.1-sol:medi… 46.1/medium E E E G P  0 runs                │
+│ sol                codex    gpt-6.1-sol:medium         46.1  E E E G P       │
+│ terra              codex    gpt-6.1-terra:high         42.3  E E E G P       │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
