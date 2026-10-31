@@ -566,6 +566,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
+	case "tools.report":
+		p, err := decode[protocol.ToolResult](raw)
+		if err != nil {
+			return nil, reject("bad tool result")
+		}
+		return nil, st.ReportToolResult(nc.id, p)
+
 	case "tools.targets":
 		return st.ToolTargets(nc.id)
 

@@ -81,6 +81,7 @@ type ToolItem struct {
 	State      string         `json:"state"`
 	Desired    *ToolRevision  `json:"desired,omitempty"`
 	Applied    string         `json:"applied,omitempty"`
+	Results    []ToolResult   `json:"results,omitempty"`
 }
 type ToolsPage struct {
 	Items []ToolItem `json:"items"`
@@ -211,4 +212,14 @@ type ToolTarget struct {
 	Name     string         `json:"name"`
 	Index    int            `json:"index"`
 	Target   ToolPlanTarget `json:"target"`
+}
+
+// ToolResult reports the outcome of one target on its owning daemon.
+type ToolResult struct {
+	Item     string `json:"item"`
+	Revision int64  `json:"revision"`
+	Index    int    `json:"index"`
+	NodeID   string `json:"node_id,omitempty"`
+	State    string `json:"state"`
+	Reason   string `json:"reason,omitempty"`
 }

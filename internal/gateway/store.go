@@ -254,6 +254,8 @@ CREATE TABLE tool_plans (id TEXT PRIMARY KEY, item TEXT NOT NULL, snapshot TEXT 
 `, `
 CREATE TABLE tool_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, item TEXT NOT NULL, plan_id TEXT NOT NULL, action TEXT NOT NULL, actor TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, targets TEXT NOT NULL, result TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE INDEX tool_audit_item ON tool_audit(item,id);
+`, `
+CREATE TABLE tool_results (item TEXT NOT NULL, revision INTEGER NOT NULL, target_index INTEGER NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(item,revision,target_index));
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

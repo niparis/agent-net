@@ -264,6 +264,67 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err != nil {
 		return nil, err
 	}
+
+	// Compare reported outcomes with all targets in the applied plan. Missing
+	// reports remain pending, including those belonging to offline machines.
+	resultRows, err := s.db.Query(`SELECT r.item,r.revision,p.plan FROM tool_revisions r JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item)`)
+	if err != nil {
+		return nil, err
+	}
+	plans := map[string]protocol.ToolPlan{}
+	for resultRows.Next() {
+		var id, raw string
+		var revision int64
+		if err = resultRows.Scan(&id, &revision, &raw); err != nil {
+			resultRows.Close()
+			return nil, err
+		}
+		var plan protocol.ToolPlan
+		if err = json.Unmarshal([]byte(raw), &plan); err != nil {
+			resultRows.Close()
+			return nil, err
+		}
+		plans[id] = plan
+	}
+	err = resultRows.Err()
+	resultRows.Close()
+	if err != nil {
+		return nil, err
+	}
+	resultRows, err = s.db.Query(`SELECT item,revision,target_index,node_id,state,reason FROM tool_results ORDER BY item,target_index`)
+	if err != nil {
+		return nil, err
+	}
+	for resultRows.Next() {
+		var r protocol.ToolResult
+		if err = resultRows.Scan(&r.Item, &r.Revision, &r.Index, &r.NodeID, &r.State, &r.Reason); err != nil {
+			resultRows.Close()
+			return nil, err
+		}
+		if item := all[r.Item]; item != nil && item.Desired != nil && item.Desired.Revision == r.Revision {
+			item.Results = append(item.Results, r)
+		}
+	}
+	err = resultRows.Err()
+	resultRows.Close()
+	if err != nil {
+		return nil, err
+	}
+	for id, plan := range plans {
+		item := all[id]
+		if item == nil || item.Desired == nil {
+			continue
+		}
+		if len(plan.Targets) > 0 && len(item.Results) == len(plan.Targets) {
+			item.Applied = "applied"
+			for _, r := range item.Results {
+				if r.State != "applied" {
+					item.Applied = r.State
+					break
+				}
+			}
+		}
+	}
 	out := make([]protocol.ToolItem, 0, len(order))
 	for _, id := range order {
 		item := all[id]

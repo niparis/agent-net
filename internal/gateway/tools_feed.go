@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"encoding/json"
+	"errors"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -35,4 +36,37 @@ func (s *Store) ToolTargets(node string) ([]protocol.ToolTarget, error) {
 		}
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) ReportToolResult(node string, r protocol.ToolResult) error {
+	switch r.State {
+	case "applied", "pending", "conflict", "manual", "failed":
+	default:
+		return errors.New("invalid tool result state")
+	}
+	if len(r.Reason) > 512 || r.Index < 0 {
+		return errors.New("invalid tool result")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw string
+	err = tx.QueryRow(`SELECT p.plan FROM tool_revisions r JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.item=? AND r.revision=? AND r.revision=(SELECT MAX(x.revision) FROM tool_revisions x WHERE x.item=r.item)`, r.Item, r.Revision).Scan(&raw)
+	if err != nil {
+		return errors.New("tool revision unavailable")
+	}
+	var p protocol.ToolPlan
+	if err = json.Unmarshal([]byte(raw), &p); err != nil {
+		return err
+	}
+	if r.Index >= len(p.Targets) || p.Targets[r.Index].NodeID != node || node == "" {
+		return errors.New("target does not belong to node")
+	}
+	_, err = tx.Exec(`INSERT INTO tool_results(item,revision,target_index,node_id,state,reason) VALUES(?,?,?,?,?,?) ON CONFLICT(item,revision,target_index) DO UPDATE SET state=excluded.state,reason=excluded.reason`, r.Item, r.Revision, r.Index, node, r.State, r.Reason)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
