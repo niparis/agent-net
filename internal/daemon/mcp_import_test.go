@@ -76,7 +76,7 @@ func newImportFixtureWith(t *testing.T, claude map[string]string, codex string, 
 // stdioNative is a native entry that runs the test binary as an MCP server.
 func stdioNative() string {
 	b, _ := json.Marshal(map[string]any{"command": os.Args[0], "args": []string{"-test.run=XXX"},
-		"env": map[string]string{helperEnv: "${" + helperEnv + "}"}})
+		"env": map[string]string{helperEnv: "${" + helperEnv + "}", "GORACE": "${GORACE}"}})
 	return string(b)
 }
 
@@ -253,8 +253,8 @@ func TestMCPImportFailedTestChangesNothing(t *testing.T) {
 // A native entry that lists tools the server does not report is not imported.
 func TestMCPImportComparesTheToolList(t *testing.T) {
 	cmd := os.Args[0]
-	codex := "[mcp_servers.listed]\ncommand = '" + cmd + "'\nargs = ['-test.run=XXX']\nenv_vars = ['" + helperEnv + "']\nenabled_tools = ['echo']\n" +
-		"[mcp_servers.wrong]\ncommand = '" + cmd + "'\nargs = ['-test.run=XXX']\nenv_vars = ['" + helperEnv + "']\nenabled_tools = ['echo','no_such_tool']\n"
+	codex := "[mcp_servers.listed]\ncommand = '" + cmd + "'\nargs = ['-test.run=XXX']\nenv_vars = ['" + helperEnv + "', 'GORACE']\nenabled_tools = ['echo']\n" +
+		"[mcp_servers.wrong]\ncommand = '" + cmd + "'\nargs = ['-test.run=XXX']\nenv_vars = ['" + helperEnv + "', 'GORACE']\nenabled_tools = ['echo','no_such_tool']\n"
 	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, codex)
 	good := f.apply(t, f.plan(t, f.candidate(t, "codex", "listed")).ID)
 	if good.State != protocol.MCPImportOK || !strings.Contains(good.Compared, "present") {
@@ -352,7 +352,7 @@ func TestMCPImportRefusesADuplicateName(t *testing.T) {
 func TestMCPImportRefusesAServerThatReportsNoTools(t *testing.T) {
 	t.Setenv("AGENT_NET_TEST_MCP_NO_TOOLS", "1")
 	empty, _ := json.Marshal(map[string]any{"command": os.Args[0], "args": []string{"-test.run=XXX"},
-		"env": map[string]string{helperEnv: "${" + helperEnv + "}", "AGENT_NET_TEST_MCP_NO_TOOLS": "${AGENT_NET_TEST_MCP_NO_TOOLS}"}})
+		"env": map[string]string{helperEnv: "${" + helperEnv + "}", "GORACE": "${GORACE}", "AGENT_NET_TEST_MCP_NO_TOOLS": "${AGENT_NET_TEST_MCP_NO_TOOLS}"}})
 	f := newImportFixture(t, map[string]string{"empty": string(empty)}, "")
 	res := f.apply(t, f.plan(t, f.candidate(t, "claude", "empty")).ID)
 	if res.State != protocol.MCPImportFailed || !strings.Contains(res.Reason, "no tools") {

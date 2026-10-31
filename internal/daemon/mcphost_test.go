@@ -74,6 +74,9 @@ func TestMain(m *testing.M) {
 		runFakeOpenCode()
 		return
 	}
+	// The race runtime has already initialized in this process. Child test
+	// binaries do not need its one-second exit delay.
+	os.Setenv("GORACE", "atexit_sleep_ms=0")
 	quotaaxi.SetDiscoveryRootForTesting(os.TempDir())
 	quotaaxi.SetSystemNodeDirsForTesting(nil)
 	hideRealHerdr()
@@ -126,7 +129,7 @@ func useHelper(t *testing.T) { t.Setenv(helperEnv, "1") }
 
 func stdioSpec(name string, env ...string) protocol.MCPServer {
 	return protocol.MCPServer{Name: name, Transport: protocol.MCPStdio, Command: os.Args[0],
-		Args: []string{"-test.run=XXX"}, Env: append([]string{helperEnv}, env...)}
+		Args: []string{"-test.run=XXX"}, Env: append([]string{helperEnv, "GORACE"}, env...)}
 }
 
 // cliClient connects to a node's socket as the CLI.

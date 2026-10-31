@@ -87,11 +87,7 @@ func TestCTOToolsDifferencesCapsTheAnswerAndReadsEveryPage(t *testing.T) {
 		write(".claude/skills/"+name, "one "+name)
 		write(".agents/skills/"+name, "two "+name)
 	}
-	// Enough plain skills that the item list needs more than one page.
-	for i := 0; i < 700; i++ {
-		write(fmt.Sprintf(".claude/skills/filler-%04d", i), fmt.Sprintf("filler %d", i))
-	}
-	g := startGateway(t, t.TempDir(), "")
+	g := startGatewayWithToolsPageSize(t, t.TempDir(), 16)
 	n := startNode(t, g, nodeOpts{detect: fakeInventory, cfg: func(c *Config) { c.InventoryHome = home }})
 	cli := cliClient(t, n)
 	var r struct {

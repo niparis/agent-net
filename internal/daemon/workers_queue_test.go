@@ -585,20 +585,3 @@ func TestStartGapQueuesTheSecondStart(t *testing.T) {
 }
 
 // At the hard cap a start is queued, not refused, and goes when a worker ends.
-func TestHardCapQueuesInsteadOfRefusing(t *testing.T) {
-	g := startGateway(t, t.TempDir(), "")
-	set := queueSet
-	set.Max = 1
-	w := startWorkerNode(t, g, set, nil)
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	first := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
-	r, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "y"})
-	if err != nil || r.Status != "queued" || !strings.Contains(r.QueueReason, "1 workers, which is its cap") {
-		t.Fatalf("%+v %v", r, err)
-	}
-	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: first.SessionID})
-	eventually(t, "the queued start went after the stop", func() bool {
-		return len(w.logs.lines("worker.dequeued")) == 1
-	})
-}

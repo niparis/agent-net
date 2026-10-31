@@ -22,7 +22,7 @@ func TestProxy(t *testing.T) {
 		select {}
 	}
 	cmd := exec.Command(os.Args[0], "-test.run=TestProxy")
-	cmd.Env = append(os.Environ(), "PTY_PROXY_CHILD=1")
+	cmd.Env = append(os.Environ(), "PTY_PROXY_CHILD=1", "GORACE=atexit_sleep_ms=0")
 	input, keys := io.Pipe()
 	defer input.Close()
 	defer keys.Close()
@@ -148,7 +148,7 @@ func TestProxyEscapeTiming(t *testing.T) {
 	for _, split := range []bool{false, true} {
 		t.Run(fmt.Sprintf("split=%v", split), func(t *testing.T) {
 			cmd := exec.Command(os.Args[0], "-test.run=^TestProxyEscapeTiming$")
-			cmd.Env = append(os.Environ(), "PTY_PROXY_TIMING_CHILD=1")
+			cmd.Env = append(os.Environ(), "PTY_PROXY_TIMING_CHILD=1", "GORACE=atexit_sleep_ms=0")
 			input, keys := io.Pipe()
 			output, screen := io.Pipe()
 			defer input.Close()

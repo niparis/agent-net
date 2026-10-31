@@ -457,12 +457,16 @@ func (s *Store) ToolsItem(id string, online func(string) bool) (protocol.ToolDet
 	return out, nil
 }
 
-func toolsPage(items []protocol.ToolItem, offset int) (protocol.ToolsPage, error) {
+func toolsPage(items []protocol.ToolItem, offset, maxItems int) (protocol.ToolsPage, error) {
 	page := protocol.ToolsPage{Items: []protocol.ToolItem{}}
 	if offset < 0 || offset > len(items) {
 		return page, errors.New("invalid tools offset")
 	}
 	for i := offset; i < len(items); i++ {
+		if maxItems > 0 && len(page.Items) >= maxItems {
+			page.Next = i
+			return page, nil
+		}
 		page.Items = append(page.Items, items[i])
 		b, err := json.Marshal(page)
 		if err != nil {

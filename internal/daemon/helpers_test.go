@@ -91,6 +91,14 @@ func (l *logBuf) lines(parts ...string) []string {
 }
 
 func startGateway(t *testing.T, dir, addr string) *testGateway {
+	return startGatewayPageSize(t, dir, addr, 0)
+}
+
+func startGatewayWithToolsPageSize(t *testing.T, dir string, size int) *testGateway {
+	return startGatewayPageSize(t, dir, "", size)
+}
+
+func startGatewayPageSize(t *testing.T, dir, addr string, size int) *testGateway {
 	t.Helper()
 	if addr == "" {
 		addr = "127.0.0.1:0"
@@ -107,7 +115,7 @@ func startGateway(t *testing.T, dir, addr string) *testGateway {
 		t.Fatal(err)
 	}
 	logs := &logBuf{}
-	gw, err := gateway.New(gateway.Options{DataDir: dir, OfflineGrace: 200 * time.Millisecond, Logger: log.New(logs, "", 0)})
+	gw, err := gateway.New(gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond, Logger: log.New(logs, "", 0)})
 	if err != nil {
 		t.Fatal(err)
 	}
