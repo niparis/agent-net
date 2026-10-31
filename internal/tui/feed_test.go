@@ -272,17 +272,17 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 	}
 }
 
-func TestFeedEnterOpensTheConversationOfTheLocalEnd(t *testing.T) {
+func TestFeedEnterSelectsTheLatestMessageInTheThread(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
 	m = keys(m, "2")
 	m = selectFeedMessage(m, "m_1")
-	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
-	if m.conv == nil || m.conv.id != "s_0000000000000002" {
-		t.Fatalf("enter opened %+v, want the conversation of the recipient", m.conv)
+	if m.conv != nil || m.open != nil {
+		t.Fatalf("enter opened another view: conv=%+v body=%+v", m.conv, m.open)
 	}
-	if cmd == nil {
-		t.Fatal("enter did not start loading the conversation")
+	if it := m.selectedConversationItem(); it == nil || it.MsgID != "m_2" {
+		t.Fatalf("enter did not select the latest thread message: %+v", it)
 	}
 }
 

@@ -49,6 +49,7 @@ func TestMessageThreadShowsLongBriefAndShortReply(t *testing.T) {
 	})
 	// The owner can read a thread between two remote sessions through the
 	// message_status relay, even though neither end runs on this machine.
+	m.tab = 1
 	m.snap.OwnerSession = ownerID
 	src.snap.OwnerSession = ownerID
 	m = drainSnippets(t, m)
@@ -207,7 +208,7 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	if !strings.Contains(ansi.Strip(line), "you→") {
 		t.Fatalf("owner instruction marker missing: %s", line)
 	}
-	warning := lipgloss.NewStyle().Foreground(roleWarning).Render("Waiting on test · a2a-ocs ↔ reviewer")
+	warning := lipgloss.NewStyle().Foreground(roleWarning).Render("a2a-ocs ↔ reviewer · Waiting on test")
 	if !strings.Contains(m.messageConversationLine(rows[1], 110, false), warning) {
 		t.Fatal("a request without a reply is not orange")
 	}
@@ -293,7 +294,7 @@ func TestConversationScreens(t *testing.T) {
 		worker := snap.Agents[0]
 		worker.SessionID = "s_worker"
 		worker.Profile.Name = "build worker 8"
-		worker.Worker = &protocol.WorkerInfo{ID: "w_8"}
+		worker.Worker = &protocol.WorkerInfo{ID: "w_8", Owner: "s_0000000000000001", Task: "Polish the sessions panel"}
 		snap.Agents = append(snap.Agents, worker)
 		a, b := "s_0000000000000001", "s_0000000000000002"
 		events := []protocol.FeedEvent{
@@ -318,6 +319,13 @@ func TestConversationScreens(t *testing.T) {
 		m = refresh(m, src)
 		m = drainSnippets(t, m)
 		m = keys(m, "2")
+		for _, row := range m.messageConversations() {
+			if row.worker {
+				m.feedCur = row.items[0]
+				break
+			}
+		}
+		m = keys(m, "enter")
 		v := m.View()
 		if !strings.Contains(ansi.Strip(v), "Polish") {
 			t.Fatal(v)
@@ -364,7 +372,7 @@ func TestConversationAgeUsesLastMessageTime(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m", Time: t0.Add(-5 * time.Minute)}, ConversationID: "c"}, {Event: protocol.Event{ID: 2, Kind: "msg.delivered", MessageID: "m", Time: t0.Add(-time.Minute)}, ConversationID: "c"}})
 	v := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 80, false))
-	if !strings.Contains(v, "5m ago") {
+	if !strings.Contains(v, "1m ago") {
 		t.Fatal(v)
 	}
 }

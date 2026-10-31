@@ -260,7 +260,8 @@ func (m *Model) wantSnippets() tea.Cmd {
 	}
 	for i := len(m.feed.items) - 1; i >= 0; i-- {
 		it := m.feed.items[i]
-		if !it.isMessage() || it.Snip != snipNone || (!m.localEnd(it) && m.snap.OwnerSession == "") {
+		ownerRelay := m.tab == 1 && m.snap.OwnerSession != ""
+		if !it.isMessage() || it.Snip != snipNone || (!m.localEnd(it) && !ownerRelay) {
 			continue
 		}
 		it.Snip = snipLoading

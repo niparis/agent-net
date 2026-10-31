@@ -188,7 +188,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	if selected {
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
-	content := topic + " · " + names
+	content := names + " · " + topic
 	messageWord := "messages"
 	if len(c.items) == 1 {
 		messageWord = "message"

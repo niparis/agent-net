@@ -1086,7 +1086,7 @@ func (m Model) messagesView(w, h int) []string {
 	listW := w - 4
 	chatW := w - 4
 	if w >= 100 {
-		listW = max(w*2/5-4, 1)
+		listW = max(w*55/100-4, 1)
 		chatW = max(w-(listW+4)-4, 1)
 	}
 	for i, r := range rows {
