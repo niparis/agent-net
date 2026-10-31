@@ -95,6 +95,7 @@ repo repository project projects code test tests build run running runs command 
 use used using user users need needs help can does doesn did done make made work works working
 unavailable available internal bad gateway not found unauthorized forbidden permission denied
 see seen check checks checking read write error
+cleanup tmp temp dist src lib docs scripts backup old new main dev prod scratch
 `)
 
 func toSet(s string) map[string]bool {
