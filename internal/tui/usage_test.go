@@ -110,7 +110,7 @@ func TestGoldenMainWithUsage(t *testing.T) {
 
 func TestGoldenDetailWithTopProcesses(t *testing.T) {
 	golden(t, "detail_80x24", keys(newModel(80, 24), "d").View())
-	golden(t, "detail_120x40", newModel(120, 40).View())
+	golden(t, "detail_120x40", keys(newModel(120, 40), "d").View())
 }
 
 func TestGoldenStaleUsage(t *testing.T) {
@@ -148,6 +148,12 @@ func TestHeaderQuotaWarning(t *testing.T) {
 }
 
 func TestGoldenHelp(t *testing.T) {
+	v := keys(newModel(100, 40), "?").View()
+	for _, want := range []string{"map:", "charters", "u undo"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("the help lacks %q:\n%s", want, v)
+		}
+	}
 	golden(t, "help_80x24", keys(newModel(80, 24), "?").View())
 	golden(t, "help_120x40", keys(newModel(120, 40), "?").View())
 }

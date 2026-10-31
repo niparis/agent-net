@@ -4,26 +4,26 @@
 │  ● build-vm   cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free   top: ci-runner 5%    no claude · no opencode  │
 │  ○ old-box    cpu ?                  mem ?             disk ?                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME               AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
- Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-▸ tenebrae-53        claude   tenebrae   opus-5-5   busy   -       38%  1.2G
-  strategies         claude   strategies sonnet-5-5 idle   -      240%  4.6G backtest v2
-  web                opencode shop       sonnet-5   idle   -         ?     ?
- build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner          pi       agent-net  gpt-6      idle   -        5%  300M
-  scratch            pi       -          -          shell  -       <1%   80M
-
-
-
-
-
-
-
-
-
-
-
-
+Selected session ───────────────────────────────────────────────────────────────────────────────────────────────────────
+  tenebrae-53  claude  busy    CPU 38% (5m 20%)  RAM 1.2G (1.2G)  14 procs
+  id       s_0000000000000001 pid 4242                          │     PID   CPU   RAM by CPU
+  folder   /Users/n/code/tenebrae                               │    4301  180%  900M node /srv/app/dev-server.js --por…
+  branch   main                                                 │    4300   40%  600M claude --resume
+  model    claude-opus-5-5, foreground                          │    4402   18%  1.2G python3 backtest.py --years 10
+  function research                                             │    4410    2%  300M cargo watch -x test
+  remote   https://git.example.com/team/tenebrae.git            │    4500    0%    1M sleep 600
+  project source: seen in a session and registered              │     PID   CPU   RAM by RAM
+  messages 14:04  -> s_00000000  request  dispatched            │    4402   18%  1.2G python3 backtest.py --years 10
+           14:02  -> ci-runner (build-vm)  notification  failed │    4301  180%  900M node /srv/app/dev-server.js --por…
+           14:01  <- ci-runner (build-vm)  request  delivered   │    4300   40%  600M claude --resume
+           13:57  <- strategies (Mac)  reply  delivered         │    4410    2%  300M cargo watch -x test
+           13:56  -> strategies (Mac)  request  replied         │    4501    0%    4M bash -l
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
+                                                                │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

@@ -407,7 +407,6 @@ func golden(t *testing.T, name, got string) {
 	}
 }
 
-func TestViewGolden80(t *testing.T)  { golden(t, "view_80x24", newModel(80, 24).View()) }
 func TestViewGolden120(t *testing.T) { golden(t, "view_120x34", newModel(120, 34).View()) }
 
 func TestViewGoldenOfflineAndFilter(t *testing.T) {

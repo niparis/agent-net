@@ -150,15 +150,6 @@ func TestMapKeysAreReadOnlyAndMoveTheSelection(t *testing.T) {
 	}
 }
 
-func TestHelpListsTheMapKey(t *testing.T) {
-	v := keys(newModel(100, 40), "?").View()
-	for _, want := range []string{"map:", "charters", "u undo"} {
-		if !strings.Contains(v, want) {
-			t.Errorf("the help lacks %q:\n%s", want, v)
-		}
-	}
-}
-
 func TestGoldenMap(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := openMap(t, mapModel(size[0], size[1], fakeGraph()))
