@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -221,5 +222,112 @@ func TestProjectExcludeSymlinkRefused(t *testing.T) {
 	}
 	if data, err := os.ReadFile(foreign); err != nil || string(data) != "/.claude/skills/demo/\n" {
 		t.Fatalf("changed link target: %q %v", data, err)
+	}
+}
+
+func TestProjectTargetsReconcileThroughGateway(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "xdg"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	source := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	checkout := filepath.Join(t.TempDir(), "project")
+	if err := os.Mkdir(checkout, 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, checkout, "init", "-q", "-b", "main")
+	detect := func(context.Context) []protocol.HarnessInfo {
+		return []protocol.HarnessInfo{{Name: "codex"}, {Name: "opencode"}, {Name: "pi"}}
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: detect, cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{checkout}})
+	var item protocol.ToolItem
+	eventually(t, "inventory", func() bool {
+		raw, err := cli.call("tools_items", map[string]any{"kind": "skill"})
+		if err != nil {
+			return false
+		}
+		var p protocol.ToolsPage
+		if json.Unmarshal(raw, &p) != nil {
+			return false
+		}
+		for _, v := range p.Items {
+			if v.Name == "demo" {
+				item = v
+				return true
+			}
+		}
+		return false
+	})
+	loc := item.Locations[0]
+	cli.mustCall("tools_import", protocol.ToolImport{Item: item.ID, Location: protocol.ToolImportLocation{NodeID: loc.NodeID, Location: loc.Location}})
+	raw := cli.mustCall("tools_plan", protocol.ToolPlanRequest{Item: item.ID, Target: protocol.ToolAssignment{Scope: "projects", Projects: []string{"project"}}})
+	var plan protocol.ToolPlan
+	if err := json.Unmarshal(raw, &plan); err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range plan.Targets {
+		if target.Action == "copy" && target.Checkout == checkout && target.Destination != filepath.Join(checkout, ".agents/skills/demo") {
+			t.Fatalf("not deduped: %+v", target)
+		}
+	}
+	cli.mustCall("tools_apply", protocol.ToolPlanID{ID: plan.ID})
+	eventually(t, "project copied", func() bool {
+		b, err := os.ReadFile(filepath.Join(checkout, ".agents/skills/demo/SKILL.md"))
+		return err == nil && string(b) == "fixture"
+	})
+	eventually(t, "project results", func() bool {
+		raw, err := cli.call("tools_item", map[string]any{"id": item.ID})
+		if err != nil {
+			return false
+		}
+		var detail protocol.ToolDetail
+		if json.Unmarshal(raw, &detail) != nil {
+			return false
+		}
+		applied := 0
+		for _, r := range detail.Item.Results {
+			if r.State == "applied" {
+				applied++
+			}
+		}
+		return applied >= 3
+	})
+	for _, rel := range []string{".opencode/skills/demo", ".pi/skills/demo"} {
+		if _, err := os.Stat(filepath.Join(checkout, rel)); !os.IsNotExist(err) {
+			t.Fatalf("duplicate %s: %v", rel, err)
+		}
+	}
+}
+
+func TestProjectTargetsRefuseShadowingCompatibilityRoot(t *testing.T) {
+	checkout := t.TempDir()
+	shadow := filepath.Join(checkout, ".opencode/skills/demo")
+	if err := os.MkdirAll(shadow, 0700); err != nil {
+		t.Fatal(err)
+	}
+	revision := protocol.ToolRevision{Item: "item", Assignment: protocol.ToolAssignment{Scope: "projects"}}
+	targets := []protocol.ToolTarget{{Name: "demo", Revision: revision, Target: protocol.ToolPlanTarget{Checkout: checkout, Harness: "codex", Action: "copy"}}, {Name: "demo", Revision: revision, Target: protocol.ToolPlanTarget{Checkout: checkout, Harness: "opencode", Action: "copy"}}}
+	if got := projectTargets(targets)["item\x00"+checkout]; got == "" {
+		t.Fatal("accepted shadowing source")
+	}
+}
+func TestProjectTargetsRefuseImpossibleCompatibilityOverlap(t *testing.T) {
+	checkout := t.TempDir()
+	revision := protocol.ToolRevision{Item: "item", Assignment: protocol.ToolAssignment{Scope: "projects"}}
+	var targets []protocol.ToolTarget
+	for _, h := range []string{"claude", "codex", "opencode"} {
+		targets = append(targets, protocol.ToolTarget{Name: "demo", Revision: revision, Target: protocol.ToolPlanTarget{Checkout: checkout, Harness: h, Action: "copy"}})
+	}
+	if got := projectTargets(targets)["item\x00"+checkout]; got == "" {
+		t.Fatal("accepted incompatible visibility")
 	}
 }

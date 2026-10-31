@@ -258,3 +258,67 @@ func (d *Daemon) recordProjectExclude(path, exclude, line string, owned bool) er
 	}
 	return os.Rename(name, manifest)
 }
+
+// projectTargets validates the exact planned path and detects compatibility
+// sources that would make a skill visible more than once.
+func projectTargets(targets []protocol.ToolTarget) map[string]string {
+	type group struct {
+		item, checkout, name string
+		harnesses            []string
+		targets              []protocol.ToolTarget
+	}
+	groups := map[string]*group{}
+	for _, t := range targets {
+		if t.Revision.Assignment.Scope != "projects" || t.Target.Action != "copy" || t.Target.Checkout == "" {
+			continue
+		}
+		key := t.Revision.Item + "\x00" + t.Target.Checkout
+		g := groups[key]
+		if g == nil {
+			g = &group{item: t.Revision.Item, checkout: t.Target.Checkout, name: t.Name}
+			groups[key] = g
+		}
+		g.harnesses = append(g.harnesses, t.Target.Harness)
+		g.targets = append(g.targets, t)
+	}
+	conflicts := map[string]string{}
+	for key, g := range groups {
+		for _, t := range g.targets {
+			root, conflict := inventory.ProjectSkillRoot(t.Target.Harness, g.harnesses)
+			if conflict {
+				conflicts[key] = "installed harnesses have overlapping skill roots"
+				break
+			}
+			dest := filepath.Join(g.checkout, root, g.name)
+			if t.Target.Destination != "" && filepath.Clean(t.Target.Destination) != dest {
+				conflicts[key] = "planned destination differs"
+				break
+			}
+			var visible []string
+			switch t.Target.Harness {
+			case "claude":
+				visible = []string{".claude/skills"}
+			case "codex":
+				visible = []string{".agents/skills"}
+			case "opencode":
+				visible = []string{".opencode/skills", ".claude/skills", ".agents/skills"}
+			case "pi":
+				visible = []string{".pi/skills", ".agents/skills"}
+			}
+			for _, other := range visible {
+				if other == root {
+					continue
+				}
+				_, err := os.Lstat(filepath.Join(g.checkout, other, g.name))
+				if err == nil || !os.IsNotExist(err) {
+					conflicts[key] = "another skill source may shadow the planned path"
+					break
+				}
+			}
+			if conflicts[key] != "" {
+				break
+			}
+		}
+	}
+	return conflicts
+}
