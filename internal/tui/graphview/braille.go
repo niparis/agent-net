@@ -174,7 +174,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		touched := map[Cell]bool{}
 		// Fill a compact two-row halo in sub-cell steps around the marker.
 		offsets := [][2]int{{-1, 0}, {1, 0}, {0, -1}, {-1, -1}, {1, -1}}
-		for i := 0; i < max(1, min(n.Activity, 5)); i++ {
+		for i := 0; i < max(1, min(n.Activity, 5))-1; i++ {
 			px, py := cx+offsets[i][0], cy+offsets[i][1]
 			if px < 0 || py < 0 || px >= width || py >= height || cells[py*width+px].occupied {
 				continue
@@ -222,9 +222,25 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			labelRole = "label"
 		}
 		rs := []rune(label)
-		radiusX := 1
-		radiusY := 1
-		candidates := [][2]int{{cx + radiusX + 1, cy}, {cx - len(rs) - radiusX, cy}, {cx - len(rs)/2, cy - radiusY - 1}, {cx - len(rs)/2, cy + radiusY + 1}}
+		left, right, top := 0, 0, 0
+		if n.Activity >= 2 {
+			left = 1
+		}
+		if n.Activity >= 3 {
+			right = 1
+		}
+		if n.Activity >= 4 {
+			top = 1
+		}
+		candidates := [][2]int{{cx + right + 2, cy}, {cx - len(rs) - left - 1, cy}, {cx - len(rs)/2, cy - top - 1}, {cx - len(rs)/2, cy + 1}}
+		// A selected node gets another chance in any free row of the viewport.
+		if n.Selected {
+			for row := 0; row < height; row++ {
+				for col := 0; col+len(rs) <= width; col++ {
+					candidates = append(candidates, [2]int{col, row})
+				}
+			}
+		}
 		placed := false
 		labelX, labelY := 0, 0
 		for _, pos := range candidates {

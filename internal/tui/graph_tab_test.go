@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +88,15 @@ func TestGraphGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := graphModel(size[0], size[1])
 		got := m.View()
+		plain := ansi.Strip(got)
+		if strings.Contains(plain, "…") {
+			t.Fatalf("truncated graph label: %s", plain)
+		}
+		for _, name := range regexp.MustCompile(`project-[[:alnum:]-]*`).FindAllString(plain, -1) {
+			if !regexp.MustCompile(`^project-[0-9]{2}$`).MatchString(name) {
+				t.Errorf("partial project label %q", name)
+			}
+		}
 		if strings.Count(got, "•") < 2 {
 			t.Fatalf("two comets must be visible at %dx%d:\n%s", size[0], size[1], got)
 		}

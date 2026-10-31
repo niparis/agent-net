@@ -166,3 +166,16 @@ func TestNoSelectionChoosesNearestViewCentre(t *testing.T) {
 		}
 	}
 }
+
+func TestActivitySnapshotAndFeed(t *testing.T) {
+	now := time.Unix(1000, 0)
+	s, _ := Update(State{}, TalkLoaded{Activity: map[string]int{"alpha": 3}})
+	events := []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 1, Kind: "msg.stored", Time: now}, From: "a", To: "owner"},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", Time: now}, From: "a", To: "b"},
+	}
+	next, _ := Update(s, FeedEvents{Events: events, Now: now, Projects: map[string]string{"a": "alpha", "b": "alpha"}})
+	if next.Activity["alpha"] != 5 || s.Activity["alpha"] != 3 || len(next.Talk) != 0 {
+		t.Fatalf("activity: %+v, original: %+v, talk: %+v", next.Activity, s.Activity, next.Talk)
+	}
+}
