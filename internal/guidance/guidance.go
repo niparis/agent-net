@@ -18,13 +18,15 @@ const (
 
 // Variants differ only in how to reply to a peer.
 const (
-	Claude = "claude"
-	Other  = "other"
+	Claude   = "claude"
+	Other    = "other"
+	Combined = "combined"
 )
 
 var reply = map[string]string{
-	Claude: "(Claude: `SendMessage` to the sender; others: `agent_reply` with the message ID)",
-	Other:  "with `agent_reply` and the message ID",
+	Claude:   "(Claude: `SendMessage` to the sender; others: `agent_reply` with the message ID)",
+	Other:    "with `agent_reply` and the message ID",
+	Combined: "as follows: Claude Code: use `SendMessage` to the sender; Pi, OpenCode, Codex: use `agent_reply` with the message ID",
 }
 
 // Block returns the marked block for a variant, ending in a newline.
