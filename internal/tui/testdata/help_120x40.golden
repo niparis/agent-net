@@ -18,7 +18,8 @@ Keys ─────────────────────────
   map arrows           focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h
                        hide, H show hidden
   5 Tools              [ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first
-  C, tab               focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model
+  C, tab               focus the CTO box (tab or esc returns); enter opens the full CTO, n starts new, u undoes, m
+                       changes model
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support
   /                    filter (words match name, project, branch, model, ...)
@@ -35,6 +36,5 @@ Keys ─────────────────────────
  Reading the screen
   CPU                  machine: all cores. session: one core. (x%): 5 min avg
   red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
-  shared               one process many sessions share; its figures are on the machine line
   more below
 up/down scroll  esc close help  q quit

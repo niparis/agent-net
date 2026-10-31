@@ -160,12 +160,8 @@ func New(src Source) Model {
 	ti.Cursor.SetMode(cursor.CursorHide)
 	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{}}
-	ct := textinput.New()
-	ct.Prompt = "> "
-	ct.Placeholder = "write to the CTO..."
-	ct.CharLimit = 65536
 	m.ctoGeneration = 1
-	m.cto = &ctoState{input: ct, generation: 1}
+	m.cto = &ctoState{generation: 1}
 	if _, ok := src.(ctoSource); ok {
 		m.cto.polling = true
 	}
@@ -499,21 +495,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
-	case ctoSendMsg:
-		if m.cto != nil && m.cto.generation == msg.generation {
-			if msg.err != nil {
-				line := "error: " + ctoErrorHint(sanitize(msg.err.Error()))
-				baseline := msg.baseline[line]
-				if m.cto.polledErrors[line] <= baseline {
-					m.cto.sendErrors = append(m.cto.sendErrors, ctoLocalError{text: line, at: m.now().UnixNano(), baseline: baseline})
-					m.cto.messages = append(m.cto.messages, line)
-				}
-			} else if !m.cto.polling {
-				m.cto.polling = true
-				return m, m.ctoPollCmd()
-			}
-		}
-		return m, nil
 	case ctoNewMsg:
 		if m.cto != nil && m.cto.generation == msg.generation {
 			if msg.err != nil {
@@ -524,8 +505,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cto.olderCursor = 0
 				m.cto.olderLoading = false
 				m.cto.local = nil
-				m.cto.sendErrors = nil
-				m.cto.polledErrors = nil
 				m.cto.history = nil
 				m.cto.historyLoaded = false
 				m.ctoGeneration++
@@ -844,13 +823,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.cto == nil {
 			return m.startCTO()
 		}
-		m.cto.editing = true
-		return m, m.cto.input.Focus()
+		return m, nil
 	}
 	if k.String() == "tab" && m.cto != nil && !m.filtering && m.open == nil {
 		m.focus = focusCTO
-		m.cto.editing = true
-		return m, m.cto.input.Focus()
+		return m, nil
 	}
 	if !m.filtering && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5" || k.String() == "6") {
 		if k.String() == "6" {
@@ -1124,8 +1101,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "tab":
 		if m.tab == 0 && m.cto != nil {
 			m.focus = focusCTO
-			m.cto.editing = true
-			return m, m.cto.input.Focus()
+			return m, nil
 		}
 	case "r":
 		if !m.fetching {

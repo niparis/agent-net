@@ -18,7 +18,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│ write to the CTO: set charters, start workers, ask about the network         │
-│ > write to the CTO...                                                        │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 up/down select  left/right message  enter thread  w workers  v body  tab CTO

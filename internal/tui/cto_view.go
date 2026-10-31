@@ -53,24 +53,7 @@ func (m Model) ctoView(w, h int) []string {
 		lines = append(lines, c.renderMessage(v, w)...)
 	}
 	if c.err != "" {
-		duplicate := false
-		pollError := "error: " + ctoErrorHint(sanitize(c.err))
-		for _, e := range c.sendErrors {
-			if e.text == pollError {
-				duplicate = true
-				break
-			}
-		}
-		if !duplicate {
-			lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
-		}
-	}
-	if len(lines) == 0 {
-		hint := "write to the CTO: it can set charters, start workers, answer what the network is doing"
-		if w < 84 {
-			hint = "write to the CTO: set charters, start workers, ask about the network"
-		}
-		lines = append(lines, sDim.Render(hint))
+		lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
 	}
 	if c.confirming {
 		lines = append(lines, "Start a new conversation? y/n")
@@ -93,12 +76,7 @@ func (m Model) ctoView(w, h int) []string {
 	for _, v := range lines {
 		out = append(out, clip(v, w))
 	}
-	c.input.Width = max(w-4, 1)
-	input := c.input.View()
-	if !c.editing {
-		input = "> write to the CTO..."
-	}
-	out = append(out, clip(input, w))
+	out = append(out, clip(sDim.Render("enter: open the CTO · tab: back"), w))
 	return panelWithBorder(title, out, w+4, roleCTO, borderColor)
 }
 

@@ -16,7 +16,6 @@ import (
 
 type ctoSource interface {
 	CTOEnter(context.Context) (protocol.EnterPlan, error)
-	CTOSend(context.Context, string) error
 	CTONew(context.Context) error
 	CTOSettings(context.Context) (protocol.CTOSettings, error)
 	SetCTOSettings(context.Context, protocol.CTOSettingsRequest) (protocol.CTOSettings, error)
@@ -25,10 +24,9 @@ type ctoSource interface {
 	CTOUndo(context.Context, int64) error
 }
 type ctoState struct {
-	input               textinput.Model
 	settingsForm        *ctoSettingsForm
 	configuredModel     string
-	editing, polling    bool
+	polling             bool
 	confirming          bool
 	model, harness, err string
 	opencodeModel       string
@@ -43,8 +41,6 @@ type ctoState struct {
 	lastPoll            ctoPollMsg
 	history             []protocol.CTOGraphChange
 	local               []protocol.CTOAction
-	sendErrors          []ctoLocalError
-	polledErrors        map[string]int
 	historyLoaded       bool
 	lastGraphID         int64
 	generation          int
@@ -78,16 +74,6 @@ type ctoOlderMsg struct {
 	err        error
 	generation int
 }
-type ctoLocalError struct {
-	text     string
-	at       int64
-	baseline int
-}
-type ctoSendMsg struct {
-	baseline   map[string]int
-	err        error
-	generation int
-}
 type ctoUndoMsg struct {
 	id         int64
 	err        error
@@ -103,11 +89,7 @@ func (m Model) startCTO() (tea.Model, tea.Cmd) {
 		m.notice = notice{err: true, text: "CTO is unavailable"}
 		return m, nil
 	}
-	ti := textinput.New()
-	ti.Prompt = "> "
-	ti.Placeholder = "write to the CTO..."
-	ti.CharLimit = 65536
-	m.cto = &ctoState{input: ti, polling: true, generation: m.ctoGeneration + 1}
+	m.cto = &ctoState{polling: true, generation: m.ctoGeneration + 1}
 	m.ctoGeneration++
 	return m, m.ctoPollCmd()
 }
@@ -221,19 +203,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if c.settingsForm != nil {
 		return m.ctoSettingsKey(k)
 	}
-	if k.Type == tea.KeyEsc {
-		c.editing = false
-		c.input.Blur()
-		c.confirming = false
-		m.focus = focusSessions
-		if m.tab == 1 && !m.mapOn {
-			m.focus = focusFeed
-		}
-		return m, nil
-	}
-	if k.String() == "tab" {
-		c.editing = false
-		c.input.Blur()
+	if k.Type == tea.KeyEsc || k.String() == "tab" {
 		m.focus = focusSessions
 		if m.tab == 1 && !m.mapOn {
 			m.focus = focusFeed
@@ -265,77 +235,53 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return ctoNewMsg{err: src.CTONew(ctx), generation: g}
 		}
 	}
-	if c.input.Value() == "" {
-		if _, ok := m.src.(ctoSource); !ok && (k.String() == "o" || k.String() == "n" || k.String() == "u") {
-			c.err = "CTO is unavailable"
-			return m, nil
+	switch k.String() {
+	case "m":
+		ti := textinput.New()
+		ti.Prompt = ""
+		ti.CharLimit = 4000
+		harness := c.harness
+		if harness == "" {
+			harness = "opencode"
 		}
-		switch k.String() {
-		case "m":
-			ti := textinput.New()
-			ti.Prompt = ""
-			ti.CharLimit = 4000
-			harness := c.harness
-			if harness == "" {
-				harness = "opencode"
-			}
-			ti.Placeholder = "default"
-			ti.SetValue(c.modelForHarness(harness))
-			c.settingsForm = &ctoSettingsForm{harness: harness, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
-			return m, nil
-		case "o":
-			src := m.src.(ctoSource)
-			return m, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
-				defer cancel()
-				plan, err := src.CTOEnter(ctx)
-				return enterMsg{name: "CTO", plan: plan, err: err}
-			}
-		case "enter":
-			c.editing = true
-			return m, c.input.Focus()
-		case "u":
-			src := m.src.(ctoSource)
-			g := c.generation
-			return m, func() tea.Msg {
-				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-				defer cancel()
-				history, err := src.CTOGraphHistory(ctx, 0)
-				if err != nil {
-					return ctoUndoMsg{err: err, generation: g}
-				}
-				if len(history) == 0 {
-					return ctoUndoMsg{err: errors.New("no CTO graph change to undo"), generation: g}
-				}
-				id := history[len(history)-1].ID
-				return ctoUndoMsg{id: id, err: src.CTOUndo(ctx, id), generation: g}
-			}
-		case "n":
-			c.confirming = true
-			return m, nil
-		}
-	}
-	if k.Type == tea.KeyEnter {
-		text := strings.TrimSpace(c.input.Value())
-		if text == "" {
-			return m, nil
-		}
-		c.input.SetValue("")
+		ti.Placeholder = "default"
+		ti.SetValue(c.modelForHarness(harness))
+		c.settingsForm = &ctoSettingsForm{harness: harness, input: ti, opencodeDraft: c.opencodeModel, claudeDraft: c.claudeModel}
+		return m, nil
+	case "u":
 		src := m.src.(ctoSource)
 		g := c.generation
-		baseline := make(map[string]int, len(c.polledErrors))
-		for text, count := range c.polledErrors {
-			baseline[text] = count
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			history, err := src.CTOGraphHistory(ctx, 0)
+			if err != nil {
+				return ctoUndoMsg{err: err, generation: g}
+			}
+			if len(history) == 0 {
+				return ctoUndoMsg{err: errors.New("no CTO graph change to undo"), generation: g}
+			}
+			id := history[len(history)-1].ID
+			return ctoUndoMsg{id: id, err: src.CTOUndo(ctx, id), generation: g}
+		}
+	case "n":
+		c.confirming = true
+		return m, nil
+	}
+	if k.Type == tea.KeyEnter {
+		src, ok := m.src.(ctoSource)
+		if !ok {
+			c.err = "CTO is unavailable"
+			return m, nil
 		}
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
 			defer cancel()
-			return ctoSendMsg{err: src.CTOSend(ctx, text), generation: g, baseline: baseline}
+			plan, err := src.CTOEnter(ctx)
+			return enterMsg{name: "CTO", plan: plan, err: err}
 		}
 	}
-	var cmd tea.Cmd
-	c.input, cmd = c.input.Update(k)
-	return m, cmd
+	return m, nil
 }
 func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c := m.cto
@@ -364,7 +310,6 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		text string
 	}
 	var lines []line
-	polledErrors := make(map[string]int)
 	for _, raw := range events.Messages {
 		if text := ctoMessage(raw); text != "" {
 			var v struct {
@@ -374,9 +319,6 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 			}
 			json.Unmarshal(raw, &v)
 			lines = append(lines, line{v.Time.Created * int64(1000000), text})
-			if strings.HasPrefix(text, "error: ") {
-				polledErrors[text]++
-			}
 		}
 	}
 	for _, a := range events.Actions {
@@ -397,19 +339,6 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 		}
 	}
 	c.local = pending
-	c.polledErrors = polledErrors
-	var pendingErrors []ctoLocalError
-	matched := make(map[string]int)
-	for _, e := range c.sendErrors {
-		next := max(e.baseline, matched[e.text]) + 1
-		if next <= polledErrors[e.text] {
-			matched[e.text] = next
-			continue
-		}
-		pendingErrors = append(pendingErrors, e)
-		lines = append(lines, line{e.at, e.text})
-	}
-	c.sendErrors = pendingErrors
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].at < lines[j].at })
 	c.messages = nil
 	for i := 0; i < len(lines); i++ {

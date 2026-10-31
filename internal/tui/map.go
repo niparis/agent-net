@@ -198,10 +198,6 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "c":
 		if m.cto != nil {
 			m.focus = focusCTO
-			m.cto.editing = true
-			m.cto.input.SetValue("about " + m.mp.selected + ": ")
-			m.cto.input.CursorEnd()
-			return m, m.cto.input.Focus()
 		}
 	case "h":
 		return m.toggleHiddenNode()

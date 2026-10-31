@@ -210,7 +210,7 @@ func TestTabsMoveFeedToMessages(t *testing.T) {
 	}
 }
 
-func TestCTOBoxFocusAndSend(t *testing.T) {
+func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m := New(src)
 	m = keys(m, "tab")
@@ -218,14 +218,16 @@ func TestCTOBoxFocusAndSend(t *testing.T) {
 		t.Fatal("tab did not focus CTO")
 	}
 	m = keys(m, "h", "i")
+	if len(src.sent) != 0 {
+		t.Fatalf("the box sent a message: %v", src.sent)
+	}
 	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
 	if cmd == nil {
-		t.Fatal("send missing")
+		t.Fatal("enter did not open the CTO")
 	}
-	cmd()
-	if len(src.sent) != 1 || src.sent[0] != "hi" {
-		t.Fatalf("sent %v", src.sent)
+	if _, ok := cmd().(enterMsg); !ok {
+		t.Fatal("enter did not return an enter plan")
 	}
 	m = keys(m, "esc")
 	if m.focus != focusSessions {
@@ -235,8 +237,8 @@ func TestCTOBoxFocusAndSend(t *testing.T) {
 
 func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.Contains(m.View(), "write to the CTO: set charters") {
-		t.Fatal("empty CTO box missing")
+	if !strings.Contains(m.View(), "enter: open the CTO · tab: back") {
+		t.Fatal("CTO box hint missing")
 	}
 	m = keys(m, "2", "C")
 	if m.tab != 0 || m.focus != focusCTO {
@@ -372,7 +374,7 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 func TestCTOFrameOnEveryTab(t *testing.T) {
 	for _, key := range []string{"1", "2", "3", "M"} {
 		m := keys(newModel(80, 24), key)
-		if !strings.Contains(m.View(), "write to the CTO") {
+		if !strings.Contains(m.View(), "enter: open the CTO") {
 			t.Errorf("%s missing CTO", key)
 		}
 		m = keys(m, "tab")
