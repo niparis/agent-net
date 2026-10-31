@@ -256,6 +256,9 @@ CREATE TABLE tool_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, item TEXT NOT NUL
 CREATE INDEX tool_audit_item ON tool_audit(item,id);
 `, `
 CREATE TABLE tool_results (item TEXT NOT NULL, revision INTEGER NOT NULL, target_index INTEGER NOT NULL, node_id TEXT NOT NULL, state TEXT NOT NULL, reason TEXT NOT NULL, PRIMARY KEY(item,revision,target_index));
+`, `
+INSERT OR IGNORE INTO tool_identities(id,kind,name,hash)
+SELECT json_array('mcp',name,'federated-'||added_at),'mcp',name,'federated-'||added_at FROM mcp_servers;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

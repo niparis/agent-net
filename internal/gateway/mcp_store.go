@@ -60,7 +60,12 @@ func (s *Store) AddMCPServer(srv protocol.MCPServer) error {
 	if srv.Health == "" {
 		srv.Health = protocol.HealthUnknown
 	}
-	_, err := s.db.Exec(`INSERT INTO mcp_servers (name, node_id, spec, enabled, added_by_node, added_by_session,
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	_, err = tx.Exec(`INSERT INTO mcp_servers (name, node_id, spec, enabled, added_by_node, added_by_session,
 		added_by_harness, added_at, health, health_detail, health_at, tools) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		srv.Name, srv.NodeID, specOf(srv), 1, srv.AddedByNode, srv.AddedBySession, srv.AddedByHarness,
 		s.now().UnixNano(), srv.Health, srv.HealthDetail, s.now().UnixNano(), tools)
@@ -68,6 +73,13 @@ func (s *Store) AddMCPServer(srv protocol.MCPServer) error {
 		if _, ok, _ := s.MCPServer(srv.Name); ok {
 			return reject("an MCP server named %q already exists", srv.Name)
 		}
+		return err
+	}
+	// A new server is a tool item with no assignment, which means global.
+	if err = ensureMCPItemTx(tx, srv.Name); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
 		return err
 	}
 	s.Event("mcp.added", srv.AddedByNode, srv.AddedBySession, "", srv.Name+" on "+srv.NodeID)
@@ -104,8 +116,19 @@ func (s *Store) MCPServers() ([]protocol.MCPServer, error) {
 
 // RemoveMCPServer deletes a server and reports whether it existed.
 func (s *Store) RemoveMCPServer(name, byNode, bySession string) (bool, error) {
-	res, err := s.db.Exec(`DELETE FROM mcp_servers WHERE name = ?`, name)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if err = forgetMCPItemTx(tx, name); err != nil {
+		return false, err
+	}
+	res, err := tx.Exec(`DELETE FROM mcp_servers WHERE name = ?`, name)
+	if err != nil {
+		return false, err
+	}
+	if err = tx.Commit(); err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()

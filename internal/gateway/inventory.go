@@ -61,7 +61,7 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 			return err
 		}
 	}
-	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM tool_revisions WHERE item=tool_identities.id)`); err != nil {
+	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM tool_revisions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM mcp_servers m WHERE tool_identities.kind='mcp' AND tool_identities.name=m.name AND tool_identities.hash='federated-'||m.added_at)`); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -212,7 +212,7 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 	if err = rows.Close(); err != nil {
 		return nil, err
 	}
-	retained, err := s.db.Query(`SELECT i.id,i.kind,i.name,i.hash FROM tool_identities i WHERE NOT EXISTS (SELECT 1 FROM tool_locations l WHERE l.identity_id=i.id) AND (EXISTS (SELECT 1 FROM skill_versions v WHERE v.item=i.id) OR EXISTS (SELECT 1 FROM tool_revisions r WHERE r.item=i.id)) ORDER BY i.kind,i.name,i.hash`)
+	retained, err := s.db.Query(`SELECT i.id,i.kind,i.name,i.hash FROM tool_identities i WHERE NOT EXISTS (SELECT 1 FROM tool_locations l WHERE l.identity_id=i.id) AND (EXISTS (SELECT 1 FROM skill_versions v WHERE v.item=i.id) OR EXISTS (SELECT 1 FROM tool_revisions r WHERE r.item=i.id) OR (i.kind='mcp' AND i.hash LIKE 'federated-%')) ORDER BY i.kind,i.name,i.hash`)
 	if err != nil {
 		return nil, err
 	}
@@ -221,6 +221,13 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 		if err = retained.Scan(&id, &kind, &name, &hash); err != nil {
 			retained.Close()
 			return nil, err
+		}
+		if isFederatedHash(hash) {
+			// A registry server is not a copy on a machine, so it is not a
+			// variant of a native entry with the same name.
+			all[id] = &protocol.ToolItem{ID: id, Kind: kind, Name: name, Hash: hash, Locations: []protocol.ToolLocation{}, Harnesses: []string{}, Machines: []string{}, Projects: []string{}, State: protocol.InventoryOK, Federated: true}
+			order = append(order, id)
+			continue
 		}
 		key := kind + "\x00" + name
 		if variants[key] == nil {
@@ -341,6 +348,9 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 				item.Applied = "applied"
 			}
 		}
+	}
+	if err = s.fillFederatedItems(all, f, matched, online); err != nil {
+		return nil, err
 	}
 	out := make([]protocol.ToolItem, 0, len(order))
 	for _, id := range order {

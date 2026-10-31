@@ -82,6 +82,15 @@ type ToolItem struct {
 	Desired    *ToolRevision  `json:"desired,omitempty"`
 	Applied    string         `json:"applied,omitempty"`
 	Results    []ToolResult   `json:"results,omitempty"`
+	// Federated is true for a server registered with the MCP registry. It has
+	// no copies on machines: Scope and ScopeProjects say which sessions can see
+	// and call it (a server with no assignment is global), and Host says which
+	// machine runs it.
+	Federated     bool     `json:"federated,omitempty"`
+	Scope         string   `json:"scope,omitempty"`
+	ScopeProjects []string `json:"scope_projects,omitempty"`
+	Host          string   `json:"host,omitempty"`
+	HostOnline    bool     `json:"host_online,omitempty"`
 }
 type ToolsPage struct {
 	Items []ToolItem `json:"items"`

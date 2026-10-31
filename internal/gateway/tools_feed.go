@@ -44,7 +44,9 @@ func (s *Store) ToolTargets(node string) ([]protocol.ToolTarget, error) {
 			}
 		}
 		for i, t := range p.Targets {
-			if t.NodeID == node {
+			// A registry server is enforced at the gateway; the machine has
+			// nothing to do.
+			if t.NodeID == node && t.Action != "federate" {
 				out = append(out, protocol.ToolTarget{Revision: r, Name: name, Index: i, Target: t, CopiesReady: ready})
 			}
 		}
@@ -102,7 +104,13 @@ func (s *Store) toolOutcomes(r protocol.ToolRevision, targets []protocol.ToolPla
 	}
 	for i, t := range targets {
 		o := protocol.ToolTargetOutcome{NodeID: t.NodeID, Machine: t.Machine, Harness: t.Harness, Project: t.Project, Checkout: t.Checkout, Source: t.Source, Destination: t.Destination, Action: t.Action}
-		if v, ok := reported[i]; ok {
+		if t.Action == "federate" {
+			// Enforced at the gateway, so it is in effect as soon as it is recorded.
+			o.State, o.Reason = "ok", "in effect at the gateway"
+			if !online(t.NodeID) {
+				o.Reason = "in effect at the gateway; host " + t.Machine + " is offline, so the tools are unavailable until it returns"
+			}
+		} else if v, ok := reported[i]; ok {
 			o.Reason = v.Reason
 			switch v.State {
 			case "applied":

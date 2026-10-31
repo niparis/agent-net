@@ -75,6 +75,13 @@ type MCPServer struct {
 	HealthAt     int64     `json:"health_at,omitempty"`
 	HostOnline   bool      `json:"host_online"`
 	Tools        []MCPTool `json:"tools,omitempty"`
+
+	// Scope says which sessions can see and call the server: "global" (every
+	// session, also when no assignment exists), "projects" (sessions of the
+	// listed Projects) or "uninstalled" (no session). The gateway fills these
+	// from the owner's assignment; they are never stored in the spec.
+	Scope    string   `json:"scope,omitempty"`
+	Projects []string `json:"projects,omitempty"`
 }
 
 // Timeout returns the per-call timeout.
@@ -197,10 +204,21 @@ type (
 		Detail string    `json:"detail,omitempty"`
 		Tools  []MCPTool `json:"tools,omitempty"`
 	}
+	// MCPCall is a tool call from a session's daemon. SessionID names the
+	// calling session; the gateway checks that it lives on the calling node
+	// and takes its project from its own record. There is no project field:
+	// a project in the request is never read. Owner is the owner session ID
+	// for the command line (operator authority), checked like tools.plan.
 	MCPCall struct {
 		Server    string          `json:"server"`
 		Tool      string          `json:"tool"`
 		Arguments json.RawMessage `json:"arguments,omitempty"`
+		SessionID string          `json:"session_id,omitempty"`
+		Owner     string          `json:"owner,omitempty"`
+	}
+	// MCPCatalog asks for the enabled servers one session may see.
+	MCPCatalog struct {
+		SessionID string `json:"session_id,omitempty"`
 	}
 	// MCPInvoke is a call forwarded to the hosting node.
 	MCPInvoke struct {
