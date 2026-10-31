@@ -859,3 +859,14 @@ func TestQuotaCopyAndAttention(t *testing.T) {
 		t.Fatal(view)
 	}
 }
+
+func TestQuotaCopyShownBeforeFirstReading(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = nil
+	m.usage.raw.Local.QuotaCopy = &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}
+	m.usage.raw.Local.QuotaError = "it failed"
+	if view := ansi.Strip(m.View()); !strings.Contains(view, "quota-axi 0.1.66 · yours (/opt/homebrew/bin)") {
+		t.Fatal(view)
+	}
+}

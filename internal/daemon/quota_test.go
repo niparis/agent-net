@@ -493,3 +493,17 @@ func TestQuotaReadingCarriesCopy(t *testing.T) {
 		t.Fatalf("quota %+v", q)
 	}
 }
+
+func TestQuotaUsageReportsCopyBeforeReading(t *testing.T) {
+	st, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.close()
+	d := &Daemon{cfg: Config{}, st: st}
+	d.setQuotaChoice(quotaaxi.Choice{Path: "/test/bin/quota-axi", Version: "0.1.66"})
+	rep, ok := d.usageReport()
+	if !ok || rep.QuotaCopy == nil || rep.QuotaCopy.Dir != "/test/bin" || rep.QuotaCopy.Version != "0.1.66" {
+		t.Fatalf("report %+v %v", rep, ok)
+	}
+}

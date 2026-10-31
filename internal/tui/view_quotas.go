@@ -221,19 +221,23 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	title := "Subscriptions"
-	if reporting == 1 {
-		for _, id := range ids {
-			if q := nodes[id].Usage.Quotas; q != nil && q.Copy != nil {
-				title += " · " + quotaCopyLabel(q.Copy)
-				break
-			}
+	var copies []string
+	for _, id := range ids {
+		n := nodes[id]
+		c := n.Usage.QuotaCopy
+		if c == nil && n.Usage.Quotas != nil {
+			c = n.Usage.Quotas.Copy
 		}
-	} else if reporting > 1 {
-		for _, id := range ids {
-			n := nodes[id]
-			if n.Usage.Quotas != nil && n.Usage.Quotas.Copy != nil {
-				subscription = append(subscription, sDim.Render(sanitize(firstNonEmpty(n.Hostname, id))+": "+quotaCopyLabel(n.Usage.Quotas.Copy)))
-			}
+		if c != nil {
+			copies = append(copies, sanitize(firstNonEmpty(n.Hostname, id))+": "+quotaCopyLabel(c))
+		}
+	}
+	if len(copies) == 1 {
+		_, label, _ := strings.Cut(copies[0], ": ")
+		title += " · " + label
+	} else if len(copies) > 1 {
+		for _, label := range copies {
+			subscription = append(subscription, sDim.Render(label))
 		}
 	}
 	if reporting == 1 {

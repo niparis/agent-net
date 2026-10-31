@@ -53,6 +53,7 @@ var discoverQuotaChoice = quotaaxi.DiscoverChoice
 type quotaState struct {
 	mu   sync.Mutex
 	last *protocol.Quotas
+	copy *protocol.QuotaCopy
 	at   time.Time
 	err  string
 	// note is why no reading can be made yet, for example missing Node. It is
@@ -62,6 +63,20 @@ type quotaState struct {
 
 func (q *quotaState) lock()   { q.mu.Lock() }
 func (q *quotaState) unlock() { q.mu.Unlock() }
+
+func (q *quotaState) setCopy(c *protocol.QuotaCopy) { q.lock(); defer q.unlock(); q.copy = c }
+func (q *quotaState) copyInfo() *protocol.QuotaCopy {
+	q.lock()
+	defer q.unlock()
+	if q.copy == nil {
+		return nil
+	}
+	c := *q.copy
+	return &c
+}
+func (d *Daemon) setQuotaChoice(c quotaaxi.Choice) {
+	d.quota.setCopy(&protocol.QuotaCopy{Version: c.Version, Dir: filepath.Dir(c.Path), Private: c.Private})
+}
 
 // set records a good reading.
 func (q *quotaState) set(p *protocol.Quotas) {
@@ -189,11 +204,13 @@ func (d *Daemon) startQuota(ctx context.Context) {
 				return
 			}
 			d.quota.setNote("")
+			d.setQuotaChoice(choice)
 			d.quotaLoop(ctx, p, every)
 		}()
 		return
 	}
 	d.quota.setNote("")
+	d.setQuotaChoice(choice)
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
