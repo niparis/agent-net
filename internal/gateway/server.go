@@ -413,7 +413,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" {
+		if h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -586,6 +586,19 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.applyTool(ctx, p.ID, p.Actor)
+	case "tools.undo":
+		p, err := decode[struct {
+			protocol.ToolUndoRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		if p.Item == "" {
+			return nil, reject("undo needs an item")
+		}
+		return g.undoTool(ctx, p.Item, p.Actor)
 	case "query.tools_needs":
 		graph, err := st.Graph()
 		if err != nil {

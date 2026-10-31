@@ -83,15 +83,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		}
 	}
 	d.toolsMu.Unlock()
-	root := d.cfg.InventoryHome
-	if t.Target.Checkout != "" {
-		root = filepath.Clean(t.Target.Checkout)
-	} else if filepath.IsAbs(d.cfg.CodexHome) {
-		codexRel, e := filepath.Rel(filepath.Join(d.cfg.CodexHome, "skills"), source)
-		if e == nil && codexRel != ".." && !strings.HasPrefix(codexRel, ".."+string(os.PathSeparator)) {
-			root = d.cfg.CodexHome
-		}
-	}
+	root := d.skillRootFor(t, source)
 	rel, err := filepath.Rel(root, source)
 	if err != nil || !filepath.IsAbs(root) || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
 		return fail("conflict", "source outside authorized root")
@@ -187,7 +179,17 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if err != nil || hash != t.Revision.Version {
 		return fail("conflict", "changed since plan")
 	}
-	sum := sha256.Sum256([]byte(t.Revision.Item))
+	state, reason, keep := d.backupAndForget(j, anchored, source, t.Revision.Item, t.Revision.Version)
+	retain = keep
+	return fail(state, reason)
+}
+
+// backupAndForget moves a verified source directory into the private backup
+// folder and drops its manifest entry. The caller has already written the
+// journal record and must keep it when keep is true.
+func (d *Daemon) backupAndForget(j *skillJournal, anchored, source, item, version string) (state, reason string, keep bool) {
+	fail := func(state, reason string) (string, string, bool) { return state, reason, keep }
+	sum := sha256.Sum256([]byte(item))
 	itemDir := hex.EncodeToString(sum[:])
 	backups, closeBackups, err := openSkillRoot(d.cfg.StateDir, filepath.Join("skill-backups", itemDir))
 	if err != nil {
@@ -208,7 +210,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	// path in the journal so a later daemon can find the preimage.
 	j.record.Backup = filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp), strings.TrimPrefix(source, string(os.PathSeparator)))
 	if err = j.advance("backing_up"); err != nil {
-		retain = true
+		keep = true
 		return fail("failed", "skill operation interrupted")
 	}
 	stableStamp := filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp))
@@ -217,27 +219,27 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 			os.RemoveAll(stamp)
 			return fail("failed", "cannot move source to backup")
 		}
-		switch state, reason := d.moveAcrossFilesystems(j, anchored, dest, stamp, stableStamp, t.Revision.Version); state {
+		switch st, rs := d.moveAcrossFilesystems(j, anchored, dest, stamp, stableStamp, version); st {
 		case "":
 		case "interrupted":
-			retain = true
+			keep = true
 			return fail("failed", "skill operation interrupted")
 		default:
-			if state == "conflict" {
+			if st == "conflict" {
 				os.RemoveAll(stamp)
 			}
-			return fail(state, reason)
+			return fail(st, rs)
 		}
 	}
-	retain = true
+	keep = true
 	if err = j.advance("backed_up"); err != nil {
 		return fail("failed", "skill operation interrupted")
 	}
-	hash, err = inventory.SkillHash(dest)
-	if err != nil || hash != t.Revision.Version {
+	hash, err := inventory.SkillHash(dest)
+	if err != nil || hash != version {
 		if e := restoreSkillBackup(dest, anchored); e == nil {
 			os.RemoveAll(stamp)
-			retain = false
+			keep = false
 		}
 		return fail("conflict", "changed since plan")
 	}
@@ -256,7 +258,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	if err = j.advance("forgotten"); err != nil {
 		return fail("failed", "skill operation interrupted")
 	}
-	retain = false
+	keep = false
 	return fail("applied", "")
 }
 
@@ -313,4 +315,18 @@ func (d *Daemon) moveAcrossFilesystems(j *skillJournal, source, dest, stamp, sta
 		return "interrupted", ""
 	}
 	return "", ""
+}
+
+// skillRootFor returns the authorized root that must contain a source path.
+func (d *Daemon) skillRootFor(t protocol.ToolTarget, source string) string {
+	root := d.cfg.InventoryHome
+	if t.Target.Checkout != "" {
+		root = filepath.Clean(t.Target.Checkout)
+	} else if filepath.IsAbs(d.cfg.CodexHome) {
+		codexRel, e := filepath.Rel(filepath.Join(d.cfg.CodexHome, "skills"), source)
+		if e == nil && codexRel != ".." && !strings.HasPrefix(codexRel, ".."+string(os.PathSeparator)) {
+			root = d.cfg.CodexHome
+		}
+	}
+	return root
 }

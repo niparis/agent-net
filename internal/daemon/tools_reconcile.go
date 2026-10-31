@@ -86,20 +86,26 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 		return fail("conflict", "plan target requires inspection")
 	}
 	root := d.cfg.InventoryHome
-	var rel string
-	switch t.Target.Harness {
-	case "claude":
-		rel = ".claude/skills"
-	case "codex":
-		rel = ".agents/skills"
-	case "opencode":
-		rel = ".config/opencode/skills"
-	case "pi":
-		rel = ".pi/agent/skills"
-	default:
+	rel := globalSkillRel(t.Target.Harness)
+	if rel == "" {
 		return fail("manual", "unsupported harness")
 	}
 	return d.copySkillAt(t, bundle, root, rel)
+}
+
+// globalSkillRel is the user skill root of a harness, relative to home.
+func globalSkillRel(harness string) string {
+	switch harness {
+	case "claude":
+		return ".claude/skills"
+	case "codex":
+		return ".agents/skills"
+	case "opencode":
+		return ".config/opencode/skills"
+	case "pi":
+		return ".pi/agent/skills"
+	}
+	return ""
 }
 
 // copySkillAt stages and installs a verified bundle under the given root.
@@ -243,6 +249,10 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 			result = d.removeSkill(t)
 		} else if t.Target.Action == "verify" {
 			result = d.verifySkillAbsence(t)
+		} else if t.Target.Action == "undo_copy" {
+			result = d.undoCopySkill(t, targets)
+		} else if t.Target.Action == "undo_remove" {
+			result = d.undoRemoveSkill(t)
 		} else if t.Target.Action == "copy" && ((t.Revision.Assignment.Scope == "global" && t.Target.Checkout == "") || (t.Revision.Assignment.Scope == "projects" && t.Target.Checkout != "")) {
 			raw, err = d.call(ctx, "tools.export", protocol.ToolVersionRequest{Item: t.Revision.Item, Version: t.Revision.Version})
 			if err != nil {

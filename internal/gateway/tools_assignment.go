@@ -390,3 +390,105 @@ func (s *Store) recordRefusedToolPlan(item, actor string) error {
 	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at) SELECT id,'','plan',?,COALESCE((SELECT MAX(revision) FROM tool_revisions WHERE item=tool_identities.id),0),'[]','refused',? FROM tool_identities WHERE id=?`, actor, s.now().UnixNano(), item)
 	return err
 }
+
+// undoAction maps an applied action to the action that reverses it.
+func undoAction(action string) string {
+	switch action {
+	case "copy":
+		return "undo_copy"
+	case "remove":
+		return "undo_remove"
+	case "undo_copy":
+		return "copy"
+	case "undo_remove":
+		return "remove"
+	}
+	return ""
+}
+
+// UndoTool records a new audited revision that reverses the item's newest
+// revision. It reuses the assignment revision path: the new revision takes the
+// previous assignment and a plan whose targets reverse every target that was
+// applied. Targets that were never applied have nothing to reverse. Machines
+// that are offline keep their target pending until they reconnect.
+func (s *Store) UndoTool(item, actor string) (protocol.ToolRevision, protocol.ToolPlan, error) {
+	var r protocol.ToolRevision
+	var p protocol.ToolPlan
+	if actor != "owner" && actor != "cto" {
+		return r, p, errors.New("owner authority required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return r, p, err
+	}
+	defer tx.Rollback()
+	var revision int64
+	var source, planRaw string
+	if err = tx.QueryRow(`SELECT r.revision,r.source,COALESCE(p.plan,'') FROM tool_revisions r LEFT JOIN tool_plans p ON r.source='plan:' || p.id AND p.applied=1 WHERE r.item=? AND r.revision=(SELECT MAX(revision) FROM tool_revisions WHERE item=?)`, item, item).Scan(&revision, &source, &planRaw); err != nil {
+		return r, p, errors.New("nothing to undo")
+	}
+	if planRaw == "" {
+		return r, p, errors.New("the newest revision has no plan to undo")
+	}
+	var last protocol.ToolPlan
+	if err = json.Unmarshal([]byte(planRaw), &last); err != nil {
+		return r, p, err
+	}
+	previous := protocol.ToolAssignment{Scope: "uninstalled"}
+	var rawAssignment string
+	if err = tx.QueryRow(`SELECT assignment FROM tool_revisions WHERE item=? AND revision=?`, item, revision-1).Scan(&rawAssignment); err == nil {
+		if err = json.Unmarshal([]byte(rawAssignment), &previous); err != nil {
+			return r, p, err
+		}
+	} else if err != sql.ErrNoRows {
+		return r, p, err
+	}
+	rows, err := tx.Query(`SELECT target_index FROM tool_results WHERE item=? AND revision=? AND state='applied'`, item, revision)
+	if err != nil {
+		return r, p, err
+	}
+	applied := map[int]bool{}
+	for rows.Next() {
+		var i int
+		if err = rows.Scan(&i); err != nil {
+			rows.Close()
+			return r, p, err
+		}
+		applied[i] = true
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return r, p, err
+	}
+	targets := []protocol.ToolPlanTarget{}
+	for i, t := range last.Targets {
+		action := undoAction(t.Action)
+		if action == "" || !applied[i] {
+			continue
+		}
+		t.Action, t.State, t.Conflict, t.Fingerprint = action, "pending", "", ""
+		targets = append(targets, t)
+	}
+	snapshot, err := toolSnapshot(tx)
+	if err != nil {
+		return r, p, err
+	}
+	now := s.now().UnixNano()
+	p = protocol.ToolPlan{ID: protocol.NewID("plan"), Item: item, Version: last.Version, BaseRevision: revision, Assignment: previous, Targets: targets, Conflicts: []string{}, State: "pending", Actor: actor, At: now, UndoOf: revision}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return r, p, err
+	}
+	if _, err = tx.Exec(`INSERT INTO tool_plans(id,item,snapshot,plan,applied) VALUES(?,?,?,?,1)`, p.ID, item, snapshot, string(raw)); err != nil {
+		return r, p, err
+	}
+	r, err = assignToolTx(tx, item, previous, actor, "plan:"+p.ID, now)
+	if err != nil {
+		return r, p, err
+	}
+	if err = auditToolTx(tx, item, p.ID, "undo", actor, r.Revision, targets, "pending", now); err != nil {
+		return r, p, err
+	}
+	return r, p, tx.Commit()
+}

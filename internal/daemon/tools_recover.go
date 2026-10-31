@@ -103,6 +103,13 @@ func (d *Daemon) recoverSkillRecord(rec skillJournalRecord) string {
 		return d.recoverCopy(rec)
 	case "remove":
 		return d.recoverRemove(rec)
+	case "restore":
+		if rec.Stage != "" && strings.HasPrefix(filepath.Base(rec.Stage), skillStagePrefix) && exists(rec.Stage) {
+			if err := os.RemoveAll(rec.Stage); err != nil {
+				return "cannot delete staged copy"
+			}
+		}
+		return ""
 	case "project-copy":
 		if rec.Exclude != "" && rec.ExcludeLine != "" {
 			_ = d.recordProjectExclude(rec.Target, rec.Exclude, rec.ExcludeLine, true)

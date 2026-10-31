@@ -285,18 +285,33 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 	checked = true
 	r, err = g.store.ApplyToolPlan(id, actor)
 	if err == nil {
-		frame, e := protocol.EncodeRequest("node.tools_changed", protocol.NewID("d"), struct{}{})
-		if e == nil {
-			seen := map[string]bool{}
-			for _, t := range p.Targets {
-				if !seen[t.NodeID] {
-					seen[t.NodeID] = true
-					if c := g.conn(t.NodeID); c != nil {
-						_ = c.write(ctx, frame)
-					}
-				}
+		g.notifyToolNodes(ctx, p.Targets)
+	}
+	return r, err
+}
+
+// notifyToolNodes wakes every connected node that owns a target.
+func (g *Gateway) notifyToolNodes(ctx context.Context, targets []protocol.ToolPlanTarget) {
+	frame, e := protocol.EncodeRequest("node.tools_changed", protocol.NewID("d"), struct{}{})
+	if e != nil {
+		return
+	}
+	seen := map[string]bool{}
+	for _, t := range targets {
+		if !seen[t.NodeID] {
+			seen[t.NodeID] = true
+			if c := g.conn(t.NodeID); c != nil {
+				_ = c.write(ctx, frame)
 			}
 		}
+	}
+}
+
+// undoTool reverses the item's newest revision as a new audited revision.
+func (g *Gateway) undoTool(ctx context.Context, item, actor string) (protocol.ToolRevision, error) {
+	r, p, err := g.store.UndoTool(item, actor)
+	if err == nil {
+		g.notifyToolNodes(ctx, p.Targets)
 	}
 	return r, err
 }

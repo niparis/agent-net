@@ -162,10 +162,18 @@ type ToolPlan struct {
 	State        string           `json:"state"`
 	Actor        string           `json:"actor"`
 	At           int64            `json:"at"`
+	// UndoOf is the revision that this plan reverses. It is zero for a plan
+	// that the owner proposed.
+	UndoOf int64 `json:"undo_of,omitempty"`
 }
 type ToolPlanRequest struct {
 	Item   string         `json:"item"`
 	Target ToolAssignment `json:"target"`
+}
+
+// ToolUndoRequest asks to reverse an item's newest applied revision.
+type ToolUndoRequest struct {
+	Item string `json:"item"`
 }
 type ToolPlanID struct {
 	ID string `json:"plan_id"`
