@@ -355,13 +355,16 @@ func (m Model) mapFocusWithList(w, h int) []string {
 			if n.Name == m.mp.selected {
 				lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸ ")
 			}
-			countText := fmt.Sprintf("%d", count)
-			nameW := max(left-ansi.StringWidth(lead)-len(countText)-1, 1)
-			name := clip(sanitize(n.Name), nameW)
+			countText := " "
+			if count > 0 {
+				countText = sBusy.Render("●")
+			}
+			nameW := max(left-ansi.StringWidth(lead)-ansi.StringWidth(countText)-1, 1)
+			name := clip(displayNode(n.Name), nameW)
 			if n.Charter == (protocol.Charter{}) {
 				name = sDim.Render(name)
 			}
-			line = lead + padStyled(name, nameW) + " " + sDim.Render(countText)
+			line = lead + padStyled(name, nameW) + " " + countText
 		}
 		diagram := ""
 		if row < len(drawing) {

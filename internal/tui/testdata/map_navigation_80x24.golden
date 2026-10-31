@@ -1,19 +1,19 @@
 1 Sessions  2 Messages  3 Quotas  4 Map │ 5 nodes, 3 edges       updated 14:05
-  architect     0│                        ╭──────────╮
-  a2a-ocs       0│                        │architect │
-▸ cogforge      0│                        │- ○0      │
-  shop          1│                        ╰──────────╯
-  tenebrae      1│                        ▼ governs owner normal
-                 │╭──────────╮depends ask ╔══════════╗depends auto╭──────────╮
-                 ││tenebrae  │            ║cogforge  ║            │shop      │
-                 ││early ●1  │┄┄┄┄┄┄┄┄┄┄┄▶║growing ○0║━━━━━━━━━━━▶│mature ○0 │
-                 │╰──────────╯            ╚══════════╝            ╰──────────╯
-                 │purpose: Document and evidence API.
-                 │accepts: Generic endpoints.
-                 │refuses: Client-specific work.
-                 │last change: purpose: Document and evidence API.
+  architect      │cogforge  growing
+  a2a-ocs        │Document and evidence API.
+▸ cogforge       │○ no live sessions
+  shop          ●│governed by: architect (owner)
+  tenebrae      ●│
+                 │IN 1                            OUT 1
+                 │tenebrae ──▶ depends ask        ──▶ shop depends auto
+                 │Charter ──────────────────────────────────────────────────────
+                 │purpose          Document and evidence API.
+                 │maturity         growing
+                 │accepts          Generic endpoints.
+                 │refuses          Client-specific work.
                  │
                  │
+                 │RECENT  now purpose
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

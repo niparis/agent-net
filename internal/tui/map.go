@@ -40,6 +40,8 @@ type mapState struct {
 	overviewEdgeScroll int
 	finding            bool
 	findQuery          string
+	charterFor         string
+	charterScroll      int
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a
@@ -189,6 +191,10 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mapMove(-1 << 20)
 	case "end", "G":
 		m.mapMove(1 << 20)
+	case "]", "ctrl+d":
+		m.mapScrollCharter(3)
+	case "[", "ctrl+u":
+		m.mapScrollCharter(-3)
 	case "r":
 		if !m.mp.loading {
 			m.mp.loading = true

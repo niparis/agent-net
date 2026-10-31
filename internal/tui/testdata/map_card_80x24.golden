@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map │ 7 nodes, 7 edges       updated 14:05
+  api-architect  │tenebrae  mature
+  trading-arch…  │Research platform that turns papers, figures and strategies
+  wbg-architect  │into a searchable library for the trading desk, with …
+  cogforge       │● 1 session, 1 busy
+  homelab        │governed by: wbg-architect (advisor)
+  shop          ●│
+▸ tenebrae      ●│IN 2                            OUT 2
+                 │all projects ──▶ depends        ──▶ cogforge depends ask
+                 │homelab ──▶ deploys auto        ──▶ homelab depends ask
+                 │Charter 1-4/17  [ ] scroll ───────────────────────────────────
+                 │purpose          Research platform that turns papers, figures
+                 │                 and strategies into a searchable library for
+                 │                 the trading desk, with citations kept for
+                 │                 every claim.
+                 │RECENT  3h ago maturity by trading-architect
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down projects  left/right follow  / find  z overview  enter sessions  c CTO

@@ -134,7 +134,14 @@ tool calls, including reads and failures, plus graph diffs; a graph change
 refreshes an open map.
 
 Press `4` or `M` to open the Map tab. The focus view shows the selected
-project, its architect, incoming and outgoing edges, and charter. Left and
+project as a card: name, maturity, the start of the purpose, and its live sessions
+as dots. Below it, a `governed by` line names its architects (only when it has
+some), then IN and OUT columns list the edges with colored arrows. The rule is
+shown only when it is not `normal`, and the `*` wildcard reads `all projects`.
+The charter follows with every field that is set, wrapped under aligned labels;
+use `[` and `]` to scroll it when it does not fit. The last row, RECENT, lists
+the newest graph changes of the project. In the left list, a dot marks a
+project with a live session. Left and
 right follow dependencies; up and down move through all projects in the left list.
 Press `/` to find a project, Enter to focus the first match, or Esc to cancel.
 The initial focus uses the most recent connected charter change, then the most
