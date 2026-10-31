@@ -28,6 +28,8 @@ type skillVersion struct {
 	NodeID     string `json:"node_id"`
 	Location   string `json:"location"`
 	ImportedAt int64  `json:"imported_at"`
+	// Number counts the stored versions of one skill name: 1, 2, ...
+	Number int `json:"number"`
 }
 type skillStore struct {
 	path string
@@ -78,7 +80,7 @@ func (s *skillStore) put(item, hash string, bundle []byte, node, location string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var v skillVersion
-	err := s.db.db.QueryRow(`SELECT item,hash,commit_id,node_id,location,imported_at FROM skill_versions WHERE item=? AND hash=?`, item, hash).Scan(&v.Item, &v.Hash, &v.Commit, &v.NodeID, &v.Location, &v.ImportedAt)
+	err := s.db.db.QueryRow(`SELECT item,hash,commit_id,node_id,location,imported_at,number FROM skill_versions WHERE item=? AND hash=?`, item, hash).Scan(&v.Item, &v.Hash, &v.Commit, &v.NodeID, &v.Location, &v.ImportedAt, &v.Number)
 	if err == nil {
 		return v, nil
 	}
@@ -134,7 +136,11 @@ func (s *skillStore) put(item, hash string, bundle []byte, node, location string
 		return v, err
 	}
 	v = skillVersion{Item: item, Hash: hash, Commit: commit, NodeID: node, Location: location, ImportedAt: s.db.now().UnixNano()}
-	_, err = s.db.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at) VALUES(?,?,?,?,?,?)`, v.Item, v.Hash, v.Commit, v.NodeID, v.Location, v.ImportedAt)
+	// The next number for this skill name. The lock above keeps it unique.
+	if err = s.db.db.QueryRow(`SELECT COALESCE(MAX(v.number),0)+1 FROM skill_versions v JOIN tool_identities i ON i.id=v.item WHERE i.kind=(SELECT kind FROM tool_identities WHERE id=?) AND i.name=(SELECT name FROM tool_identities WHERE id=?)`, item, item).Scan(&v.Number); err != nil {
+		return v, err
+	}
+	_, err = s.db.db.Exec(`INSERT INTO skill_versions(item,hash,commit_id,node_id,location,imported_at,number) VALUES(?,?,?,?,?,?,?)`, v.Item, v.Hash, v.Commit, v.NodeID, v.Location, v.ImportedAt, v.Number)
 	return v, err
 }
 
@@ -201,7 +207,7 @@ func (g *Gateway) importSkill(ctx context.Context, p protocol.ToolImport) (skill
 }
 
 func (g *Gateway) skillVersions(item string) (any, error) {
-	rows, err := g.store.db.Query(`SELECT item,hash,commit_id,node_id,location,imported_at FROM skill_versions WHERE item=? ORDER BY imported_at,hash`, item)
+	rows, err := g.store.db.Query(`SELECT item,hash,commit_id,node_id,location,imported_at,number FROM skill_versions WHERE item=? ORDER BY imported_at,hash`, item)
 	if err != nil {
 		return nil, err
 	}
@@ -209,7 +215,7 @@ func (g *Gateway) skillVersions(item string) (any, error) {
 	versions := []skillVersion{}
 	for rows.Next() {
 		var v skillVersion
-		if err = rows.Scan(&v.Item, &v.Hash, &v.Commit, &v.NodeID, &v.Location, &v.ImportedAt); err != nil {
+		if err = rows.Scan(&v.Item, &v.Hash, &v.Commit, &v.NodeID, &v.Location, &v.ImportedAt, &v.Number); err != nil {
 			return nil, err
 		}
 		versions = append(versions, v)

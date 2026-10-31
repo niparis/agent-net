@@ -50,6 +50,16 @@ type Copy struct {
 	Location string `json:"location"`
 	Hash     string `json:"hash"`
 	Name     string `json:"name,omitempty"`
+	// Label is the version of this copy: "v2", "changed" or a short hash.
+	Label string `json:"label,omitempty"`
+}
+
+// Version is the label to show for the copy.
+func (c Copy) Version() string {
+	if c.Label != "" {
+		return c.Label
+	}
+	return Short(c.Hash)
 }
 
 // Action is the one suggested fix, in data. The TUI turns it into a plan.
@@ -138,8 +148,8 @@ func nameList(names []string, max int) string {
 	return strings.Join(names[:max], ", ") + fmt.Sprintf(" and %d more", len(names)-max)
 }
 
-func copyOf(v protocol.ToolItem, l protocol.ToolLocation) Copy {
-	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name}
+func copyOf(g group, v protocol.ToolItem, l protocol.ToolLocation) Copy {
+	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Hash: v.Hash, Name: v.Name, Label: g.label(v.VersionNo, v.Hash)}
 }
 
 func skillDiffs(g group, ms []Machine) []Difference {
@@ -163,7 +173,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 				order = append(order, l.Machine)
 			}
 			if _, ok := h.hashes[v.Hash]; !ok {
-				h.hashes[v.Hash] = copyOf(v, l)
+				h.hashes[v.Hash] = copyOf(g, v, l)
 			}
 		}
 	}
@@ -213,15 +223,28 @@ func skillDiffs(g group, ms []Machine) []Difference {
 			}
 			return hs[i] < hs[j]
 		})
-		var parts, machines []string
+		labelOf := map[string]string{}
+		for _, v := range g.variants {
+			labelOf[v.Hash] = g.label(v.VersionNo, v.Hash)
+		}
+		// One part per machine: "Mac on v1, research on v3".
+		hashOf := map[string]string{}
 		for _, h := range hs {
-			parts = append(parts, fmt.Sprintf("%s on %s", Short(h), strings.Join(byHash[h], ", ")))
-			machines = append(machines, byHash[h]...)
+			for _, m := range byHash[h] {
+				hashOf[m] = h
+			}
+		}
+		var parts, machines []string
+		for _, m := range order {
+			if h, ok := hashOf[m]; ok {
+				parts = append(parts, fmt.Sprintf("%s on %s", m, labelOf[h]))
+				machines = append(machines, m)
+			}
 		}
 		d := Difference{Key: "drift:" + g.name, Kind: KindDrift, Severity: SevWarn, Name: g.name, Machines: machines,
 			Title: fmt.Sprintf("%s differs: %s", g.name, strings.Join(parts, ", "))}
 		if mg != nil {
-			d.Fix = "make every machine use " + Short(mg.Hash)
+			d.Fix = "make every machine use " + g.label(mg.VersionNo, mg.Hash)
 			d.Action = Action{Kind: ActAssign, Item: mg.ID, Name: g.name}
 		} else {
 			d.Fix = "compare, then keep one"
@@ -262,7 +285,7 @@ func skillDiffs(g group, ms []Machine) []Difference {
 				for _, w := range g.variants {
 					for _, m := range w.Locations {
 						if m.Scope == protocol.InventoryProject && projectOf(m) == p && !userHashes[w.Hash] {
-							cs = append(cs, copyOf(w, m))
+							cs = append(cs, copyOf(g, w, m))
 						}
 					}
 				}
@@ -353,7 +376,7 @@ func duplicateDiffs(gs []group) []Difference {
 			ok := false
 			for _, l := range v.Locations {
 				if l.Scope == protocol.InventoryUser && !readOnlySource(l) {
-					c, ok = copyOf(v, l), true
+					c, ok = copyOf(g, v, l), true
 					break
 				}
 			}
@@ -429,7 +452,7 @@ func unmanagedDiffs(gs []group, ms []Machine, skip map[string]bool) []Difference
 					on[l.Machine] = true
 					if !hashes[v.Hash] {
 						hashes[v.Hash] = true
-						cs = append(cs, copyOf(v, l))
+						cs = append(cs, copyOf(g, v, l))
 					}
 				}
 			}

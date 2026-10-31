@@ -930,12 +930,12 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		}
 		letter := string(rune('a' + i))
 		c := c
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+toolsdiff.Short(c.Hash)+")")
+		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+c.Version()+")")
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
-		md.foot = append(md.foot, letter, "keep "+toolsdiff.Short(c.Hash))
+		md.foot = append(md.foot, letter, "keep "+c.Version())
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
-			model, cmd := m.openAssign("Keep "+act.Name+" "+toolsdiff.Short(c.Hash), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, []string{"a different copy in the way shows as a conflict in the result"})
+			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: protocol.ToolAssignment{Scope: "global"}}}, []string{"a different copy in the way shows as a conflict in the result"})
 			return model.(Model), cmd
 		}
 	}

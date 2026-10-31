@@ -42,7 +42,7 @@ func TestDriftBetweenMachinesSuggestsManagedVersion(t *testing.T) {
 	if d == nil {
 		t.Fatalf("no drift in %+v", ds)
 	}
-	if !strings.Contains(d.Title, "aaaaaa on research") || !strings.Contains(d.Title, "bbbbbb on mac") {
+	if !strings.Contains(d.Title, "research on aaaaaa") || !strings.Contains(d.Title, "mac on bbbbbb") {
 		t.Errorf("title %q", d.Title)
 	}
 	if d.Fix != "make every machine use aaaaaa" || d.Action.Kind != ActAssign || d.Action.Item != a.ID {

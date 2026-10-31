@@ -3,8 +3,8 @@
 ╭─What differs · 5 to look at──────────────────────────────────────────────────╮
 │ ▸ ! design-taste-frontend has 2 different copies on research                 │
 │     fix: compare, then keep one                                              │
-│   ◐ code-review differs: 111111 on Nicolas-MBP, 333333 on research           │
-│     fix: make every machine use 333333                                       │
+│   ◐ code-review differs: Nicolas-MBP on v1, research on v3                   │
+│     fix: make every machine use v3                                           │
 │   ◐ imnplementing-clean-architecture looks like a copy of clean-architectur… │
 │     fix: remove imnplementing-clean-architecture                             │
 │   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours      │

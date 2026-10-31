@@ -67,13 +67,21 @@ type ToolLocation struct {
 	NodeID    string `json:"node_id"`
 	Machine   string `json:"machine"`
 	GraphNode string `json:"graph_node,omitempty"`
+	// VersionNo is the agent-net store number (1, 2, ...) of this copy's
+	// content, or 0 when no stored version has this content (it was edited
+	// outside agent-net, or never imported).
+	VersionNo int `json:"version_no,omitempty"`
 	InventoryItem
 }
 type ToolItem struct {
-	ID         string         `json:"id"`
-	Kind       string         `json:"kind"`
-	Name       string         `json:"name"`
-	Hash       string         `json:"hash"`
+	ID   string `json:"id"`
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+	Hash string `json:"hash"`
+	// VersionNo is the number of this content in the agent-net store: v1, v2
+	// and so on, counted per skill name in import order. Zero means the
+	// content is not in the store.
+	VersionNo  int            `json:"version_no,omitempty"`
 	Locations  []ToolLocation `json:"locations"`
 	Global     bool           `json:"global"`
 	Projects   []string       `json:"projects"`

@@ -6,9 +6,9 @@
 │   dotfiles          │ ON FOR THIS PROJECT  0                                 │
 │   flood-wargame     │   none · a on All tools adds one                       │
 │ ▸ homelab           │ ON NICOLAS-MBP FOR EVERY PROJECT  9                    │
-│   homelab-portal    │   ● clean-architecture-python     agent-net 555555     │
-│   infra-game        │   ◐ code-review                   agent-net 333333     │
-│   sovl-clone        │   ◐ diagnosing-bugs               agent-net 111111     │
+│   homelab-portal    │   ● clean-architecture-python     agent-net v1         │
+│   infra-game        │   ◐ code-review                   agent-net v3         │
+│   sovl-clone        │   ◐ diagnosing-bugs               agent-net v1         │
 │   strategies        │   + 6 more                                             │
 │   tenebrae          │ MCP SERVERS  1                                         │
 │   wbg-arch          │   ◆ tenebrae-library              gateway on research  │

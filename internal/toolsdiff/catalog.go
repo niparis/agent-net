@@ -102,6 +102,26 @@ func Short(hash string) string {
 	return hash
 }
 
+// Changed is the label of a copy whose content is not any stored version: it
+// was edited outside agent-net.
+const Changed = "changed"
+
+// Label names a content for the owner. A stored version reads "v3". When the
+// skill has stored versions but this content is none of them, it reads
+// "changed". A skill with no stored version has nothing to count from, so the
+// content shows as a short hash.
+func (g group) label(versionNo int, hash string) string {
+	if versionNo > 0 {
+		return "v" + strconv.Itoa(versionNo)
+	}
+	for _, v := range g.variants {
+		if v.VersionNo > 0 {
+			return Changed
+		}
+	}
+	return Short(hash)
+}
+
 func managed(it protocol.ToolItem) bool {
 	if it.Federated {
 		return false
@@ -268,9 +288,9 @@ func rowsOf(g group, ms []Machine) []Row {
 			fillFederated(&r, *mg, ms)
 		case mg != nil:
 			r.Origin = OriginStore
-			r.Version = Short(mg.Hash)
+			r.Version = g.label(mg.VersionNo, mg.Hash)
 			r.From = "agent-net " + r.Version
-			fillManaged(&r, *mg, copies, ms, repoByProject)
+			fillManaged(&r, g, *mg, copies, ms, repoByProject)
 		default:
 			r.Origin = OriginMachines
 			r.From = "your machines"
@@ -368,7 +388,7 @@ func importInfo(copies []protocol.ToolLocation) *protocol.MCPImportInfo {
 	return nil
 }
 
-func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, ms []Machine, repos map[string]*Row) {
+func fillManaged(r *Row, g group, mg protocol.ToolItem, copies []protocol.ToolLocation, ms []Machine, repos map[string]*Row) {
 	scope := "global"
 	if mg.Desired != nil {
 		scope = mg.Desired.Assignment.Scope
@@ -400,7 +420,7 @@ func fillManaged(r *Row, mg protocol.ToolItem, copies []protocol.ToolLocation, m
 					}
 				}
 			} else if other == "" {
-				other = Short(l.Hash)
+				other = g.label(l.VersionNo, l.Hash)
 			}
 		}
 		switch {

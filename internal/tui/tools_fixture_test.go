@@ -36,6 +36,15 @@ func toolSkill(name, hash string, locs ...protocol.ToolLocation) protocol.ToolIt
 
 func toolManaged(it protocol.ToolItem, scope string, projects ...string) protocol.ToolItem {
 	it.Desired = &protocol.ToolRevision{Item: it.ID, Revision: 1, Version: it.Hash, Assignment: protocol.ToolAssignment{Scope: scope, Projects: projects}, State: "pending"}
+	return toolNumbered(it, 1)
+}
+
+// toolNumbered gives an item its store version number, as the gateway does.
+func toolNumbered(it protocol.ToolItem, n int) protocol.ToolItem {
+	it.VersionNo = n
+	for i := range it.Locations {
+		it.Locations[i].VersionNo = n
+	}
 	return it
 }
 
@@ -55,11 +64,11 @@ func toolFixtureNodes() []protocol.NodeView {
 func toolFixtureItems() []protocol.ToolItem {
 	var items []protocol.ToolItem
 	// managed, on both machines
-	items = append(items, toolManaged(userBoth("using-git-worktrees", "sha256:3333333aaaa"), "global"))
+	items = append(items, toolNumbered(toolManaged(userBoth("using-git-worktrees", "sha256:3333333aaaa"), "global"), 2))
 	items = append(items, toolManaged(userBoth("research", "sha256:1111111aaaa"), "global"))
 	// drift: the Mac has another version
-	review := toolManaged(toolSkill("code-review", "sha256:3333333bbbb", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/code-review", "user", "", "claude")), "global")
-	oldReview := toolSkill("code-review", "sha256:1111111cccc", toolLoc(toolNodeM, "Nicolas-MBP", "/Users/n/.claude/skills/code-review", "user", "", "claude"))
+	review := toolNumbered(toolManaged(toolSkill("code-review", "sha256:3333333bbbb", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/code-review", "user", "", "claude")), "global"), 3)
+	oldReview := toolNumbered(toolSkill("code-review", "sha256:1111111cccc", toolLoc(toolNodeM, "Nicolas-MBP", "/Users/n/.claude/skills/code-review", "user", "", "claude")), 1)
 	items = append(items, review, oldReview)
 	// a harness limit
 	diag := userBoth("diagnosing-bugs", "sha256:1111111dddd")
