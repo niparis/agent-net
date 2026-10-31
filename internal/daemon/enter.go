@@ -23,7 +23,8 @@ import (
 //	Claude Code background session   claude attach <id>
 //	Claude Code, Pi in a terminal    its herdr pane (herdr agent attach), else
 //	                                 its tmux pane, when there is one
-//	OpenCode                         opencode --session <id> (in the folder)
+//	OpenCode                         its herdr pane, else opencode --session <id>
+//	                                 (in the folder)
 //	Codex (not a worker)             codex resume <thread>, on the shared app server
 //	a worker of OpenCode or Codex    their private server, with its password
 //	                                 in Env; only on the machine that has it
@@ -175,16 +176,31 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 		return plan, nil
 	case "opencode":
+		var herdrNote string
 		if w == nil { // a TUI the owner started in a herdr pane is the screen to show
 			if p, ok := d.herdrPlan(info, q, plan, name, viaGateway); ok {
-				return p, nil
+				if len(p.Argv) > 0 {
+					return p, nil
+				}
+				// The pane has closed, or herdr cannot attach it. The session
+				// itself still lives in the OpenCode service, so open it there.
+				herdrNote = p.Note
 			}
 		}
 		bin, err := d.harnessBinary("opencode")
 		if err != nil {
+			if herdrNote != "" {
+				return no("%s It cannot be opened from the OpenCode service either: %v", herdrNote, err)
+			}
 			return no("%v", err)
 		}
 		if w == nil {
+			if info.NativeID == "" {
+				if herdrNote != "" {
+					return no("%s It also has no OpenCode session ID to open it with", herdrNote)
+				}
+				return no("%s has no OpenCode session ID to open it with", name)
+			}
 			plan.Argv = []string{bin, "--session", info.NativeID}
 			plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running.", name)
 			return plan, nil
