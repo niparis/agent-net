@@ -89,12 +89,11 @@ func (m *Model) applyMap(r mapMsg) {
 		m.mp.err = mapError(r.err)
 		return
 	}
-	if m.graph == nil {
-		m.graph = graphview.New(r.view)
+	first := m.graphState.Graph == nil
+	m.graphState, _ = graphview.Update(m.graphState, graphview.GraphChanged{Graph: r.view})
+	if first {
 		w, h := m.graphSize()
-		m.graphCamera = m.graph.Fit(w, h)
-	} else {
-		m.graph.Update(r.view)
+		m.graphState, _ = graphview.Update(m.graphState, graphview.Fit{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}})
 	}
 	m.mp.nodes, m.mp.edges, m.mp.changes = r.view.Nodes, r.view.Edges, r.view.Changes
 	m.mp.at, m.mp.loaded, m.mp.err = r.at, true, ""

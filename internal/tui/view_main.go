@@ -607,6 +607,12 @@ func columns(avail, nameWant int) []column { return columnsFor(avail, nameWant, 
 // delegation policy (decision 0014). Without one the column would only take
 // room from the others.
 func columnsFor(avail, nameWant int, policy bool) []column {
+	return columnsForProject(avail, nameWant, 0, policy)
+}
+
+// columnsForProject is columnsFor, with PROJECT grown to fit the longest
+// project name (up to its maximum) before TASK takes the rest of the room.
+func columnsForProject(avail, nameWant, projectWant int, policy bool) []column {
 	cols := []column{
 		{name: "NAME", min: 12, max: min(max(nameWant, 18), 32)},
 		{name: "AGENT", min: 8, max: 8},
@@ -642,17 +648,27 @@ func columnsFor(avail, nameWant int, policy bool) []column {
 		cols[i].width = cols[i].min
 	}
 	if hasColumn(cols, "TASK") {
-		// Grow NAME to what it needs, then give every other column to TASK.
+		// Grow NAME to what it needs, then PROJECT to the longest project
+		// name, then give every other column to TASK.
 		extra := avail - sumMin(cols)
-		for i := range cols {
-			switch cols[i].name {
-			case "NAME":
-				add := min(extra, cols[i].max-cols[i].min)
-				cols[i].width += add
-				extra -= add
-			case "TASK":
-				cols[i].width += extra
-				extra = 0
+		for _, name := range []string{"NAME", "PROJECT", "TASK"} {
+			for i := range cols {
+				if cols[i].name != name {
+					continue
+				}
+				switch name {
+				case "NAME":
+					add := min(extra, cols[i].max-cols[i].min)
+					cols[i].width += add
+					extra -= add
+				case "PROJECT":
+					add := min(extra, max(min(projectWant, cols[i].max)-cols[i].min, 0))
+					cols[i].width += add
+					extra -= add
+				case "TASK":
+					cols[i].width += extra
+					extra = 0
+				}
 			}
 		}
 		return cols
@@ -718,10 +734,11 @@ func cellR(s string, w int) string {
 }
 
 func (m Model) sessionsTable(w, n int) []string {
-	nameWant, policy := 0, false
+	nameWant, projectWant, policy := 0, 0, false
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
 			nameWant = max(nameWant, utf8.RuneCountInString(nameText(a, g.marks[a.SessionID], 1<<20)))
+			projectWant = max(projectWant, ansi.StringWidth(sanitize(firstNonEmpty(a.Repo.Project, a.Profile.Project))))
 			policy = policy || policyBadge(a.Delegation) != ""
 		}
 	}
@@ -729,7 +746,7 @@ func (m Model) sessionsTable(w, n int) []string {
 	if len(m.needsRows()) > 0 {
 		avail -= 3
 	} // reserve the wider status
-	cols := m.needsColumns(columnsFor(avail, nameWant, policy))
+	cols := m.needsColumns(columnsForProject(avail, nameWant, projectWant, policy))
 	wanted := 5
 	for _, g := range m.groups() {
 		for _, a := range g.agents {

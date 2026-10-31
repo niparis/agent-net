@@ -4,18 +4,18 @@
 │  ● build-vm   v0.4.0 online  cpu ?  mem ?  load ?                              pi                                    │
 │  ○ old-box    v0.3.2 offline                                                                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  NAME                             AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
+  NAME                             AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 7 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
-  strategies                       claude   strategi… sonnet-5-5 idle   -         ?     ? backtest v2
-  ├─ backtest-a                    opencode -         haiku-4-5  idle   -         ?     ? probe
-▸ ├─ backtest-b                    opencode -         haiku-4-5  idle   -         ?     ? probe
-  └─ backtest-on-a-remo… @build-vm opencode -         haiku-4-5  idle   -         ?     ? probe
-  ↳ tenebrae                       opencode tenebrae  haiku-4-5  busy   -         ?     ?
-  tenebrae-53                      claude   tenebrae  opus-5-5   busy   -         ?     ?
-  web                              opencode shop      sonnet-5   idle   -         ?     ?
+  strategies                       claude   strategies sonnet-5-5 idle   -         ?     ? backtest v2
+  ├─ backtest-a                    opencode -          haiku-4-5  idle   -         ?     ? probe
+▸ ├─ backtest-b                    opencode -          haiku-4-5  idle   -         ?     ? probe
+  └─ backtest-on-a-remo… @build-vm opencode -          haiku-4-5  idle   -         ?     ? probe
+  ↳ tenebrae                       opencode tenebrae   haiku-4-5  busy   -         ?     ?
+  tenebrae-53                      claude   tenebrae   opus-5-5   busy   -         ?     ?
+  web                              opencode shop       sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
-  ci-runner                        pi       agent-net gpt-6      idle   -         ?     ?
-  scratch                          pi       -         -          shell  -         ?     ?
+  ci-runner                        pi       agent-net  gpt-6      idle   -         ?     ?
+  scratch                          pi       -          -          shell  -         ?     ?
 
 
 

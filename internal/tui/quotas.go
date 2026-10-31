@@ -482,3 +482,31 @@ func (m Model) quotaProviderProtected(provider string) bool {
 	}
 	return false
 }
+
+// selectableQuotaRows follows the same ordering and visibility as the panel.
+func (m Model) selectableQuotaRows() []quotaRow {
+	rows := m.quotaRows()
+	relevant := m.quotaRelevantProviders()
+	withQuota := map[string]bool{}
+	for _, r := range rows {
+		if len(r.provider.Windows) > 0 {
+			withQuota[strings.ToLower(r.provider.Provider)] = true
+		}
+	}
+	var configured, unset, unused []quotaRow
+	for _, r := range rows {
+		provider := strings.ToLower(r.provider.Provider)
+		if quotaNotSetUp(r.provider) && !withQuota[provider] {
+			unset = append(unset, r)
+		} else if !relevant[provider] {
+			unused = append(unused, r)
+		} else {
+			configured = append(configured, r)
+		}
+	}
+	if m.quotaShowUnset {
+		configured = append(configured, unset...)
+		configured = append(configured, unused...)
+	}
+	return configured
+}

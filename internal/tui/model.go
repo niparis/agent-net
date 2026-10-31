@@ -59,22 +59,23 @@ type Model struct {
 	width, height     int
 	tab               int
 	quotaScroll       int
+	quotaSelected     int
+	quotaConfirm      string
+	quotaUnprotect    bool
 	quotaShowUnset    bool
 	messageShowEvents bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap                               Snapshot
-	haveData                           bool
-	lastOK                             time.Time
-	problem                            Problem
-	problemT                           string // text of the last error
-	graph                              *graphview.Graph
-	graphCamera                        graphview.Camera
-	graphOrbit, graphPaused, graphHelp bool
-	graphPausedAt                      time.Time
-	graphGeneration                    int
-	feed                               feed
-	fetching                           bool
+	snap            Snapshot
+	haveData        bool
+	lastOK          time.Time
+	problem         Problem
+	problemT        string // text of the last error
+	graphState      graphview.State
+	graphHelp       bool
+	graphGeneration int
+	feed            feed
+	fetching        bool
 
 	// What the person chose.
 	selected           string // session ID
@@ -321,6 +322,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case graphTickMsg:
 		if m.tab == 5 && !m.mapOn && msg.generation == m.graphGeneration {
+			m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 			return m, graphTick(m.graphGeneration)
 		}
 		return m, nil
@@ -612,7 +614,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		wasLast := m.feedCur >= m.feedLastVisible()
 		lastID := m.feed.lastID
 		m.feed.apply(r.events)
-		m.graphEvents(r.events, lastID, r.at)
+		m.graphState, _ = graphview.Update(m.graphState, graphview.FeedEvents{Events: r.events, LastID: lastID, Now: r.at})
 		if m.focus != focusFeed || wasLast {
 			m.feedCur = m.feedLastVisible()
 		} else {
@@ -658,6 +660,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.formKey(k)
 	case modeConfirm:
 		return m.confirmKey(k)
+	case modeQuotaConfirm:
+		return m.quotaConfirmKey(k)
 	case modeTrust:
 		return m.trustKey(k)
 	case modePolicy:
@@ -800,15 +804,29 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == 2 {
 		switch k.String() {
+		case "p":
+			rows := m.selectableQuotaRows()
+			if len(rows) == 0 {
+				m.fail("No subscription selected.")
+				return m, nil
+			}
+			row := rows[min(m.quotaSelected, len(rows)-1)]
+			provider := m.quotaModelProvider(row.provider.Provider)
+			m.notice = notice{}
+			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
+			m.mode = modeQuotaConfirm
 		case "s":
+			m.quotaSelected = 0
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
 		case "down", "j":
+			m.quotaSelected = min(m.quotaSelected+1, max(0, len(m.selectableQuotaRows())-1))
 			m.quotaScroll++
 		case "up", "k":
+			m.quotaSelected = max(0, m.quotaSelected-1)
 			m.quotaScroll = max(0, m.quotaScroll-1)
 		case "?":
 			m.help = true

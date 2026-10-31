@@ -4,15 +4,15 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // Braille renders a graph in terminal cells. Color, when provided, styles a
 // cell according to its semantic role.
 type Braille struct {
-	Color         func(role, text string) string
-	Now           time.Time
-	ReducedMotion bool
+	Color  func(role, text string) string
+	Styled bool
 }
 type cell struct {
 	dots     byte
@@ -21,9 +21,10 @@ type cell struct {
 	occupied bool
 }
 
-func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
+func (b Braille) Render(scene Scene, size Size) Output {
+	width, height := size.Width, size.Height
 	if width <= 0 || height <= 0 {
-		return nil
+		return Output{}
 	}
 	cells := make([]cell, width*height)
 	put := func(x, y int, r rune, role string) bool {
@@ -48,10 +49,8 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 		c.dots |= bits[x%2][y%4]
 		c.role = role
 	}
-	point := func(name string) (int, int, bool) {
-		p, ok := g.Positions[name]
-		x, y := cam.Project(p, width, height)
-		return int(math.Round(x * 2)), int(math.Round(y * 4)), ok
+	point := func(p Point) (int, int) {
+		return int(math.Round(p.X * float64(width) * 2)), int(math.Round(p.Y * float64(height) * 4))
 	}
 	type arrow struct {
 		x, y int
@@ -59,12 +58,9 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 		role string
 	}
 	var arrows []arrow
-	for _, e := range g.Edges {
-		x0, y0, ok := point(e.From)
-		x1, y1, ok2 := point(e.To)
-		if !ok || !ok2 {
-			continue
-		}
+	for _, e := range scene.Edges {
+		x0, y0 := point(e.From)
+		x1, y1 := point(e.To)
 		ax, ay := x1-x0, y1-y0
 		if ax != 0 || ay != 0 {
 			angle := math.Atan2(float64(ay)/4, float64(ax)/2)
@@ -87,7 +83,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			continue
 		}
 		for step := 0; ; step++ {
-			if e.Kind != "governs" || step%8 < 5 {
+			if !e.Dashed || step%8 < 5 {
 				dot(x0, y0, e.Kind)
 			}
 			if x0 == x1 && y0 == y1 {
@@ -104,54 +100,46 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			}
 		}
 	}
-	_, flashes := g.Traffic(b.Now)
-	flash := map[string]bool{}
-	for _, name := range flashes {
-		flash[name] = true
-	}
-	for _, n := range g.Nodes {
-		x, y, _ := point(n.Name)
-		cx, cy := x/2, y/4
+	for _, n := range scene.Nodes {
+		x, y := point(n.Position)
 		marker := '○'
-		if n.Kind == "architect" {
+		if n.Architect {
 			marker = '◆'
-		} else if n.SessionCount > 0 || len(n.Sessions) > 0 {
+		} else if n.HasSessions {
 			marker = '●'
 		}
 		role := "node"
-		for _, sess := range n.Sessions {
-			if sess.Status == "busy" {
-				role = "busy"
-				if !b.ReducedMotion && b.Now.UnixMilli()%1000 >= 500 {
-					role = "busyPulse"
-				}
-				break
+		if n.Role == "busy" {
+			role = "busy"
+			if n.Pulse {
+				role = "busyPulse"
 			}
 		}
-		if flash[n.Name] {
+		if n.Flashing {
 			role = "flash"
 		}
-		put(cx, cy, marker, role)
+		put(x/2, y/4, marker, role)
 	}
-	if x, y, ok := point(g.Selected()); ok {
+	for _, n := range scene.Nodes {
+		if !n.Selected {
+			continue
+		}
+		x, y := point(n.Position)
 		cx, cy := x/2, y/4
 		if !put(cx-1, cy, '▸', "selected") {
 			put(cx, cy-1, '▾', "selected")
 		}
 	}
 
-	for _, n := range g.Nodes {
-		x, y, _ := point(n.Name)
+	for _, n := range scene.Nodes {
+		x, y := point(n.Position)
 		cx, cy := x/2, y/4
-		label := n.Name
-		if cam.Level() == "cards" {
+		label := n.Label
+		if scene.Level == "cards" {
 			label = "[" + label + "]"
 		}
-		for _, e := range g.Edges {
-			if e.From == "*" && e.To == n.Name {
-				label += " ◂all"
-				break
-			}
+		if n.Wildcard {
+			label += " ◂all"
 		}
 		rs := []rune(label)
 		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
@@ -215,11 +203,11 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 				}
 			}
 		}
-		if placed && cam.Level() == "cards" {
-			count := max(n.SessionCount, len(n.Sessions))
+		if placed && scene.Level == "cards" {
+			count := n.Card.Sessions
 			detail := fmt.Sprintf("%d sessions", count)
-			if n.Charter.Purpose != "" {
-				detail += " · " + n.Charter.Purpose
+			if n.Card.Purpose != "" {
+				detail += " · " + n.Card.Purpose
 			}
 			detailRunes := []rune(detail)
 			if len(detailRunes) > width-labelX {
@@ -248,19 +236,11 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 	for _, a := range arrows {
 		put(a.x, a.y, a.r, a.role)
 	}
-	for _, c := range func() []Comet { cs, _ := g.Traffic(b.Now); return cs }() {
-		a := g.Positions[c.From]
-		target := g.Positions[c.To]
-		for i := 3; i >= 1; i-- {
-			u := c.Progress - float64(i)*0.035
-			if u < 0 {
-				continue
-			}
-			x, y := cam.Project(Point{a.X + (target.X-a.X)*u, a.Y + (target.Y-a.Y)*u}, width, height)
-			dot(int(x*2), int(y*4), "trail")
+	for _, c := range scene.Comets {
+		for _, p := range c.Trail {
+			dot(int(p.X*float64(width)*2), int(p.Y*float64(height)*4), "trail")
 		}
-		x, y := cam.Project(c.Position, width, height)
-		cx, cy := int(x), int(y)
+		cx, cy := int(c.Position.X*float64(width)), int(c.Position.Y*float64(height))
 		if !put(cx, cy, '•', "comet") {
 			for _, offset := range [][2]int{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
 				if put(cx+offset[0], cy+offset[1], '•', "comet") {
@@ -283,18 +263,40 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 				}
 			}
 			text := string(r)
-			if b.Color != nil && r != ' ' {
-				text = b.Color(c.role, text)
+			if r != ' ' {
+				if b.Color != nil {
+					text = b.Color(c.role, text)
+				} else if b.Styled {
+					text = colorRole(c.role, text)
+				}
 			}
 			s.WriteString(text)
 		}
 		out[y] = s.String()
 	}
-	return out
+	return Output{Lines: out}
 }
 func abs(n int) int {
 	if n < 0 {
 		return -n
 	}
 	return n
+}
+
+// colorRole owns the terminal palette for semantic drawing roles.
+func colorRole(role, text string) string {
+	color := lipgloss.AdaptiveColor{Light: "#596171", Dark: "#6f7889"}
+	switch role {
+	case "depends", "trail":
+		color = lipgloss.AdaptiveColor{Light: "#00666b", Dark: "#5fc4c9"}
+	case "governs":
+		color = lipgloss.AdaptiveColor{Light: "#6445a1", Dark: "#b49cf5"}
+	case "deploys", "selected", "flash", "busyPulse":
+		color = lipgloss.AdaptiveColor{Light: "#865000", Dark: "#f0b35a"}
+	case "node", "label", "card":
+		color = lipgloss.AdaptiveColor{Light: "#242a34", Dark: "#d7dce5"}
+	case "busy", "comet":
+		color = lipgloss.AdaptiveColor{Light: "#246b32", Dark: "#7ccf8a"}
+	}
+	return lipgloss.NewStyle().Foreground(color).Render(text)
 }
