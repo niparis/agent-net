@@ -271,7 +271,7 @@ func (d *Daemon) terminalPlan(info protocol.SessionInfo, q protocol.EnterRequest
 func (d *Daemon) tmuxPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string) (protocol.EnterPlan, error) {
 	pane, ok := findTmuxPane(info.PID)
 	if !ok {
-		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr or tmux pane agent-net can reach: open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
+		return protocol.EnterPlan{Host: plan.Host, Note: fmt.Sprintf("%s is not in a herdr or tmux pane agent-net can reach (no herdr variables and no herdr server above the process): open its window on %s", name, firstNonEmpty(plan.Host, "its machine"))}, nil
 	}
 	tmux := []string{"tmux"}
 	if pane.socket != "" {

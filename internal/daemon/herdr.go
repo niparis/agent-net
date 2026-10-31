@@ -19,7 +19,9 @@ import (
 //
 // herdr is client/server. The panes live in the server, and the owner's
 // terminal is a client. Every process in a pane has HERDR_ENV=1, HERDR_PANE_ID
-// and HERDR_SOCKET_PATH (the server) in its environment. `herdr agent focus`
+// and HERDR_SOCKET_PATH (the server) in its environment. When macOS does not
+// expose those variables, the daemon can identify a herdr server in the
+// process ancestry and probe its socket. `herdr agent focus`
 // only changes the server's idea of the focused pane: a client that is already
 // attached keeps showing the tab it is on (checked on herdr 0.8.0), so it
 // cannot take the owner to the pane. `herdr agent attach <pane>` gives this
@@ -35,10 +37,11 @@ import (
 
 // herdrPane is where a session's process runs in herdr.
 type herdrPane struct {
-	id, socket, bin string
+	id, socket, bin, session string
 }
 
 var herdrIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$`)
+var herdrSessionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
 // findHerdrPane reads the herdr variables of pid, or of the closest parent that
 // has them (a launcher may have cleaned the environment of the child).
@@ -72,6 +75,95 @@ func findHerdrPane(pid int) (herdrPane, bool) {
 		p = parent
 	}
 	return herdrPane{}, false
+}
+
+// findHerdrServer finds a Herdr server in pid's parent chain when the process
+// environments do not expose Herdr's pane variables.
+func findHerdrServer(pid int) (herdrPane, bool) {
+	for p, depth := pid, 0; p > 1 && depth < 64; depth++ {
+		if h, ok := herdrServerArgs(processArgs(p)); ok {
+			return h, true
+		}
+		parent, err := processParentPID(p)
+		if err != nil {
+			break
+		}
+		p = parent
+	}
+	return herdrPane{}, false
+}
+
+func herdrServerArgs(args []string) (herdrPane, bool) {
+	if len(args) < 2 || args[1] != "server" || filepath.Base(args[0]) != "herdr" {
+		return herdrPane{}, false
+	}
+	h := herdrPane{bin: args[0]}
+	for i := 2; i < len(args); i++ {
+		a := args[i]
+		if strings.HasPrefix(a, "--socket=") {
+			h.socket = strings.TrimPrefix(a, "--socket=")
+		} else if strings.HasPrefix(a, "--socket-path=") {
+			h.socket = strings.TrimPrefix(a, "--socket-path=")
+		} else if (a == "--socket" || a == "--socket-path" || a == "-S") && i+1 < len(args) {
+			i++
+			h.socket = args[i]
+		} else if a == "--session" && i+1 < len(args) {
+			i++
+			h.session = args[i]
+		} else if strings.HasPrefix(a, "--session=") {
+			h.session = strings.TrimPrefix(a, "--session=")
+		}
+	}
+	if h.socket != "" && !filepath.IsAbs(h.socket) {
+		h.socket = ""
+	}
+	if !herdrSessionRe.MatchString(h.session) {
+		h.session = ""
+	}
+	return h, true
+}
+
+// herdrSocketCandidates returns explicit server sockets first, then Herdr's
+// documented config socket and common per-user config locations. A candidate
+// is accepted only after the server answers the pane-list API.
+func herdrSocketCandidates(h herdrPane) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(p string) {
+		if filepath.IsAbs(p) && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	add(h.socket)
+
+	var configDirs []string
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); filepath.IsAbs(xdg) {
+		configDirs = append(configDirs, xdg)
+	}
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		configDirs = append(configDirs,
+			filepath.Join(home, ".config"),
+			filepath.Join(home, "Library", "Application Support"),
+		)
+	}
+	for _, dir := range configDirs {
+		if h.session != "" {
+			add(filepath.Join(dir, "herdr", "sessions", h.session, "herdr.sock"))
+		}
+		add(filepath.Join(dir, "herdr", "herdr.sock"))
+	}
+	return out
+}
+
+func herdrPanesFromServer(bin string, h herdrPane) ([]herdrPaneInfo, string, bool) {
+	for _, socket := range herdrSocketCandidates(h) {
+		panes, err := herdrPanes(bin, socket)
+		if err == nil {
+			return panes, socket, true
+		}
+	}
+	return nil, "", false
 }
 
 // herdrBinary finds the herdr program: the pane's own HERDR_BIN_PATH, the
@@ -130,13 +222,16 @@ func herdrPanes(bin, socket string) ([]herdrPaneInfo, error) {
 	}
 	var r struct {
 		Result struct {
-			Panes []herdrPaneInfo `json:"panes"`
+			Panes *[]herdrPaneInfo `json:"panes"`
 		} `json:"result"`
 	}
 	if err := json.Unmarshal(out, &r); err != nil {
 		return nil, err
 	}
-	return r.Result.Panes, nil
+	if r.Result.Panes == nil {
+		return nil, fmt.Errorf("herdr pane list response has no panes")
+	}
+	return *r.Result.Panes, nil
 }
 
 // herdrHolds says whether the pane runs one of the pids (its shell, or a
@@ -191,6 +286,11 @@ func pidChain(pid int) map[int]bool {
 // inside herdr is not known, so the note names both detach keys.
 func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, plan protocol.EnterPlan, name string, viaGateway bool) (protocol.EnterPlan, bool) {
 	h, found := findHerdrPane(info.PID)
+	fromServer := false
+	if !found {
+		h, found = findHerdrServer(info.PID)
+		fromServer = found
+	}
 	if !found {
 		return protocol.EnterPlan{}, false
 	}
@@ -202,9 +302,19 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	if bin == "" {
 		return note("%s runs in herdr, but herdr is not installed where agent-net can find it: open its window on %s", name, where)
 	}
-	panes, err := herdrPanes(bin, h.socket)
-	if err != nil {
-		return note("%s runs in herdr, but the herdr server does not answer: open its window on %s", name, where)
+	var panes []herdrPaneInfo
+	if fromServer {
+		var ok bool
+		panes, h.socket, ok = herdrPanesFromServer(bin, h)
+		if !ok {
+			return note("%s has a herdr server above its process, but no candidate herdr socket answers: open its window on %s", name, where)
+		}
+	} else {
+		var err error
+		panes, err = herdrPanes(bin, h.socket)
+		if err != nil {
+			return note("%s runs in herdr, but the herdr server does not answer: open its window on %s", name, where)
+		}
 	}
 	// The pane in the environment is the one the process started in. A moved
 	// pane gets a new ID, so check that the pane still holds the process, and
