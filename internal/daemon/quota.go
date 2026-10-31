@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -410,10 +409,7 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 
 func quotaAXIProviderError(provider, message string) string {
 	if strings.EqualFold(provider, "opencode-go") && strings.EqualFold(message, "provider_auth_rejected") {
-		if strings.TrimSpace(os.Getenv("XDG_DATA_HOME")) == "" {
-			return "OpenCode Go login was rejected. XDG_DATA_HOME is not set for the daemon; set it if OpenCode uses a custom data folder."
-		}
-		return "OpenCode Go login was rejected; check the local OpenCode Go credentials."
+		return "the OpenCode Go login the daemon found was rejected; if your shell sets QUOTA_AXI_OPENCODE_GO_PI_AUTH=1, run agent-net setup again so the daemon gets it"
 	}
 	return message
 }

@@ -167,7 +167,7 @@ func TestQuotaAXIExplainsMissingOpenCodeDataHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, ok := q.Provider("opencode-go")
-	if !ok || !strings.Contains(p.Error, "XDG_DATA_HOME is not set for the daemon") || strings.Contains(p.Error, "provider_auth_rejected") {
+	if !ok || !strings.Contains(p.Error, "if your shell sets QUOTA_AXI_OPENCODE_GO_PI_AUTH=1, run agent-net setup again so the daemon gets it") || strings.Contains(p.Error, "provider_auth_rejected") {
 		t.Fatalf("provider error was not explained: %+v", p)
 	}
 }

@@ -775,3 +775,21 @@ func TestProtectedQuotaGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("quotas_protected_%dx%d", size[0], size[1]), m.View())
 	}
 }
+
+func TestQuotaFailedReadingHasNoBar(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		m.tab = 2
+		m.quotaShowUnset = true
+		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "the OpenCode Go login the daemon found was rejected; if your shell sets QUOTA_AXI_OPENCODE_GO_PI_AUTH=1, run agent-net setup again so the daemon gets it"}}}
+		view := ansi.Strip(m.View())
+		for _, line := range lines(view) {
+			if strings.Contains(line, "opencode-go") && !strings.Contains(line, "provider_auth_rejected") {
+				if strings.Contains(line, "100%") || strings.ContainsAny(line, "█─") || !strings.Contains(line, "-              -") {
+					t.Fatalf("failed reading has a quota: %s", line)
+				}
+			}
+		}
+		golden(t, fmt.Sprintf("quotas_failed_%dx%d", size[0], size[1]), view)
+	}
+}
