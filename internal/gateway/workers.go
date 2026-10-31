@@ -402,6 +402,10 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	case node.Harnesses == nil:
 		return none, reject("machine %s has not reported its harnesses yet", node.Hostname)
 	}
+	protected, err := g.store.protectedProviders()
+	if err != nil {
+		return none, err
+	}
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote string
 	if automatic {
@@ -497,12 +501,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			rotation := g.modelRotation
 			g.modelRotation++
 			g.mu.Unlock()
-			choice, err := protocol.ChooseWorkerModel(candidates, difficulty, scores, minimums, quotas, running, rotation)
+			choice, protectionNote, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, rotation, protected)
 			if err != nil {
 				return none, reject("%v", err)
 			}
 			p.Harness, p.Model = choice.Harness, choice.Model
 			automaticNote = fmt.Sprintf("%s -> %s %s (score %g, %s", difficulty, p.Harness, p.Model, choice.Score, choice.Fit)
+			if protectionNote != "" {
+				automaticNote += "; " + protectionNote
+			}
 			if choice.QuotaNote != "" {
 				automaticNote += "; " + choice.QuotaNote
 			}
@@ -577,6 +584,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			}
 		}
 		p.Model = resolved
+	}
+	if !automatic && isProtected(p.Harness, p.Model, protected) {
+		if modelNote != "" {
+			modelNote += "; "
+		}
+		modelNote += fmt.Sprintf("uses protected provider (%s), saved for your orchestrator", protocol.ProfileProvider(p.Harness, p.Model))
 	}
 	// A provider with no allowance left refuses the start now, with the reset
 	// time, instead of failing at the first model call (decision 0022).
