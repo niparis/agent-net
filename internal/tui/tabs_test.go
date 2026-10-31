@@ -607,3 +607,12 @@ func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestWorkerColumnsKeepNamesAndModels(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "eighteen-char-name", Harness: "codex", Model: "12345678901234567890", Effort: "high"}}
+	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
+	if !strings.Contains(v, "eighteen-char-name") || !strings.Contains(v, "12345678901234567890:high") || strings.Contains(v, " · 12345678901234567890") {
+		t.Fatal(v)
+	}
+}

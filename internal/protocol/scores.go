@@ -144,7 +144,25 @@ func LookupModelScoreWithDefaultEffort(model, defaultEffort string, overrides []
 	if result, ok := lookup(overrides); ok {
 		return result, true
 	}
-	return lookup(EmbeddedModelScores())
+	scores := EmbeddedModelScores()
+	if result, ok := lookup(scores); ok {
+		return result, true
+	}
+	_, level := SplitModelLevel(model)
+	if level == "" && defaultEffort == "" {
+		var found ModelScore
+		count := 0
+		for _, s := range scores {
+			if s.Effort != "" && scoreName(s.Match) == scoreName(model) {
+				found = s
+				count++
+			}
+		}
+		if count == 1 {
+			return found, true
+		}
+	}
+	return ModelScore{}, false
 }
 
 // DifficultyMinimums are the default minimum capability scores.

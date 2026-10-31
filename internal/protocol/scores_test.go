@@ -120,3 +120,20 @@ func TestOwnerEffortOverrideUsesHarnessDefault(t *testing.T) {
 		t.Fatalf("got %+v %v", got, ok)
 	}
 }
+
+func TestRegisteredProfileScores(t *testing.T) {
+	for _, tt := range []struct {
+		model, effort string
+		score         float64
+	}{
+		{"gpt-6.1-terra:high", "", 42.3},
+		{"gpt-6-luna:xhigh", "", 0},
+		{"openai-codex/gpt-6.1-terra", "", 38.1},
+		{"opencode-go/deepseek-v4.1-flash", "", 32.5},
+	} {
+		got, ok := LookupModelScoreWithDefaultEffort(tt.model, tt.effort, nil)
+		if !ok || (tt.score != 0 && got.Score != tt.score) {
+			t.Errorf("%s: %+v %v", tt.model, got, ok)
+		}
+	}
+}
