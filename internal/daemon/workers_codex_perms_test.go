@@ -229,6 +229,8 @@ func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
 	if m, _ := rec.Answers[0].(map[string]any); m["decision"] != "decline" {
 		t.Errorf("answer: %v", rec.Answers[0])
 	}
+	w.waitNotice(t, 1)
+	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 }
 
 // Only the owner sets the level: an agent session is refused, and a session
