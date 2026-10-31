@@ -244,6 +244,10 @@ func TestFindQuotaAXIUsesThePrivateCopy(t *testing.T) {
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// quota-axi runs only with a supported Node; this one sits next to it.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "node"), []byte("#!/bin/sh\necho v22.19.0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	got, ok := FindQuotaAXI("")
 	if !ok || got != path {
 		t.Fatalf("private copy: %q %v", got, ok)
