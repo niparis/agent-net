@@ -57,8 +57,7 @@ func CharterGuideFor(name string) (CharterAttributeGuide, bool) {
 }
 
 // CharterGuideText describes every field, including its reader, size and
-// examples. It is used by the CTO tool schema so that text stays in sync with
-// the shared protocol guide.
+// examples from the shared protocol guide.
 func CharterGuideText() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Budget about 1200 characters (~300 tokens) for the whole charter because the project's agent reads it every turn. Neighbors see only the first %d characters of accepts and refuses, so put the most important item first, in a few words.\n", NeighborFieldChars)

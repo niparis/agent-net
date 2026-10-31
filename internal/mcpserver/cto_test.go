@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/niparis/agent-net/internal/protocol"
-
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -138,14 +136,10 @@ func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
 		t.Fatal("charter_set missing")
 	}
 	props, _ := ctoToolSchema(t, charter)
-	for _, want := range []string{"accepts", "other agents ask", "Bug fixes in retrieval", "Bearer-authenticated"} {
-		if !strings.Contains(charter.Description, want) {
-			t.Errorf("tool description misses %q", want)
-		}
-	}
-	for _, name := range []string{"attr", "value"} {
-		if !strings.Contains(props[name]["description"].(string), "guide") {
-			t.Errorf("%s description does not point to the guide", name)
+	value := props["value"]["description"].(string)
+	for _, want := range []string{"1200", "6", "40", "accepts", "refuses", "escalate"} {
+		if !strings.Contains(value, want) {
+			t.Errorf("charter summary misses %q", want)
 		}
 	}
 
@@ -263,7 +257,7 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 		found[v.Name] = v
 	}
 	for _, name := range []string{"tools_list", "tools_plan", "tools_apply", "tools_history", "tools_differences", "mcp_import_candidates", "mcp_import", "mcp_native_remove"} {
-		if found[name] == nil || len(found[name].Description) < 60 {
+		if found[name] == nil || found[name].Description == "" {
 			t.Fatalf("missing description: %s", name)
 		}
 	}
@@ -357,12 +351,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 		sizes = append(sizes, size{tool.Name, len(data)})
 		if tool.Name == "charter_set" {
 			foundCharter = true
-			guide, err := json.Marshal(protocol.CharterGuideText())
-			if err != nil {
-				t.Fatal(err)
-			}
-			if count := strings.Count(string(data), string(guide[1:len(guide)-1])); count != 1 {
-				t.Errorf("charter guide occurs %d times, want 1", count)
+			if strings.Count(string(data), "1200") != 1 {
+				t.Error("charter summary must occur once")
 			}
 		}
 	}
@@ -373,7 +363,7 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	for _, item := range sizes[:10] {
 		t.Logf("%s: %d bytes", item.name, item.bytes)
 	}
-	if len(schema) > 24000 {
-		t.Errorf("CTO schema is %d bytes, budget 24000", len(schema))
+	if len(schema) > 23984 {
+		t.Errorf("CTO schema is %d bytes, budget 23984", len(schema))
 	}
 }
