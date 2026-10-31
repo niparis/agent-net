@@ -81,11 +81,21 @@ func (r *runner) installLaunchd(s Service) (string, error) {
 // workers. It does nothing outside a systemd service. Failures are ignored: the
 // next `agent-net setup` writes the whole unit.
 func RefreshDaemonUnit() {
-	if runtime.GOOS != "linux" || os.Getenv("INVOCATION_ID") == "" || os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
+	if os.Getenv("AGENT_NET_NO_SERVICE") == "1" {
+		return
+	}
+	if runtime.GOOS == "darwin" {
+		path := filepath.Join(launchAgentsDir(), Service{Name: "daemon"}.PlistName())
+		EnsureDaemonServiceEnvironment(path, true, daemonEnvironment(home()))
+		return
+	}
+	if runtime.GOOS != "linux" || os.Getenv("INVOCATION_ID") == "" {
 		return
 	}
 	path := filepath.Join(systemdDir(), Service{Name: "daemon"}.UnitName())
-	if changed, err := EnsureWorkersSurviveUnit(path); err == nil && changed {
+	changed, _ := EnsureWorkersSurviveUnit(path)
+	pathChanged, _ := EnsureDaemonServiceEnvironment(path, false, daemonEnvironment(home()))
+	if changed || pathChanged {
 		if _, err := exec.LookPath("systemctl"); err == nil {
 			runCmd("", "systemctl", "--user", "daemon-reload")
 		}

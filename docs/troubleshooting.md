@@ -129,3 +129,7 @@ These messages come from `agent-net tools ...`, the MCP import and native remova
 ## Still stuck
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues) with the output of `agent-net version`, `agent-net status`, the relevant log lines and your OS.
+
+If a worker worktree fails because `git-lfs` is not found, install git-lfs in a
+directory on the login shell PATH, then run `agent-net setup` to refresh the
+daemon service environment. Restart the daemon to use the updated PATH.
