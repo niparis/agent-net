@@ -47,10 +47,17 @@ func (m Model) quotasView(w, h int) []string {
 	var newest int64
 	var configured, unset, unused []quotaRow
 	relevant := m.quotaRelevantProviders()
+	providersWithQuota := map[string]bool{}
 	for _, r := range rows {
-		if quotaNotSetUp(r.provider) {
+		if len(r.provider.Windows) > 0 {
+			providersWithQuota[strings.ToLower(r.provider.Provider)] = true
+		}
+	}
+	for _, r := range rows {
+		provider := strings.ToLower(r.provider.Provider)
+		if quotaNotSetUp(r.provider) && !providersWithQuota[provider] {
 			unset = append(unset, r)
-		} else if !relevant[strings.ToLower(r.provider.Provider)] {
+		} else if !relevant[provider] {
 			unused = append(unused, r)
 		} else {
 			configured = append(configured, r)

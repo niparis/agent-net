@@ -617,6 +617,24 @@ func TestQuotaFoldsUnusedSubscriptions(t *testing.T) {
 	}
 }
 
+func TestQuotaReadingPreventsProviderFromFoldingAsNotSetUp(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Providers: []protocol.QuotaProvider{
+		{Provider: "cursor", Plan: "Premium", Windows: []protocol.QuotaWindow{{ID: "month", PercentUsed: 100, Exhausted: true}}},
+		{Provider: "cursor", Plan: "api", Error: "credential_unavailable"},
+	}}
+	v := ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if strings.Contains(v, "providers not set up") || !strings.Contains(v, "2 more subscriptions (not used by your agents) · s to show") {
+		t.Fatal(v)
+	}
+	m = keys(m, "s")
+	v = ansi.Strip(strings.Join(m.quotasView(120, 30), "\n"))
+	if !strings.Contains(v, "cursor") || !strings.Contains(v, "exhausted") || !strings.Contains(v, "credential_unavailable") {
+		t.Fatal(v)
+	}
+}
+
 func TestWorkerColumnsKeepNamesAndModels(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "eighteen-char-name", Harness: "codex", Model: "12345678901234567890", Effort: "high"}}
