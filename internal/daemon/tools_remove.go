@@ -153,7 +153,7 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	}
 	hash, err = inventory.SkillHash(dest)
 	if err != nil || hash != t.Revision.Version {
-		if e := os.Rename(dest, anchored); e == nil {
+		if e := restoreSkillBackup(dest, anchored); e == nil {
 			os.RemoveAll(stamp)
 		}
 		return fail("conflict", "changed since plan")
@@ -171,4 +171,8 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		return fail("failed", "cannot update skill manifest or Git exclude")
 	}
 	return fail("applied", "")
+}
+
+func restoreSkillBackup(backup, source string) error {
+	return renameSkillNoReplace(backup, source)
 }

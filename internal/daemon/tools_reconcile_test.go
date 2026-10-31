@@ -449,3 +449,24 @@ func TestRemoveSkillRefusesSymlink(t *testing.T) {
 		t.Fatalf("target: %q %v", b, err)
 	}
 }
+
+func TestRestoreSkillBackupDoesNotReplaceNewSource(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", root)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(root, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", filepath.Join(root, "state"))
+	backup, source := filepath.Join(root, "backup"), filepath.Join(root, "source")
+	if err := os.Mkdir(backup, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(source, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := restoreSkillBackup(backup, source); err == nil {
+		t.Fatal("replaced new source")
+	}
+	if _, err := os.Stat(backup); err != nil {
+		t.Fatalf("backup lost: %v", err)
+	}
+}
