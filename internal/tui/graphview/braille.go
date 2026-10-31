@@ -139,23 +139,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			put(cx, cy-1, '▾', "selected")
 		}
 	}
-	for _, a := range arrows {
-		put(a.x, a.y, a.r, a.role)
-	}
-	for _, c := range func() []Comet { cs, _ := g.Traffic(b.Now); return cs }() {
-		a := g.Positions[c.From]
-		target := g.Positions[c.To]
-		for i := 3; i >= 1; i-- {
-			u := c.Progress - float64(i)*0.035
-			if u < 0 {
-				continue
-			}
-			x, y := cam.Project(Point{a.X + (target.X-a.X)*u, a.Y + (target.Y-a.Y)*u}, width, height)
-			dot(int(x*2), int(y*4), "trail")
-		}
-		x, y := cam.Project(c.Position, width, height)
-		put(int(x), int(y), '•', "comet")
-	}
+
 	for _, n := range g.Nodes {
 		x, y, _ := point(n.Name)
 		cx, cy := x/2, y/4
@@ -170,7 +154,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			}
 		}
 		rs := []rune(label)
-		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
+		candidates := [][2]int{{cx + 1, cy}, {cx - len(rs), cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
 		placed := false
 		labelX, labelY := 0, 0
 		for _, pos := range candidates {
@@ -197,7 +181,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 		if !placed {
 			for length := len(rs) - 1; length >= 2 && !placed; length-- {
 				short := append(append([]rune(nil), rs[:length-1]...), '…')
-				for _, pos := range [][2]int{{cx + 2, cy}, {cx - length - 1, cy}, {cx - length/2, cy - 1}, {cx - length/2, cy + 1}} {
+				for _, pos := range [][2]int{{cx + 1, cy}, {cx - length, cy}, {cx - length/2, cy - 1}, {cx - length/2, cy + 1}} {
 					if pos[0] < 0 || pos[1] < 0 || pos[0]+length > width || pos[1] >= height {
 						continue
 					}
@@ -215,6 +199,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 						put(pos[0]+i, pos[1], r, "label")
 					}
 					placed = true
+					labelX, labelY = pos[0], pos[1]
 					break
 				}
 			}
@@ -248,6 +233,23 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 				}
 			}
 		}
+	}
+	for _, a := range arrows {
+		put(a.x, a.y, a.r, a.role)
+	}
+	for _, c := range func() []Comet { cs, _ := g.Traffic(b.Now); return cs }() {
+		a := g.Positions[c.From]
+		target := g.Positions[c.To]
+		for i := 3; i >= 1; i-- {
+			u := c.Progress - float64(i)*0.035
+			if u < 0 {
+				continue
+			}
+			x, y := cam.Project(Point{a.X + (target.X-a.X)*u, a.Y + (target.Y-a.Y)*u}, width, height)
+			dot(int(x*2), int(y*4), "trail")
+		}
+		x, y := cam.Project(c.Position, width, height)
+		put(int(x), int(y), '•', "comet")
 	}
 	out := make([]string, height)
 	for y := 0; y < height; y++ {
