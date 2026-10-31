@@ -64,6 +64,7 @@ type Model struct {
 	quotaUnprotect    bool
 	quotaShowUnset    bool
 	messageShowEvents bool
+	hideWorkerThreads bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
 	snap            Snapshot
@@ -883,6 +884,23 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.startEnter()
+	case "w":
+		if m.tab == 1 {
+			m.hideWorkerThreads = !m.hideWorkerThreads
+			rows := m.messageConversations()
+			selected := false
+			for _, row := range rows {
+				for _, i := range row.items {
+					if i == m.feedCur {
+						selected = true
+					}
+				}
+			}
+			if !selected && len(rows) > 0 {
+				m.feedCur = rows[0].items[0]
+			}
+			return m, nil
+		}
 	case "x":
 		return m.startConfirm()
 	case "h":

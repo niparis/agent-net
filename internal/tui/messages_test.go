@@ -121,6 +121,55 @@ func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) 
 	}
 }
 
+func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
+	const owner, other, w1, w2 = "s_owner", "s_other", "s_worker1", "s_worker2"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.snap = Snapshot{NodeID: "n", Agents: []protocol.AgentView{
+		agent(owner, "n", "Mac", "claude", "a2a-ocs", nil),
+		agent(other, "n", "Mac", "pi", "reviewer", nil),
+		agent(w1, "n", "Mac", "opencode", "shop worker 6", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_6", Owner: owner} }),
+		agent(w2, "n", "Mac", "opencode", "shop worker 7", func(a *protocol.AgentView) { a.Worker = &protocol.WorkerInfo{ID: "w_7", Owner: owner} }),
+	}}
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		ev(1, -4*time.Minute, "msg.stored", "agent", owner, other, "request", nil),
+		ev(2, -3*time.Minute, "msg.stored", "w1a", owner, w1, "request", nil),
+		ev(3, -2*time.Minute, "msg.stored", "w1b", w1, owner, "reply", func(e *protocol.FeedEvent) { e.Parent = "w1a" }),
+		ev(4, -time.Minute, "msg.stored", "w1c", owner, w1, "request", nil),
+		ev(5, -time.Second, "msg.stored", "w2a", owner, w2, "request", nil),
+	})
+	m.feed.byMsg["w1c"].Body = "[agent-net worker notice]\nstatus: done"
+	rows := m.messageConversations()
+	if len(rows) != 3 || rows[0].worker || !rows[1].worker || !rows[2].worker {
+		t.Fatalf("expected agent thread first, followed by two collapsed worker threads: %+v", rows)
+	}
+	var workerRow *messageConversation
+	for i := range rows {
+		if rows[i].workerSession == w1 {
+			workerRow = &rows[i]
+		}
+	}
+	if workerRow == nil {
+		t.Fatal("worker 6 was not listed")
+	}
+	line := ansi.Strip(m.messageConversationLine(*workerRow, 110, false))
+	for _, want := range []string{"a2a-ocs → worker 6", "3 messages", "done"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("worker summary is missing %q: %q", want, line)
+		}
+	}
+	m = keys(m, "w")
+	if got := m.messageConversations(); len(got) != 1 || got[0].worker {
+		t.Fatalf("w should hide worker threads, got %+v", got)
+	}
+	m = keys(m, "w")
+	if got := m.messageConversations(); len(got) != 3 {
+		t.Fatalf("w should show worker threads again, got %+v", got)
+	}
+}
+
 func TestMessageChatShowsBodyAndCollapsesWorkerNotice(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 1
