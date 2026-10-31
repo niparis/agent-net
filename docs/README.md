@@ -8,6 +8,9 @@
 - [troubleshooting.md](troubleshooting.md): first checks and fixes for common problems.
 - [agent-guidance.md](agent-guidance.md): the text agent-net adds to your agents' instruction files.
 - [../plugins/pi/README.md](../plugins/pi/README.md): the Pi extension.
+- [mcp-registry.md](mcp-registry.md): the shared MCP server registry (tools of one machine's servers, used by agents on all machines).
+- [upgrade.md](upgrade.md): how machines upgrade, and what happens to running sessions.
+- [opencode.md](opencode.md): OpenCode sessions and the plugin.
 - [codex.md](codex.md): Codex threads as peers: how they are found, how messages reach them, setup and limits.
 
 ## Work on it
@@ -36,6 +39,7 @@ These files record how the project was planned and built. They are kept for cont
 - [0023](decisions/0023-model-lists-for-every-harness.md): model lists for every harness, loose names resolved for all of them, recent success ranking, and the start gap counting only starts that ran.
 - [0024](decisions/0024-session-names.md): a session's name is its project name, duplicates get ` 2`/` 3`, workers are `<project> worker <n>`, and a harness title goes to TASK.
 - [0025](decisions/0025-install-quota-axi.md): agent-net installs a pinned quota-axi in its own data folder; an owner-installed copy always wins.
+- [0027](decisions/0027-skills-and-mcp-management.md): skills and MCP servers across machines: inventory, a private skill store, owner-gated assignments with undo, scoped MCP federation, and guarded removal of native MCP entries. Steps 1 to 7 and 9 are built; the Tools tab (step 8) is pending. Current behavior: [reference](reference.md#tools-inventory), [security](security.md#skills-and-mcp-management), [troubleshooting](troubleshooting.md#skills-and-mcp-management).
 - [0015](decisions/0015-machine-display-name.md): machine display name (the owner names a machine once, from the TUI; every machine shows it).
 - [0018](decisions/0018-admit-workers-by-machine-load.md): workers start by recent CPU and memory load, with a queue and a choice of machine by headroom.
 - [0019](decisions/0019-opencode-worker-logins.md): OpenCode workers get a private data folder and a copy of all the owner's OpenCode logins; the OAuth sign-out risk and when to revisit.

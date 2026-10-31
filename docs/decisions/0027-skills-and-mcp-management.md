@@ -4,6 +4,10 @@
 **Status:** Proposed for owner review
 **Context:** [0001 D2](0001-initial-decisions.md), [0022](0022-component-graph-and-cto.md), [MCP registry](../mcp-registry.md), [reference](../reference.md).
 
+## Status
+
+Build steps 1 to 7 and 9 are done: inventory, gateway storage, the private skill store, owner-gated assignments, skill projection with journal and undo, scoped MCP federation, and native MCP import and guarded removal, with the final documentation, setup and uninstall pass. Step 8 (the Tools tab and CTO workflows) is pending the owner's approval of the mockup. The decision text below is unchanged.
+
 ## Goal and terms
 
 The Tools tab and CTO chat show skills and MCP servers found on every enrolled machine, including things agent-net did not install. The owner can make an item global, assign it to one or more registered projects, or keep it uninstalled for later restoration. A project is the network project in 0022, not a path: all its registered checkouts on all machines are targets, including later registrations. Global means all projects and sessions without a project. An unknown project never gets a project-only item. Desired assignment, observed installation, and effective availability are separate; an offline machine is pending, not successful. A charter's `needs` is advisory text, not an assignment or permission. Show unmet needs and let the owner explicitly assign them.
