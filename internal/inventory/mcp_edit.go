@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -178,6 +179,12 @@ func verifyRemoval(src nativeSource, before, after []byte, root, name string) er
 	if err != nil {
 		return errors.New("the edit would leave a malformed file; nothing was changed")
 	}
+	if src.toml {
+		// Removing dotted assignments can leave an empty implicit table in the
+		// parsed form. It has no source text of its own, so discard it before
+		// proving that no part of the named entry remains.
+		dropEmptyTOMLEntry(neu, src, name)
+	}
 	if holds(neu, src, root, name) {
 		return errors.New("the entry is written in a form this editor does not remove; remove it by hand")
 	}
@@ -190,6 +197,16 @@ func verifyRemoval(src nativeSource, before, after []byte, root, name string) er
 		return errors.New("the edit would change more than the entry; nothing was changed")
 	}
 	return nil
+}
+
+func dropEmptyTOMLEntry(doc map[string]any, src nativeSource, name string) {
+	servers, _ := doc[src.key].(map[string]any)
+	if server, ok := servers[name].(map[string]any); ok && len(server) == 0 {
+		delete(servers, name)
+	}
+	if len(servers) == 0 {
+		delete(doc, src.key)
+	}
 }
 
 func holds(doc map[string]any, src nativeSource, root, name string) bool {
@@ -606,10 +623,226 @@ func tomlEntrySpans(d []byte, key, name string) ([][2]int, error) {
 		}
 		spans = append(spans, [2]int{h.start, end})
 	}
+	assignments, err := tomlAssignments(d)
+	if err != nil {
+		return nil, errors.New("the file is malformed; it was not edited")
+	}
+	for _, a := range assignments {
+		var target, descendant bool
+		switch {
+		case len(a.table) == 0 && len(a.keys) >= 2 && a.keys[0] == key && a.keys[1] == name:
+			target = true
+			descendant = len(a.keys) > 2
+		case len(a.table) == 1 && a.table[0] == key && len(a.keys) >= 1 && a.keys[0] == name:
+			target = true
+			descendant = len(a.keys) > 1
+		}
+		if !target || (!descendant && !a.inlineTable) {
+			continue
+		}
+		start, end := a.lineStart, a.end
+		if a.comment >= 0 {
+			// Keep a trailing comment on the removed assignment as a comment
+			// line, byte-for-byte from the whitespace before # onward.
+			start = a.keyStart
+			end = a.valueEnd
+		}
+		spans = append(spans, [2]int{start, end})
+	}
 	if len(spans) == 0 {
 		return nil, os.ErrNotExist
 	}
-	return spans, nil
+	sort.Slice(spans, func(i, j int) bool { return spans[i][0] < spans[j][0] })
+	merged := spans[:0]
+	for _, span := range spans {
+		if len(merged) > 0 && span[0] < merged[len(merged)-1][1] {
+			if span[1] > merged[len(merged)-1][1] {
+				merged[len(merged)-1][1] = span[1]
+			}
+			continue
+		}
+		merged = append(merged, span)
+	}
+	return merged, nil
+}
+
+type tomlAssignment struct {
+	lineStart   int
+	keyStart    int
+	end         int
+	comment     int
+	valueEnd    int
+	table       []string
+	keys        []string
+	inlineTable bool
+}
+
+// tomlAssignments scans assignment lines outside of values. It keeps the
+// current table path and records complete logical assignments, including
+// multi-line values, so removal never mistakes key-like text inside a value
+// for another entry.
+func tomlAssignments(d []byte) ([]tomlAssignment, error) {
+	var out []tomlAssignment
+	var table []string
+	for lineStart := 0; lineStart < len(d); {
+		j := lineStart
+		for j < len(d) && (d[j] == ' ' || d[j] == '\t') {
+			j++
+		}
+		if j >= len(d) {
+			break
+		}
+		if d[j] == '\n' || d[j] == '\r' && j+1 < len(d) && d[j+1] == '\n' {
+			lineStart = tomlLineEnd(d, j)
+			continue
+		}
+		if d[j] == '#' {
+			lineStart = tomlLineEnd(d, j)
+			continue
+		}
+		if d[j] == '[' {
+			keys, end, err := tomlHeaderKeys(d, j)
+			if err != nil {
+				return nil, err
+			}
+			table = keys
+			lineStart = tomlLineEnd(d, end)
+			continue
+		}
+
+		keys, keyEnd, err := tomlKeyPath(d, j)
+		if err != nil {
+			return nil, err
+		}
+		eq := keyEnd
+		for eq < len(d) && (d[eq] == ' ' || d[eq] == '\t') {
+			eq++
+		}
+		if eq >= len(d) || d[eq] != '=' {
+			return nil, errors.New("expected TOML assignment")
+		}
+		valueStart := eq + 1
+		for valueStart < len(d) && (d[valueStart] == ' ' || d[valueStart] == '\t') {
+			valueStart++
+		}
+		end, comment, err := tomlValueEnd(d, valueStart)
+		if err != nil {
+			return nil, err
+		}
+		valueEnd := comment
+		if comment < 0 {
+			valueEnd = end
+		}
+		for valueEnd > valueStart && (d[valueEnd-1] == ' ' || d[valueEnd-1] == '\t' || d[valueEnd-1] == '\r' || d[valueEnd-1] == '\n') {
+			valueEnd--
+		}
+		out = append(out, tomlAssignment{
+			lineStart:   lineStart,
+			keyStart:    j,
+			end:         end,
+			comment:     comment,
+			valueEnd:    valueEnd,
+			table:       append([]string(nil), table...),
+			keys:        keys,
+			inlineTable: valueStart < len(d) && d[valueStart] == '{',
+		})
+		lineStart = end
+	}
+	return out, nil
+}
+
+func tomlLineEnd(d []byte, i int) int {
+	for i < len(d) && d[i] != '\n' {
+		i++
+	}
+	if i < len(d) {
+		return i + 1
+	}
+	return i
+}
+
+func tomlKeyPath(d []byte, i int) ([]string, int, error) {
+	var keys []string
+	for {
+		for i < len(d) && (d[i] == ' ' || d[i] == '\t') {
+			i++
+		}
+		if i >= len(d) {
+			return nil, i, errors.New("missing TOML key")
+		}
+		if d[i] == '"' || d[i] == '\'' {
+			end, err := tomlString(d, i)
+			if err != nil {
+				return nil, i, err
+			}
+			k := string(d[i+1 : end-1])
+			if d[i] == '"' {
+				k, err = strconv.Unquote(`"` + k + `"`)
+				if err != nil {
+					return nil, i, errors.New("bad TOML key")
+				}
+			}
+			keys = append(keys, k)
+			i = end
+		} else {
+			start := i
+			for i < len(d) && (d[i] == '-' || d[i] == '_' || d[i] >= '0' && d[i] <= '9' || d[i] >= 'a' && d[i] <= 'z' || d[i] >= 'A' && d[i] <= 'Z') {
+				i++
+			}
+			if i == start {
+				return nil, i, errors.New("bad TOML key")
+			}
+			keys = append(keys, string(d[start:i]))
+		}
+		for i < len(d) && (d[i] == ' ' || d[i] == '\t') {
+			i++
+		}
+		if i < len(d) && d[i] == '.' {
+			i++
+			continue
+		}
+		return keys, i, nil
+	}
+}
+
+func tomlValueEnd(d []byte, i int) (end, comment int, err error) {
+	depth := 0
+	comment = -1
+	for i < len(d) {
+		switch d[i] {
+		case '\n':
+			if depth == 0 {
+				return i + 1, comment, nil
+			}
+			i++
+		case '#':
+			if depth == 0 {
+				comment = i
+				return tomlLineEnd(d, i), comment, nil
+			}
+			i = tomlLineEnd(d, i)
+		case '"', '\'':
+			i, err = tomlString(d, i)
+			if err != nil {
+				return 0, -1, err
+			}
+		case '[', '{':
+			depth++
+			i++
+		case ']', '}':
+			depth--
+			if depth < 0 {
+				return 0, -1, errors.New("unbalanced TOML value")
+			}
+			i++
+		default:
+			i++
+		}
+	}
+	if depth != 0 {
+		return 0, -1, errors.New("unterminated TOML value")
+	}
+	return len(d), comment, nil
 }
 
 // trimTrailingBlank moves end back over comment-only and blank lines at the end
