@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -239,6 +240,95 @@ func (m Model) quotaModels() []quotaModel {
 	return rows
 }
 
+// workerShareStarts is how many future starts the Workers panel forecasts.
+const workerShareStarts = 20
+
+// workerShareCellWidth keeps every heatmap cell the same width.
+const workerShareCellWidth = 5
+
+// workerCandidateTiers splits the candidates the way automatic starts do:
+// unprotected first, then protected only when no ordinary model qualifies.
+func (m Model) workerCandidateTiers(level string, candidates []protocol.WorkerModelCandidate) (normal, protected []protocol.WorkerModelCandidate) {
+	for _, c := range candidates {
+		if len(m.snap.ProtectedProviders.Providers) > 0 {
+			score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, m.snap.Scores)
+			if !ok {
+				continue
+			}
+			fit, _ := protocol.DifficultyFit(score.Score, level, m.snap.DifficultyMinimums)
+			if fit != "good" && fit != "excellent" {
+				continue
+			}
+		}
+		if m.providerProtected(protocol.ProfileProvider(c.Harness, c.Model)) {
+			protected = append(protected, c)
+		} else {
+			normal = append(normal, c)
+		}
+	}
+	return normal, protected
+}
+
+// workerShareCell renders one profile's share of the next 20 starts. A model
+// below the difficulty minimum is a dim x; an eligible model with no share is
+// a dot.
+func workerShareCell(count int, eligible bool) string {
+	if !eligible {
+		return sDim.Render(cell("x", workerShareCellWidth))
+	}
+	if count <= 0 {
+		return sDim.Render(cell("·", workerShareCellWidth))
+	}
+	pct := count * 100 / workerShareStarts
+	block := "░"
+	switch {
+	case pct >= 75:
+		block = "█"
+	case pct >= 50:
+		block = "▓"
+	case pct >= 25:
+		block = "▒"
+	}
+	return lipgloss.NewStyle().Foreground(roleGood).Render(cell(fmt.Sprintf("%s%3d%%", block, pct), workerShareCellWidth))
+}
+
+func shareHeaderCell(s string) string {
+	pad := workerShareCellWidth - ansi.StringWidth(s)
+	if pad <= 0 {
+		return s
+	}
+	left := pad / 2
+	return strings.Repeat(" ", left) + s + strings.Repeat(" ", pad-left)
+}
+
+func workerShareHeader() string {
+	var cells []string
+	for _, letter := range []string{"T", "S", "N", "H", "V"} {
+		cells = append(cells, shareHeaderCell(letter))
+	}
+	return strings.Join(cells, " ")
+}
+
+// shortWorkerModel keeps a short model name within w columns without cutting a
+// word: it drops the effort suffix or a trailing whole segment first.
+func shortWorkerModel(model string, w int) string {
+	s := shortModel(model)
+	if ansi.StringWidth(s) <= w {
+		return s
+	}
+	if i := strings.LastIndexByte(s, ':'); i > 0 && ansi.StringWidth(s[:i]) <= w {
+		return s[:i]
+	}
+	for i := len(s) - 1; i > 0; i-- {
+		if s[i] == '-' || s[i] == '.' || s[i] == '_' || s[i] == ':' || s[i] == '/' {
+			if ansi.StringWidth(s[:i])+1 <= w {
+				return s[:i] + "…"
+			}
+		}
+	}
+	return cell(s, w)
+}
+
 func (m Model) quotaModelsView(w int) []string {
 	rows := m.quotaModels()
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
@@ -270,39 +360,48 @@ func (m Model) quotaModelsView(w int) []string {
 	}
 	picks := make([]protocol.WorkerModelChoice, len(levels))
 	shares := make([]string, len(levels))
-	rotation := m.snap.WorkerRotation.Clone()
+	counts := make([][]int, len(levels))
+	rowKeys := make([]string, len(rows))
+	for i, r := range rows {
+		rowKeys[i] = protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model})
+	}
+	forecast := m.snap.WorkerRotation.Clone()
 	for i, level := range levels {
+		counts[i] = make([]int, len(rows))
 		shares[i] = protocol.WorkerRotationShares(level, candidates, &m.snap.WorkerRotation)
-		var normal, protected []protocol.WorkerModelCandidate
-		for _, c := range candidates {
-			if len(m.snap.ProtectedProviders.Providers) > 0 {
-				score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, m.snap.Scores)
-				if !ok {
-					continue
-				}
-				fit, _ := protocol.DifficultyFit(score.Score, level, m.snap.DifficultyMinimums)
-				if fit != "good" && fit != "excellent" {
-					continue
+		normal, protected := m.workerCandidateTiers(level, candidates)
+		for start := 0; start < workerShareStarts; start++ {
+			choice, err := protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &forecast)
+			if err != nil {
+				choice, err = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &forecast)
+			}
+			if err != nil {
+				break
+			}
+			if start == 0 {
+				picks[i] = choice
+			}
+			key := protocol.WorkerModelKey(choice.WorkerModelCandidate)
+			for rowIndex, rowKey := range rowKeys {
+				if rowKey == key {
+					counts[i][rowIndex]++
 				}
 			}
-			if m.providerProtected(protocol.ProfileProvider(c.Harness, c.Model)) {
-				protected = append(protected, c)
-			} else {
-				normal = append(normal, c)
-			}
-		}
-		var err error
-		picks[i], err = protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &rotation)
-		if err != nil {
-			picks[i], _ = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &rotation)
 		}
 	}
 	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
-	showUsed := w >= 110
-	usedWidth := max(w-4-(nameWidth+1+harnessWidth+1+modelWidth+1+scoreWidth+1+9+2), 0)
-	header := fmt.Sprintf("%-*s %-*s %-*s %-*s T S N H V", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL", scoreWidth, "SCORE")
+	if w < 110 {
+		nameWidth, harnessWidth, modelWidth, scoreWidth = 15, 8, 17, 0
+	}
+	usedWidth := max(w-4-(nameWidth+1+harnessWidth+1+modelWidth+1+scoreWidth+1+len(workerShareHeader())+2), 0)
+	showUsed := w >= 110 && usedWidth >= 10
+	header := fmt.Sprintf("%-*s %-*s %-*s", nameWidth, "NAME", harnessWidth, "HARNESS", modelWidth, "MODEL")
+	if scoreWidth > 0 {
+		header += " " + cell("SCORE", scoreWidth)
+	}
+	header += " " + workerShareHeader()
 	if showUsed {
-		header += "  USED"
+		header += "  " + cell("USED", usedWidth)
 	}
 	var body []string
 	body = append(body, sDim.Render(header))
@@ -314,34 +413,30 @@ func (m Model) quotaModelsView(w int) []string {
 	displayed := make([]displayRow, 0, len(rows))
 	selectedRow, selectedCount := -1, 0
 	for rowIndex, r := range rows {
-		var fits, fitLetters []string
+		var cellsOut, fitLetters []string
 		var chosen []int
 		for i, level := range levels {
 			letter := "-"
-			color := roleFaint
+			eligible := false
 			if r.scored && !r.stale {
 				fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
 				switch fit {
 				case "excellent":
 					letter = "E"
-					color = roleGood
+					eligible = true
 				case "good":
 					letter = "G"
-					color = roleGood
+					eligible = true
 				case "poor":
 					letter = "P"
-					color = roleWarning
 				}
 			}
-			style := lipgloss.NewStyle().Foreground(color)
-			if letter == "G" {
-				style = style.Faint(true)
-			}
+			share := workerShareCell(counts[i][rowIndex], eligible)
 			if picks[i].Model == r.model && picks[i].Harness == r.harness && picks[i].Model != "" {
-				style = sSel.Bold(true)
+				share = sSel.Bold(true).Render(stripStyles(share))
 				chosen = append(chosen, i)
 			}
-			fits = append(fits, style.Render(letter))
+			cellsOut = append(cellsOut, share)
 			fitLetters = append(fitLetters, letter)
 		}
 		score := "-"
@@ -351,13 +446,21 @@ func (m Model) quotaModelsView(w int) []string {
 		if r.score.Effort != "" && !r.stale {
 			score += "/" + r.score.Effort
 		}
-		model := workerDisplayModel(r.harness, r.model)
+		model := shortWorkerModel(r.model, modelWidth)
 		if r.protected {
 			r.name = "🔒 " + r.name
 		}
-		line := fmt.Sprintf("%s %s %s %s %s", cell(sanitize(r.name), nameWidth), cell(r.harness, harnessWidth), cell(sanitize(model), modelWidth), cell(score, scoreWidth), strings.Join(fits, " "))
+		line := fmt.Sprintf("%s %s %s", cell(sanitize(r.name), nameWidth), cell(r.harness, harnessWidth), cell(sanitize(model), modelWidth))
+		if scoreWidth > 0 {
+			line += " " + cell(score, scoreWidth)
+		}
+		line += " " + strings.Join(cellsOut, " ")
 		if showUsed {
-			line += "  " + cell(workerUsage(r), usedWidth)
+			usage := workerUsage(r)
+			if ansi.StringWidth(usage) > usedWidth {
+				usage = workerUsageShort(r)
+			}
+			line += "  " + cell(usage, usedWidth)
 		}
 		if len(chosen) > selectedCount {
 			selectedRow, selectedCount = rowIndex, len(chosen)
@@ -392,11 +495,8 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 	}
-	key := "T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now"
-	if w < 110 {
-		key = "T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now"
-	}
-	body = append(body, sDim.Render(clip(key, w-4)))
+	legend := "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min"
+	body = append(body, sDim.Render(clip(legend, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	if len(m.snap.ProtectedProviders.Providers) > 0 {
 		title = fmt.Sprintf("Workers · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
@@ -464,6 +564,20 @@ func workerUsage(r quotaModel) string {
 	usage := fmt.Sprintf("%d · %d%% done", r.used, pct)
 	if r.failedRuns > 0 {
 		usage += fmt.Sprintf(" · %d failed", r.failedRuns)
+	}
+	return usage
+}
+
+// workerUsageShort fits the usage column when the table also shows the share
+// heatmap.
+func workerUsageShort(r quotaModel) string {
+	if r.used <= 0 {
+		return "unused"
+	}
+	pct := (r.done*100 + r.used/2) / r.used
+	usage := fmt.Sprintf("%d·%d%%", r.used, pct)
+	if r.failedRuns > 0 {
+		usage += fmt.Sprintf("·%d✗", r.failedRuns)
 	}
 	return usage
 }

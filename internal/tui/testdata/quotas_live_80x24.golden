@@ -11,9 +11,9 @@
 │ laptop: exit status 2                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────╮
-│ NAME               HARNESS  MODEL                     SCORE        T S N H V │
-│ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P │
-│ T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now │
+│ NAME            HARNESS  MODEL               T     S     N     H     V       │
+│ terra           codex    gpt-6.1-terra     ·     ·     ·     ·     x         │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

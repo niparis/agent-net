@@ -6,10 +6,10 @@
 │ > 🔒 claude max       week           ███████───  70%      -         -                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 🔒 protected · 1 registered · 0 running · scores: Artificial Analysis──────────────────────────────────────╮
-│ NAME               HARNESS  MODEL                     SCORE        T S N H V  USED                                   │
-│ 🔒 sonnet          claude   claude-sonnet-4           -            - - - - -  unused                                 │
+│ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
+│ 🔒 sonnet          claude   sonnet-4                  -            x     x     x     x     x      unused             │
 │   protected · saved for your orchestrator (anthropic)                                                                │
-│ T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now               │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
 
