@@ -58,3 +58,17 @@ func (g *Graph) Traffic(now time.Time) ([]Comet, []string) {
 	}
 	return comets, flashes
 }
+
+// ShiftTraffic preserves animation progress while traffic is paused.
+func (g *Graph) ShiftTraffic(start, end time.Time) {
+	if !end.After(start) {
+		return
+	}
+	for i := range g.messages {
+		if g.messages[i].At.Before(start) {
+			g.messages[i].At = g.messages[i].At.Add(end.Sub(start))
+		} else if g.messages[i].At.Before(end) {
+			g.messages[i].At = end
+		}
+	}
+}

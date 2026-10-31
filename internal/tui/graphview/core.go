@@ -17,7 +17,7 @@ type Camera struct {
 }
 
 func (c Camera) Project(p Point, width, height int) (float64, float64) {
-	return float64(width)/2 + (p.X-c.Center.X)*c.Zoom, float64(height)/2 + (p.Y-c.Center.Y)*c.Zoom
+	return float64(width)/2 + (p.X-c.Center.X)*c.Zoom*2, float64(height)/2 + (p.Y-c.Center.Y)*c.Zoom
 }
 func (c Camera) Level() string {
 	if c.Zoom < c.FitZoom*0.7 {
@@ -91,7 +91,7 @@ func (g *Graph) Fit(width, height int) Camera {
 		miny = math.Min(miny, p.Y)
 		maxy = math.Max(maxy, p.Y)
 	}
-	z := math.Min(math.Max(1, float64(width)-2)/math.Max(1, maxx-minx), math.Max(1, float64(height)-2)/math.Max(1, maxy-miny))
+	z := math.Min(math.Max(1, float64(width)-2)/(2*math.Max(1, maxx-minx)), math.Max(1, float64(height)-2)/math.Max(1, maxy-miny))
 	return Camera{Center: Point{(minx + maxx) / 2, (miny + maxy) / 2}, Zoom: z, FitZoom: z}
 }
 func (g *Graph) layout() {

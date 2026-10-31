@@ -91,6 +91,8 @@ func (m *Model) applyMap(r mapMsg) {
 	}
 	if m.graph == nil {
 		m.graph = graphview.New(r.view)
+		w, h := m.graphSize()
+		m.graphCamera = m.graph.Fit(w, h)
 	} else {
 		m.graph.Update(r.view)
 	}

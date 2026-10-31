@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools │ 12 online · 1 busy · 2 needs you       14:05:00
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy · 2 needs you
 Needs you (2) ──────────────────────────────────────────────────────────────────────────────────────
 ▍▸ strategies claude          question: "Merge tenebrae-nexus/truenas-stacks #817?"              12m
 ▍  ci-runner  pi     build-vm permission: Bash(git push origin main)                              3m
@@ -27,4 +27,4 @@ Needs you (2) ──────────────────────
 │ write to the CTO: it can set charters, start workers, answer what the network is doing           │
 │ > write to the CTO...                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-5 tabs  up/down select  enter conversation  m msg  s start  x stop  h/H hide/show  t trust  q quit
+1-6 tabs  up/down select  enter conversation  m msg  s start  x stop  h/H hide/show  t trust  q quit

@@ -1,6 +1,7 @@
 package graphview
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"time"
@@ -103,6 +104,11 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 			}
 		}
 	}
+	_, flashes := g.Traffic(b.Now)
+	flash := map[string]bool{}
+	for _, name := range flashes {
+		flash[name] = true
+	}
 	for _, n := range g.Nodes {
 		x, y, _ := point(n.Name)
 		cx, cy := x/2, y/4
@@ -122,7 +128,16 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 				break
 			}
 		}
+		if flash[n.Name] {
+			role = "flash"
+		}
 		put(cx, cy, marker, role)
+	}
+	if x, y, ok := point(g.Selected()); ok {
+		cx, cy := x/2, y/4
+		if !put(cx-1, cy, '▸', "selected") {
+			put(cx, cy-1, '▾', "selected")
+		}
 	}
 	for _, a := range arrows {
 		put(a.x, a.y, a.r, a.role)
@@ -157,6 +172,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 		rs := []rune(label)
 		candidates := [][2]int{{cx + 2, cy}, {cx - len(rs) - 1, cy}, {cx - len(rs)/2, cy - 1}, {cx - len(rs)/2, cy + 1}}
 		placed := false
+		labelX, labelY := 0, 0
 		for _, pos := range candidates {
 			if pos[0] < 0 || pos[1] < 0 || pos[0]+len(rs) > width || pos[1] >= height {
 				continue
@@ -175,6 +191,7 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 				put(pos[0]+i, pos[1], r, "label")
 			}
 			placed = true
+			labelX, labelY = pos[0], pos[1]
 			break
 		}
 		if !placed {
@@ -198,6 +215,35 @@ func (b Braille) Render(g *Graph, cam Camera, width, height int) []string {
 						put(pos[0]+i, pos[1], r, "label")
 					}
 					placed = true
+					break
+				}
+			}
+		}
+		if placed && cam.Level() == "cards" {
+			count := max(n.SessionCount, len(n.Sessions))
+			detail := fmt.Sprintf("%d sessions", count)
+			if n.Charter.Purpose != "" {
+				detail += " · " + n.Charter.Purpose
+			}
+			detailRunes := []rune(detail)
+			if len(detailRunes) > width-labelX {
+				detailRunes = detailRunes[:max(0, width-labelX)]
+			}
+			for _, row := range []int{labelY + 1, labelY - 1} {
+				if row < 0 || row >= height || len(detailRunes) == 0 {
+					continue
+				}
+				free := true
+				for i := range detailRunes {
+					if cells[row*width+labelX+i].occupied {
+						free = false
+						break
+					}
+				}
+				if free {
+					for i, r := range detailRunes {
+						put(labelX+i, row, r, "card")
+					}
 					break
 				}
 			}
