@@ -91,7 +91,7 @@ func sevRank(s string) int {
 // machine columns.
 func Differences(items []protocol.ToolItem, ms []Machine) []Difference {
 	ms = machinesOf(items, ms)
-	gs := groupItems(items)
+	gs := groupItems(named(items, ms))
 	var out []Difference
 	skipUnmanaged := map[string]bool{}
 	for _, g := range gs {

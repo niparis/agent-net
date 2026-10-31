@@ -257,7 +257,7 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 	for _, v := range list.Tools {
 		found[v.Name] = v
 	}
-	for _, name := range []string{"tools_list", "tools_plan", "tools_apply", "tools_history", "mcp_import_candidates", "mcp_import", "mcp_native_remove"} {
+	for _, name := range []string{"tools_list", "tools_plan", "tools_apply", "tools_history", "tools_differences", "mcp_import_candidates", "mcp_import", "mcp_native_remove"} {
 		if found[name] == nil || len(found[name].Description) < 60 {
 			t.Fatalf("missing description: %s", name)
 		}

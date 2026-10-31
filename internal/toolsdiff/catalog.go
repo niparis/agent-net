@@ -193,7 +193,7 @@ func machineIndex(ms []Machine, nodeID, name string) int {
 // show even when they hold no tool.
 func Build(items []protocol.ToolItem, known []Machine) Catalog {
 	c := Catalog{Machines: machinesOf(items, known)}
-	for _, g := range groupItems(items) {
+	for _, g := range groupItems(named(items, c.Machines)) {
 		c.Rows = append(c.Rows, rowsOf(g, c.Machines)...)
 	}
 	c.Diffs = Differences(items, c.Machines)
