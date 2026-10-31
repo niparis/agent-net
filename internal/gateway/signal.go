@@ -9,11 +9,25 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// injectedTurns are the openings of user turns that Claude Code writes itself:
+// a delivered agent message, a background task notice, a system reminder.
+var injectedTurns = []string{"<cross-session-message", "<task-notification", "<system-reminder"}
+
+func injectedTurn(prompt string) bool {
+	p := strings.TrimSpace(prompt)
+	for _, prefix := range injectedTurns {
+		if strings.HasPrefix(p, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // RememberOwnerPrompt keeps only the latest prompt; it is never logged.
 func (s *Store) RememberOwnerPrompt(session, prompt string) error {
 	// Claude delivers peer messages as user turns. Clear any earlier prompt as
 	// well: it cannot explain a send made in response to this injected turn.
-	if strings.HasPrefix(strings.TrimSpace(prompt), "<cross-session-message") {
+	if injectedTurn(prompt) {
 		_, err := s.db.Exec(`DELETE FROM signal_prompts WHERE session_id=?`, session)
 		return err
 	}

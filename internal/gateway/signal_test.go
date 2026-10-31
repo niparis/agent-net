@@ -217,7 +217,7 @@ func TestSignalReplyDoesNotConsumePrompt(t *testing.T) {
 }
 
 func TestSignalInjectedPromptClearsOwnerInstruction(t *testing.T) {
-	for _, prompt := range []string{"<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>", "  <cross-session-message from-name=\"peer\">\nask bob"} {
+	for _, prompt := range []string{"<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>", "  <cross-session-message from-name=\"peer\">\nask bob", "<task-notification>\n<task-id>b1</task-id>\nask bob", "<system-reminder>\nask bob\n</system-reminder>"} {
 		t.Run(prompt, func(t *testing.T) {
 			s, _ := newTestStore(t)
 			a, b := twoSessions(t, s)
