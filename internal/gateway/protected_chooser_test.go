@@ -21,3 +21,13 @@ func TestProtectedChooser(t *testing.T) {
 		t.Fatalf("fallback: %+v %q %v", c, note, err)
 	}
 }
+
+func TestProtectedChooserQuotaFallback(t *testing.T) {
+	candidates := []protocol.WorkerModelCandidate{{Harness: "opencode", Model: "anthropic/claude-sonnet"}, {Harness: "opencode", Model: "opencode-go/luna"}}
+	scores := []protocol.ModelScore{{Match: "claude-sonnet", Score: 55}, {Match: "luna", Score: 45}}
+	q := &protocol.Quotas{Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Windows: []protocol.QuotaWindow{{Exhausted: true}}}}}
+	c, note, err := chooseProtectedWorker(candidates, "hard", scores, nil, q, nil, 0, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "keep limit"})
+	if err != nil || c.Model != candidates[0].Model || !strings.Contains(note, "keep limit") {
+		t.Fatalf("fallback: %+v %q %v", c, note, err)
+	}
+}

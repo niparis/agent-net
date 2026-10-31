@@ -10,6 +10,7 @@ import (
 
 // WorkerModelCandidate is one model available on an installed harness.
 type WorkerModelCandidate struct {
+	Name          string
 	Harness       string
 	Model         string
 	Provider      string

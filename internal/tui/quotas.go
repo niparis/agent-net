@@ -355,7 +355,7 @@ func (m Model) quotaModelsView(w int) []string {
 	body = append(body, sDim.Render(clip(key, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	if len(m.snap.ProtectedProviders.Providers) > 0 {
-		title += " · 🔒 protected"
+		title = fmt.Sprintf("Workers · 🔒 protected · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	}
 	out := panel(title, body, w, roleAccent)
 	if selectedRow >= 0 {
@@ -431,6 +431,15 @@ func naturalList(items []string) string {
 func (m Model) providerProtected(provider string) bool {
 	for _, p := range m.snap.ProtectedProviders.Providers {
 		if strings.EqualFold(p, provider) {
+			return true
+		}
+	}
+	return false
+}
+
+func (m Model) quotaProviderProtected(provider string) bool {
+	for _, p := range m.snap.ProtectedProviders.Providers {
+		if strings.EqualFold(p, provider) || protocol.QuotaProviderForModelProvider(p) != "" && strings.EqualFold(protocol.QuotaProviderForModelProvider(p), provider) {
 			return true
 		}
 	}

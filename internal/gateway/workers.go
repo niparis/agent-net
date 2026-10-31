@@ -487,7 +487,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 					if profile.Effort != "" {
 						model += ":" + profile.Effort
 					}
-					candidates = append(candidates, protocol.WorkerModelCandidate{Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[profile.Model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
+					candidates = append(candidates, protocol.WorkerModelCandidate{Name: profile.Name, Harness: h.Name, Model: model, DefaultEffort: h.ModelDefaultEfforts[profile.Model], Failed: failures[model], Succeeded: !successes[model].IsZero()})
 				}
 			}
 			if len(candidates) == 0 {

@@ -38,7 +38,11 @@ func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level str
 		}
 		if isProtected(c.Harness, c.Model, setting) {
 			protected = append(protected, c)
-			skipped = append(skipped, fmt.Sprintf("skipped %s %s: protected provider (%s), saved for your orchestrator", c.Harness, c.Model, protocol.ProfileProvider(c.Harness, c.Model)))
+			name := c.Name
+			if name == "" {
+				name = c.Harness + " " + c.Model
+			}
+			skipped = append(skipped, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", name, protocol.ProfileProvider(c.Harness, c.Model)))
 		} else {
 			ordinary = append(ordinary, c)
 		}
