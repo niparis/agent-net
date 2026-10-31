@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -138,5 +139,45 @@ func TestFederatedItemSurvivesInventoryAndGoesWithServer(t *testing.T) {
 	}
 	if a, _ := g.store.MCPAssignment("files"); a.Scope != "global" {
 		t.Fatalf("old scope came back: %+v", a)
+	}
+}
+
+// Even when the clock does not move, so the new item has the same identity as
+// the old one, removing a server must forget the owner's assignment.
+func TestRemovedServerForgetsItsAssignmentWithAFrozenClock(t *testing.T) {
+	g, node := scopeGateway(t)
+	g.store.now = func() time.Time { return time.Unix(2000, 0) }
+	// Re-add under the frozen clock so both generations share an identity.
+	if ok, err := g.store.RemoveMCPServer("files", node, ""); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if err := g.store.AddMCPServer(mcpSpec("files", node)); err != nil {
+		t.Fatal(err)
+	}
+	assignMCP(t, g, "files", protocol.ToolAssignment{Scope: "uninstalled"})
+	if ok, err := g.store.RemoveMCPServer("files", node, ""); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if err := g.store.AddMCPServer(mcpSpec("files", node)); err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := g.store.MCPAssignment("files"); a.Scope != "global" {
+		t.Fatalf("old scope came back: %+v", a)
+	}
+}
+
+// An assignment the gateway cannot read must close access, not open it.
+func TestUnreadableAssignmentClosesAccess(t *testing.T) {
+	g, _ := scopeGateway(t)
+	id, _, _ := g.store.MCPItemID("files")
+	if _, err := g.store.AssignTool(id, protocol.ToolAssignment{Scope: "global"}, "owner", "test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.store.db.Exec(`UPDATE tool_revisions SET assignment='{not json' WHERE item=?`, id); err != nil {
+		t.Fatal(err)
+	}
+	a, err := g.store.MCPAssignment("files")
+	if err != nil || a.Scope != "uninstalled" {
+		t.Fatalf("unreadable assignment: %+v %v", a, err)
 	}
 }
