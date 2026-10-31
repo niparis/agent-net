@@ -3,125 +3,11 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-
-	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The conversation view: one session's prompts, replies, tool calls and tool
-// results, with the time and a role label. The lines come from the model
-// (conv.go); this file only styles them.
-
-var (
-	sUser   = lipgloss.NewStyle().Bold(true).Foreground(roleAccent)
-	sReply  = lipgloss.NewStyle().Foreground(roleGood)
-	sTool   = lipgloss.NewStyle().Foreground(roleWarning)
-	sResult = lipgloss.NewStyle().Foreground(roleDim)
-)
-
-// roleStyle and roleLabel give each role one look. The label also says it
-// without colour.
-func roleStyle(role string) lipgloss.Style {
-	switch role {
-	case protocol.RoleUser:
-		return sUser
-	case protocol.RoleAssistant:
-		return sReply
-	case protocol.RoleToolCall:
-		return sTool
-	}
-	return sResult
-}
-
-func roleLabel(e protocol.TextEntry) string {
-	l := map[string]string{protocol.RoleUser: "user", protocol.RoleAssistant: "assistant",
-		protocol.RoleToolCall: "tool", protocol.RoleToolResult: "result"}[e.Role]
-	if l == "" {
-		l = "?"
-	}
-	if e.Sidechain {
-		l += "*"
-	}
-	return l
-}
-
-// convView draws the conversation in h rows (heading included).
-func (m Model) convView(w, h int) []string {
-	c := m.conv
-	a, _ := m.agentByID(c.id)
-	name := dashIfEmpty(a.Profile.Name)
-	left := sTitle.Render("agent-net") + " " + sDim.Render("conversation") + "  " + sBold.Render(sanitize(name))
-	if a.Harness != "" {
-		left += " " + sanitize(a.Harness) + " on " + sanitize(m.nodeName(a.NodeID, a.Hostname))
-	}
-	state := "following"
-	switch {
-	case c.err != "":
-		state = "error"
-	case !c.loaded:
-		state = "loading..."
-	case c.back > 0:
-		state = "paused, G follows"
-	case c.busy:
-		state = "following"
-	}
-	if c.loaded && c.older == "" && c.err == "" {
-		state += "  (start reached)"
-	}
-	gap := max(w-ansi.StringWidth(left)-ansi.StringWidth(state)-1, 2)
-	out := []string{clip(left+strings.Repeat(" ", gap)+sDim.Render(state), w)}
-	out = append(out, section("Conversation", w))
-	rows := max(h-len(out), 1)
-
-	var body []string
-	switch {
-	case c.err != "":
-		for _, l := range wrap(c.err, w-4) {
-			body = append(body, "  "+sBad.Render(l))
-		}
-	case !c.loaded:
-		body = append(body, sDim.Render("  fetching..."))
-	case len(c.entries) == 0:
-		body = append(body, sDim.Render("  nothing yet in this session"))
-	default:
-		body = m.convBody(w, rows)
-	}
-	for len(body) < rows {
-		body = append(body, "")
-	}
-	return append(out, body[:rows]...)
-}
-
-// convBody draws the window of lines that is on screen.
-func (m Model) convBody(w, rows int) []string {
-	c := m.conv
-	ls := m.convLines(w)
-	end := len(ls) - min(c.back, max(len(ls)-rows, 0))
-	start := max(end-rows, 0)
-	var out []string
-	for _, l := range ls[start:end] {
-		e := c.entries[l.entry]
-		st := roleStyle(e.Role)
-		var prefix string
-		if l.first {
-			prefix = "  " + sDim.Render(m.convClock(e)) + " " + st.Render(cell(roleLabel(e), convRoleW)) + " "
-		} else {
-			prefix = strings.Repeat(" ", 2+convTimeW+1+convRoleW+1)
-		}
-		text := l.text
-		switch e.Role {
-		case protocol.RoleUser:
-			text = sBold.Render(text)
-		case protocol.RoleToolResult:
-			text = sDim.Render(text)
-		case protocol.RoleToolCall:
-			text = st.Render(text)
-		}
-		out = append(out, clip(prefix+text, w))
-	}
-	return out
-}
+// The key line and the help overlay. The model (model.go) supplies the state;
+// this file only draws it.
 
 // ---- help ----
 
@@ -137,8 +23,6 @@ func (m Model) hints() []hint {
 	switch {
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
-	case m.conv != nil:
-		return []hint{{"up/down", "scroll", 1}, {"pgup", "older", 2}, {"G", "follow", 2}, {"esc", "back", 1}, {"?", "help", 3}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
 		return []hint{{"D", "name", 0}, {"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"?", "help", 2}}
 	case m.mapOn && m.focus != focusCTO:
@@ -158,7 +42,7 @@ func (m Model) hints() []hint {
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
-			return []hint{{"c", "recipient", 1}, {"R", "requester", 1}, {"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
 	return []hint{{"1-6", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 1}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},

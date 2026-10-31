@@ -502,12 +502,6 @@ func TestHelpOverlay(t *testing.T) {
 	if m.help {
 		t.Fatal("esc did not close the help")
 	}
-	// ? toggles from the conversation too, and returns to it.
-	m = keys(newModel(100, 40), "c")
-	m = keys(m, "?", "?")
-	if m.help || m.conv == nil {
-		t.Fatal("help over the conversation lost it")
-	}
 }
 
 var _ = fmt.Sprint

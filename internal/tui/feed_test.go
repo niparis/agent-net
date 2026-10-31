@@ -278,8 +278,8 @@ func TestFeedEnterSelectsTheLatestMessageInTheThread(t *testing.T) {
 	m = selectFeedMessage(m, "m_1")
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
-	if m.conv != nil || m.open != nil {
-		t.Fatalf("enter opened another view: conv=%+v body=%+v", m.conv, m.open)
+	if m.open != nil {
+		t.Fatalf("enter opened another view: body=%+v", m.open)
 	}
 	if it := m.selectedConversationItem(); it == nil || it.MsgID != "m_2" {
 		t.Fatalf("enter did not select the latest thread message: %+v", it)

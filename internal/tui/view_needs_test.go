@@ -170,15 +170,6 @@ func TestWaitingRowsUseTheSameSessionActions(t *testing.T) {
 				t.Fatalf("enter on the %s row opened mode %v (command %t), want the enter action", row, answer.mode, cmd != nil)
 			}
 
-			conv, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
-			if cmd == nil || conv.conv == nil || conv.conv.id != cogforgeMaintenanceID {
-				var got string
-				if conv.conv != nil {
-					got = conv.conv.id
-				}
-				t.Fatalf("c opened conversation for %q, command %t", got, cmd != nil)
-			}
-
 			m, src = waitingTableModel()
 			m = selectWaitingRow(m, inNeeds)
 			_, cmd = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")})

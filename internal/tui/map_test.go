@@ -145,7 +145,7 @@ func TestMapKeysAreReadOnlyAndMoveTheSelection(t *testing.T) {
 		t.Fatalf("G selected %q", m.mapSelectedName())
 	}
 	// Keys that act on sessions do nothing on the map.
-	if m.mode != 0 || m.confirmID != "" || m.conv != nil {
+	if m.mode != 0 || m.confirmID != "" {
 		t.Fatal("a session action started from the map")
 	}
 }
