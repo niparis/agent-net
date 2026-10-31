@@ -413,9 +413,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cto.err = sanitize(msg.err.Error())
 			} else {
 				m.cto.messages = nil
-				m.cto.archived = nil
-				m.cto.currentAll = nil
-				m.cto.seen = nil
 				m.cto.local = nil
 				m.cto.sendErrors = nil
 				m.cto.polledErrors = nil
