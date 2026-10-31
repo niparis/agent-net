@@ -148,7 +148,7 @@ func (m Model) hints() []hint {
 	case m.focus == focusCTO:
 		return []hint{{"tab", "focus", 1}, {"enter", "send", 1}, {"m", "model", 1}, {"o", "full screen", 2}, {"n", "new", 2}, {"u", "undo", 2}, {"esc", "back", 1}}
 	case m.tab == 1:
-		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "conversation", 1}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
+		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "thread", 1}, {"w", "workers", 2}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
 	case m.tab == 2:
 		return []hint{{"up/down", "scroll/select", 1}, {"p", "protect", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
 	case m.tab == 5:
@@ -235,12 +235,19 @@ func (m Model) helpLine(w int) string {
 
 // helpContent builds all help lines so none are lost on a small screen.
 func (m Model) helpContent(w int) []string {
+	state := "on"
+	if m.snap.NotificationsDisabled {
+		state = "off"
+	}
+
 	rows := [][2]string{
+		{"n", "desktop notifications: " + state + " (toggle)"},
 		{"Sessions", ""},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
-		{"enter or c", "open the conversation of the session"},
+		{"enter", "answer a waiting session, else open its conversation"},
+		{"c", "open the conversation"},
 		{"e", "enter the session (ctrl+] to return)"},
 		{"m", "send a message to the session as yourself"},
 		{"s", "start a worker (a form: project, harness, model, task)"},

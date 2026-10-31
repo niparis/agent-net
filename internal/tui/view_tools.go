@@ -170,15 +170,34 @@ func (m Model) diffsView(w, h int) []string {
 	if rows < 6 || len(ds)*3 > rows {
 		per = 2 // no blank line between them when they would not all fit
 	}
-	visible := max(rows/per, 1)
-	start := 0
-	if m.tl.row >= visible {
-		start = m.tl.row - visible + 1
+
+	titleLines := func(d toolsdiff.Difference) []string {
+		title := sanitize(d.Title)
+		if m.tl.accepted[d.Key] {
+			title += "  (accepted)"
+		}
+		lines := wrap(title, max(w-8, 1))
+		if len(lines) > max(rows-1, 1) {
+			lines = lines[:max(rows-1, 1)]
+		}
+		return lines
 	}
-	for i := start; i < len(ds) && i < start+visible; i++ {
+	height := func(d toolsdiff.Difference) int { return len(titleLines(d)) + 1 }
+	start := min(m.tl.row, max(len(ds)-1, 0))
+	if start > 0 {
+		used := height(ds[start])
+		for start > 0 && used+height(ds[start-1]) <= rows {
+			start--
+			used += height(ds[start])
+		}
+	}
+	for i := start; i < len(ds); i++ {
 		d := ds[i]
+		titles := titleLines(d)
+		if len(body)+len(titles)+1 > rows && len(body) > 0 {
+			break
+		}
 		sel := i == m.tl.row
-		accepted := m.tl.accepted[d.Key]
 		mark := tsDim.Render("○ ")
 		switch {
 		case d.Info:
@@ -188,28 +207,39 @@ func (m Model) diffsView(w, h int) []string {
 		case d.Severity == toolsdiff.SevWarn:
 			mark = tsWarn.Render("◐ ")
 		}
-		title := tsText.Render(sanitize(d.Title))
-		if d.Info {
-			title = tsDim.Render(sanitize(d.Title))
-		}
-		if accepted {
-			title = tsFaint.Render(sanitize(d.Title)) + tsFaint.Render("  (accepted)")
+		for n, title := range titles {
+			style := tsText
+			if d.Info {
+				style = tsDim
+			}
+			if m.tl.accepted[d.Key] {
+				style = tsFaint
+			}
+			prefix := "    "
+			if n == 0 {
+				prefix = marker(sel) + mark
+			}
+			line := prefix + style.Render(title)
+			if sel {
+				line = selectedRow(padStyled(line, w-4))
+			}
+			body = append(body, line)
 		}
 		fix := tsAcc.Render(sanitize(d.Fix))
 		lead := "fix: "
 		if d.Info {
 			fix, lead = tsFaint.Render(sanitize(d.Fix)), ""
 		}
-		l1 := marker(sel) + mark + title
-		l2 := "    " + tsFaint.Render(lead) + fix
+		line := "    " + tsFaint.Render(lead) + fix
 		if sel {
-			l1, l2 = selectedRow(padStyled(l1, w-4)), selectedRow(padStyled(l2, w-4))
+			line = selectedRow(padStyled(line, w-4))
 		}
-		body = append(body, l1, l2)
-		if per == 3 {
+		body = append(body, line)
+		if per == 3 && len(body) < rows {
 			body = append(body, "")
 		}
 	}
+
 	for len(body) < rows {
 		body = append(body, "")
 	}
@@ -641,7 +671,11 @@ func (m Model) modalBox(w, h int) []string {
 	}
 	room := max(h-6, 3)
 	if len(body) > room {
-		body = append(body[:room-1:room-1], tsFaint.Render(fmt.Sprintf("  and %d more lines", len(body)-room+1)))
+		start := min(md.scroll, len(body)-room+1)
+		end := min(start+room-1, len(body))
+		window := append([]string(nil), body[start:end]...)
+		window = append(window, tsFaint.Render(fmt.Sprintf("  lines %d-%d of %d · up/down scroll", start+1, end, len(body))))
+		body = window
 	}
 	body = append(body, "")
 	var foot []string

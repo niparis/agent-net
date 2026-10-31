@@ -32,6 +32,14 @@ Use the invite line that has a Tailscale address (`100.x.x.x`). Tailscale traffi
 
 Sessions that were already open when you installed agent-net can receive messages, because the daemon finds them on its own. They have no agent-net tools yet, because Claude Code and Pi load tools when a session starts. Restart the session, or start a new one. After an upgrade this is not needed for Claude Code sessions started on v0.3.5 or newer (they switch to the new binary by themselves), and Pi needs only `/reload`. See [upgrade.md](upgrade.md#running-sessions).
 
+## `e` says a session is not in a herdr or tmux pane
+
+On macOS, process environments may not be readable for Apple-signed programs such as `/bin/zsh`. When that happens, agent-net looks up the process tree for a `herdr server` command and probes its socket. The default socket documented by Herdr is `~/.config/herdr/herdr.sock`; named sessions and custom config locations can use another path.
+
+- Check that the session process is a child of the Herdr server process. If the server is not in its parent chain and the process has no readable `HERDR_*` variables, agent-net cannot associate the session with that Herdr instance.
+- If the note says no candidate Herdr socket answers, check that the Herdr server is running for the same user and that its socket is reachable. Run `herdr pane list` from that user's shell to check the default socket.
+- If agent-net cannot find a Herdr pane, it still checks tmux. If neither multiplexer holds the process, open the session in its existing window.
+
 ## `curl ... | sh` of an invite line printed nothing and exited 0
 
 If the download fails, the shell receives an empty script and exits with 0. Look above for a `curl:` error line. Common causes: the gateway is not reachable from this machine, the line was cut when you pasted it (it is one line), or the one-time code expired (10 minutes) or was already used. If the gateway says the link is unknown, expired or already used, run `agent-net invite` again.

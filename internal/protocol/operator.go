@@ -33,6 +33,7 @@ const (
 	// owner's command line or TUI, never an agent session.
 	OpUsage        = "usage"         // takes nothing, answers UsageResult
 	OpUsageTop     = "usage_top"     // takes QueryUsageTop, answers UsageTop
+	OpGraphTalk    = "graph_talk"    // answers project message counts
 	OpGraphView    = "graph_view"    // takes QueryGraph, answers GraphView
 	OpSessionText  = "session_text"  // takes TextQuery, answers TextPage
 	OpCounts       = "counts"        // takes nothing, answers SessionCounts
@@ -107,7 +108,7 @@ const (
 
 // OperatorMethods lists every operator method, for tests and docs.
 var OperatorMethods = []string{OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers,
-	OpUsage, OpUsageTop, OpGraphView, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
+	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}

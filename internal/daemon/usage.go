@@ -28,6 +28,25 @@ type usageState struct {
 	// before this feature. No more reports go over that link; a new link
 	// (a new gateway) is tried again.
 	off *link
+	// Disk space changes slowly, so refresh it less often than the other usage
+	// figures. diskSampled makes a failed or zero reading cache too.
+	diskAt      time.Time
+	diskFree    uint64
+	diskSampled bool
+}
+
+const diskFreeEvery = time.Minute
+
+func (u *usageState) diskFreeAt(now time.Time, read func() uint64) uint64 {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.diskSampled && now.Sub(u.diskAt) < diskFreeEvery {
+		return u.diskFree
+	}
+	u.diskFree = read()
+	u.diskAt = now
+	u.diskSampled = true
+	return u.diskFree
 }
 
 func (u *usageState) disabledFor(l *link) bool {
@@ -140,6 +159,7 @@ func (d *Daemon) usageReport() (protocol.UsageReport, bool) {
 	} else if rep.Quotas == nil && rep.QuotaError == "" && rep.QuotaNote == "" && rep.QuotaCopy == nil {
 		return protocol.UsageReport{}, false
 	}
+	rep.Machine.DiskFree = d.usage.diskFreeAt(time.Now(), homeDiskFree)
 	// Group the sessions by process: OpenCode runs many in one.
 	type group struct {
 		harness string

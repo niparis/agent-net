@@ -23,3 +23,19 @@ func osProcessEnviron(pid int) []string {
 	}
 	return out
 }
+
+// osProcessArgs reads a process's argument vector from /proc. It returns nil
+// when the process is not ours or is gone.
+func osProcessArgs(pid int) []string {
+	raw, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/cmdline")
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, arg := range bytes.Split(raw, []byte{0}) {
+		if len(arg) > 0 {
+			out = append(out, string(arg))
+		}
+	}
+	return out
+}

@@ -20,6 +20,11 @@ type SceneEdge struct {
 	Kind            string
 	Dashed          bool
 }
+type SceneTalk struct {
+	From, To Point
+	Bucket   int
+	NoRule   bool
+}
 type SceneComet struct {
 	Position Point
 	Trail    []Point
@@ -34,6 +39,7 @@ type KeyHint struct {
 type Scene struct {
 	Nodes  []SceneNode
 	Edges  []SceneEdge
+	Talk   []SceneTalk
 	Comets []SceneComet
 	Level  string
 	Feed   []Message
@@ -43,7 +49,7 @@ type Scene struct {
 
 // BuildScene derives a renderer-independent view without changing state.
 func BuildScene(s State, viewport Viewport) Scene {
-	scene := Scene{Level: s.Camera.Level(), Paused: s.Paused, Hints: []KeyHint{{Keys: []string{"+", "-"}, Action: "zoom"}, {Keys: []string{"h", "j", "k", "l"}, Action: "pan"}, {Keys: []string{"0"}, Action: "fit"}, {Keys: []string{"[", "]"}, Action: "select"}, {Keys: []string{"o"}, Action: "orbit"}, {Keys: []string{"enter"}, Action: "open"}, {Keys: []string{"space"}, Action: "pause"}, {Keys: []string{"?"}, Action: "help"}}}
+	scene := Scene{Level: s.Camera.Level(), Paused: s.Paused, Hints: []KeyHint{{Keys: []string{"+", "-"}, Action: "zoom"}, {Keys: []string{"h", "j", "k", "l"}, Action: "pan"}, {Keys: []string{"0"}, Action: "fit"}, {Keys: []string{"[", "]"}, Action: "select"}, {Keys: []string{"o"}, Action: "orbit"}, {Keys: []string{"t"}, Action: "talk"}, {Keys: []string{"enter"}, Action: "open"}, {Keys: []string{"space"}, Action: "pause"}, {Keys: []string{"?"}, Action: "help"}}}
 	if s.Graph == nil || viewport.Width <= 0 || viewport.Height <= 0 {
 		return scene
 	}
@@ -104,6 +110,29 @@ func BuildScene(s State, viewport Viewport) Scene {
 			}
 		}
 		scene.Nodes = append(scene.Nodes, node)
+	}
+	if !s.HideTalk {
+		for _, talk := range s.Talk {
+			a, ok := g.Positions[talk.From]
+			b, ok2 := g.Positions[talk.To]
+			if !ok || !ok2 || talk.Count <= 0 {
+				continue
+			}
+			bucket := 1
+			if talk.Count >= 20 {
+				bucket = 3
+			} else if talk.Count >= 5 {
+				bucket = 2
+			}
+			hasEdge := false
+			for _, e := range g.Edges {
+				if e.From == talk.From && e.To == talk.To || e.From == talk.To && e.To == talk.From {
+					hasEdge = true
+					break
+				}
+			}
+			scene.Talk = append(scene.Talk, SceneTalk{From: project(a), To: project(b), Bucket: bucket, NoRule: !hasEdge})
+		}
 	}
 	for _, e := range g.Edges {
 		a, ok := g.Positions[e.From]

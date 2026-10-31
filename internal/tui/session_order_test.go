@@ -104,3 +104,68 @@ func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
 		t.Fatalf("frozen order: %s", got)
 	}
 }
+
+func orderedTableNames(m Model) []string {
+	var out []string
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			out = append(out, a.Profile.Name)
+		}
+	}
+	return out
+}
+
+func TestNeedsRowDownToTableKeepsActivityOrderDuringFreeze(t *testing.T) {
+	const waitingID = "waiting-session"
+	snap := fakeSnapshot()
+	snap.Agents = []protocol.AgentView{
+		agent(waitingID, "n_mac", "Mac", "claude", "waiting", func(a *protocol.AgentView) {
+			a.Status, a.LastSeen = "busy", t0.Add(-3*time.Hour).Unix()
+			a.FirstSeen = t0.Add(-time.Minute).Unix()
+			waiting(a, -time.Minute, protocol.WaitingQuestion, "Continue?")
+		}),
+		agent("recent-session", "n_mac", "Mac", "pi", "recent", func(a *protocol.AgentView) {
+			a.LastSeen = t0.Add(-2 * time.Hour).Unix()
+			a.FirstSeen = t0.Add(-2 * time.Minute).Unix()
+		}),
+	}
+	src := &fakeSource{snap: snap, events: fakeEvents()}
+	now := t0
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return now }
+	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
+	m = refresh(m, src)
+	wantOrder := "waiting,recent"
+	if got := strings.Join(orderedTableNames(m), ","); got != wantOrder {
+		t.Fatalf("initial activity order: %s, want %s", got, wantOrder)
+	}
+	if m.selected != waitingID || !m.selNeeds || m.selIdx != 0 {
+		t.Fatalf("initial selection is %q at %d (Needs you: %v), want the Needs you row", m.selected, m.selIdx, m.selNeeds)
+	}
+
+	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	if m.selected != waitingID || m.selNeeds || m.selIdx != 1 {
+		t.Fatalf("down selected %q at %d (Needs you: %v), want the table row", m.selected, m.selIdx, m.selNeeds)
+	}
+	if got := strings.Join(orderedTableNames(m), ","); got != wantOrder {
+		t.Fatalf("order changed on down: %s, want %s", got, wantOrder)
+	}
+
+	src.snap.Agents[1].Status = "busy"
+	m = refresh(m, src)
+	if got := strings.Join(orderedTableNames(m), ","); got != wantOrder {
+		t.Fatalf("activity order jumped during freeze: %s, want %s", got, wantOrder)
+	}
+	if m.selected != waitingID || m.selNeeds || m.selIdx != 1 {
+		t.Fatalf("refresh selected %q at %d (Needs you: %v), want the table row", m.selected, m.selIdx, m.selNeeds)
+	}
+
+	now = now.Add(3 * time.Second)
+	m = refresh(m, src)
+	if got := strings.Join(orderedTableNames(m), ","); got != "recent,waiting" {
+		t.Fatalf("order did not update after freeze: %s", got)
+	}
+	if m.selected != waitingID || m.selNeeds || m.selIdx != 2 {
+		t.Fatalf("post-freeze selection is %q at %d (Needs you: %v), want the moved table row", m.selected, m.selIdx, m.selNeeds)
+	}
+}

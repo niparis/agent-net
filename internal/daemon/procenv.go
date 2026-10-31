@@ -6,6 +6,11 @@ import "strings"
 // herdr or tmux the tests run in is not seen.
 var processEnviron = osProcessEnviron
 
+// processArgs and processParentPID are replaceable so process-tree discovery
+// can be tested without depending on the test process's real ancestors.
+var processArgs = osProcessArgs
+var processParentPID = parentPID
+
 // processEnvVar reads one variable of a process's environment. It returns ""
 // when the process is not ours or the variable is not set.
 func processEnvVar(pid int, key string) string {
@@ -16,6 +21,45 @@ func processEnvVar(pid int, key string) string {
 		}
 	}
 	return ""
+}
+
+// parseProcArgs2Argv returns the argument strings in kern.procargs2's buffer.
+func parseProcArgs2Argv(buf []byte) []string {
+	if len(buf) < 4 {
+		return nil
+	}
+	argc := int(uint32(buf[0]) | uint32(buf[1])<<8 | uint32(buf[2])<<16 | uint32(buf[3])<<24)
+	rest := buf[4:]
+	next := func() (string, bool) {
+		for i, b := range rest {
+			if b == 0 {
+				s := string(rest[:i])
+				rest = rest[i+1:]
+				return s, true
+			}
+		}
+		if len(rest) > 0 {
+			s := string(rest)
+			rest = nil
+			return s, true
+		}
+		return "", false
+	}
+	if _, ok := next(); !ok { // executable path
+		return nil
+	}
+	for len(rest) > 0 && rest[0] == 0 { // padding
+		rest = rest[1:]
+	}
+	args := make([]string, 0, argc)
+	for i := 0; i < argc; i++ {
+		arg, ok := next()
+		if !ok {
+			return nil
+		}
+		args = append(args, arg)
+	}
+	return args
 }
 
 // parseProcArgs2 returns the environment strings ("KEY=value") in the buffer

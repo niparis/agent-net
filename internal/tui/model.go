@@ -64,18 +64,23 @@ type Model struct {
 	quotaUnprotect    bool
 	quotaShowUnset    bool
 	messageShowEvents bool
+	hideWorkerThreads bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap            Snapshot
-	haveData        bool
-	lastOK          time.Time
-	problem         Problem
-	problemT        string // text of the last error
-	graphState      graphview.State
-	graphHelp       bool
-	graphGeneration int
-	feed            feed
-	fetching        bool
+	snap             Snapshot
+	haveData         bool
+	lastOK           time.Time
+	problem          Problem
+	problemT         string // text of the last error
+	graphState       graphview.State
+	graphHelp        bool
+	graphGeneration  int
+	graphTalkLoading bool
+	graphTalkLastID  int64
+	graphTalkPending []graphview.FeedEvents
+	graphTalkAt      time.Time
+	feed             feed
+	fetching         bool
 
 	// What the person chose.
 	sessionOrder              map[string]sessionOrder
@@ -84,6 +89,7 @@ type Model struct {
 	frozenOrder               map[string]int
 	selected                  string // session ID
 	selIdx                    int    // position in the visible list, to move on when the session leaves
+	selNeeds                  bool   // whether the selected visible row is in the Needs you section
 	tableTop                  int    // first table row on screen
 	showOffline               bool
 	activeOnly                bool
@@ -189,6 +195,11 @@ type fetchedMsg struct {
 	countsErr  error
 	hidden     protocol.HiddenItems
 	hiddenErr  error
+}
+
+type notificationSettingMsg struct {
+	disabled bool
+	err      error
 }
 
 type hiddenItemsMsg struct {
@@ -332,8 +343,30 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case graphTalkMsg:
+		m.graphTalkLoading = false
+		m.graphTalkAt = msg.at
+		if msg.err == nil {
+			m.graphTalkLastID = msg.result.LastID
+			m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: msg.result.Counts})
+		}
+		if msg.err == nil {
+			for _, pending := range m.graphTalkPending {
+				pending.CountAfter = m.graphTalkLastID
+				pending.CountsOnly = true
+				m.graphState, _ = graphview.Update(m.graphState, pending)
+			}
+		}
+		m.graphTalkPending = nil
+		return m, nil
+
 	case tickMsg:
 		cmds := []tea.Cmd{tick()}
+		if m.tab == 5 && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
+			m.graphTalkLoading = true
+			m.graphTalkPending = nil
+			cmds = append(cmds, m.graphTalkCmd())
+		}
 		if (m.mapOn || m.tab == 5) && !m.mp.loading {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
@@ -506,6 +539,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.fetching = false
 		m.applyFetch(msg)
 		return m, nil
+	case notificationSettingMsg:
+		if msg.err != nil {
+			m.fail("Could not change desktop notifications: " + explain(msg.err))
+		} else {
+			m.snap.NotificationsDisabled = msg.disabled
+		}
+		return m, nil
 	case hiddenItemsMsg:
 		if msg.err != nil {
 			m.fail("Could not save hidden items: " + sanitize(msg.err.Error()))
@@ -635,7 +675,23 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		wasLast := m.feedCur >= m.feedLastVisible()
 		lastID := m.feed.lastID
 		m.feed.apply(r.events)
-		m.graphState, _ = graphview.Update(m.graphState, graphview.FeedEvents{Events: r.events, LastID: lastID, Now: r.at})
+		projects := make(map[string]string)
+		for _, a := range r.snap.Agents {
+			if a.Harness == "owner" {
+				projects[a.SessionID] = ""
+			} else {
+				p := a.Repo.Project
+				if p == "" {
+					p = a.Profile.Project
+				}
+				projects[a.SessionID] = p
+			}
+		}
+		events := graphview.FeedEvents{Events: r.events, LastID: lastID, CountAfter: m.graphTalkLastID, Now: r.at, Projects: projects}
+		if m.graphTalkLoading {
+			m.graphTalkPending = append(m.graphTalkPending, events)
+		}
+		m.graphState, _ = graphview.Update(m.graphState, events)
 		if m.focus != focusFeed || wasLast {
 			m.feedCur = m.feedLastVisible()
 		} else {
@@ -699,6 +755,22 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.help {
 		switch k.String() {
+		case "n":
+			src, ok := m.src.(interface {
+				NotificationSettings(context.Context, *bool) (bool, error)
+			})
+			if !ok {
+				m.fail("Desktop notification settings are unavailable.")
+				return m, nil
+			}
+			disabled := !m.snap.NotificationsDisabled
+			return m, func() tea.Msg {
+				ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+				defer cancel()
+				value, err := src.NotificationSettings(ctx, &disabled)
+				return notificationSettingMsg{disabled: value, err: err}
+			}
+
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
@@ -760,11 +832,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tab, m.mapOn, m.focus = 5, false, focusSessions
 			m.graphGeneration++
 			animation := graphTick(m.graphGeneration)
+			var talk tea.Cmd
+			if !m.graphTalkLoading {
+				m.graphTalkLoading = true
+				m.graphTalkPending = nil
+				talk = m.graphTalkCmd()
+			}
 			if m.mp.loading {
-				return m, animation
+				return m, tea.Batch(animation, talk)
 			}
 			m.mp.loading = true
-			return m, tea.Batch(m.mapCmd(), animation)
+			return m, tea.Batch(m.mapCmd(), animation, talk)
 		}
 		if k.String() == "4" {
 			return m.startMap()
@@ -943,6 +1021,23 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.startEnter()
+	case "w":
+		if m.tab == 1 {
+			m.hideWorkerThreads = !m.hideWorkerThreads
+			rows := m.messageConversations()
+			selected := false
+			for _, row := range rows {
+				for _, i := range row.items {
+					if i == m.feedCur {
+						selected = true
+					}
+				}
+			}
+			if !selected && len(rows) > 0 {
+				m.feedCur = rows[0].items[0]
+			}
+			return m, nil
+		}
 	case "x":
 		return m.startConfirm()
 	case "h":
@@ -1063,13 +1158,21 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if it == nil || !it.isMessage() {
 				return m, nil
 			}
-			// Open the conversation of the end on this machine; when there is
-			// none, the message body explains why it cannot be read here.
-			if id := m.feedConvID(it); id != "" {
-				return m, m.openConvFor(id)
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				row := rows[m.conversationIndex(rows)]
+				m.feedCur = row.items[len(row.items)-1]
 			}
-			m.open = &openMsg{id: it.MsgID, loading: true}
-			return m, m.bodyCmd(it.MsgID)
+			return m, nil
+		}
+		if a, ok := m.selectedAgent(); ok && a.Waiting != nil && protocol.ValidWaitingKind(a.Waiting.Kind) {
+			var cmd tea.Cmd
+			m, cmd = m.startCompose()
+			if m.mode == modeCompose && len(a.Waiting.Options) > 0 {
+				m.compose.SetValue(a.Waiting.Options[0])
+				m.compose.CursorEnd()
+			}
+			return m, cmd
 		}
 		return m, m.openConv()
 	}
@@ -1122,12 +1225,15 @@ func (m *Model) move(delta int) {
 	if len(vis) == 0 {
 		return
 	}
-	i := m.indexOf(vis, m.selected)
-	if i < 0 {
-		i = 0
+	i := m.selIdx
+	if i < 0 || i >= len(vis) || vis[i].SessionID != m.selected {
+		m.ensureSelection()
+		vis = m.visible()
+		i = m.selIdx
 	}
 	i = min(max(i+delta, 0), len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
+	m.selNeeds = i < len(m.needsRows())
 	m.fixScroll()
 }
 
@@ -1372,21 +1478,15 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	return out
 }
 
-// visible is the sessions in the order the keys move through: the "Needs you"
-// rows first, then the table. A waiting session is reached from the section,
-// so it is not selectable a second time in the table.
+// visible is the selection order: the "Needs you" rows first, then every
+// table row. A waiting session can be selected in both places where it is
+// drawn.
 func (m Model) visible() []protocol.AgentView {
 	needs := m.needsRows()
 	out := append([]protocol.AgentView(nil), needs...)
-	seen := map[string]bool{}
-	for _, a := range needs {
-		seen[a.SessionID] = true
-	}
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
-			if !seen[a.SessionID] {
-				out = append(out, a)
-			}
+			out = append(out, a)
 		}
 	}
 	return out
@@ -1407,15 +1507,36 @@ func (m Model) indexOf(list []protocol.AgentView, id string) int {
 func (m *Model) ensureSelection() {
 	vis := m.visible()
 	if len(vis) == 0 {
-		m.selected, m.selIdx = "", 0
+		m.selected, m.selIdx, m.selNeeds = "", 0, false
 		return
 	}
+	needs := len(m.needsRows())
+	if m.selIdx >= 0 && m.selIdx < len(vis) && vis[m.selIdx].SessionID == m.selected && (m.selIdx < needs) == m.selNeeds {
+		m.selNeeds = m.selIdx < needs
+		return
+	}
+	// A refresh can move the row while preserving its section. Prefer the
+	// matching occurrence in that section when a session appears twice.
+	start, end := needs, len(vis)
+	if m.selNeeds {
+		start, end = 0, needs
+	}
+	for i := start; i < end; i++ {
+		if vis[i].SessionID == m.selected {
+			m.selIdx = i
+			return
+		}
+	}
+	// If the selected section row disappeared but its table row remains, keep
+	// the same session there.
 	if i := m.indexOf(vis, m.selected); i >= 0 {
 		m.selIdx = i
+		m.selNeeds = i < needs
 		return
 	}
 	i := min(m.selIdx, len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
+	m.selNeeds = i < needs
 }
 
 // selectedAgent returns the selected session.

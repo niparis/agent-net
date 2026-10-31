@@ -1,25 +1,25 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
-╭─Messages · conversations─────────────────────╮╭─Conversation─────────────────────────────────────────────────────────╮
-│ ▸ tenebrae-53 ↔ worker 8 · Polish th… 1m ago ││ ▸ 14:02 tenebrae-53                                                  │
-│   14:00 build disconnected                   ││ Polish the sessions panel                                            │
-│   tenebrae-53 ↔ strategies · The dep… 6m ago ││ Run the checks.                                                      │
-│   tenebrae-53 ↔ worker 8 · Review th… 7m ago ││   14:04 worker 8                                                     │
-│   13:55 build connected                      ││ ✓ done · 12m · 3 files                                               │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│                                              ││                                                                      │
-│ 2 system events · e to hide                  ││                                                                      │
-╰──────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────────╯
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
+╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
+│   tenebrae-53 ↔ strategies · The deploy is… 1 message · 6m ago ││   13:56 tenebrae-53                                │
+│ ▸ tenebrae-53 → worker 8                     4 messages · done ││ Review the change                                  │
+│   14:00 build disconnected                                     ││ Check the tests.                                   │
+│   13:55 build connected                                        ││   13:58 worker 8                                   │
+│                                                                ││ ✓ done · 1h5m · 15 files                           │
+│                                                                ││   14:02 tenebrae-53                                │
+│                                                                ││ Polish the sessions panel                          │
+│                                                                ││ Run the checks.                                    │
+│                                                                ││ ▸ 14:04 worker 8                                   │
+│                                                                ││ ✓ done · 12m · 3 files                             │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│ 2 system events · e to hide · w hide workers                   ││                                                    │
+╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  left/right message  enter conversation  v body  e events  l filter  tab CTO  ? help
+up/down select  left/right message  enter thread  w workers  v body  e events  l filter  tab CTO  ? help

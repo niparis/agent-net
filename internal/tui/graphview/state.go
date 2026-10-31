@@ -10,6 +10,9 @@ import (
 // State holds graph interaction and animation state. Times are supplied by the caller.
 type State struct {
 	Graph                        *Graph
+	Talk                         []protocol.GraphTalkCount
+	TalkReady                    bool
+	HideTalk                     bool
 	Camera                       Camera
 	Orbit, Paused, ReducedMotion bool
 	Now, PausedAt                time.Time
@@ -24,15 +27,20 @@ type Fit struct{ Viewport Viewport }
 type SelectNext struct{}
 type SelectPrev struct{}
 type ToggleOrbit struct{}
+type ToggleTalk struct{}
 type TogglePause struct{}
 type OpenSelected struct{}
 type Tick struct{ Now time.Time }
 type GraphChanged struct{ Graph protocol.GraphView }
+type TalkLoaded struct{ Counts []protocol.GraphTalkCount }
 type MessageEvent struct{ Message Message }
 type FeedEvents struct {
-	Events []protocol.FeedEvent
-	LastID int64
-	Now    time.Time
+	Events     []protocol.FeedEvent
+	LastID     int64
+	Now        time.Time
+	Projects   map[string]string
+	CountAfter int64
+	CountsOnly bool
 }
 
 func (ZoomIn) graphAction()       {}
@@ -41,11 +49,13 @@ func (Pan) graphAction()          {}
 func (Fit) graphAction()          {}
 func (SelectNext) graphAction()   {}
 func (SelectPrev) graphAction()   {}
+func (ToggleTalk) graphAction()   {}
 func (ToggleOrbit) graphAction()  {}
 func (TogglePause) graphAction()  {}
 func (OpenSelected) graphAction() {}
 func (Tick) graphAction()         {}
 func (GraphChanged) graphAction() {}
+func (TalkLoaded) graphAction()   {}
 func (MessageEvent) graphAction() {}
 func (FeedEvents) graphAction()   {}
 
@@ -68,6 +78,7 @@ func Update(s State, action Action) (State, Effect) {
 		}
 		s.Graph = &graph
 	}
+	s.Talk = append([]protocol.GraphTalkCount(nil), s.Talk...)
 	var effect Effect
 	switch a := action.(type) {
 	case ZoomIn:
@@ -91,6 +102,8 @@ func Update(s State, action Action) (State, Effect) {
 		if s.Graph != nil {
 			s.Graph.Select(-1)
 		}
+	case ToggleTalk:
+		s.HideTalk = !s.HideTalk
 	case ToggleOrbit:
 		s.Orbit = !s.Orbit
 	case TogglePause:
@@ -116,16 +129,54 @@ func Update(s State, action Action) (State, Effect) {
 		} else {
 			s.Graph.Update(a.Graph)
 		}
+	case TalkLoaded:
+		s.Talk = append([]protocol.GraphTalkCount(nil), a.Counts...)
+		s.TalkReady = true
 	case FeedEvents:
-		if s.Graph != nil {
+		{
 			projects := make(map[string]string)
-			for _, n := range s.Graph.Nodes {
-				for _, session := range n.Sessions {
-					projects[session.ID] = n.Name
+			if s.Graph != nil {
+				for _, n := range s.Graph.Nodes {
+					for _, session := range n.Sessions {
+						projects[session.ID] = n.Name
+					}
 				}
+			}
+			for id, project := range a.Projects {
+				projects[id] = project
 			}
 			for _, event := range a.Events {
 				if event.ID <= a.LastID || event.Kind != "msg.stored" {
+					continue
+				}
+				if s.TalkReady && event.ID > a.CountAfter && !event.Time.IsZero() && !event.Time.Before(a.Now.Add(-7*24*time.Hour)) && !event.Time.After(a.Now) {
+					from, to := projects[event.From], projects[event.To]
+					if from != "" && to != "" && from != to {
+						if from > to {
+							from, to = to, from
+						}
+						i := 0
+						for ; i < len(s.Talk); i++ {
+							if s.Talk[i].From == from && s.Talk[i].To == to {
+								break
+							}
+						}
+						if i == len(s.Talk) {
+							item := protocol.GraphTalkCount{From: from, To: to}
+							if s.Graph != nil {
+								for _, edge := range s.Graph.Edges {
+									if edge.From == from && edge.To == to || edge.From == to && edge.To == from {
+										item.HasEdge = true
+										break
+									}
+								}
+							}
+							s.Talk = append(s.Talk, item)
+						}
+						s.Talk[i].Count++
+					}
+				}
+				if a.CountsOnly || s.Graph == nil {
 					continue
 				}
 				at := event.Time

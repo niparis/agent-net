@@ -14,3 +14,12 @@ func osProcessEnviron(pid int) []string {
 	}
 	return parseProcArgs2(raw)
 }
+
+// osProcessArgs reads a process's argument vector from sysctl kern.procargs2.
+func osProcessArgs(pid int) []string {
+	raw, err := unix.SysctlRaw("kern.procargs2", pid)
+	if err != nil {
+		return nil
+	}
+	return parseProcArgs2Argv(raw)
+}

@@ -24,6 +24,9 @@ const (
 // cover the last UsageWindowSeconds.
 type MachineUsage struct {
 	Cores int `json:"cores"`
+	// DiskFree is the free space in bytes on the filesystem containing the
+	// daemon user's home directory.
+	DiskFree uint64 `json:"disk_free,omitempty"`
 	// CPU is the share of all cores in use, 0 to 100.
 	CPU     float64 `json:"cpu"`
 	CPUAvg  float64 `json:"cpu_avg"`

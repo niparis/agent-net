@@ -58,6 +58,50 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		role string
 	}
 	var arrows []arrow
+	// Talk is painted first so declared relationships keep their own color.
+	for _, talk := range scene.Talk {
+		x0, y0 := point(talk.From)
+		x1, y1 := point(talk.To)
+		dx, dy := abs(x1-x0), -abs(y1-y0)
+		if dx-dy > 10000 {
+			continue
+		}
+		sx, sy := -1, -1
+		if x0 < x1 {
+			sx = 1
+		}
+		if y0 < y1 {
+			sy = 1
+		}
+		role := "talkFaint"
+		if talk.NoRule {
+			role = "talk"
+		}
+		spacing := 8
+		if talk.Bucket == 2 {
+			spacing = 5
+		} else if talk.Bucket >= 3 {
+			spacing = 3
+		}
+		err := dx + dy
+		for step := 0; ; step++ {
+			if step%spacing == 0 {
+				dot(x0, y0, role)
+			}
+			if x0 == x1 && y0 == y1 {
+				break
+			}
+			v := 2 * err
+			if v >= dy {
+				err += dy
+				x0 += sx
+			}
+			if v <= dx {
+				err += dx
+				y0 += sy
+			}
+		}
+	}
 	for _, e := range scene.Edges {
 		x0, y0 := point(e.From)
 		x1, y1 := point(e.To)
@@ -287,6 +331,10 @@ func abs(n int) int {
 func colorRole(role, text string) string {
 	color := lipgloss.AdaptiveColor{Light: "#596171", Dark: "#6f7889"}
 	switch role {
+	case "talk":
+		color = talkColor
+	case "talkFaint":
+		color = talkFaintColor
 	case "depends", "trail":
 		color = lipgloss.AdaptiveColor{Light: "#00666b", Dark: "#5fc4c9"}
 	case "governs":

@@ -111,6 +111,8 @@ func normalHandler(method string, params json.RawMessage) (any, string) {
 		return map[string]any{"connected": true, "node_id": "n_here", "version": "v9.9.9"}, ""
 	case "nodes":
 		return protocol.NodesInfo{Nodes: []protocol.NodeView{{NodeID: "n_here", Hostname: "here", Online: true}}}, ""
+	case "notification_settings":
+		return map[string]any{"disabled": false}, ""
 	case "graph_get":
 		return protocol.Graph{}, ""
 	case "held_list":
@@ -156,7 +158,7 @@ func TestDaemonSourceReads(t *testing.T) {
 	}
 	// Read-only: these are the only methods the screen ever calls, and it says
 	// it is a CLI client (which the daemon limits to read-only calls).
-	allowed := map[string]bool{"worker_profiles": true, "worker_providers_get": true, "protected_providers_get": true, "scores_get": true, "difficulty_get": true, "hello": true, "info": true, "nodes": true, "list": true, "projects": true, "outcome_inbox": true, "learned_list": true, "events": true, "message_status": true, "held_list": true, "graph_get": true}
+	allowed := map[string]bool{"notification_settings": true, "worker_profiles": true, "worker_providers_get": true, "protected_providers_get": true, "scores_get": true, "difficulty_get": true, "hello": true, "info": true, "nodes": true, "list": true, "projects": true, "outcome_inbox": true, "learned_list": true, "events": true, "message_status": true, "held_list": true, "graph_get": true}
 	for _, m := range d.called() {
 		if !allowed[m] {
 			t.Errorf("the screen called %q", m)

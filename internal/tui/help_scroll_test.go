@@ -52,3 +52,39 @@ func TestToolsHelpScrolls(t *testing.T) {
 		}
 	}
 }
+
+func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
+	m := keys(newModel(80, 24), "?")
+	for _, want := range []string{"desktop notifications: on (toggle)", "answer a waiting session, else open its conversation", "open the conversation"} {
+		if !strings.Contains(ansi.Strip(m.View()), want) {
+			t.Errorf("help lacks %q", want)
+		}
+	}
+	m.snap.NotificationsDisabled = true
+	if !strings.Contains(ansi.Strip(m.View()), "desktop notifications: off (toggle)") {
+		t.Fatal("help does not show disabled notifications")
+	}
+}
+
+func TestToolsHelpWrapsAndEveryLineCanBeReached(t *testing.T) {
+	m := keys(newModel(40, 10), "5", "?")
+	var seen strings.Builder
+	for i := 0; i < 100; i++ {
+		v := ansi.Strip(m.View())
+		if strings.Contains(v, "…") {
+			t.Fatalf("tools help has an ellipsis:\n%s", v)
+		}
+		seen.WriteString(v)
+		seen.WriteByte('\n')
+		m = keys(m, "j")
+	}
+	for _, line := range m.helpContent(40) {
+		line = strings.TrimSpace(ansi.Strip(line))
+		if line != "" && !strings.Contains(seen.String(), line) {
+			t.Errorf("tools help line unreachable: %q", line)
+		}
+	}
+	if !strings.Contains(seen.String(), "more below") || !strings.Contains(seen.String(), "more above") {
+		t.Fatal("tools scroll indicators missing")
+	}
+}

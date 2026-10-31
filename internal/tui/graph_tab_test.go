@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
@@ -36,6 +37,7 @@ func graphModel(w, h int) Model {
 	m := mapModel(w, h, graphFixture())
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
 	m.tab = 5
+	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true}, {From: "project-07", To: "project-11", Count: 23}}})
 	gw, gh := m.graphSize()
 	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
 	m.graphState.Graph.Message("project-01", "project-02", "request", t0.Add(-time.Second))
@@ -58,6 +60,10 @@ func TestGraphTabKeys(t *testing.T) {
 	m = keys(m, "0")
 	if m.graphState.Camera.Zoom != old.Zoom {
 		t.Fatal("fit failed")
+	}
+	m = keys(m, "t")
+	if !m.graphState.HideTalk {
+		t.Fatal("talk toggle failed")
 	}
 	m = keys(m, "o")
 	if !m.graphState.Orbit {
@@ -160,5 +166,62 @@ func TestGraphEnterOpensEmptyMap(t *testing.T) {
 	m = keys(m, "enter")
 	if !m.mapOn {
 		t.Fatal("enter should open the map even without a selected node")
+	}
+}
+
+func TestGraphTalkSnapshotReplaysOnlyNewerFeed(t *testing.T) {
+	m := graphModel(80, 24)
+	m.graphTalkLoading = true
+	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 1}}})
+	m.graphTalkPending = []graphview.FeedEvents{{Now: t0, Events: []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 4, Kind: "msg.stored", Time: t0}, From: "session-1", To: "session-2"},
+		{Event: protocol.Event{ID: 6, Kind: "msg.stored", Time: t0}, From: "session-1", To: "session-2"},
+	}}}
+	next, _ := m.Update(graphTalkMsg{at: t0, result: protocol.GraphTalkResult{LastID: 5, Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 4}}}})
+	got := next.(Model).graphState.Talk
+	if len(got) != 1 || got[0].Count != 5 {
+		t.Fatalf("snapshot replay: %+v", got)
+	}
+}
+
+func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
+	for _, paused := range []bool{false, true} {
+		m := graphModel(80, 24)
+		m.graphState.Paused = paused
+		lines := m.graphView(80, 16)
+		line := ansi.Strip(lines[len(lines)-1])
+		if !strings.HasSuffix(line, "? keys") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
+			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
+		}
+		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") == paused || !strings.Contains(line, "0 fit") {
+			t.Fatalf("paused=%v: incorrect hint priority %q", paused, line)
+		}
+	}
+}
+
+func TestGraphHintsDropInPriorityOrder(t *testing.T) {
+	for _, tc := range []struct {
+		width           int
+		present, absent []string
+	}{
+		{80, []string{"enter Map", "0 fit", "t talk", "? keys"}, []string{"space pause"}},
+		{70, []string{"0 fit", "t talk", "? keys"}, []string{"space pause", "enter Map"}},
+		{60, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+		{40, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+	} {
+		line := graphHintLine(tc.width, false)
+		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? keys") {
+			t.Fatalf("width %d: %q", tc.width, line)
+		}
+		for _, h := range tc.present {
+			if !strings.Contains(line, h) {
+				t.Errorf("width %d missing %q: %q", tc.width, h, line)
+			}
+		}
+		for _, h := range tc.absent {
+			if strings.Contains(line, h) {
+				t.Errorf("width %d has %q: %q", tc.width, h, line)
+			}
+		}
 	}
 }

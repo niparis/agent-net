@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+Things that do not match across your machines. enter fixes the selected one, x
+accepts it as it is.
+╭─What differs · 1 to look at──────────────────────────────────────────────────╮
+│ ▸ ! demo: Claude's copy (~/.claude/skills) is newer than Pi's                │
+│     (~/.pi/agent/skills), 3 files differ                                     │
+│     fix: keep the newer one in both places                                   │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ 9 tools are the same everywhere you set them  ·  [ ] shows all of them       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ write to the CTO: set charters, start workers, ask about the network         │
+│ > write to the CTO...                                                        │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept as is  . accepted  [ ] screen  tab CTO  ? help

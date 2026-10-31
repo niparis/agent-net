@@ -109,3 +109,26 @@ func TestPausePreservesTrafficProgress(t *testing.T) {
 		t.Fatalf("traffic jumped on resume: %+v", scene.Comets)
 	}
 }
+
+func TestTalkCountsAndLiveEvents(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	s, _ := Update(State{}, GraphChanged{Graph: protocol.GraphView{Nodes: []protocol.Node{{Name: "alpha", Sessions: []protocol.GraphSession{{ID: "a"}}}, {Name: "beta", Sessions: []protocol.GraphSession{{ID: "b"}}}}, Edges: []protocol.Edge{{From: "alpha", To: "beta", Kind: "depends"}}}})
+	s, _ = Update(s, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "alpha", To: "beta", Count: 2, HasEdge: true}}})
+	s, _ = Update(s, FeedEvents{Now: now, Events: []protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", Time: now}, From: "b", To: "a"}}})
+	if len(s.Talk) != 1 || s.Talk[0].Count != 3 || !s.Talk[0].HasEdge {
+		t.Fatalf("talk: %+v", s.Talk)
+	}
+}
+
+func TestTalkFeedBeforeGraphAndWatermark(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	s, _ := Update(State{}, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "a", To: "b", Count: 2}}})
+	s, _ = Update(s, FeedEvents{Now: now, CountAfter: 5, Projects: map[string]string{"one": "a", "two": "b", "owner": ""}, Events: []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 5, Kind: "msg.stored", Time: now}, From: "one", To: "two"},
+		{Event: protocol.Event{ID: 6, Kind: "msg.stored", Time: now}, From: "two", To: "one"},
+		{Event: protocol.Event{ID: 7, Kind: "msg.stored", Time: now}, From: "owner", To: "one"},
+	}})
+	if len(s.Talk) != 1 || s.Talk[0].Count != 3 {
+		t.Fatalf("counts: %+v", s.Talk)
+	}
+}

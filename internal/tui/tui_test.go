@@ -466,7 +466,7 @@ func TestViewFitsEverySize(t *testing.T) {
 func TestViewHasEverythingAt80Columns(t *testing.T) {
 	out := keys(newModel(80, 24), "down").View() // tenebrae-53
 	for _, want := range []string{
-		"Mac (here)", "v0.4.0", "online", "old-box", "offline", "12 online",
+		"Mac (here)", "old-box", "12 online", "cpu", "mem", "disk 180G free", "disk 31G free",
 		"AGENT", "NAME", "PROJECT", "MODEL", "STATUS", "TRUST", "CPU", "RAM", "TASK",
 		"tenebrae-53", "opus-5-5", "busy", "shell", "CTO",
 		"up/down select", "q quit",
@@ -858,7 +858,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 	)
 	m = refresh(m, src)
 	v := keys(m, "2", "e").View()
-	if !strings.Contains(v, "ci-runner ↔ tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
+	if !strings.Contains(v, "ci-runner") || !strings.Contains(v, "tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
 	if m.feed.lastID != 15 {
@@ -894,7 +894,8 @@ func TestFeedUnavailableOnOlderPeers(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
 	v := keys(m, "2").View()
-	if m.problem != ProblemNone || !strings.Contains(v, "no message feed:") || !strings.Contains(v, "older than the event feed") {
+	plain := strings.ReplaceAll(ansi.Strip(v), "\n", " ")
+	if m.problem != ProblemNone || !strings.Contains(plain, "no message feed:") || !strings.Contains(plain, "older") || !strings.Contains(plain, "event feed") {
 		t.Fatalf("not explained:\n%s", v)
 	}
 	if !strings.Contains(m.View(), "tenebrae-53") {
