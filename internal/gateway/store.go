@@ -280,7 +280,7 @@ ALTER TABLE tool_results ADD COLUMN commit_hash TEXT NOT NULL DEFAULT '';
 CREATE TABLE IF NOT EXISTS signal_prompts (session_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS charter_signals (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, prompt TEXT NOT NULL, at INTEGER NOT NULL);
 `, `
-CREATE TABLE learned_suggestions (
+CREATE TABLE IF NOT EXISTS learned_suggestions (
  id INTEGER PRIMARY KEY AUTOINCREMENT, node TEXT NOT NULL, field TEXT NOT NULL,
  edge_kind TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, phrase TEXT NOT NULL,
  evidence TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', severity TEXT NOT NULL,
@@ -288,9 +288,9 @@ CREATE TABLE learned_suggestions (
  CHECK(status IN ('pending','applied','rejected','undone')),
  CHECK(kind IN ('add','remove')), CHECK(severity IN ('minor','major'))
 );
-CREATE INDEX learned_pending ON learned_suggestions(node,field,phrase,status);
-CREATE TABLE learned_message_flow (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, excerpt TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE INDEX learned_flow_pair ON learned_message_flow(source,target,at);
+CREATE INDEX IF NOT EXISTS learned_pending ON learned_suggestions(node,field,phrase,status);
+CREATE TABLE IF NOT EXISTS learned_message_flow (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, excerpt TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS learned_flow_pair ON learned_message_flow(source,target,at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
