@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -575,5 +576,30 @@ func TestToolsPlanCanScrollLongComparison(t *testing.T) {
 	}
 	if !strings.Contains(plain(m), "changed: file49") {
 		t.Fatalf("last entry missing:\n%s", plain(m))
+	}
+}
+
+func TestChooseShowsManifestDecision(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	now := m.now()
+	old := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Newest: now.Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10, Fingerprint: "old"}}}}
+	newer := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: now.Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 20, Fingerprint: "new"}, {Path: "scripts/run.sh", Size: 5, Fingerprint: "x"}}}}
+	model, _ := m.openChoose("Compare, then keep one", toolsdiff.Action{Copies: []toolsdiff.Copy{old, newer}})
+	v := plain(model.(Model))
+	for _, want := range []string{"3 days ago", now.Add(-72 * time.Hour).Format("2 Jan"), "newer", "2 files", "25 B", "SKILL.md changed", "scripts/run.sh only on beta", "suggest: keep beta's copy"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q: %s", want, v)
+		}
+	}
+}
+
+func TestChooseExplainsMissingFilesWithoutRecommendation(t *testing.T) {
+	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "a"}}}}
+	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "b"}}}}
+	got := strings.Join(chooseComparison(a, b), "\n")
+	for _, want := range []string{"alpha lacks 1 file", "beta lacks 1 file"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q: %s", want, got)
+		}
 	}
 }

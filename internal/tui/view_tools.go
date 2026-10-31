@@ -682,7 +682,7 @@ func (m Model) modalBox(w, h int) []string {
 	for i := 0; i+1 < len(md.foot); i += 2 {
 		foot = append(foot, md.foot[i], md.foot[i+1])
 	}
-	body = append(body, clip(keyHints(foot...), bw-4))
+	body = append(body, wrapStyled(keyHints(foot...), bw-4)...)
 	return panelWithBorder(md.title, body, bw, roleAccent, roleAccent)
 }
 

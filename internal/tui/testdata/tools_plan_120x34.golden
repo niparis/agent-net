@@ -1,13 +1,13 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 1 busy             updated 14:05:00
  Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────────────────────────────────────────────╮
-│ a  keep the copy on research (bbbbbb)                                                                                │
-│ b  keep the copy on research (aaaaaa)                                                                                │
-│   the one you keep goes into agent-net and to every machine                                                          │
+│ a  keep the copy on research (pi) (file details unavailable)                                                         │
+│ b  keep the copy on research (claude) (file details unavailable)                                                     │
+│   file comparison unavailable or too large to compare                                                                │
+│   the one you keep goes into agent-net and to research                                                               │
 │                                                                                                                      │
-│ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                                                            │
+│ a keep research  b keep research  d exact folders  esc cancel                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-│     fix: remove imnplementing-clean-architecture                                                                     │
 │   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours                                              │
 │     fix: remove the repo copy                                                                                        │
 │   ○ 23 skills are only on research and not managed by agent-net                                                      │

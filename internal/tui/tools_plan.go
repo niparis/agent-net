@@ -1084,9 +1084,13 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		}
 		letter := string(rune('a' + i))
 		c := c
-		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+c.Machine+" ("+c.Version()+")")
+		who := sanitize(c.Machine)
+		if len(act.Copies) == 2 && act.Copies[0].Machine == act.Copies[1].Machine && c.Harness != "" {
+			who += " (" + sanitize(c.Harness) + ")"
+		}
+		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+who+copySummary(c, act.Copies, m.now()))
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
-		md.foot = append(md.foot, letter, "keep "+c.Version())
+		md.foot = append(md.foot, letter, "keep "+sanitize(c.Machine))
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
 			notes := comparisonNotes(act.Copies, c)
@@ -1101,13 +1105,83 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 			return model.(Model), cmd
 		}
 	}
+	if len(act.Copies) == 2 {
+		md.lines = append(md.lines, chooseComparison(act.Copies[0], act.Copies[1])...)
+	}
 	if title == "Keep the newer one in both places" && len(act.Copies) == 2 {
 		md.actions["enter"] = md.actions["a"]
 		md.foot = append([]string{"enter", "keep newer"}, md.foot...)
 	}
-	md.lines = append(md.lines, tsDim.Render("  the one you keep goes into agent-net and to every machine"))
+	destination := "  the one you keep goes into agent-net and to every machine"
+	if len(act.Copies) == 2 && act.Copies[0].NodeID != "" && act.Copies[0].NodeID == act.Copies[1].NodeID && len(m.tl.cat.Machines) > 1 {
+		destination = "  the one you keep goes into agent-net and to " + sanitize(act.Copies[0].Machine)
+	}
+	md.lines = append(md.lines, tsDim.Render(destination))
 	md.foot = append(md.foot, "d", "exact folders", "esc", "cancel")
 	return m, nil
+}
+
+// copySummary describes what was observed, without treating absent manifests as empty.
+func copySummary(c toolsdiff.Copy, copies []toolsdiff.Copy, now time.Time) string {
+	m := c.Manifest
+	if m == nil || m.TooLarge {
+		return " (file details unavailable)"
+	}
+	var size int64
+	for _, f := range m.Files {
+		size += f.Size
+	}
+	detail := fmt.Sprintf(" - %s, %d B", nounCount(len(m.Files), "file", "files"), size)
+	if !m.Newest.IsZero() {
+		age := now.Sub(m.Newest)
+		when := "just now"
+		if age >= 24*time.Hour {
+			when = nounCount(int(age.Hours()/24), "day", "days") + " ago"
+		} else if age >= time.Hour {
+			when = nounCount(int(age.Hours()), "hour", "hours") + " ago"
+		} else if age >= time.Minute {
+			when = nounCount(int(age.Minutes()), "minute", "minutes") + " ago"
+		}
+		detail += ", changed " + when + ", " + m.Newest.Format("2 Jan")
+		if len(copies) == 2 && copies[0].Manifest != nil && copies[1].Manifest != nil && !copies[0].Manifest.TooLarge && !copies[1].Manifest.TooLarge && !copies[0].Manifest.Newest.IsZero() && !copies[1].Manifest.Newest.IsZero() {
+			other := copies[0].Manifest.Newest
+			if m == copies[0].Manifest {
+				other = copies[1].Manifest.Newest
+			}
+			if m.Newest.After(other) {
+				detail += " (newer)"
+			}
+		}
+	}
+	return detail
+}
+
+func chooseComparison(a, b toolsdiff.Copy) []string {
+	added, removed, changed, ok := toolsdiff.CompareFiles(a, b)
+	if !ok {
+		return []string{tsDim.Render("  file comparison unavailable or too large to compare")}
+	}
+	var parts []string
+	for _, p := range changed {
+		parts = append(parts, sanitize(p)+" changed")
+	}
+	for _, p := range added {
+		parts = append(parts, sanitize(p)+" only on "+sanitize(b.Machine))
+	}
+	for _, p := range removed {
+		parts = append(parts, sanitize(p)+" only on "+sanitize(a.Machine))
+	}
+	lines := []string{fmt.Sprintf("  %s differ: %s", nounCount(len(parts), "file", "files"), listNames(parts, 5))}
+	if !a.Manifest.Newest.IsZero() && !b.Manifest.Newest.IsZero() {
+		switch {
+		case a.Manifest.Newest.After(b.Manifest.Newest) && len(added) == 0:
+			return append(lines, "  suggest: keep "+sanitize(a.Machine)+"'s copy (newer, has every file)")
+		case b.Manifest.Newest.After(a.Manifest.Newest) && len(removed) == 0:
+			return append(lines, "  suggest: keep "+sanitize(b.Machine)+"'s copy (newer, has every file)")
+		}
+	}
+	lines = append(lines, fmt.Sprintf("  %s lacks %s; %s lacks %s", sanitize(a.Machine), nounCount(len(added), "file", "files"), sanitize(b.Machine), nounCount(len(removed), "file", "files")))
+	return lines
 }
 
 const time10min = 10 * time.Minute
