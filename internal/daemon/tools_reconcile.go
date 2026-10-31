@@ -99,31 +99,19 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 	default:
 		return fail("manual", "unsupported harness")
 	}
-	info, err := os.Lstat(root)
-	if err != nil || !info.IsDir() {
-		return fail("conflict", "home is not a directory")
+	cur, closeRoot, err := openSkillRoot(root, rel)
+	if err != nil {
+		return fail("conflict", "skill root cannot be opened safely")
 	}
-	cur := root
-	for _, part := range strings.Split(rel, "/") {
-		cur = filepath.Join(cur, part)
-		info, err = os.Lstat(cur)
-		if os.IsNotExist(err) {
-			if err = os.Mkdir(cur, 0700); err != nil && !os.IsExist(err) {
-				return fail("failed", "cannot create skill root")
-			}
-			info, err = os.Lstat(cur)
-		}
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			return fail("conflict", "skill root is not a directory")
-		}
-	}
+	defer closeRoot()
 	dest := filepath.Join(cur, t.Name)
+	manifestDest := filepath.Join(root, rel, t.Name)
 	if _, err = os.Lstat(dest); err == nil {
 		hash, e := inventory.SkillHash(dest)
 		if e != nil || hash != t.Revision.Version {
 			return fail("conflict", "destination differs")
 		}
-		if e = d.recordSkill(t, dest, false); e != nil {
+		if e = d.recordSkill(t, manifestDest, false); e != nil {
 			return fail("failed", "cannot record manifest")
 		}
 		return fail("applied", "")
@@ -148,7 +136,7 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 		}
 		return fail("failed", "cannot install skill")
 	}
-	if err = d.recordSkill(t, dest, true); err != nil {
+	if err = d.recordSkill(t, manifestDest, true); err != nil {
 		return fail("failed", "cannot record manifest")
 	}
 	return fail("applied", "")

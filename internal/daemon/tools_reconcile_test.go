@@ -139,3 +139,29 @@ func TestGlobalSkillReconcilesThroughGateway(t *testing.T) {
 		return detail.Item.Applied == "applied" && len(detail.Item.Results) == 4
 	})
 }
+
+func TestSkillRootStaysAnchoredAfterParentSwap(t *testing.T) {
+	home := t.TempDir()
+	outside := t.TempDir()
+	path, closeRoot, err := openSkillRoot(home, ".claude/skills")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeRoot()
+	original := filepath.Join(home, ".claude", "skills")
+	if err = os.Rename(original, filepath.Join(home, "moved")); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.Symlink(outside, original); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(path, "fixture"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = os.Stat(filepath.Join(outside, "fixture")); !os.IsNotExist(err) {
+		t.Fatalf("wrote through swapped parent: %v", err)
+	}
+	if _, err = os.Stat(filepath.Join(home, "moved", "fixture")); err != nil {
+		t.Fatal(err)
+	}
+}
