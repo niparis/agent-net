@@ -46,6 +46,9 @@ explicit words in the chat before it stops a worker, declines a held request,
 removes an MCP server or changes integrations. This is an instruction to the
 model, not a separate technical confirmation gate.
 
+CTO feed, worker and project pages default to 20 entries and accept at most 50.
+The cursor reads the next page. These output limits do not change the owner gate.
+
 The CTO can send interface requests to local TUI connections that subscribed
 and passed the owner gate. The requests select a view, selection and filter or
 show a notice; they do not run an operator action in the TUI.

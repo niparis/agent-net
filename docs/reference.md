@@ -81,7 +81,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 
 | Owner method or ordinary tool | CTO tool or equivalent |
 |---|---|
-| `info`, `nodes`, `agent_nodes` | `info`, `nodes` (includes quotas, tracks and playbook) |
+| `info`, `nodes`, `agent_nodes` | `info`, `nodes` (compact machine summaries) |
 | `list`, `agent_list` | `agents` |
 | `get`, `agent_get` | `get` |
 | `projects`, `agent_project_list`, `project_add`, `agent_project_add`, `project_remove` | `projects`, `project_add`, `project_remove` |
@@ -101,8 +101,12 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
 | `agent_announce`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session or worker self-service only. The CTO is neither a network session nor a worker; it talks to the owner in this chat. |
 
-The CTO can read worker track records in `nodes` and the worker roster in
-`workers`. This version has no separate scores or roster operator methods.
+CTO `nodes` returns machine name, online state, version, harness versions and
+model counts, worker count and a quota summary. To read one model list, call
+`nodes {"models":{"machine":"box","harness":"pi"}}`. `agents` returns a
+compact session summary. `feed`, `workers` and `projects` return at most 20
+items by default, or up to 50 with `limit`. Pass the returned `next_before` as
+`before` to read the next page. An empty cursor means there are no more items.
 `held_answer` accepts `a` (approve once), `A` (approve and set auto), `r`
 (decline once), or `R` (decline and set never). `edge_set` takes kind `depends`,
 `governs` or `deploys`, governance mode `advisor`, `arbiter` or `owner`, and
@@ -185,7 +189,7 @@ The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <t
 
 Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`.
 
-- `graph_get {}` returns `nodes` and `edges`, hiding empty implicit projects without a live or recently seen session for seven days. `graph_get {"all":true}` includes those projects. The map uses the same default filter.
+- `graph_get {}` returns `nodes` and `edges`, hiding unregistered empty implicit projects without a live or recently seen session for seven days. Each project node includes registered and observed `locations` (machine and path), up to five live `sessions` (id, name, machine and status), and `session_count`. `graph_get {"all":true}` includes those projects. The map uses the same default filter.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
 - `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges, and clears the node's settings with it.
 - `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.

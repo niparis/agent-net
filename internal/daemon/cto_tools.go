@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
+
 	"strings"
 	"time"
 
@@ -46,7 +48,7 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		res, _, err := lc.dispatchOwner(ctx, name, raw)
 		return res, err
 	}
-	if ctoLocalMethods[name] {
+	if ctoLocalMethods[name] && name != "nodes" && name != "projects" {
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
@@ -133,12 +135,114 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
 		}
 		return d.call(ctx, strings.ReplaceAll(name, "_", "."), args)
+	case "nodes":
+		data, err := d.call(ctx, "query.nodes", nil)
+		if err != nil {
+			return nil, err
+		}
+		var nodes protocol.NodesInfo
+		if err = json.Unmarshal(data, &nodes); err != nil {
+			return nil, err
+		}
+		var opt struct {
+			Models *struct {
+				Machine string `json:"machine"`
+				Harness string `json:"harness"`
+			} `json:"models"`
+		}
+		if err = json.Unmarshal(raw, &opt); err != nil && len(raw) > 0 {
+			return nil, err
+		}
+		if opt.Models != nil {
+			for _, n := range nodes.Nodes {
+				if n.Hostname == opt.Models.Machine || n.NodeID == opt.Models.Machine {
+					for _, h := range n.Harnesses {
+						if h.Name == opt.Models.Harness {
+							return map[string]any{"machine": n.Hostname, "harness": h.Name, "models": h.Models}, nil
+						}
+					}
+				}
+			}
+			return nil, errors.New("machine or harness not found")
+		}
+		data, err = d.call(ctx, "query.agents", protocol.QueryAgents{IncludeOwners: true})
+		if err != nil {
+			return nil, err
+		}
+		var agents protocol.AgentsResult
+		if err = json.Unmarshal(data, &agents); err != nil {
+			return nil, err
+		}
+		return compactCTONodes(nodes, agents.Agents), nil
 	case "agents":
-		return d.call(ctx, "query.agents", args)
+		data, err := d.call(ctx, "query.agents", args)
+		if err != nil {
+			return nil, err
+		}
+		var agents protocol.AgentsResult
+		if err = json.Unmarshal(data, &agents); err != nil {
+			return nil, err
+		}
+		return compactCTOAgents(agents.Agents), nil
 	case "feed":
-		return d.call(ctx, "query.events", args)
+		var p struct {
+			Limit  int   `json:"limit"`
+			Before int64 `json:"before"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad pagination")
+		}
+		limit := ctoLimit(p.Limit)
+		data, err := d.call(ctx, "query.events", protocol.QueryEvents{Limit: limit + 1, BeforeID: p.Before})
+		if err != nil {
+			return nil, err
+		}
+		var r protocol.EventsResult
+		if err = json.Unmarshal(data, &r); err != nil {
+			return nil, err
+		}
+		for i, j := 0, len(r.Events)-1; i < j; i, j = i+1, j-1 {
+			r.Events[i], r.Events[j] = r.Events[j], r.Events[i]
+		}
+		next := int64(0)
+		if len(r.Events) > limit {
+			r.Events = r.Events[:limit]
+			next = r.Events[len(r.Events)-1].ID
+		}
+		return map[string]any{"events": r.Events, "next_before": next}, nil
+	case "projects":
+		var p struct {
+			Name   string `json:"name"`
+			Limit  int    `json:"limit"`
+			Before string `json:"before"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad pagination")
+		}
+		data, err := d.call(ctx, "query.projects", protocol.QueryProjects{Name: p.Name})
+		if err != nil {
+			return nil, err
+		}
+		var r protocol.ProjectsResult
+		if err = json.Unmarshal(data, &r); err != nil {
+			return nil, err
+		}
+		page, next := ctoPage(r.Projects, p.Limit, p.Before, func(v protocol.ProjectView) string { return v.Name + "|" + v.NodeID + "|" + v.Path })
+		return map[string]any{"projects": page, "next_before": next}, nil
 	case "workers":
-		return d.workersView(ctx, protocol.WorkersQuery{Recent: true})
+		var p struct {
+			Limit  int    `json:"limit"`
+			Before string `json:"before"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad pagination")
+		}
+		r, err := d.workersView(ctx, protocol.WorkersQuery{Recent: true})
+		if err != nil {
+			return nil, err
+		}
+		page, next := ctoPage(r.Workers, p.Limit, p.Before, func(v protocol.WorkerView) string { return fmt.Sprintf("%020d|%s", v.StartedAt, v.SessionID) })
+		return map[string]any{"workers": page, "next_before": next}, nil
 	case "needs_you":
 		data, err := d.call(ctx, "query.agents", protocol.QueryAgents{OnlineOnly: true})
 		if err != nil {
@@ -322,6 +426,103 @@ func (d *Daemon) broadcastCTOUI(q protocol.UIRequest) int {
 		}
 	}
 	return count
+}
+
+type ctoHarnessSummary struct {
+	Name       string `json:"name"`
+	Version    string `json:"version"`
+	ModelCount int    `json:"model_count"`
+}
+type ctoNode struct {
+	Name        string              `json:"name"`
+	Online      bool                `json:"online"`
+	Version     string              `json:"version"`
+	Harnesses   []ctoHarnessSummary `json:"harnesses"`
+	WorkerCount int                 `json:"worker_count"`
+	Quota       string              `json:"quota"`
+}
+type ctoAgent struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Project string `json:"project"`
+	Machine string `json:"machine"`
+	Folder  string `json:"folder"`
+	Harness string `json:"harness"`
+	Model   string `json:"model"`
+	Status  string `json:"status"`
+	Task    string `json:"task"`
+}
+
+func compactCTONodes(in protocol.NodesInfo, agents []protocol.AgentView) any {
+	counts := map[string]int{}
+	for _, w := range protocol.WorkersOf(agents) {
+		counts[w.NodeID]++
+	}
+	out := make([]ctoNode, 0, len(in.Nodes))
+	for _, n := range in.Nodes {
+		v := ctoNode{Name: n.Hostname, Online: n.Online, Version: n.Version, Harnesses: []ctoHarnessSummary{}, WorkerCount: counts[n.NodeID]}
+		for _, h := range n.Harnesses {
+			v.Harnesses = append(v.Harnesses, ctoHarnessSummary{h.Name, h.Version, len(h.Models)})
+		}
+		if n.Quotas != nil {
+			var q []string
+			for _, p := range n.Quotas.Providers {
+				for _, w := range p.Windows {
+					q = append(q, fmt.Sprintf("%s %s %.0f%%", p.Provider, w.ID, w.PercentUsed))
+				}
+			}
+			v.Quota = strings.Join(q, ", ")
+		}
+		out = append(out, v)
+	}
+	return map[string]any{"nodes": out}
+}
+func compactCTOAgents(in []protocol.AgentView) any {
+	out := make([]ctoAgent, 0, len(in))
+	for _, a := range in {
+		project := a.Repo.Project
+		if project == "" {
+			project = a.Profile.Project
+		}
+		name := a.Profile.Name
+		if name == "" {
+			name = a.Title
+		}
+		task := cleanLine(a.Profile.Task)
+		if len(task) > 160 {
+			task = task[:160]
+		}
+		out = append(out, ctoAgent{a.SessionID, name, project, a.Hostname, a.Cwd, a.Harness, a.Model, a.Status, task})
+	}
+	return map[string]any{"agents": out}
+}
+
+func ctoLimit(n int) int {
+	if n <= 0 {
+		return 20
+	}
+	if n > 50 {
+		return 50
+	}
+	return n
+}
+func ctoPage[T any](items []T, limit int, before string, key func(T) string) ([]T, string) {
+	sort.Slice(items, func(i, j int) bool { return key(items[i]) > key(items[j]) })
+	limit = ctoLimit(limit)
+	out := make([]T, 0, limit)
+	next := ""
+	for _, item := range items {
+		k := key(item)
+		if before != "" && k >= before {
+			continue
+		}
+		if len(out) == limit {
+			next = key(out[len(out)-1])
+			break
+		}
+		out = append(out, item)
+	}
+	return out, next
 }
 
 // compactCTONeedsYou keeps only what the owner needs to identify and answer a wait.

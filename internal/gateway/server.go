@@ -638,7 +638,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad query.events")
 		}
-		evs, err := st.FeedEvents(p.AfterID, p.Limit)
+		evs, err := st.feedEventsBefore(p.AfterID, p.BeforeID, p.Limit)
 		if err != nil {
 			return nil, err
 		}

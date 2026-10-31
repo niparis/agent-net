@@ -480,3 +480,10 @@ func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
+	want := "Each graph node lists where its project lives and its live sessions: use that before searching any filesystem."
+	if !strings.Contains(ctoBrief, want) {
+		t.Fatalf("CTO brief missing %q", want)
+	}
+}

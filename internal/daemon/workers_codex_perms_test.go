@@ -134,6 +134,8 @@ func TestCodexWorkerPermissionLevels(t *testing.T) {
 				a := w.agentOf(t, res.SessionID)
 				return a != nil && a.Worker != nil && a.Worker.Permissions == tc.want
 			})
+			w.waitNotice(t, 1)
+			eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 		})
 	}
 }
@@ -196,6 +198,8 @@ func TestCodexWorkerTurnsOffTheAgentNetMCPServer(t *testing.T) {
 			if strings.Contains(joined, "mcp_servers.other") {
 				t.Errorf("another MCP server is touched: %v", rec.Args)
 			}
+			w.waitNotice(t, 1)
+			eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 		})
 	}
 }
@@ -255,6 +259,8 @@ func TestWorkersLevelGateAndScope(t *testing.T) {
 	if res.Permissions != protocol.WorkersSandboxed {
 		t.Errorf("level after refusals: %q", res.Permissions)
 	}
+	w.waitNotice(t, 1)
+	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 }
 
 // A start that waits in the queue keeps the level the project had when it was
