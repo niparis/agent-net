@@ -8,18 +8,26 @@ import (
 	"time"
 )
 
-func TestOperatorReadCoalescesAndCaches(t *testing.T) {
+func TestOperatorReadCoalescesButNeverReusesAFinishedRead(t *testing.T) {
 	var c operatorReadCache
 	var calls atomic.Int32
 	started := make(chan struct{})
 	release := make(chan struct{})
-	fn := func(context.Context) (any, error) { calls.Add(1); close(started); <-release; return "ok", nil }
+	var once sync.Once
+	fn := func(context.Context) (any, error) {
+		calls.Add(1)
+		once.Do(func() { close(started) })
+		<-release
+		return "ok", nil
+	}
 	const n = 20
 	var wg sync.WaitGroup
+	var entered atomic.Int32
 	wg.Add(n)
 	for i := 0; i < n; i++ {
 		go func() {
 			defer wg.Done()
+			entered.Add(1)
 			v, err := c.do(context.Background(), "workers", []byte(`{}`), fn)
 			if err != nil || v != "ok" {
 				t.Errorf("got %v, %v", v, err)
@@ -27,14 +35,22 @@ func TestOperatorReadCoalescesAndCaches(t *testing.T) {
 		}()
 	}
 	<-started
+	// Release only once every caller is waiting on the shared read.
+	for entered.Load() < n {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
 	close(release)
 	wg.Wait()
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("underlying calls = %d, want 1", got)
 	}
-	v, err := c.do(context.Background(), "workers", []byte(`{}`), fn)
-	if err != nil || v != "ok" || calls.Load() != 1 {
-		t.Fatalf("cached: %v, %v, calls %d", v, err, calls.Load())
+	// A read that starts after the first one finished must run again: the
+	// state may have changed in between (a trust set, a worker resumed).
+	fresh := func(context.Context) (any, error) { calls.Add(1); return "new", nil }
+	v, err := c.do(context.Background(), "workers", []byte(`{}`), fresh)
+	if err != nil || v != "new" || calls.Load() != 2 {
+		t.Fatalf("a finished read was reused: %v, %v, calls %d", v, err, calls.Load())
 	}
 }
 
