@@ -66,6 +66,7 @@ func (d *Daemon) scanTools(ctx context.Context) protocol.InventoryReport {
 func (d *Daemon) toolsLoop(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
+	d.recoverSkillJournal()
 	d.scanTools(ctx)
 	d.reconcileTools(ctx)
 	for {

@@ -114,6 +114,9 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 		return fail("failed", "local directories unavailable")
 	}
 	manifestDest := filepath.Join(root, rel, t.Name)
+	if reason := d.skillConflict(manifestDest); reason != "" {
+		return fail("conflict", reason)
+	}
 	j, err := newSkillJournal(d.cfg.StateDir, skillJournalRecord{Operation: "copy", Target: manifestDest, AfterHash: t.Revision.Version, Item: t.Revision.Item, Revision: t.Revision.Revision, Step: "prepared"})
 	if err != nil {
 		return fail("failed", "cannot write skill journal")
@@ -142,7 +145,7 @@ func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel str
 	} else if !os.IsNotExist(err) {
 		return fail("failed", "cannot inspect destination")
 	}
-	stageName := ".agent-net-stage-" + filepath.Base(j.path)
+	stageName := skillStagePrefix + filepath.Base(j.path)
 	stage := filepath.Join(cur, stageName)
 	j.record.Stage = filepath.Join(root, rel, stageName)
 	if err = j.advance("staging"); err != nil {

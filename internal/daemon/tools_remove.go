@@ -62,6 +62,9 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		return fail("conflict", t.Target.Conflict)
 	}
 	source := filepath.Clean(t.Target.Source)
+	if reason := d.skillConflict(source); reason != "" {
+		return fail("conflict", reason)
+	}
 	if !filepath.IsAbs(source) || t.Name == "" || filepath.Base(source) != t.Name || t.Name == "." || t.Name == ".." {
 		return fail("conflict", "invalid source")
 	}
