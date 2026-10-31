@@ -218,6 +218,98 @@ func TestCTOAdoptsModelSelectedInOpenCode(t *testing.T) {
 	}
 }
 
+func TestCTOModelsAreSavedPerHarnessAndUsedByEachRuntime(t *testing.T) {
+	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.Adapters = append(c.Adapters, &fsClaudeAdapter{dir: sessions})
+		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+	}})
+	cli := cliClient(t, n)
+	opencodeModel, claudeModel := "fake/m1", "sonnet"
+	opencode, claude := "opencode", "claude"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &opencode, Model: &opencodeModel})
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &claude, Model: &claudeModel})
+
+	var settings struct {
+		Model         string `json:"model"`
+		Harness       string `json:"harness"`
+		OpenCodeModel string `json:"opencode_model"`
+		ClaudeModel   string `json:"claude_model"`
+	}
+	if err := json.Unmarshal(cli.mustCall("cto_settings", nil), &settings); err != nil {
+		t.Fatal(err)
+	}
+	if settings.Harness != "claude" || settings.Model != claudeModel || settings.OpenCodeModel != opencodeModel || settings.ClaudeModel != claudeModel {
+		t.Fatalf("settings after changing Claude model: %+v", settings)
+	}
+
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &opencode})
+	cli.mustCall("cto_send", map[string]string{"text": "OpenCode model"})
+	openRec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if got := openRec.SessionBody["model"].(map[string]any)["id"]; got != "m1" {
+		t.Fatalf("OpenCode started with model %v", got)
+	}
+
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &claude})
+	cli.mustCall("cto_send", map[string]string{"text": "Claude model"})
+	claudeRec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+	if got := argValue(claudeRec.Args, "--model"); got != claudeModel {
+		t.Fatalf("Claude started with model %q", got)
+	}
+}
+
+func TestCTOLegacyModelMigratesToMatchingHarnessSlot(t *testing.T) {
+	for _, tc := range []struct {
+		model, harness, wantOpenCode, wantClaude string
+	}{
+		{model: "opencode-go/deepseek-v4.1-flash", harness: "opencode", wantOpenCode: "opencode-go/deepseek-v4.1-flash"},
+		{model: "sonnet", harness: "claude", wantClaude: "sonnet"},
+	} {
+		t.Run(tc.model, func(t *testing.T) {
+			t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+			g := startGateway(t, t.TempDir(), "")
+			n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour})
+			c, ok := n.d.integrationsClient()
+			if !ok {
+				t.Fatal("integrations client unavailable")
+			}
+			body, err := json.Marshal(protocol.CTOSettings{Model: tc.model, Harness: tc.harness})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req, err := http.NewRequest(http.MethodPut, c.URL+"/v1/cto-settings", bytes.NewReader(body))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Authorization", "Bearer "+c.Token)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := c.HTTP.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				t.Fatalf("seed legacy setting: %s", resp.Status)
+			}
+
+			var settings struct {
+				OpenCodeModel string `json:"opencode_model"`
+				ClaudeModel   string `json:"claude_model"`
+			}
+			if err := json.Unmarshal(cliClient(t, n).mustCall("cto_settings", nil), &settings); err != nil {
+				t.Fatal(err)
+			}
+			if settings.OpenCodeModel != tc.wantOpenCode || settings.ClaudeModel != tc.wantClaude {
+				t.Fatalf("migrated settings: %+v", settings)
+			}
+		})
+	}
+}
+
 func TestCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO(t *testing.T) {
 	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())

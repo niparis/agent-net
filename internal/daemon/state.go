@@ -118,6 +118,8 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"cto", "claude_graph_after", "claude_graph_after INTEGER NOT NULL DEFAULT 0"},
 		{"cto", "active_harness", "active_harness TEXT NOT NULL DEFAULT 'opencode'"},
 		{"cto", "opencode_model", "opencode_model TEXT NOT NULL DEFAULT ''"},
+		{"cto", "claude_model", "claude_model TEXT NOT NULL DEFAULT ''"},
+		{"cto", "models_migrated", "models_migrated INTEGER NOT NULL DEFAULT 0"},
 		{"cto_actions", "harness", "harness TEXT NOT NULL DEFAULT 'opencode'"},
 	} {
 		var has int
@@ -130,6 +132,23 @@ CREATE TABLE IF NOT EXISTS workers (
 				db.Close()
 				return nil, err
 			}
+		}
+	}
+	var hasOpenCodeLastModel int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto') WHERE name = 'opencode_last_model'`).Scan(&hasOpenCodeLastModel); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if hasOpenCodeLastModel == 0 {
+		if _, err := db.Exec(`ALTER TABLE cto ADD COLUMN opencode_last_model TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+		// Before per-harness model settings, opencode_model remembered the
+		// model last applied to the live OpenCode conversation.
+		if _, err := db.Exec(`UPDATE cto SET opencode_last_model=opencode_model`); err != nil {
+			db.Close()
+			return nil, err
 		}
 	}
 	// Fix files that an older version made with the default mode.

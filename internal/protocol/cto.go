@@ -5,12 +5,14 @@ import (
 	"time"
 )
 
-// CTOSettings is the owner's network-wide model preference and the rules that
-// keep the one long CTO conversation within its model's window.
+// CTOSettings is the owner's CTO harness and per-harness model preferences,
+// plus the rules that keep the one long CTO conversation within its window.
 type CTOSettings struct {
-	Model      string                `json:"model"`
-	Harness    string                `json:"harness"`
-	Compaction CTOCompactionSettings `json:"compaction,omitempty"`
+	Model         string                `json:"model"`
+	Harness       string                `json:"harness"`
+	OpenCodeModel string                `json:"opencode_model"`
+	ClaudeModel   string                `json:"claude_model"`
+	Compaction    CTOCompactionSettings `json:"compaction,omitempty"`
 }
 
 // CTOCompactionSettings are the auto-compaction rules. Zero values are
@@ -55,9 +57,10 @@ func (s CTOCompactionSettings) CacheWindow(provider string) time.Duration {
 	return DefaultCTOCacheWindowSeconds * time.Second
 }
 
-// CTOSettingsRequest reads the settings when both pointers are nil and saves
-// the given fields otherwise. Pointers permit partial updates, including a
-// reset of the model to the machine's default.
+// CTOSettingsRequest reads the settings when all pointers are nil and saves
+// the given fields otherwise. Model is saved for Harness, or for the active
+// harness when Harness is omitted. Pointers permit partial updates, including
+// a reset of a model to the harness default.
 type CTOSettingsRequest struct {
 	Model      *string                `json:"model,omitempty"`
 	Harness    *string                `json:"harness,omitempty"`

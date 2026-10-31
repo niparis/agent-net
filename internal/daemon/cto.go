@@ -236,8 +236,8 @@ func (d *Daemon) ctoModel(ctx context.Context) (string, error) {
 		if h.Name != "opencode" {
 			continue
 		}
-		if settings.Model != "" {
-			return protocol.ResolveModel(settings.Model, h.Models, nil, h.ModelProviders)
+		if settings.OpenCodeModel != "" {
+			return protocol.ResolveModel(settings.OpenCodeModel, h.Models, nil, h.ModelProviders)
 		}
 		for _, q := range []string{"gpt 6.1", "opus 5.5", "deepseek v4 pro"} {
 			if model, e := protocol.ResolveModel(q, h.Models, nil, h.ModelProviders); e == nil {
@@ -280,7 +280,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 	if _, err = tx.Exec(`INSERT INTO cto(id,session_id) VALUES(1,?) ON CONFLICT(id) DO UPDATE SET session_id=excluded.session_id`, created.Data.ID); err != nil {
 		return "", err
 	}
-	if _, err = tx.Exec(`UPDATE cto SET opencode_model=? WHERE id=1`, model); err != nil {
+	if _, err = tx.Exec(`UPDATE cto SET opencode_last_model=? WHERE id=1`, model); err != nil {
 		return "", err
 	}
 	if _, err = tx.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='opencode'`, created.Data.ID); err != nil {
@@ -295,7 +295,7 @@ func (d *Daemon) createCTOLocked(ctx context.Context) (string, error) {
 
 func (d *Daemon) ctoOpenCodeLastModel() (string, error) {
 	var model string
-	err := d.st.db.QueryRow(`SELECT opencode_model FROM cto WHERE id=1`).Scan(&model)
+	err := d.st.db.QueryRow(`SELECT opencode_last_model FROM cto WHERE id=1`).Scan(&model)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -303,7 +303,7 @@ func (d *Daemon) ctoOpenCodeLastModel() (string, error) {
 }
 
 func (d *Daemon) saveCTOOpenCodeLastModel(model string) error {
-	_, err := d.st.db.Exec(`UPDATE cto SET opencode_model=? WHERE id=1`, model)
+	_, err := d.st.db.Exec(`UPDATE cto SET opencode_last_model=? WHERE id=1`, model)
 	return err
 }
 
@@ -361,7 +361,8 @@ func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (strin
 	}
 	if currentModel != "" && currentModel != model && currentModel != lastApplied {
 		model = currentModel
-		if _, err = d.ctoSettings(ctx, protocol.CTOSettingsRequest{Model: &model}); err != nil {
+		opencode := "opencode"
+		if _, err = d.ctoSettings(ctx, protocol.CTOSettingsRequest{Model: &model, Harness: &opencode}); err != nil {
 			return "", err
 		}
 		if err = d.recordCTOAction("model set to " + model + " (picked in the full screen)"); err != nil {

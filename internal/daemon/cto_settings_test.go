@@ -37,11 +37,10 @@ func TestCTOHarnessSettings(t *testing.T) {
 		t.Fatalf("default: %+v %v", out, err)
 	}
 	model := "opus"
-	cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Model: &model})
 	harness := "claude"
-	cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Harness: &harness})
+	cli.mustCall(protocol.OpCTOSettings, protocol.CTOSettingsRequest{Harness: &harness, Model: &model})
 	raw = cli.mustCall(protocol.OpCTOSettings, nil)
-	if err := json.Unmarshal(raw, &out); err != nil || out.Harness != harness || out.Model != model {
+	if err := json.Unmarshal(raw, &out); err != nil || out.Harness != harness || out.Model != model || out.ClaudeModel != model {
 		t.Fatalf("settings: %+v %v", out, err)
 	}
 	bad := "other"
