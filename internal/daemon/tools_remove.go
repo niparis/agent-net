@@ -4,11 +4,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -209,9 +211,23 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 		retain = true
 		return fail("failed", "skill operation interrupted")
 	}
-	if err = os.Rename(anchored, dest); err != nil {
-		os.RemoveAll(stamp)
-		return fail("failed", "cannot move source to backup")
+	stableStamp := filepath.Join(d.cfg.StateDir, "skill-backups", itemDir, filepath.Base(stamp))
+	if err = skillRename(anchored, dest); err != nil {
+		if !errors.Is(err, syscall.EXDEV) {
+			os.RemoveAll(stamp)
+			return fail("failed", "cannot move source to backup")
+		}
+		switch state, reason := d.moveAcrossFilesystems(j, anchored, dest, stamp, stableStamp, t.Revision.Version); state {
+		case "":
+		case "interrupted":
+			retain = true
+			return fail("failed", "skill operation interrupted")
+		default:
+			if state == "conflict" {
+				os.RemoveAll(stamp)
+			}
+			return fail(state, reason)
+		}
 	}
 	retain = true
 	if err = j.advance("backed_up"); err != nil {
@@ -246,4 +262,55 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 
 func restoreSkillBackup(backup, source string) error {
 	return renameSkillNoReplace(backup, source)
+}
+
+// skillRename moves a source directory into the backup folder. Tests replace
+// it to simulate a backup folder on another filesystem.
+var skillRename = os.Rename
+
+// moveAcrossFilesystems backs up a source that cannot be renamed into the
+// backup folder: copy to a staging folder beside the destination, verify the
+// hash, rename into place, then remove the source only if it is unchanged.
+// Every step is journaled. It returns an empty state on success.
+func (d *Daemon) moveAcrossFilesystems(j *skillJournal, source, dest, stamp, stableStamp, hash string) (state, reason string) {
+	bundle, err := inventory.PackSkill(source)
+	if err != nil {
+		os.RemoveAll(stamp)
+		return "failed", "cannot copy source to backup"
+	}
+	stage := filepath.Join(stamp, skillStagePrefix+filepath.Base(j.path))
+	j.record.Stage = filepath.Join(stableStamp, skillStagePrefix+filepath.Base(j.path))
+	if err = j.advance("copying"); err != nil {
+		return "interrupted", ""
+	}
+	if err = os.Mkdir(stage, 0700); err == nil {
+		err = inventory.UnpackSkill(bundle, stage)
+	}
+	if err != nil {
+		os.RemoveAll(stamp)
+		return "failed", "cannot copy source to backup"
+	}
+	if got, e := inventory.SkillHash(stage); e != nil || got != hash {
+		os.RemoveAll(stamp)
+		return "conflict", "changed since plan"
+	}
+	if err = j.advance("copied"); err != nil {
+		return "interrupted", ""
+	}
+	if err = os.Rename(stage, dest); err != nil {
+		os.RemoveAll(stamp)
+		return "failed", "cannot move source to backup"
+	}
+	if err = j.advance("backup_copied"); err != nil {
+		return "interrupted", ""
+	}
+	// Guarded removal: the source must still be what the backup holds.
+	if got, e := inventory.SkillHash(source); e != nil || got != hash {
+		os.RemoveAll(stamp)
+		return "conflict", "changed since plan"
+	}
+	if err = os.RemoveAll(source); err != nil {
+		return "interrupted", ""
+	}
+	return "", ""
 }

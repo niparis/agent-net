@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -208,5 +209,102 @@ func TestRecoverKeepsForeignIndexLock(t *testing.T) {
 	(&Daemon{cfg: Config{StateDir: state}}).recoverSkillJournal()
 	if b, err := os.ReadFile(lock); err != nil || string(b) != "someone else" {
 		t.Fatalf("foreign lock: %q %v", b, err)
+	}
+}
+
+func exdev(string, string) error {
+	return &os.LinkError{Op: "rename", Err: syscall.EXDEV}
+}
+
+func removeFixture(t *testing.T) (*Daemon, protocol.ToolTarget, string, string, string) {
+	t.Helper()
+	home, state, source, hash := recoverFixture(t)
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: source, Hash: hash, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: hash}, Target: protocol.ToolPlanTarget{Action: "remove", Source: source}}
+	return d, target, state, source, hash
+}
+
+func TestRemoveSkillAcrossFilesystems(t *testing.T) {
+	d, target, state, source, hash := removeFixture(t)
+	skillRename = exdev
+	var steps []string
+	skillJournalHook = func(s string) error { steps = append(steps, s); return nil }
+	defer func() { skillRename, skillJournalHook = os.Rename, nil }()
+	if r := d.removeSkill(target); r.State != "applied" {
+		t.Fatalf("remove: %+v", r)
+	}
+	if _, err := os.Lstat(source); !os.IsNotExist(err) {
+		t.Fatalf("source remains: %v", err)
+	}
+	want := []string{"copying", "copied", "backup_copied", "backed_up", "forgotten"}
+	if got := strings.Join(steps, ","); !strings.HasSuffix(got, strings.Join(want, ",")) {
+		t.Fatalf("steps: %s", got)
+	}
+	found := false
+	_ = filepath.WalkDir(filepath.Join(state, "skill-backups"), func(p string, e os.DirEntry, err error) error {
+		if err == nil && e.IsDir() && e.Name() == "demo" && skillHashIs(p, hash) {
+			found = true
+		}
+		if err == nil && strings.HasPrefix(e.Name(), skillStagePrefix) {
+			t.Errorf("stage remains: %s", p)
+		}
+		return nil
+	})
+	if !found || journalCount(t, state) != 0 {
+		t.Fatalf("backup %v journal %d", found, journalCount(t, state))
+	}
+}
+
+func TestRemoveSkillAcrossFilesystemsKeepsChangedSource(t *testing.T) {
+	d, target, state, source, _ := removeFixture(t)
+	skillRename = exdev
+	skillJournalHook = func(s string) error {
+		if s == "backup_copied" {
+			return os.WriteFile(filepath.Join(source, "SKILL.md"), []byte("edited"), 0600)
+		}
+		return nil
+	}
+	defer func() { skillRename, skillJournalHook = os.Rename, nil }()
+	if r := d.removeSkill(target); r.State != "conflict" {
+		t.Fatalf("remove: %+v", r)
+	}
+	if b, _ := os.ReadFile(filepath.Join(source, "SKILL.md")); string(b) != "edited" {
+		t.Fatalf("source touched: %q", b)
+	}
+	if journalCount(t, state) != 0 {
+		t.Fatal("journal remains")
+	}
+}
+
+func TestRecoverFinishesRemovalAfterCopiedBackup(t *testing.T) {
+	d, target, state, source, hash := removeFixture(t)
+	if err := d.recordSkill(target, source, true); err != nil {
+		t.Fatal(err)
+	}
+	skillRename = exdev
+	skillJournalHook = func(s string) error {
+		if s == "backup_copied" {
+			return os.ErrClosed
+		}
+		return nil
+	}
+	defer func() { skillRename, skillJournalHook = os.Rename, nil }()
+	if r := d.removeSkill(target); r.State != "failed" {
+		t.Fatalf("crash: %+v", r)
+	}
+	skillRename, skillJournalHook = os.Rename, nil
+	if !skillHashIs(source, hash) {
+		t.Fatal("source should still exist after the crash")
+	}
+	fresh := &Daemon{cfg: Config{StateDir: state}}
+	if c := fresh.recoverSkillJournal(); len(c) != 0 {
+		t.Fatalf("conflicts: %v", c)
+	}
+	if _, err := os.Lstat(source); !os.IsNotExist(err) {
+		t.Fatalf("source remains: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(state, "skill-manifest.json")); strings.Contains(string(b), source) {
+		t.Fatalf("manifest: %s", b)
 	}
 }
