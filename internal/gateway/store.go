@@ -33,6 +33,7 @@ type Store struct {
 	db                *sql.DB
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
+	identityMerges    [][2]string
 	now               func() time.Time
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
@@ -303,7 +304,7 @@ CREATE TABLE IF NOT EXISTS learned_phrase_state (suggestion_id INTEGER PRIMARY K
 CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL);
 `, `
 CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
-`}
+`, `SELECT 1 /* project identity migration */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -352,6 +353,14 @@ func (s *Store) migrate() error {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
 		}
+		var merges [][2]string
+		if strings.Contains(migrations[i], "project identity migration") {
+			merges, err = migrateProjectIdentities(tx)
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+		}
 		if _, err := tx.Exec(`INSERT INTO schema_version (version) VALUES (?)`, i+1); err != nil {
 			tx.Rollback()
 			return err
@@ -359,6 +368,7 @@ func (s *Store) migrate() error {
 		if err := tx.Commit(); err != nil {
 			return err
 		}
+		s.identityMerges = append(s.identityMerges, merges...)
 		if strings.Contains(migrations[i], "DELETE FROM graph_nodes") {
 			s.graphJunkRemoved, _ = result.RowsAffected()
 			s.graphJunkMigrated = true

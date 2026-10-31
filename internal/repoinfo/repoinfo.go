@@ -123,7 +123,7 @@ func (r *Resolver) readAll(ctx context.Context, cwd string) protocol.RepoInfo {
 	info.Project = filepath.Base(info.Root)
 	if remote, err := r.git(ctx, cwd, "config", "--get", "remote.origin.url"); err == nil {
 		info.Remote = StripCredentials(remote)
-		if name := projectFromRemote(info.Remote); name != "" {
+		if name := ProjectFromRemote(info.Remote); name != "" {
 			info.Project = name
 		}
 	}
@@ -131,9 +131,9 @@ func (r *Resolver) readAll(ctx context.Context, cwd string) protocol.RepoInfo {
 	return info
 }
 
-// projectFromRemote extracts the repository name from URL, scp-style, and
+// ProjectFromRemote extracts the repository name from URL, scp-style, and
 // local path remotes. An empty or unusable remote leaves the folder fallback.
-func projectFromRemote(remote string) string {
+func ProjectFromRemote(remote string) string {
 	remote = strings.TrimSpace(remote)
 	if strings.Contains(remote, "://") {
 		u, err := url.Parse(remote)

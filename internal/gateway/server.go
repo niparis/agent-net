@@ -201,6 +201,9 @@ func New(opts Options) (*Gateway, error) {
 	}
 	g.skills = skills
 	store.logf = g.logLine
+	for _, merge := range store.identityMerges {
+		g.logLine("project.identity_merge", "from", merge[0], "to", merge[1])
+	}
 	if store.graphJunkMigrated {
 		g.logLine("graph.junk_removed", "count", store.graphJunkRemoved)
 	}

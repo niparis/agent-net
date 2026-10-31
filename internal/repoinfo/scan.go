@@ -42,7 +42,7 @@ func (r *Resolver) Inspect(path string) (protocol.ProjectEntry, error) {
 	e.Path, e.Name = root, filepath.Base(root)
 	if remote, err := r.git(ctx, root, "config", "--get", "remote.origin.url"); err == nil {
 		e.Remote = StripCredentials(remote)
-		if name := projectFromRemote(e.Remote); name != "" {
+		if name := ProjectFromRemote(e.Remote); name != "" {
 			e.Name = name
 		}
 	}
