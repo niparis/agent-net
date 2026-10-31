@@ -616,9 +616,21 @@ session. Applying or undoing an assignment makes the gateway send `mcp.changed`
 to every daemon, and each daemon sends `mcp_changed` to its sessions. Claude
 Code gets `notifications/tools/list_changed` only when its tool list really
 changed. Pi hides removed tools and updates its list from the next prompt.
-Codex and OpenCode have not been tested end to end for live updates. They get
-the filtered list when they next read it, and a stale call is still refused at
-the gateway. Removing a server deletes its plans and assignment; adding it
+Pi and OpenCode plugin connections are tested end to end: after the push, the
+next `mcp_tools` is filtered for the session's project. The shipped OpenCode
+plugin does not read `mcp_tools` yet, so an OpenCode session does not get
+federated tools as tools; its connection gets the push and the filtered list,
+and a stale call is refused at the gateway.
+
+Codex starts one `agent-net mcp --codex` process for all threads of its app
+server, and `tools/list` carries no thread. That process has no project, so it
+lists only `global` servers. A server scoped to projects is not listed to Codex
+at all, even for a thread of an assigned project; to use a server from Codex,
+keep it `global`. The process hears `mcp_changed` at once (the same push as other
+sessions) and updates its list, so an assignment change shows in the next
+`tools/list` that Codex asks for. Whether Codex asks again during a running
+session is Codex's choice and is not tested against the real Codex. A call to a
+tool that is no longer listed fails with `unknown tool`. Removing a server deletes its plans and assignment; adding it
 again starts global.
 
 A call (`mcp_call`) is checked again at the gateway, whatever the client
@@ -672,7 +684,14 @@ plan with a conflict cannot be applied. Apply:
 2. runs the same test as `mcp_test`;
 3. compares the tools the server reports with the tools the native entry lists
    (`enabled_tools` in Codex, `enabledTools` or `allowedTools` elsewhere), when it
-   lists any. A listed tool that is missing, or a server with no tools, fails;
+   lists any. A listed tool that is missing, or a server with no tools, fails.
+   When the entry has an allow-list, the federated server gets the same list
+   (`allowed_tools` on the server): the gateway lists and lets through only those
+   tools, even if the server reports more, so a session sees what it saw before.
+   A call to another tool fails with `tool "X" is not exposed by MCP server`, and
+   `mcp test` and health reports never widen the list. When the entry has no
+   allow-list, every tool the server reports is accepted and the import record
+   (`imported.tools`) keeps the list. The record also keeps `allowed_tools`;
 4. enables it. A user-level entry becomes `global` (a per-machine scope cannot be
    expressed); a project-level entry becomes `projects` with that project.
 
@@ -742,7 +761,16 @@ writes a temporary file beside the original, checks the hash again and renames
 it over. For `~/.claude.json` it takes Claude Code's own `.claude.json.lock`
 directory first. After the rename it reads the file again, checks the bytes
 are exactly the planned result, and checks that the entry is gone. A session
-that is running keeps its native tools until it restarts.
+that is running keeps its native tools until it restarts, so the gateway tells
+it. Each online session of the entry's harness on that machine gets one message
+from the owner session: "the MCP server X moved to agent-net; restart this
+session to drop the old copy". A user-level entry reaches every such session; a
+project-level entry reaches the sessions of its project. Sessions of other
+harnesses and other machines are not told. The message needs no reply, and it
+is sent at most once per session for a plan (undo sends nothing). The result
+lists the session IDs in `notified` and adds a note with the count. A session
+that cannot be reached still gets the stored message when it returns. A failure
+to tell a session does not fail the removal.
 
 **Undo.** `undo_plan_id` restores the original file only if the file still has
 the hash of the edit's result. Otherwise it answers `refused` with "changed

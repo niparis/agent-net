@@ -67,7 +67,7 @@ func (d *Daemon) onMCPFrame(ctx context.Context, l *link, h protocol.Header, raw
 	}
 }
 
-// broadcastLocal tells every bound local client (not the CLI) that something
+// broadcastLocal tells every bound local client (not the CLI, and including the thread-less connection of a Codex process) that something
 // changed. Clients then ask for what they need.
 func (d *Daemon) broadcastLocal(method string) {
 	if d.ln == nil {
@@ -81,7 +81,8 @@ func (d *Daemon) broadcastLocal(method string) {
 	d.ln.mu.Unlock()
 	for _, c := range conns {
 		c.mu.Lock()
-		bound := c.ls != nil
+		// The thread-less connection of a Codex process lists tools too.
+		bound := c.ls != nil || c.client == "mcp"
 		c.mu.Unlock()
 		if bound {
 			c.writeJSON(map[string]any{"method": method, "params": map[string]any{}})
@@ -103,9 +104,18 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 	case "mcp_tools":
 		// Enabled servers with their tools: what a session registers. The
 		// gateway filters them for the bound session's project.
+		//
+		// The one connection of a Codex process that has no thread (it lists
+		// tools for every thread of the app server) is not bound. It has no
+		// project, so it gets the global servers only.
 		var sid string
-		if sid, err = lc.boundID(); err != nil {
-			return
+		lc.mu.Lock()
+		unboundCodex := lc.ls == nil && lc.client == "mcp"
+		lc.mu.Unlock()
+		if !unboundCodex {
+			if sid, err = lc.boundID(); err != nil {
+				return
+			}
 		}
 		res, err = d.call(ctx, "mcp.catalog", protocol.MCPCatalog{SessionID: sid})
 

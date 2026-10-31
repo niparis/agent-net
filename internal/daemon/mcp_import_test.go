@@ -25,6 +25,12 @@ type importFixture struct {
 // native MCP configs: Claude user and project entries and a Codex entry.
 func newImportFixture(t *testing.T, claude map[string]string, codex string) *importFixture {
 	t.Helper()
+	return newImportFixtureWith(t, claude, codex, nil)
+}
+
+// newImportFixtureWith is newImportFixture with a fake harness adapter on the node.
+func newImportFixtureWith(t *testing.T, claude map[string]string, codex string, adapter *fakeAdapter) *importFixture {
+	t.Helper()
 	useHelper(t)
 	f := &importFixture{home: t.TempDir(), repo: filepath.Join(t.TempDir(), "alpha"), hashes: map[string][32]byte{}}
 	if err := os.MkdirAll(f.repo, 0o700); err != nil {
@@ -57,7 +63,7 @@ func newImportFixture(t *testing.T, claude map[string]string, codex string) *imp
 		f.hashes[path] = sha256.Sum256(b)
 	}
 	f.g = startGateway(t, t.TempDir(), "")
-	f.n = startNode(t, f.g, nodeOpts{cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = f.home; c.CodexHome = filepath.Join(f.home, ".codex") }})
+	f.n = startNode(t, f.g, nodeOpts{adapter: adapter, cmdline: "pi", cfg: func(c *Config) { c.InventoryHome = f.home; c.CodexHome = filepath.Join(f.home, ".codex") }})
 	f.cli = cliClient(t, f.n)
 	f.cli.mustCall("project_add", protocol.ProjectAddRequest{Paths: []string{f.repo}})
 	f.cli.mustCall("inventory_scan", nil)

@@ -252,3 +252,25 @@ func forgetMCPItemTx(tx *sql.Tx, name string) error {
 	}
 	return nil
 }
+
+// sessionsHoldingNative lists the online sessions of one harness on one node
+// that may have loaded a native MCP entry: all of them, or only those of the
+// project when project is not empty. Owner sessions are never listed.
+func (s *Store) sessionsHoldingNative(nodeID, harness, project string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT s.id FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
+		WHERE s.node_id=? AND s.harness=? AND s.harness<>? AND s.online=1
+		AND (?='' OR COALESCE(NULLIF(s.repo_project,''),p.project,'')=?) ORDER BY s.id`, nodeID, harness, protocol.OwnerHarness, project, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}

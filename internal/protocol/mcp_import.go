@@ -122,6 +122,10 @@ type MCPImportRecord struct {
 	NativeStillPresent bool `json:"native_still_present"`
 	// Gaps say what the native entry had that the federation does not provide.
 	Gaps []string `json:"federation_gaps,omitempty"`
+	// Tools are the tools the server reported at import. AllowedTools is the
+	// native entry's allow-list that the federated server keeps, or empty.
+	Tools        []string `json:"tools,omitempty"`
+	AllowedTools []string `json:"allowed_tools,omitempty"`
 }
 
 // MCPImportResult answers an apply. State is imported or failed. A failed
