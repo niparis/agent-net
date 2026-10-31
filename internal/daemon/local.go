@@ -246,7 +246,31 @@ func (lc *localConn) run(ctx context.Context) {
 			operator := lc.client == "cli"
 			lc.mu.Unlock()
 			started := time.Now()
-			res, err := lc.dispatch(cctx, req.Method, req.Params)
+			var res any
+			var err error
+			if operator && cacheOperatorRead(req.Method) {
+				// Check each caller, including cache hits, before sharing owner data.
+				if operatorMethods[req.Method] {
+					err = lc.operatorGate(req.Method)
+				}
+				if err == nil {
+					cacheMethod := req.Method
+					lc.mu.Lock()
+					if req.Method == "list" && lc.tui {
+						cacheMethod += ":tui"
+					}
+					lc.mu.Unlock()
+					res, err = lc.d.operatorReads.do(cctx, cacheMethod, req.Params, func(ctx context.Context) (any, error) {
+						if operatorMethods[req.Method] {
+							value, _, err := lc.dispatchOwner(ctx, req.Method, req.Params)
+							return value, err
+						}
+						return lc.dispatch(ctx, req.Method, req.Params)
+					})
+				}
+			} else {
+				res, err = lc.dispatch(cctx, req.Method, req.Params)
+			}
 			if operator {
 				lc.d.logSlowOperatorCall(req.Method, started)
 			}
@@ -899,4 +923,13 @@ func (d *Daemon) logSlowOperatorCall(method string, start time.Time) {
 	if elapsed := time.Since(start); elapsed > time.Second {
 		d.Logf("slow operator call %q: %s", method, elapsed.Round(time.Millisecond))
 	}
+}
+
+// cacheOperatorRead identifies the reads shared by command-line clients.
+func cacheOperatorRead(method string) bool {
+	switch method {
+	case protocol.OpWorkers, "usage", "usage_top", "list", "counts":
+		return true
+	}
+	return false
 }

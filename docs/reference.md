@@ -242,6 +242,8 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net needs-hook` | Not for you to run: the Claude Code `PermissionRequest`, `Notification`, `PreToolUse` and `UserPromptSubmit` hooks that [setup can add](#what-setup-changes-on-your-machine). It tells the local daemon when the session waits for you, and clears that when you type a prompt or a tool runs after an approval. See [Needs you](#needs-you). |
 | `agent-net version` | Print the version. |
 
+The daemon shares concurrent identical owner reads for `workers`, `usage`, `usage_top`, `list` and `counts`. Successful results can be reused for one second. Each caller is checked separately before an owner-only result is returned.
+
 ## Graph operator methods (foundation)
 
 The gateway stores explicit nodes, charter attributes, node settings, edges and their history in `graph_nodes`, `graph_charter`, `graph_node_settings`, `graph_edges` and `graph_history`. Git working trees reported by sessions and registered projects also appear as implicit component nodes, except roots in temporary folders or the home folder itself. Registrations are checked for Git by the reporting daemon. The following local methods are behind the owner gate and relay to the gateway. Agents cannot call them.
