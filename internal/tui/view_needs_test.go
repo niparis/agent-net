@@ -327,7 +327,7 @@ func TestNeedsMComposesWithoutEntering(t *testing.T) {
 func TestNotifySettingInHelp(t *testing.T) {
 	m := newModel(100, 30)
 	m.help = true
-	if !strings.Contains(m.View(), "desktop notifications: on") {
+	if !strings.Contains(strings.Join(m.helpContent(100), "\n"), "desktop notifications: on") {
 		t.Fatal("missing notification setting")
 	}
 }
@@ -354,7 +354,7 @@ func TestNotifyHelpToggle(t *testing.T) {
 	}
 	m = next.(Model)
 	m = send(m, cmd())
-	if !src.disabled || !m.snap.NotificationsDisabled || !strings.Contains(m.View(), "desktop notifications: off") {
+	if !src.disabled || !m.snap.NotificationsDisabled || !strings.Contains(strings.Join(m.helpContent(100), "\n"), "desktop notifications: off") {
 		t.Fatalf("toggle did not persist: %+v", m.snap)
 	}
 }
