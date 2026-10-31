@@ -259,6 +259,9 @@ CREATE TABLE tool_results (item TEXT NOT NULL, revision INTEGER NOT NULL, target
 `, `
 INSERT OR IGNORE INTO tool_identities(id,kind,name,hash)
 SELECT json_array('mcp',name,'federated-'||added_at),'mcp',name,'federated-'||added_at FROM mcp_servers;
+`, `
+CREATE TABLE IF NOT EXISTS mcp_import_plans (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL, plan TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS mcp_imports (name TEXT PRIMARY KEY, record TEXT NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

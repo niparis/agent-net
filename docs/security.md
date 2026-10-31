@@ -262,6 +262,17 @@ The owner can limit a server to some projects ([reference](reference.md#scoped-m
 - **What this does not stop.** The gateway trusts the daemon of an enrolled node to name the right local session, as it does for every other frame. A compromised enrolled machine can name any session of its own node, and so any project that has a session on it. It cannot act as a session of another machine. The list of servers (`mcp list`, `agent_mcp_list`) is a registry view and still shows every server, with its scope, to every agent.
 - **Host failure is visible.** An offline host gives `host NAME offline`, never a silent empty result, and never drops the assignment.
 
+### Importing native MCP servers
+
+Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness's own MCP entry into the federation. Rules:
+
+- **Secrets stay as names.** The scanner classifies an entry and the gateway stores only names and reasons: the class, a plain reason, the transport, environment variable names and a tool allow-list. A secret given as a value (environment value, header value, URL query, argument, URL credential) makes the entry `unsupported`; it is never copied, shown or logged. The registry keeps command, arguments and variable names, as for `mcp_add`.
+- **The host runs the server.** The server runs on the machine that has the native entry, as that user, with that machine's environment. The gateway asks the daemon to read the entry again, from a source it saw in its own scan only; the gateway cannot name another file.
+- **The owner gate.** `mcp_import` is an owner method, served like `tools_apply`: only the owner's connection or the CTO on the owner's words, never an agent session, and the gateway checks the owner session of the node. The plan binds to the scanned entry and the inventory snapshot; a changed entry or inventory makes the plan stale. A plan applies once.
+- **A failed import changes nothing.** The server is added disabled, tested, and removed again on any failure. No session can use it before the test passes.
+- **No config is written.** Import never edits a harness config file. The native entry stays, so the server can be defined twice until the owner removes the native entry; this is shown as a conflict on both items.
+- **Audit.** Plans, applies, refusals and failures are recorded with actor and result, without values.
+
 ## Project registry
 
 A registered project is a folder where workers may start sessions (see [decision 0002](decisions/0002-workers.md)). Registering one widens that set, so it is controlled like this:

@@ -47,6 +47,8 @@ type Gateway struct {
 	opts     Options
 	store    *Store
 	skillsMu sync.Mutex
+	// importMu serializes MCP imports, so two applies cannot race on a name.
+	importMu sync.Mutex
 	skills   *skillStore
 	ca       *authority
 	cert     tls.Certificate
@@ -664,6 +666,13 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 		}
 		return inventoryPage(reports, p.Offset)
+
+	case "query.mcp_import_candidates":
+		p, err := decode[protocol.MCPImportCandidatesRequest](raw)
+		if err != nil || p.Offset < 0 {
+			return nil, reject("bad query.mcp_import_candidates")
+		}
+		return g.mcpImportCandidates(p)
 
 	case "query.tools_items":
 		p, err := decode[protocol.ToolsFilter](raw)

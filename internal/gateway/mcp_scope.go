@@ -230,6 +230,9 @@ func (s *Store) fillFederatedItems(all map[string]*protocol.ToolItem, f protocol
 // forgetMCPItemTx drops the plans, revisions and identity of a removed server.
 // The audit trail stays.
 func forgetMCPItemTx(tx *sql.Tx, name string) error {
+	if _, err := tx.Exec(`DELETE FROM mcp_imports WHERE name=?`, name); err != nil {
+		return err
+	}
 	var id string
 	err := tx.QueryRow(`SELECT i.id FROM tool_identities i JOIN mcp_servers m ON m.name=i.name
 		AND i.kind='mcp' AND i.hash='federated-'||m.added_at WHERE m.name=?`, name).Scan(&id)

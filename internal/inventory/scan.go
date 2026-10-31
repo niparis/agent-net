@@ -66,24 +66,7 @@ func Scan(o Options) protocol.InventoryReport {
 		report.Items[index].Files = files
 	}
 	// Never traverse links in a source path or skill root.
-	safe := func(base, path string) bool {
-		rel, err := filepath.Rel(base, path)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
-			return false
-		}
-		cur := base
-		for _, part := range strings.Split(rel, string(os.PathSeparator)) {
-			cur = filepath.Join(cur, part)
-			info, err := os.Lstat(cur)
-			if err != nil {
-				return errors.Is(err, os.ErrNotExist)
-			}
-			if info.Mode()&os.ModeSymlink != 0 {
-				return false
-			}
-		}
-		return true
-	}
+	safe := safePath
 	sourceCount := 0
 	var skills func(h, scope, project, root, base, path string)
 	skills = func(h, scope, project, root, base, path string) {
@@ -179,65 +162,9 @@ func Scan(o Options) protocol.InventoryReport {
 		}
 	}
 	config := func(h, scope, project, root, base, path, key string, tomlFormat bool) {
-		if !safe(base, path) {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "source contains a symlink")
-			return
-		}
-		dir, err := os.OpenRoot(base)
-		if errors.Is(err, os.ErrNotExist) {
-			return
-		}
-		if err != nil {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "cannot open source root")
-			return
-		}
-		defer dir.Close()
-		rel, err := filepath.Rel(base, path)
-		if err != nil {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "invalid source path")
-			return
-		}
-		f, err := dir.Open(rel)
-		if errors.Is(err, os.ErrNotExist) {
-			return
-		}
-		if err != nil {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source")
-			return
-		}
-		defer f.Close()
-		data, err := io.ReadAll(io.LimitReader(f, 1<<20+1))
-		if err != nil || len(data) > 1<<20 {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "cannot read source or source too large")
-			return
-		}
-		var doc map[string]any
-		if tomlFormat {
-			err = toml.Unmarshal(data, &doc)
-		} else {
-			err = json.Unmarshal(stripComments(data), &doc)
-		}
-		if err != nil {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "malformed configuration")
-			return
-		}
-		if key == "project-local" {
-			projects, _ := doc["projects"].(map[string]any)
-			projectDoc, _ := projects[root].(map[string]any)
-			doc = projectDoc
-			key = "mcpServers"
-		}
-		rawServers, present := doc[key]
-		if !present {
-			return
-		}
-		servers, ok := rawServers.(map[string]any)
-		if !ok {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "invalid server map")
-			return
-		}
-		if len(servers) > maxFiles {
-			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, "source exceeds entry limit")
+		servers, reason := readServers(base, path, key, tomlFormat, root)
+		if reason != "" {
+			add(h, protocol.InventoryMCP, scope, project, root, path, "", "", protocol.InventoryError, reason)
 			return
 		}
 		names := make([]string, 0, len(servers))
@@ -251,7 +178,13 @@ func Scan(o Options) protocol.InventoryReport {
 				add(h, protocol.InventoryMCP, scope, project, root, path, name, "", protocol.InventoryError, "invalid server descriptor")
 				continue
 			}
+			before := len(report.Items)
 			add(h, protocol.InventoryMCP, scope, project, root, path, name, fingerprint(name, desc), protocol.InventoryOK, "", "sensitive and unknown descriptor values redacted")
+			if len(report.Items) > before {
+				info, _ := ClassifyMCP(name, desc)
+				totalFields += len(info.Reason) + len(info.Transport) + 64
+				report.Items[before].Import = &info
+			}
 		}
 	}
 	piSettings := func(scope, project, root, base, path string) {
