@@ -217,6 +217,8 @@ func (d *Daemon) onToolPlanScan(ctx context.Context, l *link, h protocol.Header)
 		report := d.scanTools(ctx)
 		if report.State != protocol.InventoryOK {
 			err = errors.New("inventory scan incomplete")
+		} else if _, e := d.call(ctx, "node.inventory", report); e != nil {
+			err = errors.New("inventory upload unavailable")
 		}
 	}
 	if b, e := protocol.EncodeResult(h.ID, nil, err); e == nil {

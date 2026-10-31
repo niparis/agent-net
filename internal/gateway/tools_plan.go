@@ -64,6 +64,15 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 	}
 	for _, node := range nodes {
 		host := g.conn(node.NodeID)
+		before := len(targets)
+		if a.Scope == "uninstalled" {
+			t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "verify", State: "pending"}
+			if host == nil {
+				t.State = "offline"
+				t.Conflict = "machine offline; absence cannot be verified"
+			}
+			targets = append(targets, t)
+		}
 		if a.Scope == "global" || a.Scope == "projects" {
 			checkouts := []protocol.ProjectView{}
 			if a.Scope == "global" {
@@ -117,6 +126,14 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 					targets = append(targets, t)
 				}
 			}
+		}
+		if len(targets) == before {
+			t := protocol.ToolPlanTarget{NodeID: node.NodeID, Machine: node.Hostname, Action: "verify", State: "pending"}
+			if host == nil {
+				t.State = "offline"
+				t.Conflict = "machine offline; absence cannot be verified"
+			}
+			targets = append(targets, t)
 		}
 	}
 	for _, report := range reports {

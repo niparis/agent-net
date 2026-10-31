@@ -325,3 +325,29 @@ func TestToolPlanIncludesUnseenEnrolledMachines(t *testing.T) {
 	}
 	t.Fatalf("missing unseen node: %+v", p.Targets)
 }
+
+func TestUninstallPlanShowsOfflineMachinesWithoutObservedCopies(t *testing.T) {
+	g, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Close()
+	node, _, err := g.store.CreateNode("offline", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	obs := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "abc", State: "ok"}
+	if err = g.store.SetInventory("other", protocol.InventoryReport{State: "ok", Items: []protocol.InventoryItem{obs}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := g.planTool(context.Background(), protocol.ToolPlanRequest{Item: `["skill","demo","abc"]`, Target: protocol.ToolAssignment{Scope: "uninstalled"}}, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, target := range p.Targets {
+		if target.NodeID == node && target.State == "offline" {
+			return
+		}
+	}
+	t.Fatalf("offline machine missing: %+v", p.Targets)
+}
