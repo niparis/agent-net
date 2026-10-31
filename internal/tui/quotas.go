@@ -126,6 +126,7 @@ func (m Model) quotaWarning() (string, bool) {
 
 type quotaModel struct {
 	name, harness, model, defaultEffort           string
+	notOn                                         []string
 	score                                         protocol.ModelScore
 	used, done, failedRuns                        int
 	last                                          int64
@@ -143,55 +144,82 @@ func (m Model) quotaModels() []quotaModel {
 			model += ":" + p.Effort
 		}
 		row := quotaModel{name: p.Name, harness: p.Harness, model: model, failed: true, stale: p.Available != nil && !*p.Available}
+		trackedModels := map[string]bool{model: true}
+		missingMachines := map[string]bool{}
+		for _, machine := range p.MachineAvailability {
+			if machine.Available {
+				row.available = true
+				resolved := machine.ResolvedModel
+				if resolved == "" {
+					resolved = p.Model
+				}
+				if p.Effort != "" {
+					resolved += ":" + p.Effort
+				}
+				trackedModels[resolved] = true
+			} else if machine.Machine != "" {
+				missingMachines[machine.Machine] = true
+			}
+		}
 		found := false
 		for _, n := range m.snap.Nodes {
+			if !n.Online {
+				continue
+			}
+			machine := firstNonEmpty(n.Hostname, n.NodeID)
+			for _, h := range n.Harnesses {
+				if h.Name != p.Harness {
+					continue
+				}
+				resolved, _ := protocol.ResolveWorkerProfileModel(p.Model, h.Models)
+				if resolved == "" {
+					if machine != "" {
+						missingMachines[machine] = true
+					}
+					continue
+				}
+				delete(missingMachines, machine)
+				trackedModel := resolved
+				if p.Effort != "" {
+					trackedModel += ":" + p.Effort
+				}
+				trackedModels[trackedModel] = true
+				quota := n.Quotas
+				if usage, ok := quotaNodes[n.NodeID]; ok && usage.Usage.Quotas != nil {
+					quota = usage.Usage.Quotas
+				}
+				allowed := protocol.WorkerProviderAllowed(h.Name, resolved, m.snap.WorkerProviders, quota)
+				row.available = true
+				row.allowed = row.allowed || allowed
+				if !found {
+					row.defaultEffort = h.ModelDefaultEfforts[resolved]
+					found = true
+				}
+				if allowed {
+					row.failed = row.failed && n.RecentModelFailures[h.Name][trackedModel]
+					row.succeeded = row.succeeded || n.RecentModelSuccesses[h.Name][trackedModel]
+				}
+			}
+		}
+		for _, n := range m.snap.Nodes {
 			for _, track := range n.Tracks {
-				if track.Harness == p.Harness && track.Model == model {
+				if track.Harness == p.Harness && trackedModels[track.Model] {
 					row.used += track.Runs
 					row.done += track.Complete
 					row.failedRuns += track.Failed + track.TimedOut
 				}
 			}
-			if !n.Online {
-				continue
-			}
-			for _, h := range n.Harnesses {
-				if h.Name != p.Harness {
-					continue
-				}
-				installed := false
-				for _, id := range h.Models {
-					if id == p.Model {
-						installed = true
-						break
-					}
-				}
-				if !installed {
-					continue
-				}
-				quota := n.Quotas
-				if usage, ok := quotaNodes[n.NodeID]; ok && usage.Usage.Quotas != nil {
-					quota = usage.Usage.Quotas
-				}
-				allowed := protocol.WorkerProviderAllowed(h.Name, p.Model, m.snap.WorkerProviders, quota)
-				row.available = true
-				row.allowed = row.allowed || allowed
-				if !found {
-					row.defaultEffort = h.ModelDefaultEfforts[p.Model]
-					found = true
-				}
-				if allowed {
-					row.failed = row.failed && n.RecentModelFailures[h.Name][model]
-					row.succeeded = row.succeeded || n.RecentModelSuccesses[h.Name][model]
-				}
-			}
 		}
+		for machine := range missingMachines {
+			row.notOn = append(row.notOn, machine)
+		}
+		sort.Strings(row.notOn)
 		row.score, row.scored = protocol.LookupModelScoreWithDefaultEffort(model, row.defaultEffort, m.snap.Scores)
 		if row.stale {
 			row.available = false
 		}
 		for _, a := range m.snap.Agents {
-			if a.Harness == p.Harness && a.Model == model {
+			if a.Harness == p.Harness && trackedModels[a.Model] {
 				if a.LastSeen > row.last {
 					row.last = a.LastSeen
 				}
@@ -309,12 +337,21 @@ func (m Model) quotaModelsView(w int) []string {
 		r := rows[i]
 		if r.stale {
 			body = append(body, sDim.Render("  model gone - ask the CTO to fix"))
-		} else if !r.available || !r.allowed {
-			reason := "not available on an online machine"
-			if r.available {
-				reason = "not a worker provider"
+		} else {
+			if r.available && len(r.notOn) > 0 {
+				machines := make([]string, len(r.notOn))
+				for i, machine := range r.notOn {
+					machines[i] = sanitize(machine)
+				}
+				body = append(body, sDim.Render(clip("  not on "+strings.Join(machines, ", "), w-4)))
 			}
-			body = append(body, sDim.Render("  ("+reason+")"))
+			if !r.available || !r.allowed {
+				reason := "not available on an online machine"
+				if r.available {
+					reason = "not a worker provider"
+				}
+				body = append(body, sDim.Render("  ("+reason+")"))
+			}
 		}
 	}
 	key := "T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now"

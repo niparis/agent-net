@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -20,6 +21,51 @@ func TestWorkerAutomaticDifficulty(t *testing.T) {
 	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
 	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "hard ->") {
 		t.Fatalf("choice: %+v, %v", res, err)
+	}
+}
+
+func TestWorkerAutomaticProfileResolvesProviderPerMachine(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	startPiWithModels := func(host string, models []string) *workerNode {
+		dir := t.TempDir()
+		t.Setenv(envFakePi, "1")
+		t.Setenv("PI_CODING_AGENT_SESSION_DIR", dir)
+		return startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("pi", models), func(c *Config) {
+			c.Hostname = host
+			c.HarnessPaths = map[string]string{"pi": os.Args[0]}
+			c.PiSessionsDir = dir
+		})
+	}
+
+	mac := startPiWithModels("mac", []string{"openai-codex/gpt-6.1-terra"})
+	research := startPiWithModels("research", []string{"openai/gpt-6.1-terra"})
+	mac.register(t, newRepo(t, "shop"))
+	repo := newRepo(t, "shop")
+	research.register(t, repo)
+	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{
+		Name: "terra pi", Harness: "pi", Model: "openai-codex/gpt-6.1-terra", AddedBy: research.ownerID(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	score := 80.0
+	research.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "openai/gpt-6.1-terra", Score: &score})
+	research.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"codex"}})
+
+	res, err := research.start(protocol.WorkerStartRequest{Project: "shop", Machine: "research", Harness: "pi", Model: "auto", Task: "x", Isolation: protocol.IsolationWorktree})
+	if err != nil {
+		t.Fatalf("automatic profile start: %v", err)
+	}
+	if res.Model != "openai/gpt-6.1-terra" {
+		t.Fatalf("started model %q, want machine's id openai/gpt-6.1-terra", res.Model)
+	}
+	if !strings.Contains(res.ModelNote, "terra pi: openai-codex/gpt-6.1-terra resolved to openai/gpt-6.1-terra on research") {
+		t.Fatalf("profile resolution missing from start result: %q", res.ModelNote)
+	}
+	explicit, err := research.start(protocol.WorkerStartRequest{
+		Project: "shop", Machine: "research", Harness: "pi", Model: "openai-codex/gpt-6.1-terra", Task: "x", Isolation: protocol.IsolationWorktree,
+	})
+	if err != nil || explicit.Model != "openai/gpt-6.1-terra" || !strings.Contains(explicit.ModelNote, "terra pi: openai-codex/gpt-6.1-terra resolved to openai/gpt-6.1-terra on research") {
+		t.Fatalf("explicit profile model: %+v, %v", explicit, err)
 	}
 }
 

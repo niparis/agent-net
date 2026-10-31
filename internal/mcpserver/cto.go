@@ -134,7 +134,7 @@ var ctoTools = map[string]ctoToolDef{
 			"body": {typ: "string", desc: "Message text, sent as a request from the owner's CTO."},
 		},
 	},
-	"worker_profile_list": {desc: "List all registered worker profiles, with their harness, model, effort, creator and time."},
+	"worker_profile_list": {desc: "List all registered worker profiles, with per-machine model resolution, closest alternatives, harness, model, effort, creator and time."},
 	"worker_profile_add": {desc: "Register a worker profile only when the owner asks; model names resolve against installed harness model lists. Using an existing profile name replaces its model or effort in one call.", fields: map[string]ctoField{
 		"name": {typ: "string", desc: "Optional profile name; use an existing name to replace that profile's model or effort. Defaults to the harness and resolved model."}, "harness": {typ: "string", desc: "Installed worker harness."}, "model": {typ: "string", desc: "Model ID or loose model name."}, "effort": {typ: "string", desc: "Optional reasoning or thinking effort."},
 	}},

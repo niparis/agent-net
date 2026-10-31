@@ -1,9 +1,10 @@
 package gateway
 
 import (
-	"github.com/niparis/agent-net/internal/protocol"
 	"reflect"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestWorkerProfileAvailability(t *testing.T) {
@@ -22,17 +23,52 @@ func TestWorkerProfileAvailability(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("profiles: %+v", got)
 	}
-	if got[0].Available == nil || *got[0].Available || len(got[0].Closest) == 0 || got[0].Closest[0] != "openai/gpt-6.1-terra" {
-		t.Errorf("stale profile availability: %+v", got[0])
+	if got[0].Available == nil || !*got[0].Available || len(got[0].MachineAvailability) != 1 || got[0].MachineAvailability[0].ResolvedModel != "openai/gpt-6.1-terra" {
+		t.Errorf("provider prefix should resolve: %+v", got[0])
 	}
-	if len(got[0].Closest) > 3 || len(got[0].MachinesChecked) != 1 || got[0].MachinesChecked[0] != "pi-host" {
-		t.Errorf("stale profile suggestions/checks: %+v", got[0])
+	if len(got[0].MachinesChecked) != 1 || got[0].MachinesChecked[0] != "pi-host" {
+		t.Errorf("profile machine checks: %+v", got[0])
 	}
 	if got[1].Available != nil || len(got[1].MachinesChecked) != 0 {
 		t.Errorf("offline-only harness should be unknown: %+v", got[1])
 	}
 	if got[2].Available == nil || *got[2].Available != available || len(got[2].Closest) != 0 || got[2].MachinesChecked[0] != "oc-host" {
 		t.Errorf("available profile: %+v", got[2])
+	}
+}
+
+func TestWorkerProfileAvailabilityResolvesAcrossProviders(t *testing.T) {
+	profiles := []protocol.WorkerProfile{
+		{Name: "terra pi", Harness: "pi", Model: "openai-codex/gpt-6.1-terra"},
+		{Name: "other", Harness: "pi", Model: "other/x"},
+	}
+	nodes := []protocol.NodeView{
+		{NodeID: "n_mac", Hostname: "mac", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "pi", Models: []string{"openai-codex/gpt-6.1-terra"}}}},
+		{NodeID: "n_research", Hostname: "research", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "pi", Models: []string{"openai/gpt-6.1-terra"}}}},
+		{NodeID: "n_ambiguous", Hostname: "ambiguous", Online: true, Harnesses: []protocol.HarnessInfo{{Name: "pi", Models: []string{"openai/x", "azure/x"}}}},
+	}
+
+	got := withWorkerProfileAvailability(profiles, nodes)
+	if got[0].Available == nil || !*got[0].Available || len(got[0].MachineAvailability) != 3 {
+		t.Fatalf("profile should resolve on both provider variants: %+v", got[0])
+	}
+	if got[0].MachineAvailability[0].Machine != "ambiguous" || got[0].MachineAvailability[0].Available ||
+		got[0].MachineAvailability[1].Machine != "mac" || !got[0].MachineAvailability[1].Available ||
+		got[0].MachineAvailability[2].Machine != "research" || !got[0].MachineAvailability[2].Available ||
+		got[0].MachineAvailability[2].ResolvedModel != "openai/gpt-6.1-terra" {
+		t.Fatalf("per-machine provider resolution: %+v", got[0].MachineAvailability)
+	}
+	if got[1].Available == nil || *got[1].Available || len(got[1].MachineAvailability) != 3 {
+		t.Fatalf("ambiguous name should resolve nowhere: %+v", got[1])
+	}
+	var ambiguous []string
+	for _, machine := range got[1].MachineAvailability {
+		if machine.Machine == "ambiguous" {
+			ambiguous = machine.Ambiguous
+		}
+	}
+	if !reflect.DeepEqual(ambiguous, []string{"azure/x", "openai/x"}) {
+		t.Fatalf("ambiguous providers not reported: %v", ambiguous)
 	}
 }
 

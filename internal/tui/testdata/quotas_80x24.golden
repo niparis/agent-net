@@ -7,14 +7,14 @@
 │   (read on Mac)                                                              │
 │ 1 more subscription (not used by your agents) · s to show                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Workers · 4 registered · 0 running · scores: Artificial Analysis─────────────╮
+╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME               HARNESS  MODEL                     SCORE        T S N H V │
 │ opus               claude   claude-opus-5-5:high      51.7/high    E E E E G │
 │ renamed            pi       gpt-6.1-zed               -            - - - - - │
 │   model gone - ask the CTO to fix                                            │
 │ sol                codex    gpt-6.1-sol:medium        46.1/medium  E E E G P │
 │ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P │
-│ T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now │
+│ terra pi           pi       gpt-6.1-terra             38.1/medium  E E G P - │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
