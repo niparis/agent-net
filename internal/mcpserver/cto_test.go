@@ -290,7 +290,7 @@ func TestProtectedProvidersTools(t *testing.T) {
 	}
 }
 
-// The owner renames a session through the CTO (decision 0032). An empty name
+// The owner renames a session through the CTO (decision 0033). An empty name
 // returns to the automatic project name.
 func TestCTOSessionRenameTool(t *testing.T) {
 	cs := ctoTestSession(t)

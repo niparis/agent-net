@@ -17,7 +17,7 @@ type ErrSessionName struct{ Reason string }
 func (e ErrSessionName) Error() string { return e.Reason }
 
 // RenameSession gives a session the name the owner chose, or with an empty
-// name returns it to its automatic project name (decision 0032). A name set
+// name returns it to its automatic project name (decision 0033). A name set
 // here survives every later report, because reports only write the automatic
 // name. It may not be the name of another live session: agent_send matches
 // names exactly, so a duplicate would be ambiguous.

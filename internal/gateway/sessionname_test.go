@@ -182,7 +182,7 @@ func TestHarnessTitleIsNotTheName(t *testing.T) {
 }
 
 // An announce from an older client still carries a name. The gateway ignores
-// it: only the owner renames a session (decision 0032). The harness title
+// it: only the owner renames a session (decision 0033). The harness title
 // stays apart.
 func TestAnnounceIgnoresAnOlderClientsName(t *testing.T) {
 	s, _ := newTestStore(t)
@@ -229,7 +229,7 @@ func TestAnnounceIgnoresAnOlderClientsName(t *testing.T) {
 
 // An older gateway stored the name an agent announced. The migration clears
 // those names, so every session shows its automatic project name again at its
-// next report (decision 0032).
+// next report (decision 0033).
 func TestMigrationClearsAnnounceNames(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gw.db")
 	db, err := sql.Open("sqlite", "file:"+path)

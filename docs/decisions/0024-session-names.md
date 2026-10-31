@@ -1,7 +1,7 @@
 # 0024 - Session names are project names
 
 **Date:** 2026-10-30
-**Status:** Accepted by the owner. Rule 5 is replaced by [0032](0032-session-names-are-owner-only.md): only the owner renames a session, and an announce sets no name.
+**Status:** Accepted by the owner. Rule 5 is replaced by [0033](0033-session-names-are-owner-only.md): only the owner renames a session, and an announce sets no name.
 **Context:** The session list showed names the harnesses made up: `tenebrae-53`, `a2a-ocs-4f`, a Codex thread title (`Plan portal apps and project de...`), `wbg-arch: Open the server`, `Repo: Legion & Legends (brow...`. They say nothing about the project, they change when a title changes, and they make an exact name hard to use. The owner asked for one rule for every harness.
 
 ## Decision

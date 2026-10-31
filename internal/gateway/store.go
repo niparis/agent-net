@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCRE
 CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
 `, `SELECT 1 /* project identity migration */;`, `CREATE TABLE IF NOT EXISTS project_display_names (project TEXT PRIMARY KEY, name TEXT NOT NULL);`, `
 -- Names set by announce are cleared: only the owner renames a session now
--- (decision 0032). A session shows its automatic name at its next report.
+-- (decision 0033). A session shows its automatic name at its next report.
 UPDATE profiles SET name = '';
 `}
 
@@ -967,7 +967,7 @@ func (s *Store) SetNodeOffline(nodeID string) error {
 // Announce stores what an agent says about itself: its current task, and
 // optionally a project and capability tags. Empty fields keep what is stored,
 // so announcing a new task does not erase the rest. The name is not announce's
-// to set: only the owner renames a session (decision 0032). The function is
+// to set: only the owner renames a session (decision 0033). The function is
 // not taken from the agent either: it comes from the project's AGENTS.md (see
 // RepoInfo.Description), so a "function" in the request is ignored.
 func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Profile, error) {

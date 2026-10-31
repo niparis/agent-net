@@ -20,7 +20,7 @@ func shopSession(t *testing.T, s *Store, node, native string) string {
 
 // The owner renames a session. The name survives every later report and is
 // shown everywhere an automatic name is. An empty name returns to the
-// automatic project name (decision 0032).
+// automatic project name (decision 0033).
 func TestOwnerRenameSurvivesReportsAndClearsToAutomatic(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("box", "linux")

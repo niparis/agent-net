@@ -412,7 +412,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			d.Logf("session.trust session=%s on=%t", q.SessionID, q.On)
 		}
 	case protocol.OpSessionRename:
-		// Only the owner names a session (decision 0032). The gate above
+		// Only the owner names a session (decision 0033). The gate above
 		// refuses agent sessions; the CTO uses the same method through its
 		// process-tree-checked channel.
 		var q protocol.SessionRenameRequest

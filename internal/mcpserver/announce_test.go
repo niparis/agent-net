@@ -181,7 +181,7 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 	t.Fatal("no agent_announce tool")
 }
 
-// A session cannot rename itself (decision 0032): agent_announce has no name
+// A session cannot rename itself (decision 0033): agent_announce has no name
 // parameter and its description does not mention one.
 func TestAnnounceHasNoNameParameter(t *testing.T) {
 	ctx := context.Background()

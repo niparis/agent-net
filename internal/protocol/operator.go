@@ -47,7 +47,7 @@ const (
 	OpSessionPolicy = "session_policy" // takes SessionPolicyRequest, answers SessionPolicyResult
 
 	// OpSessionRename gives a session a name the owner chose, or with an empty
-	// name returns it to the automatic project name (decision 0032). Owner
+	// name returns it to the automatic project name (decision 0033). Owner
 	// only: no agent tool sets it.
 	OpSessionRename = "session_rename" // takes SessionRenameRequest, answers SessionRenameResult
 

@@ -45,7 +45,7 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 		if strings.Contains(b, "once you know what you are working on") {
 			t.Errorf("%s block still has the old optional wording", v)
 		}
-		// Only the owner names a session (decision 0032).
+		// Only the owner names a session (decision 0033).
 		if strings.Contains(b, "Do not pass a name") || strings.Contains(b, "rename the session") {
 			t.Errorf("%s block still tells the agent to rename its session", v)
 		}

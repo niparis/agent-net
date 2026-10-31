@@ -38,7 +38,8 @@ These files record how the project was planned and built. They are kept for cont
 - [0022](decisions/0022-component-graph-and-cto.md): built. A graph of components with charters (maturity included), edges with modes, and a CTO agent in the TUI that changes it by conversation.
 - [0023](decisions/0023-model-lists-for-every-harness.md): model lists for every harness, loose names resolved for all of them, recent success ranking, and the start gap counting only starts that ran.
 - [0024](decisions/0024-session-names.md): a session's name is its project name, duplicates get ` 2`/` 3`, workers are `<project> worker <n>`, and a harness title goes to TASK.
-- [0032](decisions/0032-session-names-are-owner-only.md): only the owner renames a session; an announce sets no name, and the upgrade clears names that announce had set. Replaces rule 5 of 0024.
+- [0032](decisions/0032-enter-enters-the-session.md): Enter opens the selected session (like `e`); the read-only conversation view is removed.
+- [0033](decisions/0033-session-names-are-owner-only.md): only the owner renames a session; an announce sets no name, and the upgrade clears names that announce had set. Replaces rule 5 of 0024.
 - [0025](decisions/0025-install-quota-axi.md): agent-net installs a pinned quota-axi in its own data folder; an owner-installed copy always wins.
 - [0027](decisions/0027-skills-and-mcp-management.md): skills and MCP servers across machines: inventory, a private skill store, owner-gated assignments with undo, scoped MCP federation, and guarded removal of native MCP entries. Steps 1 to 7 and 9 are built; the Tools tab (step 8) is pending. Current behavior: [reference](reference.md#tools-inventory), [security](security.md#skills-and-mcp-management), [troubleshooting](troubleshooting.md#skills-and-mcp-management).
 - [0028](decisions/0028-tui-hidden-items.md): shared hide preferences for TUI sessions and project nodes, stored in the gateway's owner settings.

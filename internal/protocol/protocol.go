@@ -335,7 +335,7 @@ type (
 	ProfileAnnounce struct {
 		SessionID string `json:"session_id"`
 		// A name is not an announce field: only the owner renames a session
-		// (decision 0032). An older client's "name" is ignored.
+		// (decision 0033). An older client's "name" is ignored.
 		Function     string   `json:"function"`
 		Project      string   `json:"project"`
 		Capabilities []string `json:"capabilities"`

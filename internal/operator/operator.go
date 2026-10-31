@@ -61,7 +61,7 @@ type Operator interface {
 	// clears it with an empty name (decision 0015). Owner only.
 	RenameNode(ctx context.Context, nodeID, name string) (protocol.NodeRenameResult, error)
 	// RenameSession gives a session a name the owner chose, or with an empty
-	// name returns it to its automatic project name (decision 0032). Owner
+	// name returns it to its automatic project name (decision 0033). Owner
 	// only.
 	RenameSession(ctx context.Context, sessionID, name string) (protocol.SessionRenameResult, error)
 	ProjectDisplayName(ctx context.Context, project string) (protocol.ProjectDisplayResult, error)

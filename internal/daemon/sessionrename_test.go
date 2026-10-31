@@ -11,7 +11,7 @@ import (
 
 // Only the owner renames a session: the CTO tool and an owner CLI may, an
 // agent connection is refused. The name survives reports and an empty name
-// returns to the automatic project name (decision 0032).
+// returns to the automatic project name (decision 0033).
 func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)

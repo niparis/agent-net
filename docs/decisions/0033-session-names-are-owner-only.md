@@ -1,4 +1,4 @@
-# 0032 - Only the owner names a session
+# 0033 - Only the owner names a session
 
 **Date:** 2026-10-31
 **Status:** Accepted by the owner

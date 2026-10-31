@@ -10,7 +10,7 @@ import (
 
 // FUNCTION is read from the AGENTS.md of the project by the daemon, travels to
 // the gateway with the session, follows the file when it changes, and cannot
-// be set by announce. Announce sets the task only (decision 0032).
+// be set by announce. Announce sets the task only (decision 0033).
 func TestFunctionComesFromAgentsMd(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{cmdline: "pi"})
