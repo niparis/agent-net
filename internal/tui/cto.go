@@ -320,20 +320,6 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 			}
 		}
 	}
-	for _, h := range r.history {
-		var text string
-		switch h.Kind {
-		case "charter":
-			text = fmt.Sprintf("charter %s.%s: %s -> %s", h.Node, h.Attr, h.OldValue, h.NewValue)
-		case "edge":
-			text = "edge " + h.OldValue + " -> " + h.NewValue
-		case "node":
-			text = "node " + h.Node + ": " + h.OldValue + " -> " + h.NewValue
-		}
-		if text != "" {
-			lines = append(lines, line{h.At, text})
-		}
-	}
 	for _, a := range r.events.Actions {
 		lines = append(lines, line{a.At, a.Text})
 	}

@@ -36,7 +36,7 @@ The daemon asks OpenCode 2.2.0 to compact with
 next step boundary. The conversation's messages report the context before a
 compaction. The first reply after it reports the context after. The CTO chat
 shows one line, for example `compacted: 182k -> 14k tokens`; it is stored with
-the other CTO action lines.
+the other CTO action lines. Action lines belong to their harness and conversation. Graph change details remain in Map history.
 
 The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
 harness on first use. OpenCode runs as a private server. Claude Code runs as a

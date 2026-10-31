@@ -358,7 +358,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter_set", "sent to", "started worker"} {
+	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter architecture: purpose updated", "sent to", "worker started"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}

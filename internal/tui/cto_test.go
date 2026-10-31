@@ -149,7 +149,7 @@ func TestCTOPaneShowsRecordedActions(t *testing.T) {
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	v := strings.Join(m.cto.messages, "\n")
-	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "read graph", "failed charter_set", "cogforge.maturity: early -> mature"} {
+	for _, want := range []string{"sent to tenebrae-53", "started worker shop", "read graph", "failed charter_set"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
@@ -225,8 +225,8 @@ func TestCTOActionOrderFollowsConversation(t *testing.T) {
 	updated, _ = m.update(m.ctoPollCmd()())
 	m = updated.(Model)
 	joined := strings.Join(m.cto.messages, "|")
-	a, b, c, d := strings.Index(joined, "you:"), strings.Index(joined, "charter"), strings.Index(joined, "sent to"), strings.Index(joined, "cto:")
-	if !(a < b && b < c && c < d) {
+	a, c, d := strings.Index(joined, "you:"), strings.Index(joined, "sent to"), strings.Index(joined, "cto:")
+	if strings.Contains(joined, "charter") || !(a < c && c < d) {
 		t.Fatalf("wrong order: %s", joined)
 	}
 }

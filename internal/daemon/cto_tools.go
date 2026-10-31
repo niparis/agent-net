@@ -336,6 +336,9 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		Task    string `json:"task"`
 		Node    string `json:"node"`
 		Attr    string `json:"attr"`
+		From    string `json:"from"`
+		Kind    string `json:"kind"`
+		Mode    string `json:"mode"`
 	}
 	_ = json.Unmarshal(raw, &a)
 	text := name
@@ -358,15 +361,17 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		case "feed":
 			text = "read feed"
 		case "charter_set":
-			text = fmt.Sprintf("charter_set %s.%s", a.Node, a.Attr)
+			text = fmt.Sprintf("charter %s: %s updated · u to undo", a.Node, a.Attr)
+		case "edge_set":
+			text = fmt.Sprintf("edge %s → %s set (%s, %s) · u to undo", a.From, a.To, a.Kind, a.Mode)
 		case "send":
-			text = fmt.Sprintf("sent to %s: %s", a.To, a.Body)
+			text = fmt.Sprintf("sent to %s", a.To)
 		case "worker_start":
 			verb := "started"
 			if r, ok := result.(*protocol.WorkerStartResult); ok && r.Status == "queued" {
 				verb = "queued"
 			}
-			text = fmt.Sprintf("%s worker %s: %s", verb, a.Project, a.Task)
+			text = fmt.Sprintf("worker %s: %s", verb, a.Project)
 		}
 	}
 	logErr := d.recordCTOAction(text)
