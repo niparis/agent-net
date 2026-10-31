@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/inventory"
@@ -210,5 +211,38 @@ func TestRemoveSkillBackupAndChangedContent(t *testing.T) {
 	})
 	if err != nil || !found {
 		t.Fatalf("backup missing: %v", err)
+	}
+}
+
+func TestForgetSkillExcludeRefcount(t *testing.T) {
+	state := t.TempDir()
+	repo := t.TempDir()
+	if _, err := projectGit(repo, "init", "-q"); err != nil {
+		t.Fatal(err)
+	}
+	exclude := filepath.Join(repo, ".git", "info", "exclude")
+	line := "/.agents/skills/demo/"
+	if err := os.WriteFile(exclude, []byte("# existing\n"+line+"\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	entries := []skillManifestEntry{{Item: "i", Path: filepath.Join(repo, "a"), Exclude: exclude, ExcludeLine: line, ExcludeOwned: true}, {Item: "i", Path: filepath.Join(repo, "b"), Exclude: exclude, ExcludeLine: line, ExcludeOwned: true}}
+	b, _ := json.Marshal(entries)
+	if err := os.WriteFile(filepath.Join(state, "skill-manifest.json"), b, 0600); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{StateDir: state}}
+	if err := d.forgetSkill(entries[0].Path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(exclude)
+	if !strings.Contains(string(b), line) {
+		t.Fatalf("removed referenced line: %q", b)
+	}
+	if err := d.forgetSkill(entries[1].Path); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(exclude)
+	if string(b) != "# existing\n" {
+		t.Fatalf("exclude: %q", b)
 	}
 }

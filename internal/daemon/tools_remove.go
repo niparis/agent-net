@@ -60,6 +60,9 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 	anchored := filepath.Join(parent, t.Name)
 	info, err := os.Lstat(anchored)
 	if os.IsNotExist(err) {
+		if err = d.forgetSkill(source); err != nil {
+			return fail("failed", "cannot update skill manifest or Git exclude")
+		}
 		return fail("applied", "")
 	}
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
@@ -125,6 +128,9 @@ func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
 				_ = os.RemoveAll(filepath.Join(backups, e.Name()))
 			}
 		}
+	}
+	if err = d.forgetSkill(source); err != nil {
+		return fail("failed", "cannot update skill manifest or Git exclude")
 	}
 	return fail("applied", "")
 }
