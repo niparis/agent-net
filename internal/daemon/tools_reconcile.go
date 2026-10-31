@@ -201,6 +201,8 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 		} else if t.Revision.Assignment.Scope == "projects" && t.Target.Action == "copy" && t.Target.Checkout != "" && projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout] != "" {
 			result.State = "conflict"
 			result.Reason = projectConflicts[t.Revision.Item+"\x00"+t.Target.Checkout]
+		} else if t.Target.Action == "remove" {
+			result = d.removeSkill(t)
 		} else if t.Target.Action == "copy" && ((t.Revision.Assignment.Scope == "global" && t.Target.Checkout == "") || (t.Revision.Assignment.Scope == "projects" && t.Target.Checkout != "")) {
 			raw, err = d.call(ctx, "tools.export", protocol.ToolVersionRequest{Item: t.Revision.Item, Version: t.Revision.Version})
 			if err != nil {
