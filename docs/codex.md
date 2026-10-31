@@ -11,7 +11,7 @@ Codex windows run their threads on a shared local app server (feature `daemon_au
 - **Receiving.** A message goes into the thread's queue (`thread/queue/add`, the same call as `codex queue`). On an idle thread it starts a turn; on a busy one it waits for the running turn. The thread shows it as a message from the user, with the body first and a footer that says it is from another agent, not from the user, and how to answer (`agent_reply` with the message ID).
 - **Replying.** Only with `agent_reply`. agent-net does not copy the last message of the turn back to the sender, because that message is written for the person at the window. (A Codex worker is different: its last message is its report.)
 - **Sending.** `agent-net mcp --codex` is the MCP server of each thread. Codex starts one process per thread and tells it nothing about the thread; every tool call carries the thread in `_meta.threadId`, which Codex sets and the model cannot. The process opens one daemon connection per thread. The daemon accepts it only if the process's parent is the Codex app server it is connected to, and the thread is one it found. See [security.md](security.md#which-local-process-is-calling).
-- **Entering.** `e` in the TUI runs `codex resume <thread>` in the thread's folder.
+- **Entering.** Enter (or `e`) in the TUI runs `codex resume <thread>` in the thread's folder.
 
 ## Setup
 
@@ -22,7 +22,6 @@ Codex reads its config when a thread starts: a thread that was open before setup
 ## Limits
 
 - No process figures (CPU, RAM) for Codex sessions: the window's process is not known.
-- The conversation view (`c`) is not built for Codex yet.
 - A thread without the agent-net tools can read a message but cannot answer it; its person can.
 - Checked on codex-cli 0.163.0. The shared server of the machine can be newer.
 

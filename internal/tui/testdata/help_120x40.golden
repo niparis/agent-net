@@ -5,9 +5,8 @@ Keys ─────────────────────────
   1-6                  switch between Sessions, Messages, Quotas, Map, Tools and Graph
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
-  enter                answer a waiting session, else open its conversation
-  c                    open the conversation
-  e                    enter the session (ctrl+] to return)
+  enter                enter the selected session (ctrl+] to return)
+  e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
   x, h, H              stop worker; h hides/unhides; H shows hidden sessions (dim)
@@ -29,12 +28,13 @@ Keys ─────────────────────────
   r                    refresh now
   states               messages: pending ... delivered ✓ replied ↩ failed ✗
 
- Conversation
-  up/down, pgup/pgdn   scroll; at the top, older entries load
-  g                    go to the oldest loaded entry
-  G, end, f            back to the end and follow new entries
-  esc                  back to the sessions
-
  Everywhere
+  ?                    this help
+  q, ctrl+c            quit
+
+ Reading the screen
+  CPU                  machine: all cores. session: one core. (x%): 5 min avg
+  red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
+  shared               one process many sessions share; its figures are on the machine line
   more below
 up/down scroll  esc close help  q quit

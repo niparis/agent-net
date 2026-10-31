@@ -6,9 +6,8 @@ Keys ─────────────────────────
                        Graph
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
-  enter                answer a waiting session, else open its conversation
-  c                    open the conversation
-  e                    enter the session (ctrl+] to return)
+  enter                enter the selected session (ctrl+] to return)
+  e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
   s                    start a worker (a form: project, harness, model, task)
   x, h, H              stop worker; h hides/unhides; H shows hidden sessions
@@ -20,5 +19,6 @@ Keys ─────────────────────────
   4/M                  map: charters and edges; z switches overview
   map D                name project (empty clears)
   map arrows           focus: up/down projects, left/right edges, / find, [ ]
+                       scroll, U select learned change, u undo, h hide, H show
   more below
 up/down scroll  esc close help  q quit

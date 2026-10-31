@@ -45,7 +45,7 @@ func (m Model) hints() []hint {
 			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 		}
 	}
-	return []hint{{"1-6", "tabs", 2}, {"up/down", "select", 1}, {"enter", "conversation", 1}, {"e", "enter (ctrl+] back)", 3}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 1}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
+	return []hint{{"1-6", "tabs", 2}, {"up/down", "select", 1}, {"enter", "enter (ctrl+] back)", 1}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 1}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
 		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
@@ -130,9 +130,8 @@ func (m Model) helpContent(w int) []string {
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},
-		{"enter", "answer a waiting session, else open its conversation"},
-		{"c", "open the conversation"},
-		{"e", "enter the session (ctrl+] to return)"},
+		{"enter", "enter the selected session (ctrl+] to return)"},
+		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
 		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x, h, H", "stop worker; h hides/unhides; H shows hidden sessions (dim)"},
@@ -152,12 +151,6 @@ func (m Model) helpContent(w int) []string {
 		{"Messages", "up/down: conversation; left/right: message; v: body; e/l: events"},
 		{"r", "refresh now"},
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
-		{"", ""},
-		{"Conversation", ""},
-		{"up/down, pgup/pgdn", "scroll; at the top, older entries load"},
-		{"g", "go to the oldest loaded entry"},
-		{"G, end, f", "back to the end and follow new entries"},
-		{"esc", "back to the sessions"},
 		{"", ""},
 		{"Everywhere", ""},
 		{"?", "this help"},

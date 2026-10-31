@@ -171,7 +171,7 @@ type fakeSource struct {
 	hiddenSetErr     error
 	hiddenSaved      []protocol.HiddenItems
 
-	// CPU, memory, counts, top lists and conversations. Nil means the daemon
+	// CPU, memory, counts, top lists and session text. Nil means the daemon
 	// is older than the feature.
 	usage   *Usage
 	counts  *protocol.SessionCounts
