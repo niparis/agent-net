@@ -26,24 +26,90 @@ type WorkerModelChoice struct {
 	Score     float64
 	Fit       string
 	QuotaNote string
+	// Weight is the rotation weight the model had for this start.
+	Weight float64
+	// ShareNote says how the recent starts of this difficulty were spread.
+	ShareNote string
 }
 
-// ChooseWorkerModel ranks adequate models by track record, quota pace and score.
-// Rotation selects among equally ranked choices.
-func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation int) (WorkerModelChoice, error) {
+// WorkerRotation is the smooth weighted round robin state of automatic worker
+// model selection. It is kept per difficulty so a restart does not reset it.
+type WorkerRotation struct {
+	Levels map[string]*WorkerRotationLevel `json:"levels,omitempty"`
+}
+
+// WorkerRotationLevel is one difficulty's rotation state.
+type WorkerRotationLevel struct {
+	// Current carries each candidate's weight between starts.
+	Current map[string]float64 `json:"current,omitempty"`
+	// Recent lists the last picks, newest last.
+	Recent []string `json:"recent,omitempty"`
+}
+
+// workerRotationWindow is how many recent picks a share counts.
+const workerRotationWindow = 10
+
+// WorkerModelKey identifies a candidate in the rotation state.
+func WorkerModelKey(c WorkerModelCandidate) string { return c.Harness + "\x00" + c.Model }
+
+// Clone copies the rotation state, so a preview can advance it without
+// changing what the gateway will do.
+func (r WorkerRotation) Clone() WorkerRotation {
+	out := WorkerRotation{Levels: make(map[string]*WorkerRotationLevel, len(r.Levels))}
+	for level, state := range r.Levels {
+		if state == nil {
+			continue
+		}
+		copied := &WorkerRotationLevel{Recent: append([]string(nil), state.Recent...)}
+		if state.Current != nil {
+			copied.Current = make(map[string]float64, len(state.Current))
+			for key, weight := range state.Current {
+				copied.Current[key] = weight
+			}
+		}
+		out.Levels[level] = copied
+	}
+	return out
+}
+
+func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
+	if r.Levels == nil {
+		r.Levels = map[string]*WorkerRotationLevel{}
+	}
+	state := r.Levels[name]
+	if state == nil {
+		state = &WorkerRotationLevel{}
+		r.Levels[name] = state
+	}
+	return state
+}
+
+// ChooseWorkerModel picks an adequate model by weighted rotation.
+//
+// A candidate must score at or above the difficulty minimum. Exhausted
+// windows and windows above 90 percent used are excluded. Unprotected
+// candidates come first, and candidates with a poor track record are used only
+// when no other adequate candidate remains. The rest rotate with a smooth
+// weighted round robin, so one model with a little more quota room does not win
+// every start.
+func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64, quotas *Quotas, running map[string]int, rotation *WorkerRotation) (WorkerModelChoice, error) {
 	if level == "" {
 		level = "normal"
 	}
 	if _, err := DifficultyFit(0, level, minimums); err != nil {
 		return WorkerModelChoice{}, err
 	}
+	state := rotation
+	if state == nil {
+		state = &WorkerRotation{}
+	}
 	type ranked struct {
-		choice   WorkerModelChoice
-		fit      int
-		room     float64
-		measured bool
+		choice WorkerModelChoice
+		weight float64
+		poor   bool
 	}
 	var eligible []ranked
+	var adequate []string
 	var reasons []string
 	for _, c := range candidates {
 		s, ok := LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
@@ -55,7 +121,6 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if fit != "good" && fit != "excellent" {
 			continue
 		}
-		rank := 0
 		provider := c.Provider
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
@@ -64,8 +129,17 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if blocked {
 			continue
 		}
-		room -= 5 * float64(running[provider])
-		eligible = append(eligible, ranked{WorkerModelChoice{c, s.Score, fit, note}, rank, room, measured})
+		servedRoom := room
+		if measured {
+			servedRoom -= 5 * float64(running[provider])
+		}
+		weight := workerRotationWeight(c, s.Score, level, minimums, servedRoom, measured)
+		eligible = append(eligible, ranked{
+			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: s.Score, Fit: fit, QuotaNote: note},
+			weight: weight,
+			poor:   poorTrack(c.Track),
+		})
+		adequate = append(adequate, WorkerModelKey(c))
 	}
 	if len(eligible) == 0 {
 		if len(reasons) == 0 {
@@ -74,48 +148,163 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		sort.Strings(reasons)
 		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s: %s", level, strings.Join(reasons, ", "))
 	}
-	measured := false
-	for _, r := range eligible {
-		measured = measured || r.measured
+	lvl := state.level(level)
+	// Follow the roster: a model that left or lost its allowance no longer
+	// carries weight.
+	keep := make(map[string]bool, len(adequate))
+	for _, key := range adequate {
+		keep[key] = true
 	}
-	sort.SliceStable(eligible, func(i, j int) bool {
-		a, b := eligible[i], eligible[j]
-		if a.fit != b.fit {
-			return a.fit < b.fit
+	for key := range lvl.Current {
+		if !keep[key] {
+			delete(lvl.Current, key)
 		}
-		if poorTrack(a.choice.Track) != poorTrack(b.choice.Track) {
-			return !poorTrack(a.choice.Track)
-		}
-		if measured && a.room != b.room {
-			return a.room > b.room
-		}
-		if a.choice.Score != b.choice.Score {
-			return a.choice.Score < b.choice.Score
-		}
-		if strongTrack(a.choice.Track) != strongTrack(b.choice.Track) {
-			return strongTrack(a.choice.Track)
-		}
-		if a.choice.Failed != b.choice.Failed {
-			return !a.choice.Failed
-		}
-		if a.choice.Succeeded != b.choice.Succeeded {
-			return a.choice.Succeeded
-		}
-		return false
-	})
-	best := eligible[0]
-	ties := 1
-	for ties < len(eligible) {
-		r := eligible[ties]
-		if r.fit != best.fit || poorTrack(r.choice.Track) != poorTrack(best.choice.Track) || strongTrack(r.choice.Track) != strongTrack(best.choice.Track) || r.choice.Score != best.choice.Score || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
+	}
+	// Prefer candidates without a poor track record. Only when none remain do
+	// the poor ones rotate.
+	tier := eligible
+	hasGood := false
+	for _, e := range eligible {
+		if !e.poor {
+			hasGood = true
 			break
 		}
-		ties++
 	}
-	if rotation < 0 {
-		rotation = 0
+	if hasGood {
+		good := make([]ranked, 0, len(eligible))
+		for _, e := range eligible {
+			if !e.poor {
+				good = append(good, e)
+			}
+		}
+		tier = good
 	}
-	return eligible[rotation%ties].choice, nil
+	sort.Slice(tier, func(i, j int) bool {
+		return WorkerModelKey(tier[i].choice.WorkerModelCandidate) < WorkerModelKey(tier[j].choice.WorkerModelCandidate)
+	})
+	total := 0.0
+	for _, e := range tier {
+		total += e.weight
+	}
+	if total <= 0 {
+		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s", level)
+	}
+	if lvl.Current == nil {
+		lvl.Current = map[string]float64{}
+	}
+	best := -1
+	var bestCurrent float64
+	for i, e := range tier {
+		key := WorkerModelKey(e.choice.WorkerModelCandidate)
+		current := lvl.Current[key] + e.weight
+		lvl.Current[key] = current
+		if best < 0 || current > bestCurrent {
+			best, bestCurrent = i, current
+		}
+	}
+	picked := tier[best]
+	pickedKey := WorkerModelKey(picked.choice.WorkerModelCandidate)
+	lvl.Current[pickedKey] -= total
+	lvl.Recent = append(lvl.Recent, pickedKey)
+	if len(lvl.Recent) > workerRotationWindow {
+		lvl.Recent = lvl.Recent[len(lvl.Recent)-workerRotationWindow:]
+	}
+	out := picked.choice
+	out.Weight = picked.weight
+	names := make(map[string]string, len(eligible))
+	for _, e := range eligible {
+		c := e.choice.WorkerModelCandidate
+		name := c.Name
+		if name == "" {
+			name = c.Model
+		}
+		names[WorkerModelKey(c)] = name
+	}
+	out.ShareNote = rotationShareNote(level, names, lvl.Recent)
+	return out, nil
+}
+
+// workerRotationWeight turns quota room, fit and track record into a positive
+// weight. Every adequate candidate keeps a positive weight, so none is starved.
+func workerRotationWeight(c WorkerModelCandidate, score float64, level string, minimums map[string]float64, room float64, measured bool) float64 {
+	weight := 1.0
+	if measured {
+		// Room is percentage points behind pace. Five points behind is about a
+		// quarter more weight, and a lagging provider can lean further. Ahead of
+		// pace keeps less, but never zero.
+		weight *= math.Max(0.1, math.Min(4, math.Exp(room/20)))
+	}
+	minimum, ok := DifficultyMinimums[level]
+	if custom, set := minimums[level]; set {
+		minimum = custom
+		ok = true
+	}
+	if ok {
+		margin := math.Max(0, score-minimum)
+		weight *= 1 + 0.10*(1-math.Min(margin/20, 1))
+	}
+	if n := c.Track.Complete + c.Track.Partial + c.Track.Failed; n >= 5 {
+		weight *= 1 + 0.20*float64(c.Track.Complete)/float64(n)
+	}
+	if c.Failed {
+		weight *= 0.5
+	} else if c.Succeeded {
+		weight *= 1.2
+	}
+	return weight
+}
+
+// rotationShareNote describes the recent picks of one difficulty, in the order
+// of most picked first. It names the models the caller offered.
+func rotationShareNote(level string, names map[string]string, recent []string) string {
+	counts := map[string]int{}
+	seen := 0
+	for _, key := range recent {
+		if _, ok := names[key]; !ok {
+			continue
+		}
+		counts[key]++
+		seen++
+	}
+	if seen == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if counts[keys[i]] != counts[keys[j]] {
+			return counts[keys[i]] > counts[keys[j]]
+		}
+		return names[keys[i]] < names[keys[j]]
+	})
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s: %d", names[key], counts[key]))
+	}
+	return fmt.Sprintf("%s of the last %d %s starts", strings.Join(parts, ", "), seen, level)
+}
+
+// WorkerRotationShares summarizes the recent picks of a difficulty for the
+// models the caller offers. It reads the state without advancing it.
+func WorkerRotationShares(level string, candidates []WorkerModelCandidate, rotation *WorkerRotation) string {
+	if rotation == nil {
+		return ""
+	}
+	state := rotation.Levels[level]
+	if state == nil {
+		return ""
+	}
+	names := make(map[string]string, len(candidates))
+	for _, c := range candidates {
+		name := c.Name
+		if name == "" {
+			name = c.Model
+		}
+		names[WorkerModelKey(c)] = name
+	}
+	return rotationShareNote(level, names, state.Recent)
 }
 
 func workerQuotaRoom(q *Quotas, provider string) (float64, string, bool, bool) {
@@ -175,7 +364,5 @@ func poorTrack(t TrackRecord) bool {
 	return n >= 5 && 2*t.Complete < n
 }
 
-func strongTrack(t TrackRecord) bool {
-	n := t.Complete + t.Partial + t.Failed
-	return n >= 5 && 2*t.Complete >= n
-}
+// OpWorkerRotationGet reads the gateway's worker rotation state for screens.
+const OpWorkerRotationGet = "worker_rotation_get"

@@ -40,7 +40,7 @@ var operatorMethods = map[string]bool{
 	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true,
-	protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
+	protocol.OpProtectedProvidersGet: true, protocol.OpProtectedProvidersSet: true, protocol.OpWorkerProvidersGet: true, protocol.OpWorkerProvidersSet: true, "difficulty_get": true, "difficulty_set": true, protocol.OpScoresGet: true, protocol.OpScoresSet: true, protocol.OpWorkerRotationGet: true, protocol.OpCTOSettings: true, protocol.OpCTOEnter: true, protocol.OpCTOSend: true, protocol.OpCTONew: true, protocol.OpCTOEvents: true, protocol.OpCTOGraphHistory: true,
 	protocol.OpHeldList: true, protocol.OpHeldAnswer: true,
 	protocol.OpGraphGet: true, protocol.OpCharterSet: true, protocol.OpCharterHistory: true, protocol.OpNodeAdd: true, protocol.OpNodeRemove: true, protocol.OpEdgeSet: true, protocol.OpEdgeRemove: true, protocol.OpEdgeHistory: true, protocol.OpGraphUndo: true,
 	protocol.OpNodeSettingsGet: true, protocol.OpNodeSettingsSet: true,
@@ -588,6 +588,8 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		res, err = d.difficulty(ctx, q)
 	case protocol.OpScoresGet:
 		res, err = d.scores(ctx, nil)
+	case protocol.OpWorkerRotationGet:
+		res, err = d.workerRotation(ctx)
 	case protocol.OpScoresSet:
 		var q protocol.ScoreSetRequest
 		if json.Unmarshal(raw, &q) != nil {

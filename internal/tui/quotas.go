@@ -246,7 +246,7 @@ func (m Model) quotaModelsView(w int) []string {
 	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
 	for _, r := range rows {
 		if r.available && r.allowed && r.scored {
-			candidates = append(candidates, protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
+			candidates = append(candidates, protocol.WorkerModelCandidate{Name: r.name, Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
 		}
 	}
 	q := &protocol.Quotas{}
@@ -269,7 +269,10 @@ func (m Model) quotaModelsView(w int) []string {
 		}
 	}
 	picks := make([]protocol.WorkerModelChoice, len(levels))
+	shares := make([]string, len(levels))
+	rotation := m.snap.WorkerRotation.Clone()
 	for i, level := range levels {
+		shares[i] = protocol.WorkerRotationShares(level, candidates, &m.snap.WorkerRotation)
 		var normal, protected []protocol.WorkerModelCandidate
 		for _, c := range candidates {
 			if len(m.snap.ProtectedProviders.Providers) > 0 {
@@ -289,9 +292,9 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 		var err error
-		picks[i], err = protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
+		picks[i], err = protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &rotation)
 		if err != nil {
-			picks[i], _ = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
+			picks[i], _ = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &rotation)
 		}
 	}
 	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
@@ -419,7 +422,16 @@ func (m Model) quotaModelsView(w int) []string {
 		if !strings.Contains(strings.ToLower(label), strings.ToLower(r.harness)) {
 			label += " " + sanitize(r.harness)
 		}
-		detail := fmt.Sprintf("%s: picked for %s.", label, naturalList(selected))
+		var recent []string
+		for _, i := range displayed[selectedRow].picks {
+			if shares[i] != "" {
+				recent = append(recent, shares[i])
+			}
+		}
+		detail := fmt.Sprintf("%s: picked for %s (next start).", label, naturalList(selected))
+		if len(recent) > 0 {
+			detail += " " + strings.Join(recent, " · ") + "."
+		}
 		if len(strong) > 0 {
 			detail += " Strong at " + naturalList(strong) + "."
 		} else if len(good) > 0 {

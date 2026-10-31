@@ -28,18 +28,23 @@ func TestChooseWorkerModel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := append([]WorkerModelCandidate(nil), candidates...)
 			c[0].Failed = tt.failed
-			got, err := ChooseWorkerModel(c, "hard", scores, nil, tt.q, tt.running, tt.rotate)
+			rotation := &WorkerRotation{}
+			var got WorkerModelChoice
+			var err error
+			for i := 0; i <= tt.rotate; i++ {
+				got, err = ChooseWorkerModel(c, "hard", scores, nil, tt.q, tt.running, rotation)
+			}
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
 		})
 	}
 	q.Providers[0].Windows[0].PercentUsed = 91
-	got, err := ChooseWorkerModel(candidates, "hard", scores, nil, q, nil, 0)
+	got, err := ChooseWorkerModel(candidates, "hard", scores, nil, q, nil, &WorkerRotation{})
 	if err != nil || got.Model != "b" {
 		t.Fatalf("high quota: %+v %v", got, err)
 	}
-	_, err = ChooseWorkerModel([]WorkerModelCandidate{{Model: "d"}}, "very_complex", scores, nil, nil, nil, 0)
+	_, err = ChooseWorkerModel([]WorkerModelCandidate{{Model: "d"}}, "very_complex", scores, nil, nil, nil, &WorkerRotation{})
 	if err == nil || !strings.Contains(err.Error(), "denied") {
 		t.Fatalf("no eligible: %v", err)
 	}
@@ -47,7 +52,7 @@ func TestChooseWorkerModel(t *testing.T) {
 
 func TestChooseWorkerModelUsesHarnessDefaultEffort(t *testing.T) {
 	candidates := []WorkerModelCandidate{{Harness: "codex", Model: "gpt-6.1-terra", DefaultEffort: "high"}}
-	choice, err := ChooseWorkerModel(candidates, "hard", nil, nil, nil, nil, 0)
+	choice, err := ChooseWorkerModel(candidates, "hard", nil, nil, nil, nil, &WorkerRotation{})
 	if err != nil || choice.Score != 42.3 || choice.Fit != "good" {
 		t.Fatalf("choice: %+v %v", choice, err)
 	}
@@ -64,17 +69,31 @@ func TestWorkerQuotaRoomMonthly(t *testing.T) {
 
 func TestChooseWorkerModelPrefersRecentSuccess(t *testing.T) {
 	scores := []ModelScore{{Match: "a", Score: 51}, {Match: "b", Score: 51}}
-	candidates := []WorkerModelCandidate{{Harness: "pi", Model: "a"}, {Harness: "pi", Model: "b", Succeeded: true}}
-	for _, rotation := range []int{0, 1} {
+	candidates := []WorkerModelCandidate{{Name: "a", Harness: "pi", Model: "a"}, {Name: "b", Harness: "pi", Model: "b", Succeeded: true}}
+	counts := map[string]int{}
+	rotation := &WorkerRotation{}
+	for i := 0; i < 12; i++ {
 		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, rotation)
-		if err != nil || got.Model != "b" {
-			t.Fatalf("rotation %d: %+v %v", rotation, got, err)
+		if err != nil {
+			t.Fatal(err)
 		}
+		counts[got.Name]++
+	}
+	if counts["b"] <= counts["a"] || counts["a"] == 0 {
+		t.Fatalf("recent success did not raise the share: %v", counts)
 	}
 	candidates[1].Failed = true
-	got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, 0)
-	if err != nil || got.Model != "a" {
-		t.Fatalf("failed after success: %+v %v", got, err)
+	counts = map[string]int{}
+	rotation = &WorkerRotation{}
+	for i := 0; i < 12; i++ {
+		got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, rotation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts[got.Name]++
+	}
+	if counts["a"] <= counts["b"] {
+		t.Fatalf("a failed model kept its share: %v", counts)
 	}
 }
 
@@ -83,7 +102,7 @@ func TestChooseWorkerModelAdequateScore(t *testing.T) {
 	scores := []ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}}
 	for _, tt := range []struct{ level, want string }{{"normal", "deepseek"}, {"hard", "terra"}} {
 		t.Run(tt.level, func(t *testing.T) {
-			got, err := ChooseWorkerModel(c, tt.level, scores, nil, nil, nil, 0)
+			got, err := ChooseWorkerModel(c, tt.level, scores, nil, nil, nil, &WorkerRotation{})
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
@@ -105,7 +124,7 @@ func TestChooseWorkerModelQuotaPaceBeforeScore(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: tt.a, ResetsAt: now.Add(84 * time.Hour).Unix()}}}, {Provider: "b", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: tt.b, ResetsAt: now.Add(84 * time.Hour).Unix()}}}}}
-			got, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, 0)
+			got, err := ChooseWorkerModel(c, "normal", scores, nil, q, nil, &WorkerRotation{})
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
@@ -126,10 +145,116 @@ func TestChooseWorkerModelTrackRecord(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := []WorkerModelCandidate{{Model: "cheap", Track: TrackRecord{Complete: tt.complete, Partial: tt.partial, Failed: tt.failed}}, {Model: "strong"}}
-			got, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, 0)
+			got, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, &WorkerRotation{})
 			if err != nil || got.Model != tt.want {
 				t.Fatalf("got %+v: %v", got, err)
 			}
 		})
+	}
+}
+
+// Terra is five percent behind its weekly pace and DeepSeek has no reading.
+// Over twenty normal starts both models must appear, and the lagging one must
+// still win more often.
+func TestChooseWorkerModelWeightedRotationSpreads(t *testing.T) {
+	now := time.Unix(1000000, 0)
+	candidates := []WorkerModelCandidate{
+		{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Provider: "codex"},
+		{Name: "deepseek", Harness: "opencode", Model: "opencode-go/deepseek", Provider: "opencode-go"},
+	}
+	scores := []ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}}
+	// The window resets in 84 hours of a 168 hour week, so 50 percent has
+	// elapsed and 45 percent is used: five points behind pace.
+	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "codex", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 45, ResetsAt: now.Add(84 * time.Hour).Unix()}}}}}
+	rotation := &WorkerRotation{}
+	counts := map[string]int{}
+	var last WorkerModelChoice
+	for i := 0; i < 20; i++ {
+		choice, err := ChooseWorkerModel(candidates, "normal", scores, nil, q, nil, rotation)
+		if err != nil {
+			t.Fatal(err)
+		}
+		counts[choice.Name]++
+		last = choice
+	}
+	if counts["deepseek"] == 0 || counts["terra"] == 0 {
+		t.Fatalf("a model was starved: %v", counts)
+	}
+	if counts["terra"] <= counts["deepseek"] {
+		t.Fatalf("the lagging model did not win more: %v", counts)
+	}
+	if !strings.Contains(last.ShareNote, "terra") || !strings.Contains(last.ShareNote, "deepseek") || !strings.Contains(last.ShareNote, "normal starts") {
+		t.Fatalf("share note: %q", last.ShareNote)
+	}
+	if last.Weight <= 0 {
+		t.Fatalf("weight: %v", last.Weight)
+	}
+}
+
+func TestChooseWorkerModelRotationIsDeterministic(t *testing.T) {
+	candidates := []WorkerModelCandidate{
+		{Name: "a", Harness: "pi", Model: "a"},
+		{Name: "b", Harness: "pi", Model: "b"},
+		{Name: "c", Harness: "pi", Model: "c"},
+	}
+	scores := []ModelScore{{Match: "a", Score: 41}, {Match: "b", Score: 42}, {Match: "c", Score: 43}}
+	base := &WorkerRotation{}
+	for i := 0; i < 3; i++ {
+		if _, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, base); err != nil {
+			t.Fatal(err)
+		}
+	}
+	left, right := base.Clone(), base.Clone()
+	for i := 0; i < 7; i++ {
+		x, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, &left)
+		if err != nil {
+			t.Fatal(err)
+		}
+		y, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, &right)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if x.Model != y.Model || x.ShareNote != y.ShareNote {
+			t.Fatalf("start %d differs: %q %q", i, x.Model, y.Model)
+		}
+	}
+}
+
+func TestChooseWorkerModelExhaustedNeverAppears(t *testing.T) {
+	candidates := []WorkerModelCandidate{{Name: "empty", Harness: "pi", Model: "empty", Provider: "a"}, {Name: "open", Harness: "pi", Model: "open", Provider: "b"}}
+	scores := []ModelScore{{Match: "empty", Score: 50}, {Match: "open", Score: 50}}
+	q := &Quotas{Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Exhausted: true}}}}}
+	rotation := &WorkerRotation{}
+	for i := 0; i < 10; i++ {
+		got, err := ChooseWorkerModel(candidates, "normal", scores, nil, q, nil, rotation)
+		if err != nil || got.Model != "open" {
+			t.Fatalf("start %d: %+v %v", i, got, err)
+		}
+	}
+}
+
+func TestChooseWorkerModelUsesPoorOnlyWhenAlone(t *testing.T) {
+	scores := []ModelScore{{Match: "cheap", Score: 32.5}, {Match: "strong", Score: 42.3}}
+	c := []WorkerModelCandidate{{Name: "cheap", Model: "cheap", Track: TrackRecord{Complete: 1, Partial: 4}}, {Name: "strong", Model: "strong"}}
+	rotation := &WorkerRotation{}
+	for i := 0; i < 10; i++ {
+		got, err := ChooseWorkerModel(c, "normal", scores, nil, nil, nil, rotation)
+		if err != nil || got.Model != "strong" {
+			t.Fatalf("start %d: %+v %v", i, got, err)
+		}
+	}
+	got, err := ChooseWorkerModel(c[:1], "normal", scores, nil, nil, nil, rotation)
+	if err != nil || got.Model != "cheap" {
+		t.Fatalf("poor alone: %+v %v", got, err)
+	}
+}
+
+func TestWorkerRotationCloneIsIndependent(t *testing.T) {
+	a := WorkerRotation{Levels: map[string]*WorkerRotationLevel{"normal": {Current: map[string]float64{"x": 1}, Recent: []string{"x"}}}}
+	b := a.Clone()
+	b.Levels["normal"].Current["x"] = 99
+	b.Levels["normal"].Recent[0] = "y"
+	if a.Levels["normal"].Current["x"] != 1 || a.Levels["normal"].Recent[0] != "x" {
+		t.Fatalf("clone shares state: %+v", a)
 	}
 }
