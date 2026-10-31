@@ -340,6 +340,57 @@ func (d *Daemon) openCodeCTOSessionSelection(ctx context.Context, id string) (st
 	return modelRef(session.Data.Model.ProviderID, session.Data.Model.ID, session.Data.Model.ModelID), session.Data.Agent, nil
 }
 
+// syncOpenCodeCTOSelection keeps the live OpenCode session aligned with the
+// saved CTO model and agent. The caller must hold cto.mu.
+func (d *Daemon) syncOpenCodeCTOSelection(ctx context.Context, id string) (string, error) {
+	c := &d.cto
+	model, err := d.ctoModel(ctx)
+	if err != nil {
+		return "", err
+	}
+	currentModel, currentAgent, err := d.openCodeCTOSessionSelection(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("read CTO OpenCode session: %w", err)
+	}
+	lastApplied, err := d.ctoOpenCodeLastModel()
+	if err != nil {
+		return "", err
+	}
+	if lastApplied == "" && c.session == id && c.model != "" {
+		lastApplied = c.model
+	}
+	if currentModel != "" && currentModel != model && currentModel != lastApplied {
+		model = currentModel
+		if _, err = d.ctoSettings(ctx, protocol.CTOSettingsRequest{Model: &model}); err != nil {
+			return "", err
+		}
+		if err = d.recordCTOAction("model set to " + model + " (picked in the full screen)"); err != nil {
+			return "", err
+		}
+	}
+	if currentAgent != "cto" {
+		if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/agent", map[string]string{"agent": "cto"}); err != nil {
+			return "", err
+		}
+	}
+	if model != lastApplied {
+		provider, name, ok := strings.Cut(model, "/")
+		if !ok || provider == "" || name == "" {
+			return "", fmt.Errorf("invalid OpenCode model %q", model)
+		}
+		if currentModel != model {
+			if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/model", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
+				return "", err
+			}
+		}
+		if err = d.saveCTOOpenCodeLastModel(model); err != nil {
+			return "", err
+		}
+	}
+	c.session, c.model = id, model
+	return model, nil
+}
+
 func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) {
 	c := &d.cto
 	c.mu.Lock()
@@ -357,50 +408,9 @@ func (d *Daemon) openCodeCTOSend(ctx context.Context, text string) (any, error) 
 			return nil, err
 		}
 	}
-	model, err := d.ctoModel(ctx)
-	if err != nil {
+	if _, err = d.syncOpenCodeCTOSelection(ctx, id); err != nil {
 		return nil, err
 	}
-	currentModel, currentAgent, err := d.openCodeCTOSessionSelection(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("read CTO OpenCode session: %w", err)
-	}
-	lastApplied, err := d.ctoOpenCodeLastModel()
-	if err != nil {
-		return nil, err
-	}
-	if lastApplied == "" && c.session == id && c.model != "" {
-		lastApplied = c.model
-	}
-	if currentModel != "" && currentModel != model && currentModel != lastApplied {
-		model = currentModel
-		if _, err = d.ctoSettings(ctx, protocol.CTOSettingsRequest{Model: &model}); err != nil {
-			return nil, err
-		}
-		if err = d.recordCTOAction("model set to " + model + " (picked in the full screen)"); err != nil {
-			return nil, err
-		}
-	}
-	if currentAgent != "cto" {
-		if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/agent", map[string]string{"agent": "cto"}); err != nil {
-			return nil, err
-		}
-	}
-	if model != lastApplied {
-		provider, name, ok := strings.Cut(model, "/")
-		if !ok || provider == "" || name == "" {
-			return nil, fmt.Errorf("invalid OpenCode model %q", model)
-		}
-		if currentModel != model {
-			if _, err := c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/model", map[string]any{"model": map[string]string{"providerID": provider, "id": name}}); err != nil {
-				return nil, err
-			}
-		}
-		if err = d.saveCTOOpenCodeLastModel(model); err != nil {
-			return nil, err
-		}
-	}
-	c.session, c.model = id, model
 	before := opencodeSessionContext(ctx, c.base, c.password, id)
 	_, err = c.api(ctx, "POST", "/api/session/"+url.PathEscape(id)+"/prompt", map[string]string{"text": text, "delivery": "queue"})
 	if err == nil {

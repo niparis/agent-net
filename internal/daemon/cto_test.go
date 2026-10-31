@@ -248,6 +248,39 @@ func TestCTOSkipsAgentSwitchWhenSessionIsAlreadyCTO(t *testing.T) {
 	}
 }
 
+func TestCTOEnterAppliesSavedModelAndAgent(t *testing.T) {
+	t.Setenv("FAKE_OC_AUTH_RECORD", "1")
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	model := "fake/m1"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
+	cli.mustCall("cto_send", map[string]string{"text": "start CTO session"})
+
+	model = "fake/m2"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model})
+	rec := readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if _, err := n.d.cto.api(context.Background(), "POST", "/api/session/"+rec.SessionID+"/agent", map[string]string{"agent": "build"}); err != nil {
+		t.Fatal(err)
+	}
+
+	var plan protocol.EnterPlan
+	if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &plan); err != nil {
+		t.Fatal(err)
+	}
+	rec = readFake(t, filepath.Join(n.cfg.StateDir, "cto"))
+	if got := rec.SessionBody["model"].(map[string]any)["id"]; got != "m2" {
+		t.Fatalf("cto_enter left the old model selected: %+v", rec.SessionBody)
+	}
+	if rec.SessionBody["agent"] != "cto" {
+		t.Fatalf("cto_enter left the wrong agent selected: %+v", rec.SessionBody)
+	}
+	if len(plan.Argv) == 0 || plan.Argv[0] == "" {
+		t.Fatalf("cto_enter returned no attach plan: %+v", plan)
+	}
+}
+
 func TestCTOMethodsOwnerGate(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
