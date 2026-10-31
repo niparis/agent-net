@@ -409,7 +409,7 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 
 func quotaAXIProviderError(provider, message string) string {
 	if strings.EqualFold(provider, "opencode-go") && strings.EqualFold(message, "provider_auth_rejected") {
-		return "the OpenCode Go login the daemon found was rejected; if your shell sets QUOTA_AXI_OPENCODE_GO_PI_AUTH=1, run agent-net setup again so the daemon gets it"
+		return "the OpenCode Go login the daemon found was rejected"
 	}
 	return message
 }
