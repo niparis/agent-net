@@ -470,3 +470,27 @@ func TestRestoreSkillBackupDoesNotReplaceNewSource(t *testing.T) {
 		t.Fatalf("backup lost: %v", err)
 	}
 }
+
+func TestVerifySkillAbsence(t *testing.T) {
+	home, state := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(home, ".agents", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Hash: "hash", Location: path, Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: `["skill","demo","hash"]`, Version: "hash"}, Target: protocol.ToolPlanTarget{Action: "verify"}}
+	if r := d.verifySkillAbsence(target); r.State != "pending" {
+		t.Fatalf("existing skill: %+v", r)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if r := d.verifySkillAbsence(target); r.State != "applied" {
+		t.Fatalf("absent skill: %+v", r)
+	}
+}

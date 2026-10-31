@@ -205,6 +205,8 @@ func (d *Daemon) reconcileTools(ctx context.Context) {
 			result.Reason = "waiting for copies to be applied"
 		} else if t.Target.Action == "remove" {
 			result = d.removeSkill(t)
+		} else if t.Target.Action == "verify" {
+			result = d.verifySkillAbsence(t)
 		} else if t.Target.Action == "copy" && ((t.Revision.Assignment.Scope == "global" && t.Target.Checkout == "") || (t.Revision.Assignment.Scope == "projects" && t.Target.Checkout != "")) {
 			raw, err = d.call(ctx, "tools.export", protocol.ToolVersionRequest{Item: t.Revision.Item, Version: t.Revision.Version})
 			if err != nil {

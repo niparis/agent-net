@@ -3,6 +3,7 @@ package daemon
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -13,6 +14,45 @@ import (
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+func (d *Daemon) verifySkillAbsence(t protocol.ToolTarget) protocol.ToolResult {
+	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index, State: "pending"}
+	var identity []string
+	if json.Unmarshal([]byte(t.Revision.Item), &identity) != nil || len(identity) != 3 || identity[0] != protocol.InventorySkill {
+		r.Reason = "absence verification is not supported"
+		return r
+	}
+	d.toolsMu.Lock()
+	report := d.toolsReport
+	report.Items = append([]protocol.InventoryItem(nil), report.Items...)
+	d.toolsMu.Unlock()
+	if report.State == protocol.InventoryError || report.State == protocol.InventoryStale {
+		r.Reason = "inventory scan incomplete"
+		return r
+	}
+	for _, obs := range report.Items {
+		if obs.Kind != protocol.InventorySkill || obs.Name != t.Name || obs.Hash != t.Revision.Version {
+			continue
+		}
+		_, err := os.Lstat(obs.Location)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			r.Reason = "cannot inspect source"
+			return r
+		}
+		if obs.Source != protocol.InventoryNative {
+			r.State = "manual"
+			r.Reason = "source is managed externally"
+		} else {
+			r.Reason = "skill is still present"
+		}
+		return r
+	}
+	r.State = "applied"
+	return r
+}
 
 // removeSkill moves a verified observed directory into local private storage.
 func (d *Daemon) removeSkill(t protocol.ToolTarget) protocol.ToolResult {
