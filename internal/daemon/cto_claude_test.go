@@ -331,6 +331,20 @@ func TestClaudeCTOCapabilityCache(t *testing.T) {
 	if err != nil || strings.Count(string(raw), "called") != 1 {
 		t.Fatalf("cache: %q %v", raw, err)
 	}
+	other := filepath.Join(dir, "other-claude")
+	if err := os.WriteFile(other, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.checkClaudeCTOCapabilities(context.Background(), other); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.checkClaudeCTOCapabilities(context.Background(), bin); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(log)
+	if err != nil || strings.Count(string(raw), "called") != 2 {
+		t.Fatalf("path cache: %q %v", raw, err)
+	}
 	stamp := time.Now().Add(3 * time.Second)
 	if err := os.Chtimes(bin, stamp, stamp); err != nil {
 		t.Fatal(err)
@@ -339,7 +353,7 @@ func TestClaudeCTOCapabilityCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, err = os.ReadFile(log)
-	if err != nil || strings.Count(string(raw), "called") != 2 {
+	if err != nil || strings.Count(string(raw), "called") != 3 {
 		t.Fatalf("mtime: %q %v", raw, err)
 	}
 }

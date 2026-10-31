@@ -29,9 +29,12 @@ type claudeCTOState struct {
 	starting            atomic.Bool
 	token               string
 	ref, session, model string
-	capabilityPath      string
-	capabilityMtime     time.Time
-	capabilityErr       error
+	capabilities        map[string]claudeCTOCapability
+}
+
+type claudeCTOCapability struct {
+	mtime time.Time
+	err   error
 }
 
 type claudeCTORoot struct {
@@ -185,8 +188,8 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 		return fmt.Errorf("check Claude Code: %w", err)
 	}
 	c := &d.claudeCTO
-	if c.capabilityPath == bin && c.capabilityMtime.Equal(info.ModTime()) {
-		return c.capabilityErr
+	if cached, ok := c.capabilities[bin]; ok && cached.mtime.Equal(info.ModTime()) {
+		return cached.err
 	}
 	help, err := exec.CommandContext(ctx, bin, "--help").CombinedOutput()
 	if err != nil {
@@ -204,7 +207,10 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 		}
 		result = fmt.Errorf("Claude Code %s is too old for the CTO: run `claude update`", v)
 	}
-	c.capabilityPath, c.capabilityMtime, c.capabilityErr = bin, info.ModTime(), result
+	if c.capabilities == nil {
+		c.capabilities = make(map[string]claudeCTOCapability)
+	}
+	c.capabilities[bin] = claudeCTOCapability{mtime: info.ModTime(), err: result}
 	return result
 }
 
