@@ -230,7 +230,9 @@ func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
 		t.Errorf("answer: %v", rec.Answers[0])
 	}
 	// The fake process and its cleanup can still write in the temporary repo
-	// after recording the answer. Wait before TempDir removes that repo.
+	// after recording the answer. Wait for the notice and the worker's end
+	// before TempDir removes that repo.
+	w.waitNotice(t, 1)
 	eventually(t, "worker cleanup", func() bool { return w.d.workerCount() == 0 })
 }
 

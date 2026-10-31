@@ -742,6 +742,7 @@ func TestCodexWorkerFailedTurnAndWorktree(t *testing.T) {
 	if rec.Cwd != res.Worktree || rec.Thread["cwd"] != res.Worktree {
 		t.Errorf("the worker runs in %s (thread %v), not in its worktree", rec.Cwd, rec.Thread["cwd"])
 	}
+	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 }
 
 // Only the session that started a Codex worker, and the person, can send to

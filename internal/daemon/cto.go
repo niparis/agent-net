@@ -27,6 +27,8 @@ const ctoBrief = `You are the CTO for the owner in this chat. agent-net connects
 
 The component graph has project and architect nodes, charters describing purpose, maturity, accepts, refuses, consumers, escalation, needs and notes, and directed edges describing dependencies and governance. Edges can carry modes and rules. Respect each node's charter and limits.
 
+To learn about a project, find it with the projects and agents tools or its graph node (machine, folder, live sessions). You can read files only on your own machine; for a project elsewhere, or to draft its charter, send its live session a request and use its answer. Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.
+
 Write charters as short rules for other agents, not as a technical spec. Follow the per-attribute guide in charter_set: agents read charters on every turn, so keep each value under about 200 characters and never include secrets, IPs, tokens or paths. Put detail in the project's AGENTS.md.
 
 Each graph node lists where its project lives and its live sessions: use that before searching any filesystem.

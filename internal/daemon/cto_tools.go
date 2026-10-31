@@ -252,13 +252,7 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		if err = json.Unmarshal(data, &a); err != nil {
 			return nil, err
 		}
-		out := []protocol.AgentView{}
-		for _, v := range a.Agents {
-			if v.Waiting != nil {
-				out = append(out, v)
-			}
-		}
-		return protocol.AgentsResult{Agents: out}, nil
+		return compactCTONeedsYou(a.Agents, time.Now()), nil
 	case "send":
 		var p struct {
 			To   string `json:"to"`
@@ -529,4 +523,41 @@ func ctoPage[T any](items []T, limit int, before string, key func(T) string) ([]
 		out = append(out, item)
 	}
 	return out, next
+}
+
+// compactCTONeedsYou keeps only what the owner needs to identify and answer a wait.
+func compactCTONeedsYou(agents []protocol.AgentView, now time.Time) any {
+	type item struct {
+		Kind       string `json:"kind"`
+		SessionID  string `json:"session_id"`
+		Name       string `json:"name"`
+		Project    string `json:"project"`
+		Machine    string `json:"machine"`
+		Text       string `json:"text"`
+		AgeSeconds int64  `json:"age_seconds"`
+	}
+	out := make([]item, 0)
+	for _, a := range agents {
+		if a.Waiting == nil {
+			continue
+		}
+		name := a.Profile.Name
+		if name == "" {
+			name = a.Title
+		}
+		project := a.Repo.Project
+		if project == "" {
+			project = a.Profile.Project
+		}
+		text := []rune(a.Waiting.Text)
+		if len(text) > 200 {
+			text = text[:200]
+		}
+		age := int64(0)
+		if a.Waiting.Since > 0 && now.Unix() > a.Waiting.Since {
+			age = now.Unix() - a.Waiting.Since
+		}
+		out = append(out, item{a.Waiting.Kind, a.SessionID, name, project, a.Hostname, string(text), age})
+	}
+	return map[string]any{"agents": out}
 }

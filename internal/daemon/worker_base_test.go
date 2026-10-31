@@ -46,6 +46,8 @@ func TestCodexWorkerStartsFromTheBaseBranch(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(rec.Cwd, "feature")); err != nil {
 		t.Fatalf("codex ran in %s, which lacks the base branch: %v", rec.Cwd, err)
 	}
+	w.waitNotice(t, 1)
+	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 }
 
 // A start that waits in the queue keeps its base branch.
