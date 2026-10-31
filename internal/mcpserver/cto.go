@@ -210,14 +210,6 @@ func NewCTO(call Caller, version string) *mcp.Server {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
 			text := string(raw)
-			if method == "charter_set" {
-				var set protocol.CharterSetRequest
-				if b, marshalErr := json.Marshal(req.Params.Arguments); marshalErr == nil && json.Unmarshal(b, &set) == nil {
-					if warning := protocol.CharterValueWarning(set.Attr, set.Value); warning != "" {
-						text += "\n" + warning
-					}
-				}
-			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 		})
 	}

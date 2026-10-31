@@ -16,6 +16,9 @@ type graphFake struct {
 func (f *graphFake) Call(_ context.Context, method string, params any) (json.RawMessage, error) {
 	f.method = method
 	f.params = params
+	if method == "charter_set" {
+		return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md"]}`), nil
+	}
 	if method == "graph_get" {
 		return json.RawMessage(`{"nodes":[{"name":"p","kind":"component","charter":{"purpose":"test"}}],"edges":[]}`), nil
 	}

@@ -15,6 +15,9 @@ func ctoTestSession(t *testing.T) *mcp.ClientSession {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "charter_set" {
+			return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names only; put detail in AGENTS.md"]}`), nil
+		}
 		return json.RawMessage(`{"ok":true}`), nil
 	}, "test")
 	ss, err := srv.Connect(ctx, st, nil)
