@@ -711,7 +711,7 @@ func TestNoDataYet(t *testing.T) {
 	m := New(src)
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	v := send(m, tea.WindowSizeMsg{Width: 80, Height: 24}).View()
-	if !strings.Contains(v, "connecting...") {
+	if !strings.Contains(v, "loading…") {
 		t.Fatalf("first frame:\n%s", v)
 	}
 	m = refresh(m, src)
@@ -1147,4 +1147,18 @@ func TestProjectColumnFitsLongestName(t *testing.T) {
 	if w := width(columnsForProject(160, 12, 3, false), "PROJECT"); w != 9 {
 		t.Fatalf("PROJECT is %d wide, want the 9 minimum", w)
 	}
+}
+
+func TestLoadingAndPartialSnapshot(t *testing.T) {
+	m := New(&fakeSource{})
+	if !strings.Contains(m.View(), "loading…") {
+		t.Fatal("first load must show loading")
+	}
+	golden(t, "view_80x24_loading", m.View())
+	m = newModel(80, 24)
+	m.snap.FailedCalls = []string{protocol.OpNodes}
+	if !strings.Contains(m.View(), "machines list slow") {
+		t.Fatal("partial snapshot must name the missing data")
+	}
+	golden(t, "view_80x24_partial", m.View())
 }

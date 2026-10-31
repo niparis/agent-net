@@ -434,3 +434,61 @@ func TestMCPHostRunsOnlyOwnServers(t *testing.T) {
 		t.Fatal("still running after it left the sync")
 	}
 }
+
+func TestMCPPingHealth(t *testing.T) {
+	for _, unsupported := range []bool{false, true} {
+		t.Run(fmt.Sprint("unsupported=", unsupported), func(t *testing.T) {
+			ctx := context.Background()
+			ct, st := mcp.NewInMemoryTransports()
+			server := tools.New()
+			validPing := make(chan bool, 1)
+			if unsupported {
+				server.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+					return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+						if method == "ping" {
+							return nil, fmt.Errorf("method not found")
+						}
+						return next(ctx, method, req)
+					}
+				})
+			}
+			ss, err := server.Connect(ctx, st, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer ss.Close()
+			client := mcp.NewClient(&mcp.Implementation{Name: "test", Version: "1"}, nil)
+			client.AddSendingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+				return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+					if method == "ping" && !unsupported {
+						p, ok := req.GetParams().(*mcp.PingParams)
+						validPing <- (ok && p.Meta[mcp.MetaKeyProtocolVersion] == "2026-07-28")
+					}
+					return next(ctx, method, req)
+				}
+			})
+			version := "2026-07-28"
+			if unsupported {
+				version = "2025-11-25"
+			}
+			cs, err := client.Connect(ctx, ct, &mcp.ClientSessionOptions{ProtocolVersion: version})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cs.Close()
+			if err := pingHealth(ctx, cs); err != nil {
+				t.Fatal(err)
+			}
+			if !unsupported {
+				select {
+				case valid := <-validPing:
+					if !valid {
+						t.Fatal("ping missing negotiated version")
+					}
+				default:
+					t.Fatal("ping was not received")
+				}
+			}
+		})
+	}
+}

@@ -223,7 +223,14 @@ func (lc *localConn) run(ctx context.Context) {
 			}
 			cctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
+			lc.mu.Lock()
+			operator := lc.client == "cli"
+			lc.mu.Unlock()
+			started := time.Now()
 			res, err := lc.dispatch(cctx, req.Method, req.Params)
+			if operator {
+				lc.d.logSlowOperatorCall(req.Method, started)
+			}
 			lc.respond(req.ID, res, err)
 		}()
 	}
@@ -857,4 +864,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return res, err
 	}
 	return nil, fmt.Errorf("unknown method %q", method)
+}
+
+func (d *Daemon) logSlowOperatorCall(method string, start time.Time) {
+	if elapsed := time.Since(start); elapsed > time.Second {
+		d.Logf("slow operator call %q: %s", method, elapsed.Round(time.Millisecond))
+	}
 }

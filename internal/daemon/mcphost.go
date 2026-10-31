@@ -295,7 +295,7 @@ func (r *mcpRunner) watch(ctx context.Context, c *mcpConn) {
 			}
 		case <-t.C:
 			pctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := c.sess.Ping(pctx, nil)
+			err := pingHealth(pctx, c.sess)
 			cancel()
 			if err != nil {
 				r.logf("ping failed: %v", c.red.wrap(err))
@@ -662,4 +662,18 @@ func capResult(raw []byte, max int) []byte {
 	res["content"], _ = json.Marshal(out)
 	b, _ := json.Marshal(res)
 	return b
+}
+
+// pingHealth accepts a server that can list its tools even if it rejects ping.
+func pingHealth(ctx context.Context, sess *mcp.ClientSession) error {
+	params := &mcp.PingParams{}
+	if init := sess.InitializeResult(); init != nil && init.ProtocolVersion >= "2026-07-28" {
+		params.Meta = mcp.Meta{mcp.MetaKeyProtocolVersion: init.ProtocolVersion, mcp.MetaKeyClientInfo: &mcp.Implementation{Name: "agent-net", Version: "0.3.0"}, mcp.MetaKeyClientCapabilities: map[string]any{}}
+	}
+	if err := sess.Ping(ctx, params); err != nil {
+		if _, listErr := listTools(ctx, sess); listErr != nil {
+			return fmt.Errorf("ping: %v; tools/list: %w", err, listErr)
+		}
+	}
+	return nil
 }

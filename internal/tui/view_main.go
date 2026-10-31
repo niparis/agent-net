@@ -37,7 +37,7 @@ const maxMachineRows = 5
 func (m Model) layout() layout {
 	var l layout
 	h := max(m.height, 10)
-	l.banner = m.problem != ProblemNone
+	l.banner = m.problem != ProblemNone || (m.haveData && len(m.snap.FailedCalls) > 0)
 	l.notice = len(m.noticeLines(max(m.width, 40)))
 	l.needs = m.needsHeight()
 	n := len(m.machineRows())
@@ -192,7 +192,11 @@ func (m Model) mainView(w, h int) []string {
 
 	add(m.titleLine(w))
 	if l.banner {
-		add(m.bannerLine(w))
+		if m.problem != ProblemNone {
+			add(m.bannerLine(w))
+		} else {
+			add(m.partialLine(w))
+		}
 	}
 	for _, s := range m.noticeLines(w) {
 		add(s)
@@ -334,7 +338,7 @@ func (m Model) titleLine(w int) string {
 		right = "updated " + m.lastOK.In(m.loc).Format("15:04:05")
 	}
 	if !m.haveData && m.problem == ProblemNone {
-		right = "connecting..."
+		right = "loading…"
 	}
 	if m.mapOn {
 		mid = fmt.Sprintf("%d nodes, %d edges", len(m.mp.nodes), len(m.mp.edges))
