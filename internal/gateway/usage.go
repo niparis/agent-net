@@ -312,7 +312,7 @@ func (g *Gateway) relayMessageBody(ctx context.Context, raw []byte) (json.RawMes
 	if err != nil {
 		return nil, err
 	}
-	if !ok || (!msg.ExpiresAt.IsZero() && !msg.ExpiresAt.After(time.Now())) {
+	if !ok || (!msg.ExpiresAt.IsZero() && !msg.ExpiresAt.After(g.store.now())) {
 		return nil, reject("unknown message %q", q.MessageID)
 	}
 	var offline string
