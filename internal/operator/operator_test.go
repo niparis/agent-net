@@ -210,7 +210,7 @@ func TestSnapshotSlowBestEffort(t *testing.T) {
 		switch method {
 		case protocol.OpInfo:
 			return protocol.OperatorInfo{Connected: true}, ""
-		case protocol.OpWorkerProfiles, protocol.OpScoresGet:
+		case protocol.OpWorkerProfiles, protocol.OpScoresGet, "learned_list":
 			return []any{}, ""
 		case protocol.OpNodes:
 			<-release
