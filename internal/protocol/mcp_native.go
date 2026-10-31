@@ -54,8 +54,9 @@ type MCPNativeRemovePlan struct {
 	ID        string             `json:"id"`
 	Candidate MCPImportCandidate `json:"candidate"`
 	// Server is the federated server that replaces the native entry.
-	Server   string `json:"server"`
-	FileHash string `json:"file_hash"`
+	Server     string `json:"server"`
+	FileHash   string `json:"file_hash"`
+	NativeHash string `json:"native_hash"`
 	// Gaps say what the native entry can do that the federation does not.
 	Gaps      []string `json:"gaps"`
 	Conflicts []string `json:"conflicts"`

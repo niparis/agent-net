@@ -262,6 +262,8 @@ SELECT json_array('mcp',name,'federated-'||added_at),'mcp',name,'federated-'||ad
 `, `
 CREATE TABLE IF NOT EXISTS mcp_import_plans (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL, plan TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS mcp_imports (name TEXT PRIMARY KEY, record TEXT NOT NULL);
+`, `
+CREATE TABLE IF NOT EXISTS mcp_native_plans (id TEXT PRIMARY KEY, snapshot TEXT NOT NULL, plan TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'pending');
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

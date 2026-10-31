@@ -80,6 +80,32 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		}
 		return g.applyMCPImport(ctx, p.PlanID, p.Actor, p.Owner)
 
+	case "mcp.native_remove":
+		p, err := decode[struct {
+			protocol.MCPNativeRemoveRequest
+			Actor string `json:"actor"`
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		n := 0
+		for _, v := range []string{p.Candidate, p.PlanID, p.UndoPlanID} {
+			if v != "" {
+				n++
+			}
+		}
+		if n != 1 {
+			return nil, reject("native removal needs one of candidate, plan_id or undo_plan_id")
+		}
+		switch {
+		case p.Candidate != "":
+			return g.planMCPNativeRemove(ctx, p.Candidate, p.Actor)
+		case p.PlanID != "":
+			return g.applyMCPNativeRemove(ctx, p.PlanID, p.Actor)
+		}
+		return g.undoMCPNativeRemove(ctx, p.UndoPlanID, p.Actor)
+
 	case "mcp.list":
 		srvs, err := g.mcpList()
 		if err != nil {

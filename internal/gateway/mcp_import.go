@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -138,6 +139,9 @@ func (g *Gateway) mcpImportCandidates(f protocol.MCPImportCandidatesRequest) (pr
 		} else if registered[name] {
 			c.Conflict = fmt.Sprintf("a federated server named %q already exists", name)
 		}
+		if c.Class == protocol.MCPImportable || c.Imported {
+			c.Gaps = inventory.FederationGaps(c.Machine)
+		}
 		all = append(all, c)
 	}
 	page.Total = len(all)
@@ -205,6 +209,7 @@ func (s *Store) markMCPConflicts(all map[string]*protocol.ToolItem) error {
 			if rec, ok := imports[item.Name]; ok {
 				r := rec
 				r.NativeStillPresent = len(places) > 0
+				r.Gaps = inventory.FederationGaps(r.Machine)
 				item.Imported, item.NativeStillPresent = &r, r.NativeStillPresent
 			}
 			if len(places) > 0 {
