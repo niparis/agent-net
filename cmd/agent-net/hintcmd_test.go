@@ -66,6 +66,66 @@ func TestHintHookPostToolUseOnlyBashFailures(t *testing.T) {
 	}
 }
 
+func TestHintHookSuccessfulBashUsesStderrAndShortNonReadStdout(t *testing.T) {
+	diff := `{"session_id":"abc","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"git diff -- internal/hint"},"tool_response":{"stdout":"error: connection refused","stderr":""}}`
+	if out, asked := runHintWith(t, diff, oneHint, nil); out != "" || len(asked) != 0 {
+		t.Fatalf("successful git diff triggered a hint: %q %+v", out, asked)
+	}
+
+	curl := `{"session_id":"abc","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"curl https://example.invalid"},"tool_response":{"stdout":"502 Bad Gateway","stderr":""}}`
+	out, asked := runHintWith(t, curl, oneHint, nil)
+	if len(asked) != 1 || asked[0].Failed || !strings.Contains(asked[0].Text, "502 Bad Gateway") || out == "" {
+		t.Fatalf("short curl response was ignored: %q %+v", out, asked)
+	}
+
+	readError := `{"session_id":"abc","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"cat file"},"tool_response":{"stdout":"all good","stderr":"502 Bad Gateway"}}`
+	_, asked = runHintWith(t, readError, oneHint, nil)
+	if len(asked) != 1 || asked[0].Text != "502 Bad Gateway" {
+		t.Fatalf("read-command stderr was ignored or stdout was included: %+v", asked)
+	}
+}
+
+func TestHintHookSkipsReadCommandStdout(t *testing.T) {
+	commands := []string{
+		"git diff -- file", "git log --oneline", "git show HEAD", "git grep error", "git blame file",
+		"cat file", "sed -n '1,5p' file", "head -n 5 file", "tail -n 5 file",
+		"grep error file", "rg error", "less file", "jq . file",
+	}
+	for _, command := range commands {
+		t.Run(command, func(t *testing.T) {
+			in, err := json.Marshal(map[string]any{
+				"session_id": "abc", "hook_event_name": "PostToolUse", "tool_name": "Bash",
+				"tool_input":    map[string]string{"command": command},
+				"tool_response": map[string]string{"stdout": "502 Bad Gateway", "stderr": ""},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out, asked := runHintWith(t, string(in), oneHint, nil); out != "" || len(asked) != 0 {
+				t.Fatalf("read command stdout triggered a hint: %q %+v", out, asked)
+			}
+		})
+	}
+}
+
+func TestHintHookIgnoresStdoutAt2000Bytes(t *testing.T) {
+	stdout := strings.Repeat("x", 1985) + "502 Bad Gateway"
+	if len(stdout) != 2000 {
+		t.Fatalf("test output is %d bytes, want 2000", len(stdout))
+	}
+	in, err := json.Marshal(map[string]any{
+		"session_id": "abc", "hook_event_name": "PostToolUse", "tool_name": "Bash",
+		"tool_input":    map[string]string{"command": "curl https://example.invalid"},
+		"tool_response": map[string]string{"stdout": stdout, "stderr": ""},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, asked := runHintWith(t, string(in), oneHint, nil); out != "" || len(asked) != 0 {
+		t.Fatalf("2000-byte stdout triggered a hint: %q %+v", out, asked)
+	}
+}
+
 func TestHintHookIsSilentOnEveryProblem(t *testing.T) {
 	fail := `{"session_id":"abc","hook_event_name":"PostToolUseFailure","tool_name":"Bash","error":"Exit code 1\nconnection refused"}`
 	for name, tc := range map[string]struct {
