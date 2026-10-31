@@ -188,6 +188,9 @@ func (d *Dynamic) Refresh(ctx context.Context) error {
 		for _, t := range srv.Tools {
 			name := srv.Name + "__" + t.Name
 			desc := fmt.Sprintf("[%s on %s] %s", srv.Name, srv.Hostname, t.Description)
+			if !srv.HostOnline {
+				desc = fmt.Sprintf("[%s on %s, unavailable: host %s offline] %s", srv.Name, srv.Hostname, srv.Hostname, t.Description)
+			}
 			want[name] = &mcp.Tool{Name: name, Description: desc, InputSchema: objectSchema(t.InputSchema)}
 			fp[name] = desc + string(t.InputSchema)
 		}
