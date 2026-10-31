@@ -25,11 +25,12 @@ func injectedTurn(prompt string) bool {
 
 // RememberOwnerPrompt keeps only the latest prompt; it is never logged.
 func (s *Store) RememberOwnerPrompt(session, prompt string) error {
-	// Claude delivers peer messages as user turns. Clear any earlier prompt as
-	// well: it cannot explain a send made in response to this injected turn.
+	// Claude delivers peer messages, task notices and reminders as user turns.
+	// They are not the owner's words, so they are not kept. The owner's earlier
+	// prompt stays: a message that lands between the owner's prompt and the
+	// agent's send must not erase what the owner asked.
 	if injectedTurn(prompt) {
-		_, err := s.db.Exec(`DELETE FROM signal_prompts WHERE session_id=?`, session)
-		return err
+		return nil
 	}
 	r := []rune(prompt)
 	if len(r) > 300 {

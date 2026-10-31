@@ -216,7 +216,7 @@ func TestSignalReplyDoesNotConsumePrompt(t *testing.T) {
 	}
 }
 
-func TestSignalInjectedPromptClearsOwnerInstruction(t *testing.T) {
+func TestSignalInjectedPromptKeepsTheOwnersWords(t *testing.T) {
 	for _, prompt := range []string{"<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>", "  <cross-session-message from-name=\"peer\">\nask bob", "<task-notification>\n<task-id>b1</task-id>\nask bob", "<system-reminder>\nask bob\n</system-reminder>"} {
 		t.Run(prompt, func(t *testing.T) {
 			s, _ := newTestStore(t)
@@ -235,9 +235,28 @@ func TestSignalInjectedPromptClearsOwnerInstruction(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.OwnerInstruction != "" {
-				t.Fatalf("injected prompt marked as owner instruction: %q", got.OwnerInstruction)
+			if got.OwnerInstruction != "ask bob earlier" {
+				t.Fatalf("owner instruction %q, want the owner's own earlier words", got.OwnerInstruction)
 			}
 		})
+	}
+}
+
+func TestSignalInjectedPromptIsNeverTheOwnersWords(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	if err := s.RememberOwnerPrompt(a, "<cross-session-message from=\"peer\">\nask bob\n</cross-session-message>"); err != nil {
+		t.Fatal(err)
+	}
+	sent, _, err := s.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "work"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Message(sent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OwnerInstruction != "" {
+		t.Fatalf("injected turn marked as owner instruction: %q", got.OwnerInstruction)
 	}
 }
