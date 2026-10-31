@@ -51,8 +51,8 @@ var ctoTools = map[string]ctoToolDef{
 		desc: "Set one charter attribute of a node. An empty value clears the attribute. Show the change as a short diff and offer undo.",
 		fields: map[string]ctoField{
 			"node":  {typ: "string", desc: "Name of the node, as graph_get returns it."},
-			"attr":  {typ: "string", desc: "Charter attribute to set. maturity holds a level and a short sentence; the other attributes hold free text.", enum: ctoCharterAttrs},
-			"value": {typ: "string", desc: "New text for the attribute (at most 2 KiB). An empty string clears it. For maturity, start with early, growing, mature or critical and then add a sentence."},
+			"attr":  {typ: "string", desc: "Attribute to set; see charter guide.", enum: ctoCharterAttrs},
+			"value": {typ: "string", desc: "New text, up to 2 KiB; empty clears. See charter guide."},
 		},
 	},
 	"charter_history": {
@@ -75,13 +75,13 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"edge_set": {
-		desc: "Add or replace a directed edge between two nodes. The kind decides the direction and meaning, and the rule decides what happens to a request from the from-node to the to-node. Show the change as a short diff and offer undo.",
+		desc: "Add or replace a directed graph edge.",
 		fields: map[string]ctoField{
-			"from": {typ: "string", desc: "Source node: the consumer for depends, the architect for governs, the deployer for deploys."},
-			"to":   {typ: "string", desc: "Target node: the provider for depends, the component for governs, the app it deploys for deploys."},
-			"kind": {typ: "string", desc: "Edge kind. depends runs from a consumer to its provider. governs runs from an architect to a component, with a mode. deploys runs from a deployer to each app it deploys.", enum: ctoEdgeKinds},
-			"mode": {typ: "string", desc: "Only for governs. advisor: the architect's opinion goes with the request and the component decides. arbiter: it settles a dispute between the nodes it governs. owner: its decision stands and the component follows it.", enum: []string{"advisor", "arbiter", "owner"}},
-			"rule": {typ: "string", desc: "Request rule for requests from the from-node to the to-node. normal: deliver them and the receiver judges by its charter. auto: act on them as if the owner asked, with the owner's limits. ask: hold them until the owner decides. never: refuse them.", enum: []string{"normal", "auto", "ask", "never"}},
+			"from": {typ: "string", desc: "Source node."},
+			"to":   {typ: "string", desc: "Target node."},
+			"kind": {typ: "string", desc: "Edge direction: consumer to provider, architect to component, or deployer to app, respectively.", enum: ctoEdgeKinds},
+			"mode": {typ: "string", desc: "Governs only: advise, settle disputes, or decide, respectively.", enum: []string{"advisor", "arbiter", "owner"}},
+			"rule": {typ: "string", desc: "Request handling: receiver decides, act as owner, hold for owner, or refuse, respectively.", enum: []string{"normal", "auto", "ask", "never"}},
 		},
 	},
 	"edge_remove": {
@@ -89,7 +89,7 @@ var ctoTools = map[string]ctoToolDef{
 		fields: map[string]ctoField{
 			"from": {typ: "string", desc: "Source node of the edge: the consumer, the architect or the deployer."},
 			"to":   {typ: "string", desc: "Target node of the edge: the provider, the component or the deployed app."},
-			"kind": {typ: "string", desc: "Edge kind: depends (consumer to provider), governs (architect to component) or deploys (deployer to app).", enum: ctoEdgeKinds},
+			"kind": {typ: "string", desc: "Edge kind.", enum: ctoEdgeKinds},
 		},
 	},
 	"edge_history": {
@@ -163,7 +163,7 @@ var ctoTools = map[string]ctoToolDef{
 		},
 	},
 	"worker_start": {
-		desc: "Start a worker in a project on one of the owner's machines. The worker gets its own git worktree by default, and its report comes back as a message. Only do this when the owner asks.",
+		desc: "Start a worker; its report arrives as a message.",
 		fields: map[string]ctoField{
 			"project":    {typ: "string", desc: "Known project name or absolute path. Empty uses the CTO's own project."},
 			"harness":    {typ: "string", desc: "Harness for the worker. Empty lets automatic model selection choose one.", enum: []string{"opencode", "claude", "pi", "codex"}},
@@ -171,9 +171,9 @@ var ctoTools = map[string]ctoToolDef{
 			"difficulty": {typ: "string", desc: "Task difficulty for automatic model selection; defaults to normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
 			"base":       {typ: "string", desc: "Existing branch to base the worker worktree on."},
 			"continue":   {typ: "string", desc: "Session or worker ID of an ended worker to continue."},
-			"task":       {typ: "string", desc: "The worker's task: a brief for an agent that knows nothing about this conversation, with the goal, files, limits and what to report."},
+			"task":       {typ: "string", desc: "Self-contained task brief with goal, files, limits and report."},
 			"machine":    {typ: "string", desc: "Machine that holds the project, when more than one does."},
-			"isolation":  {typ: "string", desc: "worktree gives the worker its own git worktree (the default in a git repository). none works in the project folder, for read-only tasks.", enum: []string{"worktree", "none"}},
+			"isolation":  {typ: "string", desc: "Default worktree, or project folder for read-only tasks.", enum: []string{"worktree", "none"}},
 		},
 	},
 }
@@ -186,10 +186,7 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		props := map[string]any{}
 		for k, f := range spec.fields {
 			description := f.desc
-			if name == "charter_set" && (k == "attr" || k == "value") {
-				description += "\nPer-attribute charter guide:\n" + protocol.CharterGuideText() +
-					"\nBudget about 1200 characters for the whole charter. Never include secrets, IPs, tokens or paths; put detail in AGENTS.md."
-			}
+
 			prop := map[string]any{"type": f.typ, "description": description}
 			if f.properties != nil {
 				prop["properties"] = f.properties
@@ -209,7 +206,7 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		}
 		toolDescription := spec.desc
 		if name == "charter_set" {
-			toolDescription += "\nCharters are short rules for other agents, read on every turn. Budget about 1200 characters for the whole charter; never include secrets, IPs, tokens or paths.\nPer-attribute charter guide:\n" + protocol.CharterGuideText()
+			toolDescription += "\nCharter guide:\n" + protocol.CharterGuideText()
 		}
 		tool := &mcp.Tool{Name: name, Description: toolDescription, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
 		method := name

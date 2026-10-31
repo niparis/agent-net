@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/niparis/agent-net/internal/protocol"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -79,7 +81,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 			t.Errorf("missing tool %s", name)
 			continue
 		}
-		if strings.HasPrefix(tl.Description, "CTO: ") || len(tl.Description) < 60 {
+		if strings.HasPrefix(tl.Description, "CTO: ") || strings.TrimSpace(tl.Description) == "" {
 			t.Errorf("%s has a generic or short description: %q", name, tl.Description)
 		}
 		props, names := ctoToolSchema(t, tl)
@@ -136,17 +138,17 @@ func TestCTOCharterGuideAppearsInSchemaAndWarnsWithoutRefusing(t *testing.T) {
 		t.Fatal("charter_set missing")
 	}
 	props, _ := ctoToolSchema(t, charter)
-	for name, description := range map[string]string{
-		"tool":  charter.Description,
-		"attr":  props["attr"]["description"].(string),
-		"value": props["value"]["description"].(string),
-	} {
-		for _, want := range []string{"accepts", "other agents ask", "Bug fixes in retrieval", "Bearer-authenticated", "1200 characters", "AGENTS.md"} {
-			if !strings.Contains(description, want) {
-				t.Errorf("%s description misses %q: %s", name, want, description)
-			}
+	for _, want := range []string{"accepts", "other agents ask", "Bug fixes in retrieval", "Bearer-authenticated"} {
+		if !strings.Contains(charter.Description, want) {
+			t.Errorf("tool description misses %q", want)
 		}
 	}
+	for _, name := range []string{"attr", "value"} {
+		if !strings.Contains(props[name]["description"].(string), "guide") {
+			t.Errorf("%s description does not point to the guide", name)
+		}
+	}
+
 	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "charter_set", Arguments: map[string]any{
 		"node": "cogforge", "attr": "needs", "value": "Read /home/project/private/config",
 	}})
@@ -329,4 +331,49 @@ func TestCTOProjectDisplayTool(t *testing.T) {
 		}
 	}
 	t.Fatal("project_display_set missing")
+}
+
+func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
+	list, err := ctoTestSession(t).ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := json.Marshal(list.Tools)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("total schema: %d bytes", len(schema))
+	type size struct {
+		name  string
+		bytes int
+	}
+	var sizes []size
+	foundCharter := false
+	for _, tool := range list.Tools {
+		data, err := json.Marshal(tool)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sizes = append(sizes, size{tool.Name, len(data)})
+		if tool.Name == "charter_set" {
+			foundCharter = true
+			guide, err := json.Marshal(protocol.CharterGuideText())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if count := strings.Count(string(data), string(guide[1:len(guide)-1])); count != 1 {
+				t.Errorf("charter guide occurs %d times, want 1", count)
+			}
+		}
+	}
+	if !foundCharter {
+		t.Error("charter_set missing")
+	}
+	sort.Slice(sizes, func(i, j int) bool { return sizes[i].bytes > sizes[j].bytes })
+	for _, item := range sizes[:10] {
+		t.Logf("%s: %d bytes", item.name, item.bytes)
+	}
+	if len(schema) > 24000 {
+		t.Errorf("CTO schema is %d bytes, budget 24000", len(schema))
+	}
 }
