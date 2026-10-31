@@ -8,7 +8,7 @@ import (
 
 func TestChooseWorkerModel(t *testing.T) {
 	now := time.Unix(1000000, 0)
-	scores := []ModelScore{{Match: "a", Score: 51}, {Match: "b", Score: 52}, {Match: "c", Score: 42}, {Match: "d", Score: 29}}
+	scores := []ModelScore{{Match: "a", Score: 51}, {Match: "b", Score: 51}, {Match: "c", Score: 39}, {Match: "d", Score: 29}}
 	candidates := []WorkerModelCandidate{{Harness: "pi", Model: "a"}, {Harness: "pi", Model: "b"}, {Harness: "pi", Model: "c"}, {Harness: "pi", Model: "d"}}
 	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 40, ResetsAt: now.Add(3 * 24 * time.Hour).Unix()}}}, {Provider: "b", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 70, ResetsAt: now.Add(3 * 24 * time.Hour).Unix()}}}}}
 	candidates[0].Provider = "a"
@@ -75,5 +75,18 @@ func TestChooseWorkerModelPrefersRecentSuccess(t *testing.T) {
 	got, err := ChooseWorkerModel(candidates, "hard", scores, nil, nil, nil, 0)
 	if err != nil || got.Model != "a" {
 		t.Fatalf("failed after success: %+v %v", got, err)
+	}
+}
+
+func TestChooseWorkerModelAdequateScore(t *testing.T) {
+	c := []WorkerModelCandidate{{Harness: "pi", Model: "terra"}, {Harness: "pi", Model: "deepseek"}}
+	scores := []ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}}
+	for _, tt := range []struct{ level, want string }{{"normal", "deepseek"}, {"hard", "terra"}} {
+		t.Run(tt.level, func(t *testing.T) {
+			got, err := ChooseWorkerModel(c, tt.level, scores, nil, nil, nil, 0)
+			if err != nil || got.Model != tt.want {
+				t.Fatalf("got %+v: %v", got, err)
+			}
+		})
 	}
 }

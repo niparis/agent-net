@@ -51,10 +51,10 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		}
 		fit, _ := DifficultyFit(s.Score, level, minimums)
 		reasons = append(reasons, fmt.Sprintf("%s %s (score %g, %s)", c.Harness, c.Model, s.Score, fit))
-		if fit == "denied" {
+		if fit != "good" && fit != "excellent" {
 			continue
 		}
-		rank := map[string]int{"excellent": 0, "good": 1, "poor": 2}[fit]
+		rank := 0
 		provider := c.Provider
 		if provider == "" {
 			provider = QuotaProviderForStart(c.Harness, c.Model)
@@ -82,6 +82,9 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if a.fit != b.fit {
 			return a.fit < b.fit
 		}
+		if a.choice.Score != b.choice.Score {
+			return a.choice.Score < b.choice.Score
+		}
 		if measured && a.room != b.room {
 			return a.room > b.room
 		}
@@ -97,7 +100,7 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	ties := 1
 	for ties < len(eligible) {
 		r := eligible[ties]
-		if r.fit != best.fit || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
+		if r.fit != best.fit || r.choice.Score != best.choice.Score || measured && r.room != best.room || r.choice.Failed != best.choice.Failed || r.choice.Succeeded != best.choice.Succeeded {
 			break
 		}
 		ties++
