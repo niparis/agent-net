@@ -141,7 +141,8 @@ var ctoTools = map[string]ctoToolDef{
 		"name": {typ: "string", desc: "Optional profile name; use an existing name to replace that profile's model or effort. Defaults to the harness and resolved model."}, "harness": {typ: "string", desc: "Installed worker harness."}, "model": {typ: "string", desc: "Model ID or loose model name."}, "effort": {typ: "string", desc: "Optional reasoning or thinking effort."},
 	}},
 	"worker_profile_remove":   {desc: "Remove a registered worker profile by name only when the owner asks for that removal.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name of the registered profile to remove."}}},
-	"protected_providers_set": {desc: "Set protected providers and the reason only when the owner asks.", fields: map[string]ctoField{"protected_providers": {typ: "array", desc: "Provider IDs reserved for the orchestrator."}, "reason": {typ: "string", desc: "Why these providers are protected."}}},
+	"protected_providers_get": {desc: "Read the protected providers and their reason."},
+	"protected_providers_set": {desc: "Set protected providers and the reason. Ask the owner before changing this setting.", fields: map[string]ctoField{"protected_providers": {typ: "array", desc: "Provider IDs reserved for the orchestrator."}, "reason": {typ: "string", desc: "Why these providers are protected."}}},
 	"worker_providers_set": {
 		desc:   "Set the network worker provider allowlist only when the owner asks. Pass provider IDs as an array; omit providers to restore the defaults.",
 		fields: map[string]ctoField{"providers": {typ: "array", desc: "Provider IDs to allow. Omit this field to restore the subscription defaults."}},

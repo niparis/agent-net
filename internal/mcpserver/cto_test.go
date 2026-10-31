@@ -278,3 +278,14 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 		t.Fatalf("repo_targets must contain checkout objects: %+v", targets)
 	}
 }
+
+func TestProtectedProvidersTools(t *testing.T) {
+	for _, name := range []string{"protected_providers_get", "protected_providers_set"} {
+		if _, ok := ctoTools[name]; !ok {
+			t.Errorf("missing CTO tool %s", name)
+		}
+	}
+	if !strings.Contains(strings.ToLower(ctoTools["protected_providers_set"].desc), "ask the owner") {
+		t.Fatal("setter must say to ask the owner")
+	}
+}

@@ -12,6 +12,30 @@ import (
 func (m Model) quotasView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	var subscription []string
+	protected := m.snap.ProtectedProviders
+	if len(protected.Providers) == 0 {
+		subscription = append(subscription, sDim.Render("no provider protected · select a subscription and press p"))
+	} else {
+		summary := "protected: " + sanitize(strings.Join(protected.Providers, ", "))
+		if protected.Reason != "" {
+			summary += " · " + sanitize(protected.Reason)
+		}
+		for _, line := range wrap(summary, w-4) {
+			subscription = append(subscription, sDim.Render(line))
+		}
+	}
+	if n := m.activeNotice(); n != nil {
+		subscription = append(subscription, clip(sanitize(n.text), w-4))
+	}
+	if m.mode == modeQuotaConfirm {
+		question := "workers use others first; this provider only when nothing else fits"
+		if m.quotaUnprotect {
+			question = "workers may use this provider freely"
+		}
+		for _, line := range wrap(question, w-4) {
+			subscription = append(subscription, sBold.Render(line))
+		}
+	}
 	rows := m.quotaRows()
 	nodes, ids := m.quotaNodes()
 	var errors []string
@@ -69,7 +93,7 @@ func (m Model) quotasView(w, h int) []string {
 		configured = append(configured, unset...)
 		configured = append(configured, unused...)
 	}
-	for _, r := range configured {
+	for rowIndex, r := range configured {
 		if r.at > newest {
 			newest = r.at
 		}
@@ -142,7 +166,18 @@ func (m Model) quotasView(w, h int) []string {
 					reset = t.Format("Jan 02 15:04")
 				}
 			}
-			line := fmt.Sprintf("%s %s %s %s %s %s", cell(provider, 11), cell(plan, 9), cell(name, 14), remaining, pace, reset)
+			if i == 0 {
+				if rowIndex == m.quotaSelected {
+					provider = "> " + provider
+				} else {
+					provider = "  " + provider
+				}
+			}
+			providerCell := cell(provider, 11)
+			if rowIndex == m.quotaSelected && i == 0 {
+				providerCell = sSel.Render(providerCell)
+			}
+			line := fmt.Sprintf("%s %s %s %s %s %s", providerCell, cell(plan, 9), cell(name, 14), remaining, pace, reset)
 			if p.Stale || p.Error != "" {
 				line = sDim.Render(stripStyles(line))
 			}

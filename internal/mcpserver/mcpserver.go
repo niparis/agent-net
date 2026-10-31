@@ -123,6 +123,16 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 		return out, nil
 	}
 
+	mcp.AddTool(s, tool("agent_protected_providers_get", "Read protected providers. Owner only."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, protocol.OpProtectedProvidersGet, nil)
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_protected_providers_set", "Set protected providers and reason. Owner only; ask the owner before changing this setting."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in protocol.ProtectedProviders) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, protocol.OpProtectedProvidersSet, in)
+			return nil, out, err
+		})
 	mcp.AddTool(s, tool("agent_list",
 		"List agent sessions on the network (Claude Code, Pi, OpenCode) with their name, function (from the project's AGENTS.md), task, expertise (what they can answer about), project and status. "+
 			AskPeerRule+" "+
