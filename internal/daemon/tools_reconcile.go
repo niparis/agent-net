@@ -79,13 +79,7 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 	if t.Target.Conflict != "" && t.Target.Conflict != "destination already exists and is not owned" && t.Target.Conflict != "machine offline; destination cannot be inspected" {
 		return fail("conflict", "plan target requires inspection")
 	}
-	if t.Name == "" || t.Name == "." || t.Name == ".." || filepath.Base(t.Name) != t.Name || strings.ContainsAny(t.Name, "/\\\x00") {
-		return fail("conflict", "invalid skill name")
-	}
 	root := d.cfg.InventoryHome
-	if root == "" || !filepath.IsAbs(root) || d.cfg.StateDir == "" {
-		return fail("failed", "local directories unavailable")
-	}
 	var rel string
 	switch t.Target.Harness {
 	case "claude":
@@ -98,6 +92,20 @@ func (d *Daemon) copyGlobalSkill(t protocol.ToolTarget, bundle []byte) protocol.
 		rel = ".pi/agent/skills"
 	default:
 		return fail("manual", "unsupported harness")
+	}
+	return d.copySkillAt(t, bundle, root, rel)
+}
+
+// copySkillAt stages and installs a verified bundle under the given root.
+// Callers must verify that the root and destination are authorized.
+func (d *Daemon) copySkillAt(t protocol.ToolTarget, bundle []byte, root, rel string) protocol.ToolResult {
+	r := protocol.ToolResult{Item: t.Revision.Item, Revision: t.Revision.Revision, Index: t.Index}
+	fail := func(state, reason string) protocol.ToolResult { r.State = state; r.Reason = reason; return r }
+	if t.Name == "" || t.Name == "." || t.Name == ".." || filepath.Base(t.Name) != t.Name || strings.ContainsAny(t.Name, "/\\\x00") {
+		return fail("conflict", "invalid skill name")
+	}
+	if root == "" || !filepath.IsAbs(root) || d.cfg.StateDir == "" {
+		return fail("failed", "local directories unavailable")
 	}
 	cur, closeRoot, err := openSkillRoot(root, rel)
 	if err != nil {
