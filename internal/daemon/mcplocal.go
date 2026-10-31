@@ -101,24 +101,13 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 		res, err = d.call(ctx, "mcp.list", nil)
 
 	case "mcp_tools":
-		// Enabled servers with their tools: what a session registers.
-		var data json.RawMessage
-		if data, err = d.call(ctx, "mcp.list", nil); err != nil {
+		// Enabled servers with their tools: what a session registers. The
+		// gateway filters them for the bound session's project.
+		var sid string
+		if sid, err = lc.boundID(); err != nil {
 			return
 		}
-		var r struct {
-			Servers []protocol.MCPServer `json:"servers"`
-		}
-		if err = json.Unmarshal(data, &r); err != nil {
-			return
-		}
-		out := []protocol.MCPServer{}
-		for _, s := range r.Servers {
-			if s.Enabled {
-				out = append(out, s)
-			}
-		}
-		res = map[string]any{"servers": out}
+		res, err = d.call(ctx, "mcp.catalog", protocol.MCPCatalog{SessionID: sid})
 
 	case "mcp_add":
 		var p protocol.MCPAdd
@@ -163,6 +152,18 @@ func (lc *localConn) dispatchMCP(ctx context.Context, client, method string, raw
 		var p protocol.MCPCall
 		if json.Unmarshal(raw, &p) != nil || p.Server == "" || p.Tool == "" {
 			return nil, true, errors.New("mcp_call needs server and tool")
+		}
+		// Who calls is decided here, never taken from the request: a bound
+		// session calls as itself, and the owner's own command line calls
+		// with the owner's authority. A command line run from inside an agent
+		// session has neither and sees only global servers.
+		p.SessionID, p.Owner = "", ""
+		if client == "cli" {
+			if lc.operatorGate(method) == nil {
+				p.Owner = d.ownerSessionID()
+			}
+		} else if p.SessionID, err = lc.boundID(); err != nil {
+			return nil, true, err
 		}
 		res, err = d.call(withCallWait(ctx, protocol.MCPMaxTimeout+30*time.Second), "mcp.call", p)
 
