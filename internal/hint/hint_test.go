@@ -40,6 +40,24 @@ func TestSuggestFindsTheOwnerOfAService(t *testing.T) {
 	}
 }
 
+func TestSuggestIgnoresCommonFolderNames(t *testing.T) {
+	peers := []Candidate{
+		{SessionID: "s_cleanup", Name: "cleanup", Hostname: "laptop-a", Online: true, Project: "maintenance", Folder: "cleanup"},
+		{SessionID: "s_cog", Name: "cogforge", Hostname: "laptop-a", Online: true, Project: "cogforge", Folder: "cogforge"},
+	}
+	self := Self{SessionID: "s_me", Project: "client-app", Hostname: "laptop-b"}
+
+	got := Suggest("git diff -- cleanup/config.go cogforge/config.go", self, peers)
+	if len(got) != 1 || got[0].Candidate.SessionID != "s_cog" {
+		t.Fatalf("want only cogforge; got %+v", got)
+	}
+
+	got = Suggest("git diff -- cleanup/config.go", self, peers[:1])
+	if len(got) != 0 {
+		t.Fatalf("a common folder name must not match: %+v", got)
+	}
+}
+
 func TestSuggestUsesExpertiseWords(t *testing.T) {
 	// No name in the error, but two words of the homelab expertise.
 	text := "docker compose: service unavailable, see the homelab services stack"
