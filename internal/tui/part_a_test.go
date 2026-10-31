@@ -144,7 +144,7 @@ func TestTableShowsTheNewColumnsAndNotTheMovedOnes(t *testing.T) {
 
 // ---- order ----
 
-func TestSessionsAreOrderedByFirstSeenAndStay(t *testing.T) {
+func TestSessionsAreOrderedByActivityAndStay(t *testing.T) {
 	snap := fakeSnapshot()
 	snap.Agents = nil
 	at := t0.Add(-time.Hour)
@@ -161,7 +161,7 @@ func TestSessionsAreOrderedByFirstSeenAndStay(t *testing.T) {
 	if got := strings.Join(names(m), ","); got != "first,second,third" {
 		t.Fatalf("order %s", got)
 	}
-	// Activity does not re-order: only the first seen counts.
+	// Entering the busy band moves the session to its top.
 	for i := range snap.Agents {
 		if snap.Agents[i].Profile.Name == "third" {
 			snap.Agents[i].LastSeen = t0.Add(-time.Minute).Unix()
@@ -169,7 +169,7 @@ func TestSessionsAreOrderedByFirstSeenAndStay(t *testing.T) {
 		}
 	}
 	m = refresh(m, &fakeSource{snap: snap, events: fakeEvents()})
-	if got := strings.Join(names(m), ","); got != "first,second,third" {
+	if got := strings.Join(names(m), ","); got != "third,first,second" {
 		t.Fatalf("order after activity %s", got)
 	}
 }

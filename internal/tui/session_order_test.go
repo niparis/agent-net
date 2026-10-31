@@ -1,8 +1,12 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestActivityBand(t *testing.T) {
@@ -28,5 +32,52 @@ func TestActivityBand(t *testing.T) {
 				t.Fatalf("got %d want %d", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestOrderFreezeAndSelection(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Agents = nil
+	for i, name := range []string{"first", "second"} {
+		snap.Agents = append(snap.Agents, agent(name, "n_mac", "Mac", "claude", name, func(a *protocol.AgentView) {
+			a.FirstSeen = t0.Add(time.Duration(i) * time.Second).Unix()
+			a.LastSeen = t0.Add(-time.Hour).Unix()
+		}))
+	}
+	now := t0
+	m := treeModel(80, 24, snap)
+	m.now = func() time.Time { return now }
+	m.selected = "first"
+	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
+	selected := m.selected
+	snap.Agents[1].Status = "busy"
+	m = refresh(m, &fakeSource{snap: snap})
+	if got := strings.Join(names(m), ","); got != "first,second" {
+		t.Fatalf("order during freeze: %s", got)
+	}
+	now = now.Add(3 * time.Second)
+	m = refresh(m, &fakeSource{snap: snap})
+	if got := strings.Join(names(m), ","); got != "second,first" {
+		t.Fatalf("order after freeze: %s", got)
+	}
+	if m.selected != selected {
+		t.Fatalf("selection changed from %s to %s", selected, m.selected)
+	}
+}
+
+func TestMessageMovesSession(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Agents = nil
+	for i, name := range []string{"first", "second"} {
+		snap.Agents = append(snap.Agents, agent(name, "n_mac", "Mac", "claude", name, func(a *protocol.AgentView) {
+			a.FirstSeen = t0.Add(time.Duration(i) * time.Second).Unix()
+			a.LastSeen = t0.Add(-2 * time.Hour).Unix()
+		}))
+	}
+	m := treeModel(80, 24, snap)
+	events := []protocol.FeedEvent{{Event: protocol.Event{ID: 13, Kind: "msg.stored", Time: t0}, From: "second"}}
+	m = refresh(m, &fakeSource{snap: snap, events: events})
+	if got := strings.Join(names(m), ","); got != "second,first" {
+		t.Fatalf("message order: %s", got)
 	}
 }
