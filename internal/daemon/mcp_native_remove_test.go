@@ -252,23 +252,47 @@ func TestMCPNativeRemoveRefusesAServerThatIsOffOrUnhealthy(t *testing.T) {
 		}
 	}
 	// Switched off.
+	hosted := f.n.d.mcp.runner("probe")
 	f.cli.mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "probe", Enabled: false})
 	conflict("switched off")
+	if hosted != nil {
+		eventually(t, "the hosted copy stops after being disabled", func() bool {
+			select {
+			case <-hosted.done:
+				return true
+			default:
+				return false
+			}
+		})
+	}
+	// Make the test helper fail before enabling the server again. That keeps
+	// both the explicit test and any hosted copy started by the enable from
+	// reporting healthy.
+	t.Setenv(helperEnv, "")
 	f.cli.mustCall("mcp_enable", protocol.MCPSetEnabled{Name: "probe", Enabled: true})
 	// Not healthy: the server cannot start.
-	t.Setenv(helperEnv, "")
-	f.cli.mustCall("mcp_test", protocol.MCPName{Name: "probe"})
-	// The failed test reaches the gateway as a health report; plan only
-	// once the registry shows it, or the plan can see the old state.
+	var testResult struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(f.cli.mustCall("mcp_test", protocol.MCPName{Name: "probe"}), &testResult); err != nil || testResult.OK {
+		t.Fatalf("mcp_test should fail: %+v %v", testResult, err)
+	}
+	// The failed test reaches the gateway as a health report; wait for the
+	// precise state the plan checks. The helper stays unavailable after this.
 	eventually(t, "the registry shows the server unhealthy", func() bool {
 		for _, s := range f.servers(t) {
 			if s.Name == "probe" {
-				return s.Health != protocol.HealthOK
+				return s.Health == protocol.HealthError
 			}
 		}
 		return false
 	})
 	conflict("not healthy")
+	for _, s := range f.servers(t) {
+		if s.Name == "probe" && s.Health != protocol.HealthError {
+			t.Fatalf("the server health changed during planning: %q", s.Health)
+		}
+	}
 	if after, _ := os.ReadFile(file); string(after) != string(original) {
 		t.Fatal("the file changed")
 	}
