@@ -258,6 +258,16 @@ func TestMCPNativeRemoveRefusesAServerThatIsOffOrUnhealthy(t *testing.T) {
 	// Not healthy: the server cannot start.
 	t.Setenv(helperEnv, "")
 	f.cli.mustCall("mcp_test", protocol.MCPName{Name: "probe"})
+	// The failed test reaches the gateway as a health report; plan only
+	// once the registry shows it, or the plan can see the old state.
+	eventually(t, "the registry shows the server unhealthy", func() bool {
+		for _, s := range f.servers(t) {
+			if s.Name == "probe" {
+				return s.Health != protocol.HealthOK
+			}
+		}
+		return false
+	})
 	conflict("not healthy")
 	if after, _ := os.ReadFile(file); string(after) != string(original) {
 		t.Fatal("the file changed")
