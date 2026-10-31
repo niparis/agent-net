@@ -537,7 +537,9 @@ func (d *Daemon) sessionByID(id string) *localSession {
 func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	return ls.info
+	info := ls.info
+	info.SessionID = ls.sessionID
+	return info
 }
 
 // pushSession tells the gateway about a session if the link is up.
@@ -570,7 +572,9 @@ func (d *Daemon) snapshot() []protocol.SessionInfo {
 	defer d.mu.Unlock()
 	out := make([]protocol.SessionInfo, 0, len(d.sessions))
 	for _, ls := range d.sessions {
-		out = append(out, ls.info)
+		info := ls.info
+		info.SessionID = ls.sessionID
+		out = append(out, info)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return key(out[i].Harness, out[i].NativeID) < key(out[j].Harness, out[j].NativeID)

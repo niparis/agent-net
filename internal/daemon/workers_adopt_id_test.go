@@ -64,3 +64,17 @@ func TestAdoptedWorkerKeepsItsSessionID(t *testing.T) {
 		t.Fatal("cleanup deleted the record of a running worker")
 	}
 }
+
+// Re-registering a known session must ask the gateway for its existing ID,
+// including when a status update races gateway record cleanup.
+func TestSessionReportsKnownID(t *testing.T) {
+	d := &Daemon{sessions: make(map[string]*localSession)}
+	ls := &localSession{sessionID: "s_existing", info: protocol.SessionInfo{Harness: "opencode", NativeID: "native"}}
+	d.sessions[key("opencode", "native")] = ls
+	if got := d.infoOf(ls).SessionID; got != ls.sessionID {
+		t.Errorf("upsert ID = %q, want %q", got, ls.sessionID)
+	}
+	if got := d.snapshot()[0].SessionID; got != ls.sessionID {
+		t.Errorf("sync ID = %q, want %q", got, ls.sessionID)
+	}
+}
