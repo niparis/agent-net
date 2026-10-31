@@ -134,4 +134,34 @@ func TestFakeOpenCodePromptContract(t *testing.T) {
 	if r.StatusCode != 400 {
 		t.Fatalf("unknown delivery: HTTP %d", r.StatusCode)
 	}
+	// The message endpoint supports filtering and ordering before pagination.
+	path := filepath.Join(dir, "data", "fake-session-"+created.Data.ID+".json")
+	items := []map[string]any{ctoAssistant("msg_new", 84000), ctoUser("recent"), ctoAssistant("msg_old", 100)}
+	data, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err = call("GET", "/api/session/"+created.Data.ID+"/message?type=assistant&order=desc&limit=1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var latest struct {
+		Data []struct {
+			ID     string `json:"id"`
+			Type   string `json:"type"`
+			Tokens struct {
+				Input int `json:"input"`
+			} `json:"tokens"`
+		} `json:"data"`
+		Cursor map[string]any `json:"cursor"`
+	}
+	err = json.NewDecoder(r.Body).Decode(&latest)
+	r.Body.Close()
+	if err != nil || len(latest.Data) != 1 || latest.Data[0].ID != "msg_new" || latest.Data[0].Type != "assistant" || latest.Data[0].Tokens.Input != 84000 || latest.Cursor == nil {
+		t.Fatalf("latest assistant: %+v, error: %v", latest, err)
+	}
+
 }

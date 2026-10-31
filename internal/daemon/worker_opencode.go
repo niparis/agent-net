@@ -387,7 +387,7 @@ func opencodeSessionContext(ctx context.Context, base, pass, nativeID string) op
 			} `json:"tokens"`
 		} `json:"data"`
 	}
-	if get("/api/session/"+nativeID+"/message", &msgs) {
+	if get("/api/session/"+url.PathEscape(nativeID)+"/message?type=assistant&order=desc&limit=1", &msgs) {
 		for _, m := range msgs.Data {
 			if m.Type != "assistant" {
 				continue
