@@ -365,7 +365,7 @@ Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness'
 - **Only known files.** The daemon takes the file from its own scan and a fixed list of native sources. The gateway cannot name a path.
 - **Committed files are not edited.** A tracked project file stays as it is. You remove the entry with a commit ("committed in the repo").
 - **Edits are compare-and-swap with a private backup**, as described above. The gateway keeps only hashes, the backup ID and the plan.
-- A running session keeps its native tools until it restarts.
+- A running session keeps its native tools until it restarts. The gateway sends each online session in scope one ordinary message from the owner session, with the server name and no secret. Sessions in scope are chosen from the gateway's own records (node, harness, project), not from the request.
 
 ### The trust limit
 

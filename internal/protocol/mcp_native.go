@@ -83,4 +83,7 @@ type MCPNativeRemoveResult struct {
 	Reason string `json:"reason,omitempty"`
 	// Notes tell the owner what to do next, for example reload the session.
 	Notes []string `json:"notes,omitempty"`
+	// Notified are the running sessions that were told, once, to restart so
+	// that they drop the old copy of the server. Only an applied removal sets it.
+	Notified []string `json:"notified,omitempty"`
 }

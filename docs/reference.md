@@ -759,7 +759,16 @@ writes a temporary file beside the original, checks the hash again and renames
 it over. For `~/.claude.json` it takes Claude Code's own `.claude.json.lock`
 directory first. After the rename it reads the file again, checks the bytes
 are exactly the planned result, and checks that the entry is gone. A session
-that is running keeps its native tools until it restarts.
+that is running keeps its native tools until it restarts, so the gateway tells
+it. Each online session of the entry's harness on that machine gets one message
+from the owner session: "the MCP server X moved to agent-net; restart this
+session to drop the old copy". A user-level entry reaches every such session; a
+project-level entry reaches the sessions of its project. Sessions of other
+harnesses and other machines are not told. The message needs no reply, and it
+is sent at most once per session for a plan (undo sends nothing). The result
+lists the session IDs in `notified` and adds a note with the count. A session
+that cannot be reached still gets the stored message when it returns. A failure
+to tell a session does not fail the removal.
 
 **Undo.** `undo_plan_id` restores the original file only if the file still has
 the hash of the edit's result. Otherwise it answers `refused` with "changed

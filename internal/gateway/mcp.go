@@ -102,7 +102,7 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		case p.Candidate != "":
 			return g.planMCPNativeRemove(ctx, p.Candidate, p.Actor)
 		case p.PlanID != "":
-			return g.applyMCPNativeRemove(ctx, p.PlanID, p.Actor)
+			return g.applyMCPNativeRemove(ctx, p.PlanID, p.Actor, p.Owner)
 		}
 		return g.undoMCPNativeRemove(ctx, p.UndoPlanID, p.Actor)
 
