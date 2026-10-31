@@ -193,7 +193,7 @@ func TestGraphHintsFitWithoutCuttingWords(t *testing.T) {
 		if !strings.HasSuffix(line, "? keys") || !strings.Contains(line, "t talk") || strings.Contains(line, "…") || ansi.StringWidth(line) > 80 {
 			t.Fatalf("paused=%v: invalid hint line %q", paused, line)
 		}
-		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") == paused || !strings.Contains(line, "0 fit") {
+		if strings.Contains(line, "space pause") || strings.Contains(line, "enter Map") || !strings.Contains(line, "arrows select") {
 			t.Fatalf("paused=%v: incorrect hint priority %q", paused, line)
 		}
 	}
@@ -204,8 +204,8 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"enter Map", "0 fit", "t talk", "? keys"}, []string{"space pause"}},
-		{70, []string{"0 fit", "t talk", "? keys"}, []string{"space pause", "enter Map"}},
+		{80, []string{"arrows select", "t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
+		{70, []string{"arrows select", "t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
 		{60, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
 		{40, []string{"t talk", "? keys"}, []string{"space pause", "enter Map", "0 fit"}},
 	} {
@@ -222,6 +222,17 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 			if strings.Contains(line, h) {
 				t.Errorf("width %d has %q: %q", tc.width, h, line)
 			}
+		}
+	}
+}
+
+func TestGraphHelpDescribesNavigation(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphHelp = true
+	text := strings.Join(m.graphView(120, 20), " ")
+	for _, want := range []string{"arrows select", "shift+arrows", "[ ] neighbours"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("help missing %q: %s", want, text)
 		}
 	}
 }
