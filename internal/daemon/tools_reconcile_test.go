@@ -419,3 +419,33 @@ func TestRemoveOwnedExcludeKeepsSimilarLines(t *testing.T) {
 		t.Fatalf("changed another line: %q", b)
 	}
 }
+
+func TestRemoveSkillRefusesSymlink(t *testing.T) {
+	home, state, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("CODEX_HOME", filepath.Join(home, "codex"))
+	t.Setenv("AGENT_NET_STATE_DIR", state)
+	path := filepath.Join(home, ".claude", "skills", "demo")
+	if err := os.MkdirAll(path, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "SKILL.md"), []byte("fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(outside, "file"), []byte("external"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "file"), filepath.Join(path, "link")); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{InventoryHome: home, StateDir: state}}
+	d.toolsReport.Items = []protocol.InventoryItem{{Kind: "skill", Name: "demo", Location: path, Hash: "fixture", Source: protocol.InventoryNative}}
+	target := protocol.ToolTarget{Name: "demo", Revision: protocol.ToolRevision{Item: "item", Version: "fixture"}, Target: protocol.ToolPlanTarget{Action: "remove", Source: path}}
+	if r := d.removeSkill(target); r.State != "conflict" {
+		t.Fatalf("symlink: %+v", r)
+	}
+	if b, err := os.ReadFile(filepath.Join(outside, "file")); err != nil || string(b) != "external" {
+		t.Fatalf("target: %q %v", b, err)
+	}
+}
