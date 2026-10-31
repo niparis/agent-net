@@ -2,6 +2,11 @@
 
 ## CTO settings and conversation
 
+Replies to conversations started by the CTO reach its active conversation and
+remain visible in the owner's Messages tab. This includes replies sent through
+Claude Code's reply socket. Replies to the owner's own messages stay in the
+Messages tab. The CTO receives peer replies as model output, not owner words.
+
 The owner-only `cto_settings` operator method reads and saves the active CTO
 harness, its model, the saved model for each harness, and conversation
 auto-compaction rules. The response has `harness`, `model`, `opencode_model` and
