@@ -150,7 +150,7 @@ func (m Model) ctoPollCmd() tea.Cmd {
 }
 func (m Model) ctoOlderCmd() tea.Cmd {
 	src := m.src.(ctoSource)
-	generation, index := m.cto.generation, m.cto.olderCursor
+	generation, index := m.cto.generation, -m.cto.olderCursor
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
@@ -350,7 +350,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c.err = ""
 	if !r.olderPage {
 		c.lastPoll = r
-		c.olderCursor = r.events.Next
+		c.olderCursor = r.events.Older
 	}
 	events := mergeCTOEventPages(c.olderPages, r.events)
 	c.configuredModel = r.configuredModel

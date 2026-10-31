@@ -363,10 +363,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.cto.olderPages = append([]protocol.CTOEvents{msg.events}, m.cto.olderPages...)
-		if msg.events.Next >= m.cto.olderCursor {
+		if msg.events.Older >= m.cto.olderCursor {
 			m.cto.olderCursor = 0
 		} else {
-			m.cto.olderCursor = msg.events.Next
+			m.cto.olderCursor = msg.events.Older
 		}
 		m.cto.scroll = int(^uint(0) >> 1)
 		poll := m.cto.lastPoll

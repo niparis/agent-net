@@ -668,12 +668,12 @@ func TestCTOSwitchDividerGolden(t *testing.T) {
 
 func TestCTOScrollLoadsOlderTimelinePage(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}, pages: map[int]protocol.CTOEvents{
-		1: {Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"older","time":{"created":1000}}`)}, Next: 0},
+		-1: {Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"older","time":{"created":1000}}`)}, Older: 0},
 	}}
 	m := New(src)
 	m.cto = &ctoState{generation: 1}
 	m.applyCTOPoll(ctoPollMsg{generation: 1, harness: "opencode", model: "fake/m1", events: protocol.CTOEvents{
-		Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"newer","time":{"created":2000}}`)}, Next: 1,
+		Messages: []json.RawMessage{json.RawMessage(`{"type":"user","text":"newer","time":{"created":2000}}`)}, Older: 1,
 	}})
 	m.cto.scrollMax = 0
 	m.cto.pageRows = 1

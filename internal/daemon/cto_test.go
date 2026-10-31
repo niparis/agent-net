@@ -712,8 +712,8 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(latest.Messages) != ctoHistoryLimit || latest.Next != 5 {
-		t.Fatalf("entry cap: messages=%d next=%d", len(latest.Messages), latest.Next)
+	if len(latest.Messages) != ctoHistoryLimit || latest.Next != ctoHistoryLimit+5 || latest.Older != 5 {
+		t.Fatalf("entry cap: messages=%d next=%d older=%d", len(latest.Messages), latest.Next, latest.Older)
 	}
 	var first, last struct {
 		Text string `json:"text"`
@@ -723,13 +723,13 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 	if first.Text != "entry-5" || last.Text != "entry-504" {
 		t.Fatalf("returned range: first=%q last=%q", first.Text, last.Text)
 	}
-	page, err := d.mergeCTOHistory(events, "opencode", latest.Next)
+	page, err := d.mergeCTOHistory(events, "opencode", -latest.Older)
 	if err != nil {
 		t.Fatal(err)
 	}
 	json.Unmarshal(page.Messages[0], &first)
-	if len(page.Messages) != 5 || page.Next != 0 || first.Text != "entry-0" {
-		t.Fatalf("indexed page: count=%d first=%q", len(page.Messages), first.Text)
+	if len(page.Messages) != 5 || page.Older != 0 || first.Text != "entry-0" {
+		t.Fatalf("older page: count=%d first=%q older=%d", len(page.Messages), first.Text, page.Older)
 	}
 }
 

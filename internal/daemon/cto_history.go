@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -80,6 +81,9 @@ func ctoMessageAt(raw json.RawMessage) int64 {
 }
 
 func (d *Daemon) mergeCTOHistory(out protocol.CTOEvents, active string, index int) (protocol.CTOEvents, error) {
+	if index == -int(^uint(0)>>1)-1 {
+		return out, errors.New("invalid CTO history index")
+	}
 	entries := make([]ctoHistoryEntry, 0, len(out.Messages)+len(out.Actions))
 	for _, message := range out.Messages {
 		entries = append(entries, ctoHistoryEntry{at: ctoMessageAt(message), message: message, isMsg: true})
@@ -126,15 +130,20 @@ func (d *Daemon) mergeCTOHistory(out protocol.CTOEvents, active string, index in
 
 	sort.SliceStable(entries, func(i, j int) bool { return entries[i].at < entries[j].at })
 	start, end := 0, len(entries)
-	if index <= 0 {
-		start = max(len(entries)-ctoHistoryLimit, 0)
-	} else {
-		end = min(index, len(entries))
+	switch {
+	case index < 0:
+		end = min(-index, len(entries))
 		start = max(end-ctoHistoryLimit, 0)
+	case index == 0:
+		start = max(len(entries)-ctoHistoryLimit, 0)
+	case index > 0:
+		start = min(index, len(entries))
+		end = min(start+ctoHistoryLimit, len(entries))
 	}
 	out.Messages = []json.RawMessage{}
 	out.Actions = []protocol.CTOAction{}
-	out.Next = start
+	out.Next = len(entries)
+	out.Older = start
 	for i := start; i < end; i++ {
 		entry := entries[i]
 		if entry.isMsg {
