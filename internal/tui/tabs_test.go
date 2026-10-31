@@ -58,8 +58,17 @@ func TestQuotaViewGoldens(t *testing.T) {
 		stale := false
 		m := newModel(size[0], size[1])
 		m.tab = 2
-		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5"}}}
-		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"}, {Name: "sol", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"}, {Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"}, {Name: "renamed", Harness: "pi", Model: "openai-codex/gpt-6.1-zed", Available: &stale}}
+		m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"gpt-6.1-terra", "gpt-6.1-sol", "unknown"}}, {Name: "claude", Models: []string{"claude-opus-5-5"}}, {Name: "pi", Models: []string{"openai/gpt-6.1-terra"}}}
+		m.snap.Nodes[1].Harnesses = []protocol.HarnessInfo{{Name: "pi", Models: []string{"openai/gpt-6.1-terra"}}}
+		available := true
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{
+			{Name: "opus", Harness: "claude", Model: "claude-opus-5-5", Effort: "high"},
+			{Name: "sol", Harness: "codex", Model: "gpt-6.1-sol", Effort: "medium"},
+			{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra", Effort: "high"},
+			{Name: "renamed", Harness: "pi", Model: "openai-codex/gpt-6.1-zed", Available: &stale},
+			{Name: "terra pi", Harness: "pi", Model: "openai-codex/gpt-6.1-terra", Available: &available,
+				MachineAvailability: []protocol.WorkerProfileMachineAvailability{{Machine: "Mac", Available: true, ResolvedModel: "openai/gpt-6.1-terra"}, {Machine: "research", Closest: []string{"openai/gpt-6.1-terra"}}}},
+		}
 		m.snap.Scores = append(m.snap.Scores, protocol.ModelScore{Match: "openai-codex/gpt-6.1-zed", Score: 77, Source: "owner"})
 		m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "claude", Model: "claude-opus-5-5:high", Runs: 12, Complete: 10, Failed: 2}}
 		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Add(-40 * time.Second).Unix(), Providers: []protocol.QuotaProvider{
@@ -71,6 +80,9 @@ func TestQuotaViewGoldens(t *testing.T) {
 		view := m.View()
 		if !strings.Contains(ansi.Strip(view), "model gone - ask the CTO to fix") {
 			t.Fatalf("stale profile note missing:\n%s", ansi.Strip(view))
+		}
+		if size[0] == 120 && !strings.Contains(ansi.Strip(view), "not on research") {
+			t.Fatalf("partial profile availability note missing:\n%s", ansi.Strip(view))
 		}
 		for _, line := range lines(ansi.Strip(view)) {
 			if strings.Contains(line, "renamed") && strings.Contains(line, "77") {
