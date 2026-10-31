@@ -4,37 +4,44 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// noticeLines is the result of the last action, on one or two rows: plain text
-// when it worked, "!" and red when it did not.
-func (m Model) noticeLines(w int) []string {
+// noticeLine is the result of the last action, on the key line where the hints
+// sit. It is one row, so showing or clearing it never moves the layout:
+// "!" and the error colour when it failed, the accent colour otherwise. The
+// bool is false when there is no result to show.
+func (m Model) noticeLine(w int) (string, bool) {
 	n := m.activeNotice()
 	if n == nil {
-		return nil
+		return "", false
 	}
-	if strings.HasPrefix(n.text, "CTO: ") {
-		return []string{sIdle.Render(cell(clip("  "+sanitize(n.text), w), w))}
-	}
-	prefix, style := "  ", sIdle
+	prefix := "  "
 	if n.err {
-		prefix, style = "! ", sBad
+		prefix = "! "
 	}
-	ls := wrap(sanitize(n.text), w-2)
-	if len(ls) > 2 {
-		ls = append(ls[:1], clip(strings.Join(ls[1:], " "), w-2))
+	return m.noticeStyle(n).Render(clip(prefix+sanitize(n.text), w)), true
+}
+
+// noticeStyle is the colour of the result: full brightness for the hold, then
+// three steps toward dim while it fades.
+func (m Model) noticeStyle(n *notice) lipgloss.Style {
+	base := roleAccent
+	if n.err {
+		base = roleError
 	}
-	out := make([]string, 0, 2)
-	for i, l := range ls {
-		p := prefix
-		if i > 0 {
-			p = "  "
-		}
-		out = append(out, style.Render(cell(p+l, w)))
+	age := m.now().Sub(n.at)
+	if age < n.hold() {
+		return lipgloss.NewStyle().Foreground(base)
 	}
-	return out
+	elapsed := age - n.hold()
+	step := int((elapsed + noticeFadeStep - 1) / noticeFadeStep)
+	if step > 3 {
+		step = 3
+	}
+	return lipgloss.NewStyle().Foreground(blendColor(base, roleDim, float64(step)/3))
 }
 
 // formView draws the start-a-worker form in the place of the detail pane and

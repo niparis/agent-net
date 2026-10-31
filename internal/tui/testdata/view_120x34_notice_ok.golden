@@ -1,5 +1,4 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
-  Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.
 ╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) cpu ? mem ? disk ?                                                                                     │
 │  ● build-vm   cpu ? mem ? disk ?   no claude · no opencode                                                           │
@@ -20,6 +19,7 @@
 
 
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │ write to the CTO: it can set charters, start workers, answer what the network is doing                               │
 │ > write to the CTO...                                                                                                │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-6 tabs  up/down select  enter open session  m msg  s start  x stop  h/H hide/show  t trust  tab CTO  ? help  q quit
+  Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.

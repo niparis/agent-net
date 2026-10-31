@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -22,6 +23,7 @@ import (
 var (
 	sBold   = lipgloss.NewStyle().Bold(true)
 	sDim    = lipgloss.NewStyle().Foreground(roleDim)
+	sAccent = lipgloss.NewStyle().Foreground(roleAccent)
 	sSel    = lipgloss.NewStyle().Foreground(roleBase).Background(roleAccent)
 	sTitle  = lipgloss.NewStyle().Bold(true).Foreground(roleAccent)
 	sBusy   = lipgloss.NewStyle().Foreground(roleGood)
@@ -30,6 +32,31 @@ var (
 	sBad    = lipgloss.NewStyle().Foreground(roleError)
 	sBanner = lipgloss.NewStyle().Bold(true).Reverse(true).Foreground(roleError)
 )
+
+// blendColor moves a colour toward another by t (0 to 1), keeping the light
+// and dark variants. It is used to fade a result line.
+func blendColor(from, to lipgloss.TerminalColor, t float64) lipgloss.TerminalColor {
+	a, ok1 := from.(lipgloss.AdaptiveColor)
+	b, ok2 := to.(lipgloss.AdaptiveColor)
+	if !ok1 || !ok2 {
+		return to
+	}
+	return lipgloss.AdaptiveColor{Light: blendHex(a.Light, b.Light, t), Dark: blendHex(a.Dark, b.Dark, t)}
+}
+
+func blendHex(from, to string, t float64) string {
+	ai, err1 := strconv.ParseUint(strings.TrimPrefix(from, "#"), 16, 32)
+	bi, err2 := strconv.ParseUint(strings.TrimPrefix(to, "#"), 16, 32)
+	if err1 != nil || err2 != nil {
+		return to
+	}
+	mix := func(x, y uint64) uint64 {
+		return uint64(float64(x) + (float64(y)-float64(x))*t + 0.5)
+	}
+	ar, ag, ab := ai>>16&0xff, ai>>8&0xff, ai&0xff
+	br, bg, bb := bi>>16&0xff, bi>>8&0xff, bi&0xff
+	return fmt.Sprintf("#%02x%02x%02x", mix(ar, br), mix(ag, bg), mix(ab, bb))
+}
 
 // ---- text helpers ----
 

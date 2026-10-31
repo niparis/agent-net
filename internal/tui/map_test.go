@@ -266,6 +266,9 @@ func TestMapHidesAndUnhidesNodesWithSharedPreference(t *testing.T) {
 	if !containsString(src.hidden.Nodes, "shop") || containsString(m.mapSelectable(), "shop") {
 		t.Fatalf("visible node was not hidden: %+v / %v", src.hidden, m.mapSelectable())
 	}
+	// The saved notice takes the key line until a key dismisses it; the hints
+	// then come back.
+	m = keys(m, "down")
 	line := m.helpLine(120)
 	if !strings.Contains(line, "h hide") || !strings.Contains(line, "H hidden") {
 		t.Fatalf("map key hints: %s", line)

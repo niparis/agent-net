@@ -50,7 +50,12 @@ func (m Model) hints() []hint {
 }
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
+// An action result takes the whole line while it is shown, so the screen keeps
+// its height and nothing above moves.
 func (m Model) helpLine(w int) string {
+	if line, ok := m.noticeLine(w); ok {
+		return line
+	}
 	if m.tab == toolsTab && !m.mapOn && !m.help {
 		if line, ok := m.toolsHelpLine(w); ok {
 			return line

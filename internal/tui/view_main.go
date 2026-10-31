@@ -22,7 +22,6 @@ import (
 
 type layout struct {
 	banner       bool
-	notice       int // rows of the result under the title (0 to 2)
 	needs        int // rows of the "Needs you" section
 	machines     int // machine rows shown
 	moreMachines int // machines not shown
@@ -40,7 +39,6 @@ func (m Model) layout() layout {
 	var l layout
 	h := max(m.height, 10)
 	l.banner = m.problem != ProblemNone || (m.haveData && len(m.snap.FailedCalls) > 0)
-	l.notice = len(m.noticeLines(max(m.width, 40)))
 	l.needs = m.needsHeight()
 	n := len(m.machineRows())
 	l.machines = min(n, maxMachineRows)
@@ -50,7 +48,7 @@ func (m Model) layout() layout {
 	}
 	if m.mode == modeNormal {
 		box := min(max((h-1)/3, 6), max(h-4, 1))
-		fixed := 1 + max(l.machines, 1) + 3 + l.needs + l.notice + 1 + box
+		fixed := 1 + max(l.machines, 1) + 3 + l.needs + 1 + box
 		if l.banner {
 			fixed++
 		}
@@ -62,7 +60,6 @@ func (m Model) layout() layout {
 	if l.banner {
 		fixed++
 	}
-	fixed += l.notice
 	avail := max(h-fixed, 3)
 	if m.expand {
 		feed := 1
@@ -165,14 +162,8 @@ func (m Model) View() string {
 		}
 
 	}
-	// CTO notices must also be visible on the map, messages and quotas views.
-	if (m.tab != 0 || m.mapOn || m.inboxOn || m.help || m.learned) && len(out) > 0 {
-		if n := m.activeNotice(); n != nil && (m.mapOn || strings.HasPrefix(n.text, "CTO: ")) {
-			line := sIdle.Render(clip("  "+sanitize(n.text), w))
-			out = append(out[:1], append([]string{line}, out[1:]...)...)
-		}
-	}
-	// The key line sits on the last row; blank rows fill the gap.
+	// The key line sits on the last row; blank rows fill the gap. A result
+	// replaces its hints there, so no row is added or removed.
 	for len(out) < h-1 {
 		add("")
 	}
@@ -195,9 +186,6 @@ func (m Model) mainView(w, h int) []string {
 		} else {
 			add(m.partialLine(w))
 		}
-	}
-	for _, s := range m.noticeLines(w) {
-		add(s)
 	}
 	for _, s := range m.needsLines(w) {
 		add(s)

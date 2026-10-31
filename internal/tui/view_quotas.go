@@ -24,9 +24,6 @@ func (m Model) quotasView(w, h int) []string {
 			subscription = append(subscription, sDim.Render(line))
 		}
 	}
-	if n := m.activeNotice(); n != nil {
-		subscription = append(subscription, clip(sanitize(n.text), w-4))
-	}
 	if m.mode == modeQuotaConfirm {
 		question := "workers use others first; this provider only when nothing else fits"
 		if m.quotaUnprotect {

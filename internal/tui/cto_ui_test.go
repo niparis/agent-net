@@ -34,7 +34,7 @@ func TestCTONoticeVisibleInOverlayAndOneLine(t *testing.T) {
 	if !strings.Contains(m.View(), "CTO: long notice") {
 		t.Fatal("notice missing from overlay")
 	}
-	if len(m.noticeLines(80)) != 1 {
+	if line, ok := m.noticeLine(80); !ok || strings.Contains(line, "\n") {
 		t.Fatal("CTO notice wrapped")
 	}
 }
