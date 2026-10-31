@@ -4,6 +4,7 @@ package graphview
 import (
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -38,9 +39,16 @@ type Graph struct {
 	Edges     []protocol.Edge
 	Positions map[string]Point
 	selected  int
+	messages  []Message
 }
 
 func New(view protocol.GraphView) *Graph {
+	g := NewWithoutLayout(view)
+	g.layout()
+	return g
+}
+
+func NewWithoutLayout(view protocol.GraphView) *Graph {
 	g := &Graph{Nodes: append([]protocol.Node(nil), view.Nodes...), Edges: append([]protocol.Edge(nil), view.Edges...), Positions: map[string]Point{}}
 	sort.Slice(g.Nodes, func(i, j int) bool { return g.Nodes[i].Name < g.Nodes[j].Name })
 	sort.Slice(g.Edges, func(i, j int) bool {
@@ -59,7 +67,6 @@ func New(view protocol.GraphView) *Graph {
 		}
 		return a.Rule < b.Rule
 	})
-	g.layout()
 	return g
 }
 func (g *Graph) Selected() string {
@@ -143,4 +150,24 @@ func (g *Graph) layout() {
 	for i, node := range g.Nodes {
 		g.Positions[node.Name] = p[i]
 	}
+}
+
+// Update recomputes positions only when the graph changes.
+func (g *Graph) Update(view protocol.GraphView) bool {
+	next := NewWithoutLayout(view)
+	if reflect.DeepEqual(g.Nodes, next.Nodes) && reflect.DeepEqual(g.Edges, next.Edges) {
+		return false
+	}
+	selected := g.Selected()
+	g.Nodes, g.Edges = next.Nodes, next.Edges
+	g.Positions = make(map[string]Point)
+	g.layout()
+	g.selected = 0
+	for i, n := range g.Nodes {
+		if n.Name == selected {
+			g.selected = i
+			break
+		}
+	}
+	return true
 }

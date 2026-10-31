@@ -15,6 +15,7 @@ import (
 
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 // RefreshEvery is how often the screen asks the daemon for news.
@@ -67,6 +68,7 @@ type Model struct {
 	lastOK   time.Time
 	problem  Problem
 	problemT string // text of the last error
+	graph    *graphview.Graph
 	feed     feed
 	fetching bool
 
@@ -598,7 +600,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		// Any other error shows up as a problem on the next refresh.
 	} else {
 		wasLast := m.feedCur >= m.feedLastVisible()
+		lastID := m.feed.lastID
 		m.feed.apply(r.events)
+		m.graphEvents(r.events, lastID, r.at)
 		if m.focus != focusFeed || wasLast {
 			m.feedCur = m.feedLastVisible()
 		} else {
