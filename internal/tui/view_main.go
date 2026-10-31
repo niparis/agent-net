@@ -455,8 +455,8 @@ type machineFigures struct {
 }
 
 type machineRowLayout struct {
-	nameW, cpuW, memW, diskW, workersW, topW, noteW int
-	showDisk, showWorkers, showTop, showNote        bool
+	nameW, versionW, cpuW, memW, diskW, workersW, topW, noteW int
+	showDisk, showWorkers, showTop, showNote                  bool
 }
 
 func (m Model) machineLine(r machineRow, w, nameW int) string {
@@ -482,6 +482,9 @@ func (m Model) machineLineFor(r machineRow, rows []machineRow, w, nameW int) str
 		}
 	}
 	line := " " + style.Render(dot) + " " + cell(name, layout.nameW)
+	if layout.versionW > 0 {
+		line += " " + m.machineVersionCell(r, rows, layout.versionW)
+	}
 	line += " " + padStyled(m.machineCPUCell(fig), layout.cpuW)
 	line += " " + padStyled(m.machineMemCell(fig), layout.memW)
 	if layout.showDisk {
@@ -497,6 +500,22 @@ func (m Model) machineLineFor(r machineRow, rows []machineRow, w, nameW int) str
 		line += " " + sDim.Render(cell(fig.note, layout.noteW))
 	}
 	return clip(strings.TrimRight(line, " "), w)
+}
+
+func (m Model) machineVersionCell(r machineRow, rows []machineRow, width int) string {
+	if r.version == "" {
+		return strings.Repeat(" ", width)
+	}
+	style := sDim
+	if r.online {
+		for _, other := range rows {
+			if other.online && versionGreater(other.version, r.version) {
+				style = sNeeds
+				break
+			}
+		}
+	}
+	return style.Render(cell(r.version, width))
 }
 
 func (m Model) machineFigures(r machineRow, rows []machineRow) machineFigures {
@@ -558,6 +577,7 @@ func machineRowWidths(rows []machineRow, figures map[string]machineFigures, w, n
 	l := machineRowLayout{showDisk: true, showWorkers: true, showTop: true}
 	for _, r := range rows {
 		f := figures[r.nodeID]
+		l.versionW = max(l.versionW, ansi.StringWidth(sanitize(r.version)))
 		l.cpuW = max(l.cpuW, ansi.StringWidth(f.cpu))
 		l.memW = max(l.memW, ansi.StringWidth(f.mem))
 		l.diskW = max(l.diskW, ansi.StringWidth(f.disk))
@@ -567,7 +587,11 @@ func machineRowWidths(rows []machineRow, figures map[string]machineFigures, w, n
 	}
 	l.showNote = l.noteW > 0
 	width := func() int {
-		n := 3 + nameW + 1 + l.cpuW + 1 + l.memW
+		n := 3 + nameW
+		if l.versionW > 0 {
+			n += 1 + l.versionW
+		}
+		n += 1 + l.cpuW + 1 + l.memW
 		if l.showDisk {
 			n += 1 + l.diskW
 		}
@@ -752,6 +776,7 @@ func (m Model) machineHarnessNote(r machineRow, rows []machineRow) string {
 }
 
 func versionGreater(a, b string) bool {
+	a, b = strings.TrimPrefix(a, "v"), strings.TrimPrefix(b, "v")
 	if a == "" || b == "" {
 		return false
 	}
