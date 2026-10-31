@@ -71,9 +71,10 @@ type feedItem struct {
 	Session          string // session of a session.new event
 	// Snippet is the first line of the body, when this machine has a session
 	// in the conversation. Snip says whether it was fetched.
-	Snippet string
-	Body    string
-	Snip    snippetState
+	Snippet   string
+	Body      string
+	BodyError string
+	Snip      snippetState
 }
 
 func (it *feedItem) isMessage() bool { return it.MsgID != "" }
@@ -233,8 +234,8 @@ type snippetMsg struct {
 }
 
 // snippetCmd asks the daemon for one message body, the same call the
-// conversation view uses. The gateway only answers the machines with a session
-// in the conversation.
+// conversation view uses. Owners can also read remote messages through the
+// daemon's participant relay.
 func (m Model) snippetCmd(id string) tea.Cmd {
 	src := m.src
 	return func() tea.Msg {
@@ -259,7 +260,7 @@ func (m *Model) wantSnippets() tea.Cmd {
 	}
 	for i := len(m.feed.items) - 1; i >= 0; i-- {
 		it := m.feed.items[i]
-		if !it.isMessage() || it.Snip != snipNone || !m.localEnd(it) {
+		if !it.isMessage() || it.Snip != snipNone || (!m.localEnd(it) && m.snap.OwnerSession == "") {
 			continue
 		}
 		it.Snip = snipLoading
@@ -275,6 +276,7 @@ func (m *Model) applySnippet(r snippetMsg) {
 		return // the line was dropped from the feed
 	}
 	if r.err != nil {
+		it.BodyError = bodyError(r.err)
 		it.Snip = snipFailed
 		return
 	}
@@ -293,7 +295,7 @@ func firstLine(body string) string {
 	line, _, _ := strings.Cut(sanitizeBody(body), "\n")
 	line = strings.TrimSpace(line)
 	if r := []rune(line); len(r) > maxSnippetRunes {
-		line = string(r[:maxSnippetRunes])
+		line = string(r[:maxSnippetRunes-1]) + "…"
 	}
 	return line
 }

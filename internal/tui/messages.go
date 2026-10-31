@@ -115,7 +115,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	names := from + " ↔ " + to
 	topic := first.Snippet
 	if topic == "" {
-		topic = "…"
+		topic = m.missingMessageBody(first)
 	}
 	age := m.now().Sub(last.At)
 	if age < 0 {
@@ -151,6 +151,25 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		line = selectedRow(line)
 	}
 	return clip(line, w)
+}
+
+func (m Model) missingMessageBody(it *feedItem) string {
+	if it.BodyError != "" {
+		return "body unavailable: " + it.BodyError
+	}
+	switch it.Snip {
+	case snipLoading:
+		return "loading body"
+	case snipFailed:
+		return "body unavailable"
+	case snipDone:
+		return "empty message"
+	default:
+		if m.localEnd(it) || m.snap.OwnerSession != "" {
+			return "loading body"
+		}
+		return "body unavailable here"
+	}
 }
 
 func workerNoticeLine(body string) (string, bool) {
@@ -222,11 +241,7 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 			continue
 		}
 		if it.Body == "" {
-			text := "…"
-			if it.Snip == snipFailed {
-				text = "body unavailable"
-			}
-			out = append(out, sDim.Render(text))
+			out = append(out, sDim.Render(clip(m.missingMessageBody(it), w)))
 			continue
 		}
 		lines := strings.Split(it.Body, "\n")

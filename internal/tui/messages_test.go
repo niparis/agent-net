@@ -32,6 +32,49 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 	}
 }
 
+func TestMessageThreadShowsLongBriefAndShortReply(t *testing.T) {
+	const a, b = "remote-a", "remote-b"
+	brief := "Worker brief: " + strings.Repeat("run the checks and report what changed; ", 40)
+	events := []protocol.FeedEvent{
+		ev(1, -2*time.Minute, "msg.stored", "brief", a, b, "request", func(e *protocol.FeedEvent) { e.ConversationID = "thread" }),
+		ev(2, -time.Minute, "msg.stored", "reply", b, a, "reply", func(e *protocol.FeedEvent) { e.ConversationID = "thread"; e.Parent = "brief" }),
+	}
+	m, src := feedModel(events, map[string]protocol.Message{
+		"brief": {ID: "brief", Body: brief},
+		"reply": {ID: "reply", Body: "Checks passed."},
+	})
+	// The owner can read a thread between two remote sessions through the
+	// message_status relay, even though neither end runs on this machine.
+	m.snap.OwnerSession = ownerID
+	src.snap.OwnerSession = ownerID
+	m = drainSnippets(t, m)
+	if got := m.feed.byMsg["brief"].Snippet; !strings.HasPrefix(got, "Worker brief: ") || !strings.HasSuffix(got, "…") {
+		t.Fatalf("long first line should keep real text and end in an ellipsis, got %q", got)
+	}
+	rows := m.messageConversations()
+	if len(rows) != 1 {
+		t.Fatalf("got %d threads", len(rows))
+	}
+	chat := strings.Join(m.conversationChat(rows[0], 80), "\n")
+	for _, want := range []string{"Worker brief: ", "Checks passed."} {
+		if !strings.Contains(chat, want) {
+			t.Errorf("thread is missing %q:\n%s", want, chat)
+		}
+	}
+}
+
+func TestConversationExplainsUnavailableMessageBody(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.OwnerSession = ownerID
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "held", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
+	m.applySnippet(snippetMsg{id: "held", err: fmt.Errorf("body held on build-vm, offline")})
+	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
+	if !strings.Contains(chat, "body held on build-vm, offline") {
+		t.Fatalf("the thread did not explain why its body is unavailable:\n%s", chat)
+	}
+}
+
 func TestMessageConversationNavigation(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 1
