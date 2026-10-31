@@ -81,3 +81,14 @@ func TestMessageMovesSession(t *testing.T) {
 		t.Fatalf("message order: %s", got)
 	}
 }
+
+func TestNewSessionEntersTopOfBand(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Agents = []protocol.AgentView{agent("first", "n_mac", "Mac", "claude", "first", nil)}
+	m := treeModel(80, 24, snap)
+	snap.Agents = append(snap.Agents, agent("second", "n_mac", "Mac", "claude", "second", nil))
+	m = refresh(m, &fakeSource{snap: snap})
+	if got := strings.Join(names(m), ","); got != "second,first" {
+		t.Fatalf("new session order: %s", got)
+	}
+}

@@ -39,6 +39,7 @@ type sessionOrder struct {
 	status   string
 	profile  protocol.Profile
 	waiting  bool
+	pending  bool
 }
 
 func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
@@ -46,6 +47,7 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 	if m.sessionOrder == nil {
 		m.sessionOrder = make(map[string]sessionOrder)
 	}
+	initialized := len(m.sessionOrder) > 0
 	agents := append([]protocol.AgentView(nil), m.snap.Agents...)
 	sort.SliceStable(agents, func(i, j int) bool {
 		if a, b := sessionStart(agents[i]), sessionStart(agents[j]); a != b {
@@ -81,10 +83,19 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 			m.sessionNext++
 			old.rank = m.sessionNext
 			old.band = band
-		} else if band != old.band && !now.Before(m.orderFrozenUntil) {
+			if initialized {
+				if now.Before(m.orderFrozenUntil) {
+					old.pending = true
+				} else {
+					m.sessionFront--
+					old.rank = m.sessionFront
+				}
+			}
+		} else if (band != old.band || old.pending) && !now.Before(m.orderFrozenUntil) {
 			m.sessionFront--
 			old.rank = m.sessionFront
 			old.band = band
+			old.pending = false
 		}
 		m.sessionOrder[a.SessionID] = old
 	}
