@@ -441,6 +441,7 @@ func (a *fsClaudeAdapter) DeliverCTO(ctx context.Context, target protocol.Sessio
 func useFakeClaude(t *testing.T) (sessions, stopLog string) {
 	t.Helper()
 	base := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(base, "claude-config"))
 	sessions = filepath.Join(base, "sessions")
 	if err := os.MkdirAll(sessions, 0o700); err != nil {
 		t.Fatal(err)

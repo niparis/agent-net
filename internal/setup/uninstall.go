@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/agentfiles"
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/daemon"
 	"github.com/niparis/agent-net/internal/guidance"
 )
@@ -40,6 +41,9 @@ func Uninstall(o Options) error {
 	default:
 		r.step("workers", fmt.Sprintf("ok (stopped %d)", n), nil)
 	}
+	if err := claudetrust.Remove(filepath.Join(daemon.StateDir(), "cto", "claude")); err != nil {
+		r.step("Claude CTO trust", "", err)
+	}
 	r.removeClaudeMCP()
 	r.removePeerMessages()
 	r.removeCodexMCP()
@@ -57,12 +61,22 @@ func Uninstall(o Options) error {
 	}
 
 	if r.Purge {
+		worktrees, _ := os.ReadDir(filepath.Join(daemon.StateDir(), "worktrees"))
 		for _, dir := range []string{daemon.ConfigDir(), daemon.StateDir()} {
 			res := "skipped (not found)"
 			if exists(dir) {
 				if err := os.RemoveAll(dir); err != nil {
 					r.step("purge", "", err)
 					continue
+				}
+				if dir == daemon.StateDir() {
+					for _, entry := range worktrees {
+						if entry.IsDir() {
+							if err := claudetrust.Remove(filepath.Join(dir, "worktrees", entry.Name())); err != nil {
+								r.step("Claude worktree trust", "", err)
+							}
+						}
+					}
 				}
 				res = "ok (removed)"
 			}

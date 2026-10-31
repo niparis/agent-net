@@ -18,6 +18,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
@@ -132,6 +133,9 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
+	if err := claudetrust.Set(dir); err != nil {
+		return fmt.Errorf("trust CTO Claude directory: %w", err)
+	}
 	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
 	args := []string{"--bg", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
 	if id != "" {
@@ -148,6 +152,9 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		if claudeTrustPrompt(output) {
+			return fmt.Errorf("Claude Code does not trust %s", dir)
+		}
 		detail := claudeCTOErrorOutput(output)
 		if detail != "" {
 			return fmt.Errorf("start CTO Claude: %s", detail)
@@ -212,6 +219,11 @@ func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) err
 	}
 	c.capabilities[bin] = claudeCTOCapability{mtime: info.ModTime(), err: result}
 	return result
+}
+
+func claudeTrustPrompt(output []byte) bool {
+	text := strings.ToLower(string(output))
+	return strings.Contains(text, "trust") && (strings.Contains(text, "workspace") || strings.Contains(text, "project") || strings.Contains(text, "folder"))
 }
 
 func claudeCTOErrorOutput(output []byte) string {

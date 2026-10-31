@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -213,6 +214,11 @@ func (d *Daemon) finishWorktree(w *worker) {
 	if _, err := gitOut(ctx, main, "worktree", "remove", "--force", dir); err != nil {
 		d.Logf("worker %s: %v", w.id, err)
 		return
+	}
+	if w.harness == "claude" {
+		if err := claudetrust.Remove(dir); err != nil {
+			d.Logf("worker %s: remove Claude trust: %v", w.id, err)
+		}
 	}
 	gitOut(ctx, main, "branch", "-D", branch)
 	d.Logf("worker.worktree removed worker=%s path=%s (no changes)", w.id, dir)

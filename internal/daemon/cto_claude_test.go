@@ -283,6 +283,20 @@ func TestCTOEnterClaude(t *testing.T) {
 	if len(plan.Argv) != 3 || plan.Argv[1] != "attach" || plan.Argv[2] != n.d.claudeCTO.ref {
 		t.Fatalf("plan: %+v", plan)
 	}
+	cfgPath := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json")
+	raw, err := os.ReadFile(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Projects map[string]struct {
+			Accepted bool `json:"hasTrustDialogAccepted"`
+		} `json:"projects"`
+	}
+	dir := filepath.Join(n.cfg.StateDir, "cto", "claude")
+	if json.Unmarshal(raw, &cfg) != nil || !cfg.Projects[dir].Accepted {
+		t.Fatalf("CTO trust: %s", raw)
+	}
 	first := plan.Argv[2]
 	if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &plan); err != nil {
 		t.Fatal(err)
@@ -355,5 +369,23 @@ func TestClaudeCTOCapabilityCache(t *testing.T) {
 	raw, err = os.ReadFile(log)
 	if err != nil || strings.Count(string(raw), "called") != 3 {
 		t.Fatalf("mtime: %q %v", raw, err)
+	}
+}
+
+func TestClaudeCTOTrustPromptError(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	script := `#!/bin/sh
+if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; else echo 'Accessing workspace'; echo 'Is this a project you created or one you trust?'; exit 1; fi
+`
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
+	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
+	want := "Claude Code does not trust " + filepath.Join(dir, "cto", "claude")
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Fatalf("got %v, want %s", err, want)
 	}
 }
