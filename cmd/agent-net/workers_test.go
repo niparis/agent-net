@@ -77,6 +77,12 @@ func (f *fakeOp) Integrations(context.Context) (protocol.IntegrationsResult, err
 func (f *fakeOp) SetIntegrations(context.Context, protocol.Integrations) (protocol.IntegrationsResult, error) {
 	return protocol.IntegrationsResult{}, nil
 }
+func (f *fakeOp) HiddenItems(context.Context) (protocol.HiddenItems, error) {
+	return protocol.HiddenItems{}, nil
+}
+func (f *fakeOp) SetHiddenItems(context.Context, protocol.HiddenItems) (protocol.HiddenItems, error) {
+	return protocol.HiddenItems{}, nil
+}
 func (f *fakeOp) Close() {}
 
 func TestStartCommand(t *testing.T) {
