@@ -340,3 +340,67 @@ func TestMCPImportRefusesADuplicateName(t *testing.T) {
 		t.Fatalf("registry changed: %d servers", n)
 	}
 }
+
+// The federation carries tools only: a server that starts but reports none is
+// not imported, and nothing stays registered.
+func TestMCPImportRefusesAServerThatReportsNoTools(t *testing.T) {
+	t.Setenv("AGENT_NET_TEST_MCP_NO_TOOLS", "1")
+	empty, _ := json.Marshal(map[string]any{"command": os.Args[0], "args": []string{"-test.run=XXX"},
+		"env": map[string]string{helperEnv: "${" + helperEnv + "}", "AGENT_NET_TEST_MCP_NO_TOOLS": "${AGENT_NET_TEST_MCP_NO_TOOLS}"}})
+	f := newImportFixture(t, map[string]string{"empty": string(empty)}, "")
+	res := f.apply(t, f.plan(t, f.candidate(t, "claude", "empty")).ID)
+	if res.State != protocol.MCPImportFailed || !strings.Contains(res.Reason, "no tools") {
+		t.Fatalf("apply: %+v", res)
+	}
+	if len(f.servers(t)) != 0 {
+		t.Fatalf("a server without tools stayed registered: %+v", f.servers(t))
+	}
+	f.requireConfigsUntouched(t)
+}
+
+// Any change in the scanned state makes a plan stale, not only a change to the
+// entry itself: the owner approved the plan against the picture they saw.
+func TestMCPImportPlanGoesStaleWhenAnyOtherEntryAppears(t *testing.T) {
+	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, "")
+	plan := f.plan(t, f.candidate(t, "claude", "probe"))
+	changed := `{"mcpServers":{"probe":` + stdioNative() + `,"another":` + stdioNative() + `}}`
+	if err := os.WriteFile(filepath.Join(f.home, ".claude.json"), []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f.cli.mustCall("inventory_scan", nil)
+	eventually(t, "new entry reaches the gateway", func() bool {
+		for _, c := range f.candidates(t).Candidates {
+			if c.Name == "another" {
+				return true
+			}
+		}
+		return false
+	})
+	if _, err := f.cli.call("mcp_import", protocol.MCPImportRequest{PlanID: plan.ID}); err == nil || !strings.Contains(err.Error(), "out of date") {
+		t.Fatalf("stale plan: %v", err)
+	}
+	if len(f.servers(t)) != 0 {
+		t.Fatal("a stale plan registered a server")
+	}
+}
+
+// The daemon re-reads only an entry its own last scan saw. A name that is in
+// the file but was never scanned, or a file it did not scan, is refused.
+func TestMCPImportSpecReadsOnlyObservedEntries(t *testing.T) {
+	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, "")
+	cand := f.candidate(t, "claude", "probe")
+	req := protocol.MCPImportSpecRequest{Harness: cand.Harness, Scope: cand.Scope, Project: cand.Project, Location: cand.Location, Name: "probe"}
+	if _, err := f.n.d.importSpec(req); err != nil {
+		t.Fatalf("observed entry: %v", err)
+	}
+	// An entry added to the file after the scan has not been observed.
+	changed := `{"mcpServers":{"probe":` + stdioNative() + `,"late":` + stdioNative() + `}}`
+	if err := os.WriteFile(filepath.Join(f.home, ".claude.json"), []byte(changed), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	late := req
+	late.Name = "late"
+	if _, err := f.n.d.importSpec(late); err == nil || !strings.Contains(err.Error(), "no longer observed") {
+		t.Fatalf("unscanned entry was read: %v", err)
+	}
+}
