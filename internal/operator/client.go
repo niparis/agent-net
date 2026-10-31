@@ -164,6 +164,9 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 			snap.Outcomes = in.Entries
 		}
 	}
+	if raw, err := s.Call(ctx, "learned_list", nil); err == nil {
+		_ = json.Unmarshal(raw, &snap.Learned)
+	}
 	if raw, err := s.Call(ctx, protocol.OpHeldList, nil); err == nil {
 		var held struct {
 			Messages []protocol.Message `json:"messages"`

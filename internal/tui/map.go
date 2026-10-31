@@ -43,6 +43,8 @@ type mapState struct {
 	findQuery          string
 	charterFor         string
 	charterScroll      int
+	learnedFor         string
+	learnedIndex       int
 }
 
 // mapRow is one line of the left column. A row with a node is selectable; a
@@ -103,6 +105,7 @@ func (m *Model) applyMap(r mapMsg) {
 
 // mapKey handles the keys of the map. M and esc return to the session list.
 func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	previous := m.mp.selected
 	if m.mp.finding {
 		switch k.Type {
 		case tea.KeyEsc:
@@ -123,6 +126,9 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case tea.KeyRunes:
 			m.mp.findQuery += string(k.Runes)
 		}
+		if previous != m.mp.selected {
+			return m, m.markMapViewed(previous)
+		}
 		return m, nil
 	}
 	switch k.String() {
@@ -135,6 +141,17 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "M", "esc":
 		m.mapOn, m.tab = false, 0
 		m.uiFilter = ""
+		return m, nil
+	case "u":
+		return m, m.mapUndoLearned()
+	case "U":
+		changes := m.mapLearned(m.mp.selected)
+		if len(changes) > 0 {
+			if m.mp.learnedFor != m.mp.selected {
+				m.mp.learnedFor, m.mp.learnedIndex = m.mp.selected, 0
+			}
+			m.mp.learnedIndex = (m.mp.learnedIndex + 1) % len(changes)
+		}
 	case "?":
 		m.help = true
 	case "left":
@@ -176,6 +193,7 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.input.SetValue(m.filter)
 		m.ensureSelection()
 		m.fixScroll()
+		return m, nil
 	case "c":
 		if m.cto != nil {
 			m.focus = focusCTO
@@ -217,6 +235,9 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mp.loading = true
 			return m, m.mapCmd()
 		}
+	}
+	if previous != m.mp.selected {
+		return m, m.markMapViewed(previous)
 	}
 	return m, nil
 }

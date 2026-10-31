@@ -23,7 +23,7 @@ func (m Model) mapView(w, h int) []string {
 }
 
 func (m Model) mapTitle(w int) string {
-	left := sTitle.Render("Map") + " " + sDim.Render("(read only)")
+	left := sTitle.Render("Map")
 	mid := fmt.Sprintf("%d nodes, %d edges", len(m.mp.nodes), len(m.mp.edges))
 	if n := len(m.hiddenNodes); n > 0 {
 		mid += fmt.Sprintf(" · hidden %d", n)
@@ -35,7 +35,7 @@ func (m Model) mapTitle(w int) string {
 	case m.mp.loaded:
 		right = "updated " + m.clock(m.mp.at)
 	}
-	used := ansi.StringWidth("Map (read only)") + 2 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
+	used := ansi.StringWidth("Map") + 2 + ansi.StringWidth(mid) + 2 + ansi.StringWidth(right)
 	gap := max(w-used, 2)
 	return clip(left+"  "+sDim.Render(mid)+strings.Repeat(" ", gap)+sDim.Render(right), w)
 }
@@ -335,9 +335,15 @@ func (m Model) mapFocusWithList(w, h int) []string {
 	if w < 38 {
 		return m.mapFocusView(w, h)
 	}
-	left := min(max(w/5, 17), 23)
-	right := max(w-left-1, 1)
 	nodes := m.mapProjectNodes()
+	left := min(max(w/5, 17), 23)
+	for _, n := range nodes {
+		if m.mapUnseen(n.Name) > 0 {
+			left = min(max(w/4, 25), 34, w-25)
+			break
+		}
+	}
+	right := max(w-left-1, 1)
 	selected := 0
 	for i, n := range nodes {
 		if n.Name == m.mp.selected {
@@ -369,6 +375,10 @@ func (m Model) mapFocusWithList(w, h int) []string {
 			}
 			nameW := max(left-ansi.StringWidth(lead)-ansi.StringWidth(countText)-1, 1)
 			name := clip(displayNode(n.Name), nameW)
+			if count := m.mapUnseen(n.Name); count > 0 {
+				badge := fmt.Sprintf("● %d learned", count)
+				name = clip(displayNode(n.Name), max(nameW-ansi.StringWidth(badge)-1, 1)) + " " + badge
+			}
 			if n.Charter == (protocol.Charter{}) {
 				name = sDim.Render(name)
 			}

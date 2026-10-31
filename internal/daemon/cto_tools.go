@@ -73,7 +73,33 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		if err = json.Unmarshal(rawGraph, &graph); err != nil {
 			return nil, err
 		}
-		return charterSuggestions(graph.Graph, signals), nil
+		result := charterSuggestions(graph.Graph, signals)
+		if learned, err := d.call(ctx, "learned.list", map[string]string{"owner": owner}); err == nil {
+			var suggestions []protocol.LearnedSuggestion
+			if json.Unmarshal(learned, &suggestions) == nil {
+				for _, v := range suggestions {
+					if v.Status == "pending" && v.Severity == "major" {
+						result.PendingMajors = append(result.PendingMajors, v)
+					}
+				}
+			}
+		}
+		for {
+			b, _ := json.Marshal(result)
+			if len(b) < 19000 {
+				break
+			}
+			if len(result.Suggestions) > 0 {
+				result.Suggestions = result.Suggestions[:len(result.Suggestions)-1]
+			} else if len(result.Evidence) > 0 {
+				result.Evidence = result.Evidence[:len(result.Evidence)-1]
+			} else if len(result.PendingMajors) > 0 {
+				result.PendingMajors = result.PendingMajors[:len(result.PendingMajors)-1]
+			} else {
+				break
+			}
+		}
+		return result, nil
 	case "tools_list":
 		data, err := d.call(ctx, "query.tools_items", json.RawMessage(raw))
 		if err != nil {

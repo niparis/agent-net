@@ -33,7 +33,7 @@ import (
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
 	"inventory_scan": true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_versions": true, "tools_export": true, "gateway_backup": true,
-	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
+	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpGraphView: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpNodeRename: true,
 	protocol.OpIntegrationsGet: true, protocol.OpIntegrationsSet: true,
 	protocol.OpHiddenGet: true, protocol.OpHiddenSet: true,
@@ -310,6 +310,26 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}
 	case "inbox_list":
 		res, err = d.call(ctx, "inbox.list", struct{}{})
+	case "learned_list", "learned_answer", "learned_view":
+		var p struct {
+			ID     int64  `json:"suggestion_id"`
+			Node   string `json:"node"`
+			Action string `json:"action"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad learned request")
+		}
+		owner := d.ownerSessionID()
+		if owner == "" {
+			return nil, true, errors.New("owner session not registered")
+		}
+		frame := struct {
+			Owner  string `json:"owner"`
+			ID     int64  `json:"suggestion_id"`
+			Node   string `json:"node"`
+			Action string `json:"action"`
+		}{owner, p.ID, p.Node, p.Action}
+		res, err = d.call(ctx, strings.Replace(method, "_", ".", 1), frame)
 	case "inbox_answer":
 		var p struct {
 			ID     string `json:"id"`

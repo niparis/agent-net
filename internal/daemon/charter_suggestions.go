@@ -18,8 +18,9 @@ type charterSuggestion struct {
 	MessageIDs    []string `json:"message_ids"`
 }
 type charterSuggestionResult struct {
-	Suggestions []charterSuggestion      `json:"suggestions"`
-	Evidence    []protocol.CharterSignal `json:"evidence"`
+	Suggestions   []charterSuggestion          `json:"suggestions"`
+	Evidence      []protocol.CharterSignal     `json:"evidence"`
+	PendingMajors []protocol.LearnedSuggestion `json:"pending_majors,omitempty"`
 }
 
 var ownerJob = regexp.MustCompile(`(?i)\b(?:all\s+)?(?:this\s+)?([^.!?;]{1,100}?)\s+(?:is|are)\s+(?:his|its)(?:\s+job)?\b`)

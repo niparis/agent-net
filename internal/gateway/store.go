@@ -301,6 +301,8 @@ INSERT OR IGNORE INTO learned_suggestion_details(suggestion_id,origin)
 `, `
 CREATE TABLE IF NOT EXISTS learned_phrase_state (suggestion_id INTEGER PRIMARY KEY, raw_phrase TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS learned_phrase_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL);
+`, `
+CREATE TABLE IF NOT EXISTS learned_views (node TEXT PRIMARY KEY, last_seen_id INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

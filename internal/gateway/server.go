@@ -1110,6 +1110,25 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.Signals()
 
+	case "learned.list", "learned.answer", "learned.view":
+		var p struct {
+			Owner  string `json:"owner"`
+			ID     int64  `json:"suggestion_id"`
+			Node   string `json:"node"`
+			Action string `json:"action"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		switch typ {
+		case "learned.list":
+			return st.OwnerLearned()
+		case "learned.answer":
+			return map[string]bool{"ok": true}, st.DecideLearned(p.ID, p.Action)
+		default:
+			return map[string]bool{"ok": true}, st.MarkLearnedViewed(p.Node, p.ID)
+		}
+
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)
 		if err != nil || p.SessionID == "" {

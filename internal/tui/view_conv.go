@@ -142,7 +142,7 @@ func (m Model) hints() []hint {
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
 		return []hint{{"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"?", "help", 2}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 1}, {"[ ]", "charter", 3}, {"h", "hide", 0}, {"H", "hidden", 0}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 1}, {"[ ]", "charter", 3}, {"U/u", "learned/undo", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -241,8 +241,8 @@ func (m Model) helpView(w, h int) []string {
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", "integrations for all machines: six checkboxes (a form)"},
-		{"4/M", "map: charters and edges (read only); z switches overview"},
-		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll charter, h hide, H show hidden; overview: arrows, pgup/pgdn, enter"},
+		{"4/M", "map: charters and edges; z switches overview"},
+		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h hide, H show hidden"},
 		{"5 Tools", "[ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first"},
 		{"C, tab", "focus CTO chat (tab or esc returns); o opens full UI, n starts new, u undoes, m changes model"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},

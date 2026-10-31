@@ -27,6 +27,13 @@ var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
 // follows the same filter and offline switch as the table.
 func (m Model) needsRows() []protocol.AgentView {
 	var out []protocol.AgentView
+	for _, v := range m.snap.Learned {
+		if v.Status != "pending" || v.Severity != "major" {
+			continue
+		}
+		text := fmt.Sprintf("%s: %s -> %s  [a accept, r reject]", v.Field, dashIfEmpty(v.OldValue), dashIfEmpty(v.NewValue))
+		out = append(out, protocol.AgentView{SessionID: fmt.Sprintf("learned:%d", v.ID), NodeID: m.snap.NodeID, Harness: "learned", Online: true, Profile: protocol.Profile{Name: v.Node}, Waiting: &protocol.Waiting{Kind: "learned", Text: text, Since: v.CreatedAt / 1e9}})
+	}
 	for _, e := range m.snap.Outcomes {
 		text := e.Request + " | " + e.Outcome + ": " + e.Reason
 		if e.Recommendation != "" {
@@ -129,6 +136,8 @@ func needsText(w *protocol.Waiting) string {
 	switch w.Kind {
 	case "held":
 		return "a approve  A always  r reject  R never"
+	case "learned":
+		return text
 	case protocol.WaitingPermission:
 		if text == "" {
 			return "permission"

@@ -1,0 +1,30 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy · 3 needs you
+Needs you (3) ──────────────────────────────────────────────────────────────────────────────────────
+▍  strategies claude           question: "Merge tenebrae-nexus/truenas-stacks #817?"             12m
+▍  ci-runner  pi      build-vm permission: Bash(git push origin main)                             3m
+▍▸ ops        learned          input: refuses: - -> deploys  [a accept, r reject]                now
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 online  cpu █░░░  12% (8%)   mem ██░░ 9.1/16G    claude  opencode  pi       │
+│  ● build-vm   v0.4.0 online  cpu ███░  71% (40%)  mem ██░░ 3.2/8.0G  load 0.8  pi                │
+│  ○ old-box    v0.3.2 offline                                                                     │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+  NAME               AGENT    PROJECT   MODEL      STATUS    TRUST   CPU   RAM TASK
+ Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────
+  strategies         claude   strategi… sonnet-5-5 needs you -      240%  4.6G backtest v2
+  tenebrae-53        claude   tenebrae  opus-5-5   busy      -       38%  1.2G
+  web                opencode shop      sonnet-5   idle      -         ?     ?
+ build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net gpt-6      needs you -        5%  300M
+  scratch            pi       -         -          shell     -       <1%   80M
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+│ write to the CTO: it can set charters, start workers, answer what the network is doing           │
+│ > write to the CTO...                                                                            │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
+1-6 tabs  up/down select  enter conversation  m msg  s start  x stop  h/H hide/show  t trust  q quit

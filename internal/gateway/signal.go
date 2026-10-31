@@ -64,7 +64,6 @@ func (s *Store) signalRequest(tx *sql.Tx, m protocol.Message) error {
 		// Learn explicit assignments privately without attaching the owner's
 		// prompt to a message addressed to another project.
 		return s.learnOwner(tx, from, to, m.ID, prompt, m.CreatedAt.UnixNano())
-		return nil
 	}
 	_, err = tx.Exec(`INSERT INTO charter_signals(message_id,source,target,prompt,at) VALUES(?,?,?,?,?)`, m.ID, from, to, prompt, m.CreatedAt.UnixNano())
 	if err != nil {
