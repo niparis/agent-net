@@ -167,6 +167,17 @@ visible; a count shows the edges off screen. In focus view, Enter opens
 Sessions filtered to the selected project, and `c` starts a CTO question
 about it. Tab moves between the map and CTO box.
 
+Hidden item preferences are shared by every machine's TUI through the
+gateway's `owner_settings` entry `hidden_items`. On Sessions, `h` hides or
+unhides the selected session, and `H` toggles hidden sessions into the list as
+dim rows tagged `hidden`. The title shows `hidden N` while preferences exist.
+Sessions already use `x` to stop a selected worker, so `h` and `H` are the
+hide and show keys there. On Map, `x` hides or unhides the selected project
+node by name, and `X` toggles hidden nodes into the view as dim rows tagged
+`[hidden]`. Session IDs stay hidden if a session comes back online. An ended
+session's preference is dropped after 30 days; project preferences remain
+until unhidden. The owner-only methods are `hidden_get` and `hidden_set`.
+
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
 ## Commands
@@ -1051,6 +1062,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `l` | Cycle the session and worker lines in the feed: worker lines (the default), all of them, none. |
 | `/` | Filter the sessions: type words, all must appear in some field of a session (name, harness, machine, project, branch, model, mode, status, function, task, folder, ID). Enter keeps the filter, Esc clears it. |
 | `o` | Show or hide offline and dormant sessions. |
+| `h`, `H` | In Sessions, hide or unhide the selected session; `H` toggles showing hidden sessions as dim rows. |
 | `a` | Active only: hide sessions that are idle and have had no report for more than an hour. Each machine heading says how many it hides, and the header lists the active filters. |
 | `1`, `2`, `3`, `4` | Open Sessions, Messages, Quotas or Map. |
 | tab, `C` | Focus the CTO box; tab or Esc returns focus to the sessions. |
@@ -1061,8 +1073,9 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
-| `x` | Stop the selected worker, after a `y/n` question. Any other session is refused with a message. |
+| `x` | In Sessions, stop the selected worker after a `y/n` question. Any other session is refused with a message. On Map, hide or unhide the selected project node. |
 | `t` | Cycle the selected node's wildcard request rule through `normal`, `ask` and `auto`. |
+| `X` | On Map, toggle showing hidden nodes as dim rows. |
 | `N` | Name the machine of the selected session ([machine names](#machine-names)). A one-line prompt starts with the name shown now. Enter saves, an empty name clears it, Esc cancels. Every machine shows the new name. |
 | `p` | Set the [delegation policy](#delegation-policy) of the selected session or its project. A form takes Delegate (left and right: none, off, native, workers), Coder, Main, Workers (the [permission level](#workers) of workers started in the project: default sandboxed, sandboxed, no-network, read-only; choosing one sets the scope to project) and Scope (session, project). Each move to another field shows what the loose model names resolve to; Enter on Scope saves; Esc cancels. |
 | `e` | Enter the selected session: the TUI hands the terminal to it and comes back when you leave. See [Enter a session](#enter-a-session). |

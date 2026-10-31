@@ -164,6 +164,24 @@ Your answers to the integrations question ([decision 0021](decisions/0021-networ
 - **A machine can say no for itself.** A local `--no-...` answer at `setup` wins over the network answer on that machine, and the daemon never undoes it.
 - **Quota-axi reads local logins.** The quota item only lets the daemon run quota-axi on each machine; see [subscription quotas](#subscription-quotas).
 
+## Shared TUI hidden items
+
+The gateway stores session IDs and project node names hidden from the owner's
+TUI in `owner_settings`. This preference changes only what the TUI draws; it
+does not restrict what an enrolled machine or agent can read through its normal
+interfaces.
+
+- **Only the owner can change it locally.** `hidden_get` and `hidden_set` use
+  the operator owner gate. The daemon refuses agent clients and command lines
+  inside an agent session's process tree, like `session_policy`.
+- **Enrolled machines are trusted to write owner settings.** The gateway accepts
+  these frames from a machine with a valid node token, as it does for the other
+  owner settings. A compromised enrolled machine could change the hidden list
+  for every TUI; remove a lost machine at the gateway (see [node tokens](#node-tokens)).
+- **Session preferences expire.** A hidden session that returns online keeps
+  its preference. The gateway drops the entry after that session has stayed
+  offline for 30 days. Project node names remain until the owner unhides them.
+
 ## Delegation policy
 
 A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegation-policy.md)) is text that agent-net adds to a session's context on every turn: hand code changes to a subagent or a worker, or do them yourself. It is your standing instruction to the session, so who can set it matters.
