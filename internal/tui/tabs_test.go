@@ -787,7 +787,7 @@ func TestQuotaFailedReadingHasNoBar(t *testing.T) {
 		m := newModel(size[0], size[1])
 		m.tab = 2
 		m.quotaShowUnset = true
-		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "the OpenCode Go login the daemon found was rejected"}}}
+		m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Copy: &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}, Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "provider_auth_rejected", NeedsAttention: true}}}
 		view := ansi.Strip(m.View())
 		for _, line := range lines(view) {
 			if strings.Contains(line, "opencode-go") && !strings.Contains(line, "provider_auth_rejected") {
@@ -839,5 +839,23 @@ func TestQuotaSelectionVisible(t *testing.T) {
 	v = ansi.Strip(m.View())
 	if !strings.Contains(v, "> codex") {
 		t.Fatalf("selection did not move: %s", v)
+	}
+}
+
+func TestQuotaCopyAndAttention(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 2
+	m.quotaShowUnset = true
+	m.usage.raw.Local.Quotas = &protocol.Quotas{Copy: &protocol.QuotaCopy{Version: "0.1.66", Dir: "/opt/homebrew/bin"}, Providers: []protocol.QuotaProvider{{Provider: "opencode-go", Error: "provider_auth_rejected", NeedsAttention: true}}}
+	view := ansi.Strip(m.View())
+	for _, want := range []string{"quota-axi 0.1.66 · yours (/opt/homebrew/bin)", "needs you once: run agent-net setup --quota"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q:\n%s", want, view)
+		}
+	}
+	m.usage.raw.Local.Quotas.Copy.Private = true
+	view = ansi.Strip(m.View())
+	if !strings.Contains(view, "agent-net's copy") {
+		t.Fatal(view)
 	}
 }

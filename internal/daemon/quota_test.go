@@ -158,19 +158,6 @@ func TestRunQuotaAXIReceivesOpenCodeAuthEnvironment(t *testing.T) {
 	}
 }
 
-func TestQuotaAXIExplainsRejectedOpenCodeLogin(t *testing.T) {
-	t.Setenv("XDG_DATA_HOME", "")
-	raw := []byte(`{"providers":[{"provider":"opencode-go","state":{"error":"provider_auth_rejected"}}]}`)
-	q, err := parseQuotaAXI(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, ok := q.Provider("opencode-go")
-	if !ok || p.Error != "the OpenCode Go login the daemon found was rejected" || strings.Contains(p.Error, "provider_auth_rejected") {
-		t.Fatalf("provider error was not explained: %+v", p)
-	}
-}
-
 func TestReadQuotaAXIUsesJSONWhenEveryProviderFailed(t *testing.T) {
 	json := strings.Replace(fakeQuotaJSON,
 		`"state": {"status": "fresh", "stale": false}`,
@@ -479,5 +466,30 @@ func TestQuotaParsesMinSupportedReport(t *testing.T) {
 	q, err := parseQuotaAXI([]byte(report))
 	if err != nil || q.GeneratedAt == 0 || len(q.Providers) != 1 || q.Providers[0].Provider != "claude" || q.Providers[0].Stale {
 		t.Fatalf("report: %+v %v", q, err)
+	}
+}
+
+func TestQuotaAuthRejectionNeedsAttention(t *testing.T) {
+	q, err := parseQuotaAXI([]byte(`{"providers":[{"provider":"opencode-go","state":{"error":"provider_auth_rejected"}}]}`))
+	if err != nil || len(q.Providers) != 1 || !q.Providers[0].NeedsAttention || q.Providers[0].Error != "provider_auth_rejected" {
+		t.Fatalf("got %+v, %v", q, err)
+	}
+}
+
+func TestQuotaReadingCarriesCopy(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "quota-axi")
+	if err := os.WriteFile(filepath.Join(dir, "node"), []byte("#!/bin/sh\necho v22.19.0\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	body := "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 0.1.66; else echo '{\"providers\":[]}'; fi\n"
+	if err := os.WriteFile(path, []byte(body), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	d := &Daemon{log: log.New(io.Discard, "", 0)}
+	q := d.refreshQuota(context.Background(), path)
+	if q == nil || q.Copy == nil || q.Copy.Dir != dir || q.Copy.Version != "0.1.66" || q.Copy.Private {
+		t.Fatalf("quota %+v", q)
 	}
 }

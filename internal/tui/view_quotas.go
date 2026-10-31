@@ -78,9 +78,9 @@ func (m Model) quotasView(w, h int) []string {
 	}
 	for _, r := range rows {
 		provider := strings.ToLower(r.provider.Provider)
-		if quotaNotSetUp(r.provider) && !providersWithQuota[provider] {
+		if quotaNotSetUp(r.provider) && !r.provider.NeedsAttention && !providersWithQuota[provider] {
 			unset = append(unset, r)
-		} else if !relevant[provider] {
+		} else if !relevant[provider] && !r.provider.NeedsAttention {
 			unused = append(unused, r)
 		} else {
 			configured = append(configured, r)
@@ -190,7 +190,9 @@ func (m Model) quotasView(w, h int) []string {
 		if p.Stale {
 			notes = append(notes, "stale reading")
 		}
-		if p.Error != "" {
+		if p.NeedsAttention {
+			notes = append(notes, "needs you once: run agent-net setup --quota")
+		} else if p.Error != "" {
 			notes = append(notes, sanitize(p.Error))
 		}
 		if len(notes) > 0 {
@@ -219,6 +221,21 @@ func (m Model) quotasView(w, h int) []string {
 		}
 	}
 	title := "Subscriptions"
+	if reporting == 1 {
+		for _, id := range ids {
+			if q := nodes[id].Usage.Quotas; q != nil && q.Copy != nil {
+				title += " · " + quotaCopyLabel(q.Copy)
+				break
+			}
+		}
+	} else if reporting > 1 {
+		for _, id := range ids {
+			n := nodes[id]
+			if n.Usage.Quotas != nil && n.Usage.Quotas.Copy != nil {
+				subscription = append(subscription, sDim.Render(sanitize(firstNonEmpty(n.Hostname, id))+": "+quotaCopyLabel(n.Usage.Quotas.Copy)))
+			}
+		}
+	}
 	if reporting == 1 {
 		title += " · read on " + sanitize(singleMachine)
 	}
@@ -266,4 +283,12 @@ func quotaBar(frac float64, n int, color lipgloss.TerminalColor) string {
 		filled = 1
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(strings.Repeat("█", filled)) + lipgloss.NewStyle().Foreground(roleFaint).Render(strings.Repeat("─", n-filled))
+}
+
+func quotaCopyLabel(c *protocol.QuotaCopy) string {
+	label := "quota-axi " + sanitize(c.Version)
+	if c.Private {
+		return label + " · agent-net's copy"
+	}
+	return label + " · yours (" + sanitize(c.Dir) + ")"
 }

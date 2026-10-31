@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,10 @@ func cloneQuotas(q *protocol.Quotas) *protocol.Quotas {
 		return nil
 	}
 	cp := *q
+	if q.Copy != nil {
+		copy := *q.Copy
+		cp.Copy = &copy
+	}
 	cp.Providers = make([]protocol.QuotaProvider, len(q.Providers))
 	for i, p := range q.Providers {
 		cp.Providers[i] = p
@@ -219,6 +224,18 @@ func (d *Daemon) refreshQuota(ctx context.Context, path string) *protocol.Quotas
 		d.quota.fail(err)
 		d.Logf("quota-axi: %v", err)
 		return nil
+	}
+	if version, err := quotaaxi.InstalledVersion(path); err == nil {
+		q.Copy = &protocol.QuotaCopy{Version: version, Dir: filepath.Dir(path), Private: path == quotaaxi.Binary()}
+	}
+	if auth, err := quotaaxi.LoadAuth(ConfigDir()); err == nil && auth.Path == path && auth.Error == "" {
+		for i := range q.Providers {
+			for _, p := range auth.Providers {
+				if strings.EqualFold(p.Provider, q.Providers[i].Provider) && p.Status == "needs attention" && q.Providers[i].Error != "" {
+					q.Providers[i].NeedsAttention = true
+				}
+			}
+		}
 	}
 	d.quota.set(q)
 	return q
@@ -348,7 +365,9 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 	for _, p := range in.Providers {
 		qp := protocol.QuotaProvider{Provider: p.Provider, Plan: p.Plan, Stale: p.State.Stale || strings.EqualFold(p.State.Status, "stale")}
 		if p.State.Error != "" {
-			qp.Error = quotaAXIProviderError(p.Provider, p.State.Error)
+			qp.Error = p.State.Error
+			reason := strings.ToLower(p.State.Error)
+			qp.NeedsAttention = strings.Contains(reason, "auth_rejected") || strings.Contains(reason, "credential_invalid") || strings.Contains(reason, "credential_expired")
 		}
 		// Per-window pace facts.
 		for _, w := range p.Windows {
@@ -384,13 +403,6 @@ func parseQuotaAXI(raw []byte) (*protocol.Quotas, error) {
 		out.Providers = append(out.Providers, qp)
 	}
 	return out, nil
-}
-
-func quotaAXIProviderError(provider, message string) string {
-	if strings.EqualFold(provider, "opencode-go") && strings.EqualFold(message, "provider_auth_rejected") {
-		return "the OpenCode Go login the daemon found was rejected"
-	}
-	return message
 }
 
 // quotaPercent prefers percentUsed when quota-axi sends it and otherwise
