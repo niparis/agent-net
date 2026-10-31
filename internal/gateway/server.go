@@ -566,6 +566,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
+	case "tools.targets":
+		return st.ToolTargets(nc.id)
+
 	case "tools.apply":
 		p, err := decode[struct {
 			protocol.ToolPlanID

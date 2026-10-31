@@ -259,7 +259,22 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (r protocol.T
 		return r, errors.New("plan out of date")
 	}
 	checked = true
-	return g.store.ApplyToolPlan(id, actor)
+	r, err = g.store.ApplyToolPlan(id, actor)
+	if err == nil {
+		frame, e := protocol.EncodeRequest("node.tools_changed", protocol.NewID("d"), struct{}{})
+		if e == nil {
+			seen := map[string]bool{}
+			for _, t := range p.Targets {
+				if !seen[t.NodeID] {
+					seen[t.NodeID] = true
+					if c := g.conn(t.NodeID); c != nil {
+						_ = c.write(ctx, frame)
+					}
+				}
+			}
+		}
+	}
+	return r, err
 }
 
 func (g *Gateway) validToolOwner(nc *nodeConn, id string) bool {

@@ -123,6 +123,8 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onWorkerFrame(ctx, l, h, raw)
 			}()
+		case "node.tools_changed":
+			d.wakeTools()
 		case "node.tool_plan_scan":
 			d.wg.Add(1)
 			go func() { defer d.wg.Done(); d.onToolPlanScan(ctx, l, h) }()

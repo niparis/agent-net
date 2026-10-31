@@ -204,3 +204,11 @@ type ToolNeed struct {
 	Text  string `json:"text"`
 	State string `json:"state"`
 }
+
+// ToolTarget is an owner-applied plan target for one daemon.
+type ToolTarget struct {
+	Revision ToolRevision   `json:"revision"`
+	Name     string         `json:"name"`
+	Index    int            `json:"index"`
+	Target   ToolPlanTarget `json:"target"`
+}
