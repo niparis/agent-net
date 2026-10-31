@@ -63,7 +63,7 @@ func runFakeHarness() bool {
 		fakeCodexShim()
 	case os.Getenv(envFakeClaudeMCP) != "":
 		fakeClaudeMCP()
-	case os.Getenv(envFakeClaude) != "" && len(os.Args) > 1 && (os.Args[1] == "--bg" || os.Args[1] == "stop"):
+	case os.Getenv(envFakeClaude) != "" && len(os.Args) > 1 && (os.Args[1] == "--bg" || os.Args[1] == "stop" || os.Args[1] == "--help" || os.Args[1] == "--version"):
 		fakeClaudeCLI()
 	case os.Getenv(envFakePi) != "" && len(os.Args) > 1 && os.Args[1] == "--mode":
 		fakePi()
@@ -129,6 +129,14 @@ type fakeClaudeInit struct {
 // fakeClaudeCLI is `claude --bg ...` and `claude stop <id>`.
 func fakeClaudeCLI() {
 	dir := os.Getenv(envFakeClaudeSessions)
+	if os.Args[1] == "--help" {
+		fmt.Println("--bg --strict-mcp-config")
+		return
+	}
+	if os.Args[1] == "--version" {
+		fmt.Println("2.1.314")
+		return
+	}
 	if os.Args[1] == "stop" {
 		id := os.Args[2]
 		if f, err := os.OpenFile(os.Getenv(envFakeClaudeLog), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {

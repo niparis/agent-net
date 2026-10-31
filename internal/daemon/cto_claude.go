@@ -10,13 +10,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/redact"
 )
 
 // claudeCTOState is protected by cto.mu, except pid, which is read by the
@@ -26,6 +29,9 @@ type claudeCTOState struct {
 	starting            atomic.Bool
 	token               string
 	ref, session, model string
+	capabilityPath      string
+	capabilityMtime     time.Time
+	capabilityErr       error
 }
 
 type claudeCTORoot struct {
@@ -117,6 +123,9 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	if err != nil {
 		return err
 	}
+	if err := d.checkClaudeCTOCapabilities(ctx, bin); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
@@ -136,6 +145,10 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	cmd.Dir = dir
 	output, err := cmd.CombinedOutput()
 	if err != nil {
+		detail := claudeCTOErrorOutput(output)
+		if detail != "" {
+			return fmt.Errorf("start CTO Claude: %s", detail)
+		}
 		return fmt.Errorf("start CTO Claude: %w", err)
 	}
 	m := claudeBgID.FindStringSubmatch(string(output))
@@ -162,6 +175,53 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+var claudeVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)
+
+func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) error {
+	info, err := os.Stat(bin)
+	if err != nil {
+		return fmt.Errorf("check Claude Code: %w", err)
+	}
+	c := &d.claudeCTO
+	if c.capabilityPath == bin && c.capabilityMtime.Equal(info.ModTime()) {
+		return c.capabilityErr
+	}
+	help, err := exec.CommandContext(ctx, bin, "--help").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("check Claude Code help: %w", err)
+	}
+	var result error
+	if !strings.Contains(string(help), "--bg") || !strings.Contains(string(help), "--strict-mcp-config") {
+		version, versionErr := exec.CommandContext(ctx, bin, "--version").CombinedOutput()
+		if versionErr != nil {
+			return fmt.Errorf("check Claude Code version: %w", versionErr)
+		}
+		v := claudeVersionPattern.FindString(string(version))
+		if v == "" {
+			v = "(unknown version)"
+		}
+		result = fmt.Errorf("Claude Code %s is too old for the CTO: run `claude update`", v)
+	}
+	c.capabilityPath, c.capabilityMtime, c.capabilityErr = bin, info.ModTime(), result
+	return result
+}
+
+func claudeCTOErrorOutput(output []byte) string {
+	lines := strings.Split(string(output), "\n")
+	if len(lines) > 2 {
+		lines = lines[:2]
+	}
+	for i, line := range lines {
+		lines[i] = redact.Args(strings.TrimSpace(strings.Map(func(r rune) rune {
+			if unicode.IsControl(r) {
+				return ' '
+			}
+			return r
+		}, line)))
+	}
+	return redact.Cut(redact.Secrets(strings.TrimSpace(strings.Join(lines, " · "))), 500)
 }
 
 func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {

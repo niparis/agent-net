@@ -291,3 +291,55 @@ func TestCTOEnterClaude(t *testing.T) {
 		t.Fatalf("existing session plan: %+v", plan)
 	}
 }
+
+func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "claude")
+	write := func(script string) {
+		t.Helper()
+		if err := os.WriteFile(bin, []byte("#!/bin/sh\n"+script), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(`if [ "$1" = --help ]; then echo '--strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
+	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
+	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
+	if err == nil || !strings.Contains(err.Error(), "Claude Code 2.1.289 is too old for the CTO: run `claude update`") {
+		t.Fatalf("old Claude: %v", err)
+	}
+	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.314'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
+	err = d.startClaudeCTOLocked(context.Background(), "", "opus")
+	if err == nil || !strings.Contains(err.Error(), "unknown option --bg") || !strings.Contains(err.Error(), "[REDACTED]") || strings.Contains(err.Error(), "topsecretvalue") || strings.Contains(err.Error(), "third line") {
+		t.Fatalf("startup error: %v", err)
+	}
+}
+
+func TestClaudeCTOCapabilityCache(t *testing.T) {
+	dir := t.TempDir()
+	bin, log := filepath.Join(dir, "claude"), filepath.Join(dir, "calls")
+	script := "#!/bin/sh\necho called >> " + log + "\necho --bg --strict-mcp-config\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{}
+	for i := 0; i < 2; i++ {
+		if err := d.checkClaudeCTOCapabilities(context.Background(), bin); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(log)
+	if err != nil || strings.Count(string(raw), "called") != 1 {
+		t.Fatalf("cache: %q %v", raw, err)
+	}
+	stamp := time.Now().Add(3 * time.Second)
+	if err := os.Chtimes(bin, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.checkClaudeCTOCapabilities(context.Background(), bin); err != nil {
+		t.Fatal(err)
+	}
+	raw, err = os.ReadFile(log)
+	if err != nil || strings.Count(string(raw), "called") != 2 {
+		t.Fatalf("mtime: %q %v", raw, err)
+	}
+}
