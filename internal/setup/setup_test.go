@@ -526,8 +526,10 @@ func TestUninstallRemovesSkillBackupsAndOwnedExclude(t *testing.T) {
 	if err := os.WriteFile(exclude, []byte("# mine\n/.agents/skills/demo/\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(filepath.Join(state, "skill-backups", "fixture"), 0700); err != nil {
-		t.Fatal(err)
+	for _, dir := range []string{"skill-backups", "mcp-backups"} {
+		if err := os.MkdirAll(filepath.Join(state, dir, "fixture"), 0700); err != nil {
+			t.Fatal(err)
+		}
 	}
 	manifest, err := json.Marshal([]map[string]any{{"item": "i", "path": filepath.Join(f.home, "repo", ".agents", "skills", "demo"), "exclude": exclude, "exclude_line": "/.agents/skills/demo/", "exclude_owned": true}})
 	if err != nil {
@@ -540,8 +542,10 @@ func TestUninstallRemovesSkillBackupsAndOwnedExclude(t *testing.T) {
 	if err = Uninstall(Options{Out: &out, NoService: true}); err != nil {
 		t.Fatalf("uninstall: %v %s", err, out.String())
 	}
-	if _, err = os.Stat(filepath.Join(state, "skill-backups")); !os.IsNotExist(err) {
-		t.Fatalf("backups remain: %v", err)
+	for _, dir := range []string{"skill-backups", "mcp-backups"} {
+		if _, err = os.Stat(filepath.Join(state, dir)); !os.IsNotExist(err) {
+			t.Fatalf("%s remain: %v", dir, err)
+		}
 	}
 	b, err := os.ReadFile(exclude)
 	if err != nil || string(b) != "# mine\n" {

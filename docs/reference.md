@@ -111,7 +111,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `graph_get`, `charter_set`, `charter_history`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `edge_history`, `graph_undo` | Same names; request rules are on `edge_set` |
 | `node_settings_get`, `node_settings_set`, `playbook_get`, `playbook_set` | Same names |
 | `agent_learn` | `learn` |
-| `mcp_import_candidates`, `mcp_import` | Same names; see [importing native MCP servers](#importing-native-mcp-servers) |
+| `mcp_import_candidates`, `mcp_import`, `mcp_native_remove` | Same names; see [importing native MCP servers](#importing-native-mcp-servers) and [removing a native MCP entry](#removing-a-native-mcp-entry) |
 | `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
 | `cto_settings` | `cto_settings` |
 | `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
@@ -292,6 +292,7 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | quota-axi private copy | `~/.local/share/agent-net/quota-axi/` | The pinned npm package `quota-axi`, installed by setup or the daemon when the Quota integration is on and you have no quota-axi. The daemon runs `node_modules/.bin/quota-axi` from it. Removed by uninstall and when the item is turned off. |
 | Skill manifest | `~/.local/state/agent-net/daemon/skill-manifest.json` | Paths, hashes, revisions and ownership of skill copies the daemon made, and the Git exclude lines it owns. Mode 0600. |
 | Skill backups | `~/.local/state/agent-net/daemon/skill-backups/<item hash>/<time>-<id>/` | Exact copy of a skill directory before the daemon removed it. Local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. |
+| MCP config backups | `~/.local/state/agent-net/daemon/mcp-backups/<item hash>/<time>-<id>/` | The whole native MCP config file (`preimage`) as it was before the daemon removed an entry, and `meta.json` (file path, hashes, entry name). A backup can hold secrets: local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. Uninstall removes them. |
 | Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. |
 | Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files). **Back this folder up.** Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
@@ -658,6 +659,80 @@ names the machine and harness; the native item shows a conflict too. Removing
 the native entry is a later step. Import does not carry resources, prompts,
 OAuth or a hidden-tool list. The audit (`tools_history` of the federated item)
 records the plan, the actor and the result.
+
+### Removing a native MCP entry
+
+After an import both the native entry and the federated server exist. The
+owner may remove the native entry. `mcp_native_remove` (daemon method, owner
+only; CTO tool) takes exactly one of `candidate`, `plan_id` or `undo_plan_id`.
+
+**Rules.** The plan refuses an entry whose server was not imported from that
+exact entry, is switched off, is not healthy, reports no tools, or whose native
+description no longer matches the federated server. Apply tests the federated
+server again before it touches the file. The agent-net server entry is never
+removed.
+
+**Plan.** `candidate` (a key from `mcp_import_candidates`) answers a plan and
+changes nothing: the file hash, the list of `gaps`, and any conflict. A
+conflict cannot be applied. `gaps` and the `federation_gaps` of each
+importable or imported candidate (and of the `imported` record on the
+federated item) say what the native entry can do that the federation does
+not: resources and prompts (the federation carries tools only), OAuth sign-in,
+and per-client execution (the server runs on one host, not on each client).
+
+**Files that can be edited.** The file must be a known native source that the
+scan saw:
+
+| Harness | File | Where the entry is |
+|---|---|---|
+| Claude Code | `~/.claude.json` | `mcpServers`, and `projects[<path>].mcpServers` for a project-local entry |
+| Claude Code | `<project>/.mcp.json` | `mcpServers` |
+| Codex | `~/.codex/config.toml`, `<project>/.codex/config.toml` | the `[mcp_servers.<name>]` table and its sub-tables |
+| OpenCode | `opencode.json` or `opencode.jsonc` (user and project) | `mcp` |
+| Pi | `~/.pi/agent/mcp.json`, `<project>/.pi/mcp.json` | `mcpServers` |
+
+**Format preservation.** The edit cuts only the bytes of the entry. Other
+keys, their order, comments (JSONC and TOML) and indentation stay as they were.
+The daemon does not re-write the file from parsed data. In JSON it removes the
+member and one comma. In TOML it removes the entry's tables; comment and blank
+lines that follow a table stay with what comes next. Before it writes, it
+parses the old and new text and proves that the new text no longer holds the
+entry and equals the old document in every other value. If the entry is in a
+form the editor does not own (a TOML inline table or dotted key, a duplicate
+key, a file that does not parse), nothing is changed and the plan says to
+remove it by hand. There is no whole-file rewrite fallback. A file that is a
+symlink is not edited. The file mode is kept.
+
+**Committed project files.** If Git tracks the file in a repository (a
+committed `.mcp.json`), it is not edited. The conflict reads "committed in the
+repo: remove it with a commit".
+
+**Apply.** `plan_id` applies a plan once, only on the owner's explicit words
+when the CTO does it. It edits only a file that still has the planned hash;
+otherwise it answers `refused` with "changed since plan". It first saves the
+whole original file in `mcp-backups` (mode 0600), writes a journal record, then
+writes a temporary file beside the original, checks the hash again and renames
+it over. For `~/.claude.json` it takes Claude Code's own `.claude.json.lock`
+directory first. After the rename it reads the file again, checks the bytes
+are exactly the planned result, and checks that the entry is gone. A session
+that is running keeps its native tools until it restarts.
+
+**Undo.** `undo_plan_id` restores the original file only if the file still has
+the hash of the edit's result. Otherwise it answers `refused` with "changed
+since apply" and keeps the file: it never overwrites a later edit. Undo is
+recorded in the audit as `mcp_native_undo`. After undo the native entry is back
+and the federated server is still registered, so the same server exists twice;
+the answer says so.
+
+**Audit.** `tools_history` of the native item records `mcp_native_plan`,
+`mcp_native_remove` and `mcp_native_undo` with actor, machine, file path and
+result. It never holds file content.
+
+**Secret sources.** An entry that gives a secret as a plain `${VAR}` reference
+becomes a federated server that records only the variable name. The host reads
+the value from its own environment when it starts the server. The value never
+moves and is never stored in the registry. Only the backup of the original
+file, which stays on that machine, can hold a literal value the file had.
 
 ### Desired tool assignments
 

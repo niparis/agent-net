@@ -257,12 +257,12 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 	for _, v := range list.Tools {
 		found[v.Name] = v
 	}
-	for _, name := range []string{"tools_list", "tools_plan", "tools_apply", "tools_history", "mcp_import_candidates", "mcp_import"} {
+	for _, name := range []string{"tools_list", "tools_plan", "tools_apply", "tools_history", "mcp_import_candidates", "mcp_import", "mcp_native_remove"} {
 		if found[name] == nil || len(found[name].Description) < 60 {
 			t.Fatalf("missing description: %s", name)
 		}
 	}
-	if !strings.Contains(found["tools_apply"].Description, "explicit") || !strings.Contains(found["mcp_import"].Description, "explicit") {
+	if !strings.Contains(found["tools_apply"].Description, "explicit") || !strings.Contains(found["mcp_import"].Description, "explicit") || !strings.Contains(found["mcp_native_remove"].Description, "explicit") {
 		t.Fatal("apply description lacks owner instruction requirement")
 	}
 }

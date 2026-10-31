@@ -170,3 +170,30 @@ func TestMCPServerName(t *testing.T) {
 		}
 	}
 }
+
+// A plain ${VAR} reference becomes the variable NAME on the federated server.
+// The value stays in the host's own environment and is never read here.
+func TestMCPSecretSourceConversionKeepsOnlyNames(t *testing.T) {
+	const secret = "value-that-must-never-move-7731"
+	t.Setenv("API_TOKEN", secret)
+	t.Setenv("REMOTE_KEY", secret)
+	info, server := ClassifyMCP("files", map[string]any{"command": "/usr/bin/files-mcp", "env": map[string]any{"API_TOKEN": "${API_TOKEN}"}})
+	if info.Class != protocol.MCPImportable || len(server.Env) != 1 || server.Env[0] != "API_TOKEN" {
+		t.Fatalf("env reference: %+v %+v", info, server)
+	}
+	info, server = ClassifyMCP("remote", map[string]any{"type": "http", "url": "https://mcp.example.test/v1", "headers": map[string]any{"X-Api": "${REMOTE_KEY}"}})
+	if info.Class != protocol.MCPImportable || len(server.Headers) != 1 || server.Headers[0].Env != "REMOTE_KEY" {
+		t.Fatalf("header reference: %+v %+v", info, server)
+	}
+	for _, v := range []any{info, server} {
+		if b, _ := json.Marshal(v); strings.Contains(string(b), secret) {
+			t.Fatalf("a value reached the verdict or the server: %s", b)
+		}
+	}
+	// A reference to another variable, or a literal, stays unmanaged.
+	for _, env := range []any{"${OTHER}", secret} {
+		if info, _ := ClassifyMCP("x", map[string]any{"command": "/usr/bin/x", "env": map[string]any{"API_TOKEN": env}}); info.Class != protocol.MCPUnsupported {
+			t.Fatalf("%v was accepted", env)
+		}
+	}
+}

@@ -65,6 +65,8 @@ type MCPImportCandidate struct {
 	Imported           bool   `json:"imported,omitempty"`
 	NativeStillPresent bool   `json:"native_still_present,omitempty"`
 	Conflict           string `json:"conflict,omitempty"`
+	// Gaps say what the native entry has that the federation does not provide.
+	Gaps []string `json:"federation_gaps,omitempty"`
 }
 
 type MCPImportCandidatesRequest struct {
@@ -118,6 +120,8 @@ type MCPImportRecord struct {
 	// NativeStillPresent is true when the import finished. The native entry is
 	// left as it was; the gateway recomputes this on each listing.
 	NativeStillPresent bool `json:"native_still_present"`
+	// Gaps say what the native entry had that the federation does not provide.
+	Gaps []string `json:"federation_gaps,omitempty"`
 }
 
 // MCPImportResult answers an apply. State is imported or failed. A failed
