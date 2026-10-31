@@ -483,7 +483,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"3 · 67% done · 1 failed",
 		"5 · 100% done",
 		"unused",
-		"fit per task size: T trivial S simple N normal H hard V very complex",
+		"T trivial S simple N normal H hard V very complex",
 		"E strong G ok P weak - too weak",
 		"terra codex: picked for",
 		"Strong at",
@@ -499,7 +499,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		t.Fatalf("picked fit cell has no highlight background:\n%q", got)
 	}
 	for _, line := range strings.Split(plain, "\n") {
-		if strings.Contains(line, "fit per task size:") && ansi.StringWidth(line) > 120 {
+		if strings.Contains(line, "T trivial S simple") && ansi.StringWidth(line) > 120 {
 			t.Fatalf("key line exceeds panel width: %q", line)
 		}
 	}

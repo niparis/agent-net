@@ -12,7 +12,7 @@
 ╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME               HARNESS  MODEL                     SCORE        T S N H V │
 │ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P │
-│ fit per task size: T trivial S simple N normal H hard V very complex · E st… │
+│ T trivial S simple N normal H hard V very complex · E strong G ok P weak - … │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

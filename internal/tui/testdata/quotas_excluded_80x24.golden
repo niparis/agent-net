@@ -14,7 +14,7 @@
 │   (not a worker provider)                                                    │
 │ sol                codex    gpt-6.1-sol:medium        46.1/medium  E E E G P │
 │ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P │
-│ fit per task size: T trivial S simple N normal H hard V very complex · E st… │
+│ T trivial S simple N normal H hard V very complex · E strong G ok P weak - … │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

@@ -311,7 +311,7 @@ func (m Model) quotaModelsView(w int) []string {
 			body = append(body, sDim.Render("  ("+reason+")"))
 		}
 	}
-	key := "fit per task size: T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · highlighted = picked now"
+	key := "T trivial S simple N normal H hard V very complex · E strong G ok P weak - too weak · lit = picked now"
 	body = append(body, sDim.Render(clip(key, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	out := panel(title, body, w, roleAccent)
