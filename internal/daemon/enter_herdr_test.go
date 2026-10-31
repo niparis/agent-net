@@ -54,6 +54,7 @@ func newFakeHerdr(t *testing.T) *fakeHerdr {
 	script := `#!/bin/sh
 echo "sock=$HERDR_SOCKET_PATH session=${HERDR_SESSION:-none} $*" >> ` + f.log + `
 [ -f ` + dir + `/fail ] && { echo "server down" >&2; exit 1; }
+[ ! -f ` + dir + `/socket ] || [ "$HERDR_SOCKET_PATH" = "$(cat ` + dir + `/socket)" ] || { echo "wrong socket" >&2; exit 1; }
 case "$1 $2" in
   "pane list") cat ` + dir + `/panes ;;
   "pane process-info") cat ` + dir + `/info-$4 2>/dev/null || exit 1 ;;
@@ -64,6 +65,13 @@ esac
 		t.Fatal(err)
 	}
 	return f
+}
+
+func (f *fakeHerdr) answersAt(t *testing.T, socket string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(f.dir, "socket"), []byte(socket), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f *fakeHerdr) panes(t *testing.T, json string) {
@@ -122,6 +130,93 @@ func herdrAgentPane(id, term string) string {
 func herdrPlanFor(pid int, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, bool) {
 	d := &Daemon{}
 	return d.herdrPlan(protocol.SessionInfo{PID: pid}, q, protocol.EnterPlan{Host: "h"}, "s", viaGateway)
+}
+
+// fakeProcessTree supplies a process tree and its command lines without
+// depending on the test process's real environment or ancestors.
+func fakeProcessTree(t *testing.T, parents map[int]int, args map[int][]string) {
+	t.Helper()
+	oldEnviron, oldArgs, oldParent := processEnviron, processArgs, processParentPID
+	processEnviron = func(int) []string { return nil }
+	processArgs = func(pid int) []string { return args[pid] }
+	processParentPID = func(pid int) (int, error) {
+		if parent := parents[pid]; parent != 0 {
+			return parent, nil
+		}
+		return 1, nil
+	}
+	t.Cleanup(func() {
+		processEnviron, processArgs, processParentPID = oldEnviron, oldArgs, oldParent
+	})
+}
+
+func TestEnterHerdrFallbackFromServerWithoutEnvironment(t *testing.T) {
+	f := newFakeHerdr(t)
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", "")
+	socket := filepath.Join(home, ".config", "herdr", "herdr.sock")
+	f.answersAt(t, socket)
+	f.panes(t, herdrAgentPane("w1:p1", "term_1"))
+	f.holds(t, "w1:p1", 31870)
+
+	fakeProcessTree(t,
+		map[int]int{31870: 25104, 25104: 1024, 1024: 1},
+		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}, 1024: {f.bin, "server"}},
+	)
+	p, ok := herdrPlanFor(31870, protocol.EnterRequest{}, false)
+	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + socket, f.bin, "agent", "attach", "w1:p1"}
+	if !ok || !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("fallback plan %+v ok=%v, want argv %v", p, ok, want)
+	}
+	if calls := f.calls(t); !strings.Contains(calls, "sock="+socket+" session=none pane list") {
+		t.Fatalf("fake herdr calls %q", calls)
+	}
+}
+
+func TestEnterHerdrFallbackUsesServerSocketArgument(t *testing.T) {
+	f := newFakeHerdr(t)
+	socket := filepath.Join(f.dir, "server.sock")
+	f.answersAt(t, socket)
+	f.panes(t, herdrAgentPane("w1:p1", "term_1"))
+	f.holds(t, "w1:p1", 31870)
+	fakeProcessTree(t,
+		map[int]int{31870: 25104, 25104: 1024, 1024: 1},
+		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}, 1024: {f.bin, "server", "--socket", socket}},
+	)
+	p, ok := herdrPlanFor(31870, protocol.EnterRequest{}, false)
+	if !ok || !strings.Contains(strings.Join(p.Argv, " "), "HERDR_SOCKET_PATH="+socket) {
+		t.Fatalf("server socket argument was not used: %+v ok=%v", p, ok)
+	}
+}
+
+func TestEnterWithoutHerdrAncestorFallsThroughToTmux(t *testing.T) {
+	fakeProcessTree(t,
+		map[int]int{31870: 25104, 25104: 1},
+		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}},
+	)
+	argsFile := fakeTmux(t, "25104|%7|work")
+	d := &Daemon{}
+	p, err := d.terminalPlan(protocol.SessionInfo{PID: 31870}, protocol.EnterRequest{}, protocol.EnterPlan{Host: "h"}, "pi", false)
+	if err != nil || !reflect.DeepEqual(p.Argv, []string{"tmux", "select-window", "-t", "%7", ";", "select-pane", "-t", "%7", ";", "attach-session", "-t", "work"}) {
+		t.Fatalf("tmux fallback plan %+v err=%v", p, err)
+	}
+	if calls, _ := os.ReadFile(argsFile); !strings.Contains(string(calls), "list-panes -a") {
+		t.Fatalf("tmux was not asked after herdr lookup: %q", calls)
+	}
+}
+
+func TestEnterNoHerdrOrTmuxFailureExplainsChecks(t *testing.T) {
+	fakeProcessTree(t,
+		map[int]int{31870: 25104, 25104: 1},
+		map[int][]string{31870: {"pi"}, 25104: {"-zsh"}},
+	)
+	fakeTmux(t, "")
+	d := &Daemon{}
+	p, err := d.terminalPlan(protocol.SessionInfo{PID: 31870}, protocol.EnterRequest{}, protocol.EnterPlan{Host: "h"}, "pi", false)
+	if err != nil || len(p.Argv) != 0 || !strings.Contains(p.Note, "no herdr variables and no herdr server above the process") {
+		t.Fatalf("missing diagnostic: %+v err=%v", p, err)
+	}
 }
 
 // From a TUI outside herdr, and from one inside any herdr: the same attach, with
@@ -265,6 +360,9 @@ func TestParseProcArgs2(t *testing.T) {
 	want := []string{"HERDR_ENV=1", "HERDR_PANE_ID=w1:pB", "HERDR_SOCKET_PATH=/Users/me/Library/App Support/herdr/herdr.sock", "PATH=/a:/b", "EMPTY="}
 	if got := parseProcArgs2(buf); !reflect.DeepEqual(got, want) {
 		t.Fatalf("env %q, want %q", got, want)
+	}
+	if got := parseProcArgs2Argv(buf); !reflect.DeepEqual(got, []string{"claude", "--resume"}) {
+		t.Fatalf("argv %q", got)
 	}
 	// An env var with a name is found the same way as on Linux.
 	old := processEnviron
