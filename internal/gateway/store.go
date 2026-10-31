@@ -276,6 +276,9 @@ ALTER TABLE tool_audit ADD COLUMN assignment TEXT NOT NULL DEFAULT '';
 `, `
 ALTER TABLE tool_results ADD COLUMN branch TEXT NOT NULL DEFAULT '';
 ALTER TABLE tool_results ADD COLUMN commit_hash TEXT NOT NULL DEFAULT '';
+`, `
+CREATE TABLE IF NOT EXISTS signal_prompts (session_id TEXT PRIMARY KEY, prompt TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS charter_signals (message_id TEXT PRIMARY KEY, source TEXT NOT NULL, target TEXT NOT NULL, prompt TEXT NOT NULL, at INTEGER NOT NULL);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1263,12 +1266,20 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	if err != nil {
 		return msg, false, err
 	}
+	if m.ParentID == "" && !m.FromCTO {
+		if err := s.signalRequest(tx, m); err != nil {
+			return msg, false, err
+		}
+	}
 	if p.Outcome != "" {
 		var from, to string
 		if err := tx.QueryRow(`SELECT a.repo_project,b.repo_project FROM messages q JOIN sessions a ON a.id=q.sender JOIN sessions b ON b.id=q.recipient WHERE q.id=? AND q.type=?`, p.ParentID, protocol.TypeRequest).Scan(&from, &to); err != nil {
 			return msg, false, reject("outcome requires a request parent")
 		}
 		if _, err := tx.Exec(`INSERT INTO graph_outcomes(source,target,message_id,reply_id,outcome,reason,redirect_to,recommendation,at) VALUES(?,?,?,?,?,?,?,?,?)`, from, to, p.ParentID, m.ID, p.Outcome, p.Reason, p.RedirectTo, p.Recommendation, now.UnixNano()); err != nil {
+			return msg, false, err
+		}
+		if err := s.signalOutcome(tx, m, p); err != nil {
 			return msg, false, err
 		}
 		if p.Outcome == "reject" || p.Outcome == "escalate" {

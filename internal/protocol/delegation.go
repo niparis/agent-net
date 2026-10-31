@@ -194,6 +194,7 @@ type PolicyGot struct {
 type PolicyRequest struct {
 	Harness  string `json:"harness,omitempty"`
 	NativeID string `json:"native_id,omitempty"`
+	Prompt   string `json:"prompt,omitempty"`
 }
 
 // PolicyResult answers MethodPolicy. Text is empty when the session has no

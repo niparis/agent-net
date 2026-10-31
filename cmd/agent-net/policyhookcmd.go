@@ -19,6 +19,7 @@ const policyBudget = 700 * time.Millisecond
 type policyHookInput struct {
 	SessionID string `json:"session_id"`
 	EventName string `json:"hook_event_name"`
+	Prompt    string `json:"prompt"`
 }
 
 // runPolicyHook is `agent-net policy-hook`: a Claude Code UserPromptSubmit
@@ -40,9 +41,12 @@ func runPolicyHook(ctx context.Context, stdin io.Reader, stdout io.Writer,
 	if json.Unmarshal(raw, &in) != nil || in.SessionID == "" || (in.EventName != "" && in.EventName != "UserPromptSubmit") {
 		return
 	}
+	if r := []rune(in.Prompt); len(r) > 300 {
+		in.Prompt = string(r[:300])
+	}
 	ctx, cancel := context.WithTimeout(ctx, policyBudget)
 	defer cancel()
-	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID})
+	res, err := ask(ctx, protocol.PolicyRequest{Harness: "claude", NativeID: in.SessionID, Prompt: in.Prompt})
 	if err != nil || (res.Text == "" && res.Charter == "") {
 		return
 	}

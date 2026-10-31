@@ -99,5 +99,5 @@ func (d *Daemon) charterBrief(ctx context.Context, project string) string {
 			break
 		}
 	}
-	return strings.TrimSpace(charter + "\n" + protocol.WorkerDeployApprovalRules(g, project))
+	return strings.TrimSpace(charter + "\n" + protocol.WorkerDeployApprovalRules(g, project) + "\n" + protocol.NeighborCharters(g, project))
 }

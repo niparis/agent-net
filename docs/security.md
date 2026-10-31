@@ -400,11 +400,12 @@ A registered project is a folder where workers may start sessions (see [decision
 |---|---|---|
 | Messages (with bodies) and delivery records | 30 days | `--keep-messages` |
 | Events | 90 days | `--keep-events` |
+| Instruction signals, including matched owner prompt excerpts | 90 days | none |
 | Sessions that are offline and not seen | 30 days | `--keep-sessions` |
 | Registered projects | until you remove them | none |
 | Nodes and their token hashes | until you delete them | none |
 
-A timer deletes older data once at start and then every hour. A period of `0` keeps that data for ever. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.
+A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.
 
 **File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
 
@@ -483,6 +484,14 @@ Only the owner can use `outcome_overrule`: the daemon applies the owner gate use
 An overruled request has a gateway-stored marker separate from its body. Adapters write `[agent-net] Nicolas overrules: do it.` only when that marker is present. The marker cannot be supplied to `agent_send` or `agent_reply`. Message bodies have the `[agent-net` marker broken before delivery, so a peer cannot imitate the framed note. The owner's gate is a barrier against a command running inside a session, not a defense against a program that detaches from its process tree.
 
 Outcome reasons and recommendations are visible to enrolled machines through the owner inbox. They are limited to 2048 bytes each and cleaned of controls. Do not put secrets in them. Unresolved rejections and escalations keep their request and reply messages and both session records past the normal retention period; normal retention applies after the owner answers.
+
+## Instruction signals
+
+The Claude Code `UserPromptSubmit` policy hook sends the first 300 characters of each latest owner prompt to the gateway for that session. The gateway stores it for a 10-minute matching window, even if no message is sent. When a send in that window matches the name of another known agent or project, the gateway stores the excerpt with the sender and recipient project nodes and message ID as an instruction signal. The excerpt may contain private information or secrets typed in the prompt. A match is based on time and names, so it does not prove the owner intended that particular send. Signal records, including matched prompt text, are retained for 90 days. The hourly retention timer removes expired records; the short-lived latest-prompt row is removed after its window by the same timer.
+
+Only the owner authority path and the private CTO tool can read instruction signals. The daemon restricts the CTO channel to its checked process tree, and the gateway verifies an owner session on the requesting node. As with other owner-gated operations, the gateway trusts enrolled daemons; a compromised enrolled machine can impersonate its owner session. Protect the gateway database and its backups, which contain the prompt excerpts. Reply outcomes and reasons also have their existing visibility described in [Request outcome decisions](#request-outcome-decisions).
+
+Signals and suggestions are evidence, not authority. They never change a charter. The CTO may apply a suggested diff with `charter_set` only after the owner says yes.
 
 ## Graph foundation
 

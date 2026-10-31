@@ -61,7 +61,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	reads := map[string]map[string]any{
-		"graph_get": {}, "charter_history": {"node": "project"}, "edge_history": {}, "agents": {}, "workers": {}, "needs_you": {}, "feed": {}, "worker_profile_list": {},
+		"graph_get": {}, "charter_suggestions": {}, "charter_history": {"node": "project"}, "edge_history": {}, "agents": {}, "workers": {}, "needs_you": {}, "feed": {}, "worker_profile_list": {},
 		"info": {}, "nodes": {}, "projects": {}, "get": {"session_id": ids[0]}, "messages": {}, "message_status": {"message_id": msg.ID}, "session_text": {"session_id": localID}, "usage": {}, "usage_top": {"session_id": localID}, "counts": {}, "graph_view": {}, "session_enter": {"session_id": localID}, "integrations_get": {}, "held_list": {}, "inbox_list": {}, "outcome_inbox": {}, "node_settings_get": {"node": "project"}, "playbook_get": {"model": "fake/m1"}, "mcp_list": {}, "cto_enter": {}, "cto_events": {}, "cto_graph_history": {}, "cto_settings": {}, "tools_list": {}, "tools_history": {"item": "missing"}, "mcp_import_candidates": {}, "tools_differences": {},
 	}
 	// mcp_call and mcp_test can execute arbitrary external operations. Mutation

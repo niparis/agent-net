@@ -105,3 +105,18 @@ func TestPolicyHookCarriesTheCharterEvenWithoutAPolicy(t *testing.T) {
 		t.Fatalf("policy and charter not both there: %q", both)
 	}
 }
+
+func TestPolicyHookTruncatesPrompt(t *testing.T) {
+	input := `{"session_id":"abc","prompt":"` + strings.Repeat("é", 400) + `"}`
+	_, asked := runPolicyWith(t, input, onePolicy, nil)
+	if len(asked) != 1 || len([]rune(asked[0].Prompt)) != 300 {
+		t.Fatalf("prompt not truncated: %+v", asked)
+	}
+}
+
+func TestPolicyHookCarriesOwnerPrompt(t *testing.T) {
+	_, asked := runPolicyWith(t, `{"session_id":"abc","hook_event_name":"UserPromptSubmit","prompt":"ask homelab"}`, onePolicy, nil)
+	if len(asked) != 1 || asked[0].Prompt != "ask homelab" {
+		t.Fatalf("asked: %+v", asked)
+	}
+}

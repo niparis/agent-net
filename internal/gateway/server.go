@@ -1053,6 +1053,32 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return res, nil
 
+	case "signal.prompt":
+		var p struct {
+			SessionID string `json:"session_id"`
+			Prompt    string `json:"prompt"`
+		}
+		if json.Unmarshal(raw, &p) != nil || p.SessionID == "" {
+			return nil, reject("bad signal.prompt")
+		}
+		a, ok, err := st.Agent(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if !ok || a.NodeID != nc.id || a.Harness != "claude" {
+			return nil, reject("session does not belong to this node")
+		}
+		return nil, st.RememberOwnerPrompt(p.SessionID, p.Prompt)
+
+	case "signal.list":
+		var p struct {
+			Owner string `json:"owner"`
+		}
+		if json.Unmarshal(raw, &p) != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return st.Signals()
+
 	case "policy.get":
 		p, err := decode[protocol.PolicyGet](raw)
 		if err != nil || p.SessionID == "" {

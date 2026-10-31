@@ -78,7 +78,7 @@ func NodeContext(g Graph, name string) string {
 				}
 			}
 		}
-		if !needsDeployApproval {
+		if !needsDeployApproval && NeighborCharters(g, name) == "" {
 			return ""
 		}
 	}
@@ -122,6 +122,9 @@ func NodeContext(g Graph, name string) string {
 				}
 			}
 		}
+	}
+	if neighbors := NeighborCharters(g, name); neighbors != "" {
+		b.WriteString(neighbors + "\n")
 	}
 	if charterSet(node.Charter) {
 		b.WriteString(DecideRule)

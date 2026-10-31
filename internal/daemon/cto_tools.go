@@ -52,6 +52,28 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "charter_suggestions":
+		owner := d.ownerSessionID()
+		if owner == "" {
+			return nil, errNotConnected
+		}
+		rawSignals, err := d.call(ctx, "signal.list", map[string]string{"owner": owner})
+		if err != nil {
+			return nil, err
+		}
+		var signals []protocol.CharterSignal
+		if err = json.Unmarshal(rawSignals, &signals); err != nil {
+			return nil, err
+		}
+		rawGraph, err := d.call(ctx, "graph.read", protocol.GraphRead{})
+		if err != nil {
+			return nil, err
+		}
+		var graph protocol.GraphGot
+		if err = json.Unmarshal(rawGraph, &graph); err != nil {
+			return nil, err
+		}
+		return charterSuggestions(graph.Graph, signals), nil
 	case "tools_list":
 		data, err := d.call(ctx, "query.tools_items", json.RawMessage(raw))
 		if err != nil {
