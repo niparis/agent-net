@@ -9,8 +9,9 @@ const (
 
 // ProtectedProviders are subscriptions reserved for the owner's orchestrator.
 type ProtectedProviders struct {
-	Providers []string `json:"protected_providers"`
-	Reason    string   `json:"reason"`
+	Providers  []string `json:"protected_providers"`
+	Reason     string   `json:"reason"`
+	Configured bool     `json:"configured,omitempty"`
 }
 
 // ProfileProvider identifies the provider of a worker profile independently of quota aliases.

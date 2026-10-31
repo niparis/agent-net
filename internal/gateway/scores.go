@@ -194,6 +194,7 @@ func (s *Store) protectedProviders() (protocol.ProtectedProviders, error) {
 	}
 	var out protocol.ProtectedProviders
 	err = json.Unmarshal([]byte(raw), &out)
+	out.Configured = true
 	return out, err
 }
 
@@ -225,6 +226,7 @@ func (g *Gateway) handleProtectedProviders(w http.ResponseWriter, r *http.Reques
 		seen[p] = true
 		in.Providers[i] = p
 	}
+	in.Configured = true
 	raw, err := json.Marshal(in)
 	if err != nil {
 		writeJSON(w, nil, err)

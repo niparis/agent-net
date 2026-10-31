@@ -87,6 +87,7 @@ type Snapshot struct {
 	Launch             bool
 	WorkerProfiles     []protocol.WorkerProfile
 	WorkerProviders    []string
+	ProtectedProviders protocol.ProtectedProviders
 	Scores             []protocol.ModelScore
 	DifficultyMinimums map[string]float64
 	Nodes              []protocol.NodeView

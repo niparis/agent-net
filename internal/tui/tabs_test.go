@@ -737,3 +737,13 @@ func TestWorkerColumnsKeepNamesAndModels(t *testing.T) {
 		t.Fatal(v)
 	}
 }
+
+func TestProtectedQuotaProfileMark(t *testing.T) {
+	m := Model{}
+	m.snap.ProtectedProviders = protocol.ProtectedProviders{Providers: []string{"anthropic"}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "sonnet", Harness: "claude", Model: "sonnet"}}
+	view := strings.Join(m.quotaModelsView(120), "\n")
+	if !strings.Contains(view, "protected") || !strings.Contains(view, "saved for your orchestrator (anthropic)") {
+		t.Fatalf("missing protected note: %s", view)
+	}
+}

@@ -82,6 +82,9 @@ func (m Model) quotasView(w, h int) []string {
 			provider, plan := "", ""
 			if i == 0 {
 				provider = sanitize(p.Provider)
+				if m.providerProtected(p.Provider) {
+					provider = "🔒 " + provider
+				}
 				plan = sanitize(p.Plan)
 			}
 			name := protocol.QuotaWindowName(window)

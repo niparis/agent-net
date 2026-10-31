@@ -130,7 +130,8 @@ type quotaModel struct {
 	used, done, failedRuns                        int
 	last                                          int64
 	failed, allowed, scored, succeeded, available bool
-	stale                                         bool
+	stale, protected                              bool
+	provider                                      string
 }
 
 // quotaModels lists only registered profiles, including unavailable profiles.
@@ -143,6 +144,8 @@ func (m Model) quotaModels() []quotaModel {
 			model += ":" + p.Effort
 		}
 		row := quotaModel{name: p.Name, harness: p.Harness, model: model, failed: true, stale: p.Available != nil && !*p.Available}
+		row.provider = protocol.ProfileProvider(p.Harness, p.Model)
+		row.protected = m.providerProtected(row.provider)
 		found := false
 		for _, n := range m.snap.Nodes {
 			for _, track := range n.Tracks {
@@ -235,7 +238,29 @@ func (m Model) quotaModelsView(w int) []string {
 	}
 	picks := make([]protocol.WorkerModelChoice, len(levels))
 	for i, level := range levels {
-		picks[i], _ = protocol.ChooseWorkerModel(candidates, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
+		var normal, protected []protocol.WorkerModelCandidate
+		for _, c := range candidates {
+			if len(m.snap.ProtectedProviders.Providers) > 0 {
+				score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, m.snap.Scores)
+				if !ok {
+					continue
+				}
+				fit, _ := protocol.DifficultyFit(score.Score, level, m.snap.DifficultyMinimums)
+				if fit != "good" && fit != "excellent" {
+					continue
+				}
+			}
+			if m.providerProtected(protocol.ProfileProvider(c.Harness, c.Model)) {
+				protected = append(protected, c)
+			} else {
+				normal = append(normal, c)
+			}
+		}
+		var err error
+		picks[i], err = protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
+		if err != nil {
+			picks[i], _ = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, 0)
+		}
 	}
 	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
 	showUsed := w >= 110
@@ -292,6 +317,9 @@ func (m Model) quotaModelsView(w int) []string {
 			score += "/" + r.score.Effort
 		}
 		model := workerDisplayModel(r.harness, r.model)
+		if r.protected {
+			r.name = "🔒 " + r.name
+		}
 		line := fmt.Sprintf("%-*s %-*s %-*s %-*s %s", nameWidth, cell(sanitize(r.name), nameWidth), harnessWidth, cell(r.harness, harnessWidth), modelWidth, cell(sanitize(model), modelWidth), scoreWidth, cell(score, scoreWidth), strings.Join(fits, " "))
 		if showUsed {
 			line += "  " + cell(workerUsage(r), usedWidth)
@@ -307,6 +335,9 @@ func (m Model) quotaModelsView(w int) []string {
 	for i, d := range displayed {
 		body = append(body, d.line)
 		r := rows[i]
+		if r.protected {
+			body = append(body, sDim.Render(clip("  protected · saved for your orchestrator ("+r.provider+")", w-4)))
+		}
 		if r.stale {
 			body = append(body, sDim.Render("  model gone - ask the CTO to fix"))
 		} else if !r.available || !r.allowed {
@@ -323,6 +354,9 @@ func (m Model) quotaModelsView(w int) []string {
 	}
 	body = append(body, sDim.Render(clip(key, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
+	if len(m.snap.ProtectedProviders.Providers) > 0 {
+		title += " · 🔒 protected"
+	}
 	out := panel(title, body, w, roleAccent)
 	if selectedRow >= 0 {
 		r := rows[selectedRow]
@@ -392,4 +426,13 @@ func naturalList(items []string) string {
 	default:
 		return strings.Join(items[:len(items)-1], ", ") + " and " + items[len(items)-1]
 	}
+}
+
+func (m Model) providerProtected(provider string) bool {
+	for _, p := range m.snap.ProtectedProviders.Providers {
+		if strings.EqualFold(p, provider) {
+			return true
+		}
+	}
+	return false
 }
