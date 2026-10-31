@@ -1103,8 +1103,13 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 		return false
 	})
 	// It still answers, and the other one is reported as lost.
+	// Without the gateway link the send is only queued in the outbox.
+	eventually(t, "the restarted daemon is linked to the gateway", w.d.Connected)
 	var sent protocol.MessageSent
 	json.Unmarshal(w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: live.SessionID, Body: "still there?"}), &sent)
+	if sent.Message == nil {
+		t.Fatalf("owner_send did not deliver: %+v", sent)
+	}
 	w.replyTo(t, w.ownerID(), sent.Message.ID)
 	w.workerStopped(t, g, protocol.StopLost)
 	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 1 || !strings.Contains(evs[0], "reason=lost") {
