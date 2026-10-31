@@ -150,7 +150,7 @@ func (m Model) hints() []hint {
 	case m.tab == 1:
 		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "conversation", 1}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
 	case m.tab == 2:
-		return []hint{{"up/down", "scroll", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
+		return []hint{{"up/down", "scroll/select", 1}, {"p", "protect", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
 	case m.tab == 5:
 		return []hint{{"1-6", "tabs", 1}, {"tab", "CTO", 1}, {"?", "keys", 1}, {"q", "quit", 1}}
 	case m.tab == toolsTab:
@@ -193,6 +193,11 @@ func (m Model) helpLine(w int) string {
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
 	case modeForm:
 		return sDim.Render(clip("tab completes  up/down or enter: field  enter on the task starts  esc cancels", w))
+	case modeQuotaConfirm:
+		if m.quotaUnprotect {
+			return clip("Unprotect "+m.quotaConfirm+"? workers may use this provider freely. y/n", w)
+		}
+		return clip("Protect "+m.quotaConfirm+"? y/n", w)
 	case modeConfirm:
 		return clip(sBold.Render("Stop worker "+m.confirmName+"? y/n"), w)
 	case modeRename:

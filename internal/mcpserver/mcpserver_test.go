@@ -64,7 +64,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		names = append(names, tl.Name)
 	}
 	sort.Strings(names)
-	want := "agent_announce agent_get agent_handback agent_learn agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_project_add agent_project_list agent_propose_idea agent_reply agent_request_approval agent_send agent_start agent_stop agent_worker_profile_add agent_worker_profile_remove agent_worker_profiles"
+	want := "agent_announce agent_get agent_handback agent_learn agent_list agent_mcp_add agent_mcp_list agent_mcp_remove agent_mcp_test agent_message_status agent_messages agent_nodes agent_project_add agent_project_list agent_propose_idea agent_protected_providers_get agent_protected_providers_set agent_reply agent_request_approval agent_send agent_start agent_stop agent_worker_profile_add agent_worker_profile_remove agent_worker_profiles"
 	if strings.Join(names, " ") != want {
 		t.Fatalf("tools: %v", names)
 	}
@@ -156,5 +156,27 @@ func TestReplyOutcomeForwarded(t *testing.T) {
 	r, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_reply", Arguments: map[string]any{"message_id": "m", "body": "no", "outcome": "escalate", "reason": "unclear", "recommendation": "ask"}})
 	if err != nil || r.IsError || got["outcome"] != "escalate" || got["reason"] != "unclear" || got["recommendation"] != "ask" {
 		t.Fatalf("reply: %+v %v %+v", r, err, got)
+	}
+}
+
+func TestProtectedProvidersForwardOwnerGate(t *testing.T) {
+	var methods []string
+	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
+		methods = append(methods, method)
+		return nil, errors.New("owner only")
+	})
+	for _, name := range []string{"agent_protected_providers_get", "agent_protected_providers_set"} {
+		args := map[string]any{}
+		if strings.HasSuffix(name, "_set") {
+			args["protected_providers"] = []string{}
+			args["reason"] = ""
+		}
+		result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+		if err != nil || !result.IsError {
+			t.Fatalf("%s: %v %+v", name, err, result)
+		}
+	}
+	if strings.Join(methods, ",") != "protected_providers_get,protected_providers_set" {
+		t.Fatalf("calls: %v", methods)
 	}
 }

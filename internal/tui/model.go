@@ -59,6 +59,9 @@ type Model struct {
 	width, height     int
 	tab               int
 	quotaScroll       int
+	quotaSelected     int
+	quotaConfirm      string
+	quotaUnprotect    bool
 	quotaShowUnset    bool
 	messageShowEvents bool
 
@@ -657,6 +660,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.formKey(k)
 	case modeConfirm:
 		return m.confirmKey(k)
+	case modeQuotaConfirm:
+		return m.quotaConfirmKey(k)
 	case modeTrust:
 		return m.trustKey(k)
 	case modePolicy:
@@ -799,15 +804,29 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.tab == 2 {
 		switch k.String() {
+		case "p":
+			rows := m.selectableQuotaRows()
+			if len(rows) == 0 {
+				m.fail("No subscription selected.")
+				return m, nil
+			}
+			row := rows[min(m.quotaSelected, len(rows)-1)]
+			provider := m.quotaModelProvider(row.provider.Provider)
+			m.notice = notice{}
+			m.quotaConfirm, m.quotaUnprotect = provider, m.quotaProviderProtected(row.provider.Provider)
+			m.mode = modeQuotaConfirm
 		case "s":
+			m.quotaSelected = 0
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
 		case "down", "j":
+			m.quotaSelected = min(m.quotaSelected+1, max(0, len(m.selectableQuotaRows())-1))
 			m.quotaScroll++
 		case "up", "k":
+			m.quotaSelected = max(0, m.quotaSelected-1)
 			m.quotaScroll = max(0, m.quotaScroll-1)
 		case "?":
 			m.help = true

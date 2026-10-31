@@ -1,10 +1,11 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online  14:05:00
 ╭─Subscriptions · read on research · read 40s ago──────────────────────────────╮
+│ no provider protected · select a subscription and press p                    │
 │ PROVIDER    PLAN      WINDOW         LEFT                 PACE      RESETS   │
-│ claude      max       session        █████████─  88%      -         -        │
+│ > claude    max       session        █████████─  88%      -         -        │
 │                       week           ████──────  40%      -         -        │
 │                       Fable week     ██████████  95%      -         -        │
-│ codex       prolite   week           █─────────   8%      -         -        │
+│   codex     prolite   week           █─────────   8%      -         -        │
 │ 17 providers not set up · s to show                                          │
 │ 2 more subscriptions (not used by your agents) · s to show                   │
 │ laptop: exit status 2                                                        │
@@ -14,11 +15,10 @@
 │ terra              codex    gpt-6.1-terra:high        42.3/high    E E E G P │
 │ T/S/N/H/V=tri/sim/nor/hard/v.complex·E/G/P/-=strong/ok/weak/too weak·lit=now │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
 │ write to the CTO: set charters, start workers, ask about the network         │
 │ > write to the CTO...                                                        │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down scroll  s show not set up  tab CTO  1 sessions  ? help  q quit
+up/down scroll/select  p protect  s show not set up  tab CTO  1 sessions  ? help
