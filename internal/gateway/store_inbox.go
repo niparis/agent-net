@@ -122,7 +122,7 @@ func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
 	}
 	note := ""
 	if item.Kind == "approval" && answer == "approve" {
-		note = protocol.WrittenApprovalNote("Nicolas", protocol.NeutralizeMarkers(item.Text), item.AnsweredAt)
+		note = protocol.WrittenApprovalNote("the owner", protocol.NeutralizeMarkers(item.Text), item.AnsweredAt)
 	}
 	_, err = tx.Exec(`INSERT INTO messages (id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state,approval_note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		protocol.NewID("m"), protocol.NewID("c"), "", sender, item.SessionID, protocol.TypeNotification, answer, 0, protocol.NewID("k"), item.AnsweredAt.UnixNano(), item.AnsweredAt.Add(protocol.DefaultTTL).UnixNano(), protocol.StateStored, note)

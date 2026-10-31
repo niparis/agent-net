@@ -295,3 +295,7 @@ MCP configuration, and the daemon checks its session's process tree.
 
 Open questions 1 and 6 are decided. Auto-compaction of the CTO conversation (question 5) is built: OpenCode 2.2.0's `POST /api/session/{id}/compact`, the 70 percent threshold after a reply, the 40k floor before the provider's prompt cache window (5 minutes by default), one compaction per idle period, the owner settings, and the chat line. Merge authority is guidance plus approval objects, not a git lock: use branch protection on critical repositories.
 
+## Addendum (2026-10-31)
+
+The notes no longer name the owner. On the owner's instructions they now read "from the CTO, on the owner's instructions", "the owner overrules: do it." and "the owner approved: ...". Every owner sees the same words. The examples above are kept as history.
+

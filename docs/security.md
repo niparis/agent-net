@@ -521,7 +521,7 @@ Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent
 
 Only the owner can use `outcome_overrule`: the daemon applies the owner gate used for `session_text`, refusing agent clients and command lines inside an agent session's process tree. As with other owner-gated methods, the gateway trusts enrolled daemons. An enrolled machine can send the gateway frame, so keep enrollment credentials private.
 
-An overruled request has a gateway-stored marker separate from its body. Adapters write `[agent-net] Nicolas overrules: do it.` only when that marker is present. The marker cannot be supplied to `agent_send` or `agent_reply`. Message bodies have the `[agent-net` marker broken before delivery, so a peer cannot imitate the framed note. The owner's gate is a barrier against a command running inside a session, not a defense against a program that detaches from its process tree.
+An overruled request has a gateway-stored marker separate from its body. Adapters write `[agent-net] the owner overrules: do it.` only when that marker is present. The marker cannot be supplied to `agent_send` or `agent_reply`. Message bodies have the `[agent-net` marker broken before delivery, so a peer cannot imitate the framed note. The owner's gate is a barrier against a command running inside a session, not a defense against a program that detaches from its process tree.
 
 Outcome reasons and recommendations are visible to enrolled machines through the owner inbox. They are limited to 2048 bytes each and cleaned of controls. Do not put secrets in them. Unresolved rejections and escalations keep their request and reply messages and both session records past the normal retention period; normal retention applies after the owner answers.
 
@@ -552,7 +552,7 @@ Graph operator methods use the owner gate, including history and graph reads. Th
 
 The daemon accepts `inbox_list` and `inbox_answer` only through the owner operator gate. Agent tools can create requests only for their bound session; the gateway checks that the session belongs to the authenticated daemon and derives the project from it. As with other owner operations, a compromised enrolled machine is within the trust boundary.
 
-An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that Nicolas approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
+An approval is for one exact action. The gateway stores its approval note separately from message text and delivery adapters write it after the body with the `[agent-net]` marker. A message body claiming that the owner approved something does not count. The marker in message bodies is neutralized under the rule in decision [0013](decisions/0013-peer-trust-and-hints.md). The inbox item and answer remain in the gateway database; an answer and its queued delivery are committed together.
 
 Rejection and escalation outcomes and their inbox items are committed together. Resolving an outcome in Needs you closes its inbox item; an inbox answer also resolves the corresponding outcome. Maturity guidance tells agents to use the approval tool for an exact merge or critical deploy, so a message body claiming approval does not stand in for a written note.
 

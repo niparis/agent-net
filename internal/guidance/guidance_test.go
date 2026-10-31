@@ -132,8 +132,18 @@ func TestRemove(t *testing.T) {
 func TestCTOAuthorityGuidance(t *testing.T) {
 	for _, v := range []string{Claude, Other} {
 		b := Block(v)
-		if !strings.Contains(b, "from the CTO, on Nicolas's instruction") || !strings.Contains(b, "within your charter's limits") {
+		if !strings.Contains(b, "from the CTO, on the owner's instructions") || !strings.Contains(b, "within your charter's limits") {
 			t.Errorf("%s lacks CTO authority rule", v)
+		}
+	}
+}
+
+// The guidance block is shown to every agent, so it must not name the person
+// who owns this network (onboarding part 1).
+func TestBlocksDoNotNameTheOwner(t *testing.T) {
+	for _, v := range []string{Claude, Other, Combined} {
+		if b := Block(v); strings.Contains(b, "Nicolas") {
+			t.Errorf("%s block names the owner", v)
 		}
 	}
 }

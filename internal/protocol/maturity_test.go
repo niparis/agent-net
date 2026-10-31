@@ -149,8 +149,8 @@ func TestMergeApproval(t *testing.T) {
 	if got := MergeApprovalFor(g, "cogforge"); got.Authority != MergeAsk || !got.Written || !got.Required {
 		t.Fatalf("ask approval: %#v", got)
 	}
-	note := WrittenApprovalNote("Nicolas", "merge cogforge abc123", time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC))
-	if note != "Nicolas approved: merge cogforge abc123, 2026-10-30T14:02:00Z" {
+	note := WrittenApprovalNote("the owner", "merge cogforge abc123", time.Date(2026, 10, 30, 14, 2, 0, 0, time.UTC))
+	if note != "the owner approved: merge cogforge abc123, 2026-10-30T14:02:00Z" {
 		t.Fatalf("note: %q", note)
 	}
 }

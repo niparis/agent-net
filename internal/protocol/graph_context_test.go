@@ -13,7 +13,7 @@ func contextGraph() Graph {
 				Maturity: "mature - careful with breaking changes.",
 				Accepts:  "Generic endpoints and bug fixes from any consumer.",
 				Refuses:  "Client-specific endpoints for one consumer.",
-				Escalate: "Breaking API changes: ask Nicolas.",
+				Escalate: "Breaking API changes: ask the owner.",
 				Notes:    "Deploys go through homelab.",
 			}},
 			{Name: "tenebrae", Kind: "component", Charter: Charter{Maturity: "early - speed over safety."}},
@@ -37,7 +37,7 @@ func TestNodeContextIsShortAndSaysTheEdgesThatMatter(t *testing.T) {
 		"mature - careful with breaking changes.",
 		"Generic endpoints and bug fixes from any consumer.",
 		"Client-specific endpoints for one consumer.",
-		"Breaking API changes: ask Nicolas.",
+		"Breaking API changes: ask the owner.",
 		"wbg-architect governs your node as owner.",
 		"You depend on homelab.",
 		"tenebrae depends on your node",
@@ -85,7 +85,7 @@ func TestCharterBriefHasTheWholeCharter(t *testing.T) {
 		"maturity: mature - careful with breaking changes.",
 		"accepts: Generic endpoints and bug fixes from any consumer.",
 		"refuses: Client-specific endpoints for one consumer.",
-		"escalate: Breaking API changes: ask Nicolas.",
+		"escalate: Breaking API changes: ask the owner.",
 		"notes: Deploys go through homelab.",
 	} {
 		if !strings.Contains(got, want) {
