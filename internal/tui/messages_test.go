@@ -22,12 +22,13 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 	})
 	m.feed.byMsg["one"].Snippet = "first topic"
 	m.feed.byMsg["two"].Snippet = "second topic"
+	m.feed.byMsg["three"].Snippet = "latest topic"
 	rows := m.messageConversations()
 	if len(rows) != 2 || rows[0].id != "a" || len(rows[0].items) != 2 {
 		t.Fatalf("rows: %+v", rows)
 	}
 	v := ansi.Strip(strings.Join(m.messagesView(120, 20), "\n"))
-	if !strings.Contains(v, "first") || !strings.Contains(v, "secon") {
+	if !strings.Contains(v, "latest") || !strings.Contains(v, "secon") {
 		t.Fatal(v)
 	}
 }
@@ -87,6 +88,36 @@ func TestMessageConversationNavigation(t *testing.T) {
 	m = keys(m, "down")
 	if got := m.feed.items[m.feedCur].MsgID; got != "first" {
 		t.Fatalf("selected %s", got)
+	}
+}
+
+func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) {
+	const a, b = "s_0000000000000001", "s_0000000000000002"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.focus = focusFeed
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		ev(1, -5*time.Minute, "msg.stored", "one", a, b, "request", nil),
+		ev(2, -3*time.Minute, "msg.delivered", "one", a, b, "request", nil),
+		ev(3, -2*time.Minute, "msg.stored", "two", b, a, "reply", nil),
+		ev(4, -time.Minute, "msg.delivered", "two", b, a, "reply", nil),
+	})
+	m.feed.byMsg["one"].Snippet = "First request"
+	m.feed.byMsg["two"].Snippet = "Latest reply"
+	rows := m.messageConversations()
+	if len(rows) != 1 || len(rows[0].items) != 2 {
+		t.Fatalf("messages without a conversation ID should group by session pair: %+v", rows)
+	}
+	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	for _, want := range []string{"Latest reply", "2 messages", "1m ago"} {
+		if !strings.Contains(line, want) {
+			t.Errorf("thread summary is missing %q: %q", want, line)
+		}
+	}
+	m = keys(m, "enter")
+	if m.open != nil || m.conv != nil || m.feedCur != rows[0].items[1] {
+		t.Fatalf("enter should open the latest message in the thread pane, got open=%+v conv=%+v cursor=%d", m.open, m.conv, m.feedCur)
 	}
 }
 

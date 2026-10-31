@@ -1003,13 +1003,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if it == nil || !it.isMessage() {
 				return m, nil
 			}
-			// Open the conversation of the end on this machine; when there is
-			// none, the message body explains why it cannot be read here.
-			if id := m.feedConvID(it); id != "" {
-				return m, m.openConvFor(id)
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				row := rows[m.conversationIndex(rows)]
+				m.feedCur = row.items[len(row.items)-1]
 			}
-			m.open = &openMsg{id: it.MsgID, loading: true}
-			return m, m.bodyCmd(it.MsgID)
+			return m, nil
 		}
 		return m, m.openConv()
 	}

@@ -31,6 +31,9 @@ func (m Model) messageConversations() []messageConversation {
 			id = parentIDs[it.Parent]
 		}
 		if id == "" {
+			id = messagePairID(it.From, it.To)
+		}
+		if id == "" {
 			id = it.MsgID
 		}
 		parentIDs[it.MsgID] = id
@@ -96,6 +99,17 @@ func (m Model) conversationIndex(rows []messageConversation) int {
 	}
 	return 0
 }
+
+func messagePairID(from, to string) string {
+	if from == "" || to == "" {
+		return ""
+	}
+	if from > to {
+		from, to = to, from
+	}
+	return "pair:" + from + "\x00" + to
+}
+
 func (m Model) messageConversationLine(c messageConversation, w int, selected bool) string {
 	if c.event {
 		it := m.feed.items[c.items[0]]
@@ -106,18 +120,18 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 		return line
 	}
 	first := m.feed.items[c.items[0]]
-	last := m.feed.items[c.items[len(c.items)-1]]
+	latest := m.feed.items[c.items[len(c.items)-1]]
 	from := m.conversationName(first.From)
 	if first.FromCTO {
 		from = "CTO"
 	}
 	to := m.conversationName(first.To)
 	names := from + " ↔ " + to
-	topic := first.Snippet
+	topic := latest.Snippet
 	if topic == "" {
-		topic = m.missingMessageBody(first)
+		topic = m.missingMessageBody(latest)
 	}
-	age := m.now().Sub(last.At)
+	age := m.now().Sub(c.at)
 	if age < 0 {
 		age = 0
 	}
@@ -132,7 +146,12 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	if selected {
 		lead = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
-	content := names + " · " + topic
+	content := topic + " · " + names
+	messageWord := "messages"
+	if len(c.items) == 1 {
+		messageWord = "message"
+	}
+	suffix := fmt.Sprintf("%d %s · %s", len(c.items), messageWord, ageText)
 	marker := ""
 	if first.OwnerInstruction != "" {
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("you→ ")
@@ -140,13 +159,13 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	style := lipgloss.NewStyle().Foreground(roleText)
 	if c.cto {
 		style = lipgloss.NewStyle().Foreground(roleCTO)
-	} else if last.State == protocol.StateFailed || last.State == protocol.StateExpired {
+	} else if latest.State == protocol.StateFailed || latest.State == protocol.StateExpired {
 		style = lipgloss.NewStyle().Foreground(roleError)
-	} else if last.Type == protocol.TypeRequest && last.State != protocol.StateReplied {
+	} else if latest.Type == protocol.TypeRequest && latest.State != protocol.StateReplied {
 		style = lipgloss.NewStyle().Foreground(roleWarning)
 	}
-	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(ageText)-1, 0)
-	line := lead + marker + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(ageText)
+	room := max(w-ansi.StringWidth(lead)-ansi.StringWidth(marker)-ansi.StringWidth(suffix)-1, 0)
+	line := lead + marker + padStyled(style.Render(clip(content, room)), room) + " " + sDim.Render(suffix)
 	if selected {
 		line = selectedRow(line)
 	}
