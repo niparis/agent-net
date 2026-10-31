@@ -68,7 +68,7 @@ func TestMessageThreadShowsLongBriefAndShortReply(t *testing.T) {
 	}
 }
 
-func TestConversationExplainsUnavailableMessageBody(t *testing.T) {
+func TestConversationExplainsMessageBodyFetchError(t *testing.T) {
 	m := newModel(120, 34)
 	m.snap.OwnerSession = ownerID
 	m.feed = newFeed()
@@ -77,6 +77,40 @@ func TestConversationExplainsUnavailableMessageBody(t *testing.T) {
 	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
 	if !strings.Contains(chat, "body held on build-vm, offline") {
 		t.Fatalf("the thread did not explain why its body is unavailable:\n%s", chat)
+	}
+	if strings.Contains(chat, "loading body") {
+		t.Fatalf("a fetch error should not look like a body is still loading:\n%s", chat)
+	}
+}
+
+func TestConversationShowsLoadingBodyUntilFetched(t *testing.T) {
+	m := newModel(120, 34)
+	m.tab = 1
+	m.snap.OwnerSession = ownerID
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "loading", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
+	m.feed.byMsg["loading"].Snip = snipLoading
+	chat := strings.Join(m.conversationChat(m.messageConversations()[0], 80), "\n")
+	if !strings.Contains(chat, "loading body") {
+		t.Fatalf("the thread should explain that the body fetch is in progress:\n%s", chat)
+	}
+}
+
+func TestMessagePartiesNeverShowRawSessionIDs(t *testing.T) {
+	const owner = "s_owner_fixture"
+	m := newModel(120, 34)
+	m.tab = 1
+	m.snap.OwnerSession = owner
+	const nameless = "s_nameless_fixture"
+	m.snap.Agents = append(m.snap.Agents, agent(nameless, "n_mac", "Mac", "pi", "", nil))
+	if got := m.conversationName(nameless); got != "unknown session" {
+		t.Fatalf("a session without a name should be labeled unknown, got %q", got)
+	}
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "unknown-party", Time: t0}, ConversationID: "unknown-party", From: "s_missing_fixture", To: owner, Type: "request"}})
+	line := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 110, false))
+	if !strings.Contains(line, "unknown session ↔ you") || strings.Contains(line, "s_missing_fixture") || strings.Contains(line, owner) {
+		t.Fatalf("message parties should use safe session labels, got %q", line)
 	}
 }
 
@@ -245,7 +279,12 @@ func TestMessageSystemEventsToggle(t *testing.T) {
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "node.connected", Hostname: "build", Time: t0}}})
 	v := ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
-	if !strings.Contains(v, "1 system events · e to show") || strings.Contains(v, "build connected") {
+	if !strings.Contains(v, "1 system event · e to show") || strings.Contains(v, "build connected") {
+		t.Fatal(v)
+	}
+	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 2, Kind: "node.connected", Hostname: "test", Time: t0}}})
+	v = ansi.Strip(strings.Join(m.messagesView(120, 12), "\n"))
+	if !strings.Contains(v, "2 system events · e to show") {
 		t.Fatal(v)
 	}
 	m = keys(m, "e")

@@ -307,7 +307,30 @@ func TestLayoutGoldens(t *testing.T) {
 			golden(t, fmt.Sprintf("sessions_%dx%d_%s_focused", size[0], size[1], kind), v)
 		}
 		m := keys(newModel(size[0], size[1]), "2")
+		for id, body := range map[string]string{
+			"m_1": "Can you check the latest deployment plan?\nThe release is planned for tonight.",
+			"m_2": "The deployment plan looks good.\nI checked the rollback steps too.",
+			"m_3": "Build passed for the release candidate.\nAll required checks are green.",
+			"m_4": "Rollback is ready if we need it.\nThe previous version is still available.",
+			"m_5": "Which environment should I use?\nI can start as soon as you confirm.",
+		} {
+			if it := m.feed.byMsg[id]; it != nil {
+				it.Body = body
+				it.Snippet = strings.SplitN(body, "\n", 2)[0]
+				it.Snip = snipDone
+			}
+		}
+		for i, it := range m.feed.items {
+			if it.MsgID == "m_1" {
+				m.feedCur = i
+				break
+			}
+		}
 		v := m.View()
+		plain := ansi.Strip(v)
+		if strings.Contains(plain, "loading body") || !strings.Contains(plain, "The deployment plan looks good.") || !strings.Contains(plain, "Can you check the latest deployment plan?") {
+			t.Fatalf("the Messages golden fixture should show fetched previews and thread bodies:\n%s", plain)
+		}
 		for _, line := range lines(v) {
 			if ansi.StringWidth(line) > size[0] {
 				t.Fatalf("line exceeds %d: %q", size[0], line)

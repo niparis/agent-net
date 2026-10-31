@@ -399,8 +399,24 @@ func (m Model) systemEventCount() int {
 }
 
 func (m Model) conversationName(id string) string {
+	if id == "" {
+		return "unknown session"
+	}
+	if m.snap.OwnerSession != "" && id == m.snap.OwnerSession {
+		return "you"
+	}
+	a, ok := m.agentByID(id)
+	if !ok {
+		return "unknown session"
+	}
+	if protocol.IsOwner(a.Harness) {
+		return "you"
+	}
+	if strings.TrimSpace(a.Profile.Name) == "" {
+		return "unknown session"
+	}
 	name := m.feedName(id)
-	if a, ok := m.agentByID(id); ok && a.Worker != nil {
+	if a.Worker != nil {
 		if i := strings.LastIndex(name, "worker "); i >= 0 {
 			return name[i:]
 		}

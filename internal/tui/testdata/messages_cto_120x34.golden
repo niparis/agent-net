@@ -1,10 +1,12 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy                        updated 14:05:00
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
-│   tenebrae-53 ↔ s_00000000 · loading body   1 message · 1m ago ││ ▸ 13:56 CTO                                        │
-│   ci-runner ↔ tenebrae-53 · loading body   2 messages · 2m ago ││ loading body                                       │
-│ ▸ CTO ↔ strategies · loading body          2 messages · 8m ago ││   13:57 strategies                                 │
-│                                                                ││ loading body                                       │
+│   tenebrae-53 ↔ unknown session · Which en… 1 message · 1m ago ││ ▸ 13:56 CTO                                        │
+│   ci-runner ↔ tenebrae-53 · Rollback is r… 2 messages · 2m ago ││ Can you check the latest deployment plan?          │
+│ ▸ CTO ↔ strategies · The deployment plan … 2 messages · 8m ago ││ The release is planned for tonight.                │
+│                                                                ││   13:57 strategies                                 │
+│                                                                ││ The deployment plan looks good.                    │
+│                                                                ││ I checked the rollback steps too.                  │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
@@ -16,9 +18,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
-│                                                                ││                                                    │
-│                                                                ││                                                    │
-│ 1 system events · e to show · w hide workers                   ││                                                    │
+│ 1 system event · e to show · w hide workers                    ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │

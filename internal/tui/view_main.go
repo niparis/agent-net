@@ -1109,7 +1109,12 @@ func (m Model) messagesView(w, h int) []string {
 	if m.hideWorkerThreads {
 		workerAction = "w show workers"
 	}
-	footer := fmt.Sprintf("%d system events · %s · %s", m.systemEventCount(), eventAction, workerAction)
+	eventCount := m.systemEventCount()
+	eventWord := "events"
+	if eventCount == 1 {
+		eventWord = "event"
+	}
+	footer := fmt.Sprintf("%d system %s · %s · %s", eventCount, eventWord, eventAction, workerAction)
 	var chat []string
 	if len(rows) > 0 {
 		chat = m.conversationChat(rows[selected], chatW)

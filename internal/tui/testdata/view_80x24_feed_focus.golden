@@ -1,10 +1,10 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages · conversations─────────────────────────────────────────────────────╮
-│   tenebrae-53 ↔ s_00000000 · body unavailable: The body … 1 message · 1m ago │
+│   tenebrae-53 ↔ unknown session · body unavailable: The … 1 message · 1m ago │
 │   ci-runner ↔ tenebrae-53 · body unavailable: The body … 2 messages · 2m ago │
 │ ▸ tenebrae-53 ↔ strategies · body unavailable: The body… 2 messages · 8m ago │
-│ 1 system events · e to show · w hide workers                                 │
+│ 1 system event · e to show · w hide workers                                  │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
 │ ▸ 13:56 tenebrae-53                                                          │

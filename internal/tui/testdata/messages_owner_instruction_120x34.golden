@@ -1,7 +1,7 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 12 online · 1 busy                        updated 14:05:00
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
-│ ▸ you→ tenebrae-53 ↔ s_00000000 · work      1 message · 1m ago ││ ▸ 14:04 you→ tenebrae-53                           │
+│ ▸ you→ tenebrae-53 ↔ unknown session · work 1 message · 1m ago ││ ▸ 14:04 you→ tenebrae-53                           │
 │   ci-runner ↔ tenebrae-53 · loading body   2 messages · 2m ago ││ Your instruction: ask the agent                    │
 │   tenebrae-53 ↔ strategies · loading body  2 messages · 8m ago ││ work                                               │
 │                                                                ││                                                    │
@@ -18,7 +18,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
-│ 1 system events · e to show · w hide workers                   ││                                                    │
+│ 1 system event · e to show · w hide workers                    ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
