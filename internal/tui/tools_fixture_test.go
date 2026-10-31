@@ -96,9 +96,11 @@ func toolFixtureItems() []protocol.ToolItem {
 	pg.Results = []protocol.ToolResult{{Project: "cogforge", NodeID: toolNodeR, State: "applied"}, {Project: "tenebrae", NodeID: toolNodeM, State: "pending"}}
 	items = append(items, pg)
 	// two different copies on research
-	items = append(items,
-		toolSkill("design-taste-frontend", "sha256:aaaaaaa1111", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/design-taste-frontend", "user", "", "claude")),
-		toolSkill("design-taste-frontend", "sha256:bbbbbbb2222", toolLoc(toolNodeR, "research", "/home/n/.agents/skills/design-taste-frontend", "user", "", "pi")))
+	claude := toolLoc(toolNodeR, "research", "/home/n/.claude/skills/design-taste-frontend", "user", "", "claude")
+	pi := toolLoc(toolNodeR, "research", "/home/n/.agents/skills/design-taste-frontend", "user", "", "pi")
+	pi.Manifest = &protocol.SkillManifest{Newest: time.Date(2026, 10, 25, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 200, Fingerprint: "old"}, {Path: "notes.md", Size: 40, Fingerprint: "old"}}}
+	claude.Manifest = &protocol.SkillManifest{Newest: time.Date(2026, 10, 28, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 300, Fingerprint: "new"}, {Path: "notes.md", Size: 50, Fingerprint: "new"}, {Path: "scripts/run.sh", Size: 80, Fingerprint: "new"}}}
+	items = append(items, toolSkill("design-taste-frontend", "sha256:aaaaaaa1111", claude), toolSkill("design-taste-frontend", "sha256:bbbbbbb2222", pi))
 	// a duplicate under another name
 	items = append(items, toolManaged(userBoth("clean-architecture-python", "sha256:5555555aaaa"), "global"))
 	items = append(items, toolSkill("imnplementing-clean-architecture", "sha256:5555555aaaa", toolLoc(toolNodeR, "research", "/home/n/.claude/skills/imnplementing-clean-architecture", "user", "", "claude")))
@@ -234,4 +236,11 @@ func (f *fakeTools) SendAsOwner(_ context.Context, to, body string) (protocol.Me
 	defer f.mu.Unlock()
 	f.sent = append(f.sent, to+": "+body)
 	return protocol.MessageSent{Message: &protocol.Message{ID: "m_x", To: to}}, nil
+}
+
+func (f *fakeTools) ToolsReadFile(_ context.Context, p protocol.SkillTextRequest) (string, error) {
+	if p.Item == "old" {
+		return "old text\n", nil
+	}
+	return "new text\n", nil
 }

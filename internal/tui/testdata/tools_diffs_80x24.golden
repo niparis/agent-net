@@ -3,15 +3,15 @@
 Things that do not match across your machines. enter fixes the selected one, x
 accepts it as it is.
 ╭─What differs · 5 to look at──────────────────────────────────────────────────╮
-│ ▸ ! design-taste-frontend has 2 different copies on research                 │
-│     fix: compare, then keep one                                              │
+│ ▸ ! design-taste-frontend: Claude's copy (~/.claude/skills) is newer than    │
+│     Pi's (~/.agents/skills), 3 files differ                                  │
+│     fix: keep the newer one in both places                                   │
 │   ◐ code-review differs: Nicolas-MBP on v1, research on v3                   │
 │     fix: make every machine use v3                                           │
 │   ◐ imnplementing-clean-architecture looks like a copy of                    │
 │     clean-architecture-python                                                │
 │     fix: remove imnplementing-clean-architecture                             │
-│   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours      │
-│     fix: remove the repo copy                                                │
+│                                                                              │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮

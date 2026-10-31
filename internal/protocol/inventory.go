@@ -368,3 +368,13 @@ type ToolAccept struct {
 	Key      string `json:"key"`
 	Accepted bool   `json:"accepted"`
 }
+
+// SkillTextRequest identifies one currently observed file for an owner preview.
+type SkillTextRequest struct {
+	Item     string             `json:"item"`
+	Location ToolImportLocation `json:"location"`
+	Path     string             `json:"path"`
+	Owner    string             `json:"owner,omitempty"`
+	Name     string             `json:"name,omitempty"`
+	Hash     string             `json:"hash,omitempty"`
+}

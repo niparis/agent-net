@@ -1,21 +1,21 @@
 1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 sessions, 6 online · 1 busy             updated 14:05:00
  Differences   All tools   By project   [ ] switch screen · ← → also   / search
-╭─Compare, then keep one───────────────────────────────────────────────────────────────────────────────────────────────╮
-│ a  keep the copy on research (bbbbbb)                                                                                │
-│ b  keep the copy on research (aaaaaa)                                                                                │
-│   the one you keep goes into agent-net and to every machine                                                          │
+╭─Keep the newer one in both places────────────────────────────────────────────────────────────────────────────────────╮
+│ a  keep the copy on research (claude)                                                                                │
+│      3 files, 430 B, changed 1 day ago (28 Oct) (newer)                                                              │
+│ b  keep the copy on research (pi)                                                                                    │
+│      2 files, 240 B, changed 4 days ago (25 Oct)                                                                     │
+│   3 files differ: SKILL.md changed, notes.md changed, scripts/run.sh only on claude                                  │
+│   suggest: keep claude's copy (newer, has every file)                                                                │
+│   the one you keep goes into agent-net and to research                                                               │
+│   selected file: SKILL.md                                                                                            │
 │                                                                                                                      │
 │ exact folders                                                                                                        │
-│   research  /home/n/.agents/skills/design-taste-frontend                                                             │
 │   research  /home/n/.claude/skills/design-taste-frontend                                                             │
+│   research  /home/n/.agents/skills/design-taste-frontend                                                             │
 │                                                                                                                      │
-│ a keep bbbbbb  b keep aaaaaa  d exact folders  esc cancel                                                            │
+│ enter keep newer  a keep claude's copy  b keep pi's copy  n/p select file  v view diff  d exact folders  esc cancel  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-│     fix: import them and put them on every machine                                                                   │
-│   … 2 items share a difference (pending)                                                                             │
-│     press enter to see each difference                                                                               │
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │
