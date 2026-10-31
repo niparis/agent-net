@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-D name  up/down projects  left/right follow  / find  z overview  U/u learned/undo  h hide  H hidden  enter sessions
+up/down move  left/right follow  enter open  / find  z overview  ? help  q quit

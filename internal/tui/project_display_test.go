@@ -12,8 +12,8 @@ func TestMapProjectDisplayForm(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	src := m.src.(*fakeSource)
 	m.mp.selected = "cogforge"
-	if !strings.Contains(m.helpLine(120), "D name") {
-		t.Fatalf("hint: %s", m.helpLine(120))
+	if !strings.Contains(strings.Join(m.helpContent(120), "\n"), "name project") {
+		t.Fatalf("help: %s", strings.Join(m.helpContent(120), "\n"))
 	}
 	m, _ = press(m, keyRunes("D"))
 	if !strings.Contains(m.helpLine(120), "enter saves") {

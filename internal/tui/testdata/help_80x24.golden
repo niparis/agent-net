@@ -15,10 +15,10 @@ Keys ─────────────────────────
   p                    delegation policy: subagent or worker for code changes (a
                        form)
   I                    integrations for all machines: 7 checkboxes (a form)
-  4/M                  map: charters and edges; z switches overview
-  map D                name project (empty clears)
-  map arrows           focus: up/down projects, left/right edges, / find, [ ]
-                       scroll, U select learned change, u undo, h hide, H show
-                       hidden
+
+ Quotas
+  up/down, j/k         select a subscription
+  p                    protect or unprotect the selected subscription
+  s                    show or hide subscriptions that are not set up
   more below
 up/down scroll  esc close help  q quit

@@ -21,4 +21,4 @@
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-D name  up/down projects  left/right follow  z overview  h hide  H hidden
+up/down move  left/right follow  enter open  / find  z overview  ? help  q quit

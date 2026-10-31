@@ -229,8 +229,8 @@ func TestEnterWithoutASelection(t *testing.T) {
 
 func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	m, _ := workerModel(140, 30)
-	if !strings.Contains(lines(m.View())[29], "enter open session") {
-		t.Errorf("footer: %q", lines(m.View())[29])
+	if foot := lines(m.View())[29]; !strings.Contains(foot, "enter open") || !strings.Contains(foot, "x stop") {
+		t.Errorf("footer: %q", foot)
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	v := m.View()

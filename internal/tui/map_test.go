@@ -230,9 +230,15 @@ func TestMapDefaultsToProject(t *testing.T) {
 func TestMapHelpAndHints(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	line := m.helpLine(120)
-	for _, want := range []string{"left/right", "z", "enter", "c"} {
+	for _, want := range []string{"left/right", "z", "enter"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("map hints missing %q", want)
+		}
+	}
+	help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
+	for _, want := range []string{"toggle the overview", "focus the CTO box", "name project", "hide or unhide"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("map help missing %q", want)
 		}
 	}
 	if !strings.Contains(keys(m, "?").View(), "overview") {
@@ -252,7 +258,7 @@ func TestMapHidesAndUnhidesNodesWithSharedPreference(t *testing.T) {
 		t.Fatalf("hidden node is still listed or not counted:\n%s", m.View())
 	}
 	m = keys(m, "H")
-	if !containsString(m.mapSelectable(), "cogforge") || !strings.Contains(m.View(), "hidden") {
+	if !containsString(m.mapSelectable(), "cogforge") || !m.showHiddenNodes {
 		t.Fatalf("X did not show the tagged hidden node:\n%s", m.View())
 	}
 	m.mp.selected = "cogforge"
@@ -269,9 +275,12 @@ func TestMapHidesAndUnhidesNodesWithSharedPreference(t *testing.T) {
 	// The saved notice takes the key line until a key dismisses it; the hints
 	// then come back.
 	m = keys(m, "down")
-	line := m.helpLine(120)
-	if !strings.Contains(line, "h hide") || !strings.Contains(line, "H hidden") {
+	line := ansi.Strip(m.helpLine(120))
+	if !strings.Contains(line, "z overview") || !strings.Contains(line, "? help") {
 		t.Fatalf("map key hints: %s", line)
+	}
+	if help := ansi.Strip(strings.Join(m.helpContent(120), "\n")); !strings.Contains(help, "hide or unhide") {
+		t.Fatalf("map help does not list the hide key: %s", help)
 	}
 }
 

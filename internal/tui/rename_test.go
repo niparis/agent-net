@@ -106,7 +106,7 @@ func TestRenameErrorAndHelp(t *testing.T) {
 		t.Errorf("notice: %+v", m.notice)
 	}
 	m, _ = press(m, keyRunes("?"))
-	if !strings.Contains(strings.Join(lines(m.View()), "\n"), "name the machine of the session") {
+	if !strings.Contains(strings.Join(m.helpContent(160), "\n"), "name the machine of the session") {
 		t.Error("help lacks the N key")
 	}
 }

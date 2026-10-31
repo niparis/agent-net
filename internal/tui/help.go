@@ -21,35 +21,52 @@ type hint struct {
 	prio       int
 }
 
-// hints lists the keys of the current screen. Other actions add theirs here.
+// hints lists the keys used most on the current screen. The line holds at most
+// seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
 	switch {
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
-		return []hint{{"D", "name", 0}, {"up/down", "select/scroll", 1}, {"left/right", "select", 1}, {"pgup/pgdn", "scroll", 1}, {"enter", "focus", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"?", "help", 2}}
+		return []hint{{"up/down", "select", 1}, {"left/right", "select", 1}, {"enter", "focus", 1}, {"z", "back", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"D", "name", 0}, {"up/down", "projects", 1}, {"left/right", "follow", 1}, {"/", "find", 1}, {"z", "overview", 0}, {"[ ]", "charter", 3}, {"U/u", "learned/undo", 1}, {"h", "hide", 0}, {"H", "hidden", 0}, {"enter", "sessions", 1}, {"c", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+		return []hint{{"up/down", "move", 1}, {"left/right", "follow", 1}, {"enter", "open", 1}, {"/", "find", 2}, {"z", "overview", 2}, {"?", "help", 0}, {"q", "quit", 0}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"enter", "open CTO", 1}, {"tab", "back", 1}, {"esc", "back", 3}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
+		return []hint{{"enter", "open CTO", 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == 1:
-		return []hint{{"up/down", "select", 1}, {"left/right", "message", 1}, {"enter", "thread", 1}, {"w", "workers", 2}, {"v", "body", 1}, {"e", "events", 2}, {"l", "filter", 2}, {"tab", "CTO", 1}, {"?", "help", 3}}
+		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", "CTO", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == 2:
-		return []hint{{"up/down", "scroll/select", 1}, {"p", "protect", 1}, {"s", "show not set up", 1}, {"tab", "CTO", 1}, {"1", "sessions", 2}, {"?", "help", 2}, {"q", "quit", 2}}
+		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", "CTO", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == 5:
-		return []hint{{"1-6", "tabs", 1}, {"tab", "CTO", 1}, {"?", "keys", 1}, {"q", "quit", 1}}
+		return []hint{{"1-6", "tabs", 1}, {"tab", "CTO", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == toolsTab:
 		return m.toolsHints()
 	}
 	for _, e := range m.snap.Outcomes {
 		if m.selected == "outcome:"+e.ReplyID {
-			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 1}}
+			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
 	}
-	return []hint{{"1-6", "tabs", 2}, {"up/down", "select", 1}, {"enter", "open session", 1}, {"m", "msg", 1}, {"s", "start", 2}, {"x", "stop", 1}, {"h/H", "hide/show", 1}, {"t", "trust", 2}, {"p", "policy", 6}, {"N", "name machine", 6}, {"L", "learned", 7},
-		{"/", "filter", 3}, {"o", "offline", 4}, {"a", "active", 6}, {"d", "detail", 3}, {"tab", "CTO", 2}, {"r", "refresh", 6}, {"?", "help", 2}, {"q", "quit", 0}}
+	if strings.HasPrefix(m.selected, "learned:") {
+		return []hint{{"up/down", "select", 1}, {"a", "accept", 1}, {"r", "reject", 1}, {"?", "help", 2}, {"q", "quit", 0}}
+	}
+	for _, held := range m.snap.Held {
+		if held.ID == m.selected {
+			return []hint{{"up/down", "select", 1}, {"a", "approve", 1}, {"r", "refuse", 1}, {"?", "help", 2}, {"q", "quit", 0}}
+		}
+	}
+	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"/", "filter", 2}, {"tab", "CTO", 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	if a, ok := m.selectedAgent(); ok {
+		if a.Waiting != nil {
+			hs[1].label = "answer"
+		}
+		if a.Worker != nil {
+			hs[3] = hint{"x", "stop", 1}
+		}
+	}
+	return hs
 }
 
 // helpLine is the key line: as many hints as fit, the least useful dropped first.
@@ -84,7 +101,7 @@ func (m Model) helpLine(w int) string {
 	case modeCompose:
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
 	case modeForm:
-		return sDim.Render(clip("tab completes  up/down or enter: field  enter on the task starts  esc cancels", w))
+		return sDim.Render(clip("tab or up/down: field  enter: next or start  esc cancels", w))
 	case modeQuotaConfirm:
 		if m.quotaUnprotect {
 			return clip("Unprotect "+m.quotaConfirm+"? workers may use this provider freely. y/n", w)
@@ -99,7 +116,7 @@ func (m Model) helpLine(w int) string {
 	case modeTrust:
 		return clip(sBold.Render("Let "+m.confirmName+" act on requests from your other agents without asking? y/n"), w)
 	case modePolicy:
-		return sDim.Render(clip("left/right: change a choice  up/down or enter: field  enter on Scope saves  esc cancels", w))
+		return sDim.Render(clip("left/right change  up/down or enter field  enter saves  esc cancels", w))
 	}
 	hs := m.hints()
 	text := func() string {
@@ -145,17 +162,44 @@ func (m Model) helpContent(w int) []string {
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},
-		{"4/M", "map: charters and edges; z switches overview"},
-		{"map D", "name project (empty clears)"},
-		{"map arrows", "focus: up/down projects, left/right edges, / find, [ ] scroll, U select learned change, u undo, h hide, H show hidden"},
-		{"5 Tools", "[ ] screens; enter fix, x accept, a/u turn on/off, m machine; a plan shows first"},
-		{"C, tab", "focus the CTO box (tab or esc returns); enter opens the full CTO, n starts new, u undoes, m changes model"},
+		{"", ""},
+		{"Quotas", ""},
+		{"up/down, j/k", "select a subscription"},
+		{"p", "protect or unprotect the selected subscription"},
+		{"s", "show or hide subscriptions that are not set up"},
+		{"r", "refresh the readings"},
+		{"", ""},
+		{"Map", ""},
+		{"up/down, j/k", "select a project"},
+		{"left/right", "follow an edge in or out"},
+		{"enter", "open Sessions filtered to the project; in the overview, focus it"},
+		{"/", "find a project"},
+		{"z", "toggle the overview"},
+		{"D", "name project (empty clears)"},
+		{"h, H", "hide or unhide the selected project; show hidden projects"},
+		{"U, u", "select the next learned change; undo the selected one"},
+		{"[ ], ctrl+u/d", "scroll the charter; pgup/pgdn also work"},
+		{"c", "focus the CTO box"},
+		{"r", "refresh"},
+		{"M, esc", "leave Map for Sessions"},
+		{"", ""},
+		{"Tools", ""},
+		{"[ ]", "switch screens; left/right also switches, except on All tools"},
+		{"j/k, h/l", "select an item; h/l also move between columns on All tools"},
+		{"enter", "open the selected fix or plan; on All tools, details are below"},
+		{"x", "accept a difference as it is"},
+		{"a/u", "turn on or turn off for the selected machine or projects"},
+		{"m", "change the machine on By project"},
+		{"/", "search or filter"},
+		{"r", "rescan"},
+		{"tab, C", "focus the CTO box"},
+		{"C, tab", "focus the CTO box (tab or esc returns); enter opens the full CTO, esc returns, n starts new, u undoes, m changes model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
-		{"Messages", "up/down: conversation; left/right: message; v: body; e/l: events"},
+		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; w: workers; e/l: events"},
 		{"r", "refresh now"},
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
@@ -183,7 +227,9 @@ func (m Model) helpContent(w int) []string {
 			{".", "show accepted differences"},
 			{"a/u", "turn on or turn off for the selected machine or projects"},
 			{"m", "change the machine on By project"},
-			{"/", "search or filter"}, {"r", "rescan"}, {"esc or ?", "close help"},
+			{"/", "search or filter"}, {"r", "rescan"},
+			{"tab, C", "focus the CTO box"},
+			{"esc or ?", "close help"},
 		}
 	}
 	var out []string

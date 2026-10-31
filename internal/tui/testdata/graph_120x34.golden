@@ -19,7 +19,7 @@
 
   project-01 → project-02 request  ·  project-04 → project-05 reply
   ● charter  ·  ○ no charter  ·  gold: your words  ·  pink: talked, no rule set
-  + - zoom  hjkl pan  0 fit  arrows select  [ ] neighbours  o orbit  t talk  enter Map  space pause  ? keys
+  arrows select  + - zoom  0 fit  o orbit  t talk  enter Map  ? help
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-6 tabs  tab CTO  ? keys  q quit
+1-6 tabs  tab CTO  ? help  q quit

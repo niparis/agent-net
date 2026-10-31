@@ -21,4 +21,4 @@ What a session in this project gets. m changes the machine.
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k project  m machine  / filter  [ ] screen  r rescan  tab CTO  ? help  q quit
+j/k project  m machine  / filter  [ ] screen  ? help  q quit

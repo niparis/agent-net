@@ -31,4 +31,4 @@ Every skill and MCP server, and where it is on. a turns on, u turns off for the 
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k item  h/l machine  a turn on  u turn off  / search  [ ] screen  r rescan  tab CTO  ? help  q quit
+j/k item  h/l machine  a/u on/off  / search  [ ] screen  ? help  q quit

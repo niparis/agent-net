@@ -21,4 +21,4 @@ Isolated: api-architect, homelab
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-D name  up/down select/scroll  left/right select  h hide  H hidden
+up/down select  left/right select  enter focus  z back  ? help  q quit

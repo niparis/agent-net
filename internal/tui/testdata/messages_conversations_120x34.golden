@@ -31,4 +31,4 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  left/right message  enter thread  w workers  v body  e events  l filter  tab CTO  ? help
+up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit

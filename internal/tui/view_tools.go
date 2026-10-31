@@ -104,16 +104,17 @@ func (m Model) toolsScreenLine(w int) string {
 	return left + strings.Repeat(" ", gap) + right
 }
 
-// toolsHints lists the keys of the Tools tab. [ and ] switch the screens: the
-// digits are the global tabs and tab goes to the CTO box.
+// toolsHints lists the keys used most on the Tools tab. [ and ] switch the
+// screens: the digits are the global tabs and tab goes to the CTO box. The
+// full list is in the help overlay.
 func (m Model) toolsHints() []hint {
 	switch m.tl.screen {
 	case toolsDiffs:
-		return []hint{{"j/k", "move", 1}, {"enter", "fix", 1}, {"x", "accept as is", 1}, {".", "accepted", 3}, {"[ ]", "screen", 1}, {"r", "rescan", 4}, {"tab", "CTO", 2}, {"?", "help", 3}, {"q", "quit", 5}}
+		return []hint{{"j/k", "move", 1}, {"enter", "fix", 1}, {"x", "accept", 1}, {"[ ]", "screen", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case toolsAll:
-		return []hint{{"j/k", "item", 1}, {"h/l", "machine", 1}, {"a", "turn on", 1}, {"u", "turn off", 1}, {"/", "search", 2}, {"[ ]", "screen", 1}, {"r", "rescan", 4}, {"tab", "CTO", 2}, {"?", "help", 3}, {"q", "quit", 5}}
+		return []hint{{"j/k", "item", 1}, {"h/l", "machine", 1}, {"a/u", "on/off", 1}, {"/", "search", 2}, {"[ ]", "screen", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	}
-	return []hint{{"j/k", "project", 1}, {"m", "machine", 1}, {"/", "filter", 2}, {"[ ]", "screen", 1}, {"r", "rescan", 4}, {"tab", "CTO", 2}, {"?", "help", 3}, {"q", "quit", 5}}
+	return []hint{{"j/k", "project", 1}, {"m", "machine", 1}, {"/", "filter", 2}, {"[ ]", "screen", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 }
 
 // toolsHelpLine takes over the key line for a toast, a text box or a plan.

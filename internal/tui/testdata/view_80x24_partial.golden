@@ -21,4 +21,4 @@ machines list slow or unavailable
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open session  m msg  x stop  h/H hide/show  q quit
+up/down select  enter open  m msg  / filter  tab CTO  ? help  q quit
