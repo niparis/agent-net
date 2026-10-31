@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -419,6 +420,150 @@ func TestParseProcArgs2(t *testing.T) {
 	}
 	if got := parseProcArgs2([]byte{1, 0, 0, 0, 'a', 0, 0, 'b', 0}); len(got) != 0 {
 		t.Errorf("argv only: %q", got)
+	}
+}
+
+// withoutLocalHerdr makes herdrBinary answer "" on this machine: the test's
+// PATH has no herdr and its home has no ~/.local/bin/herdr.
+func withoutLocalHerdr(t *testing.T) {
+	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	var keep []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if isExecutable(filepath.Join(dir, "herdr")) {
+			continue
+		}
+		keep = append(keep, dir)
+	}
+	t.Setenv("PATH", strings.Join(keep, string(os.PathListSeparator)))
+	if bin := (&Daemon{}).herdrBinary(""); bin != "" {
+		t.Fatalf("a herdr is still found: %s", bin)
+	}
+}
+
+// enterRemoteHerdr starts a remote node whose session runs in a fake herdr pane
+// and returns it with the session's gateway ID. The fake herdr is the one on
+// the remote machine.
+func enterRemoteHerdr(t *testing.T, g *testGateway, pane string) (*node, *fakeHerdr, string) {
+	t.Helper()
+	f := newFakeHerdr(t)
+	f.panes(t, herdrAgentPane(pane, "term_b"))
+	pid := f.session(t, pane)
+	f.holds(t, pane, pid)
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "interactive"}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.Adapters = []Adapter{ea} }})
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "i1", PID: pid, Cwd: "/nope", Name: "inter", Status: "idle", Mode: protocol.ModeForeground})
+	var id string
+	eventually(t, "remote session id", func() bool {
+		if s := n.d.Sessions(); len(s) == 1 {
+			id = s[0].SessionID
+		}
+		return id != ""
+	})
+	return n, f, id
+}
+
+// waitSessionOnGateway waits until the local node sees a session another node
+// reported.
+func waitSessionOnGateway(t *testing.T, n *node, id string) {
+	t.Helper()
+	eventually(t, "session on the gateway", func() bool {
+		p := enterOfErr(n, id)
+		return p != nil && p.Note != ""
+	})
+}
+
+// A session in herdr on another machine: when this machine has herdr, the
+// owner enters it with herdr's own remote client, which carries the clipboard
+// and image paste. The remote pane is focused first, so the client opens there.
+func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	remote, remoteHerdr, id := enterRemoteHerdr(t, g, "w1:pB")
+	localHerdr := newFakeHerdr(t) // the local client; its server is never asked
+	local := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.HarnessPaths = map[string]string{"herdr": localHerdr.bin}
+	}})
+	waitSessionOnGateway(t, local, id)
+
+	p := enterOf(t, local, id, "")
+	want := []string{localHerdr.bin, "--remote", remote.cfg.Hostname}
+	if !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v", p.Argv, want)
+	}
+	if p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname {
+		t.Fatalf("plan %+v", p)
+	}
+	for _, want := range []string{"Opens herdr on " + remote.cfg.Hostname, "pane w1:pB", "ctrl+b", "q"} {
+		if !strings.Contains(p.Note, want) {
+			t.Errorf("note %q does not contain %q", p.Note, want)
+		}
+	}
+	if strings.Contains(p.Note, "ctrl+]") {
+		t.Errorf("note names the attach detach key: %q", p.Note)
+	}
+	// The remote pane is focused before the client opens.
+	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "pane process-info --pane w1:pB") || !strings.Contains(calls, "agent focus w1:pB") {
+		t.Errorf("remote herdr calls %q", calls)
+	}
+	if calls := localHerdr.calls(t); calls != "" {
+		t.Errorf("the local herdr was asked to do something: %q", calls)
+	}
+
+	// The ssh target from enter_ssh_hosts is the one herdr's client gets.
+	alias := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.HarnessPaths = map[string]string{"herdr": localHerdr.bin}
+		c.EnterSSHHosts = map[string]string{remote.cfg.Hostname: "me@box"}
+	}})
+	waitSessionOnGateway(t, alias, id)
+	p = enterOf(t, alias, id, "")
+	if want := []string{localHerdr.bin, "--remote", "me@box"}; !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("alias argv %v, want %v", p.Argv, want)
+	}
+}
+
+// Without a local herdr there is no client to carry the clipboard, so the plan
+// stays the ssh attach it is today, and the remote pane is not focused.
+func TestEnterRemoteHerdrWithoutLocalClientKeepsSSH(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	remote, remoteHerdr, id := enterRemoteHerdr(t, g, "w1:pB")
+	local := startNode(t, g, nodeOpts{})
+	withoutLocalHerdr(t) // before the first plan, which would otherwise focus the pane
+	waitSessionOnGateway(t, local, id)
+
+	// What the remote machine plans on its own is the command ssh runs.
+	localEnter, err := remote.d.localEnter(context.Background(), protocol.EnterRequest{SessionID: id}, false)
+	if err != nil || len(localEnter.Argv) == 0 {
+		t.Fatalf("remote plan %+v err %v", localEnter, err)
+	}
+	want := []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", remote.cfg.Hostname, remoteCommand(localEnter.Dir, localEnter.Argv)}
+	p := enterOf(t, local, id, "")
+	if !reflect.DeepEqual(p.Argv, want) {
+		t.Fatalf("argv %v, want %v", p.Argv, want)
+	}
+	if p.HerdrPane != "" || strings.Contains(p.Note, "Opens herdr on") {
+		t.Fatalf("plan names a local herdr client: %+v", p)
+	}
+	if calls := remoteHerdr.calls(t); strings.Contains(calls, "agent focus") {
+		t.Errorf("the remote pane was focused without a local client: %q", calls)
+	}
+}
+
+// A session in herdr on this machine still gets the direct attach: the local
+// herdr client is for a session on another machine.
+func TestEnterLocalHerdrStaysAttach(t *testing.T) {
+	f := newFakeHerdr(t)
+	f.panes(t, herdrAgentPane("w1:pB", "term_b"))
+	pid := f.session(t, "w1:pB")
+	f.holds(t, "w1:pB", pid)
+	p, ok := herdrPlanFor(pid, protocol.EnterRequest{}, false)
+	if !ok || p.HerdrPane != "" {
+		t.Fatalf("plan %+v ok=%v", p, ok)
+	}
+	if got := strings.Join(p.Argv[len(p.Argv)-3:], " "); got != "agent attach w1:pB" {
+		t.Fatalf("argv %v", p.Argv)
+	}
+	if calls := f.calls(t); strings.Contains(calls, "agent focus") {
+		t.Errorf("a local attach focused the pane: %q", calls)
 	}
 }
 

@@ -49,8 +49,11 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 		return d.localEnter(ctx, q, false)
 	}
 	// Another machine: it knows its own processes. Our terminal means nothing
-	// to it, so the socket is not sent.
-	data, err := d.call(ctx, "query.session_enter", protocol.EnterRequest{SessionID: q.SessionID})
+	// to it, so the socket is not sent. It is told whether a herdr client is
+	// here, because that decides between herdr's remote client and an attach
+	// over ssh.
+	localHerdr := d.herdrBinary("")
+	data, err := d.call(ctx, "query.session_enter", protocol.EnterRequest{SessionID: q.SessionID, HerdrClient: localHerdr != ""})
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -61,6 +64,7 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	// The other machine's words are shown on this terminal: no control codes.
 	plan.Note = cleanLine(plan.Note)
 	plan.Host, plan.Env = cleanLine(plan.Host), nil // a secret never crosses the gateway; ignore one
+	plan.HerdrPane = cleanLine(plan.HerdrPane)
 	if len(plan.Argv) == 0 {
 		return protocol.EnterPlan{Host: plan.Host, Note: plan.Note}, nil
 	}
@@ -82,6 +86,16 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	}
 	if !sshTargetOK(target) {
 		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh_hosts gives a bad ssh target)"}, nil
+	}
+	// The session runs in herdr and this machine has a herdr client: use it.
+	// herdr's remote client carries the clipboard, so an image copied here can
+	// be pasted into the session there. The other machine focused the pane
+	// before answering.
+	if localHerdr != "" && herdrIDRe.MatchString(plan.HerdrPane) {
+		return protocol.EnterPlan{
+			Argv: []string{localHerdr, "--remote", target}, Host: host,
+			Note: fmt.Sprintf("Opens herdr on %s; the session is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here; the session keeps running.", host, plan.HerdrPane),
+		}, nil
 	}
 	return protocol.EnterPlan{Argv: []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", target, run}, Host: host,
 		Note: "Through ssh to " + target + ". " + plan.Note, Fallback: fallback}, nil
