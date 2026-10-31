@@ -84,6 +84,7 @@ type Model struct {
 	frozenOrder               map[string]int
 	selected                  string // session ID
 	selIdx                    int    // position in the visible list, to move on when the session leaves
+	selNeeds                  bool   // whether the selected visible row is in the Needs you section
 	tableTop                  int    // first table row on screen
 	showOffline               bool
 	activeOnly                bool
@@ -1104,12 +1105,15 @@ func (m *Model) move(delta int) {
 	if len(vis) == 0 {
 		return
 	}
-	i := m.indexOf(vis, m.selected)
-	if i < 0 {
-		i = 0
+	i := m.selIdx
+	if i < 0 || i >= len(vis) || vis[i].SessionID != m.selected {
+		m.ensureSelection()
+		vis = m.visible()
+		i = m.selIdx
 	}
 	i = min(max(i+delta, 0), len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
+	m.selNeeds = i < len(m.needsRows())
 	m.fixScroll()
 }
 
@@ -1354,21 +1358,15 @@ func (m Model) nestWorkers(groups []group, workers bool) []group {
 	return out
 }
 
-// visible is the sessions in the order the keys move through: the "Needs you"
-// rows first, then the table. A waiting session is reached from the section,
-// so it is not selectable a second time in the table.
+// visible is the selection order: the "Needs you" rows first, then every
+// table row. A waiting session can be selected in both places where it is
+// drawn.
 func (m Model) visible() []protocol.AgentView {
 	needs := m.needsRows()
 	out := append([]protocol.AgentView(nil), needs...)
-	seen := map[string]bool{}
-	for _, a := range needs {
-		seen[a.SessionID] = true
-	}
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
-			if !seen[a.SessionID] {
-				out = append(out, a)
-			}
+			out = append(out, a)
 		}
 	}
 	return out
@@ -1389,15 +1387,36 @@ func (m Model) indexOf(list []protocol.AgentView, id string) int {
 func (m *Model) ensureSelection() {
 	vis := m.visible()
 	if len(vis) == 0 {
-		m.selected, m.selIdx = "", 0
+		m.selected, m.selIdx, m.selNeeds = "", 0, false
 		return
 	}
+	needs := len(m.needsRows())
+	if m.selIdx >= 0 && m.selIdx < len(vis) && vis[m.selIdx].SessionID == m.selected && (m.selIdx < needs) == m.selNeeds {
+		m.selNeeds = m.selIdx < needs
+		return
+	}
+	// A refresh can move the row while preserving its section. Prefer the
+	// matching occurrence in that section when a session appears twice.
+	start, end := needs, len(vis)
+	if m.selNeeds {
+		start, end = 0, needs
+	}
+	for i := start; i < end; i++ {
+		if vis[i].SessionID == m.selected {
+			m.selIdx = i
+			return
+		}
+	}
+	// If the selected section row disappeared but its table row remains, keep
+	// the same session there.
 	if i := m.indexOf(vis, m.selected); i >= 0 {
 		m.selIdx = i
+		m.selNeeds = i < needs
 		return
 	}
 	i := min(m.selIdx, len(vis)-1)
 	m.selected, m.selIdx = vis[i].SessionID, i
+	m.selNeeds = i < needs
 }
 
 // selectedAgent returns the selected session.

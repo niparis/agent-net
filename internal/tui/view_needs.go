@@ -225,9 +225,9 @@ func (m Model) needsLines(w int) []string {
 	harnessW = min(harnessW, 8)
 	hostW = min(hostW, 14)
 	out := []string{section(fmt.Sprintf("Needs you (%d)", len(rows)), w)}
-	for _, a := range shown {
+	for i, a := range shown {
 		marker := "  "
-		if m.focus == focusSessions && a.SessionID == m.selected {
+		if m.focus == focusSessions && m.selIdx == i && a.SessionID == m.selected {
 			marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 		}
 		if a.Waiting.Kind == "learned" {
