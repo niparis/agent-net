@@ -302,6 +302,12 @@ func (s *Store) ToolsItems(f protocol.ToolsFilter, online func(string) bool) ([]
 			return nil, err
 		}
 		if item := all[r.Item]; item != nil && item.Desired != nil && item.Desired.Revision == r.Revision {
+			if p, ok := plans[r.Item]; ok && r.Index >= 0 && r.Index < len(p.Targets) {
+				target := p.Targets[r.Index]
+				r.Harness = target.Harness
+				r.Project = target.Project
+				r.Checkout = target.Checkout
+			}
 			item.Results = append(item.Results, r)
 		}
 	}

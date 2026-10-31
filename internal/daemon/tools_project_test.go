@@ -295,7 +295,7 @@ func TestProjectTargetsReconcileThroughGateway(t *testing.T) {
 		}
 		applied := 0
 		for _, r := range detail.Item.Results {
-			if r.State == "applied" {
+			if r.State == "applied" && r.Checkout == checkout && r.Project == "project" && r.Harness != "" {
 				applied++
 			}
 		}
