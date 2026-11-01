@@ -4,7 +4,7 @@
 
 This design builds on the CTO as the advisor for the whole network, its charter, edges and authority. Its proposed peer session and owner-approved proposals fit decision 0036. The current private CTO behavior remains as documented until this design is built.
 
-Status: accepted by the owner as option A on 2026-10-31. Part 6 is implemented; reply delivery remains part 7. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
+Status: accepted by the owner as option A on 2026-10-31. Parts 6 and 7 are implemented; the CTO session receives messages through the active harness. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
 
@@ -378,12 +378,14 @@ Status: implemented. Reads use ordinary agent dispatch with the CTO caller, plus
 Status: implemented. One gateway-owned stable session is registered through the
 owner gate and listed as CTO. Sends and caller-scoped reads use that session.
 Plain talk carries the peer note; only approved as-owner message proposals
-carry the CTO note. Reply delivery remains part 7.
+carry the CTO note. Reply delivery is implemented in part 7.
 
 - The stable session ID, the gateway CTO session record (set behind the owner gate), the reserved name `CTO`, discovery of the CTO directory, sends from the CTO session, the peer note, the CTO note set only by the proposal runner.
 - Tests: the gateway refuses the CTO flag from any other session; a plain `message` call never carries the flag; an approved as-owner send carries the CTO note "from the CTO, on the owner's instructions" in all four adapters (Go and TypeScript copies compared, like `TrustNote`); no note text names a person; an older gateway is refused with a clear error.
 
 **Part 7. Replies reach the CTO.**
+
+Status: implemented. Messages reach the selected harness, including after a switch. Legacy owner-session CTO conversations route to the CTO session for 30 days after registration.
 - Delivery to the CTO session for both harnesses, routing after a harness switch, the 30-day route for old conversations, then remove the forward.
 - Tests: a reply to a CTO send reaches the active harness; after a switch it reaches the other harness; a reply to a pre-upgrade conversation is routed; the CTO session is never offered ordinary agent-net tools.
 

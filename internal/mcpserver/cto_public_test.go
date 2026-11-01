@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -18,5 +19,29 @@ func TestCTOPublicReadTools(t *testing.T) {
 				t.Errorf("owner read %s remains", name)
 			}
 		}
+	}
+}
+
+func TestCTOSessionNeverOfferedOrdinaryAgentTools(t *testing.T) {
+	ctx := context.Background()
+	ordinary, err := connect(t, func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }).ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cto, err := ctoTestSession(t).ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make(map[string]bool)
+	for _, tool := range ordinary.Tools {
+		names[tool.Name] = true
+	}
+	for _, tool := range cto.Tools {
+		if names[tool.Name] {
+			t.Errorf("ordinary tool %s offered to CTO", tool.Name)
+		}
+	}
+	if len(cto.Tools) == 0 {
+		t.Fatal("CTO has no tools")
 	}
 }

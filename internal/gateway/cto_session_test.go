@@ -183,6 +183,9 @@ func TestCTOLegacyReplyRoutesToRegisteredSession(t *testing.T) {
 	if _, err := s.db.Exec(`UPDATE owner_settings SET updated_at=? WHERE key='cto_legacy_route_start'`, s.now().Add(-31*24*time.Hour).UnixNano()); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := s.db.Exec(`UPDATE messages SET created_at=? WHERE id=?`, s.now().Add(-32*24*time.Hour).UnixNano(), root.ID); err != nil {
+		t.Fatal(err)
+	}
 	expired, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: owner, ParentID: root.ID, Body: "late reply"})
 	if err != nil || expired.To != owner {
 		t.Fatalf("expired route: %+v %v", expired, err)

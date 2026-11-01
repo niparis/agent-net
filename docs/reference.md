@@ -56,7 +56,8 @@ The gateway accepts that flag only from the registered CTO session. Both
 kinds of send require the gateway's `network_session` CTO capability and are
 refused with an upgrade error on older gateways. They are not queued offline.
 Approved worker-start tasks remain owner-session messages without the CTO flag.
-Delivery to the CTO session and reply routing are design part 7.
+Messages to the CTO session reach the currently selected harness, including
+replies after a harness switch.
 
 Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
 and the sender and time of up to three messages delivered before the proposal.
@@ -64,10 +65,10 @@ Press `a` to approve, `x` to decline, or `A` to review and approve all. The
 decision screen shows the full result; after approve-all, select an outcome and
 press Enter to inspect it. A changed proposal list requires a new confirmation.
 
-Replies to older conversations that the CTO started as the owner still reach
-its active conversation and remain visible in the owner's Messages tab. This
-includes Claude Code's reply socket. Replies to personal owner messages stay
-in Messages. The retained forward quotes peer replies as model output.
+For 30 days after the gateway first registers the CTO session, replies to
+older conversations started by the CTO as the owner are routed to the CTO
+session, including replies through Claude Code's reply socket. Replies to
+personal owner messages stay with the owner. Peer bodies are quoted as data.
 
 The owner-only `cto_settings` operator method reads and saves the active CTO
 harness, its model, the saved model for each harness, the owner-facing title,

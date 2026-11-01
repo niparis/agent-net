@@ -38,11 +38,11 @@ contains only `agent-net cto-mcp`, not the ordinary agent-net MCP server. The
 daemon excludes this working directory from ordinary Claude discovery so it
 cannot get ordinary agent tools or a second network identity. The owner-gated
 CTO start registers a separate stable session at the gateway. New CTO sends
-use that session. Delivery of replies to it belongs to design part 7. Replies
-to older conversations sent as the owner still reach the owner session and
-are forwarded to the active CTO conversation as peer model output. The daemon
-checks the gateway's stored CTO marker on the conversation root and quotes the peer's body as data. Replies to
-personal owner messages are not forwarded.
+use that session. Incoming messages go to the active harness and are labeled
+as peer input with the body quoted as data. For 30 days after the first CTO
+session registration, the gateway routes replies to older owner-session CTO
+conversations to the CTO session. It checks the stored root marker and creation
+time; personal owner conversations remain with the owner.
 
 The CTO has no built-in shell, file, search, web, scheduling or subagent tools.
 Claude uses `--tools ""`, empty settings sources, disabled hooks, no enabled
