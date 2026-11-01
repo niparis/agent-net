@@ -121,6 +121,11 @@ type SessionInfo struct {
 	ToolsOld     bool   `json:"tools_old,omitempty"`
 	// Waiting is set while the session waits for its user (decision 0016).
 	Waiting *Waiting `json:"waiting,omitempty"`
+	// LastActive is when the session last did something: a turn started or
+	// ended, a message was sent or received, a task was announced, or a wait
+	// started. It is not the time the daemon last saw the session alive.
+	// Empty from an older daemon.
+	LastActive int64 `json:"last_active,omitempty"`
 }
 
 // StatusDormant is the status of a session that is reachable but has had no
@@ -241,7 +246,10 @@ type AgentView struct {
 	Status             string       `json:"status"`
 	Online             bool         `json:"online"`
 	LastSeen           int64        `json:"last_seen"`
-	Profile            Profile      `json:"profile"`
+	// LastActive is when the session last did something, in Unix seconds.
+	// It is not when its daemon last reported it. 0 from an older gateway.
+	LastActive int64   `json:"last_active,omitempty"`
+	Profile    Profile `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
 	// Mode and Model are what the session's daemon reported. Empty from an

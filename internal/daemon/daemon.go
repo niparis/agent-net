@@ -166,11 +166,18 @@ type Config struct {
 type localSession struct {
 	info           protocol.SessionInfo
 	sessionID      string
+	lastActive     time.Time  // when the session last did something, not when it was seen
 	conn           *localConn // set for plugin sessions
 	statusRevision uint64     // changes on each plugin status event
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool
+}
+
+type activityUpdate struct {
+	harness string
+	native  string
+	at      time.Time
 }
 
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
@@ -207,6 +214,10 @@ type Daemon struct {
 
 	mu       sync.Mutex
 	sessions map[string]*localSession
+	// activity is when each session last did something, keyed by harness and
+	// native ID. It is loaded from the state database so a restart cannot make
+	// an idle session look active. Guarded by mu.
+	activity map[string]time.Time
 	adapters map[string]Adapter
 	inflight map[string]bool
 	lk       *link
@@ -333,7 +344,12 @@ func New(cfg Config) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, adopted: make(chan struct{}),
+	activity, err := st.sessionActivity()
+	if err != nil {
+		st.close()
+		return nil, err
+	}
+	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
@@ -497,21 +513,42 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 	seen := map[string]bool{}
 	var changed []*localSession
 	var gone []string
+	var updates []activityUpdate
 	for _, in := range infos {
 		in.Harness = harness
 		k := key(harness, in.NativeID)
 		seen[k] = true
+		// A harness may know real activity that the daemon does not: Claude
+		// Code's transcript time. LastActive lives on localSession, so the
+		// compared info keeps zero and a poll does not look like a change.
+		candidate := time.Time{}
+		if in.LastActive > 0 {
+			candidate = time.Unix(in.LastActive, 0)
+		}
+		in.LastActive = 0
+		if p := d.activity[k]; p.After(candidate) {
+			candidate = p
+		}
 		ls := d.sessions[k]
 		if ls != nil {
 			// The tools state comes from the session's MCP hello. Discovery
 			// does not know it, and must not erase it.
 			in.ToolsVersion, in.ToolsOld = ls.info.ToolsVersion, ls.info.ToolsOld
+			if ls.lastActive.After(candidate) {
+				candidate = ls.lastActive
+			}
 		}
 		if ls == nil {
-			ls = &localSession{info: in}
+			ls = &localSession{info: in, lastActive: candidate}
 			d.sessions[k] = ls
 			changed = append(changed, ls)
+			if candidate.After(d.activity[k]) {
+				d.activity[k] = candidate
+				updates = append(updates, activityUpdate{harness, in.NativeID, candidate})
+			}
 		} else if !ls.plugin() {
+			statusChanged := in.Status != ls.info.Status
+			infoChanged := false
 			in.Waiting = keepWaiting(before[k], in)
 			if ls.info != in {
 				sid := ls.info.SessionID
@@ -520,6 +557,29 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 				}
 				ls.info = in
 				ls.info.SessionID = sid
+				infoChanged = true
+			}
+			activeChanged := false
+			if candidate.After(ls.lastActive) {
+				ls.lastActive = candidate
+				activeChanged = true
+			}
+			if statusChanged {
+				// A turn started or ended in the harness.
+				now := time.Now()
+				if !ls.lastActive.After(now) {
+					ls.lastActive = now
+					activeChanged = true
+				}
+				candidate = ls.lastActive
+			}
+			if activeChanged {
+				if candidate.After(d.activity[k]) {
+					d.activity[k] = candidate
+				}
+				updates = append(updates, activityUpdate{harness, in.NativeID, candidate})
+			}
+			if infoChanged || activeChanged {
 				changed = append(changed, ls)
 			}
 		}
@@ -533,6 +593,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 	}
 	d.mu.Unlock()
+	for _, u := range updates {
+		d.saveActivity(u.harness, u.native, u.at)
+	}
 	for _, ls := range changed {
 		d.pushSession(ls)
 	}
@@ -570,11 +633,73 @@ func (d *Daemon) sessionByID(id string) *localSession {
 func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	return d.infoLocked(ls)
+}
+
+func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 	info := ls.info
 	if ls.sessionID != "" {
 		info.SessionID = ls.sessionID
 	}
+	if !ls.lastActive.IsZero() {
+		info.LastActive = ls.lastActive.Unix()
+	}
 	return info
+}
+
+// recordActivityLocked keeps at as the session's last activity when it is
+// newer. The caller holds d.mu and saves the time to the state database after
+// unlocking.
+func (d *Daemon) recordActivityLocked(ls *localSession, at time.Time) bool {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	changed := false
+	if at.After(ls.lastActive) {
+		ls.lastActive = at
+		changed = true
+	}
+	if d.activity == nil {
+		d.activity = map[string]time.Time{}
+	}
+	k := key(ls.info.Harness, ls.info.NativeID)
+	if at.After(d.activity[k]) {
+		d.activity[k] = at
+	}
+	return changed
+}
+
+// touchSession records real activity: a turn started or ended, a message, an
+// announce or a new wait. A re-report of the same state must not call it.
+func (d *Daemon) touchSession(ls *localSession, at time.Time) {
+	d.mu.Lock()
+	changed := d.recordActivityLocked(ls, at)
+	harness, native := ls.info.Harness, ls.info.NativeID
+	d.mu.Unlock()
+	if !changed {
+		return
+	}
+	d.saveActivity(harness, native, at)
+	d.pushSession(ls)
+}
+
+// saveActivity keeps a session's real activity time across a daemon restart.
+func (d *Daemon) saveActivity(harness, native string, at time.Time) {
+	if d.st == nil || at.IsZero() {
+		return
+	}
+	if err := d.st.saveSessionActivity(harness, native, at); err != nil {
+		d.Logf("session activity: %v", err)
+	}
+}
+
+// persistActivity saves the session's current activity time to the state
+// database. Call it after recordActivityLocked when no save has been made.
+func (d *Daemon) persistActivity(ls *localSession) {
+	d.mu.Lock()
+	harness, native, at := ls.info.Harness, ls.info.NativeID, ls.lastActive
+	d.mu.Unlock()
+	d.saveActivity(harness, native, at)
 }
 
 // pushSession tells the gateway about a session if the link is up.
@@ -607,11 +732,7 @@ func (d *Daemon) snapshot() []protocol.SessionInfo {
 	defer d.mu.Unlock()
 	out := make([]protocol.SessionInfo, 0, len(d.sessions))
 	for _, ls := range d.sessions {
-		info := ls.info
-		if ls.sessionID != "" {
-			info.SessionID = ls.sessionID
-		}
-		out = append(out, info)
+		out = append(out, d.infoLocked(ls))
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return key(out[i].Harness, out[i].NativeID) < key(out[j].Harness, out[j].NativeID)
@@ -628,8 +749,7 @@ func (d *Daemon) Sessions() []protocol.SessionInfo {
 		if protocol.IsOwner(ls.info.Harness) {
 			continue // the person is not a session; info gives owner_session
 		}
-		in := ls.info
-		in.SessionID = ls.sessionID
+		in := d.infoLocked(ls)
 		out = append(out, in)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -659,6 +779,9 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 		p.IdempotencyKey = protocol.NewID("k")
 	}
 	d.touchWorker(p.Sender, p.Recipient) // a message to or from a worker keeps it alive
+	if ls := d.sessionByID(p.Sender); ls != nil {
+		d.touchSession(ls, time.Now())
+	}
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
 	if p.FromCTO {
@@ -835,6 +958,7 @@ retryWorker:
 		d.wmu.Unlock()
 	}
 	d.touchWorker(m.To, m.From)
+	d.touchSession(ls, time.Now()) // it received a message
 	d.noteAsk(m)
 	var res Result
 	if targetWorker != nil && targetWorker.harness == "codex" {

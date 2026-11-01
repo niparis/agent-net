@@ -1419,18 +1419,6 @@ func (m Model) idleLong(a protocol.AgentView) bool {
 	return m.now().Sub(time.Unix(a.LastSeen, 0)) > idleAfter
 }
 
-// sessionStart is the order key of a session: when the gateway first saw it.
-// Older gateways do not say, so those sessions keep the order of their IDs.
-func sessionStart(a protocol.AgentView) int64 {
-	if a.FirstSeen > 0 {
-		return a.FirstSeen
-	}
-	if a.Worker != nil && a.Worker.StartedAt > 0 {
-		return a.Worker.StartedAt
-	}
-	return 0
-}
-
 // treeMark is how a worker row hangs under the session that started it.
 type treeMark struct {
 	prefix string // the tree glyphs before the name: "├─ ", "│  └─ ", or "↳ " for a lone worker
@@ -1528,9 +1516,6 @@ func (m Model) groups() []group {
 				if oa.rank != ob.rank {
 					return oa.rank < ob.rank
 				}
-			}
-			if sa, sb := sessionStart(a), sessionStart(b); sa != sb {
-				return sa < sb
 			}
 			return a.SessionID < b.SessionID
 		})
