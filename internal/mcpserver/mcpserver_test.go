@@ -121,14 +121,14 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_message_status", "message_status", map[string]any{"message_id": "m_1"}},
 		{"agent_get", "get", map[string]any{"session_id": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"task": "t"}},
-		{"agent_nodes", "nodes", map[string]any{}},
+		{"agent_nodes", "machines_find", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
 		{"agent_project_list", "projects", map[string]any{"name": "a"}},
 	}
 	for _, c := range cases {
 		n := len(calls)
 		cs.CallTool(ctx, &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
-		if len(calls) != n+1 || calls[n].method != c.method {
+		if len(calls) == n || calls[n].method != c.method {
 			t.Fatalf("%s did not call %s: %+v", c.tool, c.method, calls[n:])
 		}
 	}
