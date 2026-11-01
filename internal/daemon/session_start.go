@@ -221,7 +221,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		return r, nil
 	}
 	if p.Harness == "opencode" {
-		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage, p.HerdrSocket, p.HerdrPaneID, notify)
+		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage, p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner)
 	}
 	if p.Harness == "pi" {
 		return d.launchOwnerPi(r, p.FirstMessage, "", p.HerdrSocket, p.HerdrPaneID, notify)
@@ -233,7 +233,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.FirstMessage != "" {
 		args = append(args, "--", p.FirstMessage)
 	}
-	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify), nil
+	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify, remoteOwner), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -390,7 +390,7 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, 
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false), nil
+	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false, false), nil
 }
 
 func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
@@ -411,7 +411,10 @@ func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, s
 	return d.remoteStartResult(ctx, res, socket, pane), nil
 }
 
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify bool) protocol.StartedSession {
+// relayed says the owner approved the start from another machine. That machine
+// has no herdr location for the owner's TUI, so this one must return the attach
+// plan for the owner's machine to wrap and open.
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify, relayed bool) protocol.StartedSession {
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -469,10 +472,13 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				plan.Note = "The session started but has no Claude background ID to attach."
 			}
 			opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
-			if opened.OpenedHerdr || len(opened.Argv) == 0 {
+			if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
 				r.EnterPlan = &opened
 			} else {
-				r.EnterNote = "Enter opens it. " + herdrInstallNote
+				r.EnterNote = "Enter opens it."
+				if d.herdrBinary("") == "" {
+					r.EnterNote += " " + herdrInstallNote
+				}
 			}
 			r.Status = "started"
 		}

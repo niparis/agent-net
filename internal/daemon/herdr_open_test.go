@@ -408,6 +408,32 @@ func TestSessionStartOutsideHerdrHandsOverTerminal(t *testing.T) {
 	}
 }
 
+// Herdr is installed here, so a start from a TUI outside it keeps the session
+// in the background and must not claim that herdr is missing.
+func TestSessionStartOutsideHerdrDoesNotClaimHerdrMissing(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	c := startClaudeNode(t, g, shortSet)
+	repo := newRepo(t, "garden")
+	c.register(t, repo)
+	t.Cleanup(func() { killFakeClaude(t, repo) })
+	var r protocol.StartedSession
+	mustJSON(t, c.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "claude", FirstMessage: "hello"}), &r)
+	eventually(t, "started", func() bool {
+		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+		if r.Status == "failed" {
+			t.Fatalf("start %+v", r)
+		}
+		return r.Status == "started"
+	})
+	if r.EnterPlan != nil || r.EnterNote != "Enter opens it." {
+		t.Fatalf("start %+v", r)
+	}
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("herdr opened a view for a TUI outside herdr: %s", raw)
+	}
+}
+
 func TestSessionStartAndResumeHerdrClaude(t *testing.T) {
 	for _, resume := range []bool{false, true} {
 		t.Run(map[bool]string{false: "start", true: "resume"}[resume], func(t *testing.T) {
@@ -792,7 +818,6 @@ func TestCTOEnterHerdrReportsConversationRestart(t *testing.T) {
 }
 
 func TestCTOSessionProposalRemoteStartOpensLocalHerdr(t *testing.T) {
-	t.Skip("follow-up: a start relayed from another machine must return its attach plan when that machine does not open herdr, so the owner's machine can open it (v0.4.72 Enter fix)")
 	remoteBin, remoteLog := fakeOpenHerdr(t)
 	localBin, localLog := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
@@ -908,12 +933,10 @@ func TestCTOProposalApprovalSplitsBesideOwnerTUI(t *testing.T) {
 }
 
 func TestRemoteCTOProposalApprovalOpensOwnerHerdr(t *testing.T) {
-	t.Skip("follow-up: a start relayed from another machine must return its attach plan when that machine does not open herdr, so the owner's machine can open it (v0.4.72 Enter fix)")
 	testRemoteCTOProposalApproval(t, false)
 }
 
 func TestRemoteCTOProposalApproveAllOpensOwnerHerdr(t *testing.T) {
-	t.Skip("follow-up: a start relayed from another machine must return its attach plan when that machine does not open herdr, so the owner's machine can open it (v0.4.72 Enter fix)")
 	testRemoteCTOProposalApproval(t, true)
 }
 
