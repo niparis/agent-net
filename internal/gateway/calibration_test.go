@@ -74,8 +74,11 @@ func TestCalibrationMigrationBackfillsCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at)
-		VALUES (?,?,?,?,?,?)`, node, wid, "opencode", "m", protocol.OutcomeComplete, s.now().Unix()); err != nil {
+	// The row is about caller attribution, so its counters count as known: a
+	// run from before the counters shipped is covered by
+	// TestCalibrationLeavesOutUnknownCounters.
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, counters_known)
+		VALUES (?,?,?,?,?,?,1)`, node, wid, "opencode", "m", protocol.OutcomeComplete, s.now().Unix()); err != nil {
 		t.Fatal(err)
 	}
 	// Replay the calibration migration and every migration appended after it.
@@ -208,5 +211,175 @@ func TestCalibrationLooksUpOnlyCallersInTheWindow(t *testing.T) {
 	}
 	if names, _, _, err := s.callerFacts(scores, nil); err != nil || len(names) != 0 {
 		t.Fatalf("no callers: got %d names, err %v", len(names), err)
+	}
+}
+
+// A task is one worker session (one agent_start), not one row per turn. The
+// original run and the follow-up runs of the same session make one sample,
+// with the rework of all of them. Follow-up turns never count as new tasks.
+func TestCalibrationCountsOneTaskPerWorkerSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
+		Name: "agent-net", Model: "claude-opus-5-5", Status: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := s.now()
+	for i := 0; i < 5; i++ {
+		sid := "s_task" + string(rune('a'+i))
+		// The original run needed no rework.
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: sid,
+			Harness: "opencode", Model: "m", Outcome: protocol.OutcomeComplete,
+			EndedAt: now.Add(-time.Duration(10-i) * time.Minute).Unix(),
+			Caller:  caller, Difficulty: "hard"}); err != nil {
+			t.Fatal(err)
+		}
+		// The caller sent one message after a complete hand-back: the follow-up
+		// turn carries the fix. Its caller and difficulty may be empty now.
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: sid,
+			Harness: "opencode", Model: "m", Outcome: protocol.OutcomeComplete,
+			EndedAt: now.Add(-time.Duration(10-i)*time.Minute + 30*time.Second).Unix(),
+			Fix:     1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cal, err := s.Calibration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
+		t.Fatalf("callers: %+v", cal.Callers)
+	}
+	l := cal.Callers[0].Levels[0]
+	if l.Difficulty != "hard" {
+		t.Errorf("difficulty from the first row: %q", l.Difficulty)
+	}
+	if l.Tasks != 5 || l.Median != 1 {
+		t.Fatalf("one sample per session, each with rework 1: %+v", l)
+	}
+	if l.Action != protocol.CalibrationKeep || l.Offset != 0 {
+		t.Errorf("action for median 1: %+v", l)
+	}
+}
+
+// Runs recorded before the counters shipped read 0 rework, which is not the
+// same as no rework. A session with an unknown run stays out of the medians.
+func TestCalibrationLeavesOutUnknownCounters(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
+		Name: "agent-net", Model: "claude-opus-5-5", Status: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := s.now()
+	for i := 0; i < 5; i++ {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_known" + string(rune('a'+i)),
+			Harness: "opencode", Model: "m", Outcome: protocol.OutcomeComplete,
+			EndedAt: now.Add(-time.Duration(10-i) * time.Minute).Unix(),
+			Caller:  caller, Difficulty: "hard"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A row from before the counters existed: the column keeps its default 0.
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, caller, difficulty)
+		VALUES (?,?,?,?,?,?,?,?,?)`, node, "s_old", "opencode", "m", protocol.OutcomeComplete,
+		now.Add(-20*time.Minute).Unix(), now.Add(-15*time.Minute).Unix(), caller, "hard"); err != nil {
+		t.Fatal(err)
+	}
+	// A later turn of that same session is recorded now, but the session's
+	// rework is still unknown.
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_old",
+		Harness: "opencode", Model: "m", Outcome: protocol.OutcomeComplete,
+		EndedAt: now.Add(-14 * time.Minute).Unix(), Caller: caller, Difficulty: "hard", Fix: 3}); err != nil {
+		t.Fatal(err)
+	}
+
+	cal, err := s.Calibration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
+		t.Fatalf("callers: %+v", cal.Callers)
+	}
+	l := cal.Callers[0].Levels[0]
+	if l.Tasks != 5 || l.Median != 0 {
+		t.Fatalf("the unknown session must not count: %+v", l)
+	}
+}
+
+// A task stopped by the owner or the caller is no verdict on the model. It is
+// not a clean task either: it stays out of the samples.
+func TestCalibrationLeavesOutStoppedTasks(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
+		Name: "agent-net", Model: "claude-opus-5-5", Status: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := s.now()
+	for i := 0; i < 5; i++ {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_done" + string(rune('a'+i)),
+			Harness: "opencode", Model: "m", Outcome: protocol.OutcomeComplete,
+			EndedAt: now.Add(-time.Duration(10-i) * time.Minute).Unix(),
+			Caller:  caller, Difficulty: "hard"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 3; i++ {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_stop" + string(rune('a'+i)),
+			Harness: "opencode", Model: "m", Outcome: protocol.OutcomeStopped,
+			EndedAt: now.Add(-time.Duration(3-i) * time.Minute).Unix(),
+			Caller:  caller, Difficulty: "hard", Fix: 5}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cal, err := s.Calibration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
+		t.Fatalf("callers: %+v", cal.Callers)
+	}
+	if l := cal.Callers[0].Levels[0]; l.Tasks != 5 || l.Median != 0 {
+		t.Fatalf("stopped tasks must not count: %+v", l)
+	}
+}
+
+// A stopped run adds no rework to its session either: the task keeps the
+// counters of its complete, partial and failed runs.
+func TestCalibrationStoppedRunAddsNoRework(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
+		Name: "agent-net", Model: "claude-opus-5-5", Status: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := s.now()
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_mixed",
+		Harness: "opencode", Model: "m", Outcome: protocol.OutcomeComplete,
+		EndedAt: now.Add(-2 * time.Minute).Unix(), Caller: caller, Difficulty: "hard"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_mixed",
+		Harness: "opencode", Model: "m", Outcome: protocol.OutcomeStopped,
+		EndedAt: now.Add(-time.Minute).Unix(), Caller: caller, Difficulty: "hard", Fix: 5}); err != nil {
+		t.Fatal(err)
+	}
+
+	cal, err := s.Calibration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
+		t.Fatalf("callers: %+v", cal.Callers)
+	}
+	if l := cal.Callers[0].Levels[0]; l.Tasks != 1 || l.Median != 0 {
+		t.Fatalf("the stopped run added rework: %+v", l)
 	}
 }

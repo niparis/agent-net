@@ -219,3 +219,63 @@ func TestWorkerReworkCountersSurviveDaemonRestart(t *testing.T) {
 		t.Errorf("after the second restart: %+v", row)
 	}
 }
+
+// An idle worker that did not hand back is continued by the owner's next
+// message. That message counts as a continue: the worker stopped early
+// without saying so.
+func TestWorkerFollowUpAfterIdleNoticeCountsContinue(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	d := w.d
+	wk := &worker{id: "w_idle_rework", owner: "s_owner", sessionID: "s_idle_rework", project: "shop",
+		startedAt: time.Now(), pid: 1, taskText: "a task", idleNoticeSent: true}
+	d.wmu.Lock()
+	d.workers[wk.id] = wk
+	d.wmu.Unlock()
+	t.Cleanup(func() {
+		d.wmu.Lock()
+		delete(d.workers, wk.id)
+		d.wmu.Unlock()
+	})
+
+	d.noteAsk(protocol.Message{ID: "m1", From: wk.owner, To: wk.sessionID, Type: protocol.TypeRequest,
+		Body: "Continue now: finish the task"})
+	d.wmu.Lock()
+	cont, fix := wk.continueCount, wk.fixCount
+	d.wmu.Unlock()
+	if cont != 1 || fix != 0 {
+		t.Fatalf("a follow-up to an idle worker: continue %d fix %d, want 1 and 0", cont, fix)
+	}
+}
+
+// The routed path does the same: an owner message after the idle notice of an
+// OpenCode worker that never handed back counts one continue.
+func TestWorkerIdleFollowUpCountsContinue(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	set := shortSet
+	set.IdleNotice = 200 * time.Millisecond
+	w := startWorkerNode(t, g, set, nil)
+	repo := newRepo(t, "shop")
+	w.register(t, repo)
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode",
+		Task: "FAKE:edit", Isolation: protocol.IsolationWorktree})
+	w.waitNotice(t, 1)
+	eventually(t, "the idle notice is recorded", func() bool {
+		wk := w.d.workerBySession(res.SessionID)
+		if wk == nil {
+			return false
+		}
+		w.d.wmu.Lock()
+		sent := wk.idleNoticeSent
+		w.d.wmu.Unlock()
+		return sent
+	})
+
+	var sent protocol.MessageSent
+	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID,
+		Body: "Continue now: FAKE:ignore keep quiet"}), &sent)
+	eventually(t, "the idle follow-up counts a continue", func() bool {
+		row := reworkRow(t, w, res.SessionID)
+		return row.Continue == 1 && row.ContinueRun == 1 && row.Fix == 0
+	})
+}

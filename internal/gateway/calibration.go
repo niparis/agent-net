@@ -15,37 +15,75 @@ import (
 // prunes worker_runs after TrackRecordDays, so the window is the same.
 const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 
+// calibrationSession gathers the rows of one worker session. A task is the
+// session (one agent_start), not one row per turn: a continue after a hand-back
+// starts another run and leaves its counters on a new row.
+type calibrationSession struct {
+	caller, difficulty string
+	cont, fix          int
+	unknown            bool
+	endedAt            int64
+}
+
 // Calibration reads the read-only difficulty table: per caller and
 // difficulty, the weighted rework median of the last seven finished tasks,
 // the two offsets and what the loop would do. It never writes state and the
 // chooser never reads it.
 func (s *Store) Calibration() (protocol.Calibration, error) {
 	cut := s.now().Add(-calibrationWindow).Unix()
-	rows, err := s.db.Query(`SELECT caller, difficulty, ended_at, continue_count, fix_count
-		FROM worker_runs WHERE caller <> '' AND ended_at >= ? ORDER BY ended_at, id`, cut)
+	rows, err := s.db.Query(`SELECT session_id, caller, difficulty, ended_at, continue_count, fix_count, counters_known
+		FROM worker_runs WHERE ended_at >= ? AND outcome <> ? ORDER BY ended_at, id`, cut, protocol.OutcomeStopped)
 	if err != nil {
 		return protocol.Calibration{}, err
 	}
-	samples := []protocol.CalibrationSample{}
+	sessions := map[string]*calibrationSession{}
+	order := []string{}
 	for rows.Next() {
-		var caller, difficulty string
+		var sessionID, caller, difficulty string
 		var ended int64
-		var cont, fix int
-		if err := rows.Scan(&caller, &difficulty, &ended, &cont, &fix); err != nil {
+		var cont, fix, known int
+		if err := rows.Scan(&sessionID, &caller, &difficulty, &ended, &cont, &fix, &known); err != nil {
 			rows.Close()
 			return protocol.Calibration{}, err
 		}
-		if difficulty == "" {
-			difficulty = "normal"
+		if sessionID == "" {
+			continue
 		}
-		samples = append(samples, protocol.CalibrationSample{Caller: caller, Difficulty: difficulty,
-			Continue: cont, Fix: fix, EndedAt: ended})
+		sess := sessions[sessionID]
+		if sess == nil {
+			// The first row holds what the task asked for. A follow-up run
+			// may have no caller or difficulty of its own.
+			sess = &calibrationSession{caller: caller, difficulty: difficulty}
+			sessions[sessionID] = sess
+			order = append(order, sessionID)
+		}
+		sess.cont += cont
+		sess.fix += fix
+		if known == 0 {
+			sess.unknown = true
+		}
+		sess.endedAt = ended
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return protocol.Calibration{}, err
 	}
 	rows.Close()
+
+	samples := []protocol.CalibrationSample{}
+	for _, sessionID := range order {
+		sess := sessions[sessionID]
+		// A run from before the counters shipped says nothing about rework.
+		if sess.caller == "" || sess.unknown {
+			continue
+		}
+		difficulty := sess.difficulty
+		if difficulty == "" {
+			difficulty = "normal"
+		}
+		samples = append(samples, protocol.CalibrationSample{Caller: sess.caller, Difficulty: difficulty,
+			Continue: sess.cont, Fix: sess.fix, EndedAt: sess.endedAt})
+	}
 
 	scores, err := s.scores()
 	if err != nil {
