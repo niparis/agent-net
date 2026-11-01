@@ -16,7 +16,7 @@ func TestCTOUIBroadcast(t *testing.T) {
 	call := func(name, args string) (any, error) {
 		return n.d.runCTOToolRaw(context.Background(), name, json.RawMessage(args))
 	}
-	if got, err := call("ui_notice", `{"text":"hello"}`); err != nil || got != "no TUI open" {
+	if got, err := call("ui", `{"action":"notice","text":"hello"}`); err != nil || got != "no TUI open" {
 		t.Fatalf("no TUI: %v %v", got, err)
 	}
 	channels := []chan protocol.UIRequest{}
@@ -39,7 +39,7 @@ func TestCTOUIBroadcast(t *testing.T) {
 		}
 		channels = append(channels, ch)
 	}
-	if _, err := call("ui_show", `{"tab":"graph","select":"shop","filter":"api","why":"inspect"}`); err != nil {
+	if _, err := call("ui", `{"action":"show","tab":"graph","select":"shop","filter":"api","why":"inspect"}`); err != nil {
 		t.Fatal(err)
 	}
 	for _, ch := range channels {
@@ -52,7 +52,7 @@ func TestCTOUIBroadcast(t *testing.T) {
 			t.Fatal("missing push")
 		}
 	}
-	if _, err := call("ui_notice", `{"text":"hello"}`); err != nil {
+	if _, err := call("ui", `{"action":"notice","text":"hello"}`); err != nil {
 		t.Fatal(err)
 	}
 	for _, ch := range channels {
@@ -65,7 +65,7 @@ func TestCTOUIBroadcast(t *testing.T) {
 			t.Fatal("missing notice")
 		}
 	}
-	if _, err := call("ui_show", `{"tab":"bad"}`); err == nil {
+	if _, err := call("ui", `{"action":"show","tab":"bad"}`); err == nil {
 		t.Fatal("invalid tab accepted")
 	}
 }

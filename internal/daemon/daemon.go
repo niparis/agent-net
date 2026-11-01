@@ -188,6 +188,7 @@ type Daemon struct {
 	operatorReads    operatorReadCache
 	startedSessions  map[string]protocol.StartedSession // guarded by mu
 	startedRelays    map[string]string                  // start ID -> machine, guarded by mu
+	ownerWorktrees   map[string]bool                    // folder -> true, guarded by mu
 	notify           notificationTracker
 	notifySend       func()
 	toolsMu          sync.Mutex
@@ -239,9 +240,15 @@ type Daemon struct {
 	// plugin that says hello before that would not be seen as a worker.
 	adopted chan struct{}
 	wg      sync.WaitGroup
-	cancel  context.CancelFunc
-	ln      *localServer
-	mcp     *mcpHost
+	// bg tracks short-lived work that writes the state database or kills a
+	// process, such as ending a worker after its hand-back. bgMu gates new
+	// work once Stop begins, so Stop can wait for it before closing the state.
+	bgMu     sync.Mutex
+	bgClosed bool
+	bg       sync.WaitGroup
+	cancel   context.CancelFunc
+	ln       *localServer
+	mcp      *mcpHost
 
 	upg upgradeState
 
@@ -437,6 +444,9 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 // Stop shuts everything down and waits.
 func (d *Daemon) Stop() {
+	d.bgMu.Lock()
+	d.bgClosed = true
+	d.bgMu.Unlock()
 	if d.cancel != nil {
 		d.cancel()
 	}
@@ -452,7 +462,27 @@ func (d *Daemon) Stop() {
 	d.ctoDispatchMu.unlock()
 	d.mcp.stop()
 	d.wg.Wait()
+	// The ends of handed-back workers run in their own goroutines: they kill
+	// the session and write the state database, so they must finish before the
+	// state is closed.
+	d.bg.Wait()
 	d.st.close()
+}
+
+// goBackground runs fn in a goroutine that Stop waits for. New work is not
+// started once the daemon is stopping.
+func (d *Daemon) goBackground(fn func()) {
+	d.bgMu.Lock()
+	if d.bgClosed {
+		d.bgMu.Unlock()
+		return
+	}
+	d.bg.Add(1)
+	d.bgMu.Unlock()
+	go func() {
+		defer d.bg.Done()
+		fn()
+	}()
 }
 
 func (d *Daemon) Logf(format string, args ...any) { d.log.Printf(format, args...) }

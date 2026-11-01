@@ -44,7 +44,7 @@ func TestCTOProjectDisplayOwnerGateAndListings(t *testing.T) {
 			t.Errorf("agent %s: %s", call.method, raw)
 		}
 	}
-	out, err := n.d.runCTOTool(context.Background(), "project_display_set", json.RawMessage(`{"project":"agent-net","name":"CTO Name"}`))
+	out, err := n.d.runCTOTool(context.Background(), "project_change", json.RawMessage(`{"action":"display","project":"agent-net","name":"CTO Name"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,12 +29,12 @@ func startedSession(project, harness string) protocol.StartedSession {
 
 func TestNewSessionFormFilledFromTheSelectedRow(t *testing.T) {
 	m, _ := workerModel(120, 34)
-	m = selectID(m, "s_0000000000000001") // tenebrae, claude, on Mac
+	m = selectID(m, "s_0000000000000002") // strategies, claude, idle, in a linked worktree
 	m, _ = press(m, sessionKey())
 	if m.mode != modeSessionForm {
 		t.Fatalf("n opened mode %v, want the New session form", m.mode)
 	}
-	if got := m.sform.value(sProject); got != "tenebrae" {
+	if got := m.sform.value(sProject); got != "strategies" {
 		t.Errorf("project %q", got)
 	}
 	if got := m.sform.value(sHarness); got != "claude" {
@@ -46,16 +46,22 @@ func TestNewSessionFormFilledFromTheSelectedRow(t *testing.T) {
 	if m.sform.cur != sFirstMessage {
 		t.Errorf("focus %v, want First message", m.sform.cur)
 	}
+	if m.sform.folder != protocol.FolderProject {
+		t.Errorf("folder %q, want the project folder", m.sform.folder)
+	}
 	v := m.View()
 	for _, want := range []string{
-		"New session", "Project", "tenebrae", "Harness", "claude", "Model",
-		"Folder", "project folder", "First message",
+		"New session", "Project", "strategies", "Harness", "claude", "Model",
+		"Folder", "project folder", "no other session here", "First message",
 		"empty: start it and enter it",
 		"text: start it in the background and send this",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("form does not show %q:\n%s", want, v)
 		}
+	}
+	if strings.Contains(v, "Branch") {
+		t.Errorf("the project-folder form shows a branch line:\n%s", v)
 	}
 }
 
@@ -212,14 +218,14 @@ func TestNewSessionFormGoldens(t *testing.T) {
 		name := func(s string) string { return "view_" + itoa(size.w) + "x" + itoa(size.h) + "_" + s }
 
 		m, src := workerModel(size.w, size.h)
-		m = selectID(m, "s_0000000000000001")
+		m = selectID(m, "s_0000000000000002") // strategies, idle, project folder free
 		m, _ = press(m, sessionKey())
 		golden(t, name("new_session_empty"), m.View())
 
 		m = typeText(m, "Refactor the outbox retry into its own file.")
 		golden(t, name("new_session_typed"), m.View())
 
-		src.sessionStart = startedSession("tenebrae", "claude")
+		src.sessionStart = startedSession("strategies", "claude")
 		m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 		if cmd == nil {
 			t.Fatalf("%dx%d: enter gave no command", size.w, size.h)

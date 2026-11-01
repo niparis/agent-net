@@ -28,10 +28,10 @@ func TestCTOReadParitySources(t *testing.T) {
 			t.Errorf("missing read %s", name)
 		}
 	}
-	for _, name := range []string{"cto_settings", "notification_settings"} {
-		class, err := ctoClass(name, json.RawMessage(`{}`))
-		if err == nil && class != ctoProposal {
-			t.Errorf("%s empty call still reads owner settings", name)
+	for _, name := range []string{"settings_change"} {
+		class, err := ctoClass(name, json.RawMessage(`{"area":"cto"}`))
+		if err != nil || class != ctoProposal {
+			t.Errorf("%s did not propose owner settings: %v", name, err)
 		}
 	}
 }

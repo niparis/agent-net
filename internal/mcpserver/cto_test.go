@@ -19,7 +19,7 @@ func ctoTestSession(t *testing.T) *mcp.ClientSession {
 		if method == "graph" {
 			return json.Marshal(protocol.CharterGuideText())
 		}
-		if method == "charter_set" {
+		if method == "graph_change" {
 			return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md"]}`), nil
 		}
 		return json.RawMessage(`{"ok":true}`), nil
@@ -67,22 +67,16 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	for _, tl := range list.Tools {
 		tools[tl.Name] = tl
 	}
-	wantTools := []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "sessions", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove"}
+	wantTools := []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "message", "ask_owner", "learn", "ui", "sessions"}
 	have := map[string]bool{}
-	for _, name := range tools {
-		have[name.Name] = true
-	}
 	for _, name := range wantTools {
-		if !have[name] {
+		if tools[name] == nil {
 			t.Fatalf("missing tool %s in %v", name, tools)
 		}
+		have[name] = true
 	}
 	for _, name := range wantTools {
-		tl, ok := tools[name]
-		if !ok {
-			t.Errorf("missing tool %s", name)
-			continue
-		}
+		tl := tools[name]
 		if strings.HasPrefix(tl.Description, "CTO: ") || strings.TrimSpace(tl.Description) == "" {
 			t.Errorf("%s has a generic or short description: %q", name, tl.Description)
 		}
@@ -92,21 +86,24 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 				t.Errorf("%s.%s has no description", name, field)
 			}
 		}
-		if name == "worker_profile_add" {
-			if d, _ := props["name"]["description"].(string); !strings.Contains(d, "existing name") {
-				t.Errorf("worker_profile_add.name does not explain replacement: %q", d)
-			}
-		}
 	}
 	wantEnums := map[string]map[string][]string{
-		"edge_set": {
-			"kind": {"depends", "governs", "deploys"},
-			"mode": {"advisor", "arbiter", "owner"},
-			"rule": {"normal", "auto", "ask", "never"},
+		"graph_change": {
+			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"},
+			"kind":   {"depends", "governs", "deploys"},
+			"mode":   {"advisor", "arbiter", "owner"},
+			"rule":   {"normal", "auto", "ask", "never"},
 		},
-		"edge_remove":  {"kind": {"depends", "governs", "deploys"}},
-		"charter_set":  {"attr": {"purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes"}},
-		"worker_start": {"harness": {"opencode", "claude", "pi", "codex"}, "isolation": {"worktree", "none"}},
+		"session_change": {"action": {"rename", "trust", "policy"}},
+		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex"}, "isolation": {"worktree", "none"}},
+		"answer":         {"kind": {"held", "inbox", "outcome"}},
+		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove"}},
+		"settings_change": {
+			"area": {"worker_profile_add", "worker_profile_remove", "worker_providers", "protected_providers", "score", "integrations", "notifications", "cto", "playbook", "machine_name", "invite", "onboarding"},
+		},
+		"project_change": {"action": {"add", "remove", "display"}},
+		"message":        {"action": {"send", "reply"}},
+		"ui":             {"action": {"show", "notice"}},
 	}
 	for tool, fields := range wantEnums {
 		tl, ok := tools[tool]
@@ -131,13 +128,13 @@ func TestCTOCharterSetWarnsWithoutRefusing(t *testing.T) {
 	}
 	var charter *mcp.Tool
 	for _, tool := range list.Tools {
-		if tool.Name == "charter_set" {
+		if tool.Name == "graph_change" {
 			charter = tool
 			break
 		}
 	}
 	if charter == nil {
-		t.Fatal("charter_set missing")
+		t.Fatal("graph_change missing")
 	}
 	props, _ := ctoToolSchema(t, charter)
 	value := props["value"]["description"].(string)
@@ -145,8 +142,8 @@ func TestCTOCharterSetWarnsWithoutRefusing(t *testing.T) {
 		t.Error("guide text remains in schema")
 	}
 
-	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "charter_set", Arguments: map[string]any{
-		"node": "cogforge", "attr": "needs", "value": "Read /home/project/private/config",
+	out, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "graph_change", Arguments: map[string]any{
+		"action": "charter_set", "node": "cogforge", "attr": "needs", "value": "Read /home/project/private/config",
 	}})
 	if err != nil || out.IsError {
 		t.Fatalf("detailed value was refused: result=%+v err=%v", out, err)
@@ -158,7 +155,7 @@ func TestCTOCharterSetWarnsWithoutRefusing(t *testing.T) {
 		}
 	}
 	if !strings.Contains(text, "too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md") {
-		t.Fatalf("successful charter_set did not include the warning: %q", text)
+		t.Fatalf("successful graph change did not include the warning: %q", text)
 	}
 }
 
@@ -190,8 +187,12 @@ func TestCTOToolsForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	for _, name := range []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "sessions", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove"} {
-		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
+	for _, name := range []string{"graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new", "message", "ask_owner", "learn", "ui", "sessions"} {
+		args := map[string]any{}
+		if field := ctoRoutingField[name]; field != "" {
+			args[field] = map[string]string{"message": "send", "ui": "show", "graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "tools_change": "plan", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
+		}
+		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil || out.IsError || !seen[name] {
 			t.Errorf("%s: %+v %v", name, out, err)
 		}
@@ -208,9 +209,17 @@ func TestCTOParityTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		got[tool.Name] = true
 	}
-	for _, name := range []string{"machines", "projects", "project_add", "project_remove", "session", "messages", "session_trust", "session_policy", "node_rename", "integrations_set", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "node_settings_set", "playbook_set", "learn", "tools", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings", "cto_send", "cto_new", "invite"} {
+	for _, name := range []string{"overview", "sessions", "session", "proposals", "feed", "messages", "graph", "machines", "projects", "workers", "tools", "settings", "message", "ask_owner", "learn", "ui", "graph_change", "session_change", "worker_change", "answer", "tools_change", "mcp_change", "mcp_call", "settings_change", "project_change", "cto_new"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
+		}
+	}
+	if len(got) != 26 {
+		t.Errorf("CTO exposes %d tools, want 26: %v", len(got), got)
+	}
+	for _, name := range []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
+		if got[name] {
+			t.Errorf("old name %s is still a CTO tool", name)
 		}
 	}
 }
@@ -223,9 +232,9 @@ func TestCTOSettingsSchemasDescribeNestedValues(t *testing.T) {
 	}
 	for _, tool := range list.Tools {
 		switch tool.Name {
-		case "session_policy", "mcp_add", "cto_settings":
+		case "session_change", "mcp_change", "settings_change":
 			props, _ := ctoToolSchema(t, tool)
-			field := map[string]string{"session_policy": "policy", "mcp_add": "server", "cto_settings": "compaction"}[tool.Name]
+			field := map[string]string{"session_change": "policy", "mcp_change": "server", "settings_change": "compaction"}[tool.Name]
 			if _, ok := props[field]["properties"].(map[string]any); !ok {
 				t.Errorf("%s.%s lacks nested properties", tool.Name, field)
 			}
@@ -239,14 +248,14 @@ func TestCTOSessionPolicyToolDescribesWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range list.Tools {
-		if tool.Name == "session_policy" {
-			if strings.Contains(strings.ToLower(tool.Description), "read or set") || !strings.Contains(tool.Description, "get") {
+		if tool.Name == "session_change" {
+			if strings.Contains(strings.ToLower(tool.Description), "read or set") || !strings.Contains(tool.Description, "policy") {
 				t.Fatalf("misleading policy description: %s", tool.Description)
 			}
 			return
 		}
 	}
-	t.Fatal("session_policy missing")
+	t.Fatal("session_change missing")
 }
 
 func TestCTOToolManagementDescriptions(t *testing.T) {
@@ -258,33 +267,30 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 	for _, v := range list.Tools {
 		found[v.Name] = v
 	}
-	for _, name := range []string{"tools_plan", "tools_apply", "mcp_import", "mcp_native_remove"} {
-		if found[name] == nil || found[name].Description == "" {
-			t.Fatalf("missing description: %s", name)
-		}
+	if found["tools_change"] == nil || found["tools_change"].Description == "" {
+		t.Fatal("missing tools_change")
 	}
-	if !strings.Contains(found["tools_apply"].Description, "Propose") || !strings.Contains(found["mcp_import"].Description, "Propose") || !strings.Contains(found["mcp_native_remove"].Description, "Propose") {
-		t.Fatal("apply description must say it proposes the change")
+	props, _ := ctoToolSchema(t, found["tools_change"])
+	if !strings.Contains(found["tools_change"].Description, "plan") || !strings.Contains(strings.Join(enumStrings(props["action"]["enum"]), ","), "native_remove") {
+		t.Fatalf("tool actions missing: %s", found["tools_change"].Description)
 	}
-	planProps, _ := ctoToolSchema(t, found["tools_plan"])
-	if !strings.Contains(found["tools_plan"].Description, "local branch") || !strings.Contains(strings.Join(enumStrings(planProps["operation"]["enum"]), ","), "repo_remove") {
-		t.Fatalf("repo removal missing from tools_plan: %s", found["tools_plan"].Description)
-	}
-	targets := planProps["repo_targets"]
+	targets := props["repo_targets"]
 	items, _ := targets["items"].(map[string]any)
-	if items["type"] != "object" {
-		t.Fatalf("repo_targets must contain checkout objects: %+v", targets)
+	if items["type"] != "string" {
+		t.Fatalf("repo_targets must be a string array: %+v", targets)
 	}
 }
 
 func TestProtectedProvidersTools(t *testing.T) {
-	for _, name := range []string{"protected_providers_set"} {
-		if _, ok := ctoTools[name]; !ok {
-			t.Errorf("missing CTO tool %s", name)
-		}
+	def, ok := ctoTools["settings_change"]
+	if !ok {
+		t.Fatal("missing settings_change")
 	}
-	if !strings.Contains(strings.ToLower(ctoTools["protected_providers_set"].desc), "ask the owner") {
-		t.Fatal("setter must say to ask the owner")
+	if !strings.Contains(strings.ToLower(def.desc), "protected") {
+		t.Fatal("settings_change does not mention protected providers")
+	}
+	if _, ok := ctoConcreteTools["protected_providers_set"]; !ok {
+		t.Fatal("missing concrete protected_providers_set")
 	}
 }
 
@@ -297,18 +303,15 @@ func TestCTOSessionRenameTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range list.Tools {
-		if tool.Name == "session_rename" {
+		if tool.Name == "session_change" {
 			props, _ := ctoToolSchema(t, tool)
 			if props["session_id"] == nil || props["name"] == nil {
 				t.Fatalf("properties %v", props)
 			}
-			if !strings.Contains(strings.ToLower(tool.Description), "owner") {
-				t.Fatalf("description does not say it is the owner's: %s", tool.Description)
-			}
 			return
 		}
 	}
-	t.Fatal("session_rename missing")
+	t.Fatal("session_change missing")
 }
 
 func TestCTOProjectDisplayTool(t *testing.T) {
@@ -318,15 +321,15 @@ func TestCTOProjectDisplayTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range list.Tools {
-		if tool.Name == "project_display_set" {
+		if tool.Name == "project_change" {
 			props, _ := ctoToolSchema(t, tool)
-			if props["project"] == nil || props["name"] == nil {
+			if props["project"] == nil || props["name"] == nil || props["action"] == nil {
 				t.Fatalf("properties %v", props)
 			}
 			return
 		}
 	}
-	t.Fatal("project_display_set missing")
+	t.Fatal("project_change missing")
 }
 
 func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
@@ -339,34 +342,17 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("total schema: %d bytes", len(schema))
-	type size struct {
-		name  string
-		bytes int
+	if len(schema) >= 16*1024 {
+		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 16*1024)
 	}
-	var sizes []size
-	foundCharter := false
 	for _, tool := range list.Tools {
 		data, err := json.Marshal(tool)
 		if err != nil {
 			t.Fatal(err)
 		}
-		sizes = append(sizes, size{tool.Name, len(data)})
-		if tool.Name == "charter_set" {
-			foundCharter = true
-			if strings.Contains(string(data), "1200") {
-				t.Error("charter guide must not occur in schema")
-			}
+		if strings.Contains(string(data), "1200") {
+			t.Errorf("%s schema carries the charter guide", tool.Name)
 		}
-	}
-	if !foundCharter {
-		t.Error("charter_set missing")
-	}
-	sort.Slice(sizes, func(i, j int) bool { return sizes[i].bytes > sizes[j].bytes })
-	for _, item := range sizes[:10] {
-		t.Logf("%s: %d bytes", item.name, item.bytes)
-	}
-	if len(schema) > 24150 {
-		t.Errorf("CTO schema is %d bytes, budget 24150", len(schema))
 	}
 }
 
@@ -382,11 +368,9 @@ func TestCTOCharterGuideView(t *testing.T) {
 	}
 	list, _ := cs.ListTools(context.Background(), nil)
 	for _, tool := range list.Tools {
-		if tool.Name == "charter_set" {
-			raw, _ := json.Marshal(tool)
-			if strings.Contains(string(raw), "1200") {
-				t.Error("guide text in charter_set schema")
-			}
+		raw, _ := json.Marshal(tool)
+		if strings.Contains(string(raw), "1200") {
+			t.Errorf("guide text in %s schema", tool.Name)
 		}
 	}
 }

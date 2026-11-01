@@ -306,6 +306,13 @@ func (d *Daemon) finishWorktree(w *worker) {
 	if dir == "" {
 		return
 	}
+	// An owner session's worktree belongs to the owner, not to a worker. This
+	// guard is the last line of defence; owner worktrees also live next to the
+	// project, outside the folder this cleanup scans.
+	if d.isOwnerWorktree(dir) {
+		d.Logf("worker.worktree kept owner path=%s", dir)
+		return
+	}
 	if _, changed := d.worktreeFacts(w); changed {
 		d.Logf("worker.worktree kept worker=%s path=%s branch=%s", w.id, dir, branch)
 		return
@@ -537,9 +544,9 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	// Like a Claude Code subagent, a worker ends when it hands back (W10). Its
 	// harness session is kept, so the owner's next message starts it again.
 	if next != nil {
-		go d.deliverQueuedWorkerTurn(*next)
+		d.goBackground(func() { d.deliverQueuedWorkerTurn(*next) })
 	} else if end {
-		go d.endWorker(w, protocol.StopHandback)
+		d.goBackground(func() { d.endWorker(w, protocol.StopHandback) })
 	}
 	out := &protocol.WorkerHandbackResult{Status: req.Status, Complete: req.IsComplete()}
 	var sent protocol.MessageSent
@@ -773,7 +780,7 @@ func (d *Daemon) openCodeTurnIdle(session string) bool {
 	}
 	d.wmu.Unlock()
 	if next != nil {
-		go d.deliverQueuedWorkerTurn(*next)
+		d.goBackground(func() { d.deliverQueuedWorkerTurn(*next) })
 	}
 	return pending
 }

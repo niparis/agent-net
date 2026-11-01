@@ -43,6 +43,12 @@ type WorkerRun struct {
 	// began, after a hand-back with complete:no and complete:yes.
 	Continue int `json:"continue,omitempty"`
 	Fix      int `json:"fix,omitempty"`
+	// Caller is the session that started the worker, and Difficulty is the
+	// level it asked for. The gateway keeps them on the run so the
+	// difficulty calibration still has them after the worker session is
+	// cleaned.
+	Caller     string `json:"caller,omitempty"`
+	Difficulty string `json:"difficulty,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.

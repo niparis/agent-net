@@ -7,8 +7,8 @@
   NAME               AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 4 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
   ↳ tenebrae         opencode tenebrae   haiku-4-5  busy   -         ?     ?
-▸ tenebrae-53        claude   tenebrae   opus-5-5   busy   -         ?     ?
-  strategies         claude   strategies sonnet-5-5 idle   -         ?     ? backtest v2
+  tenebrae-53        claude   tenebrae   opus-5-5   busy   -         ?     ?
+▸ strategies         claude   strategies sonnet-5-5 idle   -         ?     ? backtest v2
   web                opencode shop       sonnet-5   idle   -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner          pi       agent-net  gpt-6      idle   -         ?     ?
@@ -31,4 +31,4 @@
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-  started tenebrae (claude) on Mac: first message sent. Enter opens it.
+  started strategies (claude) on Mac: first message sent. Enter opens it.

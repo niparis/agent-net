@@ -1396,7 +1396,7 @@ func (d *Daemon) adoptWorkers() {
 			if err != nil {
 				// It runs, but the daemon cannot talk to it any more. End it.
 				d.Logf("worker %s: cannot be taken back: %v", w.id, err)
-				go d.endWorker(w, protocol.StopLost)
+				d.goBackground(func() { d.endWorker(w, protocol.StopLost) })
 				continue
 			}
 		}

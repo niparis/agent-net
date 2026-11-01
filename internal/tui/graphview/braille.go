@@ -22,6 +22,13 @@ type cell struct {
 	occupied bool
 }
 
+// LabelCell is one text cell the Braille renderer would draw. Pixel mode
+// keeps these cells as terminal text so labels stay crisp and selectable.
+type LabelCell struct {
+	Rune rune
+	Role string
+}
+
 func (b Braille) Render(scene Scene, size Size) Output {
 	width, height := size.Width, size.Height
 	if width <= 0 || height <= 0 {
@@ -29,6 +36,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 	}
 	cells := make([]cell, width*height)
 	hits := make(map[Cell]string)
+	labels := make(map[Cell]LabelCell)
 	put := func(x, y int, r rune, role string) bool {
 		if x < 0 || y < 0 || x >= width || y >= height {
 			return false
@@ -328,6 +336,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			for i, r := range rs {
 				if put(pos[0]+i, pos[1], r, labelRole) {
 					hits[Cell{pos[0] + i, pos[1]}] = n.Name
+					labels[Cell{pos[0] + i, pos[1]}] = LabelCell{Rune: r, Role: labelRole}
 				}
 			}
 			// Keep the cell between a marker and a label on its row blank,
@@ -370,6 +379,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 				if free {
 					for i, r := range detailRunes {
 						put(labelX+i, row, r, "card")
+						labels[Cell{labelX + i, row}] = LabelCell{Rune: r, Role: "card"}
 					}
 					break
 				}
@@ -421,7 +431,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		out[y] = s.String()
 	}
-	return Output{Lines: out, Hits: hits}
+	return Output{Lines: out, Hits: hits, Labels: labels}
 }
 func abs(n int) int {
 	if n < 0 {
@@ -429,6 +439,10 @@ func abs(n int) int {
 	}
 	return n
 }
+
+// StyleRole applies the terminal palette for a semantic drawing role. Pixel
+// mode uses it for the label cells it keeps as text.
+func StyleRole(role, text string) string { return colorRole(role, text) }
 
 // colorRole owns the terminal palette for semantic drawing roles.
 func colorRole(role, text string) string {

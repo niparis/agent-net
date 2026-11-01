@@ -38,7 +38,7 @@ func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 	}
 
 	// The CTO proposes the rename; only approval runs the operator method.
-	out, err := n.d.runCTOTool(context.Background(), "session_rename", json.RawMessage(`{"session_id":"`+sid+`","name":"cto-name"}`))
+	out, err := n.d.runCTOTool(context.Background(), "session_change", json.RawMessage(`{"action":"rename","session_id":"`+sid+`","name":"cto-name"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 		t.Fatalf("CTO rename: %s", ctoRaw)
 	}
 	// An empty name clears it and returns the automatic name.
-	out, err = n.d.runCTOTool(context.Background(), "session_rename", json.RawMessage(`{"session_id":"`+sid+`","name":""}`))
+	out, err = n.d.runCTOTool(context.Background(), "session_change", json.RawMessage(`{"action":"rename","session_id":"`+sid+`","name":""}`))
 	if err != nil {
 		t.Fatal(err)
 	}

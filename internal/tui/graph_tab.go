@@ -17,6 +17,24 @@ var graphSelectionStyle = lipgloss.NewStyle().Bold(true).Foreground(graphview.Ac
 
 type graphTickMsg struct{ generation int }
 
+// graphPixelState holds the pixel-mode decision and the last picture sent to
+// the terminal, so an unchanged scene is not transmitted again.
+type graphPixelState struct {
+	graphics     bool
+	cellW, cellH int
+	imageID      uint32
+	hash         [32]byte
+	have         bool
+}
+
+func (g *graphPixelState) set(gr graphview.Graphics) {
+	if g == nil {
+		return
+	}
+	g.graphics = gr.Pixel
+	g.cellW, g.cellH = gr.CellWidth, gr.CellHeight
+}
+
 func graphTick(generation int) tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(time.Time) tea.Msg { return graphTickMsg{generation} })
 }
@@ -164,8 +182,14 @@ func (m Model) graphView(w, h int) []string {
 		scene.Nodes[i].Card.Name = m.projectName(scene.Nodes[i].Name)
 	}
 	renderer := graphview.Braille{Styled: true}
-	for _, line := range renderer.Render(scene, graphview.Size{Width: gw, Height: gh}).Lines {
-		out = append(out, "  "+line)
+	if lines, ok := m.pixelLines(scene, gw, gh); ok {
+		for _, line := range lines {
+			out = append(out, "  "+line)
+		}
+	} else {
+		for _, line := range renderer.Render(scene, graphview.Size{Width: gw, Height: gh}).Lines {
+			out = append(out, "  "+line)
+		}
 	}
 	feed := []string{}
 	for _, msg := range scene.Feed {
@@ -183,6 +207,32 @@ func (m Model) graphView(w, h int) []string {
 	out = append(out, graphStatusLine(w, scene))
 	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
 	return out
+}
+
+// pixelLines draws the scene as an image and returns placeholder rows. It
+// reports false whenever pixel mode is off or the cell size is unknown, so the
+// caller falls back to Braille exactly as before.
+func (m Model) pixelLines(scene graphview.Scene, gw, gh int) ([]string, bool) {
+	g := m.graphPixel
+	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
+		return nil, false
+	}
+	size := graphview.Size{Width: gw, Height: gh}
+	img := graphview.Rasterize(scene, size, graphview.PixelMetrics{CellWidth: g.cellW, CellHeight: g.cellH})
+	if img == nil {
+		return nil, false
+	}
+	layout := (graphview.Braille{}).Render(scene, size)
+	lines := graphview.PlaceholderLines(layout.Labels, size, g.imageID, graphview.StyleRole)
+	if len(lines) == 0 {
+		return nil, false
+	}
+	hash := graphview.HashImage(img)
+	if !g.have || hash != g.hash {
+		lines[0] = graphview.DeleteImage(g.imageID) + graphview.TransmitImage(img, g.imageID, gw, gh) + lines[0]
+		g.hash, g.have = hash, true
+	}
+	return lines, true
 }
 
 // graphStatusLine names the selected node and its place in the network.

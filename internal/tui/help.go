@@ -26,9 +26,9 @@ type hint struct {
 func (m Model) hints() []hint {
 	switch {
 	case m.handover != nil:
-		return []hint{{"enter", "send", 1}, {"esc", "cancel", 1}, {"up/down", "scroll", 1}, {"q", "quit", 0}}
+		return []hint{{"enter/y", "send", 1}, {"esc/n", "cancel", 1}, {"up/down", "scroll", 1}, {"q", "quit", 0}}
 	case m.proposalConfirm:
-		return []hint{{"up/down", "scroll", 1}, {"y", "approve all", 1}, {"n/esc", "cancel", 1}}
+		return []hint{{"up/down", "scroll", 1}, {"enter/y", "yes", 1}, {"esc/n", "no", 1}}
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
 		return []hint{{"up/down", "select", 1}, {"enter", "detail", 1}, {"esc", "back", 1}, {"?", "help", 1}}
 	case m.proposalDetail != nil && !m.help:
@@ -115,24 +115,23 @@ func (m Model) helpLine(w int) string {
 	case modeForm:
 		return sDim.Render(clip("tab or up/down: field  enter: next or start  esc cancels", w))
 	case modeSessionForm:
-		return sDim.Render(clip("enter start  up/down field  esc cancel", w))
+		return sDim.Render(clip("enter start  up/down field  left/right folder  esc cancel", w))
 	case modeQuotaConfirm:
 		if m.quotaUnprotect {
-			return clip("Unprotect "+m.quotaConfirm+"? workers may use this provider freely. y/n", w)
+			return confirmLine("Unprotect "+sanitize(m.quotaConfirm)+"?", w)
 		}
-		return clip("Protect "+m.quotaConfirm+"? y/n", w)
+		return confirmLine("Protect "+sanitize(m.quotaConfirm)+"?", w)
 	case modeConfirm:
 		if m.confirmOwner {
-			const suffix = "? The conversation is kept: Enter on its offline row resumes it. y/n"
-			return clip(sBold.Render("Stop "+clip(m.confirmName, max(w-5-len(suffix), 0))+suffix), w)
+			return clip(sBold.Render(confirmName("Stop ", m.confirmName, "? Conversation kept: Enter resumes it.", w)), w)
 		}
-		return clip(sBold.Render("Stop worker "+m.confirmName+"? y/n"), w)
+		return clip(sBold.Render(confirmName("Stop worker ", m.confirmName, "?", w)), w)
 	case modeProjectRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
 	case modeRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty resets, esc cancels"), w)
 	case modeTrust:
-		return clip(sBold.Render("Let "+m.confirmName+" act on requests from your other agents without asking? y/n"), w)
+		return clip(sBold.Render(confirmName("Let ", m.confirmName, " act on peer requests without asking?", w)), w)
 	case modePolicy:
 		return sDim.Render(clip("left/right change  up/down or enter field  enter saves  esc cancels", w))
 	}

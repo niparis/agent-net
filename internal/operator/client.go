@@ -178,6 +178,7 @@ func (s *Client) Snapshot(ctx context.Context) (Snapshot, error) {
 				var v protocol.NodesInfo
 				err = json.Unmarshal(c.raw, &v)
 				snap.Nodes = v.Nodes
+				snap.Calibration = v.Calibration
 			case protocol.OpWorkerProfiles:
 				err = json.Unmarshal(c.raw, &snap.WorkerProfiles)
 			case protocol.OpWorkerProvidersGet:

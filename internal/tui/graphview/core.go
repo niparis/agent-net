@@ -46,8 +46,9 @@ type Renderer interface {
 type Size struct{ Width, Height int }
 type Cell struct{ X, Y int }
 type Output struct {
-	Lines []string
-	Hits  map[Cell]string
+	Lines  []string
+	Hits   map[Cell]string
+	Labels map[Cell]LabelCell
 }
 
 type Graph struct {

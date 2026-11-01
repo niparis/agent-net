@@ -26,7 +26,7 @@ func TestCTOOnboardingSharedAndOwnerOnly(t *testing.T) {
 			t.Fatalf("%s gate: %v", method, err)
 		}
 	}
-	value, err := n1.d.runCTOToolRaw(context.Background(), "onboarding_restart", json.RawMessage(`{}`))
+	value, err := n1.d.runCTOToolRaw(context.Background(), "settings_change", json.RawMessage(`{"area":"onboarding"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

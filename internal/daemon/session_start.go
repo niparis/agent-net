@@ -130,8 +130,17 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if !info.IsDir() {
 		return protocol.StartedSession{}, errors.New("project path is not a folder")
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: found.Path, Model: p.Model, StartedAt: time.Now().Unix()}
-	r.Branch, _ = gitOut(ctx, r.Path, "branch", "--show-current")
+	sessionPath, branch := found.Path, ""
+	if p.Folder == protocol.FolderWorktree {
+		dir, name, _, err := d.createOwnerWorktree(ctx, found.Path, found.Name, p.Branch)
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		sessionPath, branch = dir, name
+	} else {
+		branch, _ = gitOut(ctx, found.Path, "branch", "--show-current")
+	}
+	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
 	if p.Harness == "codex" {
 		args := []string{bin}
 		if p.Model != "" {
