@@ -184,6 +184,10 @@ The short version. The full model, including what is not protected, is in [docs/
 
 Start a new Claude Code, Codex, Pi or OpenCode session after the install. Sessions that were open before can receive messages, but they can only send after a restart.
 
+The TUI has five tabs: 1 Sessions, 2 Messages, 3 Quotas, 4 Graph and 5 Tools.
+On Graph, `/` finds an agent and Enter opens its charter card. Esc returns to
+the same node; Enter on the card opens Sessions for its project.
+
 Ask an agent things like:
 
 - "Who's on the agent net?"

@@ -146,7 +146,7 @@ func (m Model) View() string {
 		case m.mapOn:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.mapView(w, contentHeight-1)...)
-		case m.tab == 5:
+		case m.tab == graphTab:
 			out = append(out, m.graphView(w, contentHeight)...)
 		case m.tab == toolsTab:
 			out = append(out, m.toolsView(w, contentHeight)...)
@@ -248,7 +248,7 @@ func (m Model) mainView(w, h int) []string {
 	return out
 }
 
-var tabNames = []string{"Sessions", "Messages", "Quotas", "Map", "Tools", "Graph"}
+var tabNames = []string{"Sessions", "Messages", "Quotas", "Graph", "Tools"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 func (m Model) titleLine(w int) string {

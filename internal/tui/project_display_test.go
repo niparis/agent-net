@@ -38,7 +38,7 @@ func TestMapProjectDisplayForm(t *testing.T) {
 		t.Fatalf("cleared: %v", src.projectNames)
 	}
 	m, _ = press(m, keyRunes("?"))
-	if !strings.Contains(m.View(), "name project") {
+	if !strings.Contains(strings.Join(m.helpContent(120), "\n"), "name project") {
 		t.Fatal("help missing display name key")
 	}
 }
@@ -63,16 +63,14 @@ func TestProjectDisplayMapGraphMessagesAndFilter(t *testing.T) {
 	m := openMap(t, mapModel(120, 34, fakeGraph()))
 	m.snap.Projects = append(m.snap.Projects, protocol.ProjectView{Name: "cogforge", DisplayName: "Evidence API"})
 	m.mp.selected = "cogforge"
-	m.mp.overview = true
 	if !strings.Contains(m.View(), "Evidence API") {
 		t.Fatal("overview missing display name")
 	}
-	m.mp.overview = false
 	if !strings.Contains(strings.Join(m.mapEdgeLines("tenebrae", 120), " "), "Evidence API") {
 		t.Fatal("edge missing display name")
 	}
 	m.mapOn = false
-	m.tab = 5
+	m.tab = graphTab
 	if !strings.Contains(strings.Join(m.graphView(120, 24), "\n"), "Evidence API") {
 		t.Fatal("graph missing display name")
 	}

@@ -13,8 +13,8 @@ func TestCTOUIShowAndNotice(t *testing.T) {
 	if m.tab != 0 || m.mapOn || m.selected != "s_0000000000000002" || m.filter != "strategies" || m.notice.text != "CTO: check work" {
 		t.Fatalf("sessions: %+v", m)
 	}
-	m = send(m, protocol.UIRequest{Tab: "map", Select: "shop", Why: "inspect"})
-	if !m.mapOn || m.mp.selected != "shop" || m.notice.text != "CTO: inspect" || !strings.Contains(m.View(), "CTO: inspect") {
+	m = send(m, protocol.UIRequest{Tab: "graph", Select: "shop", Why: "inspect"})
+	if m.mapOn || m.tab != graphTab || m.mp.selected != "shop" || m.notice.text != "CTO: inspect" || !strings.Contains(m.View(), "CTO: inspect") {
 		t.Fatalf("map: %v %q %q", m.mapOn, m.mp.selected, m.notice.text)
 	}
 	m = send(m, protocol.UIRequest{Tab: "quotas", Why: "quota"})
@@ -45,7 +45,7 @@ func TestCTOUISelectsOfflineSessionAndMapProject(t *testing.T) {
 	if m.selected != "s_0000000000000006" {
 		t.Fatalf("offline selection: %s", m.selected)
 	}
-	m = send(m, protocol.UIRequest{Tab: "map", Select: "web"})
+	m = send(m, protocol.UIRequest{Tab: "graph", Select: "web"})
 	if m.mp.selected != "shop" {
 		t.Fatalf("map project: %s", m.mp.selected)
 	}
@@ -53,7 +53,7 @@ func TestCTOUISelectsOfflineSessionAndMapProject(t *testing.T) {
 
 func TestCTOMapFilterClearsWhenOwnerLeavesMap(t *testing.T) {
 	m := openMap(t, mapModel(120, 40, fakeGraph()))
-	m = send(m, protocol.UIRequest{Tab: "map", Filter: "shop"})
+	m = send(m, protocol.UIRequest{Tab: "graph", Filter: "shop"})
 	if len(m.mapSelectable()) != 1 {
 		t.Fatalf("filter not applied: %v", m.mapSelectable())
 	}

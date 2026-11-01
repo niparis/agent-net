@@ -81,7 +81,7 @@ func TestMapCardNeverWiderThanTheScreenAndKeepsRecentLast(t *testing.T) {
 		m := openMap(t, mapModel(size[0], size[1], richGraph()))
 		for _, name := range []string{"tenebrae", "cogforge", "homelab", "trading-architect"} {
 			m.mp.selected = name
-			out := m.mapFocusWithList(size[0], size[1]-6)
+			out := m.mapFocusView(size[0], size[1]-6)
 			if len(out) != size[1]-6 {
 				t.Fatalf("%v %s: %d rows, want %d", size, name, len(out), size[1]-6)
 			}
@@ -114,19 +114,6 @@ func TestMapCardCharterScrolls(t *testing.T) {
 	m.mp.selected = "cogforge"
 	if v := ansi.Strip(m.View()); !strings.Contains(v, "purpose") {
 		t.Fatal(v)
-	}
-}
-
-func TestMapListMarksProjectsWithLiveSessions(t *testing.T) {
-	m := openMap(t, mapModel(120, 34, richGraph()))
-	var shop string
-	for _, l := range lines(ansi.Strip(m.View())) {
-		if left, _, ok := strings.Cut(l, "│"); ok && strings.Contains(left, " shop") {
-			shop = left
-		}
-	}
-	if !strings.Contains(shop, "●") {
-		t.Fatalf("shop has a live session but no dot: %q", shop)
 	}
 }
 

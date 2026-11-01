@@ -36,10 +36,8 @@ func (m Model) hints() []hint {
 		return []hint{{"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"esc", "back", 1}, {"?", "help", 1}}
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
-	case m.mapOn && m.focus != focusCTO && m.mp.overview:
-		return []hint{{"up/down", "select", 1}, {"left/right", "select", 1}, {"enter", "focus", 1}, {"z", "back", 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"up/down", "move", 1}, {"left/right", "follow", 1}, {"enter", "open", 1}, {"/", "find", 2}, {"z", "overview", 2}, {"?", "help", 0}, {"q", "quit", 0}}
+		return []hint{{"enter", "sessions", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"U/u", "learned/undo", 2}, {"?", "help", 0}, {"q", "quit", 0}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -48,8 +46,8 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == 2:
 		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
-	case m.tab == 5:
-		return []hint{{"1-6", "tabs", 1}, {"tab", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
+	case m.tab == graphTab:
+		return []hint{{"1-5", "tabs", 1}, {"tab", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == toolsTab:
 		return m.toolsHints()
 	}
@@ -93,7 +91,7 @@ func (m Model) helpLine(w int) string {
 			return line
 		}
 	}
-	if m.mapOn && m.mp.finding {
+	if m.tab == graphTab && m.mp.finding {
 		return clip("find: "+sanitize(m.mp.findQuery)+sDim.Render("  enter focus  esc cancel"), w)
 	}
 	if m.inboxOn {
@@ -164,9 +162,9 @@ func (m Model) helpContent(w int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
 		{"proposal", "enter details; a approve; x decline; A approve all after confirmation"},
-		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
+		{"1-5", "switch between Sessions, Messages, Quotas, Graph and Tools"},
 		{"up/down, j/k", "select a session"},
-		{"pgup/pgdn, g/G", "page, first, last"},
+		{"pgup/pgdn, home/end", "page, first, last"},
 		{"enter", "enter the selected session (ctrl+] to return)"},
 		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
@@ -182,19 +180,23 @@ func (m Model) helpContent(w int) []string {
 		{"s", "show or hide subscriptions that are not set up"},
 		{"r", "refresh the readings"},
 		{"", ""},
-		{"Map", ""},
-		{"up/down, j/k", "select a project"},
-		{"left/right", "follow an edge in or out"},
-		{"enter", "open Sessions filtered to the project; in the overview, focus it"},
-		{"/", "find a project"},
-		{"z", "toggle the overview"},
+		{"Graph", ""},
+		{"M, G, 4", "open the network"},
+		{"arrows", "select a node; shift+arrows or hjkl pan"},
+		{"[ ]", "select a linked neighbour"},
+		{"/", "find a node; Enter selects the first match; Esc cancels"},
+		{"+ -, 0", "zoom; fit the graph"},
+		{"o, t, space", "orbit; show traffic; pause traffic"},
+		{"enter", "open the selected agent card"},
+		{"Agent card", ""},
+		{"enter", "open Sessions filtered to this agent's project"},
+		{"esc", "return to Graph with the same node selected"},
 		{"D", "name project (empty clears)"},
 		{"h, H", "hide or unhide the selected project; show hidden projects"},
 		{"U, u", "select the next learned change; undo the selected one"},
 		{"[ ], ctrl+u/d", "scroll the charter; pgup/pgdn also work"},
 		{"c", "focus the " + m.ctoTitle() + " box"},
 		{"r", "refresh"},
-		{"M, esc", "leave Map for Sessions"},
 		{"", ""},
 		{"Tools", ""},
 		{"[ ]", "switch screens; left/right also switches, except on All tools"},

@@ -310,7 +310,7 @@ func (r *runner) otherHosts(summary setupSummary) []string {
 func (r *runner) mapPoint(summary setupSummary) setupPoint {
 	// The projects call lists a folder per machine, so it also carries worker
 	// worktrees, Claude Code worktrees and temporary test folders under their
-	// own names. The Map tab counts graph nodes, which are project identities:
+	// own names. The Graph tab counts graph nodes, which are project identities:
 	// worktrees share their main tree's identity and junk roots are hidden.
 	// Use the same graph here, and keep the project list only for gateways
 	// that cannot answer graph_get.
@@ -329,21 +329,21 @@ func (r *runner) mapPoint(summary setupSummary) setupPoint {
 	} else {
 		// Without the graph there is no honest count: the folder list holds
 		// every checkout ever seen, worktrees and temporary folders included.
-		return setupPoint{label: "4 Map", first: "Your projects appear on the Map as agents work in them."}
+		return setupPoint{label: "4 Graph", first: "Your projects appear on the Graph as agents work in them."}
 	}
 	if len(projects) == 0 {
-		return setupPoint{label: "4 Map", first: "No projects yet. Each project you work in becomes one."}
+		return setupPoint{label: "4 Graph", first: "No projects yet. Each project you work in becomes one."}
 	}
 	missing := len(projects) - len(chartered)
 	switch {
 	case missing == 0:
-		return setupPoint{label: "4 Map", first: fmt.Sprintf("%d %s seen. All have charters.", len(projects), plural(len(projects), "project", "projects"))}
+		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d %s seen. All have charters.", len(projects), plural(len(projects), "project", "projects"))}
 	case missing == len(projects):
-		return setupPoint{label: "4 Map", first: fmt.Sprintf("%d projects seen. None has a charter yet: the CTO drafts", len(projects)), details: []string{"them with you."}}
+		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d projects seen. None has a charter yet: the CTO drafts", len(projects)), details: []string{"them with you."}}
 	case missing == 1:
-		return setupPoint{label: "4 Map", first: fmt.Sprintf("%d projects seen. One has no charter yet: the CTO drafts", len(projects)), details: []string{"it with you."}}
+		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d projects seen. One has no charter yet: the CTO drafts", len(projects)), details: []string{"it with you."}}
 	default:
-		return setupPoint{label: "4 Map", first: fmt.Sprintf("%d projects seen. %d have no charter yet: the CTO drafts", len(projects), missing), details: []string{"them with you."}}
+		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d projects seen. %d have no charter yet: the CTO drafts", len(projects), missing), details: []string{"them with you."}}
 	}
 }
 

@@ -7,7 +7,7 @@ daemon status         connected to https://gateway.example:7420 as node n_laptop
 [36m2 Talk[0m  Your agents can now ask each other. New sessions get the
         [2mtools; open ones get them after a restart.[0m
 [36m3 CTO[0m   Your CTO runs the network for you. Ask it in plain words.
-[36m4 Map[0m   8 projects seen. None has a charter yet: the CTO drafts
+[36m4 Graph[0m 8 projects seen. None has a charter yet: the CTO drafts
         [2mthem with you.[0m
 [36m5 Work[0m  Workers use claude, codex. Your claude plan is protected.
 [36m6 Tools[0m Skills and MCP servers are checked on every machine.

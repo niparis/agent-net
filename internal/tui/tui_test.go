@@ -504,7 +504,7 @@ func TestOfflineToggle(t *testing.T) {
 	if got := strings.Join(names(m), ","); got != "tenebrae-53,strategies,web,ci-runner,scratch,old-session" {
 		t.Fatalf("with offline: %s", got)
 	}
-	m = keys(m, "G") // the offline session is last
+	m = keys(m, "end") // the offline session is last
 	if !strings.Contains(m.View(), "old-session") || !strings.Contains(m.View(), "off") || !strings.Contains(m.View(), "filter: offline") {
 		t.Fatalf("the offline session is not on screen:\n%s", m.View())
 	}
@@ -587,7 +587,7 @@ func TestSelectionKeysAndStability(t *testing.T) {
 	if m.selected == third {
 		t.Fatal("up did not move")
 	}
-	m = keys(m, "G")
+	m = keys(m, "end")
 	if want := m.visible()[len(m.visible())-1].SessionID; m.selected != want {
 		t.Fatalf("G: %s, want %s", m.selected, want)
 	}
@@ -633,7 +633,7 @@ func TestSelectionScrollsTheTable(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 24})
 	m = refresh(m, src)
-	m = keys(m, "G")
+	m = keys(m, "end")
 	v := m.View()
 	last := m.visible()[len(m.visible())-1]
 	if !strings.Contains(v, "▸ ") || !strings.Contains(v, last.Profile.Name) {
@@ -1042,7 +1042,7 @@ func (r *recordingSource) Events(ctx context.Context, a int64, l int) ([]protoco
 // With colours on, the codes must be well formed and no text of ours may be
 // broken by the clean-up of network text: stripping them leaves the plain view.
 func TestColourOutputIsWellFormed(t *testing.T) {
-	m := keys(newModel(100, 30), "o", "G")
+	m := keys(newModel(100, 30), "o", "end")
 	plain := m.View()
 	lipgloss.SetColorProfile(termenv.ANSI256)
 	defer lipgloss.SetColorProfile(termenv.Ascii)

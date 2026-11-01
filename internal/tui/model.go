@@ -412,7 +412,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case graphTickMsg:
-		if m.tab == 5 && !m.mapOn && msg.generation == m.graphGeneration {
+		if m.tab == graphTab && !m.mapOn && msg.generation == m.graphGeneration {
 			m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 			return m, graphTick(m.graphGeneration)
 		}
@@ -437,12 +437,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		cmds := []tea.Cmd{m.nextTick()}
-		if m.tab == 5 && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
+		if m.tab == graphTab && !m.mapOn && !m.graphTalkLoading && (m.graphTalkAt.IsZero() || m.now().Sub(m.graphTalkAt) >= time.Minute) {
 			m.graphTalkLoading = true
 			m.graphTalkPending = nil
 			cmds = append(cmds, m.graphTalkCmd())
 		}
-		if (m.mapOn || m.tab == 5) && !m.mp.loading {
+		if (m.mapOn || m.tab == graphTab) && !m.mp.loading {
 			m.mp.loading = true
 			cmds = append(cmds, m.mapCmd())
 		}
@@ -989,8 +989,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.focus == focusCTO && m.cto != nil {
 		return m.ctoKey(k)
 	}
-	if m.mapOn && m.mp.finding {
-		return m.mapKey(k)
+	if m.tab == graphTab && m.mp.finding {
+		return m.graphKey(k)
 	}
 	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
 		return m.toolsKey(k)
@@ -1007,30 +1007,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.focus = focusCTO
 		return m, nil
 	}
-	if !m.filtering && m.open == nil && (k.String() == "1" || k.String() == "2" || k.String() == "3" || k.String() == "4" || k.String() == "5" || k.String() == "6") {
-		if k.String() == "6" {
-			m.tab, m.mapOn, m.focus = 5, false, focusSessions
-			m.graphGeneration++
-			animation := graphTick(m.graphGeneration)
-			var talk tea.Cmd
-			if !m.graphTalkLoading {
-				m.graphTalkLoading = true
-				m.graphTalkPending = nil
-				talk = m.graphTalkCmd()
-			}
-			if m.mp.loading {
-				return m, tea.Batch(animation, talk)
-			}
-			m.mp.loading = true
-			return m, tea.Batch(m.mapCmd(), animation, talk)
-		}
-		if k.String() == "4" {
-			return m.startMap()
-		}
-		if k.String() == "5" {
+	if !m.filtering && m.open == nil {
+		switch k.String() {
+		case "4", "M", "G":
+			return m.startGraph()
+		case "5":
 			return m.startTools()
+		case "1", "2", "3":
+			m.mapOn = false
 		}
-		m.mapOn = false
 	}
 	if m.mapOn {
 		return m.mapKey(k)
@@ -1089,7 +1074,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 	}
-	if m.tab == 5 {
+	if m.tab == graphTab {
 		return m.graphKey(k)
 	}
 	if m.tab == toolsTab {
@@ -1249,7 +1234,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "L":
 		m.learned = true
 	case "M":
-		return m.startMap()
+		return m.startGraph()
 	case "?":
 		m.help = true
 	case "d":
@@ -1329,7 +1314,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(m.layout().sessions)
 	case "home", "g":
 		m.move(-1 << 20)
-	case "end", "G":
+	case "end":
 		m.move(1 << 20)
 	case "enter":
 		if m.focus == focusFeed {
@@ -1791,9 +1776,11 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 			model, cmd = m.loadTools()
 			m = model.(Model)
 		}
-	case "map":
-		m.tab = 0
-		m.mapOn = true
+	case "graph", "map":
+		m.tab = graphTab
+		m.mapOn = false
+		m.graphGeneration++
+		cmd = graphTick(m.graphGeneration)
 		if q.Select != "" {
 			m.mp.selected = q.Select
 			for _, a := range m.snap.Agents {
@@ -1811,8 +1798,15 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 		}
 		if !m.mp.loading {
 			m.mp.loading = true
-			cmd = m.mapCmd()
+			cmd = tea.Batch(cmd, m.mapCmd())
 		}
+		if q.Select == "" && q.Filter != "" {
+			if nodes := m.mapProjectNodes(); len(nodes) > 0 {
+				m.mp.selected = nodes[0].Name
+			}
+		}
+		m.mp.pendingSelection = m.mp.selected
+		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: m.mp.selected})
 	}
 	if q.Tab == "sessions" || q.Tab == "messages" {
 		for _, a := range m.snap.Agents {
@@ -1848,5 +1842,5 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) graphMouseActive() bool {
-	return m.tab == 5 && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.learned
+	return m.tab == graphTab && m.focus != focusCTO && !m.mapOn && !m.inboxOn && !m.help && !m.learned
 }

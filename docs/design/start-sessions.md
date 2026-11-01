@@ -32,7 +32,7 @@ starting one. This design adds that step and the last one, ending.
   `worker_opencode.go`, `worker_codex.go`, `worker_pi.go`, `enter.go`,
   `herdr.go`, `codex_peers.go`, and the start form in `internal/tui/forms.go`.
 - Rendered the golden scenes with `scripts/screens.sh` (Sessions, worker
-  tree, start form, Map focus card, Graph, offline filter).
+  tree, start form, Graph agent card, Graph, offline filter).
 - Checked the installed harness help on this machine, read-only: Claude Code
   2.1.316, Codex 0.163.0, OpenCode 2.2.0, Pi 1.4.0, herdr 0.8.0, tmux.
 
@@ -46,7 +46,7 @@ starting one. This design adds that step and the last one, ending.
    it. This covers "I killed the last session of this project" when the owner
    wants the context back.
 3. **One new key, `n`, opens one form: "New session".** It works wherever a
-   project or a session is selected: Sessions, Map and Graph. `s` stays
+   project or a session is selected: Sessions and Graph. `s` stays
    "start a worker".
 4. **The form has five lines**: Project, Harness, Model, Folder, First
    message. Everything is filled from the selection, so the usual start is
@@ -154,8 +154,8 @@ of places costs nothing to learn.
 |---|---|---|
 | Sessions (tab 1), any row | `n`: form filled from the row's project, machine, harness | The main board. The owner sees what runs and starts what is missing. |
 | Sessions, offline or dormant row | Enter: resume and enter | Situation 1 with no form. |
-| Map (tab 4), focus card | `n`: form filled from the project | The card says `○ no live sessions`. That is exactly when the owner wants one. |
-| Graph (tab 6), selected node | `n`: form filled from the node | The owner asked for it. It costs one key handler because the form is shared. |
+| Graph (tab 4), agent card | `n`: form filled from the project | The card says `○ no live sessions`. That is exactly when the owner wants one. |
+| Graph (tab 4), selected node | `n`: form filled from the node | The owner asked for it. It costs one key handler because the form is shared. |
 | CTO | the owner asks in words; the CTO proposes; `a` approves in Needs you | New projects, clones, "start a session on X and tell it Y". |
 
 Places rejected:
@@ -167,9 +167,9 @@ Places rejected:
 - **The phone.** Its plan mirrors TUI actions and is paused. When it resumes,
   the same `session_start` method serves it, as `session_enter` does now.
 
-Graph and Map: Enter on a Graph node already opens Map, and the Map card is
+Graph: Enter on a Graph node opens its card, and the Graph card is
 where a project's live sessions are listed. If the owner wants fewer places,
-drop the Graph handler, not the Map one. The Graph key line is already full,
+keep the card handler and avoid duplicating it on the network view. The Graph key line is already full,
 so `n` appears there only in `?`.
 
 ### Why `n` and not `s`
@@ -181,7 +181,7 @@ read the switch on every start, and a wrong switch either sandboxes the owner
 or leaves an unsandboxed agent running for days. Two keys, two forms that
 share their fields and code.
 
-`n` is free on Sessions, Map and Graph today (`internal/tui/model.go` uses it
+`n` is free on Sessions and Graph today (`internal/tui/model.go` uses it
 only inside help, and the key audit moves that to `N`). Inside the CTO box,
 `n` stays "new CTO conversation": the box has focus then, so they do not meet.
 
@@ -226,7 +226,7 @@ The owner selected the `tenebrae` row (claude, idle) on Mac and pressed `n`.
 Focus starts on First message, because every other field is filled.
 
 ```
-1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 9 online · 2 busy
+1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ 9 online · 2 busy
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.5.0 cpu ██░░░░░░ 21% of 10 mem ██░░ 9.1/16G                 │
 │  ● build-vm   v0.5.0 cpu █░░░░░░░  8% of 4  mem █░░░ 2.0/8.0G                │
@@ -644,7 +644,7 @@ part 3.
 10. **Paths and new folders.** Path in Project; register an existing folder;
     create plus `git init` after `y`; the home-folder rule; the Claude trust
     note and its confirm.
-11. **Map and Graph entry points.** `n` on the Map card and on a Graph node;
+11. **Graph entry points.** `n` on the Graph card and on a Graph node;
     `?` lines.
 12. **CTO proposals.** `session_start` and `project_create` actions in the
     CTO change tool, the Needs you row and the runner. Depends on the

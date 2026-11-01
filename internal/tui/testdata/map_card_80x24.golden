@@ -1,19 +1,19 @@
-1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 7 nodes, 7 edges
-  api-architect  │tenebrae  mature
-  trading-arch…  │Research platform that turns papers, figures and strategies
-  wbg-architect  │into a searchable library for the trading desk, with …
-  cogforge       │● 1 session, 1 busy
-  homelab        │governed by: wbg-architect (advisor)
-  shop          ●│
-▸ tenebrae      ●│IN 2                            OUT 2
-                 │all projects ──▶ depends        ──▶ cogforge depends ask
-                 │homelab ──▶ deploys auto        ──▶ homelab depends ask
-                 │Charter 1-4/17  [ ] scroll ───────────────────────────────────
-                 │purpose          Research platform that turns papers, figures
-                 │                 and strategies into a searchable library for
-                 │                 the trading desk, with citations kept for
-                 │                 every claim.
-                 │RECENT  3h ago maturity by trading-architect
+1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ 7 nodes, 7 edges    14:05
+tenebrae  mature
+Research platform that turns papers, figures and strategies into a searchable
+library for the trading desk, with citations kept for every claim.
+● 1 session, 1 busy
+governed by: wbg-architect (advisor)
+
+IN 2                                     OUT 2
+all projects ──▶ depends                 ──▶ cogforge depends ask
+homelab ──▶ deploys auto                 ──▶ homelab depends ask
+Charter 1-4/15  [ ] scroll ─────────────────────────────────────────────────────
+purpose          Research platform that turns papers, figures and strategies
+                 into a searchable library for the trading desk, with citations
+                 kept for every claim.
+maturity         mature - stable since spring
+RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down move  left/right follow  enter open  / find  z overview  ? help  q quit
+enter sessions  esc Graph  [ ] scroll  U/u learned/undo  ? help  q quit

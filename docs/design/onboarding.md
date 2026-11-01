@@ -24,7 +24,7 @@ The sequence is: setup, then the essential getting-started info, then the TUI, t
 ## How this was researched
 
 - Read README, `docs/setup.md`, `docs/reference.md`, `docs/security.md` and all 32 files in `docs/decisions/`.
-- Rendered every golden scene with `scripts/screens.sh` and looked at the Sessions, Needs you, Messages, Quotas, Map, Tools, Graph, help and CTO scenes, and the goldens in `internal/tui/testdata/`.
+- Rendered every golden scene with `scripts/screens.sh` and looked at the Sessions, Needs you, Messages, Quotas, Graph, Tools, help and CTO scenes, and the goldens in `internal/tui/testdata/`.
 - Built the binary and ran `agent-net setup --gateway --no-service --all` in a sandbox: a temporary `HOME` with `~/.pi`, `~/.config/opencode` and `~/.codex` folders, no `claude` on `PATH`, all five `AGENT_NET_*` variables pointed at temporary folders, and a private gateway on `127.0.0.1:17420`. The daemon step was read from `internal/setup/setup.go`, because `--no-service` skips it.
 
 ### What setup prints today (sandbox run, verbatim)
@@ -132,7 +132,7 @@ What you have now                                                  {B}
 2 Talk  Your agents can now ask each other. New sessions get the
         tools; open ones get them after a restart.                 {F}
 3 CTO   Your CTO runs the network for you. Ask it in plain words.
-4 Map   8 projects seen. Their agents have no charter yet: the CTO drafts
+4 Graph 8 projects seen. Their agents have no charter yet: the CTO drafts
         them with you.                                             {F}
 5 Work  Workers use claude, codex. Your claude plan is protected.
 6 Tools Skills and MCP servers are checked on every machine.
@@ -147,7 +147,7 @@ That is 20 lines after `daemon status`. With the step lines above it, the owner 
 
 Rules:
 
-- **Each line has a label of one short word** (`See`, `Talk`, `CTO`, `Map`, `Work`, `Tools`) in cyan, so the owner can scan the left edge. The same six words name the TUI steps in Part C, so the owner meets them twice.
+- **Each line has a label of one short word** (`See`, `Talk`, `CTO`, `Graph`, `Work`, `Tools`) in cyan, so the owner can scan the left edge. The same six words name the TUI steps in Part C, so the owner meets them twice.
 - **Real names and numbers only.** No line describes a feature in the abstract when data exists. With data missing, the line says what fills it ("Your other machines appear when you add them").
 - **Line 5 states the protection fact**: protected or not, by provider name. It is the one thing that can cost the owner money before they open the TUI.
 - **"Do this first" lists only actions**, at most two, each one line: restart sessions that lack the tools, the `loginctl enable-linger` command when it applies, a failed step. Information never goes there.
@@ -163,7 +163,7 @@ What you have now
         a project: it shows up here by itself.
 2 Talk  Your agents will be able to ask each other.
 3 CTO   Your CTO runs the network for you. Ask it in plain words.
-4 Map   No projects yet. Each project you work in becomes one.
+4 Graph No projects yet. Each project you work in becomes one.
 5 Work  Workers can use: codex. Nothing to protect yet.
 6 Tools Skills and MCP servers are checked on every machine.
 
@@ -321,7 +321,7 @@ Rules:
 - **One key dismisses:** `>` skips the current step (new; `>` is not bound in the TUI today). A skipped step is never shown again.
 - **Done steps never come back.** When all steps are done or skipped, the line returns to the normal CTO hint for good.
 - **The line names the owner's real things:** a session name, a project, a provider. Never a placeholder.
-- **The label matches the setup end screen** (`See`, `Talk`, `CTO`, `Map`, `Work`, `Tools`), so the owner recognises it.
+- **The label matches the setup end screen** (`See`, `Talk`, `CTO`, `Graph`, `Work`, `Tools`), so the owner recognises it.
 - **Colours** use the existing TUI roles from `internal/tui/theme.go` (adaptive light and dark values): the step number and label in the accent role, the text in the normal text role, `> skip` in the faint role. A step that answers something waiting (Needs you) uses the warning role for the session name, like the Needs you section.
 - At 80 columns the line drops `> skip` first, then shortens the text with `…`. Help (`?`) lists `>  skip the onboarding step`.
 
@@ -344,7 +344,7 @@ Seven steps, in the order of the six points. Step 1b exists only while the netwo
 | 1b | See | only 1 machine, step 1 done | `agent-net shows every machine. Ask the CTO to add one: "add a machine".` | A second machine is listed in `nodes` (live fact). |
 | 2 | Talk | step 1 done | `Agents ask each other instead of you. m sends <session> a message as you.` | The Messages tab was opened while it held an agent-to-agent thread, or the owner sent a message with `m` (TUI action). |
 | 3 | CTO | step 2 done | `Say what you want in plain words. Try: "what is going on?"` | The first message sent to the CTO from this TUI (`cto_send`). |
-| 4 | Map | step 3 done, at least one agent with a live session has no charter | `The agent for <project> has no charter, so peers guess what it accepts. Ask the CTO: "draft a charter for the agent for <project>".` | That agent, or any agent with a live session, has a charter (live fact from `graph_get`). |
+| 4 | Graph | step 3 done, at least one agent with a live session has no charter | `The agent for <project> has no charter, so peers guess what it accepts. Ask the CTO: "draft a charter for the agent for <project>".` | That agent, or any agent with a live session, has a charter (live fact from `graph_get`). |
 | 5 | Work | step 4 done or passed, Claude, Codex or another orchestrator provider is logged in, none protected | `Workers spend the cheapest good-enough plan. Protect <provider> so your main sessions keep their limit: 3, then p.` | `protected_providers_get` says configured (live fact). |
 | 5 | Work | protection configured, no worker ever started on the network | `Hand a task to a worker: tell any agent "do this with a worker", or press s.` | A worker exists or existed (`workers` with `--recent`, or a `worker.started` event in the feed). |
 | 6 | Tools | 2 or more machines, `tools_differences` lists at least one item | `Your machines differ in <n> skills or MCP servers. 5 fixes them from one screen.` | The owner applied a fix or accepted a difference on Tools (TUI action), or the count reaches 0 (live fact). |
@@ -354,7 +354,7 @@ Notes on the choices:
 - **Step 1 teaches Enter, not a tab.** The owner confirmed that entering any session on any machine is the core of point 1. Needs you needs no step of its own: when a session waits, the existing Needs you section and the warning count are the lesson. While a Needs you row exists and step 1 is current, the line names the waiting session instead: `<session> waits for you. Enter answers it inside the session.` Same done rule.
 - **Step 2 is done by watching or by doing.** Agents talking is something the owner sees, not something they set up. The step finishes the first time the owner looks at a real agent-to-agent thread, or uses `m`.
 - **Step 3 makes the CTO the main path** for steps 4, 1b and 5. From step 3 on, every line offers the CTO first and a key second.
-- **Step 4 asks for one charter, not all.** One drafted charter shows what a charter does. The CTO brief already tells it to ask the project's own agent to draft the charter and show a diff. Learned edges teach themselves: the header already shows `learned N`, and Map marks `● N learned`.
+- **Step 4 asks for one charter, not all.** One drafted charter shows what a charter does. The CTO brief already tells it to ask the project's own agent to draft the charter and show a diff. Learned edges teach themselves: the header already shows `learned N`, and Graph marks `● N learned`.
 - **Step 5 protects before it spends.** The protect line appears only when a provider worth protecting is logged in and nothing is protected. If setup already protected it (Part D), the step goes straight to the worker line.
 - **Step 6 waits for a real difference.** With one machine, or no difference, there is nothing to teach yet, so the step stays hidden until there is.
 - **Steps that touch the network** (charters, protection, workers, a second machine) finish from live facts, so they finish everywhere at once, even when the CTO or another machine did the work.
@@ -364,7 +364,7 @@ Notes on the choices:
 Tabs that are empty today get one line of reason in their own body, written once and always shown when empty. This is not an onboarding element: it is what an empty screen should say anyway.
 
 - Messages, no thread: `No conversations yet. When an agent asks another one something, the thread shows here.`
-- Map, no charter on any agent: `No charters yet. Ask the CTO to draft one for a project you work in.`
+- Graph, no charter on any agent: `No charters yet. Ask the CTO to draft one for a project you work in.`
 - Quotas, nothing protected: today's line `no provider protected · select a subscription and press p` stays.
 - Tools, one machine: `One machine: nothing to compare yet.`
 
@@ -412,7 +412,7 @@ Waits for the TUI, and where it is learned:
 
 | Item | Where | Why it waits |
 |---|---|---|
-| Charters and edges | step 4, the CTO, Map | Needs the owner's judgement per project; the CTO drafts from the project's own agent. Edges are learned from traffic. |
+| Charters and edges | step 4, the CTO, Graph | Needs the owner's judgement per project; the CTO drafts from the project's own agent. Edges are learned from traffic. |
 | Adding machines | step 1b, CTO `invite` tool (new) | Needs the TUI open to see the result; works any time. |
 | Worker profiles and difficulty | Quotas Workers panel, the CTO | The chooser works with no roster (it uses the harness default and says how to register one). |
 | Request rules, peer trust (`t`), delegation policy (`p`) | the CTO, the keys | Only useful once agents talk; the owner sees why in Messages first. |
@@ -430,7 +430,7 @@ Rejected:
 ## Open questions for the owner
 
 1. **Protect at setup (Part D rank 2):** ask the yes/no question, or only teach it in TUI step 5? The design recommends asking, because a worker can spend the plan before the owner reaches step 5.
-2. **Step order:** is "Map before Work" right, or should protection (step 5) come right after the CTO step, because it protects money?
+2. **Step order:** is "Graph before Work" right, or should protection (step 5) come right after the CTO step, because it protects money?
 3. **Reset of onboarding:** is a CTO tool enough, or do you want a help-screen key?
 4. **Owner name in notes:** "your user" everywhere (recommended), or do you want your name kept for your own network?
 5. **Bare `agent-net`:** fine to make it open the TUI, or keep `agent-net tui` as the only way?

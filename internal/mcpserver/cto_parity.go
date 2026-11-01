@@ -31,7 +31,7 @@ func init() {
 	add("tools_apply", "Apply on explicit instruction.", map[string]ctoField{"plan_id": s("Plan ID.")})
 	add("tools_undo", "Undo assignment.", map[string]ctoField{"item": s("Item ID.")})
 	add("tools_history", "Read history.", map[string]ctoField{"item": s("Item ID.")})
-	add("ui_show", "Show a TUI view.", map[string]ctoField{"tab": en("Tab.", "sessions", "messages", "quotas", "map", "tools"), "select": s("Selection."), "filter": s("Filter."), "why": s("Reason.")})
+	add("ui_show", "Show a TUI view.", map[string]ctoField{"tab": en("Tab.", "sessions", "messages", "quotas", "graph", "tools"), "select": s("Selection."), "filter": s("Filter."), "why": s("Reason.")})
 	add("ui_notice", "Show notice.", map[string]ctoField{"text": s("Notice.")})
 	add("info", "Read daemon info.", nil)
 	add("nodes", "List machines or harness models.", map[string]ctoField{"models": obj("Selection.")})

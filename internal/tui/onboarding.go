@@ -101,7 +101,7 @@ func (m Model) onboardingStep() onboardingStep {
 		for _, a := range online {
 			project := firstNonEmpty(a.ProjectDisplayName, firstNonEmpty(a.Repo.Project, a.Profile.Project))
 			if project != "" && (a.Charter.Purpose == "" || a.Charter.PurposeFallback) && a.Charter.Maturity == "" && a.Charter.Accepts == "" && a.Charter.Refuses == "" && a.Charter.FeatureRequests == "" {
-				return onboardingStep{"map", "4/7 Map", "Ask the CTO to draft a charter for " + sanitize(project) + "."}
+				return onboardingStep{"map", "4/7 Graph", "Ask the CTO to draft a charter for " + sanitize(project) + "."}
 			}
 		}
 	}

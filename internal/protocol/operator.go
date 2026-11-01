@@ -124,7 +124,7 @@ var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes
 	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
-// remain hidden across machines; node names identify graph items on Map.
+// remain hidden across machines; node names identify graph items on Graph.
 type HiddenItems struct {
 	Sessions []string `json:"sessions,omitempty"`
 	Nodes    []string `json:"nodes,omitempty"`

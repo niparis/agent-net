@@ -12,6 +12,8 @@ import (
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
+const graphTab = 3
+
 type graphTickMsg struct{ generation int }
 
 func graphTick(generation int) tea.Cmd {
@@ -23,7 +25,46 @@ func (m Model) graphSize() (int, int) {
 	box := min(max((h-1)/3, 6), max(h-4, 1))
 	return max(w-4, 1), max(h-1-box-4, 1)
 }
+
+// startGraph opens the network and refreshes its data without losing the selection.
+func (m Model) startGraph() (tea.Model, tea.Cmd) {
+	m.tab, m.mapOn, m.focus = graphTab, false, focusSessions
+	m.mp.finding = false
+	m.uiFilter = ""
+	m.graphGeneration++
+	commands := []tea.Cmd{graphTick(m.graphGeneration)}
+	if !m.graphTalkLoading {
+		m.graphTalkLoading = true
+		m.graphTalkPending = nil
+		commands = append(commands, m.graphTalkCmd())
+	}
+	if !m.mp.loading {
+		m.mp.loading = true
+		commands = append(commands, m.mapCmd())
+	}
+	return m, tea.Batch(commands...)
+}
+
 func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mp.finding {
+		switch k.Type {
+		case tea.KeyEsc:
+			m.mp.finding, m.mp.findQuery = false, ""
+		case tea.KeyEnter:
+			if nodes := m.mapProjectNodes(); len(nodes) > 0 {
+				m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: nodes[0].Name})
+			}
+			m.mp.finding, m.mp.findQuery = false, ""
+		case tea.KeyBackspace, tea.KeyCtrlH:
+			r := []rune(m.mp.findQuery)
+			if len(r) > 0 {
+				m.mp.findQuery = string(r[:len(r)-1])
+			}
+		case tea.KeyRunes:
+			m.mp.findQuery += string(k.Runes)
+		}
+		return m, nil
+	}
 	if m.graphHelp {
 		if k.String() == "?" || k.String() == "esc" {
 			m.graphHelp = false
@@ -42,6 +83,8 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var action graphview.Action
 	switch k.String() {
+	case "/":
+		m.mp.finding, m.mp.findQuery = true, ""
 	case "+", "=":
 		action = graphview.ZoomIn{}
 	case "-":
@@ -93,9 +136,9 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var effect graphview.Effect
 		m.graphState, effect = graphview.Update(m.graphState, action)
 		if effect.Open {
-			m.mp.selected = effect.OpenMap
-			m.mp.overview = false
-			return m.startMap()
+			m.mp.selected = effect.OpenCard
+			m.mapOn = true
+			return m, nil
 		}
 	}
 	return m, nil
@@ -104,7 +147,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  o orbit  t talk  enter Map  space pause  ? close  tab CTO  q quit"))
+		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t talk  enter card  space pause  ? close  tab CTO  q quit"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
@@ -168,11 +211,11 @@ func (m Model) graphTalkCmd() tea.Cmd {
 // graphHintLine drops whole hints, starting with the least important. It holds
 // the keys used most on the graph; the full list is in the graph help panel.
 func graphHintLine(w int, paused bool) string {
-	hs := []hint{{"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"o", "orbit", 2}, {"t", "talk", 1}, {"enter", "Map", 2}, {"?", "help", 0}}
+	hs := []hint{{"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"o", "orbit", 2}, {"t", "talk", 1}, {"enter", "card", 2}, {"?", "help", 0}}
 	if paused {
 		// The paused marker takes the place of the least used hint, so the
 		// line never grows past seven.
-		hs = []hint{{"paused", "·", 0}, {"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"t", "talk", 1}, {"enter", "Map", 2}, {"?", "help", 0}}
+		hs = []hint{{"paused", "·", 0}, {"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"t", "talk", 1}, {"enter", "card", 2}, {"?", "help", 0}}
 	}
 	text := func() string {
 		parts := make([]string, 0, len(hs))

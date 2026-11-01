@@ -325,8 +325,8 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.help = true
 		return m, nil
-	case "M":
-		return m.startMap()
+	case "M", "G":
+		return m.startGraph()
 	case "]":
 		m.toolsSetScreen(m.tl.screen + 1)
 	case "[":
