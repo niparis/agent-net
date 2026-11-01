@@ -244,6 +244,27 @@ func (s *Client) Events(ctx context.Context, afterID int64, limit int) ([]protoc
 	return r.Events, nil
 }
 
+func (s *Client) Conversations(ctx context.Context, q protocol.QueryConversations) (protocol.ConversationPage, error) {
+	var out protocol.ConversationPage
+	raw, err := s.action(ctx, protocol.OpConversations, q)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) ConversationMessages(ctx context.Context, conversationID string) ([]protocol.Message, error) {
+	var out protocol.ConversationMessagesResult
+	raw, err := s.action(ctx, protocol.OpConversationMessages, protocol.QueryConversationMessages{ConversationID: conversationID, Limit: 200})
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil, err
+	}
+	return out.Messages, nil
+}
+
 func (s *Client) Message(ctx context.Context, id string) (protocol.Message, error) {
 	raw, err := s.Call(ctx, protocol.OpMessage, protocol.QueryMessage{MessageID: id})
 	if err != nil {
