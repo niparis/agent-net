@@ -93,12 +93,23 @@ func TestCTOChannelReportsDaemonVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer ln.Close()
+	// Like the daemon, the fake keeps the connection open after its reply. A
+	// close right after the reply races the client's read and makes it dial
+	// again, and nothing answers a second connection.
+	conns := make(chan net.Conn, 1)
+	t.Cleanup(func() {
+		select {
+		case c := <-conns:
+			c.Close()
+		default:
+		}
+	})
 	go func() {
 		c, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		defer c.Close()
+		conns <- c
 		r := bufio.NewScanner(c)
 		if !r.Scan() {
 			return
