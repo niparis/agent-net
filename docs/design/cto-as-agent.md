@@ -240,7 +240,7 @@ Measured with a temporary test that lists the CTO server's tools and counts the 
 
 Every proposal tool takes an optional `reason`. Estimated schema size: about 16 KB, about 4,000 tokens, two thirds less than today.
 
-`graph` is a public read: open question 1 is closed (the owner made the whole graph public to every agent), and `agent_graph` is the ordinary tool it uses. `graph` returns nodes with their charters and maturity and compact edges with kind, mode and request rule. It never returns node settings, history, hidden items, locations or sessions.
+`graph` is a public read: open question 1 is closed (the owner made the whole graph public to every agent), and `agent_graph` is the ordinary tool it uses. `graph` returns nodes with their charters, maturity, rules (the effective node settings and delegation policies, with name and value) and compact edges with kind, mode and request rule. It never returns secrets, machine paths or locations, learned-change history, hidden items or sessions.
 
 ### Today's tools, mapped
 
@@ -413,7 +413,7 @@ Status: implemented. The graph is limited to public project data, and protected 
 
 ## 13. Open questions for the owner
 
-1. **Is the graph a public read?** Closed by the owner on 2026-11-01: yes. Every agent may read the whole graph, because agents need to know each other's charters. `agent_graph` returns every node's charter and maturity and every edge with its kind, mode and request rule. Node settings, learned-change history with its evidence, hidden items, and anything with paths or machine secrets stay owner-only. The CTO reads the same view through `graph`.
+1. **Is the graph a public read?** Closed by the owner on 2026-11-01, twice: yes, read-only. Every agent may read the whole graph, because agents need to know each other's charters and rules. `agent_graph` returns every node's charter, maturity and rules (the effective node settings and delegation policies) and every edge with its kind, mode and request rule. Secrets and tokens, machine paths and locations, learned-change history with its evidence, hidden items and sessions stay hidden. Only changes are owner-gated. The CTO reads the same view through `graph`.
 2. **Approve-all.** Keep `A` with its confirm screen (recommended), or one key per proposal only?
 3. Keep the CTO box once the CTO is a Sessions row, or remove it later?
 4. **Later topic:** the owner's-words grant of the authority draft, for example letting a CTO send carry the owner's own words. Not part of this design.

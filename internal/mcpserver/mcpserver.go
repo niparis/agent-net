@@ -182,15 +182,16 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, out, nil
 		})
-	mcp.AddTool(s, tool("agent_get", "Show one agent session by session_id."),
+	mcp.AddTool(s, tool("agent_get", "Show one agent session by session_id. It includes the session's delegation policy and its node's rules (tests_before_merge, merge_authority, worker_sandbox, judge_consumers and deploy_rule), read-only."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in getIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "get", in)
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_graph",
-		"Read the component graph that every agent may see: every node's charter with its maturity, and every edge's kind, mode and request rule. "+
-			"With node, show that one node's full charter and the edges that touch it. Without node, offset and limit page the list; "+
-			"total counts the nodes and next is the next page offset. This is the public graph: node settings, learned-change history with evidence, hidden items, paths and sessions stay owner-only."),
+		"Read the component graph that every agent may see: every node's charter with its maturity, its rules with name and value (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule and the delegation policies), and every edge's kind, mode and request rule. "+
+			"With node, show that one node's full charter, its rules and the edges that touch it. Without node, offset and limit page the list; "+
+			"total counts the nodes and next is the next page offset. Charters and rules are public read-only; only changes are owner-gated. "+
+			"Secrets or tokens, machine paths, learned-change history with evidence, hidden items and sessions stay hidden."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in graphIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "agent_graph", in)
 			return nil, out, err

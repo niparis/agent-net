@@ -95,16 +95,33 @@ playbook notes in `agent_nodes` remain public; the owner-only full playbook
 view is removed. No ordinary agent read is widened for the CTO, except where
 the owner widened it for every agent.
 
-**Charters and edges are public.** The owner decided that every agent may read
-the whole graph, so `agent_graph` returns every node's charter fields and
-maturity and every edge's kind, mode and request rule. The charter guide
-forbids secrets, IP addresses, tokens and paths in a charter. Everything else
-about a node stays owner-only: its policy settings (worker sandbox, delegation
-and owner settings), learned-change history and evidence, hidden items, and
-its locations, paths and sessions. The public read projects the graph onto
-those fields; it never copies a node's settings, even from old data the
-validator would now refuse. The CTO's `graph` view calls the same read with
-the CTO caller.
+**Charters and rules are public.** The owner decided, twice, that every agent
+may read the whole graph, read-only. `agent_graph` returns every node's charter
+fields and maturity, every node's rules with name and value, and every edge's
+kind, mode and request rule. The rules are the five node settings resolved
+against the node's maturity (`tests_before_merge`, `merge_authority`,
+`worker_sandbox`, `judge_consumers`, `deploy_rule`) and the delegation policies
+the owner set for the node's project on each machine (`delegate`,
+`coder_model`, `main_model`, `workers`). `agent_get` puts the same rules on the
+session's node, so a session can check its own rules directly. Only changes
+are owner-gated (`node_settings_set` and `session_policy`). What stays hidden
+is not a rule: secrets and tokens, machine paths and locations, the
+learned-change history with its evidence excerpts, and the owner's
+hidden-items preferences. What stays hidden, and why:
+
+| Hidden field | Reason |
+|---|---|
+| `locations` (machine and path) and `sessions` | A machine path and a session list are not a rule. They name your folders and the processes that happen to be open, so they stay owner-only. |
+| Any setting name that is not one of the five above | An old or broken writer may have stored anything under an unknown name, including a path or a secret. The public read never reads it. |
+| A secret or token in a known setting | `ValidateNodeSetting` allows only the listed values, so a secret fails validation and `NodeDefaults` falls back to the maturity default. A hand-written invalid value is never returned. |
+| Learned-change history and evidence excerpts | The history can quote owner prompts, peer messages and reply outcomes. Those are evidence, not a rule. |
+| Hidden items | The owner's per-machine display preferences. They say what you do not want to see, not what an agent must do. |
+
+The public read projects the graph onto those fields: it never copies
+`locations` or `sessions`, it reads only the five known setting names, and
+`NodeDefaults` drops an invalid value. The charter guide forbids secrets, IP
+addresses, tokens and paths in a charter. The CTO's `graph` view calls the same
+read with the CTO caller.
 
 A parity test pins every data view to its ordinary source and rejects a view
 without a source. A canary test plants private markers in waiting questions,
@@ -689,7 +706,7 @@ The link is an inference from the prompt and first matching send, not a signatur
 
 ## Graph foundation
 
-Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. The public agent graph read is separate: `agent_graph` is open to every agent and returns only charters, maturity and edges, never node settings or history. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
+Graph operator methods use the owner gate, including history and graph changes. They refuse agent clients and CLI processes inside an agent session. The public agent graph read is separate: `agent_graph` is open to every agent and returns charters, maturity, rules and edges, read-only. Only changes are owner-gated. History, locations, secrets and hidden items stay out. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
 
 ## Playbook notes
 
