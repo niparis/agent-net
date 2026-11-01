@@ -249,9 +249,13 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 			Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
 	}
 	// The figures follow the info value, so every reader sees one version.
-	w.info.ContextTokens, w.info.ContextLimit, w.info.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
-	w.info.Continue, w.info.Fix = w.continueCount, w.fixCount
-	w.info.DifficultyAsked, w.info.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
+	// w.info may already be held by a session that another goroutine is
+	// encoding (noteAsk hands it out), so never write into it: replace it.
+	next := *w.info
+	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
+	next.Continue, next.Fix = w.continueCount, w.fixCount
+	next.DifficultyAsked, next.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
+	w.info = &next
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
 	// response may still be writing (a data race the race detector sees).

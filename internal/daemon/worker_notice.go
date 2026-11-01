@@ -598,7 +598,10 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 		cp.Continue, cp.Fix = w.continueCount, w.fixCount
 		cp.DifficultyAsked, cp.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
 		w.info = &cp
-		updated = w.info
+		// The session gets its own copy, so a later change to w.info never
+		// touches a value that pushSession may be encoding.
+		snap := cp
+		updated = &snap
 	}
 	d.saveWorkerLocked(w)
 	sessionID := w.sessionID
