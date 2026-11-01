@@ -376,7 +376,7 @@ This section covers everything the owner can do with skills and MCP servers acro
 
 ### Who may change things
 
-- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import` and `mcp_native_remove` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO may inspect tool metadata through its process-tree-checked channel. Its plan, apply, undo, import and native-removal calls become proposals; only approval in Needs you executes them. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
+- **The owner gate.** `tools_import`, `tools_plan`, `tools_apply`, `tools_undo`, `tools_history`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo` are owner methods. They work from your command line or the TUI. The daemon refuses an agent client and a command line that runs inside an agent session's process tree. The private CTO may inspect tool metadata through its process-tree-checked channel. Its plan, apply, undo, import and native-removal calls become proposals; only approval in Needs you executes them. A plan can be limited to chosen machines (`target.machines`). This adds no method and no new caller: it goes through the same gate, the gateway checks that each machine is enrolled, and a daemon ignores any target that names another machine.
 - **The gateway checks too.** It accepts these requests only from the online owner session of the sending machine. As with every other frame, the gateway trusts the daemons of enrolled machines (see [the trust limit](#the-trust-limit)).
 - **Advice is not authority.** A charter's `needs`, a peer message, a skill's text or a project file never grants a change. Needs are shown as unverified text and are never turned into assignments.
 - **Audit.** The gateway records each plan and apply with the actor (owner, legacy CTO, or owner with a CTO proposal ID), the targets and the result. Records can hold machine and file paths. They never hold skill contents or MCP credential values.
@@ -472,6 +472,36 @@ Import ([reference](reference.md#importing-native-mcp-servers)) moves a harness'
 - **Edits are compare-and-swap with a private backup**, as described above. The gateway keeps only hashes, the backup ID and the plan.
 - A running session keeps its native tools until it restarts. The gateway sends each online session in scope one ordinary message from the owner session, with the server name and no secret. Sessions in scope are chosen from the gateway's own records (node, harness, project), not from the request.
 
+### Project MCP coverage
+
+A project server already declared in the project files can be added to the
+harnesses that do not have it. This writes a harness config file in the
+project, so the rules are explicit.
+
+- **Only the owner.** `mcp_coverage_plan`, `mcp_coverage_apply` and
+  `mcp_coverage_undo` are owner methods under the same gate as the other Tools
+  actions.
+- **The project is the source.** The daemon re-reads the project and the
+  declared server on its own scan. A source path in the request must match a
+  source the fresh scan found.
+- **Only known files.** The destination comes from the harness's fixed project
+  path: `.mcp.json`, `.pi/mcp.json`, `opencode.json` or `opencode.jsonc`, and
+  `.codex/config.toml`. The daemon refuses a path outside the project, a
+  symlink, and an unknown harness.
+- **A same-name entry is never replaced.** If a harness already has a
+  different declaration, the row is a conflict. `definition` is opaque when a
+  value cannot be compared safely, and that is a conflict too.
+- **References, not values.** An environment value must be a reference such as
+  `${TOKEN}`. A literal value is refused, so a value is never copied from one
+  file to another.
+- **Compare-and-swap with a backup.** The plan records each file's hash. Apply
+  checks every file first, saves each whole file under `mcp-backups`, writes
+  only if the hash still matches, and verifies the result. Undo restores the
+  saved bytes only if the file still has the applied hash. A created file is
+  removed on undo.
+- Pi and Codex read their project MCP file only in a trusted project. The plan
+  says so; the write does not grant trust.
+
 ### The trust limit
 
 The gateway trusts the daemon of an enrolled node. A compromised enrolled machine can therefore name any session of its own node, and so any project that has a session there. It can request owner methods that the daemon would normally gate, because the gateway cannot tell the owner from a program that detaches from its process tree. It cannot act as a session of another machine. Keep enrollment credentials private. The owner gate is a barrier against an agent that runs a command, not against hostile code that runs as you.
@@ -480,7 +510,7 @@ The gateway trusts the daemon of an enrolled node. A compromised enrolled machin
 
 | Kept | Removed |
 |---|---|
-| Installed skill copies and every native MCP file, including daemon edits. Use undo first if you want them back. | `skill-manifest.json`, `skill-backups`, `mcp-backups`, `skill-journal` and leftover temporary files, and the Git exclude lines the manifest owns. |
+| Installed skill copies and every native MCP file, including daemon edits. Use undo first if you want them back. | `skill-manifest.json`, `skill-backups`, `mcp-backups`, `mcp-coverage-undo-*.json`, `skill-journal` and leftover temporary files, and the Git exclude lines the manifest owns. |
 | The gateway data (`skills.git`, `gateway.db`, `admin.json`), even with `--purge`. | Backups are removed because they can hold secrets. |
 
 ## Project registry

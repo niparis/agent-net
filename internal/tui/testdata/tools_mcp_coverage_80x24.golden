@@ -1,0 +1,24 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+Things that do not match across your machines. enter fixes the selected one, x
+accepts it as it is.
+╭─What differs · 2 to look at──────────────────────────────────────────────────╮
+│ ▸ ! conflict-mcp · homelab · claude ✓ pi ! opencode ✗                        │
+│     fix: compare the declarations; nothing is overwritten                    │
+│                                                                              │
+│   ◐ homelab-mcp · homelab · claude ✓ pi ✗ opencode ✗                         │
+│     fix: add it to opencode and pi for homelab                               │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ 0 tools are the same everywhere you set them  ·  [ ] shows all of them       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept  [ ] screen  ? help  q quit

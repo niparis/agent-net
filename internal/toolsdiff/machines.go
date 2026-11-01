@@ -30,7 +30,13 @@ func MachinesOf(nodes []protocol.NodeView) []Machine {
 		if name == "" {
 			name = n.NodeID
 		}
-		out = append(out, Machine{ID: n.NodeID, Name: name, Online: n.Online})
+		m := Machine{ID: n.NodeID, Name: name, Online: n.Online}
+		for _, h := range n.Harnesses {
+			if h.Name != "" {
+				m.Harnesses = append(m.Harnesses, h.Name)
+			}
+		}
+		out = append(out, m)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out

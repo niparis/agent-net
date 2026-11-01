@@ -65,6 +65,11 @@ type InventoryItem struct {
 	// Import says whether a native MCP entry can move into the federation. It
 	// is set only for native MCP entries and holds names, never values.
 	Import *MCPImportInfo `json:"import,omitempty"`
+	// Definition is an opaque digest of an MCP server's declaration. Two
+	// entries with the same name can be compared only when both have one. It
+	// is "opaque" when the declaration holds a value that cannot be compared
+	// safely, so a same-name entry is a conflict rather than a silent match.
+	Definition string `json:"definition,omitempty"`
 }
 
 // InventoryPage bounds each owner response. Next is zero at the end.

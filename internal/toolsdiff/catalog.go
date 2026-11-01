@@ -49,6 +49,9 @@ type Machine struct {
 	ID     string
 	Name   string
 	Online bool
+	// Harnesses are the harnesses installed on the machine. Empty means the
+	// node has not reported them, so coverage cannot be judged.
+	Harnesses []string
 }
 
 // Project states in a row's project list.
@@ -91,6 +94,8 @@ type Catalog struct {
 	Machines []Machine
 	Rows     []Row
 	Diffs    []Difference
+	// Coverage is the per-project, per-harness view of MCP servers.
+	Coverage []MCPCoverageRow
 }
 
 // Short is the version label of a content hash.
@@ -219,6 +224,7 @@ func Build(items []protocol.ToolItem, known []Machine) Catalog {
 		c.Rows = append(c.Rows, rowsOf(g, c.Machines)...)
 	}
 	c.Diffs = Differences(items, c.Machines)
+	c.Coverage = MCPCoverage(items, c.Machines)
 	return c
 }
 

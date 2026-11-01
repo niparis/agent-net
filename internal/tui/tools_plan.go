@@ -1067,6 +1067,130 @@ func (m Model) applyMCPNativeRemove(planID, name string) (Model, tea.Cmd) {
 	}
 }
 
+// openMCPCoverage plans adding one project server to the harnesses that do
+// not have it. The plan is read again from the machine that holds the project.
+func (m Model) openMCPCoverage(title string, act toolsdiff.Action) (tea.Model, tea.Cmd) {
+	ts, _ := m.toolsSource()
+	md := m.openModal(title)
+	md.loading = true
+	md.planFoot("apply")
+	id := md.id
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*Timeout)
+		defer cancel()
+		plan, err := ts.MCPCoveragePlan(ctx, protocol.MCPCoverageRequest{
+			NodeID: act.NodeID, Machine: act.Machine, Project: act.Project, Server: act.Name,
+			SourceHarness: act.Source, Harnesses: act.Harnesses,
+		})
+		return toolsModalMsg{id: id, update: func(md *toolsModal) {
+			md.loading = false
+			if err != nil {
+				md.lines = []string{tsErr.Render("! " + sanitize(err.Error()))}
+				md.foot = []string{"esc", "close"}
+				return
+			}
+			md.title = "Add " + plan.Server + " for " + plan.Project
+			if plan.State != "pending" {
+				md.lines = []string{tsErr.Render("! ") + "cannot add it: " + orStr(strings.Join(plan.Conflicts, "; "), "the plan is not ready")}
+				md.foot = []string{"esc", "close"}
+				md.paths = planPathsForCoverage(plan)
+				return
+			}
+			md.lines = []string{tsGood.Render("+ ") + plan.Server + " for " + plan.Project + " on " + plan.Machine}
+			md.lines = append(md.lines, tsDim.Render("  writes these files, then reads each one back:"))
+			for _, t := range plan.Targets {
+				md.lines = append(md.lines, tsText.Render("  "+t.Harness+"  "+t.Path))
+				for _, p := range t.Preview[min(1, len(t.Preview)):] {
+					md.lines = append(md.lines, tsDim.Render("  "+sanitize(p)))
+				}
+			}
+			md.lines = append(md.lines, tsFaint.Render("  environment values stay references: ${NAME} is never copied"))
+			md.paths = planPathsForCoverage(plan)
+			md.actions["enter"] = func(m Model) (Model, tea.Cmd) { return m.applyMCPCoverage(plan.ID, plan.Server) }
+		}}
+	}
+}
+
+func planPathsForCoverage(plan protocol.MCPCoveragePlan) []string {
+	var out []string
+	for _, t := range plan.Targets {
+		out = append(out, t.Harness+"  "+t.Path)
+	}
+	return out
+}
+
+func (m Model) applyMCPCoverage(planID, name string) (Model, tea.Cmd) {
+	ts, _ := m.toolsSource()
+	md := m.tl.modal
+	md.loading = true
+	md.lines = append(md.lines, "", tsDim.Render("writing..."))
+	id := md.id
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), time10min)
+		defer cancel()
+		res, err := ts.MCPCoverageApply(ctx, planID)
+		return toolsModalMsg{id: id, reload: true, update: func(md *toolsModal) {
+			md.loading, md.done, md.paths = false, true, nil
+			switch {
+			case err != nil:
+				md.lines = []string{tsErr.Render("! " + sanitize(err.Error()))}
+				md.foot = []string{"enter", "close"}
+			case res.State == "applied":
+				var done []string
+				for _, t := range res.Targets {
+					if t.State == "applied" {
+						done = append(done, t.Harness)
+					}
+				}
+				md.title = "Added " + name
+				md.lines = []string{tsGood.Render("✓ ") + name + " is now in " + strings.Join(done, ", ")}
+				md.foot = []string{"enter", "close", "u", "undo"}
+				md.actions["u"] = func(m Model) (Model, tea.Cmd) { return m.undoMCPCoverage(planID, name) }
+			default:
+				var why []string
+				for _, t := range res.Targets {
+					if t.Conflict != "" {
+						why = append(why, t.Harness+": "+t.Conflict)
+					}
+				}
+				md.title = "Not added: " + name
+				md.lines = []string{tsErr.Render("! ") + "nothing changed: " + orStr(strings.Join(why, "; "), "refused")}
+				md.foot = []string{"enter", "close"}
+			}
+		}}
+	}
+}
+
+func (m Model) undoMCPCoverage(planID, name string) (Model, tea.Cmd) {
+	ts, _ := m.toolsSource()
+	md := m.tl.modal
+	md.loading = true
+	id := md.id
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), time10min)
+		defer cancel()
+		res, err := ts.MCPCoverageUndo(ctx, planID)
+		return toolsModalMsg{id: id, reload: true, update: func(md *toolsModal) {
+			md.loading, md.done = false, true
+			md.foot = []string{"enter", "close"}
+			if err != nil || res.State != "applied" {
+				why := ""
+				if err != nil {
+					why = err.Error()
+				}
+				for _, t := range res.Targets {
+					why = orStr(why, t.Conflict)
+				}
+				md.title = "Not undone: " + name
+				md.lines = []string{tsErr.Render("! ") + orStr(why, "nothing changed")}
+				return
+			}
+			md.title = "Undone: " + name
+			md.lines = []string{tsGood.Render("✓ ") + "the files are back as they were"}
+		}}
+	}
+}
+
 // ---- differences ----
 
 // openFix is enter on a difference: the plan of its one suggested fix.
@@ -1106,6 +1230,8 @@ func (m Model) openFix() (tea.Model, tea.Cmd) {
 		return m.openMCPImport(act.Name)
 	case toolsdiff.ActMCPNativeRemove:
 		return m.openMCPNativeRemove(act.Name)
+	case toolsdiff.ActMCPCoverage:
+		return m.openMCPCoverage(title, act)
 	}
 	m.toolsToast(d.Fix)
 	return m, nil

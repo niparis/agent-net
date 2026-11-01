@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools  6 Graph │ 6 sessions, 5 online · 1 busy             updated 14:05:00
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
+╭─Add homelab-mcp for homelab──────────────────────────────────────────────────────────────────────────────────────────╮
+│ + homelab-mcp for homelab on research                                                                                │
+│   writes these files, then reads each one back:                                                                      │
+│   opencode  /src/homelab/opencode.json                                                                               │
+│     create homelab-mcp: command homelab-mcp                                                                          │
+│   pi  /src/homelab/.pi/mcp.json                                                                                      │
+│     create homelab-mcp: command homelab-mcp                                                                          │
+│   environment values stay references: ${NAME} is never copied                                                        │
+│                                                                                                                      │
+│ enter apply  d exact folders  esc cancel                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ 0 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ enter: open the CTO · tab: back                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+j/k move  enter fix  x accept  [ ] screen  ? help  q quit

@@ -35,7 +35,7 @@ import (
 var operatorMethods = map[string]bool{
 	protocol.OpProposalList: true, protocol.OpProposalAnswer: true,
 	"notification_settings": true,
-	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
+	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "mcp_coverage_plan": true, "mcp_coverage_apply": true, "mcp_coverage_undo": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
 	protocol.OpProjectDisplayGet: true, protocol.OpProjectDisplaySet: true,
 	protocol.OpGraphView: true, protocol.OpGraphTalk: true, protocol.OpSessionTrust: true, protocol.OpSessionPolicy: true, protocol.OpSessionRename: true, protocol.OpNodeRename: true,
@@ -315,6 +315,24 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		}{p, actor, d.ownerSessionID()})
 	case "mcp_import_candidates":
 		res, err = d.call(ctx, "query.mcp_import_candidates", json.RawMessage(raw))
+	case "mcp_coverage_plan":
+		var p protocol.MCPCoverageRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad mcp_coverage_plan")
+		}
+		res = d.mcpCoveragePlan(p)
+	case "mcp_coverage_apply":
+		var p protocol.MCPCoverageApplyRequest
+		if json.Unmarshal(raw, &p) != nil || p.PlanID == "" {
+			return nil, true, errors.New("mcp_coverage_apply needs a plan_id")
+		}
+		res = d.mcpCoverageApply(p.PlanID)
+	case "mcp_coverage_undo":
+		var p protocol.MCPCoverageUndoRequest
+		if json.Unmarshal(raw, &p) != nil || p.PlanID == "" {
+			return nil, true, errors.New("mcp_coverage_undo needs a plan_id")
+		}
+		res = d.mcpCoverageUndo(p.PlanID)
 	case "tools_summary":
 		var p protocol.SkillSummaryRequest
 		if json.Unmarshal(raw, &p) != nil {

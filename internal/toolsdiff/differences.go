@@ -23,6 +23,11 @@ const (
 	KindFailed     = "failed"       // a target could not be changed
 	KindMCPNative  = "mcp-native"   // an MCP server set up by hand
 	KindMCPLeftOld = "mcp-leftover" // on the gateway and still set up by hand
+	// KindMCPCoverageGap is a project server missing from an installed harness.
+	KindMCPCoverageGap = "mcp-coverage-gap"
+	// KindMCPCoverageConflict is one server declared differently by two
+	// harnesses in the same project. Nothing is overwritten.
+	KindMCPCoverageConflict = "mcp-coverage-conflict"
 )
 
 // Severities. They only order the list and pick the colour.
@@ -42,6 +47,9 @@ const (
 	ActImportAll       = "import-all"  // import Copies and put them on every machine
 	ActMCPImport       = "mcp-import"  // send the server Name through the gateway
 	ActMCPNativeRemove = "mcp-native-remove"
+	// ActMCPCoverage writes one project declaration into the harness configs
+	// that do not have it yet.
+	ActMCPCoverage = "mcp-coverage"
 )
 
 // Copy is one place a skill lives: enough to import it.
@@ -77,6 +85,11 @@ type Action struct {
 	Project string   `json:"project,omitempty"`
 	Copies  []Copy   `json:"copies,omitempty"`
 	Names   []string `json:"names,omitempty"`
+	// A coverage action names the machine and the harnesses to add.
+	NodeID    string   `json:"node_id,omitempty"`
+	Machine   string   `json:"machine,omitempty"`
+	Harnesses []string `json:"harnesses,omitempty"`
+	Source    string   `json:"source,omitempty"`
 }
 
 // Difference is one line of the Differences screen.
@@ -126,6 +139,7 @@ func Differences(items []protocol.ToolItem, ms []Machine) []Difference {
 	}
 	out = append(out, duplicateDiffs(gs)...)
 	out = append(out, unmanagedDiffs(gs, ms, skipUnmanaged)...)
+	out = append(out, coverageDiffs(items, ms)...)
 	sort.SliceStable(out, func(i, j int) bool {
 		a, b := out[i], out[j]
 		if a.Info != b.Info {
