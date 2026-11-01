@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ func TestOperatorMethodsAreDistinct(t *testing.T) {
 	req := WorkerStartRequest{Project: "p", Machine: "m", Harness: "opencode", Model: "a/b", Task: "t", Isolation: IsolationWorktree}
 	raw, _ := json.Marshal(req)
 	var back WorkerStartRequest
-	if err := json.Unmarshal(raw, &back); err != nil || back != req {
+	if err := json.Unmarshal(raw, &back); err != nil || !reflect.DeepEqual(back, req) {
 		t.Errorf("round trip: %+v %v", back, err)
 	}
 }

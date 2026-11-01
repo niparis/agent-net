@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -117,7 +118,7 @@ func TestStartCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := protocol.WorkerStartRequest{Project: "shop", Machine: "mac", Harness: "opencode", Model: "a/b", Task: "write the tests", Isolation: "worktree"}
-	if f.start != want {
+	if !reflect.DeepEqual(f.start, want) {
 		t.Errorf("request %+v, want %+v", f.start, want)
 	}
 	for _, s := range []string{"started worker s_w (opencode, a/b, project shop on mac)", "worktree /wt on branch agent-net/w_1",

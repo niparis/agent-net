@@ -401,3 +401,27 @@ func poorTrack(t TrackRecord) bool {
 
 // OpWorkerRotationGet reads the gateway's worker rotation state for screens.
 const OpWorkerRotationGet = "worker_rotation_get"
+
+// WorkerEffectiveDifficulty raises the level for work that touches shared state.
+func WorkerEffectiveDifficulty(level string, touches []string) (string, string) {
+	if level == "" {
+		level = "normal"
+	}
+	reason := ""
+	for _, touch := range touches {
+		if touch == "db" || touch == "hot-path" {
+			reason = touch
+			break
+		}
+	}
+	if reason == "" {
+		return level, ""
+	}
+	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
+	for i, v := range levels {
+		if v == level && i+1 < len(levels) {
+			return levels[i+1], reason
+		}
+	}
+	return level, reason
+}

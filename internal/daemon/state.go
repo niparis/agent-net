@@ -106,6 +106,7 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"pending_partial", `pending_partial INTEGER NOT NULL DEFAULT 0`},
 		{"difficulty_asked", `difficulty_asked TEXT NOT NULL DEFAULT ''`},
 		{"difficulty_used", `difficulty_used TEXT NOT NULL DEFAULT ''`},
+		{"touches", `touches TEXT NOT NULL DEFAULT ''`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)
@@ -118,7 +119,7 @@ CREATE TABLE IF NOT EXISTS workers (
 	}
 	// base and record_task keep a continued or based start in the queue. A
 	// queue table from an older version does not have them.
-	for _, col := range []string{"base", "record_task", "permissions", "difficulty_asked", "difficulty_used"} {
+	for _, col := range []string{"base", "record_task", "permissions", "difficulty_asked", "difficulty_used", "touches"} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = ?`, col).Scan(&has)
 		if has == 0 {
