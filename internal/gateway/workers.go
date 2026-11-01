@@ -104,8 +104,11 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		}
 		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Outcome: protocol.WorkerOutcome(p.Reason, p.Status, p.Complete), StartedAt: p.StartedAt, EndedAt: end,
-			RunSeconds: runSeconds}
+			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun}
 		if err := g.store.RecordWorkerRun(run); err != nil {
+			return nil, err
+		}
+		if err := g.store.SetSessionWorkerRework(nc.id, p.SessionID, p.Continue, p.Fix, p.DifficultyAsked, p.DifficultyUsed); err != nil {
 			return nil, err
 		}
 		if p.Status == protocol.StatusDone && p.Model != "" {
@@ -254,6 +257,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if _, err := protocol.DifficultyFit(0, p.Difficulty, nil); err != nil {
 			return none, reject("%v", err)
 		}
+	}
+	// The level the caller asked for and the level the chooser uses are kept
+	// on the worker record. Part 1 changes neither: an empty ask means normal.
+	difficultyAsked, difficultyUsed := p.Difficulty, p.Difficulty
+	if difficultyUsed == "" {
+		difficultyUsed = "normal"
 	}
 	if p.Continue == "" && p.Project == "" {
 		return none, reject("a worker needs a project")
@@ -621,7 +630,8 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly})
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
