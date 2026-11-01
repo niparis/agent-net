@@ -477,7 +477,7 @@ func TestViewGoldenFeedFocusAndBody(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 80, Height: 24})
 	m = refresh(m, src)
 	m = drainSnippets(t, m)
-	m = keys(m, "2")
+	m = keys(m, "4")
 	// Move up to the first message (the last items are newer).
 	m = selectFeedMessage(m, "m_1")
 	golden(t, "view_80x24_feed_focus", m.View())
@@ -909,7 +909,7 @@ func TestFeedLinesLiveUpdate(t *testing.T) {
 		ev(15, time.Minute, "node.disconnected", "", "", "", "", func(e *protocol.FeedEvent) { e.Hostname = "build-vm" }),
 	)
 	m = refresh(m, src)
-	v := keys(m, "2", "e").View()
+	v := keys(m, "4", "e").View()
 	if !strings.Contains(v, "ci-runner") || !strings.Contains(v, "tenebrae-53") || !strings.Contains(v, "build-vm disconnected") {
 		t.Fatalf("new events not shown:\n%s", v)
 	}
@@ -945,7 +945,7 @@ func TestFeedUnavailableOnOlderPeers(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = refresh(m, src)
-	v := keys(m, "2").View()
+	v := keys(m, "4").View()
 	plain := strings.ReplaceAll(ansi.Strip(v), "\n", " ")
 	if m.problem != ProblemNone || !strings.Contains(plain, "no message feed:") || !strings.Contains(plain, "older") || !strings.Contains(plain, "event feed") {
 		t.Fatalf("not explained:\n%s", v)
@@ -977,7 +977,7 @@ func TestOpenMessageBody(t *testing.T) {
 	if next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); next.(Model).open != nil || cmd == nil {
 		t.Fatal("enter on the sessions table opened the wrong thing")
 	}
-	m = keys(m, "2")
+	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_3")
 	m2, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = m2.(Model)

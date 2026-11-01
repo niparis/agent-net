@@ -9,6 +9,15 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+func ruleValue(rules []protocol.PublicRule, name string) string {
+	for _, r := range rules {
+		if r.Name == name {
+			return r.Value
+		}
+	}
+	return ""
+}
+
 func TestAutonomyIsOwnerOnlyAndEveryAgentCanReadIt(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
@@ -37,18 +46,21 @@ func TestAutonomyIsOwnerOnlyAndEveryAgentCanReadIt(t *testing.T) {
 	if err := json.Unmarshal(agent.mustCall("get", map[string]any{"session_id": session}), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Agent.Charter.Autonomy != protocol.AutonomyWake {
-		t.Fatalf("agent_get autonomy = %+v", got.Agent.Charter)
+	if rule := ruleValue(got.Agent.Charter.Rules, protocol.SettingAutonomy); rule != protocol.AutonomyWake {
+		t.Fatalf("agent_get autonomy = %+v", got.Agent.Charter.Rules)
 	}
 
 	var page protocol.PublicGraphPage
 	if err := json.Unmarshal(agent.mustCall("agent_graph", map[string]any{"node": "shop"}), &page); err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Nodes) != 1 || page.Nodes[0].Autonomy != protocol.AutonomyWake {
-		t.Fatalf("agent_graph autonomy: %+v", page.Nodes)
+	if len(page.Nodes) != 1 {
+		t.Fatalf("agent_graph nodes: %+v", page.Nodes)
 	}
-	if !strings.Contains(page.Nodes[0].Line, "autonomy: wake") {
+	if rule := ruleValue(page.Nodes[0].Rules, protocol.SettingAutonomy); rule != protocol.AutonomyWake {
+		t.Fatalf("agent_graph autonomy: %+v", page.Nodes[0].Rules)
+	}
+	if !strings.Contains(page.Nodes[0].Line, "shop") {
 		t.Fatalf("agent_graph line: %q", page.Nodes[0].Line)
 	}
 }

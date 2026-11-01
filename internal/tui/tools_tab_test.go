@@ -82,7 +82,7 @@ func TestToolsTabOpensWithKey5AndDifferencesFirst(t *testing.T) {
 		t.Fatalf("tab %d screen %d loaded %v", m.tab, m.tl.screen, m.tl.loaded)
 	}
 	v := plain(m)
-	for _, want := range []string{"1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools", "What differs", "code-review differs", "design-taste-frontend has 2 different copies", "fix: "} {
+	for _, want := range []string{"1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools", "What differs", "code-review differs", "design-taste-frontend has 2 different copies", "fix: "} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in\n%s", want, v)
 		}

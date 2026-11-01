@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"github.com/charmbracelet/glamour"
 	ga "github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -33,15 +35,37 @@ func (m Model) openProposals() int {
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := m.ctoTitle()
-	if c.harness != "" {
-		title += " · " + sanitize(c.harness)
+	if !c.windowUntil.IsZero() {
+		now := time.Now()
+		if m.now != nil {
+			now = m.now()
+		}
+		if left := c.windowUntil.Sub(now); left > 0 {
+			seconds := int((left + time.Second - 1) / time.Second)
+			title += fmt.Sprintf(" · I'm driving %02d:%02d · w close", seconds/60, seconds%60)
+		}
 	}
-	if c.model != "" {
-		title += " · " + sDim.Render(sanitize(c.model))
-	}
+
+	proposals := ""
 	if n := m.openProposals(); n > 0 {
-		title += " · " + sDim.Render(plural(n, "open proposal"))
+		proposals = " · " + sDim.Render(plural(n, "open proposal"))
 	}
+	// Reserve room for the window and proposal count. Optional harness/model
+	// details appear only when they fit in full, so neither status is clipped.
+	for i, detail := range []string{c.harness, c.model} {
+		if detail == "" {
+			continue
+		}
+		detail = sanitize(detail)
+		if i == 1 {
+			detail = sDim.Render(detail)
+		}
+		if lipgloss.Width(title+" · "+detail+proposals) <= max(w-4, 1) {
+			title += " · " + detail
+		}
+	}
+	title += proposals
+
 	borderColor := roleFaint
 	if m.focus == focusCTO {
 		borderColor = roleCTO

@@ -114,3 +114,13 @@ func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, propose
 	}
 	return ProposalToolResult(id), nil
 }
+
+// Graph calls default to proposals; the daemon policy may apply a minor
+// change or use an owner window before falling back to the proposal route.
+func isCTOGraphTool(name string) bool {
+	switch name {
+	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "node_settings_set", "graph_undo":
+		return true
+	}
+	return false
+}

@@ -8,11 +8,12 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
-const graphTab = 3
+var graphSelectionStyle = lipgloss.NewStyle().Bold(true).Foreground(graphview.AccentColor)
 
 type graphTickMsg struct{ generation int }
 
@@ -23,7 +24,7 @@ func graphTick(generation int) tea.Cmd {
 func (m Model) graphSize() (int, int) {
 	w, h := max(m.width, 40), max(m.height, 10)
 	box := min(max((h-1)/3, 6), max(h-4, 1))
-	return max(w-4, 1), max(h-1-box-4, 1)
+	return max(w-4, 1), max(h-1-box-5, 1)
 }
 
 // startGraph opens the network and refreshes its data without losing the selection.
@@ -152,7 +153,7 @@ func (m Model) graphView(w, h int) []string {
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
-	gw, gh := max(w-4, 1), max(h-4, 1)
+	gw, gh := max(w-4, 1), max(h-5, 1)
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
 	for i := range scene.Nodes {
@@ -179,8 +180,36 @@ func (m Model) graphView(w, h int) []string {
 	}
 	out = append(out, sDim.Render(clip("  "+strings.Join(feed, "  ·  "), w)))
 	out = append(out, sDim.Render(graphLegend(w)))
+	out = append(out, graphStatusLine(w, scene))
 	out = append(out, sDim.Render(graphHintLine(w, scene.Paused)))
 	return out
+}
+
+// graphStatusLine names the selected node and its place in the network.
+func graphStatusLine(w int, scene graphview.Scene) string {
+	for _, n := range scene.Nodes {
+		if !n.Selected {
+			continue
+		}
+		name := n.Label
+		if name == "" {
+			name = n.Name
+		}
+		kind := n.Kind
+		if kind == "" {
+			kind = "node"
+		}
+		edges := n.Card.Incoming + n.Card.Outgoing
+		prefix := "  selected: "
+		line := prefix + ansi.Truncate(name, max(w-ansi.StringWidth(prefix), 1), "…")
+		for _, extra := range []string{" · " + kind, edgeCount(edges)} {
+			if ansi.StringWidth(line+extra) <= w {
+				line += extra
+			}
+		}
+		return graphSelectionStyle.Render(line)
+	}
+	return ""
 }
 
 // graphTalkSource is optional for compatibility with older sources.
@@ -250,4 +279,12 @@ func graphLegend(w int) string {
 		items = items[:len(items)-1]
 	}
 	return ""
+}
+
+// edgeCount names a number of edges: "1 edge", "3 edges".
+func edgeCount(n int) string {
+	if n == 1 {
+		return " · 1 edge"
+	}
+	return fmt.Sprintf(" · %d edges", n)
 }

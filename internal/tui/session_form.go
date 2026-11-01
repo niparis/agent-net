@@ -241,25 +241,51 @@ func splitProjectMachine(value string) (project, machine string) {
 	return value, ""
 }
 
-// sessionFormRefusal says why this version cannot start the form's session.
-// Local Claude, OpenCode, Codex and Pi starts are built.
-func (m Model) sessionFormRefusal(f sessionForm) string {
-	const only = "only Claude, OpenCode, Codex and Pi on this machine for now"
-	if f.nodeID != "" && f.nodeID != m.snap.NodeID {
-		return only
+// nodeByIDOrHost finds a machine by its gateway ID or its host name.
+func (m Model) nodeByIDOrHost(s string) *protocol.NodeView {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
 	}
+	for i := range m.snap.Nodes {
+		if m.snap.Nodes[i].NodeID == s || strings.EqualFold(m.snap.Nodes[i].Hostname, s) {
+			return &m.snap.Nodes[i]
+		}
+	}
+	return nil
+}
+
+// sessionFormNode is the machine the form's project is on, or nil when it is
+// not known yet. The typed value wins; the selected row fills in the rest.
+func (m Model) sessionFormNode(f sessionForm) *protocol.NodeView {
+	if _, _, node := m.resolveProject(f.value(sProject)); node != nil {
+		return node
+	}
+	_, machine := splitProjectMachine(f.value(sProject))
+	if node := m.nodeByIDOrHost(machine); node != nil {
+		return node
+	}
+	return m.nodeByIDOrHost(f.nodeID)
+}
+
+// sessionRemoteHost is the other machine the form starts on, or "" for this
+// machine.
+func (m Model) sessionRemoteHost(f sessionForm) string {
+	node := m.sessionFormNode(f)
+	if node == nil || node.NodeID == m.snap.NodeID {
+		return ""
+	}
+	return firstNonEmpty(node.Hostname, node.NodeID)
+}
+
+// sessionFormRefusal says why this version cannot start the form's session.
+func (m Model) sessionFormRefusal(f sessionForm) string {
+	const only = "only Claude, OpenCode, Codex and Pi for now"
 	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" && h != "pi" {
 		return only
 	}
-	project, machine := splitProjectMachine(f.value(sProject))
-	if machine != "" {
-		local := m.localHost()
-		if !strings.EqualFold(machine, local) && !strings.EqualFold(machine, m.snap.NodeID) {
-			return only
-		}
-	}
-	if _, _, node := m.resolveProject(project); node != nil && node.NodeID != m.snap.NodeID {
-		return only
+	if _, machine := splitProjectMachine(f.value(sProject)); machine != "" && m.nodeByIDOrHost(machine) == nil {
+		return "no machine named " + machine
 	}
 	return ""
 }
@@ -324,8 +350,15 @@ func (m Model) submitSessionForm() (tea.Model, tea.Cmd) {
 	}
 	req := protocol.SessionStartRequest{Project: m.sessionFormProject(*f), Harness: harness,
 		Model: f.value(sModel), FirstMessage: f.value(sFirstMessage)}
+	host := m.localHost()
+	if node := m.sessionFormNode(*f); node != nil {
+		if node.NodeID != m.snap.NodeID {
+			req.NodeID = node.NodeID
+		}
+		host = firstNonEmpty(node.Hostname, host)
+	}
 	m.mode = modeNormal
-	m.say("Starting " + sanitize(m.sessionFormProject(*f)) + " on " + sanitize(m.localHost()) + "...")
+	m.say("Starting " + sanitize(m.sessionFormProject(*f)) + " on " + sanitize(host) + "...")
 	return m, m.sessionStartCmd(req)
 }
 
@@ -383,7 +416,7 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 		m.fail("The start did not finish.")
 		return m, refresh()
 	}
-	host := m.nodeName(r.res.NodeID, m.sform.hostname)
+	host := m.nodeName(r.res.NodeID, firstNonEmpty(m.sform.hostname, m.localHost()))
 	project := sanitize(firstNonEmpty(r.res.Project, m.sessionFormProject(m.sform)))
 	harness := firstNonEmpty(r.res.Harness, r.req.Harness)
 	if harness == "" {
@@ -399,7 +432,8 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 		return m, func() tea.Msg { return enterMsg{name: name, plan: plan} }
 	}
 	if r.req.FirstMessage != "" {
-		m.say(fmt.Sprintf("started %s (%s) on %s: first message sent. Enter opens it.", project, harness, sanitize(host)))
+		enter := firstNonEmpty(sanitize(r.res.EnterNote), "Enter opens it.")
+		m.say(fmt.Sprintf("started %s (%s) on %s: first message sent. %s", project, harness, sanitize(host), enter))
 		return m, refresh()
 	}
 	if r.res.SessionID == "" {
@@ -419,21 +453,29 @@ func (m Model) sessionFieldNote(i sessionFormField) string {
 		if f.value(sProject) == "" {
 			return ""
 		}
-		host := f.hostname
-		if _, machine, node := m.resolveProject(f.value(sProject)); node != nil {
-			host = machine
+		host, nodeID := f.hostname, f.nodeID
+		node := m.sessionFormNode(f)
+		if node != nil {
+			host, nodeID = node.Hostname, node.NodeID
 		}
 		if host == "" {
 			host = m.localHost()
 		}
 		note := "on " + host
-		if f.path != "" && f.value(sProject) == f.initialProject && f.nodeID == m.snap.NodeID {
+		if f.path != "" && f.value(sProject) == f.initialProject && f.nodeID == nodeID {
 			note += ", " + sanitize(f.path)
 		}
 		return note
 	case sHarness:
 		if f.value(sHarness) == "" {
 			return "automatic choice: claude"
+		}
+		if node := m.sessionFormNode(f); node != nil && node.NodeID != m.snap.NodeID && len(node.Harnesses) > 0 {
+			names := make([]string, 0, len(node.Harnesses))
+			for _, hi := range node.Harnesses {
+				names = append(names, hi.Name)
+			}
+			return node.Hostname + " has: " + strings.Join(names, ", ")
 		}
 	case sModel:
 		if f.value(sModel) == "" {
@@ -475,11 +517,20 @@ func (m Model) sessionFormView(w, rows int) []string {
 	}
 	why := m.sessionFormRefusal(f)
 	indent := strings.Repeat(" ", sessionValueCol)
+	remote := m.sessionRemoteHost(f)
+	enterHow := "empty: start it and enter it"
+	if remote != "" {
+		enterHow += " (through ssh to " + remote + ")"
+	}
 	if strings.EqualFold(f.value(sHarness), "codex") {
-		out = append(out, sDim.Render(clip(indent+"empty: start it and enter it", w)))
-		out = append(out, sDim.Render(clip(indent+"codex: opens it now", w)))
+		out = append(out, sDim.Render(clip(indent+enterHow, w)))
+		if remote != "" {
+			out = append(out, sDim.Render(clip(indent+"codex: opens it now through ssh to "+remote, w)))
+		} else {
+			out = append(out, sDim.Render(clip(indent+"codex: opens it now", w)))
+		}
 	} else if strings.TrimSpace(f.in[sFirstMessage].Value()) == "" {
-		out = append(out, sDim.Render(clip(indent+"empty: start it and enter it", w)))
+		out = append(out, sDim.Render(clip(indent+enterHow, w)))
 		out = append(out, sDim.Render(clip(indent+"text: start it in the background and send this", w)))
 	} else {
 		out = append(out, sDim.Render(clip(indent+"enter: start in the background and send this", w)))

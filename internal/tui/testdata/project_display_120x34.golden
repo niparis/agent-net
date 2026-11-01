@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ 7 nodes, 4 edges                                    updated 14:05
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 nodes, 4 edges                                    updated 14:05
 Evidence API  early  autonomy: off
 Document and evidence API.
 ○ no live sessions
@@ -8,14 +8,14 @@ IN 1                                                         OUT 1
 tenebrae ──▶ depends ask                                     ──▶ shop depends auto
 
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-purpose          Document and evidence API.
-maturity         early - prototype
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
 consumers        tenebrae, shop
 escalate         Breaking API changes.
 needs            MCP: tenebrae-library
 notes            Deploy through homelab.
+
+
 
 
 

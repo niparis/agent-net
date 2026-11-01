@@ -72,6 +72,15 @@ func wantWakeBody(line string) string {
 	return fmt.Sprintf("[agent-net] continue: you said you have work left (%s). Carry on, then answer the next check.", line)
 }
 
+func ruleValue(rules []protocol.PublicRule, name string) string {
+	for _, r := range rules {
+		if r.Name == name {
+			return r.Value
+		}
+	}
+	return ""
+}
+
 func TestWakeAutonomySendsOneContinueMessage(t *testing.T) {
 	s, c := newTestStore(t)
 	a, b := twoSessions(t, s)
@@ -292,8 +301,8 @@ func TestAutonomyShowsInAgentAndGraph(t *testing.T) {
 	_, b := twoSessions(t, s)
 	setAutonomy(t, s, b, protocol.AutonomyWake)
 	a, ok, err := s.Agent(b)
-	if err != nil || !ok || a.Charter.Autonomy != protocol.AutonomyWake {
-		t.Fatalf("agent charter autonomy = %+v, %v", a, err)
+	if err != nil || !ok || ruleValue(a.Charter.Rules, protocol.SettingAutonomy) != protocol.AutonomyWake {
+		t.Fatalf("agent charter rules = %+v, %v", a.Charter.Rules, err)
 	}
 	g, err := s.Graph()
 	if err != nil {

@@ -44,9 +44,9 @@ func (m Model) hints() []hint {
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
 		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
-	case m.tab == 1:
+	case m.tab == messagesTab:
 		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
-	case m.tab == 2:
+	case m.tab == quotasTab:
 		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == graphTab:
 		return []hint{{"1-5", "tabs", 1}, {"tab", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
@@ -170,7 +170,7 @@ func (m Model) helpContent(w int) []string {
 	rows := [][2]string{
 		{"Sessions", ""},
 		{"proposal", "enter details; a approve; x decline; A approve all after confirmation"},
-		{"1-5", "switch between Sessions, Messages, Quotas, Graph and Tools"},
+		{"1-5", "switch between Sessions, Graph, Quotas, Messages and Tools"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, home/end", "page, first, last"},
 		{"enter", "enter the selected session (ctrl+] to return)"},
@@ -191,7 +191,7 @@ func (m Model) helpContent(w int) []string {
 		{"r", "refresh the readings"},
 		{"", ""},
 		{"Graph", ""},
-		{"M, G, 4", "open the network"},
+		{"M, G, 2", "open the network"},
 		{"arrows", "select a node; shift+arrows or hjkl pan"},
 		{"[ ]", "select a linked neighbour"},
 		{"/", "find a node; Enter selects the first match; Esc cancels"},
@@ -219,7 +219,7 @@ func (m Model) helpContent(w int) []string {
 		{"m", "change the machine on By project"},
 		{"/", "search or filter"},
 		{"r", "rescan"},
-		{"tab, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, m title, harness and model; pgup/pgdn scroll"},
+		{"tab, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},

@@ -10,6 +10,14 @@ The gateway stores a roster of named harness, model and optional effort profiles
 
 Automatic choices use the owner's worker provider allowlist, or subscription and quota-reading defaults when unset; a recent successful worker gets more rotation weight than one without.
 
+## Amendment: explicit model names and pay-per-use providers
+
+An explicitly named model must never resolve to a pay-per-use provider by accident. When the caller gives no harness, the gateway resolves the name against every harness that reported a model list and prefers a subscription-backed harness: the Claude and Codex harnesses, the `opencode-go` provider, and any provider with a usable quota reading. A pay-per-use provider comes last.
+
+A loose or bare name is resolved only among subscription-backed models. A pay-per-use provider is used only when the full provider id is written, for example `opencode/gpt-6.1-sol`. When only pay-per-use models match, the start is refused and the error names the full id to write. The start result's `model_note` says `uses pay-per-use provider (<provider>)` whenever one is used.
+
+The pay-per-use rule is the same one the worker provider defaults use, kept in `SubscriptionProvider` (`internal/protocol/worker_providers.go`): providers without a usable quota reading or subscription are pay-per-use, including OpenRouter and OpenCode Zen (`opencode/`).
+
 ## Protected providers
 
 The owner may protect providers used by the orchestrator, because workers on the same subscription spend the limit the orchestrator needs to keep working. When protection is set, automatic selection first considers unprotected profiles at or above the difficulty minimum, then protected profiles if none qualify or all are out of quota. The result explains the choice. Explicit model requests remain available and carry a note. The owner can change the list and reason; setup only suggests it.
@@ -18,6 +26,10 @@ The owner may protect providers used by the orchestrator, because workers on the
 
 Automatic selection requires a score at or above the difficulty minimum, treating good and excellent as adequate. Unprotected providers still come first. A model with fewer than half complete among at least five complete, partial and failed runs in the recent track record is used only when no other adequate candidate remains. Stopped and timed-out runs do not count in this ratio.
 
-The remaining candidates rotate with a smooth weighted round robin, so a model that is slightly ahead on quota does not win every start. A candidate gets more weight when its provider is further behind its quota pace, when its score is close to the difficulty minimum (keeping stronger models available for harder work), and when its track record is good. A missing or stale quota reading is neutral. Exhausted windows and windows above 90 percent remain ineligible, and the chooser subtracts five quota-room points for each running worker on the provider. Every adequate candidate keeps a positive weight, so over a run of starts each one gets a share.
+The remaining candidates rotate with a smooth weighted round robin, so a model that is slightly ahead on quota does not win every start. A candidate gets more weight when its provider is further behind its quota pace, when it is the weakest adequate candidate rather than far above that candidate (keeping stronger models available for harder work), and when its track record is good. A missing or stale quota reading is neutral. Exhausted windows and windows above 90 percent remain ineligible, and the chooser subtracts five quota-room points for each running worker on the provider. Every adequate candidate keeps a positive weight, so over a run of starts each one gets a share.
 
 The rotation state is kept per difficulty in the gateway's owner settings, so it survives a restart. The start note explains the score, quota pace and rotation weight, and the shares of the last ten starts: `deepseek: 3, terra: 7 of the last 10 normal starts`.
+
+## Amendment: over-qualification penalty
+
+The fit term is measured from the weakest adequate candidate at the difficulty, not from the minimum: `fit = exp(-(score - weakestAdequateScore) / 8)`. At trivial difficulty the weakest adequate model therefore takes the largest share, and strong models take small shares instead of an even split. A model below the minimum still gets none. Every adequate candidate keeps a positive weight, so the rotation and the Quotas heatmap still spread starts. The chooser, the rotation preview and the heatmap use the same rule.

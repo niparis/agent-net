@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -357,6 +358,88 @@ func ResolveModelRankedQuota(query string, models []string, usage map[string]int
 		list = list[:maxModelCandidates]
 	}
 	return ModelResolution{}, fmt.Errorf("%q matches %d models equally well: %s. Name one of them in full", query, len(tied), strings.Join(list, ", "))
+}
+
+// PayPerUseModelError says that a loose model name only matched models on
+// pay-per-use providers. The caller must write one of Models in full.
+type PayPerUseModelError struct {
+	Query  string
+	Models []string
+}
+
+func (e *PayPerUseModelError) Error() string {
+	if len(e.Models) == 1 {
+		return fmt.Sprintf("%q only matches a pay-per-use provider: %s. Write the full provider id, for example %s", e.Query, e.Models[0], e.Models[0])
+	}
+	return fmt.Sprintf("%q only matches pay-per-use providers: %s. Write one of these full provider ids: %s", e.Query, strings.Join(e.Models, ", "), strings.Join(e.Models, ", "))
+}
+
+// ModelIDWrittenInFull tells whether query is the model id itself, rather than
+// a loose name. A trailing reasoning or thinking level is ignored.
+func ModelIDWrittenInFull(query, model string) bool {
+	q, _ := SplitModelLevel(strings.TrimSpace(query))
+	m, _ := SplitModelLevel(strings.TrimSpace(model))
+	return q != "" && strings.EqualFold(q, m)
+}
+
+// ResolveWorkerModelRankedQuota resolves the explicit model of a worker start
+// (decision 0026, amendment). A loose or bare name only considers
+// subscription-backed models. A model on a pay-per-use provider must be named
+// by its full id; when only pay-per-use models match, the error names them and
+// asks for the full id. An exact id is resolved as before.
+func ResolveWorkerModelRankedQuota(harness, query string, models []string, usage map[string]int, providers []string, failed, succeeded map[string]bool, quotas *Quotas) (ModelResolution, error) {
+	query = strings.TrimSpace(query)
+	base, _ := SplitModelLevel(query)
+	for _, m := range models {
+		if !ModelIDWrittenInFull(query, m) {
+			continue
+		}
+		// A pay-per-use model must carry its provider prefix, so a bare id
+		// that happens to be the whole listed name is not enough.
+		if PayPerUseProvider(harness, m, quotas) && !strings.Contains(base, "/") {
+			continue
+		}
+		return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded, quotas)
+	}
+	var subscription, payPerUse []string
+	for _, m := range models {
+		if SubscriptionProvider(harness, m, quotas) {
+			subscription = append(subscription, m)
+		} else {
+			payPerUse = append(payPerUse, m)
+		}
+	}
+	if len(subscription) > 0 {
+		res, err := ResolveModelRankedQuota(query, subscription, usage, providers, failed, succeeded, quotas)
+		if err == nil {
+			return res, nil
+		}
+		// An ambiguity or a quota refusal among subscription models is the
+		// answer: do not fall through to a pay-per-use provider.
+		var nm *NoModelMatchError
+		if !errors.As(err, &nm) {
+			return ModelResolution{}, err
+		}
+	}
+	toks := modelTokens(base)
+	var matches []string
+	if len(toks) > 0 {
+		for _, m := range payPerUse {
+			low := strings.ToLower(m)
+			ok := true
+			for _, tok := range toks {
+				ok = ok && hasToken(low, tok)
+			}
+			if ok {
+				matches = append(matches, m)
+			}
+		}
+	}
+	if len(matches) > 0 {
+		sort.Strings(matches)
+		return ModelResolution{}, &PayPerUseModelError{Query: base, Models: matches}
+	}
+	return ResolveModelRankedQuota(query, models, usage, providers, failed, succeeded, quotas)
 }
 
 // closestModels ranks the models that share a word with the query, by how many

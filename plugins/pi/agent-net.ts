@@ -696,20 +696,37 @@ export default function (pi: ExtensionAPI) {
     return lines.join("\n");
   }
 
+  function graphRuleLines(n: any): string[] {
+    const out: string[] = [];
+    const rules = (n.rules ?? []).map((r: any) => `${r.name}=${r.value}`);
+    if (rules.length) out.push(`rules: ${rules.join("; ")}`);
+    for (const d of n.delegation ?? []) {
+      const parts = [`machine=${d.machine}`, `delegate=${d.delegate || "-"}`];
+      if (d.coder_model) parts.push(`coder=${d.coder_model}`);
+      if (d.main_model) parts.push(`main=${d.main_model}`);
+      if (d.workers) parts.push(`workers=${d.workers}`);
+      out.push(`delegation: ${parts.join(" ")}`);
+    }
+    return out;
+  }
+
   function formatGraph(r: any): string {
     const nodes: any[] = r.nodes ?? [];
     const edges: any[] = r.edges ?? [];
     const lines: string[] = [];
     for (const n of nodes) {
+      let line: string;
       if (n.charter) {
         const c = n.charter;
         const attrs = ["purpose", "maturity", "accepts", "refuses", "feature_requests", "consumers", "escalate", "needs", "notes"]
           .filter((key) => c[key])
           .map((key) => `${key}: ${c[key]}`);
-        lines.push(`${n.name} (${n.kind || "node"}) ${attrs.join("; ")}`);
+        line = `${n.name} (${n.kind || "node"}) ${attrs.join("; ")}`;
       } else {
-        lines.push(n.line || `${n.name} (${n.kind || "node"})`);
+        line = n.line || `${n.name} (${n.kind || "node"})`;
       }
+      const extra = graphRuleLines(n);
+      lines.push(extra.length ? `${line}; ${extra.join("; ")}` : line);
     }
     for (const e of edges) {
       lines.push(`${e.from} -> ${e.to} ${e.kind}${e.mode ? ` mode=${e.mode}` : ""} rule=${e.rule}`);
@@ -744,6 +761,16 @@ export default function (pi: ExtensionAPI) {
     const c = a.charter ?? {};
     for (const key of ["purpose", "maturity", "accepts", "refuses", "feature_requests"]) {
       if (c[key]) lines.push(`${key}${key === "purpose" && c.purpose_fallback ? " (project description)" : ""}: ${c[key]}`);
+    }
+    const rules = (c.rules ?? []).map((r: any) => `${r.name}=${r.value}`);
+    if (rules.length) lines.push(`Rules: ${rules.join("; ")}`);
+    if (a.delegation) {
+      const d = a.delegation;
+      const parts = [`scope=${d.scope || "-"}`, `delegate=${d.delegate || "-"}`];
+      if (d.coder_model) parts.push(`coder=${d.coder_model}`);
+      if (d.main_model) parts.push(`main=${d.main_model}`);
+      if (d.workers) parts.push(`workers=${d.workers}`);
+      lines.push(`Delegation: ${parts.join(" ")}`);
     }
     return lines.join("\n");
   }
@@ -892,7 +919,7 @@ export default function (pi: ExtensionAPI) {
   defineTool(
     "agent_get",
     "Get agent",
-    "Get the full profile and status of one agent session.",
+    "Get the full profile and status of one agent session, including its delegation policy and its node's rules (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule), read-only.",
     Type.Object({ session_id: Type.String({ description: "Session ID, like s_0123456789abcdef" }) }),
     "get",
     formatAgentGet,
@@ -901,9 +928,9 @@ export default function (pi: ExtensionAPI) {
   defineTool(
     "agent_graph",
     "Read the graph",
-    "Read the component graph that every agent may see: every node's charter with its maturity, and every edge's kind, mode and request rule. " +
-      "With node, show that one node's full charter and the edges that touch it. Without node, offset and limit page the list; total counts the nodes and next is the next page offset. " +
-      "This is the public graph: node settings, learned-change history with evidence, hidden items, paths and sessions stay owner-only.",
+    "Read the component graph that every agent may see: every node's charter with its maturity, its rules with name and value (tests_before_merge, merge_authority, worker_sandbox, judge_consumers, deploy_rule and the delegation policies), and every edge's kind, mode and request rule. " +
+      "With node, show that one node's full charter, its rules and the edges that touch it. Without node, offset and limit page the list; total counts the nodes and next is the next page offset. " +
+      "Charters and rules are public read-only; only changes are owner-gated. Secrets or tokens, machine paths, learned-change history with evidence, hidden items and sessions stay hidden.",
     Type.Object({
       node: Type.Optional(Type.String({ description: "One node: its full charter and the edges that touch it" })),
       offset: Type.Optional(Type.Integer({ description: "Page start; 0 is the first node" })),

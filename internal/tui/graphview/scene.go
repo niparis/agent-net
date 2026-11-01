@@ -10,7 +10,7 @@ import (
 type Viewport struct{ Width, Height float64 }
 type SceneNode struct {
 	Activity                                  int
-	Name, Label, Role, PreferredSide          string
+	Name, Label, Kind, Role, PreferredSide    string
 	Position                                  Point
 	Selected, Flashing, Wildcard              bool
 	Architect, HasSessions, Pulse, HasCharter bool
@@ -24,6 +24,8 @@ type SceneEdge struct {
 	From, To, Arrow Point
 	Kind            string
 	Dashed          bool
+	Selected        bool
+	Dimmed          bool
 }
 type SceneTalk struct {
 	From, To Point
@@ -105,6 +107,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 	for _, name := range flashes {
 		flash[name] = true
 	}
+	selected := g.Selected()
 	for _, n := range g.Nodes {
 		role := "none"
 		if n.Kind == "architect" {
@@ -120,7 +123,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 				break
 			}
 		}
-		node := SceneNode{Name: n.Name, Label: n.Name, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == g.Selected(), Flashing: flash[n.Name], HasCharter: n.Charter != (protocol.Charter{}), Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
+		node := SceneNode{Name: n.Name, Label: n.Name, Kind: n.Kind, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == selected, Flashing: flash[n.Name], HasCharter: n.Charter != (protocol.Charter{}), Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
 		for _, e := range g.Edges {
 			if e.From == n.Name {
 				node.Card.Outgoing++
@@ -195,7 +198,8 @@ func BuildScene(s State, viewport Viewport) Scene {
 			continue
 		}
 		a, b = project(a), project(b)
-		scene.Edges = append(scene.Edges, SceneEdge{From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Dashed: e.Kind == "governs"})
+		accented := selected != "" && (e.From == selected || e.To == selected)
+		scene.Edges = append(scene.Edges, SceneEdge{From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Dashed: e.Kind == "governs", Selected: accented, Dimmed: selected != "" && !accented})
 	}
 	for _, c := range comets {
 		comet := SceneComet{Position: project(c.Position), Voice: c.Voice}

@@ -483,6 +483,12 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			go g.serveWorker(ctx, nc, h, raw)
 			continue
 		}
+		if isSessionRelay(h.Type) {
+			// The target machine may ask this gateway a question while it acts,
+			// so the relay must not run in this node's read loop.
+			go g.answer(ctx, nc, h, raw)
+			continue
+		}
 		if h.Type == "msg.send" && g.msgSendMayResume(raw) {
 			// Starting an ended worker again asks this same node and waits for
 			// its answer, so it must not run in the read loop that reads it.
@@ -835,6 +841,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return nil, st.SetNodeLaunch(nc.id, p.Launch)
 
+	case protocol.FrameSessionStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
+		return g.handleSessionRelay(ctx, nc, typ, raw)
+
 	case "query.projects":
 		p, err := decode[protocol.QueryProjects](raw)
 		if err != nil {
@@ -1004,8 +1013,17 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"message": m}, nil
 
+	case "cto.graph_class":
+		var q struct {
+			Tool string          `json:"tool"`
+			Args json.RawMessage `json:"args"`
+		}
+		if json.Unmarshal(raw, &q) != nil {
+			return nil, reject("bad graph classification")
+		}
+		return st.CTOGraphClass(q.Tool, q.Args)
 	case "cto.capabilities":
-		return map[string]bool{"attribution": true, "network_session": true}, nil
+		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {
@@ -1586,8 +1604,8 @@ func graphActor(raw json.RawMessage) string {
 	var p struct {
 		By string `json:"by"`
 	}
-	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
-		return "cto"
+	if json.Unmarshal(raw, &p) == nil && (p.By == "cto" || p.By == "CTO (minor)" || p.By == "CTO (owner window)") {
+		return p.By
 	}
 	if strings.HasPrefix(p.By, "owner (CTO proposal p_") && strings.HasSuffix(p.By, ")") {
 		n := strings.TrimSuffix(strings.TrimPrefix(p.By, "owner (CTO proposal p_"), ")")

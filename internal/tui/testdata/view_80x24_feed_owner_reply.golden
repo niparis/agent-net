@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
 ╭─Machines─────────────────────────────────────────────────────────────────────╮
 │  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
@@ -19,6 +19,6 @@
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ enter: open the CTO · tab: back · w: drive 30m                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter open CTO  tab back  m model  n new  u undo

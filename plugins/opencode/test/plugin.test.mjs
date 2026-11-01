@@ -359,7 +359,11 @@ await test("agent_graph reads every charter and edge from the public graph", asy
   const stop = await plugin.setup(c.ctx);
   await until("hello", () => registered("ses_g"));
   graphReply = {
-    nodes: [{ name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things" }],
+    nodes: [{
+      name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things",
+      rules: [{ name: "deploy_rule", value: "owner" }, { name: "worker_sandbox", value: "no-network" }],
+      delegation: [{ machine: "n_1", delegate: "workers", coder_model: "fake/m1", workers: "read-only" }],
+    }],
     edges: [{ from: "shop", to: "billing", kind: "depends", rule: "ask" }],
     total: 1,
     edge_total: 1,
@@ -369,13 +373,37 @@ await test("agent_graph reads every charter and edge from the public graph", asy
     if (!graph) throw new Error("agent_graph is not registered");
     const before = calls.length;
     const out = (await graph.execute({ node: "shop" }, { sessionID: "ses_g" })).content;
-    for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1"]) {
+    for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1",
+      "deploy_rule=owner", "worker_sandbox=no-network", "delegation: machine=n_1", "workers=read-only"]) {
       if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
     }
     const sent = calls.slice(before).find(([method]) => method === "agent_graph");
     if (!sent || sent[1].node !== "shop") throw new Error("agent_graph request: " + JSON.stringify(sent));
   } finally {
     graphReply = null;
+    stop();
+  }
+});
+
+await test("agent_get shows the session's node rules and delegation policy", async () => {
+  freshHub();
+  const sessions = new Map([["ses_rules", session("ses_rules", "/work/rules")]]);
+  let tools;
+  const c = makeContext("/work/rules", sessions, { onTransform(fn) { tools = []; fn({ add: (t) => tools.push(t) }); } });
+  const stop = await plugin.setup(c.ctx);
+  await until("hello for ses_rules", () => registered("ses_rules"));
+  charterReply = { session_id: "s_1", harness: "opencode", profile: { name: "x" },
+    charter: { purpose: "Sells things", rules: [{ name: "deploy_rule", value: "owner" }] },
+    delegation: { scope: "project", delegate: "workers", coder_model: "fake/m1", workers: "read-only" } };
+  try {
+    const get = tools.find((t) => t.name === "agent_get");
+    if (!get) throw new Error("agent_get is not registered");
+    const out = (await get.execute({ session_id: "s_1" }, { sessionID: "ses_rules" })).content;
+    for (const want of ["Rules: deploy_rule=owner", "Delegation: scope=project delegate=workers", "workers=read-only"]) {
+      if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
+    }
+  } finally {
+    charterReply = null;
     stop();
   }
 });

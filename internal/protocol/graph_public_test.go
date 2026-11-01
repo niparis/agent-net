@@ -24,7 +24,20 @@ func publicGraphFixture() Graph {
 					Needs:           "billing",
 					Notes:           "deploys on Fridays",
 				},
-				Settings: map[string]string{SettingMergeAuthority: "OWNER_ONLY_NODE_SETTING_CANARY"},
+				Settings: map[string]string{
+					SettingTestsBeforeMerge: TestsSuiteNewTests,
+					SettingMergeAuthority:   MergeDelegated,
+					SettingWorkerSandbox:    WorkersNoNetwork,
+					SettingJudgeConsumers:   JudgeStrict,
+					SettingDeployRule:       DeployOwner,
+					SettingAutonomy:         AutonomyWake,
+					"unknown_setting":       "OWNER_ONLY_NODE_SETTING_CANARY",
+				},
+				Locations: []GraphLocation{{Machine: "m1", Path: "/home/owner/PRIVATE_PATH_CANARY"}},
+				Delegation: []NodeDelegation{{
+					Machine:          "m1",
+					DelegationPolicy: DelegationPolicy{Delegate: DelegateWorkers, CoderModel: "deepseek/deepseek-v4.1-flash", Workers: WorkersReadOnly},
+				}},
 			},
 			{Name: "billing", Kind: "component", Charter: Charter{Purpose: "Takes money", Maturity: "growing"}},
 			{Name: "architect", Kind: "architect", Charter: Charter{Purpose: "Owns the design", Maturity: "early"}},
@@ -96,19 +109,92 @@ func TestPublicGraphDetailReturnsTheFullCharter(t *testing.T) {
 	}
 }
 
-// A setting is owner-only even when old or hand-written data holds a value the
-// validator would now refuse. The public read must not carry it at all.
-func TestPublicGraphNeverReturnsNodeSettings(t *testing.T) {
-	marker := "OWNER_ONLY_NODE_SETTING_CANARY"
+// Every rule an agent must follow is public, with name and value: the six node
+// settings, resolved against the node's maturity, plus the delegation policy the
+// owner set for the node's project on a machine.
+func TestPublicGraphReturnsNodeRules(t *testing.T) {
+	want := map[string]string{
+		SettingTestsBeforeMerge: TestsSuiteNewTests,
+		SettingMergeAuthority:   MergeDelegated,
+		SettingWorkerSandbox:    WorkersNoNetwork,
+		SettingJudgeConsumers:   JudgeStrict,
+		SettingDeployRule:       DeployOwner,
+		SettingAutonomy:         AutonomyWake,
+	}
+	for _, q := range []PublicGraphQuery{{}, {Node: "shop"}} {
+		page := PublicGraph(publicGraphFixture(), q)
+		if len(page.Nodes) == 0 {
+			t.Fatalf("query %+v returned no nodes", q)
+		}
+		var shop PublicGraphNode
+		for _, n := range page.Nodes {
+			if n.Name == "shop" {
+				shop = n
+			}
+		}
+		if len(shop.Rules) != len(want) {
+			t.Fatalf("query %+v rules: %+v", q, shop.Rules)
+		}
+		got := map[string]string{}
+		for _, r := range shop.Rules {
+			got[r.Name] = r.Value
+		}
+		for name, value := range want {
+			if got[name] != value {
+				t.Errorf("query %+v rule %s = %q, want %q (all: %+v)", q, name, got[name], value, shop.Rules)
+			}
+		}
+		if len(shop.Delegation) != 1 || shop.Delegation[0].Machine != "m1" ||
+			shop.Delegation[0].Delegate != DelegateWorkers || shop.Delegation[0].Workers != WorkersReadOnly {
+			t.Fatalf("query %+v delegation: %+v", q, shop.Delegation)
+		}
+	}
+}
+
+// A secret, an unknown setting or a machine path is not a rule. The public
+// read must not carry it, even when old or hand-written data holds it.
+func TestPublicGraphNeverReturnsSecretsOrPaths(t *testing.T) {
 	for _, q := range []PublicGraphQuery{{}, {Node: "shop"}} {
 		raw, err := json.Marshal(PublicGraph(publicGraphFixture(), q))
 		if err != nil {
 			t.Fatal(err)
 		}
 		text := string(raw)
-		if strings.Contains(text, marker) || strings.Contains(text, "settings") || strings.Contains(text, SettingMergeAuthority) {
-			t.Fatalf("query %+v leaked an owner-only setting: %s", q, text)
+		for _, hidden := range []string{"OWNER_ONLY_NODE_SETTING_CANARY", "PRIVATE_PATH_CANARY", "unknown_setting", "locations"} {
+			if strings.Contains(text, hidden) {
+				t.Fatalf("query %+v leaked %q: %s", q, hidden, text)
+			}
 		}
+		if !strings.Contains(text, SettingDeployRule) || !strings.Contains(text, DeployOwner) {
+			t.Fatalf("query %+v hid the deploy rule: %s", q, text)
+		}
+	}
+}
+
+// A rule value the validator refuses is not a rule. The node gets its maturity
+// default instead, and the refused value never reaches an agent.
+func TestPublicGraphNeverReturnsAnInvalidRuleValue(t *testing.T) {
+	marker := "INVALID_RULE_VALUE_CANARY"
+	g := publicGraphFixture()
+	g.Nodes[0].Settings[SettingWorkerSandbox] = marker
+	page := PublicGraph(g, PublicGraphQuery{Node: "shop"})
+	if len(page.Nodes) != 1 {
+		t.Fatalf("detail: %+v", page.Nodes)
+	}
+	for _, r := range page.Nodes[0].Rules {
+		if r.Value == marker {
+			t.Fatalf("invalid rule value leaked: %+v", page.Nodes[0].Rules)
+		}
+		if r.Name == SettingWorkerSandbox && r.Value != WorkersSandboxed {
+			t.Fatalf("worker_sandbox = %q, want the maturity default %q", r.Value, WorkersSandboxed)
+		}
+	}
+	raw, err := json.Marshal(page)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), marker) {
+		t.Fatalf("invalid rule value leaked: %s", raw)
 	}
 }
 

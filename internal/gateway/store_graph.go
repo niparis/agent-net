@@ -46,6 +46,15 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 	return "component", nil
 }
 func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64) error {
+	if actor == "CTO (minor)" {
+		class, err := ctoGraphClassTx(tx, typ, node, attr, old, value)
+		if err != nil {
+			return err
+		}
+		if class != "minor" {
+			return reject("CTO graph change now requires the owner")
+		}
+	}
 	if actor == "" {
 		return reject("actor required")
 	}
@@ -628,8 +637,10 @@ func (s *Store) Graph() (protocol.Graph, error) {
 		return g, err
 	}
 	byName := map[string]*protocol.Node{}
+	byLower := map[string]*protocol.Node{}
 	for i := range g.Nodes {
 		byName[g.Nodes[i].Name] = &g.Nodes[i]
+		byLower[strings.ToLower(g.Nodes[i].Name)] = &g.Nodes[i]
 	}
 	for rows.Next() {
 		var name, attr, value string
@@ -690,6 +701,31 @@ func (s *Store) Graph() (protocol.Graph, error) {
 	if err != nil {
 		return g, err
 	}
+	// The owner's delegation policies are rules agents follow, so the public
+	// read shows them read-only. They are stored per machine and project.
+	rows, err = s.db.Query(`SELECT node_id,project,policy FROM project_policies ORDER BY project,node_id`)
+	if err != nil {
+		return g, err
+	}
+	for rows.Next() {
+		var machine, project, raw string
+		if err = rows.Scan(&machine, &project, &raw); err != nil {
+			rows.Close()
+			return g, err
+		}
+		var policy protocol.DelegationPolicy
+		if json.Unmarshal([]byte(raw), &policy) != nil {
+			continue
+		}
+		if n := byLower[strings.ToLower(project)]; n != nil {
+			n.Delegation = append(n.Delegation, protocol.NodeDelegation{Machine: machine, DelegationPolicy: policy})
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return g, err
+	}
 	rows, err = s.db.Query(`SELECT source,target,kind,mode,rule FROM graph_edges ORDER BY source,target,kind`)
 	if err != nil {
 		return g, err
@@ -707,7 +743,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 
 // CTOGraphHistory returns all attributed CTO changes after a history ID.
 func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) {
-	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE (actor='cto' OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
 	if err != nil {
 		return nil, err
 	}
@@ -725,7 +761,7 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 
 func (s *Store) CTOLastGraphID() (int64, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor GLOB 'owner (CTO proposal p_[0-9]*)'`).Scan(&id)
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)'`).Scan(&id)
 	return id, err
 }
 

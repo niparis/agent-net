@@ -21,7 +21,7 @@ func TestAgentGraphToolReadsThePublicGraph(t *testing.T) {
 		if !strings.Contains(string(raw), `"node":"shop"`) {
 			t.Fatalf("params = %s", raw)
 		}
-		return json.RawMessage(`{"nodes":[{"name":"shop","kind":"component","maturity":"mature","line":"shop (component) mature Sells things","charter":{"purpose":"Sells things"}}],"edges":[{"from":"shop","to":"billing","kind":"depends","rule":"ask"}],"total":1,"edge_total":1}`), nil
+		return json.RawMessage(`{"nodes":[{"name":"shop","kind":"component","maturity":"mature","line":"shop (component) mature Sells things","charter":{"purpose":"Sells things"},"rules":[{"name":"deploy_rule","value":"owner"},{"name":"worker_sandbox","value":"no-network"}]}],"edges":[{"from":"shop","to":"billing","kind":"depends","rule":"ask"}],"total":1,"edge_total":1}`), nil
 	})
 	defer cs.Close()
 	list, err := cs.ListTools(ctx, nil)
@@ -37,7 +37,7 @@ func TestAgentGraphToolReadsThePublicGraph(t *testing.T) {
 	if tool == nil {
 		t.Fatal("agent_graph is not registered")
 	}
-	for _, want := range []string{"charter", "edge", "node", "offset", "total"} {
+	for _, want := range []string{"charter", "edge", "node", "offset", "total", "rule", "read-only"} {
 		if !strings.Contains(strings.ToLower(tool.Description), want) {
 			t.Errorf("description does not mention %q: %s", want, tool.Description)
 		}
@@ -55,7 +55,7 @@ func TestAgentGraphToolReadsThePublicGraph(t *testing.T) {
 			text += item.Text
 		}
 	}
-	for _, want := range []string{"Sells things", "depends", "ask"} {
+	for _, want := range []string{"Sells things", "depends", "ask", "deploy_rule", "owner", "worker_sandbox", "no-network"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("result misses %q: %s", want, text)
 		}

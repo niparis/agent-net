@@ -52,6 +52,10 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 		cli.mustCall("edge_set", e)
 	}
 
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingJudgeConsumers, "value": protocol.JudgeStrict})
+
 	agent, _ := helloPi(t, n, "graph-reader", "/w/reader", true)
 	var page protocol.PublicGraphPage
 	if err := json.Unmarshal(agent.mustCall("agent_graph", map[string]any{}), &page); err != nil {
@@ -68,6 +72,21 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	}
 	if byName["shop"].Maturity != "mature - stable" || !strings.Contains(byName["shop"].Line, "Sells things") {
 		t.Fatalf("shop line: %+v", byName["shop"])
+	}
+	rules := map[string]string{}
+	for _, r := range byName["shop"].Rules {
+		rules[r.Name] = r.Value
+	}
+	for name, want := range map[string]string{
+		protocol.SettingDeployRule:     protocol.DeployOwner,
+		protocol.SettingWorkerSandbox:  protocol.WorkersNoNetwork,
+		protocol.SettingJudgeConsumers: protocol.JudgeStrict,
+		protocol.SettingMergeAuthority: protocol.MergeDelegated,
+		protocol.SettingAutonomy:       protocol.AutonomyOff,
+	} {
+		if rules[name] != want {
+			t.Errorf("shop rule %s = %q, want %q (all: %+v)", name, rules[name], want, byName["shop"].Rules)
+		}
 	}
 	if len(page.Edges) < 2 || page.EdgeTotal < 2 {
 		t.Fatalf("edges: %+v (total %d)", page.Edges, page.EdgeTotal)
@@ -92,6 +111,13 @@ func TestAgentGraphReadsEveryCharterAndEdge(t *testing.T) {
 	}
 	if detail.Nodes[0].Charter.Purpose != "Sells things" || detail.Nodes[0].Charter.Maturity != "mature - stable" {
 		t.Fatalf("detail charter: %+v", detail.Nodes[0].Charter)
+	}
+	detailRules := map[string]string{}
+	for _, r := range detail.Nodes[0].Rules {
+		detailRules[r.Name] = r.Value
+	}
+	if detailRules[protocol.SettingDeployRule] != protocol.DeployOwner || detailRules[protocol.SettingWorkerSandbox] != protocol.WorkersNoNetwork {
+		t.Fatalf("detail rules: %+v", detail.Nodes[0].Rules)
 	}
 	if len(detail.Edges) != 2 {
 		t.Fatalf("edges touching shop: %+v", detail.Edges)
@@ -125,9 +151,9 @@ func TestAgentGraphPagesWithTotals(t *testing.T) {
 	}
 }
 
-// The canary puts a marker in an owner-only node setting. Neither the agent
-// read nor the CTO's graph view may return it.
-func TestAgentGraphAndCTOViewHideOwnerNodeSettings(t *testing.T) {
+// A secret stored under a setting name that is not a rule is never returned.
+// The rule settings are returned, with name and value.
+func TestAgentGraphAndCTOViewHideSecretsButShowRules(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	if err := w.d.registerCTOSession(context.Background()); err != nil {
@@ -136,17 +162,25 @@ func TestAgentGraphAndCTOViewHideOwnerNodeSettings(t *testing.T) {
 	graphFixtureNode(t, w.node, w.cli, "shop", "Sells things", "mature - stable")
 	graphFixtureNode(t, w.node, w.cli, "billing", "Takes money", "growing")
 	w.cli.mustCall("edge_set", map[string]any{"from": "shop", "to": "billing", "kind": "depends", "rule": "ask"})
+	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
+	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
+	w.cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingMergeAuthority, "value": protocol.MergeAsk})
 	marker := "OWNER_ONLY_NODE_SETTING_CANARY"
-	injectNodeSetting(t, g.dir, "shop", protocol.SettingWorkerSandbox, marker)
+	injectNodeSetting(t, g.dir, "shop", "unknown_setting", marker)
 
 	agent, _ := helloPi(t, w.node, "canary-reader", "/w/canary", true)
 	for _, args := range []map[string]any{{}, {"node": "shop"}} {
 		raw := string(agent.mustCall("agent_graph", args))
-		if strings.Contains(raw, marker) || strings.Contains(raw, "settings") || strings.Contains(raw, protocol.SettingWorkerSandbox) {
-			t.Fatalf("agent read leaked the setting: %s", raw)
+		if strings.Contains(raw, marker) || strings.Contains(raw, "unknown_setting") || strings.Contains(raw, "locations") {
+			t.Fatalf("agent read leaked a secret or path: %s", raw)
 		}
 		if !strings.Contains(raw, "Sells things") {
 			t.Fatalf("agent read has no charter: %s", raw)
+		}
+		for _, want := range []string{protocol.SettingDeployRule, protocol.DeployOwner, protocol.SettingWorkerSandbox, protocol.WorkersNoNetwork, protocol.SettingMergeAuthority, protocol.MergeAsk} {
+			if !strings.Contains(raw, want) {
+				t.Errorf("agent read hides rule %q: %s", want, raw)
+			}
 		}
 	}
 
@@ -158,11 +192,16 @@ func TestAgentGraphAndCTOViewHideOwnerNodeSettings(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := json.Marshal(cto)
-	if strings.Contains(string(raw), marker) || strings.Contains(string(raw), "settings") || strings.Contains(string(raw), protocol.SettingWorkerSandbox) {
-		t.Fatalf("CTO graph view leaked the setting: %s", raw)
+	if strings.Contains(string(raw), marker) || strings.Contains(string(raw), "unknown_setting") || strings.Contains(string(raw), "locations") {
+		t.Fatalf("CTO graph view leaked a secret or path: %s", raw)
 	}
 	if !strings.Contains(string(raw), "Sells things") || !strings.Contains(string(raw), "billing") {
 		t.Fatalf("CTO graph view lacks charters or edges: %s", raw)
+	}
+	for _, want := range []string{protocol.SettingDeployRule, protocol.DeployOwner, protocol.SettingWorkerSandbox, protocol.WorkersNoNetwork} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("CTO graph view hides rule %q: %s", want, raw)
+		}
 	}
 
 	// The CTO view is the same public read, not a copy with its own rules.
@@ -187,7 +226,88 @@ func TestAgentGraphAndCTOViewHideOwnerNodeSettings(t *testing.T) {
 		*ctoDetail.Items[0].Charter != *agentDetail.Nodes[0].Charter {
 		t.Fatalf("CTO charter differs from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes)
 	}
+	if len(ctoDetail.Items[0].Rules) != len(agentDetail.Nodes[0].Rules) {
+		t.Fatalf("CTO rules differ from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes[0].Rules)
+	}
+	for i := range ctoDetail.Items[0].Rules {
+		if ctoDetail.Items[0].Rules[i] != agentDetail.Nodes[0].Rules[i] {
+			t.Fatalf("CTO rules differ from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes[0].Rules)
+		}
+	}
 	if len(ctoDetail.Edges) != len(agentDetail.Edges) || len(ctoDetail.Edges) == 0 {
 		t.Fatalf("CTO edges differ from the agent read: %s vs %+v", rawDetail, agentDetail.Edges)
+	}
+}
+
+// The delegation policy the owner set for a project is a rule, so the public
+// graph shows it read-only, per machine.
+func TestAgentGraphShowsDelegationPolicy(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]any{"name": "shop"})
+	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature"})
+	sid, err := g.gw.Store().UpsertSession(n.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "delegation-session",
+		Repo: protocol.RepoInfo{Project: "shop"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.gw.Store().SetDelegation(sid, protocol.ScopeProject, protocol.DelegationPolicy{
+		Delegate: protocol.DelegateWorkers, CoderModel: "fake/m1", Workers: protocol.WorkersReadOnly}); err != nil {
+		t.Fatal(err)
+	}
+	agent, _ := helloPi(t, n, "delegation-reader", "/w/reader", true)
+	var detail protocol.PublicGraphPage
+	if err := json.Unmarshal(agent.mustCall("agent_graph", map[string]any{"node": "shop"}), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Nodes) != 1 || len(detail.Nodes[0].Delegation) != 1 {
+		t.Fatalf("delegation: %+v", detail.Nodes)
+	}
+	d := detail.Nodes[0].Delegation[0]
+	if d.Machine != n.cfg.NodeID || d.Delegate != protocol.DelegateWorkers || d.Workers != protocol.WorkersReadOnly {
+		t.Fatalf("delegation policy: %+v", d)
+	}
+}
+
+// agent_get shows a session's node rules, so a session can check its own rules.
+func TestAgentGetShowsSessionNodeRules(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]any{"name": "shop"})
+	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "mature - stable"})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingDeployRule, "value": protocol.DeployOwner})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingWorkerSandbox, "value": protocol.WorkersNoNetwork})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingJudgeConsumers, "value": protocol.JudgeStrict})
+	cli.mustCall("node_settings_set", map[string]any{"node": "shop", "setting": protocol.SettingAutonomy, "value": protocol.AutonomyWake})
+
+	sid, err := g.gw.Store().UpsertSession(n.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "rules-session",
+		Repo: protocol.RepoInfo{Project: "shop"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader, _ := helloPi(t, n, "rules-reader", "/w/reader", true)
+	var out struct {
+		Agent protocol.AgentView `json:"agent"`
+	}
+	if err := json.Unmarshal(reader.mustCall("get", map[string]any{"session_id": sid}), &out); err != nil {
+		t.Fatal(err)
+	}
+	rules := map[string]string{}
+	for _, r := range out.Agent.Charter.Rules {
+		rules[r.Name] = r.Value
+	}
+	for name, want := range map[string]string{
+		protocol.SettingDeployRule:       protocol.DeployOwner,
+		protocol.SettingWorkerSandbox:    protocol.WorkersNoNetwork,
+		protocol.SettingJudgeConsumers:   protocol.JudgeStrict,
+		protocol.SettingMergeAuthority:   protocol.MergeDelegated,
+		protocol.SettingTestsBeforeMerge: protocol.TestsSuiteNewTests,
+		protocol.SettingAutonomy:         protocol.AutonomyWake,
+	} {
+		if rules[name] != want {
+			t.Errorf("agent_get rule %s = %q, want %q (all: %+v)", name, rules[name], want, out.Agent.Charter.Rules)
+		}
 	}
 }

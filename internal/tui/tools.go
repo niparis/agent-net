@@ -45,7 +45,6 @@ const (
 	toolsDiffs   = 0
 	toolsAll     = 1
 	toolsProject = 2
-	toolsTab     = 4 // the tab index: "5 Tools"
 )
 
 var toolsScreenNames = []string{"Differences", "All tools", "By project"}

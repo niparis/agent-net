@@ -3,7 +3,7 @@ Keys ─────────────────────────
  Sessions
   proposal             enter details; a approve; x decline; A approve all after
                        confirmation
-  1-5                  switch between Sessions, Messages, Quotas, Graph and
+  1-5                  switch between Sessions, Graph, Quotas, Messages and
                        Tools
   up/down, j/k         select a session
   pgup/pgdn, home/end  page, first, last

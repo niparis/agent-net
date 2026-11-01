@@ -163,13 +163,14 @@ func (m Model) mapEdgeColumns(node string, w, room int) []string {
 	return lines
 }
 
-// mapCharterField is one set charter field in display order.
+// mapCharterField is one set charter field in display order. Purpose and
+// maturity are left out: the card header shows them already.
 type mapCharterField struct{ name, value string }
 
 func mapCharterFields(c protocol.Charter) []mapCharterField {
 	var out []mapCharterField
 	for _, f := range []mapCharterField{
-		{"purpose", c.Purpose}, {"maturity", c.Maturity}, {"accepts", c.Accepts}, {"refuses", c.Refuses},
+		{"accepts", c.Accepts}, {"refuses", c.Refuses},
 		{"feature_requests", c.FeatureRequests}, {"consumers", c.Consumers}, {"escalate", c.Escalate},
 		{"needs", c.Needs}, {"notes", c.Notes},
 	} {
@@ -181,7 +182,8 @@ func mapCharterFields(c protocol.Charter) []mapCharterField {
 	return out
 }
 
-// mapCharterBlock wraps every set field under an aligned label column.
+// mapCharterBlock wraps every set field that the header does not show under an
+// aligned label column.
 func mapCharterBlock(c protocol.Charter, w int) []string {
 	labelW := 16
 	if w < 48 {
@@ -193,16 +195,12 @@ func mapCharterBlock(c protocol.Charter, w int) []string {
 		if labelW < 16 && name == "feature_requests" {
 			name = "features"
 		}
-		style := lipgloss.NewStyle()
-		if f.name == "maturity" {
-			style = mapLevelStyle(maturityLevel(f.value))
-		}
 		for i, l := range wrap(f.value, max(w-labelW-1, 8)) {
 			label := strings.Repeat(" ", labelW)
 			if i == 0 {
 				label = sDim.Render(cell(name, labelW))
 			}
-			out = append(out, label+" "+style.Render(l))
+			out = append(out, label+" "+l)
 		}
 	}
 	return out

@@ -1,4 +1,4 @@
-1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ 7 nodes, 7 edges    14:05
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 nodes, 7 edges    14:05
 tenebrae  mature  autonomy: wake
 Research platform that turns papers, figures and strategies into a searchable
 library for the trading desk, with citations kept for every claim.
@@ -8,11 +8,11 @@ governed by: wbg-architect (advisor)
 IN 2                                     OUT 2
 all projects ──▶ depends                 ──▶ cogforge depends ask
 homelab ──▶ deploys auto                 ──▶ homelab depends ask
-Charter 1-4/15  [ ] scroll ─────────────────────────────────────────────────────
-purpose          Research platform that turns papers, figures and strategies
-                 into a searchable library for the trading desk, with citations
-                 kept for every claim.
-maturity         mature - stable since spring
+Charter 1-4/11  [ ] scroll ─────────────────────────────────────────────────────
+accepts          New document sources, retrieval fixes, and schema changes that
+                 keep old ids working.
+refuses          Anything that writes to the trading accounts; one-off client
+                 reports.
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │

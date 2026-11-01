@@ -108,17 +108,26 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		weight float64
 		poor   bool
 	}
+	// Over-qualification is measured from the weakest adequate candidate of
+	// this start, so every difficulty fills from the bottom of its adequate
+	// range and the strong models stay available for harder work.
+	weakestAdequate := math.Inf(1)
+	for _, c := range candidates {
+		score, _, adequate, ok := WorkerCandidateFit(c, level, scores, minimums)
+		if ok && adequate && score < weakestAdequate {
+			weakestAdequate = score
+		}
+	}
 	var eligible []ranked
 	var adequate []string
 	var reasons []string
 	for _, c := range candidates {
-		s, ok := LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
+		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
 		if !ok {
 			continue
 		}
-		fit, _ := DifficultyFit(s.Score, level, minimums)
-		reasons = append(reasons, fmt.Sprintf("%s %s (score %g, %s)", c.Harness, c.Model, s.Score, fit))
-		if fit != "good" && fit != "excellent" {
+		reasons = append(reasons, fmt.Sprintf("%s %s (score %g, %s)", c.Harness, c.Model, score, fit))
+		if !isAdequate {
 			continue
 		}
 		provider := c.Provider
@@ -133,9 +142,9 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		if measured {
 			servedRoom -= 5 * float64(running[provider])
 		}
-		weight := workerRotationWeight(c, s.Score, level, minimums, servedRoom, measured)
+		weight := workerRotationWeight(c, score, weakestAdequate, servedRoom, measured)
 		eligible = append(eligible, ranked{
-			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: s.Score, Fit: fit, QuotaNote: note},
+			choice: WorkerModelChoice{WorkerModelCandidate: c, Score: score, Fit: fit, QuotaNote: note},
 			weight: weight,
 			poor:   poorTrack(c.Track),
 		})
@@ -224,9 +233,33 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	return out, nil
 }
 
-// workerRotationWeight turns quota room, fit and track record into a positive
-// weight. Every adequate candidate keeps a positive weight, so none is starved.
-func workerRotationWeight(c WorkerModelCandidate, score float64, level string, minimums map[string]float64, room float64, measured bool) float64 {
+// workerOverQualificationScale is the score gap above the weakest adequate
+// candidate at which a model's rotation weight falls to 1/e. A small scale
+// makes over-qualification expensive: the strongest models get a small share
+// at easy difficulties instead of competing evenly with the weakest adequate
+// model, so they stay available for harder work.
+const workerOverQualificationScale = 8.0
+
+// WorkerCandidateFit looks up a candidate's score and classifies it against a
+// difficulty. ok is false when the model has no score or the level is unknown;
+// adequate is true only for a good or excellent fit, which is a score at or
+// above the minimum. Callers that show or choose candidates share this rule.
+func WorkerCandidateFit(c WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64) (score float64, fit string, adequate, ok bool) {
+	s, found := LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
+	if !found {
+		return 0, "", false, false
+	}
+	fit, err := DifficultyFit(s.Score, level, minimums)
+	if err != nil {
+		return s.Score, "", false, false
+	}
+	return s.Score, fit, fit == "good" || fit == "excellent", true
+}
+
+// workerRotationWeight turns quota room, over-qualification and track record
+// into a positive weight. Every adequate candidate keeps a positive weight, so
+// none is starved.
+func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room float64, measured bool) float64 {
 	weight := 1.0
 	if measured {
 		// Room is percentage points behind pace. Five points behind is about a
@@ -234,14 +267,11 @@ func workerRotationWeight(c WorkerModelCandidate, score float64, level string, m
 		// pace keeps less, but never zero.
 		weight *= math.Max(0.1, math.Min(4, math.Exp(room/20)))
 	}
-	minimum, ok := DifficultyMinimums[level]
-	if custom, set := minimums[level]; set {
-		minimum = custom
-		ok = true
-	}
-	if ok {
-		margin := math.Max(0, score-minimum)
-		weight *= 1 + 0.10*(1-math.Min(margin/20, 1))
+	// Fit decays with the distance above the weakest adequate score. The
+	// weakest adequate model keeps the full weight, and a model 8 points
+	// stronger gets about a third of it.
+	if !math.IsInf(weakestAdequate, 1) {
+		weight *= math.Exp(-math.Max(0, score-weakestAdequate) / workerOverQualificationScale)
 	}
 	if n := c.Track.Complete + c.Track.Partial + c.Track.Failed; n >= 5 {
 		weight *= 1 + 0.20*float64(c.Track.Complete)/float64(n)

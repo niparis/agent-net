@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"graph with view guide", "rule auto", "depends", "diff", "undo", "Every owner-only change is a proposal in Needs you", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"graph with view guide", "rule auto", "depends", "diff", "undo", "Every non-graph owner-only change is a proposal in Needs you", "An approval typed in this chat never counts", "with A in Needs you", "presses w", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -516,7 +516,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("node_add", map[string]any{"name": "component"})
 	call("charter_set", map[string]any{"node": "architecture", "attr": "purpose", "value": "design"})
 	var changes []protocol.CharterChange
-	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || !strings.HasPrefix(changes[0].By, "owner (CTO proposal p_") {
+	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || changes[0].By != "CTO (minor)" {
 		t.Fatalf("CTO history: %+v %v", changes, err)
 	}
 
@@ -590,7 +590,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read sessions", "charter_set: proposal", "sent to", "worker_start: proposal"} {
+	for _, want := range []string{"read sessions", "CTO (minor): applied charter_set", "sent to", "worker_start: proposal"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}

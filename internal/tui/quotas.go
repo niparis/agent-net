@@ -51,7 +51,7 @@ func (m Model) quotaRows() []quotaRow {
 
 	out := make([]quotaRow, 0, len(rows))
 	for _, r := range rows {
-		if m.tab == 2 && m.uiFilter != "" && !strings.Contains(strings.ToLower(r.provider.Provider+" "+r.provider.Plan+" "+r.machine), strings.ToLower(m.uiFilter)) {
+		if m.tab == quotasTab && m.uiFilter != "" && !strings.Contains(strings.ToLower(r.provider.Provider+" "+r.provider.Plan+" "+r.machine), strings.ToLower(m.uiFilter)) {
 			continue
 		}
 		if r.readers > 1 && !r.disagree {
@@ -254,12 +254,8 @@ const workerShareCellWidth = 5
 func (m Model) workerCandidateTiers(level string, candidates []protocol.WorkerModelCandidate) (normal, protected []protocol.WorkerModelCandidate) {
 	for _, c := range candidates {
 		if len(m.snap.ProtectedProviders.Providers) > 0 {
-			score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, m.snap.Scores)
-			if !ok {
-				continue
-			}
-			fit, _ := protocol.DifficultyFit(score.Score, level, m.snap.DifficultyMinimums)
-			if fit != "good" && fit != "excellent" {
+			_, _, adequate, ok := protocol.WorkerCandidateFit(c, level, m.snap.Scores, m.snap.DifficultyMinimums)
+			if !ok || !adequate {
 				continue
 			}
 		}

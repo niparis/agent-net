@@ -6,6 +6,15 @@ import (
 	"testing"
 )
 
+func ruleValue(rules []PublicRule, name string) string {
+	for _, r := range rules {
+		if r.Name == name {
+			return r.Value
+		}
+	}
+	return ""
+}
+
 func TestAutonomyIsOneNodeSettingWithTwoValues(t *testing.T) {
 	for _, value := range []string{"", AutonomyOff, AutonomyWake} {
 		if err := ValidateNodeSetting(SettingAutonomy, value); err != nil {
@@ -26,7 +35,7 @@ func TestAutonomyIsOneNodeSettingWithTwoValues(t *testing.T) {
 	}
 }
 
-func TestPublicGraphShowsAutonomyAndHidesOtherSettings(t *testing.T) {
+func TestPublicGraphShowsAutonomyWithTheOtherRulesAndHidesOtherSettings(t *testing.T) {
 	g := Graph{Nodes: []Node{
 		{Name: "shop", Kind: "component", Settings: map[string]string{
 			SettingAutonomy:       AutonomyWake,
@@ -42,21 +51,17 @@ func TestPublicGraphShowsAutonomyAndHidesOtherSettings(t *testing.T) {
 	for _, n := range page.Nodes {
 		byName[n.Name] = n
 	}
-	if got := byName["shop"].Autonomy; got != AutonomyWake {
-		t.Fatalf("shop autonomy = %q", got)
+	if got := ruleValue(byName["shop"].Rules, SettingAutonomy); got != AutonomyWake {
+		t.Fatalf("shop autonomy rule = %q in %+v", got, byName["shop"].Rules)
 	}
-	if !strings.Contains(byName["shop"].Line, "autonomy: wake") {
-		t.Fatalf("shop line does not show autonomy: %q", byName["shop"].Line)
+	if got := ruleValue(byName["billing"].Rules, SettingAutonomy); got != AutonomyOff {
+		t.Fatalf("default autonomy rule = %q, want off", got)
 	}
-	if got := byName["billing"].Autonomy; got != AutonomyOff {
-		t.Fatalf("default autonomy = %q, want off", got)
-	}
-	data, err := json.Marshal(page)
+	raw, err := json.Marshal(page)
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw := string(data)
-	if strings.Contains(raw, "OWNER_ONLY_NODE_SETTING_CANARY") || strings.Contains(raw, "settings") {
+	if strings.Contains(string(raw), "OWNER_ONLY_NODE_SETTING_CANARY") || strings.Contains(string(raw), "settings") {
 		t.Fatalf("public graph leaked an owner-only setting: %s", raw)
 	}
 }

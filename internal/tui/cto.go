@@ -23,7 +23,17 @@ type ctoSource interface {
 	CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error)
 	CTOUndo(context.Context, int64) error
 }
+type ctoWindowSource interface {
+	CTOGraphWindow(context.Context, bool) (protocol.CTOGraphWindow, error)
+}
+type ctoWindowMsg struct {
+	window     protocol.CTOGraphWindow
+	err        error
+	generation int
+}
+
 type ctoState struct {
+	windowUntil                time.Time
 	settingsForm               *ctoSettingsForm
 	configuredModel            string
 	polling                    bool
@@ -60,6 +70,7 @@ type ctoSettingsMsg struct {
 	generation int
 }
 type ctoPollMsg struct {
+	windowUntil     time.Time
 	configuredModel string
 	opencodeModel   string
 	claudeModel     string
@@ -127,6 +138,14 @@ func (m Model) ctoPollCmd() tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
+		var window protocol.CTOGraphWindow
+		if ws, ok := src.(ctoWindowSource); ok {
+			var err error
+			window, err = ws.CTOGraphWindow(ctx, false)
+			if err != nil {
+				return ctoPollMsg{err: err, generation: generation}
+			}
+		}
 		settings, err := src.CTOSettings(ctx)
 		if err != nil {
 			return ctoPollMsg{err: err, generation: generation}
@@ -153,7 +172,7 @@ func (m Model) ctoPollCmd() tea.Cmd {
 				openCodeModel = settings.Model
 			}
 		}
-		return ctoPollMsg{events: events, history: history, model: model, harness: harness, title: protocol.CTOTitleOrDefault(settings.Title), configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
+		return ctoPollMsg{windowUntil: window.Until, events: events, history: history, model: model, harness: harness, title: protocol.CTOTitleOrDefault(settings.Title), configuredModel: settings.Model, opencodeModel: openCodeModel, claudeModel: claudeModel, err: err, generation: generation}
 	}
 }
 func (m Model) ctoOlderCmd() tea.Cmd {
@@ -260,7 +279,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if k.Type == tea.KeyEsc || k.String() == "tab" {
 		m.focus = focusSessions
-		if m.tab == 1 && !m.mapOn {
+		if m.tab == messagesTab && !m.mapOn {
 			m.focus = focusFeed
 		}
 		return m, nil
@@ -291,6 +310,19 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch k.String() {
+	case "w":
+		src, ok := m.src.(ctoWindowSource)
+		if !ok {
+			c.err = "CTO graph window is unavailable"
+			return m, nil
+		}
+		g := c.generation
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			window, err := src.CTOGraphWindow(ctx, true)
+			return ctoWindowMsg{window: window, err: err, generation: g}
+		}
 	case "m":
 		ti := textinput.New()
 		ti.Prompt = ""
@@ -353,6 +385,7 @@ func (m *Model) applyCTOPoll(r ctoPollMsg) {
 	c.claudeModel = r.claudeModel
 	c.model = r.model
 	c.harness = r.harness
+	c.windowUntil = r.windowUntil
 	c.title = protocol.CTOTitleOrDefault(r.title)
 	c.history = r.history
 	type line struct {

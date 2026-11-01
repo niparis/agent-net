@@ -133,11 +133,10 @@ func TestNewSessionEnterWithTextStartsInTheBackground(t *testing.T) {
 	}
 }
 
-func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
+func TestNewSessionRefusesOtherHarnesses(t *testing.T) {
 	for _, tc := range []struct{ id, harness, why string }{
-		{"s_0000000000000004", "codex", "codex on another machine"},
 		{"s_0000000000000002", "other", "unknown harness"},
-		{"s_0000000000000004", "pi", "pi on another machine"},
+		{"s_0000000000000004", "aider", "unknown harness on another machine"},
 	} {
 		t.Run(tc.why, func(t *testing.T) {
 			m, src := workerModel(120, 34)
@@ -147,14 +146,14 @@ func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
 				t.Fatalf("n opened mode %v", m.mode)
 			}
 			m.sform.in[sHarness].SetValue(tc.harness)
-			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex and pi on this machine for now") {
+			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex and pi for now") {
 				t.Errorf("the form does not refuse:\n%s", v)
 			}
 			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("refused start still ran: cmd %v, asks %+v", cmd != nil, src.sessionStarts)
 			}
-			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude, opencode, codex and pi on this machine for now") {
+			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude, opencode, codex and pi for now") {
 				t.Errorf("the refusal is not on the form:\n%s", m.View())
 			}
 		})
