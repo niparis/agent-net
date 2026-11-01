@@ -217,7 +217,7 @@ func TestWorkerStartOpensHerdr(t *testing.T) {
 			}
 			repo := newRepo(t, "garden")
 			n.register(t, repo)
-			r := n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: harness, Task: "FAKE:ignore"})
+			r := n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: harness, Task: "FAKE:ignore"})
 			eventually(t, "worker opened in herdr", func() bool {
 				raw, _ := os.ReadFile(log)
 				return strings.Contains(string(raw), "pane run w1:p1")
@@ -302,7 +302,7 @@ func TestWorkerResumeOpensHerdr(t *testing.T) {
 	n := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
-	r := n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
+	r := n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
 	eventually(t, "initial worker view", func() bool {
 		raw, _ := os.ReadFile(log)
 		return strings.Contains(string(raw), "pane run w1:p1")
@@ -328,7 +328,7 @@ func TestEnterRemoteStartedWorkerUsesHerdrClient(t *testing.T) {
 	remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"herdr": remoteBin} })
 	repo := newRepo(t, "garden")
 	remote.register(t, repo)
-	r := remote.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
+	r := remote.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
 	eventually(t, "remote worker view", func() bool {
 		raw, _ := os.ReadFile(remoteLog)
 		return strings.Contains(string(raw), "pane run w1:p1")
@@ -355,7 +355,7 @@ func TestEnterPiRPCWorkerExplainsNoTerminal(t *testing.T) {
 	n := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
-	r := n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:ignore"})
+	r := n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:ignore"})
 	p := enterOf(t, n.node, r.SessionID, "")
 	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(p.Note, "RPC") || !strings.Contains(p.Note, "agent-net show") {
 		t.Fatalf("Pi RPC worker did not explain the missing terminal: %+v", p)
@@ -382,7 +382,7 @@ func TestWorkerStartWithoutHerdrShowsInstallNotice(t *testing.T) {
 			repo := newRepo(t, "garden")
 			n.register(t, repo)
 			notices := herdrNoticeChannel(t, n.node)
-			n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
+			n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
 			q := waitHerdrNotice(t, notices)
 			line, _ := q["text"].(string)
 			if q["daemon_notice"] != true || !strings.Contains(line, "Herdr was not found") || !strings.Contains(line, "install") {
