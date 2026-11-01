@@ -12,6 +12,16 @@ import (
 
 // The model track record and the owner's playbook notes (decision 0022).
 
+// workerTaskID reads a root recovered from an older continuation.
+func (s *Store) workerTaskID(session string) (string, error) {
+	var id string
+	err := s.db.QueryRow(`SELECT task_id FROM worker_runs WHERE session_id=? AND task_id<>'' ORDER BY id DESC LIMIT 1`, session).Scan(&id)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return id, err
+}
+
 // RecordWorkerRun adds one ended worker run. The gateway calls it when a
 // machine reports "worker.stopped".
 func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
@@ -35,11 +45,14 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if r.Fix < 0 {
 		r.Fix = 0
 	}
+	if r.Midrun < 0 {
+		r.Midrun = 0
+	}
 	if r.AutoContinue < 0 {
 		r.AutoContinue = 0
 	}
-	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, difficulty, touches, difficulty_used, counters_known)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, auto_continue_count, caller, difficulty, touches, difficulty_used, task_id, midrun_count, counters_known)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.AutoContinue, r.Caller, r.Difficulty, strings.Join(r.Touches, ","), r.DifficultyUsed, r.TaskID, r.Midrun); err != nil {
 		return err
 	}
 	if err := s.refreshQuality(); err != nil {
