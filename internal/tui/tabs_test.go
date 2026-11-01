@@ -486,12 +486,12 @@ func TestWorkerPanelPicksAndTrackRecord(t *testing.T) {
 	m := newModel(120, 34)
 	m.tab = 2
 	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"fake/a"}}}
-	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "fake/a", Runs: 12, Complete: 10, Failed: 2}}
+	m.snap.Nodes[0].Tracks = []protocol.TrackRecord{{Harness: "codex", Model: "fake/a", Runs: 12, Complete: 10, Failed: 2, Continue: 3, Fix: 1}}
 	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "a", Harness: "codex", Model: "fake/a"}}
 	m.snap.WorkerProviders = []string{"codex"}
 	m.snap.Scores = []protocol.ModelScore{{Match: "fake/a", Score: 51, Source: "artificialanalysis"}}
 	v := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, s := range []string{"Workers · 1 registered · 0 running · scores: Artificial Analysis", "12·83%·2✗", "picked for"} {
+	for _, s := range []string{"Workers · 1 registered · 0 running · scores: Artificial Analysis", "12·83%·2✗", "picked for", "complete 10 · continue 3 · fix 1"} {
 		if !strings.Contains(v, s) {
 			t.Errorf("missing %q in %s", s, v)
 		}
@@ -531,7 +531,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T S N H V: share of next 20",
 		"░<25% ▒<50% ▓<75% █≥75%",
-		"terra codex: picked for trivial, simple, normal and hard",
+		"terra codex: complete 5 · continue 0 · fix 0 · picked for trivial, simple, normal and hard",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {

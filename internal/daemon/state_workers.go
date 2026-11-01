@@ -40,23 +40,41 @@ type workerRow struct {
 	TaskFull string
 	// Permissions is the permission level the worker was started with.
 	Permissions string
+	// Continue and Fix count the owner's messages after a hand-back with
+	// complete:no and complete:yes. ContinueRun and FixRun are the part since
+	// this run began.
+	Continue, Fix       int
+	ContinueRun, FixRun int
+	// PendingHandback is true after a hand-back until the owner's next message
+	// is counted; PendingPartial says whether that hand-back was partial.
+	PendingHandback, PendingPartial bool
+	// DifficultyAsked and DifficultyUsed are the level the caller asked for
+	// and the level the chooser used.
+	DifficultyAsked, DifficultyUsed string
 }
 
 func (s *state) saveWorker(w workerRow) error {
 	_, err := s.db.Exec(`INSERT INTO workers (id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
-		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
+		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET native_id=excluded.native_id, session_id=excluded.session_id,
 		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
 		last_active=excluded.last_active, ended_reason=excluded.ended_reason, resumable=excluded.resumable,
 		reported=excluded.reported, task_msg=excluded.task_msg, task_text=excluded.task_text,
 		done_status=excluded.done_status, done_partial=excluded.done_partial, harness_ref=excluded.harness_ref,
-		task_full=excluded.task_full, permissions=excluded.permissions`,
+		task_full=excluded.task_full, permissions=excluded.permissions,
+		continue_count=excluded.continue_count, fix_count=excluded.fix_count,
+		continue_run=excluded.continue_run, fix_run=excluded.fix_run,
+		pending_handback=excluded.pending_handback, pending_partial=excluded.pending_partial,
+		difficulty_asked=excluded.difficulty_asked, difficulty_used=excluded.difficulty_used`,
 		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.NativeID, w.SessionID, w.PID, w.PGID,
 		w.StartToken, w.StartedAt.UnixNano(), w.LastActive.UnixNano(), w.EndedReason, boolInt(w.Resumable),
 		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.DoneStatus,
-		boolInt(w.DonePartial), w.Ref, w.TaskFull, w.Permissions)
+		boolInt(w.DonePartial), w.Ref, w.TaskFull, w.Permissions,
+		w.Continue, w.Fix, w.ContinueRun, w.FixRun, boolInt(w.PendingHandback), boolInt(w.PendingPartial),
+		w.DifficultyAsked, w.DifficultyUsed)
 	return err
 }
 
@@ -70,7 +88,8 @@ func boolInt(b bool) int {
 func (s *state) workers() ([]workerRow, error) {
 	rows, err := s.db.Query(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
-		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions
+		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
+		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used
 		FROM workers ORDER BY started_at`)
 	if err != nil {
 		return nil, err
@@ -80,14 +99,16 @@ func (s *state) workers() ([]workerRow, error) {
 	for rows.Next() {
 		var w workerRow
 		var started, active int64
-		var resumable, reported, partial int
+		var resumable, reported, partial, pending, pendingPartial int
 		if err := rows.Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
-			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions); err != nil {
+			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
+			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed); err != nil {
 			return nil, err
 		}
 		w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)
 		w.Resumable, w.Reported, w.DonePartial = resumable == 1, reported == 1, partial == 1
+		w.PendingHandback, w.PendingPartial = pending == 1, pendingPartial == 1
 		out = append(out, w)
 	}
 	return out, rows.Err()
@@ -97,14 +118,16 @@ func (s *state) workers() ([]workerRow, error) {
 func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 	var w workerRow
 	var started, active int64
-	var resumable, reported, partial int
+	var resumable, reported, partial, pending, pendingPartial int
 	err := s.db.QueryRow(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
-		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions
+		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
+		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used
 		FROM workers WHERE session_id = ?`, sessionID).
 		Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
-			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions)
+			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
+			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return w, false, nil
@@ -113,6 +136,7 @@ func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 	}
 	w.StartedAt, w.LastActive = time.Unix(0, started), time.Unix(0, active)
 	w.Resumable, w.Reported, w.DonePartial = resumable == 1, reported == 1, partial == 1
+	w.PendingHandback, w.PendingPartial = pending == 1, pendingPartial == 1
 	return w, true, nil
 }
 

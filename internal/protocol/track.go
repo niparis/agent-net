@@ -39,6 +39,10 @@ type WorkerRun struct {
 	EndedAt   int64 `json:"ended_at"`
 	// RunSeconds is how long the worker ran. 0 when the start is unknown.
 	RunSeconds int64 `json:"run_seconds,omitempty"`
+	// Continue and Fix count the messages the caller sent after this run
+	// began, after a hand-back with complete:no and complete:yes.
+	Continue int `json:"continue,omitempty"`
+	Fix      int `json:"fix,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.
@@ -51,6 +55,8 @@ type TrackRecord struct {
 	Failed           int    `json:"failed"`
 	TimedOut         int    `json:"timed_out"`
 	Stopped          int    `json:"stopped"`
+	Continue         int    `json:"continue,omitempty"`
+	Fix              int    `json:"fix,omitempty"`
 	MedianRunSeconds int64  `json:"median_run_seconds,omitempty"`
 	// Resumable is true when a harness can open an ended session again.
 	Resumable bool `json:"resumable"`
@@ -115,7 +121,8 @@ func (t *TrackRecord) Line() string {
 	for _, n := range []struct {
 		count int
 		word  string
-	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"}} {
+	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"},
+		{t.Continue, "continue"}, {t.Fix, "fix"}} {
 		if n.count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))
 		}
@@ -147,6 +154,15 @@ func (t *TrackRecord) Line() string {
 		b.WriteString(" · cannot resume")
 	}
 	return b.String()
+}
+
+// ReworkLine is the compact track record the owner views show: "complete 31 ·
+// continue 12 · fix 4". A record with no runs has no line.
+func (t *TrackRecord) ReworkLine() string {
+	if t == nil || t.Runs == 0 {
+		return ""
+	}
+	return fmt.Sprintf("complete %d · continue %d · fix %d", t.Complete, t.Continue, t.Fix)
 }
 
 // shortDuration writes a run time as the track record shows it: "45 s",

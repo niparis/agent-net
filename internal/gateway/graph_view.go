@@ -90,6 +90,9 @@ func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
 		return g, err
 	}
 	if all {
+		if err := s.ensureCTONode(&g); err != nil {
+			return g, err
+		}
 		return s.graphContext(g)
 	}
 	rows, err := s.db.Query(`SELECT name FROM graph_nodes UNION SELECT name FROM projects WHERE graph_excluded<>1 UNION SELECT node FROM graph_charter WHERE value<>'' UNION SELECT source FROM graph_edges UNION SELECT target FROM graph_edges UNION SELECT repo_project FROM sessions WHERE repo_project<>'' AND (online=1 OR last_seen>=?)`, s.now().Add(-7*24*time.Hour).UnixNano())
@@ -115,7 +118,27 @@ func (s *Store) visibleGraph(all bool) (protocol.Graph, error) {
 		}
 	}
 	g.Nodes = nodes
+	if err := s.ensureCTONode(&g); err != nil {
+		return g, err
+	}
 	return s.graphContext(g)
+}
+
+// ensureCTONode adds the fixed CTO node before the graph context is attached,
+// so its live session lands on that node. The CTO has no editable charter.
+func (s *Store) ensureCTONode(g *protocol.Graph) error {
+	id, err := s.CTOSessionID()
+	if err != nil || id == "" {
+		return err
+	}
+	for i := range g.Nodes {
+		if g.Nodes[i].Name == protocol.CTONodeName {
+			g.Nodes[i].Kind = "cto"
+			return nil
+		}
+	}
+	g.Nodes = append(g.Nodes, protocol.Node{Name: protocol.CTONodeName, Kind: "cto"})
+	return nil
 }
 
 // graphContext supplies the registered and observed locations and online sessions.
@@ -130,7 +153,7 @@ func (s *Store) graphContext(g protocol.Graph) (protocol.Graph, error) {
 	}
 	byName := make(map[string]*protocol.Node, len(g.Nodes))
 	for i := range g.Nodes {
-		if g.Nodes[i].Kind == "component" {
+		if g.Nodes[i].Kind == "component" || g.Nodes[i].Kind == "cto" {
 			byName[g.Nodes[i].Name] = &g.Nodes[i]
 		}
 	}
@@ -140,7 +163,11 @@ func (s *Store) graphContext(g protocol.Graph) (protocol.Graph, error) {
 		}
 	}
 	for _, a := range agents {
-		n := byName[a.Repo.Project]
+		name := a.Repo.Project
+		if a.Harness == "cto" {
+			name = protocol.CTONodeName
+		}
+		n := byName[name]
 		if n == nil {
 			continue
 		}

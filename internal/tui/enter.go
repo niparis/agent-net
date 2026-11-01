@@ -27,6 +27,7 @@ type enterMsg struct {
 	name string
 	plan protocol.EnterPlan
 	err  error
+	cto  bool
 }
 
 // enterDoneMsg is the end of the entered command.
@@ -47,6 +48,8 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 	case protocol.IsOwner(a.Harness):
 		m.fail("That is you, not a session.")
 		return m, nil
+	case a.Harness == "cto":
+		return m, m.ctoEnterCmd(a.SessionID)
 	}
 	if !a.Online && a.Harness != "opencode" && a.Harness != "codex" {
 		if (a.Harness != "claude" && a.Harness != "pi") || a.NodeID != m.snap.NodeID {
@@ -118,8 +121,8 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	case r.err != nil:
 		m.fail("Cannot enter " + r.name + ": " + explain(r.err))
 		return m, nil
-	case len(r.plan.Argv) == 0 && r.name == "CTO":
-		m.fail(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter CTO from here.")))
+	case len(r.plan.Argv) == 0 && r.cto:
+		m.fail(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter the CTO from here.")))
 		return m, nil
 	case len(r.plan.Argv) == 0:
 		m.say(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter "+r.name+" from here.")))

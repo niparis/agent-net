@@ -45,6 +45,9 @@ type EnterRefProvider interface {
 
 // enterPlan answers session_enter for a session on any machine.
 func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {
+	if handled, plan, err := d.ctoEnterQuery(ctx, q); handled {
+		return plan, err
+	}
 	if d.sessionByID(q.SessionID) != nil {
 		return d.localEnter(ctx, q, false)
 	}

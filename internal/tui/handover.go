@@ -14,17 +14,11 @@ import (
 
 // A hand-over is the owner's choice to share one private item with the CTO.
 // The CTO reads only public data, so the owner sends the item on purpose: the
-// preview shows the exact text, and Enter sends that same string through the
-// owner-gated cto_send path.
+// preview shows the exact text, and Enter sends that same string to the CTO
+// session as the owner.
 const maxHandoverRunes = 4000
 
 const handoverCutMarker = "\n\n[hand-over cut at 4000 characters]"
-
-// ctoSender is the owner path to the CTO. The daemon's cto_send method is
-// behind the owner gate.
-type ctoSender interface {
-	CTOSend(context.Context, string) error
-}
 
 type handover struct {
 	// text is exactly what Enter sends, after the cap.
@@ -163,16 +157,13 @@ func (m Model) handoverKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		text, title := h.text, m.ctoTitle()
+		to := m.ctoSessionID()
 		m.handover = nil
-		src, ok := m.src.(ctoSender)
-		if !ok {
-			m.fail("The " + title + " is unavailable.")
-			return m, nil
-		}
+		src := m.src
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 			defer cancel()
-			if err := src.CTOSend(ctx, text); err != nil {
+			if _, err := src.SendAsOwner(ctx, to, text); err != nil {
 				return actionMsg{err: err}
 			}
 			return actionMsg{text: "Sent to " + title + "."}

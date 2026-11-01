@@ -142,7 +142,7 @@ Proposals close the change path. They cannot close the read path: a read returns
 
 The CTO's tools return only:
 
-- data that an ordinary non-worker session gets through its own agent-net tools today (`agent_list`, `agent_get`, `agent_nodes`, `agent_messages`, `agent_message_status`, `agent_project_list`, `agent_mcp_list`, `agent_worker_profiles`, `agent_protected_providers_get`), and
+- data that an ordinary non-worker session gets through its own agent-net tools today (`agent_list`, `agent_get`, `agent_nodes`, `agent_graph`, `agent_messages`, `agent_message_status`, `agent_project_list`, `agent_mcp_list`, `agent_worker_profiles`, `agent_protected_providers_get`), and
 - the CTO's own conversations, its own proposals and their outcomes.
 
 Each CTO read view is built by calling the same daemon or gateway function that serves the matching agent tool, with the CTO session as the caller. A view with no such source is removed. Feed metadata (event kind, time, session IDs, never a body) stays only if the parity check finds it served to ordinary sessions; otherwise the CTO gets the feed of its own conversations.
@@ -240,7 +240,7 @@ Measured with a temporary test that lists the CTO server's tools and counts the 
 
 Every proposal tool takes an optional `reason`. Estimated schema size: about 16 KB, about 4,000 tokens, two thirds less than today.
 
-`graph` is listed as a public read on the condition of open question 1. If the parity check finds that ordinary sessions do not read charters and edges today, `graph` is cut to what they do read, and the CTO proposes charter changes from what the owner hands it.
+`graph` is a public read: open question 1 is closed (the owner made the whole graph public to every agent), and `agent_graph` is the ordinary tool it uses. `graph` returns nodes with their charters and maturity and compact edges with kind, mode and request rule. It never returns node settings, history, hidden items, locations or sessions.
 
 ### Today's tools, mapped
 
@@ -396,6 +396,14 @@ Status: implemented. Messages reach the selected harness, including after a swit
 - Tests: a reply to a CTO send reaches the active harness; after a switch it reaches the other harness; a reply to a pre-upgrade conversation is routed; the CTO session is never offered ordinary agent-net tools.
 
 **Part 8. The TUI and the Graph.**
+
+Status: implemented. The CTO is a row in Sessions with the owner's title and
+Enter uses `session_enter`. The CTO box shows the number of open proposals. The
+Graph has the fixed `cto` node; a send the owner approved as their own words is
+a gold line, and edges into the CTO node carry request rules. The operator
+client no longer exposes `cto_send`, `cto_events` and `cto_enter`; the old
+frames still answer an older TUI.
+
 - The CTO row in Sessions, Enter through `session_enter`, the CTO box on the session with the proposal count, the `cto` node and gold lines for approved sends, request rules on edges to the CTO; remove `cto_send`, `cto_events` and `cto_enter`.
 - Tests: golden TUI scenes for the Sessions row, the box with proposals, the Graph node and a proposal row (`scripts/screens.sh`); Enter on the row and Enter on the box give the same plan.
 
@@ -413,7 +421,7 @@ Status: implemented. The graph is limited to public project data, and protected 
 
 ## 13. Open questions for the owner
 
-1. **Is the graph a public read?** Recommended: follow today's agent tools exactly. If ordinary sessions do not read other nodes' charters and edges today, the CTO does not either, and widening agents' reads is a separate decision.
+1. **Is the graph a public read?** Closed by the owner on 2026-11-01: yes. Every agent may read the whole graph, because agents need to know each other's charters. `agent_graph` returns every node's charter and maturity and every edge with its kind, mode and request rule. Node settings, learned-change history with its evidence, hidden items, and anything with paths or machine secrets stay owner-only. The CTO reads the same view through `graph`.
 2. **Approve-all.** Keep `A` with its confirm screen (recommended), or one key per proposal only?
 3. Keep the CTO box once the CTO is a Sessions row, or remove it later?
 4. **Later topic:** the owner's-words grant of the authority draft, for example letting a CTO send carry the owner's own words. Not part of this design.

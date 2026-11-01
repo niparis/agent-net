@@ -14,7 +14,7 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "projects,static guide", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
 }
 
 func TestCTOReadParitySources(t *testing.T) {
