@@ -178,8 +178,9 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. Needs you shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The table audits the owner operator methods and ordinary agent-net tools. CTO
-tool names are private to the CTO and are not in the shared MCP registry.
+The table pins CTO read views to ordinary agent-net tools or an explicit
+static/own-conversation source. CTO tool names are private to the CTO and
+are not in the shared MCP registry.
 
 | Ordinary agent tool or source | CTO read view |
 |---|---|
