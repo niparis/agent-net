@@ -266,8 +266,11 @@ type AgentView struct {
 	LastSeen           int64            `json:"last_seen"`
 	// LastActive is when the session last did something, in Unix seconds.
 	// It is not when its daemon last reported it. 0 from an older gateway.
-	LastActive int64   `json:"last_active,omitempty"`
-	Profile    Profile `json:"profile"`
+	LastActive int64 `json:"last_active,omitempty"`
+	// TaskStarted is when the announced task last changed, in Unix seconds. It
+	// is for the read tools; the old list tools keep their output unchanged.
+	TaskStarted int64   `json:"-"`
+	Profile     Profile `json:"profile"`
 	// Repo comes from the daemon's checks of Cwd, not from the agent.
 	Repo RepoInfo `json:"repo"`
 	// Mode and Model are what the session's daemon reported. Empty from an

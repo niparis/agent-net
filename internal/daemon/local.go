@@ -1004,6 +1004,9 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if res, ok, err := lc.dispatchActions(ctx, client, method, raw); ok {
 		return res, err
 	}
+	if res, ok, err := lc.dispatchToolRead(ctx, client, method, raw); ok {
+		return res, err
+	}
 	return nil, fmt.Errorf("unknown method %q", method)
 }
 
