@@ -151,11 +151,9 @@ func (d *Daemon) insideSession(pid int) bool {
 	}
 	// The private CTO is also an agent process, even though it is not a
 	// registered session or worker. Its children cannot use the owner CLI.
-	d.cto.mu.Lock()
-	if d.cto.cmd != nil && d.cto.cmd.Process.Pid > 1 {
-		sess[d.cto.cmd.Process.Pid] = true
+	if root := int(d.cto.pid.Load()); root > 1 {
+		sess[root] = true
 	}
-	d.cto.mu.Unlock()
 	// Interactive Codex threads share the control socket's server process.
 	if a, ok := d.adapters["codex"].(*codexAdapter); ok {
 		if root := a.serverPID(); root > 1 {
@@ -614,13 +612,15 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("bad cto_settings params")
 		}
 		if q.Model != nil || q.Harness != nil {
-			d.ctoDispatchMu.Lock()
+			if err = d.ctoDispatchMu.lock(ctx); err != nil {
+				return nil, true, err
+			}
 			var settings protocol.CTOSettings
 			settings, err = d.ctoSettings(ctx, q)
 			if err == nil {
 				_, err = d.prepareCTOHarness(settings)
 			}
-			d.ctoDispatchMu.Unlock()
+			d.ctoDispatchMu.unlock()
 			res = settings
 		} else {
 			res, err = d.ctoSettings(ctx, q)

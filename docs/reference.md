@@ -100,6 +100,12 @@ state. The daemon passes a private MCP configuration with `--mcp-config` and
 ordinary agent-net MCP tools are not registered for this session.
 Claude starts with `--tools ""` and `--setting-sources ""`. Private settings
 disable all hooks and enable no plugins.
+Before starting Claude, the daemon adopts a live `agent-net-cto` background job
+in that private directory if one exists. When Claude resumes a conversation as
+a copy, the daemon saves the copy's session ID and moves its action lines to
+that ID. Concurrent `cto_enter` calls share one start; each caller can stop
+waiting on its own deadline. A start does not block owner reads such as
+`cto_settings`, Claude `cto_events`, graph, usage or inbox calls.
 
 The CTO has no built-in tools. OpenCode uses plural `permissions` rules denying
 `bash`, `edit`, `write`, `subagent`, `read`, `glob`, `grep`, `list`,

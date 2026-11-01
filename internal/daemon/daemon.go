@@ -183,7 +183,9 @@ type Daemon struct {
 	toolsPlanKeyOnce sync.Once
 	toolsPlanKey     [32]byte
 	toolsPlanKeyErr  error
-	ctoDispatchMu    sync.Mutex
+	ctoDispatchMu    ctoDispatchLock
+	ctoEnterMu       sync.Mutex
+	ctoEntering      *ctoEnterCall
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
 	cfg              Config
@@ -416,10 +418,13 @@ func (d *Daemon) Stop() {
 	if d.ln != nil {
 		d.ln.close()
 	}
+	// Wait for canceled startup to finish publishing before stopping its runtime.
+	_ = d.ctoDispatchMu.lock(context.Background())
 	d.cto.mu.Lock()
 	d.stopClaudeCTOLocked()
 	d.cto.stopLocked()
 	d.cto.mu.Unlock()
+	d.ctoDispatchMu.unlock()
 	d.mcp.stop()
 	d.wg.Wait()
 	d.st.close()

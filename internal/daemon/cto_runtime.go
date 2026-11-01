@@ -2,9 +2,31 @@ package daemon
 
 import (
 	"context"
+	"sync"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// ctoDispatchLock serializes CTO operations without trapping canceled callers
+// behind a slow harness start.
+type ctoDispatchLock struct {
+	once sync.Once
+	gate chan struct{}
+}
+
+func (m *ctoDispatchLock) lock(ctx context.Context) error {
+	m.once.Do(func() { m.gate = make(chan struct{}, 1) })
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case m.gate <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+func (m *ctoDispatchLock) unlock() { <-m.gate }
 
 // ctoHarness isolates the owner conversation from the harness that runs it.
 type ctoHarness interface {
@@ -51,8 +73,10 @@ func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, e
 	return h, err
 }
 func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
-	d.ctoDispatchMu.Lock()
-	defer d.ctoDispatchMu.Unlock()
+	if err := d.ctoDispatchMu.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer d.ctoDispatchMu.unlock()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return nil, err
@@ -60,8 +84,10 @@ func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
 	return h.send(ctx, d, text)
 }
 func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
-	d.ctoDispatchMu.Lock()
-	defer d.ctoDispatchMu.Unlock()
+	if err := d.ctoDispatchMu.lock(ctx); err != nil {
+		return nil, err
+	}
+	defer d.ctoDispatchMu.unlock()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return nil, err
@@ -69,8 +95,23 @@ func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	return h.newConversation(ctx, d)
 }
 func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, error) {
-	d.ctoDispatchMu.Lock()
-	defer d.ctoDispatchMu.Unlock()
+	// Claude events read the transcript and database without preparing a runtime.
+	// They remain available while another caller is starting Claude.
+	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
+	if err != nil {
+		return protocol.CTOEvents{}, err
+	}
+	if settings.Harness == "claude" {
+		out, err := (claudeCTOHarness{}).events(ctx, d, 0)
+		if err != nil {
+			return out, err
+		}
+		return d.mergeCTOHistory(out, "claude", index)
+	}
+	if err := d.ctoDispatchMu.lock(ctx); err != nil {
+		return protocol.CTOEvents{}, err
+	}
+	defer d.ctoDispatchMu.unlock()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return protocol.CTOEvents{}, err
@@ -82,15 +123,48 @@ func (d *Daemon) ctoEvents(ctx context.Context, index int) (protocol.CTOEvents, 
 	return d.mergeCTOHistory(out, h.name(), index)
 }
 
+type ctoEnterCall struct {
+	done chan struct{}
+	plan protocol.EnterPlan
+	err  error
+}
+
+// Concurrent callers share the same startup result, including failures. Each
+// waiter can leave on its own deadline without starting another process.
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
-	d.ctoDispatchMu.Lock()
-	defer d.ctoDispatchMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return protocol.EnterPlan{}, err
+	}
+	d.ctoEnterMu.Lock()
+	if call := d.ctoEntering; call != nil {
+		d.ctoEnterMu.Unlock()
+		select {
+		case <-ctx.Done():
+			return protocol.EnterPlan{}, ctx.Err()
+		case <-call.done:
+			return call.plan, call.err
+		}
+	}
+	call := &ctoEnterCall{done: make(chan struct{})}
+	d.ctoEntering = call
+	d.ctoEnterMu.Unlock()
+	call.plan, call.err = d.ctoEnterOnce(ctx)
+	d.ctoEnterMu.Lock()
+	d.ctoEntering = nil
+	close(call.done)
+	d.ctoEnterMu.Unlock()
+	return call.plan, call.err
+}
+
+func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
+	if err := d.ctoDispatchMu.lock(ctx); err != nil {
+		return protocol.EnterPlan{}, err
+	}
+	defer d.ctoDispatchMu.unlock()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
 	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
 	bin, err := d.harnessBinary(h.name())
 	if err != nil {
@@ -109,18 +183,23 @@ func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
 		if e != nil {
 			return plan, e
 		}
-		if e = d.startClaudeCTOLocked(ctx, id, model); e != nil {
+		if e = d.startClaudeCTO(ctx, id, model); e != nil {
 			return plan, e
 		}
+		d.cto.mu.Lock()
+		defer d.cto.mu.Unlock()
+		oldID := id
 		id = d.claudeCTO.session
 		if _, e = d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); e != nil {
 			return plan, e
 		}
-		if _, e = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='claude'`, id); e != nil {
+		if _, e = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID); e != nil {
 			return plan, e
 		}
 		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
 	} else {
+		d.cto.mu.Lock()
+		defer d.cto.mu.Unlock()
 		if err = d.startCTOLocked(ctx); err != nil {
 			return plan, err
 		}

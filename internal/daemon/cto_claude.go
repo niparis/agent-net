@@ -23,8 +23,8 @@ import (
 	"github.com/niparis/agent-net/internal/redact"
 )
 
-// claudeCTOState is protected by cto.mu, except pid, which is read by the
-// private-channel peer check without taking that lock.
+// claudeCTOState runtime fields are protected by cto.mu. The process root and
+// starting flag are atomic; the capability cache is serialized by ctoDispatchMu.
 type claudeCTOState struct {
 	root                atomic.Pointer[claudeCTORoot]
 	starting            atomic.Bool
@@ -82,7 +82,8 @@ func sameCTODir(a, b string) bool {
 }
 
 // findClaudeCTOBg binds only the background job launched in the private CTO
-// working directory. The PID file name must match the session's PID.
+// working directory. The PID file name must match the session's PID. An empty
+// ref allows adoption of any matching live job after a daemon restart.
 func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 	entries, err := os.ReadDir(sessions)
 	if err != nil {
@@ -98,7 +99,7 @@ func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 			Cwd  string `json:"cwd"`
 			Name string `json:"name"`
 		}
-		if json.Unmarshal(raw, &sf) != nil || sf.PID <= 1 || entry.Name() != strconv.Itoa(sf.PID)+".json" || sf.SessionID == "" || sf.Kind != "bg" || sf.JobID != ref || sf.Name != "agent-net-cto" || !sameCTODir(sf.Cwd, dir) {
+		if json.Unmarshal(raw, &sf) != nil || sf.PID <= 1 || entry.Name() != strconv.Itoa(sf.PID)+".json" || sf.SessionID == "" || sf.Kind != "bg" || (sf.JobID == "" || (ref != "" && sf.JobID != ref)) || sf.Name != "agent-net-cto" || !sameCTODir(sf.Cwd, dir) {
 			continue
 		}
 		if _, alive := procToken(sf.PID); alive {
@@ -108,9 +109,14 @@ func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 	return claudeSessionFile{}, false
 }
 
-func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) error {
+// startClaudeCTO is serialized with CTO mutations by ctoDispatchMu. Only
+// inspecting and publishing runtime state takes cto.mu. Launching Claude,
+// capability checks and waiting for its session file run without it.
+func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
+	d.cto.mu.Lock()
 	c := &d.claudeCTO
 	dir := filepath.Join(d.cfg.StateDir, "cto", "claude")
+	canAdopt := c.ref == ""
 	if c.ref != "" {
 		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, c.ref)
 		root := c.root.Load()
@@ -119,9 +125,30 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 			tok, alive = procToken(root.pid)
 		}
 		if ok && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
+			d.cto.mu.Unlock()
 			return nil
 		}
 		d.stopClaudeCTOLocked()
+	}
+	d.cto.mu.Unlock()
+	adopt := func(sf claudeSessionFile) bool {
+		token, alive := procToken(sf.PID)
+		if !alive {
+			return false
+		}
+		d.cto.mu.Lock()
+		c.ref, c.session, c.model, c.token = sf.JobID, sf.SessionID, model, token
+		c.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
+		d.cto.mu.Unlock()
+		if id != "" && id != sf.SessionID && d.log != nil {
+			d.log.Printf("CTO Claude resumed as a copy: %s -> %s", id, sf.SessionID)
+		}
+		return true
+	}
+	// A daemon restart loses the in-memory job ref, but the private background
+	// session may still be alive. Bind it before launching another copy.
+	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && adopt(sf) {
+		return nil
 	}
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
@@ -170,13 +197,8 @@ func (d *Daemon) startClaudeCTOLocked(ctx context.Context, id, model string) err
 	defer cancel()
 	for {
 		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref)
-		if ok {
-			token, alive := procToken(sf.PID)
-			if alive && (id == "" || sf.SessionID == id) {
-				c.ref, c.session, c.model, c.token = ref, sf.SessionID, model, token
-				c.root.Store(&claudeCTORoot{pid: sf.PID, token: token})
-				return nil
-			}
+		if ok && adopt(sf) {
+			return nil
 		}
 		select {
 		case <-startup.Done():
@@ -254,8 +276,6 @@ func claudeCTOErrorOutput(output []byte) string {
 }
 
 func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, error) {
-	d.cto.mu.Lock()
-	defer d.cto.mu.Unlock()
 	settings, err := d.ctoSettings(ctx, protocol.CTOSettingsRequest{})
 	if err != nil {
 		return nil, err
@@ -268,14 +288,17 @@ func (claudeCTOHarness) send(ctx context.Context, d *Daemon, text string) (any, 
 	if err != nil {
 		return nil, err
 	}
-	if err = d.startClaudeCTOLocked(ctx, id, model); err != nil {
+	if err = d.startClaudeCTO(ctx, id, model); err != nil {
 		return nil, err
 	}
+	d.cto.mu.Lock()
+	defer d.cto.mu.Unlock()
+	oldID := id
 	id = d.claudeCTO.session
 	if _, err = d.st.db.Exec(`INSERT INTO cto(id,session_id,claude_session_id) VALUES(1,'',?) ON CONFLICT(id) DO UPDATE SET claude_session_id=excluded.claude_session_id`, id); err != nil {
 		return nil, err
 	}
-	if _, err = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE session_id='' AND harness='claude'`, id); err != nil {
+	if _, err = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID); err != nil {
 		return nil, err
 	}
 	a, ok := d.adapters["claude"].(interface {
