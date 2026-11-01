@@ -301,8 +301,12 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		attrs = append(attrs, fmt.Sprintf(`from="%s"`, from))
 	}
 	attrs = append(attrs, fmt.Sprintf(`from-name="%s"`, sanitizeName(name)), `from-mode="prompting"`)
+	body := neutralize(m.Body)
+	if m.From == "agent-net" && m.FromHarness == "agent-net" && m.Type == protocol.TypeNotification {
+		body, details = "", m.Body
+	}
 	content := fmt.Sprintf("<cross-session-message %s>\n%s\n\n%s\n</cross-session-message>",
-		strings.Join(attrs, " "), neutralize(m.Body), details)
+		strings.Join(attrs, " "), body, details)
 	return json.Marshal(frame{Type: "user", MsgV: 1, MsgID: m.ID, From: from, Priority: "next",
 		Message: frameMessage{Role: "user", Content: content}})
 }

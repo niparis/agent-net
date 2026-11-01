@@ -30,6 +30,8 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	reminderMu        sync.Mutex
+	reminderOffline   map[string]bool
 	pendingMu         sync.Mutex
 	pendingEpisodes   map[string]pendingEpisode
 	pendingStalls     int
@@ -318,7 +320,7 @@ ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
 -- Reserve CTO for the network session, including names saved before part 6.
 UPDATE profiles SET name = '' WHERE name = 'CTO';
 UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harness <> 'cto';
-`, `SELECT 1 /* CTO legacy route upgrade */;`}
+`, `SELECT 1 /* CTO legacy route upgrade */;`, `ALTER TABLE messages ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1212,6 +1214,9 @@ func scanMessage(sc interface{ Scan(...any) error }) (protocol.Message, error) {
 	if m.FromCTO {
 		m.FromHarness = "cto"
 	}
+	if m.From == "agent-net" {
+		m.FromName, m.FromHarness = "agent-net", "agent-net"
+	}
 	m.CreatedAt = time.Unix(0, created).UTC()
 	m.ExpiresAt = time.Unix(0, expires).UTC()
 	return m, err
@@ -1266,6 +1271,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 	}
 	if len(p.Body) > protocol.MaxBodyBytes {
 		return msg, false, reject("body is %d bytes, the limit is %d", len(p.Body), protocol.MaxBodyBytes)
+	}
+	if p.Sender == "agent-net" {
+		return msg, false, reject("agent-net sender is reserved")
 	}
 	if strings.TrimSpace(p.Body) == "" {
 		return msg, false, reject("body is empty")
@@ -1499,7 +1507,24 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	filtered := out[:0]
+	for _, m := range out {
+		if m.From == "agent-net" {
+			eligible, err := s.reminderEligible(m.ParentID)
+			if err != nil {
+				return nil, err
+			}
+			if !eligible {
+				continue
+			}
+		}
+		filtered = append(filtered, m)
+	}
+	return filtered, nil
 }
 
 func (s *Store) MarkDispatched(id string) error {

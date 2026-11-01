@@ -104,6 +104,8 @@ function authorityNote(m: DeliveredMessage): string {
 }
 
 function formatDelivery(m: DeliveredMessage): string {
+  if (m.sender_session_id === "agent-net" && m.sender_harness === "agent-net" && m.message_type === "notification") return m.body;
+
   let text = formatDeliveryBase({ ...m, body: neutralizeMarkers(m.body) });
   if (m.owner_instruction) text += `\n${OWNER_INSTRUCTION_PREFIX}${neutralizeMarkers(m.owner_instruction)}${OWNER_INSTRUCTION_SUFFIX}${mergeRule(m)}.`;
   if (m.overruled === true) text += `\n[agent-net] the owner overrules: do it.`;

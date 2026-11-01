@@ -295,8 +295,11 @@ type TextPage struct {
 // every session. Offline sessions are kept for 30 days, so the total of
 // sessions is mostly old ones; Offline24h is the number that matters.
 type SessionCounts struct {
-	PendingStalls int `json:"pending_stalls"`
-	Online        int `json:"online"`
+	PendingReminders             int `json:"pending_reminders"`
+	PendingRemindersOffline      int `json:"pending_reminders_offline"`
+	PendingAnsweredAfterReminder int `json:"pending_answered_after_reminder"`
+	PendingStalls                int `json:"pending_stalls"`
+	Online                       int `json:"online"`
 	// Offline24h is the sessions that are offline and were seen in the last
 	// 24 hours.
 	Offline24h int `json:"offline_24h"`
