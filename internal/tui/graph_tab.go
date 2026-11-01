@@ -19,23 +19,41 @@ type graphTickMsg struct{ generation int }
 
 const (
 	// graphIdleInterval keeps the graph alive without drawing when nothing
-	// moves. graphFrameInterval is the fastest pixel frame. A frame of 120x34
-	// cells with 20 nodes costs about 85 ms to rasterize, so 8 frames a second
-	// leaves room for the terminal and the rest of the UI.
+	// moves. graphFrameInterval is the fastest pixel frame request. A 120x34
+	// frame with 20 nodes costs about 90 ms to rasterize off the UI loop, so
+	// 8 requests a second leaves room for the terminal and the rest of the UI.
 	graphIdleInterval  = 250 * time.Millisecond
 	graphFrameInterval = 125 * time.Millisecond
 )
 
-// graphPixelState holds the pixel-mode decision and the last picture sent to
-// the terminal, so an unchanged scene is not transmitted again.
+// graphPixelState holds the pixel-mode decision and the last finished frame.
+// Rendering happens in a tea.Cmd, never in View or Update.
 type graphPixelState struct {
 	graphics     bool
 	cellW, cellH int
 	imageID      uint32
 	hash         [32]byte
 	have         bool
-	scene        [32]byte
+	ready        bool
+	rendering    bool
+	size         graphview.Size
+	key          [32]byte
 	lines        []string
+	transmit     string
+}
+
+// rasterizeFrame is a variable so a test can prove View never calls it.
+var rasterizeFrame = graphview.Rasterize
+
+// graphFrameMsg carries a finished image and its placeholder rows back to the
+// update loop.
+type graphFrameMsg struct {
+	key      [32]byte
+	size     graphview.Size
+	lines    []string
+	hash     [32]byte
+	have     bool
+	transmit string
 }
 
 func (g *graphPixelState) set(gr graphview.Graphics) {
@@ -69,6 +87,74 @@ func (m Model) graphFrameInterval() time.Duration {
 // smoothCamera turns on the eased camera only for the pixel renderer.
 func (m *Model) smoothCamera() {
 	m.graphState.Smooth = m.graphPixel != nil && m.graphPixel.graphics
+}
+
+// graphScene builds the renderer-independent scene with display names. It is
+// cheap and never touches pixels.
+func (m Model) graphScene(state graphview.State, size graphview.Size) graphview.Scene {
+	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(size.Width), Height: float64(size.Height)})
+	for i := range scene.Nodes {
+		if scene.Nodes[i].Name == protocol.GraphVoiceOwner {
+			continue
+		}
+		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
+		scene.Nodes[i].Card.Name = m.projectName(scene.Nodes[i].Name)
+	}
+	return scene
+}
+
+// scheduleGraphRender starts one background frame when the cheap scene key
+// changed. While a frame is in flight new frames are dropped; the next update
+// after it finishes starts another if the scene moved on.
+func (m *Model) scheduleGraphRender() tea.Cmd {
+	g := m.graphPixel
+	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
+		return nil
+	}
+	if m.tab != graphTab || m.mapOn || m.graphHelp || m.graphState.Graph == nil {
+		return nil
+	}
+	if g.rendering {
+		return nil
+	}
+	gw, gh := m.graphSize()
+	if gw <= 0 || gh <= 0 {
+		return nil
+	}
+	size := graphview.Size{Width: gw, Height: gh}
+	state := m.graphState
+	state.Smooth = true
+	scene := m.graphScene(state, size)
+	key := graphview.HashScene(scene, size)
+	if g.ready && g.lines != nil && g.key == key && g.size == size {
+		return nil
+	}
+	g.rendering = true
+	g.key = key
+	return m.graphRenderCmd(scene, size, key)
+}
+
+// graphRenderCmd rasterizes and encodes one frame off the update loop.
+func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [32]byte) tea.Cmd {
+	g := m.graphPixel
+	metrics := graphview.PixelMetrics{CellWidth: g.cellW, CellHeight: g.cellH}
+	imageID := g.imageID
+	previousHash, previousHave := g.hash, g.have
+	previousTransmit := g.transmit
+	cols, rows := size.Width, size.Height
+	return func() tea.Msg {
+		img := rasterizeFrame(scene, size, metrics)
+		if img == nil {
+			return graphFrameMsg{key: key, size: size, hash: previousHash, have: previousHave}
+		}
+		lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, imageID, graphview.StyleRole)
+		hash := graphview.HashImage(img)
+		transmit := previousTransmit
+		if !previousHave || hash != previousHash {
+			transmit = graphview.DeleteImage(imageID) + graphview.TransmitImage(img, imageID, cols, rows)
+		}
+		return graphFrameMsg{key: key, size: size, lines: lines, hash: hash, have: true, transmit: transmit}
+	}
 }
 
 func (m Model) graphSize() (int, int) {
@@ -210,21 +296,15 @@ func (m Model) graphView(w, h int) []string {
 	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	state.Smooth = smooth
-	scene := graphview.BuildScene(state, graphview.Viewport{Width: float64(gw), Height: float64(gh)})
-	for i := range scene.Nodes {
-		if scene.Nodes[i].Name == protocol.GraphVoiceOwner {
-			continue
-		}
-		scene.Nodes[i].Label = m.projectName(scene.Nodes[i].Name)
-		scene.Nodes[i].Card.Name = m.projectName(scene.Nodes[i].Name)
-	}
+	size := graphview.Size{Width: gw, Height: gh}
+	scene := m.graphScene(state, size)
 	renderer := graphview.Braille{Styled: true}
-	if lines, ok := m.pixelLines(scene, gw, gh); ok {
+	if lines, ok := m.pixelLines(gw, gh); ok {
 		for _, line := range lines {
 			out = append(out, "  "+line)
 		}
 	} else {
-		for _, line := range renderer.Render(scene, graphview.Size{Width: gw, Height: gh}).Lines {
+		for _, line := range renderer.Render(scene, size).Lines {
 			out = append(out, "  "+line)
 		}
 	}
@@ -246,37 +326,25 @@ func (m Model) graphView(w, h int) []string {
 	return out
 }
 
-// pixelLines draws the scene as an image and returns placeholder rows. It
-// reports false whenever pixel mode is off or the cell size is unknown, so the
-// caller falls back to Braille exactly as before.
-func (m Model) pixelLines(scene graphview.Scene, gw, gh int) ([]string, bool) {
+// pixelLines returns the last finished placeholder rows. It never rasterizes
+// or encodes; a frame in flight is prepared by graphRenderCmd. Without a frame
+// for this size the caller falls back to Braille.
+func (m Model) pixelLines(gw, gh int) ([]string, bool) {
 	g := m.graphPixel
 	if g == nil || !g.graphics || g.cellW <= 0 || g.cellH <= 0 {
 		return nil, false
 	}
 	size := graphview.Size{Width: gw, Height: gh}
-	signature := graphview.HashScene(scene, size)
-	if g.have && g.lines != nil && g.scene == signature {
+	if !g.ready || g.lines == nil || g.size != size {
+		return nil, false
+	}
+	if g.transmit == "" {
 		return g.lines, true
 	}
-	img := graphview.Rasterize(scene, size, graphview.PixelMetrics{CellWidth: g.cellW, CellHeight: g.cellH})
-	if img == nil {
-		return nil, false
-	}
-	lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, g.imageID, graphview.StyleRole)
-	if len(lines) == 0 {
-		return nil, false
-	}
-	hash := graphview.HashImage(img)
-	g.scene, g.lines = signature, lines
-	if !g.have || hash != g.hash {
-		frame := append([]string(nil), lines...)
-		frame[0] = graphview.DeleteImage(g.imageID) + graphview.TransmitImage(img, g.imageID, gw, gh) + frame[0]
-		g.hash, g.have = hash, true
-		return frame, true
-	}
-	g.have = true
-	return lines, true
+	frame := append([]string(nil), g.lines...)
+	frame[0] = g.transmit + frame[0]
+	g.transmit = ""
+	return frame, true
 }
 
 // graphStatusLine names the selected node and its place in the network.

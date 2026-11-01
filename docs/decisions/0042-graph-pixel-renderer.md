@@ -60,8 +60,19 @@ them.
 
 A pixel frame is not free. The benchmark `BenchmarkRasterizeFrame120x34` draws
 120 by 34 cells with 20 nodes, edges, a busy node, a comet and a ripple. On the
-development machine it takes about 85 ms, above the 30 ms target. Pixel frames
-therefore run at 8 a second (125 ms), not 15. Idle ticks stay at 250 ms.
+development machine it takes about 90 ms. A 116 by 20 cell area with 18 by 38
+pixel cells takes about 150 ms to rasterize and 26 ms to PNG-encode; 200 by 45
+cells takes about 180 ms and 40 ms after the cap below. Pixel frames are
+therefore requested at 8 a second (125 ms), not 15, and idle ticks stay at
+250 ms.
+
+None of that work happens in `View` or `Update`. The TUI builds the cheap Scene,
+hashes it, and starts at most one `tea.Cmd` goroutine to rasterize, PNG-encode
+and lay out the placeholder rows. The finished frame is stored on the model and
+`View` only copies the cached rows and prepends the transmission that has not
+been sent yet. While a frame is in flight a new scene key is dropped; when the
+frame finishes, the next update starts another if the scene moved on. So the
+Bubble Tea loop never waits for a rasterizer, even on a slow machine.
 
 Two hashes keep the work down. `HashScene` covers everything the picture draws
 and lets the host reuse the last placeholder rows without rasterizing an
@@ -69,7 +80,12 @@ unchanged scene. `HashImage` covers the RGBA pixels and stops a retransmission
 when a rasterized frame happens to be identical. A tick is scheduled only while
 the Graph tab is shown, and `State.Moving` reports traffic in flight, a busy
 pulse, or a running camera ease. When nothing moves the host stays on the idle
-tick and sends no image.
+tick, sends no image and starts no render.
+
+The image is capped at 1600 by 900 pixels. A larger cell area is rasterized
+smaller with scaled cell metrics, and the kitty placement still names the full
+cell area, so the terminal scales the image up. Large frames therefore cost
+roughly the same as the cap instead of growing with the terminal.
 
 ## Out of scope
 

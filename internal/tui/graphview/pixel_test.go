@@ -133,6 +133,20 @@ func TestRasterizeMotionGoldens(t *testing.T) {
 	checkPixelGolden(t, cardsScene(), "pixel_cards.png")
 }
 
+func TestRasterizeCapsImagePixels(t *testing.T) {
+	img := Rasterize(pixelScene(), Size{Width: 200, Height: 45}, PixelMetrics{CellWidth: 18, CellHeight: 38})
+	if img == nil {
+		t.Fatal("no image")
+	}
+	b := img.Bounds()
+	if b.Dx() > MaxPixelWidth || b.Dy() > MaxPixelHeight {
+		t.Fatalf("image is %dx%d, above the %dx%d cap", b.Dx(), b.Dy(), MaxPixelWidth, MaxPixelHeight)
+	}
+	if b.Dx() < MaxPixelWidth*3/4 {
+		t.Fatalf("image width %d shrank too far", b.Dx())
+	}
+}
+
 // benchScene is a typical full frame: 20 nodes, edges, a busy node, a outgoing
 // message and one charter card at label level.
 func benchScene() Scene {
@@ -158,12 +172,41 @@ func benchScene() Scene {
 }
 
 func BenchmarkRasterizeFrame120x34(b *testing.B) {
+	benchmarkRasterize(b, Size{Width: 120, Height: 34}, PixelMetrics{CellWidth: 8, CellHeight: 16}, 0)
+}
+
+func BenchmarkRasterizeFrame116x20Cell18x38(b *testing.B) {
+	benchmarkRasterize(b, Size{Width: 116, Height: 20}, PixelMetrics{CellWidth: 18, CellHeight: 38}, 0)
+}
+
+func BenchmarkRasterizeFrame200x45Cell18x38(b *testing.B) {
+	benchmarkRasterize(b, Size{Width: 200, Height: 45}, PixelMetrics{CellWidth: 18, CellHeight: 38}, 0)
+}
+
+func BenchmarkTransmitFrame116x20Cell18x38(b *testing.B) {
+	benchmarkRasterize(b, Size{Width: 116, Height: 20}, PixelMetrics{CellWidth: 18, CellHeight: 38}, 1)
+}
+
+func BenchmarkTransmitFrame200x45Cell18x38(b *testing.B) {
+	benchmarkRasterize(b, Size{Width: 200, Height: 45}, PixelMetrics{CellWidth: 18, CellHeight: 38}, 1)
+}
+
+func benchmarkRasterize(b *testing.B, size Size, metrics PixelMetrics, transmit int) {
+	b.Helper()
 	scene := benchScene()
-	size := Size{Width: 120, Height: 34}
-	metrics := PixelMetrics{CellWidth: 8, CellHeight: 16}
+	img := Rasterize(scene, size, metrics)
+	if img == nil {
+		b.Fatal("no image")
+	}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if img := Rasterize(scene, size, metrics); img == nil {
+		if transmit == 1 {
+			if out := TransmitImage(img, ImageID, size.Width, size.Height); out == "" {
+				b.Fatal("no transmission")
+			}
+			continue
+		}
+		if got := Rasterize(scene, size, metrics); got == nil {
 			b.Fatal("no image")
 		}
 	}

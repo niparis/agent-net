@@ -20,6 +20,14 @@ import (
 // PixelMetrics is the size of one terminal cell in pixels.
 type PixelMetrics struct{ CellWidth, CellHeight int }
 
+const (
+	// MaxPixelWidth and MaxPixelHeight cap the image. A larger image is costly
+	// to rasterize, PNG-encode and transmit; the kitty protocol scales the
+	// smaller image to the cell area.
+	MaxPixelWidth  = 1600
+	MaxPixelHeight = 900
+)
+
 // Look of the approved mockup.
 var (
 	pixelBackground = color.NRGBA{0x11, 0x15, 0x1c, 0xff}
@@ -43,11 +51,22 @@ var (
 
 // Rasterize draws scene into an RGBA image of size cells times metrics. It
 // returns nil when the size is unknown, which makes the caller use Braille.
+// Large cell areas are rasterized at a smaller size (at most MaxPixelWidth by
+// MaxPixelHeight) and the terminal scales that image to the cell area.
 func Rasterize(scene Scene, size Size, metrics PixelMetrics) *image.RGBA {
 	if size.Width <= 0 || size.Height <= 0 || metrics.CellWidth <= 0 || metrics.CellHeight <= 0 {
 		return nil
 	}
 	width, height := size.Width*metrics.CellWidth, size.Height*metrics.CellHeight
+	if width > MaxPixelWidth || height > MaxPixelHeight {
+		scale := math.Min(float64(MaxPixelWidth)/float64(width), float64(MaxPixelHeight)/float64(height))
+		width = max(1, int(math.Round(float64(width)*scale)))
+		height = max(1, int(math.Round(float64(height)*scale)))
+		metrics.CellWidth = max(1, int(math.Round(float64(metrics.CellWidth)*scale)))
+		metrics.CellHeight = max(1, int(math.Round(float64(metrics.CellHeight)*scale)))
+		width = min(width, MaxPixelWidth)
+		height = min(height, MaxPixelHeight)
+	}
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	c := &pixelCanvas{img: img, w: float64(width), h: float64(height), level: scene.Level, metrics: metrics}
 	c.background()
