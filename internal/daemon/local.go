@@ -680,11 +680,6 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	lc.mu.Lock()
 	client, ls := lc.client, lc.ls
 	lc.mu.Unlock()
-	if client != "cli" && client != "cto-mcp" {
-		if err := lc.catalogRoleCheck(method, ls); err != nil {
-			return nil, err
-		}
-	}
 	if client == "cto-mcp" {
 		if method != "cto_tool" {
 			return nil, errors.New("method not available to CTO channel")

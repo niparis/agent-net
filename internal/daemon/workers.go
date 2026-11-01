@@ -1126,6 +1126,8 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		return err
 	}
 	okStart = true
+	// A resumed worker starts a new run: its next end must be reported again.
+	d.releaseWorkerReport(w.id)
 	d.Logf("worker.resumed worker=%s session=%s project=%s harness=%s model=%s owner=%s pid=%d",
 		w.id, sessionID, w.project, w.harness, w.model, w.owner, w.pid)
 	return nil
