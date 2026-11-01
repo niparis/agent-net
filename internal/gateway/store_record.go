@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/temppath"
 )
 
 // ---- projects ----
@@ -76,7 +77,7 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 // name, when set, keeps only projects with that name (case-insensitive).
 func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
-		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree
+		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree, s.no_project
 		FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.harness != 'owner' ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
@@ -88,9 +89,9 @@ func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	var order []key
 	for rows.Next() {
 		var node, host, h, cwd, root, project, remote, worktree string
-		var online int
+		var online, noProject int
 		var seen int64
-		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote, &worktree); err != nil {
+		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote, &worktree, &noProject); err != nil {
 			return nil, err
 		}
 		path := root
@@ -98,6 +99,12 @@ func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 			path = cwd
 		}
 		if path == "" {
+			continue
+		}
+		// A temporary folder is not a project. The daemon marks some of them;
+		// for the older records, and for a daemon that did not know the folder,
+		// the path is enough.
+		if noProject != 0 || temppath.Under(path, s.tempRoots()) {
 			continue
 		}
 		if project == "" {
