@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 )
 
@@ -29,5 +30,47 @@ func TestOpenCodeContextNewestAssistant(t *testing.T) {
 	got := opencodeSessionContext(context.Background(), server.URL, "", "ses_test")
 	if got.Tokens != 84000 || got.Limit != 200000 || got.AssistantID != "msg_new" || got.Model != "opencode-go/deepseek-v4.1-flash" {
 		t.Fatalf("context = %+v", got)
+	}
+}
+
+func TestOpenCodeWorkerContextSurvivesIncompleteAndFailedReads(t *testing.T) {
+	var phase atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := phase.Load()
+		if p == 3 {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		switch r.URL.Path {
+		case "/api/session/ses_test":
+			fmt.Fprint(w, `{"data":{"model":{"providerID":"fake","id":"m1"},"tokens":{"input":100000,"output":1000}}}`)
+		case "/api/session/ses_test/message":
+			switch p {
+			case 1: // An assistant message exists but its turn has no usage yet.
+				fmt.Fprint(w, `{"data":[{"id":"msg_running","type":"assistant"}]}`)
+			case 2: // A read can fail without the worker ending.
+				fmt.Fprint(w, `{`)
+			case 4: // Compaction reports a real, smaller context on a later step.
+				fmt.Fprint(w, `{"data":[{"id":"msg_compacted","type":"assistant","tokens":{"input":12000}}]}`)
+			default:
+				fmt.Fprint(w, `{"data":[{"id":"msg_finished","type":"assistant","tokens":{"input":84000}}]}`)
+			}
+		case "/api/model":
+			fmt.Fprint(w, `{"data":[{"providerID":"fake","id":"m1","limit":{"context":200000}}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	d := &Daemon{launchers: map[string]launcher{"opencode": opencodeLauncher{}}}
+	w := &worker{harness: "opencode", nativeID: "ses_test", apiBase: server.URL}
+	for i, want := range []int64{84000, 84000, 84000, 84000, 12000} {
+		phase.Store(int32(i))
+		st := d.workerStats(w)
+		d.noteWorkerUsage(w, st)
+		got := d.workerInfo(w)
+		if st.ContextTokens != want || got.ContextTokens != want || got.ContextLimit != 200000 {
+			t.Fatalf("phase %d: stats=%+v worker=%+v", i, st, got)
+		}
 	}
 }

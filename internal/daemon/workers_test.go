@@ -1344,32 +1344,32 @@ func TestEveryOperatorMethodIsServed(t *testing.T) {
 // All harnesses share the same cache: missing or partial reads must not erase
 // a previous context pair, but compaction may legitimately lower the tokens.
 func TestWorkerContextSurvivesMissingUsage(t *testing.T) {
- for _, harness := range []string{"opencode", "codex", "claude", "pi"} {
-  t.Run(harness, func(t *testing.T) {
-   d := &Daemon{}
-   w := &worker{harness: harness}
-   d.noteWorkerUsage(w, workerStats{ContextTokens: 84000, ContextLimit: 200000, TotalTokens: 100000})
-   for _, missing := range []workerStats{{}, {ContextTokens: 100}, {ContextLimit: 1000000}} {
-    d.noteWorkerUsage(w, missing)
-    got := d.workerInfo(w)
-    if got.ContextTokens != 84000 || got.ContextLimit != 200000 {
-     t.Fatalf("missing usage erased context: %+v", got)
-    }
-   }
-   if d.noteWorkerUsage(w, workerStats{ContextTokens: 84000, ContextLimit: 200000, TotalTokens: 100000}) {
-    t.Fatal("recovering the same total counted as new activity")
-   }
-   d.noteWorkerUsage(w, workerStats{ContextTokens: 12000, ContextLimit: 1000000, TotalTokens: 110000})
-   got := d.workerInfo(w)
-   if got.ContextTokens != 12000 || got.ContextLimit != 1000000 {
-    t.Fatalf("new context after compaction was not recorded: %+v", got)
-   }
-   // Completion notices read workerStats again, possibly after the harness
-   // can no longer answer. They need the cached context too.
-   st := d.workerStats(w)
-   if st.ContextTokens != 12000 || st.ContextLimit != 1000000 {
-    t.Fatalf("final stats lost cached context: %+v", st)
-   }
-  })
- }
+	for _, harness := range []string{"opencode", "codex", "claude", "pi"} {
+		t.Run(harness, func(t *testing.T) {
+			d := &Daemon{}
+			w := &worker{harness: harness}
+			d.noteWorkerUsage(w, workerStats{ContextTokens: 84000, ContextLimit: 200000, TotalTokens: 100000})
+			for _, missing := range []workerStats{{}, {ContextTokens: 100}, {ContextLimit: 1000000}} {
+				d.noteWorkerUsage(w, missing)
+				got := d.workerInfo(w)
+				if got.ContextTokens != 84000 || got.ContextLimit != 200000 {
+					t.Fatalf("missing usage erased context: %+v", got)
+				}
+			}
+			if d.noteWorkerUsage(w, workerStats{ContextTokens: 84000, ContextLimit: 200000, TotalTokens: 100000}) {
+				t.Fatal("recovering the same total counted as new activity")
+			}
+			d.noteWorkerUsage(w, workerStats{ContextTokens: 12000, ContextLimit: 1000000, TotalTokens: 110000})
+			got := d.workerInfo(w)
+			if got.ContextTokens != 12000 || got.ContextLimit != 1000000 {
+				t.Fatalf("new context after compaction was not recorded: %+v", got)
+			}
+			// Completion notices read workerStats again, possibly after the harness
+			// can no longer answer. They need the cached context too.
+			st := d.workerStats(w)
+			if st.ContextTokens != 12000 || st.ContextLimit != 1000000 {
+				t.Fatalf("final stats lost cached context: %+v", st)
+			}
+		})
+	}
 }

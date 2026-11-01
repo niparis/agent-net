@@ -347,18 +347,30 @@ type workerStats struct {
 	TotalTokens int64
 }
 
-// workerStats asks the launcher, with a short time limit. It is empty when the
-// harness cannot say (or the worker was adopted after a restart).
+// workerStats asks the launcher, with a short time limit. When the harness
+// cannot say, it keeps the last complete context pair for notices and views.
 func (d *Daemon) workerStats(w *worker) workerStats {
-	ln, ok := d.launchers[w.harness].(interface {
+	var st workerStats
+	if ln, ok := d.launchers[w.harness].(interface {
 		stats(ctx context.Context, d *Daemon, w *worker) workerStats
-	})
-	if !ok {
-		return workerStats{}
+	}); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		st = ln.stats(ctx, d, w)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	return ln.stats(ctx, d, w)
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	return lastWorkerContext(w, st)
+}
+
+// lastWorkerContext keeps the last complete context pair through failed reads
+// and turns that have not reported usage yet. A real value may be lower after
+// compaction, so this is not a high-water mark. The caller holds d.wmu.
+func lastWorkerContext(w *worker, st workerStats) workerStats {
+	if st.ContextTokens <= 0 || st.ContextLimit <= 0 {
+		st.ContextTokens, st.ContextLimit = w.contextTokens, w.contextLimit
+	}
+	return st
 }
 
 // tokenText formats token counts, or "" when there are none.

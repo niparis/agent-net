@@ -269,6 +269,10 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 // worker is still working (checkWorkers uses it for the idle limit).
 func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	d.wmu.Lock()
+	st = lastWorkerContext(w, st)
+	// A missing read must not reset activity tracking either: recovering the
+	// same total on the next tick is not new work.
+	st.TotalTokens = max(w.totalTokens, st.TotalTokens)
 	if w.contextTokens == st.ContextTokens && w.contextLimit == st.ContextLimit && w.totalTokens == st.TotalTokens {
 		d.wmu.Unlock()
 		return false
