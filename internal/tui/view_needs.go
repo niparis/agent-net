@@ -87,6 +87,7 @@ func (m Model) needsRows() []protocol.AgentView {
 			a.SessionID = item.SessionID
 			a.Profile.Name = item.SessionID
 			a.Harness = "agent"
+
 		}
 		a.Waiting = &protocol.Waiting{Kind: protocol.WaitingPermission, Text: item.Text, Since: item.CreatedAt.Unix()}
 		out = append(out, a)

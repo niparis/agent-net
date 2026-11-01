@@ -91,7 +91,34 @@ func (s *state) saveWorker(w workerRow) error {
 		w.Continue, w.Fix, w.ContinueRun, w.FixRun, boolInt(w.PendingHandback), boolInt(w.PendingPartial),
 		w.DifficultyAsked, w.DifficultyUsed, w.Touches,
 		boolInt(w.AutoContinue), w.AutoContinueCount, w.AutoContinueRun, w.TaskID, w.MidrunCount, w.MidrunRun, boolInt(w.NoticeSinceRequest), boolInt(w.MidrunSeen))
+	if err != nil {
+		return err
+	}
+	if w.EndedReason == "" {
+		_, err = s.db.Exec(`DELETE FROM cleanup_worktrees WHERE worker_id=?`, w.ID)
+	} else if w.MainPath != "" && w.Worktree != "" && w.Branch != "" {
+		_, err = s.db.Exec(`INSERT INTO cleanup_worktrees(worker_id,project,path,branch,ended_at,harness) VALUES(?,?,?,?,?,?) ON CONFLICT(worker_id) DO NOTHING`, w.ID, w.MainPath, w.Worktree, w.Branch, time.Now().UnixNano(), w.Harness)
+	}
 	return err
+}
+
+func (s *state) cleanupWorktrees(project string) ([]cleanupWorktree, error) {
+	rows, err := s.db.Query(`SELECT worker_id,project,path,branch,ended_at,harness FROM cleanup_worktrees WHERE project=?`, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []cleanupWorktree
+	for rows.Next() {
+		var w cleanupWorktree
+		var ended int64
+		if err := rows.Scan(&w.ID, &w.Project, &w.Path, &w.Branch, &ended, &w.Harness); err != nil {
+			return nil, err
+		}
+		w.EndedAt = time.Unix(0, ended)
+		out = append(out, w)
+	}
+	return out, rows.Err()
 }
 
 func boolInt(b bool) int {

@@ -27,6 +27,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	dec := d.admission(l.Harness, l.Model)
 	if ahead == 0 && dec.OK {
 		d.lastStart = time.Now()
+		d.reserveWorkerBaseLocked(l.Base)
 		return nil
 	}
 	// A short background phrasing task must not outlive its caller in the queue.
@@ -133,6 +134,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 		return
 	}
 	d.lastStart = time.Now()
+	d.reserveWorkerBaseLocked(head.Base)
 	delete(d.qGone, head.ID)
 	d.qmu.Unlock()
 	d.startQueued(ctx, head)
@@ -230,4 +232,35 @@ func (d *Daemon) cancelQueued(id, requester string, asOwner bool, validate ...bo
 		return nil
 	}
 	return fmt.Errorf("no worker with session %s runs on this machine (no queued start has that ID)", id)
+}
+
+// reserveWorkerBaseLocked keeps a branch used by an admitted start until its
+// worktree checkout has finished. The caller holds qmu.
+func (d *Daemon) reserveWorkerBaseLocked(base string) {
+	if base == "" {
+		return
+	}
+	if d.startingBases == nil {
+		d.startingBases = make(map[string]int)
+	}
+	d.startingBases[base]++
+}
+
+func (d *Daemon) reserveWorkerBase(base string) {
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	d.reserveWorkerBaseLocked(base)
+}
+
+func (d *Daemon) releaseWorkerBase(base string) {
+	if base == "" {
+		return
+	}
+	d.qmu.Lock()
+	defer d.qmu.Unlock()
+	if d.startingBases[base] <= 1 {
+		delete(d.startingBases, base)
+	} else {
+		d.startingBases[base]--
+	}
 }

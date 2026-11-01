@@ -156,8 +156,8 @@ func TestWorkerWorktreeHandbackAndNotice(t *testing.T) {
 	}
 }
 
-// A worktree with no changes is removed when the worker ends.
-func TestWorkerWorktreeWithoutChangesIsRemoved(t *testing.T) {
+// A worktree with no changes remains until it is old enough for cleanup.
+func TestWorkerWorktreeWithoutChangesIsRetained(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
@@ -168,10 +168,12 @@ func TestWorkerWorktreeWithoutChangesIsRemoved(t *testing.T) {
 	}
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
-	eventually(t, "worktree removed", func() bool {
-		_, err := os.Stat(res.Worktree)
-		return err != nil && gitOutT(t, repo, "branch", "--list", res.Branch) == ""
-	})
+	if _, err := os.Stat(res.Worktree); err != nil {
+		t.Fatalf("worktree removed too early: %v", err)
+	}
+	if got := gitOutT(t, repo, "branch", "--list", res.Branch); got == "" {
+		t.Fatal("branch removed too early")
+	}
 	// Without a hand-back, the stop still sends a notice with its status.
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: stopped", "changes: none", "worktree: " + res.Worktree} {

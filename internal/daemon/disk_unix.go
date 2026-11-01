@@ -4,6 +4,7 @@ package daemon
 
 import (
 	"os"
+	"syscall"
 
 	"golang.org/x/sys/unix"
 )
@@ -18,4 +19,9 @@ func homeDiskFree() uint64 {
 		return 0
 	}
 	return uint64(stat.Bavail) * uint64(stat.Bsize)
+}
+
+func diskHardlinked(info os.FileInfo) bool {
+	s, ok := info.Sys().(*syscall.Stat_t)
+	return !ok || s.Nlink > 1
 }
