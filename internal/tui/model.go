@@ -486,6 +486,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.cto.model = msg.settings.Model
+				m.cto.title = protocol.CTOTitleOrDefault(msg.settings.Title)
 				if m.cto.harness == "" {
 					m.cto.harness = "opencode"
 				}

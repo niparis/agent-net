@@ -514,7 +514,7 @@ func (m Model) messageLine(it *feedItem, lead, at string, w int, dup map[string]
 	const typeW = 12
 	from, to := m.feedDisplayName(it.From, dup), m.feedDisplayName(it.To, dup)
 	if it.FromCTO {
-		from = "CTO"
+		from = m.ctoTitle()
 	}
 	fromCell := func(width int) string {
 		name := cell(from, width)

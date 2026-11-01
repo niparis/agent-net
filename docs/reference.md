@@ -8,12 +8,17 @@ Claude Code's reply socket. Replies to the owner's own messages stay in the
 Messages tab. The CTO receives peer replies as model output, not owner words.
 
 The owner-only `cto_settings` operator method reads and saves the active CTO
-harness, its model, the saved model for each harness, and conversation
-auto-compaction rules. The response has `harness`, `model`, `opencode_model` and
+harness, its model, the saved model for each harness, the owner-facing title,
+and conversation auto-compaction rules. The response has `title`, `harness`,
+`model`, `opencode_model` and
 `claude_model`. A set request with `harness` and `model` saves the model for
 that harness and makes it active. A request with only `harness` switches the
 active harness without changing either model. An empty model selects that
-harness's default.
+harness's default. A request with only `title` changes the name on the owner's
+screens. The title is 1 to 24 printable characters, trimmed, and cannot contain
+`[agent-net` or `<cross-session`. Empty stores `CTO`. It is kept in the
+gateway's `owner_settings` as `cto_title`, not in the local daemon state. Agents
+never see it: agent-net's notes always say `CTO`.
 
 The active harness and both model preferences are stored in the local daemon
 state. A legacy single model is moved to `opencode_model` when it has a
@@ -172,9 +177,9 @@ filter text and a short reason. `ui_notice` shows a short note. Both show a
 `CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
 
 In the TUI, `C` or `tab` focuses the CTO box on every tab.
-Its title shows the selected harness and model.
+Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and one hint line,
-`enter: open the CTO · tab: back`. Enter opens the full CTO harness UI through
+`enter: open the <title> · tab: back`. Enter opens the full CTO harness UI through
 `cto_enter`, the same hand-over a session uses; ctrl+] returns. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and Esc or `tab` returns focus to the tab. The chat
@@ -252,7 +257,7 @@ Ports, files, environment variables, flags, and what setup changes on a machine.
 | `agent-net tui` | A live terminal view of every session on the network, with three actions: message a session as yourself, start a worker, stop a worker. It talks to the local daemon through the operator interface, so it runs on any machine. See [the screen](#the-tui-screen). |
 | `agent-net start --project NAME [--harness opencode|claude|pi|codex] [--model M] [--machine HOST] [--isolation worktree|none] "TASK"` | Start a worker: a new agent session in a known project, on the machine that holds it. It prints the worker's session ID. The task is sent to it as a message from you; its report comes back to you (see the TUI, or `agent-net messages`). In a git repository the worker gets its own git worktree on the branch `agent-net/<worker-id>` by default; `--isolation none` works in the project folder. `--model` takes a loose name such as `"deepseek 4.1"`. See [workers](#workers). |
 | `agent-net stop SESSION` | Stop a worker. The process group is killed. |
-| `agent-net cto [harness opencode\|claude\|model MODEL]` | Show CTO settings or change the harness or model. An empty model selects the default. Owner only. |
+| `agent-net cto [harness opencode\|claude\|model MODEL]` | Show CTO settings or change the harness or model. An empty model selects the default. Owner only. The title is changed in the TUI or by the CTO, not on this command. |
 | `agent-net workers` | The workers on the network, with machine, project, harness, model, owner, state and start time. `--json` also has the task's first line and the usage figures (`context_tokens`, `context_limit`, `tokens`). `--owner-claude UUID` keeps only the workers owned by this machine's Claude Code session with that native id (the transcript file's name). `--recent` also lists workers that ended in the last two minutes, with `ended_at`, `end_status` and `end_note`; without it the list and the table are unchanged. |
 | `agent-net send SESSION TEXT...` | Send a message as yourself (the owner of this machine). `SESSION` is a session ID or a unique agent name. |
 | `agent-net playbook set MODEL [--harness H] [--pin\|--unpin] TEXT...` | Write or replace the owner's playbook note for a model, or for a model on one harness (`H` is `opencode`, `claude`, `pi` or `codex`). With no text the note is removed. `--pin` keeps automatic learning from ever changing it. The note appears in the `agent_start` or `agent-net start` result for that model, and has at most 1 KiB. `agent-net playbook get MODEL [--harness H]` prints it; `agent-net playbook pin\|unpin MODEL [--harness H]` pins or unpins the note that is stored. See [the playbook](#the-playbook-and-the-track-record). |
@@ -1158,7 +1163,7 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has six tabs: `1` Sessions, `2` Messages, `3` Quotas, `4` Map, `5` Tools and `6` Graph. On each tab, `tab` moves focus between the tab and the CTO box. The box is read-only and shows the latest CTO output plus `enter: open the CTO · tab: back`; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the harness and model, and esc returns to the list. Messages groups the feed into conversations. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
+`agent-net tui` has six tabs: `1` Sessions, `2` Messages, `3` Quotas, `4` Map, `5` Tools and `6` Graph. On each tab, `tab` moves focus between the tab and the CTO box. The box is read-only and shows the latest CTO output plus `enter: open the <title> · tab: back`, where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and esc returns to the list. Messages groups the feed into conversations. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. The current renderer uses Braille; a kitty pixel renderer can consume the same scene later.
 

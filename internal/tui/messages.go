@@ -165,7 +165,7 @@ func (m Model) messageConversationLine(c messageConversation, w int, selected bo
 	latest := m.feed.items[c.items[len(c.items)-1]]
 	from := m.conversationName(first.From)
 	if first.FromCTO {
-		from = "CTO"
+		from = m.ctoTitle()
 	}
 	to := m.conversationName(first.To)
 	names := from + " ↔ " + to
@@ -334,7 +334,7 @@ func (m Model) conversationChat(c messageConversation, w int) []string {
 		it := m.feed.items[i]
 		sender := m.conversationName(it.From)
 		if it.FromCTO {
-			sender = "CTO"
+			sender = m.ctoTitle()
 		}
 		marker := ""
 		if it.OwnerInstruction != "" {

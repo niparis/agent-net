@@ -14,12 +14,12 @@ func init() {
 	sid := s("Session ID.")
 	model := s("Empty uses default.")
 	harness := en("Omit for default.", "opencode", "claude", "pi", "codex")
-	add("tools_list", "List tool assignments.", map[string]ctoField{"kind": s("Kind."), "harness": s("Harness."), "project": s("Project."), "state": s("State."), "offset": n("Offset.")})
-	add("mcp_import_candidates", "List MCP import candidates.", map[string]ctoField{"machine": s("Machine."), "harness": s("Harness."), "project": s("Project."), "class": en("Verdict.", "importable", "unsupported"), "offset": n("Offset.")})
-	add("mcp_import", "Plan or import on explicit instruction.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
-	add("mcp_native_remove", "Plan or undo removal; apply on explicit instruction.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
+	add("tools_list", "List tools.", map[string]ctoField{"kind": s("Kind."), "harness": s("Harness."), "project": s("Project."), "state": s("State."), "offset": n("Offset.")})
+	add("mcp_import_candidates", "List candidates.", map[string]ctoField{"machine": s("Machine."), "harness": s("Harness."), "project": s("Project."), "class": en("Verdict.", "importable", "unsupported"), "offset": n("Offset.")})
+	add("mcp_import", "Plan import on explicit instruction.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
+	add("mcp_native_remove", "Plan removal on explicit instruction.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
 	add("tools_differences", "Read tool differences.", map[string]ctoField{"offset": n("Offset."), "limit": n("Default 20; max 60.")})
-	add("tools_plan", "Plan assignments; repo_remove plans a local branch.", map[string]ctoField{
+	add("tools_plan", "Plan assignments; repo removal on a local branch.", map[string]ctoField{
 		"item": s("Item ID."), "target": obj("Assignment."),
 		"operation": en("Operation.", "repo_remove"),
 		"project":   s("Project."),
@@ -28,9 +28,9 @@ func init() {
 			"checkout": map[string]any{"type": "string", "description": "Path."},
 		}}},
 	})
-	add("tools_apply", "Apply on explicit owner instruction.", map[string]ctoField{"plan_id": s("Plan ID.")})
-	add("tools_undo", "Undo tool assignment.", map[string]ctoField{"item": s("Item ID.")})
-	add("tools_history", "Read tool history.", map[string]ctoField{"item": s("Item ID.")})
+	add("tools_apply", "Apply on explicit instruction.", map[string]ctoField{"plan_id": s("Plan ID.")})
+	add("tools_undo", "Undo assignment.", map[string]ctoField{"item": s("Item ID.")})
+	add("tools_history", "Read history.", map[string]ctoField{"item": s("Item ID.")})
 	add("ui_show", "Show a TUI view.", map[string]ctoField{"tab": en("Tab.", "sessions", "messages", "quotas", "map", "tools"), "select": s("Selection."), "filter": s("Filter."), "why": s("Reason.")})
 	add("ui_notice", "Show notice.", map[string]ctoField{"text": s("Notice.")})
 	add("info", "Read daemon info.", nil)
@@ -78,7 +78,7 @@ func init() {
 	add("cto_new", "Start CTO conversation.", nil)
 	add("cto_events", "Read CTO events.", map[string]ctoField{"index": n("Start index.")})
 	add("cto_graph_history", "Read CTO graph history.", map[string]ctoField{"after": n("Cursor.")})
-	add("cto_settings", "Read or set CTO settings.", map[string]ctoField{"harness": en("Harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction.")})
+	add("cto_settings", "Read or set settings.", map[string]ctoField{"title": s("Name on screens."), "harness": en("Harness.", "opencode", "claude"), "model": model, "compaction": obj("Compaction.")})
 	// Nested schemas make the valid settings and credential sources visible to
 	// the model, while the daemon remains the final validator.
 	property := func(typ, desc string, values ...string) map[string]any {

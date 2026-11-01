@@ -1285,7 +1285,7 @@ func (m Model) messagesView(w, h int) []string {
 	if m.open != nil {
 		return append(out, m.messageView(w, h-1)...)
 	}
-	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO", w)))
+	out = append(out, sDim.Render(clip("you→: your prompt · orange: waiting for a reply · red: failed · purple: "+m.ctoTitle(), w)))
 	filter := "conversations"
 	switch m.events {
 	case eventsAll:

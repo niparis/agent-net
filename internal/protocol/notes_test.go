@@ -34,3 +34,17 @@ func TestPluginNotesDoNotNameTheOwner(t *testing.T) {
 		}
 	}
 }
+
+// Agents never see the owner's chosen CTO title (onboarding part 5). The note
+// they match on keeps the fixed word, or a careful agent stops trusting it.
+func TestAgentNotesKeepTheFixedCTOName(t *testing.T) {
+	if title := CTOTitleOrDefault("Atlas"); title != "Atlas" {
+		t.Fatalf("owner title = %q", title)
+	}
+	if !strings.Contains(CTONote, "the CTO") {
+		t.Fatalf("the CTO note lost the fixed word: %q", CTONote)
+	}
+	if strings.Contains(CTONote, "Atlas") {
+		t.Fatalf("the CTO note follows the owner's title: %q", CTONote)
+	}
+}
