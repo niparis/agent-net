@@ -1323,6 +1323,9 @@ func (m Model) groups() []group {
 				if oa.band != ob.band {
 					return oa.band < ob.band
 				}
+				if !oa.activity.Equal(ob.activity) {
+					return oa.activity.After(ob.activity)
+				}
 				if oa.rank != ob.rank {
 					return oa.rank < ob.rank
 				}

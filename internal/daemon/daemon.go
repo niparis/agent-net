@@ -621,8 +621,10 @@ func (d *Daemon) sessionByID(id string) *localSession {
 }
 
 // activitySession returns the local session with this gateway ID when exactly
-// one session has it. If two local sessions share an ID, touching either one
-// could register it under another ID on the gateway, so it returns nil.
+// one session has it. A caller alias may share the owner's gateway ID. Picking
+// that alias by map iteration and pushing it would register a different native
+// session, replace the alias's ID, and break worker queries scoped to its owner.
+// An ambiguous ID therefore must not cause an activity upsert.
 func (d *Daemon) activitySession(id string) *localSession {
 	if id == "" {
 		return nil

@@ -42,15 +42,11 @@ type sessionOrder struct {
 	pending  bool
 }
 
-// sessionActive is when a session last did something, from the gateway. An
-// older gateway sends no last active time; fall back to when it last saw the
-// session, which is what the screen used before.
+// sessionActive is when a session last did something, from the gateway.
+// An unknown time stays unknown: a discovery report is not activity.
 func sessionActive(a protocol.AgentView) time.Time {
 	if a.LastActive > 0 {
 		return time.Unix(a.LastActive, 0)
-	}
-	if a.LastSeen > 0 {
-		return time.Unix(a.LastSeen, 0)
 	}
 	return time.Time{}
 }

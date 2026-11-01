@@ -31,10 +31,20 @@ func isIdlePromptWait(w *protocol.Waiting) bool {
 // setWaiting replaces a session's waiting state (nil clears it) and tells the
 // gateway. A new wait gets the time it began when the caller did not say.
 func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
-	if w = protocol.CleanWaiting(w); w != nil && w.Since == 0 {
-		w.Since = time.Now().Unix()
-	}
+	w = protocol.CleanWaiting(w)
 	d.mu.Lock()
+	if w != nil && w.Since == 0 {
+		// A harness need not remember when an unchanged wait began.
+		if old := ls.info.Waiting; old != nil {
+			w.Since = old.Since
+			if !sameWaiting(old, w) {
+				w.Since = 0
+			}
+		}
+		if w.Since == 0 {
+			w.Since = time.Now().Unix()
+		}
+	}
 	started := w != nil && !sameWaiting(ls.info.Waiting, w)
 	ls.info.Waiting = w
 	harness, native := ls.info.Harness, ls.info.NativeID
