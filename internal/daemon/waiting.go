@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -32,23 +33,44 @@ func isIdlePromptWait(w *protocol.Waiting) bool {
 // setWaiting replaces a session's waiting state (nil clears it) and tells the
 // gateway. A new wait gets the time it began when the caller did not say.
 func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
-	if w = protocol.CleanWaiting(w); w != nil && w.Since == 0 {
-		w.Since = time.Now().Unix()
-	}
+	w = protocol.CleanWaiting(w)
 	d.mu.Lock()
 	sessionID := ls.sessionID
 	d.mu.Unlock()
 	worker := d.workerBySession(sessionID)
 	d.mu.Lock()
+	oldWait := ls.info.Waiting
 	if worker != nil {
-		old := ls.workerWaiting
+		oldWait = ls.workerWaiting
 		if w != nil && w.Text == "" {
 			w = nil
 		}
+	}
+	if w != nil && w.Since == 0 {
+		if oldWait != nil {
+			w.Since = oldWait.Since
+			if !sameWaiting(oldWait, w) {
+				w.Since = 0
+			}
+		}
+		if w.Since == 0 {
+			w.Since = time.Now().Unix()
+		}
+	}
+	started := w != nil && !sameWaiting(oldWait, w)
+	harness, native, at := ls.info.Harness, ls.info.NativeID, time.Now()
+	if started {
+		d.recordActivityLocked(ls, at)
+	}
+	if worker != nil {
+		old := ls.workerWaiting
 		changed := w != nil && (old == nil || old.Kind != w.Kind || old.Text != w.Text)
 		ls.workerWaiting = w
 		ls.info.Waiting = nil
 		d.mu.Unlock()
+		if started {
+			d.saveActivity(harness, native, at)
+		}
 		if changed {
 			d.wmu.Lock()
 			owner := worker.owner
@@ -70,7 +92,20 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 	}
 	ls.info.Waiting = w
 	d.mu.Unlock()
+	if started {
+		d.saveActivity(harness, native, at)
+	}
 	d.pushSession(ls)
+}
+
+// sameWaiting says whether a report describes the wait already stored, so a
+// re-report does not count as new activity.
+func sameWaiting(a, b *protocol.Waiting) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return a.Explicit == b.Explicit && a.Kind == b.Kind && a.Text == b.Text &&
+		a.Since == b.Since && a.Urgency == b.Urgency && slices.Equal(a.Options, b.Options)
 }
 
 // waitingCall serves MethodWaiting. A plugin reports for the session it is

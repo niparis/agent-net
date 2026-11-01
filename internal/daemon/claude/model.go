@@ -117,6 +117,21 @@ func (r *modelReader) Model(sessionID, cwd string) string {
 	return model
 }
 
+// LastWrite returns when the session's transcript was last written, or the
+// zero time when there is none. It says when the session last did something,
+// which a restart of the daemon does not change.
+func (r *modelReader) LastWrite(sessionID, cwd string) time.Time {
+	path := r.transcript(sessionID, cwd)
+	if path == "" {
+		return time.Time{}
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}
+	}
+	return fi.ModTime()
+}
+
 // forget drops the cache of sessions that are not in keep.
 func (r *modelReader) forget(keep map[string]bool) {
 	r.mu.Lock()
