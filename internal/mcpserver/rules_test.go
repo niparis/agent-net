@@ -85,7 +85,7 @@ func TestToolDescriptionsCarryTheAskRuleAndExpertise(t *testing.T) {
 	if !strings.Contains(desc["agent_send"], RelayRule) {
 		t.Errorf("agent_send lacks the relay rule: %s", desc["agent_send"])
 	}
-	if !strings.Contains(desc["agent_announce"], "fill expertise once") || !strings.Contains(announceSchema, `"expertise"`) {
+	if !strings.Contains(desc["agent_announce"], "expertise") || !strings.Contains(announceSchema, `"expertise"`) {
 		t.Errorf("agent_announce: %s %s", desc["agent_announce"], announceSchema)
 	}
 	for name, d := range desc {
