@@ -94,18 +94,12 @@ func roFindMCPServers(ctx context.Context, call Caller, in roMCPFindIn) (roMCPFi
 	if err != nil {
 		return roMCPFindOut{}, err
 	}
-	raw, err := call(ctx, "mcp_list", nil)
+	servers, err := roLoadMCPServers(ctx, call)
 	if err != nil {
 		return roMCPFindOut{}, err
 	}
-	var result struct {
-		Servers []protocol.MCPServer `json:"servers"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil {
-		return roMCPFindOut{}, err
-	}
-	rows := make([]roMCPRow, 0, len(result.Servers))
-	for _, server := range result.Servers {
+	rows := make([]roMCPRow, 0, len(servers))
+	for _, server := range servers {
 		usable := server.Enabled && server.HostOnline && roMCPScopeAllows(server, caller.Project)
 		if usableOnly && !usable {
 			continue
@@ -130,6 +124,22 @@ func roFindMCPServers(ctx context.Context, call Caller, in roMCPFindIn) (roMCPFi
 		out.Note = roPageNote("MCP servers")
 	}
 	return out, nil
+}
+
+// roLoadMCPServers is the one MCP server read. agent_mcp_servers_find and the
+// agent_mcp_list alias both go through it.
+func roLoadMCPServers(ctx context.Context, call Caller) ([]protocol.MCPServer, error) {
+	raw, err := call(ctx, "mcp_list", nil)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Servers []protocol.MCPServer `json:"servers"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, err
+	}
+	return result.Servers, nil
 }
 
 // roMCPScopeAllows says whether the owner assigned this server to the caller's
@@ -163,11 +173,7 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 	if err != nil {
 		return roProfileFindOut{}, err
 	}
-	raw, err := call(ctx, "worker_profiles", struct{}{})
-	if err != nil {
-		return roProfileFindOut{}, err
-	}
-	profiles, err := roDecodeProfiles(raw)
+	profiles, err := roLoadWorkerProfiles(ctx, call)
 	if err != nil {
 		return roProfileFindOut{}, err
 	}
@@ -193,6 +199,16 @@ func roFindWorkerProfiles(ctx context.Context, call Caller, in roProfileFindIn) 
 		out.Note = roPageNote("worker profiles")
 	}
 	return out, nil
+}
+
+// roLoadWorkerProfiles is the one worker profile read. agent_worker_profiles_find
+// and the agent_worker_profiles alias both go through it.
+func roLoadWorkerProfiles(ctx context.Context, call Caller) ([]protocol.WorkerProfile, error) {
+	raw, err := call(ctx, "worker_profiles", struct{}{})
+	if err != nil {
+		return nil, err
+	}
+	return roDecodeProfiles(raw)
 }
 
 // roDecodeProfiles accepts the gateway's array and a wrapped object, so an

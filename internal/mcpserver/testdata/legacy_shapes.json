@@ -1,0 +1,349 @@
+{
+  "agent_announce": {
+    "profile": {
+      "capabilities": [
+        "string"
+      ],
+      "expertise": "string",
+      "name": "string",
+      "project": "string",
+      "task": "string"
+    }
+  },
+  "agent_ask_owner": {},
+  "agent_get": {
+    "agent": {
+      "charter": {
+        "purpose": "string",
+        "rules": [
+          {
+            "name": "string",
+            "value": "string"
+          }
+        ]
+      },
+      "cwd": "string",
+      "harness": "string",
+      "hostname": "string",
+      "last_seen": "number",
+      "model": "string",
+      "node_id": "string",
+      "online": "bool",
+      "profile": {
+        "capabilities": [
+          "string"
+        ],
+        "expertise": "string",
+        "function": "string",
+        "name": "string",
+        "project": "string",
+        "task": "string"
+      },
+      "repo": {
+        "branch": "string",
+        "project": "string",
+        "remote": "string",
+        "root": "string",
+        "worktree": "string"
+      },
+      "session_id": "string",
+      "status": "string"
+    }
+  },
+  "agent_graph": {
+    "edge_total": "number",
+    "edges": [
+      {
+        "from": "string",
+        "kind": "string",
+        "rule": "string",
+        "to": "string"
+      }
+    ],
+    "nodes": [
+      {
+        "charter": {
+          "purpose": "string"
+        },
+        "kind": "string",
+        "maturity": "string",
+        "name": "string",
+        "rules": [
+          {
+            "name": "string",
+            "value": "string"
+          }
+        ]
+      }
+    ],
+    "total": "number"
+  },
+  "agent_handback": {
+    "complete": "bool",
+    "delivered": "bool",
+    "status": "string"
+  },
+  "agent_learn": {
+    "id": "string",
+    "left_today": "number",
+    "recorded": "bool"
+  },
+  "agent_list": {
+    "agents": [
+      {
+        "charter": {
+          "purpose": "string",
+          "rules": [
+            {
+              "name": "string",
+              "value": "string"
+            }
+          ]
+        },
+        "cwd": "string",
+        "harness": "string",
+        "hostname": "string",
+        "last_seen": "number",
+        "model": "string",
+        "node_id": "string",
+        "online": "bool",
+        "profile": {
+          "capabilities": [
+            "string"
+          ],
+          "expertise": "string",
+          "function": "string",
+          "name": "string",
+          "project": "string",
+          "task": "string"
+        },
+        "repo": {
+          "branch": "string",
+          "project": "string",
+          "remote": "string",
+          "root": "string",
+          "worktree": "string"
+        },
+        "session_id": "string",
+        "status": "string"
+      }
+    ]
+  },
+  "agent_mcp_list": {
+    "servers": [
+      {
+        "added_by": "string",
+        "command": "string",
+        "enabled": "bool",
+        "health": "string",
+        "host": "string",
+        "host_online": "bool",
+        "name": "string",
+        "tools": [
+          "string"
+        ],
+        "transport": "string"
+      }
+    ]
+  },
+  "agent_message_status": {
+    "message": {
+      "body": "string",
+      "conversation_id": "string",
+      "created_at": "string",
+      "expires_at": "string",
+      "hop": "number",
+      "idempotency_key": "string",
+      "message_id": "string",
+      "message_type": "string",
+      "recipient_session_id": "string",
+      "sender_name": "string",
+      "sender_session_id": "string",
+      "state": "string"
+    }
+  },
+  "agent_messages": {
+    "messages": [
+      {
+        "body": "string",
+        "conversation_id": "string",
+        "created_at": "string",
+        "expires_at": "string",
+        "hop": "number",
+        "idempotency_key": "string",
+        "message_id": "string",
+        "message_type": "string",
+        "recipient_session_id": "string",
+        "sender_name": "string",
+        "sender_session_id": "string",
+        "state": "string"
+      }
+    ],
+    "total": "number"
+  },
+  "agent_nodes": {
+    "calibration": {
+      "quality": {
+        "average": "number",
+        "ratings": "number",
+        "rework_average": "number",
+        "status": "string",
+        "weighting_enabled": "bool"
+      }
+    },
+    "gateway_version": "string",
+    "nodes": [
+      {
+        "harnesses": [
+          {
+            "models": [
+              "string"
+            ],
+            "name": "string",
+            "path": "string",
+            "version": "string"
+          }
+        ],
+        "hostname": "string",
+        "last_seen": "number",
+        "node_id": "string",
+        "online": "bool",
+        "os": "string",
+        "quotas": {
+          "providers": [
+            {
+              "provider": "string",
+              "windows": [
+                {
+                  "id": "string",
+                  "percent_used": "number"
+                }
+              ]
+            }
+          ]
+        },
+        "version": "string"
+      }
+    ],
+    "playbook": [
+      {
+        "note": "string",
+        "subject": "string",
+        "subject_kind": "string"
+      }
+    ]
+  },
+  "agent_project_add": {
+    "dry_run": "bool",
+    "projects": [
+      {
+        "default_branch": "string",
+        "display_name": "string",
+        "folder": "string",
+        "machine": "string",
+        "name": "string",
+        "remote": "string",
+        "sessions_online": "number",
+        "sessions_total": "number",
+        "source": "string"
+      }
+    ]
+  },
+  "agent_project_list": {
+    "projects": [
+      {
+        "harnesses": "null",
+        "hostname": "string",
+        "last_seen": "number",
+        "name": "string",
+        "node_id": "string",
+        "online": "number",
+        "path": "string",
+        "permissions": "string",
+        "remote": "string",
+        "sessions": "number",
+        "source": "string",
+        "worktrees": "null"
+      }
+    ]
+  },
+  "agent_propose_idea": {
+    "id": "string",
+    "kind": "string",
+    "state": "string"
+  },
+  "agent_rate": {
+    "accepted": "bool",
+    "difficulty": "string",
+    "model": "string",
+    "score": "number",
+    "worker": "string"
+  },
+  "agent_reply": {
+    "idempotency_key": "string",
+    "message": {
+      "body": "string",
+      "conversation_id": "string",
+      "created_at": "string",
+      "expires_at": "string",
+      "hop": "number",
+      "idempotency_key": "string",
+      "message_id": "string",
+      "message_type": "string",
+      "recipient_session_id": "string",
+      "sender_name": "string",
+      "sender_session_id": "string",
+      "state": "string"
+    }
+  },
+  "agent_request_approval": {
+    "id": "string",
+    "kind": "string",
+    "state": "string"
+  },
+  "agent_send": {
+    "idempotency_key": "string",
+    "message": {
+      "body": "string",
+      "conversation_id": "string",
+      "created_at": "string",
+      "expires_at": "string",
+      "hop": "number",
+      "idempotency_key": "string",
+      "message_id": "string",
+      "message_type": "string",
+      "recipient_session_id": "string",
+      "sender_name": "string",
+      "sender_session_id": "string",
+      "state": "string"
+    }
+  },
+  "agent_start": {
+    "harness": "string",
+    "hostname": "string",
+    "model": "string",
+    "node_id": "string",
+    "path": "string",
+    "permissions": "string",
+    "project": "string",
+    "session_id": "string",
+    "status": "string"
+  },
+  "agent_stop": {
+    "session": "string",
+    "stopped": "bool"
+  },
+  "agent_worker_profiles": [
+    {
+      "added_at": "number",
+      "added_by": "string",
+      "available": "bool",
+      "harness": "string",
+      "machines_checked": [
+        "string"
+      ],
+      "model": "string",
+      "name": "string"
+    }
+  ]
+}

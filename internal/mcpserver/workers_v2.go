@@ -51,19 +51,6 @@ func redesignedCatalogTool(name string) *toolcatalog.Tool {
 func redesignedCall(ctx context.Context, name string, a map[string]any, run func(context.Context, string, any) (any, error)) (map[string]any, error) {
 	str := func(k string) string { v, _ := a[k].(string); return v }
 	integer := func(k string) int { v, _ := a[k].(float64); return int(v) }
-	call := func(method string, in any) (map[string]any, error) {
-		out, err := run(ctx, method, in)
-		if err != nil {
-			return nil, err
-		}
-		b, _ := json.Marshal(out)
-		var m map[string]any
-		_ = json.Unmarshal(b, &m)
-		if m == nil {
-			m = map[string]any{}
-		}
-		return m, nil
-	}
 	switch name {
 	case "agent_worker_start":
 		task, continuation := str("task"), str("continue")
@@ -87,7 +74,7 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if in.Harness == "" && in.Model != "" && in.Model != "auto" {
 			in.Harness = "opencode"
 		}
-		m, err := call(protocol.OpWorkerStart, protocol.WorkerStartRequest{Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Isolation: in.Isolation, Base: in.Base, Continue: in.Continue, AutoContinue: in.AutoContinue})
+		m, err := workerStartCall(ctx, run, protocol.WorkerStartRequest{Project: in.Project, Machine: in.Machine, Harness: in.Harness, Model: in.Model, Difficulty: in.Difficulty, Touches: in.Touches, Task: in.Task, Isolation: in.Isolation, Base: in.Base, Continue: in.Continue, AutoContinue: in.AutoContinue})
 		if err != nil {
 			return nil, err
 		}
@@ -96,7 +83,7 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		}
 		return map[string]any{"worker": workerOutput(m)}, nil
 	case "agent_worker_stop":
-		m, err := call(protocol.OpWorkerStop, protocol.WorkerStopRequest{Session: str("worker")})
+		m, err := workerStopCall(ctx, run, str("worker"))
 		if err != nil {
 			return nil, err
 		}
@@ -114,7 +101,7 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if kind != "rating" && kind != "defect_found_later" {
 			return nil, errors.New(`kind must be rating or defect_found_later`)
 		}
-		m, err := call(protocol.OpRate, protocol.RateRequest{Worker: str("worker"), Kind: kind, Score: score, Severity: severity, Note: str("note")})
+		m, err := rateCall(ctx, run, protocol.RateRequest{Worker: str("worker"), Kind: kind, Score: score, Severity: severity, Note: str("note")})
 		if err != nil {
 			return nil, err
 		}
@@ -131,14 +118,14 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if v, ok := a["complete"].(bool); ok {
 			complete = &v
 		}
-		m, err := call(protocol.OpWorkerHandback, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete})
+		m, err := handbackCall(ctx, run, protocol.WorkerHandbackRequest{Report: str("report"), Status: str("status"), Complete: complete})
 		if err != nil {
 			return nil, err
 		}
 		delivered := m["sent"] != nil && !boolValue(m["queued"])
 		return map[string]any{"delivered": delivered, "status": m["status"], "complete": m["complete"]}, nil
 	case "agent_announce":
-		m, err := call("announce", announceIn{Task: str("task"), Project: str("project"), Expertise: str("expertise"), Capabilities: stringSlice(a["capabilities"]), Waiting: str("waiting")})
+		m, err := announceCall(ctx, run, announceIn{Task: str("task"), Project: str("project"), Expertise: str("expertise"), Capabilities: stringSlice(a["capabilities"]), Waiting: str("waiting")})
 		if err != nil {
 			return nil, err
 		}
@@ -147,34 +134,20 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		}
 		return m, nil
 	case "agent_owner_ask":
-		var method string
-		var in any
-		switch str("kind") {
-		case "question":
-			method = protocol.MethodWaiting
-			in = protocol.WaitingRequest{Kind: protocol.WaitingQuestion, Text: str("text"), Options: stringSlice(a["options"]), Urgency: str("urgency"), Explicit: true}
-		case "approval":
-			method = "request_approval"
-			in = map[string]any{"action": str("text"), "recommendation": str("recommendation")}
-		case "idea":
-			method = "propose_idea"
-			in = map[string]any{"text": str("text"), "recommendation": str("recommendation")}
-		default:
-			return nil, errors.New(`kind must be question, approval or idea`)
-		}
-		m, err := call(method, in)
+		kind := str("kind")
+		m, err := ownerAskCall(ctx, run, kind, str("text"), str("recommendation"), stringSlice(a["options"]), str("urgency"))
 		if err != nil {
 			return nil, err
 		}
 		if m["kind"] == nil {
-			m["kind"] = str("kind")
+			m["kind"] = kind
 		}
 		if m["item_id"] == nil {
 			m["item_id"] = m["id"]
 		}
 		return map[string]any{"item_id": m["item_id"], "kind": m["kind"], "state": m["state"]}, nil
 	case "agent_learn":
-		m, err := call(protocol.OpLearn, protocol.LearnRequest{SubjectKind: str("subject_kind"), Subject: str("subject"), Finding: str("finding"), Evidence: stringSlice(a["evidence"])})
+		m, err := learnCall(ctx, run, protocol.LearnRequest{SubjectKind: str("subject_kind"), Subject: str("subject"), Finding: str("finding"), Evidence: stringSlice(a["evidence"])})
 		if err != nil {
 			return nil, err
 		}
@@ -191,7 +164,7 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		}
 		return map[string]any{"recorded": m["accepted"], "id": id, "left_today": remaining}, nil
 	case "agent_project_add":
-		m, err := call("project_add", protocol.ProjectAddRequest{Paths: stringSlice(a["paths"]), Dir: str("dir"), Scan: boolValue(a["scan"]), Depth: integer("depth"), DryRun: boolValue(a["dry_run"])})
+		m, err := projectAddCall(ctx, run, protocol.ProjectAddRequest{Paths: stringSlice(a["paths"]), Dir: str("dir"), Scan: boolValue(a["scan"]), Depth: integer("depth"), DryRun: boolValue(a["dry_run"])})
 		if err != nil {
 			return nil, err
 		}
@@ -216,7 +189,7 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		}
 		return map[string]any{"projects": m["projects"], "dry_run": m["dry_run"]}, nil
 	case "agent_mcp_test":
-		m, err := call("mcp_test", map[string]any{"name": str("server")})
+		m, err := mcpTestCall(ctx, run, str("server"))
 		if err != nil {
 			return nil, err
 		}

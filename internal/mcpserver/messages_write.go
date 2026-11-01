@@ -54,15 +54,9 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		if in.Type == "" {
 			in.Type = protocol.TypeRequest
 		}
-		params := map[string]any{
-			"body":            in.Body,
-			"type":            in.Type,
-			"as_owner":        in.AsOwner,
-			"receipt":         true,
-			"idempotency_key": protocol.NewID("k"),
-		}
+		var set map[string]any
 		if in.ToSet != nil {
-			set := map[string]any{}
+			set = map[string]any{}
 			if in.ToSet.Machine != "" {
 				set["machine"] = in.ToSet.Machine
 			}
@@ -82,11 +76,8 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 				online = *in.ToSet.OnlineOnly
 			}
 			set["online_only"] = online
-			params["to_set"] = set
-		} else {
-			params["to"] = in.To
 		}
-		out, err := run(ctx, "send", params)
+		out, err := sendCall(ctx, run, in.To, set, in.Body, in.Type, in.AsOwner, true)
 		if err != nil {
 			return toolError(err)
 		}
@@ -107,16 +98,7 @@ func addMessageWriteTools(s *mcp.Server, run func(context.Context, string, any) 
 		if err != nil {
 			return toolError(fmt.Errorf("%v. accept needs no extra fields; reject and escalate need reason; redirect needs reason and redirect_to; escalate needs recommendation", err))
 		}
-		out, err := run(ctx, "reply", map[string]any{
-			"message_id":      in.Message,
-			"body":            in.Body,
-			"outcome":         outcome.Outcome,
-			"reason":          outcome.Reason,
-			"redirect_to":     outcome.RedirectTo,
-			"recommendation":  outcome.Recommendation,
-			"receipt":         true,
-			"idempotency_key": protocol.NewID("k"),
-		})
+		out, err := replyCall(ctx, run, in, outcome, true)
 		if err != nil {
 			return toolError(err)
 		}

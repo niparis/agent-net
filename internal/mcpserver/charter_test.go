@@ -9,13 +9,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+// The old list and get tools now read the tool redesign's session row (full
+// detail), so they keep the charter fields that row carries.
 func TestAgentToolsCarryCharter(t *testing.T) {
+	row := `{"id":"s_test","name":"t","kind":"agent","machine":"mac","project":"agent-net","harness":"claude","model":"m","online":true,"status":"idle","task":"work","last_seen":"2023-11-14T22:13:20Z","task_started":null,"function":"fn","expertise":"exp","capabilities":["go"],"purpose":"fallback","rules":{"deploy_rule":"owner","worker_sandbox":"network"}}`
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		agent := `{"session_id":"s_test","charter":{"purpose":"fallback","purpose_fallback":true,"maturity":"mature","accepts":"bugs","refuses":"special","feature_requests":"ask"}}`
-		if method == "list" {
-			return json.RawMessage(`{"agents":[` + agent + `]}`), nil
+		if method == "sessions_find" {
+			return json.RawMessage(`{"items":[` + row + `],"total":1}`), nil
 		}
-		return json.RawMessage(`{"agent":` + agent + `}`), nil
+		return json.RawMessage(`{"session":` + row + `}`), nil
 	})
 	for _, name := range []string{"agent_list", "agent_get"} {
 		args := map[string]any{}
@@ -27,7 +29,7 @@ func TestAgentToolsCarryCharter(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := json.Marshal(r)
-		for _, want := range []string{"fallback", "purpose_fallback", "mature", "bugs", "special", "feature_requests"} {
+		for _, want := range []string{"fallback", "deploy_rule", "owner", "exp", `\"go\"`} {
 			if !strings.Contains(string(raw), want) {
 				t.Fatalf("%s missing %s: %s", name, want, raw)
 			}
@@ -35,13 +37,13 @@ func TestAgentToolsCarryCharter(t *testing.T) {
 	}
 }
 
-func TestAgentToolsCarryProjectDisplayName(t *testing.T) {
+func TestAgentToolsCarryProject(t *testing.T) {
+	row := `{"id":"s_test","name":"t","kind":"agent","machine":"mac","project":"agent-net","harness":"claude","model":"m","online":true,"status":"idle","task":"work","last_seen":"2023-11-14T22:13:20Z","task_started":null}`
 	cs := connect(t, func(_ context.Context, method string, _ any) (json.RawMessage, error) {
-		a := `{"session_id":"s_test","repo":{"project":"agent-net"},"project_display_name":"Agent Network"}`
-		if method == "list" {
-			return json.RawMessage(`{"agents":[` + a + `]}`), nil
+		if method == "sessions_find" {
+			return json.RawMessage(`{"items":[` + row + `],"total":1}`), nil
 		}
-		return json.RawMessage(`{"agent":` + a + `}`), nil
+		return json.RawMessage(`{"session":` + row + `}`), nil
 	})
 	for _, name := range []string{"agent_list", "agent_get"} {
 		args := map[string]any{}
@@ -53,7 +55,7 @@ func TestAgentToolsCarryProjectDisplayName(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := json.Marshal(res)
-		if !strings.Contains(string(raw), "agent-net") || !strings.Contains(string(raw), "Agent Network") {
+		if !strings.Contains(string(raw), "agent-net") {
 			t.Fatalf("%s: %s", name, raw)
 		}
 	}

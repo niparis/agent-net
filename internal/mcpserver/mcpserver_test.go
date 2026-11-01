@@ -86,11 +86,11 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("agent_list: %v %+v", err, res)
 	}
-	if calls[0].method != "list" || calls[0].params["online_only"] != true || calls[0].params["text"] != "go" {
-		t.Fatalf("list call: %+v", calls[0])
+	if calls[0].method != "sessions_find" || calls[0].params["detail"] != "full" || calls[0].params["text"] != "go" {
+		t.Fatalf("sessions_find call: %+v", calls[0])
 	}
 	cs.CallTool(ctx, &mcp.CallToolParams{Name: "agent_list", Arguments: map[string]any{"online_only": false}})
-	if calls[1].params["online_only"] != false {
+	if calls[1].params["online"] != "any" {
 		t.Fatalf("online_only=false not passed: %+v", calls[1])
 	}
 
@@ -119,16 +119,16 @@ func TestToolsForwardToDaemon(t *testing.T) {
 		{"agent_reply", "reply", map[string]any{"message_id": "m_1", "body": "b"}},
 		{"agent_messages", "messages", map[string]any{"limit": 5}},
 		{"agent_message_status", "message_status", map[string]any{"message_id": "m_1"}},
-		{"agent_get", "get", map[string]any{"session_id": "s_1"}},
+		{"agent_get", "session_get", map[string]any{"session_id": "s_1"}},
 		{"agent_announce", "announce", map[string]any{"task": "t"}},
-		{"agent_nodes", "nodes", map[string]any{}},
+		{"agent_nodes", "machines_find", map[string]any{}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"~/code/a"}}},
-		{"agent_project_list", "projects", map[string]any{"name": "a"}},
+		{"agent_project_list", "projects_find", map[string]any{"name": "a"}},
 	}
 	for _, c := range cases {
 		n := len(calls)
 		cs.CallTool(ctx, &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
-		if len(calls) != n+1 || calls[n].method != c.method {
+		if len(calls) == n || calls[n].method != c.method {
 			t.Fatalf("%s did not call %s: %+v", c.tool, c.method, calls[n:])
 		}
 	}

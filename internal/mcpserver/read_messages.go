@@ -170,6 +170,20 @@ func roFindMessages(ctx context.Context, call Caller, in roMessagesFindIn) (roMe
 
 func roMessageKey(row roMessageRow) string { return row.key }
 
+// roLoadMessage is the one message read. agent_message_get and the
+// agent_message_status alias both go through it.
+func roLoadMessage(ctx context.Context, call Caller, id string) (protocol.MessageResult, error) {
+	raw, err := call(ctx, "message_status", map[string]any{"message_id": id})
+	if err != nil {
+		return protocol.MessageResult{}, err
+	}
+	var result protocol.MessageResult
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return protocol.MessageResult{}, err
+	}
+	return result, nil
+}
+
 func roMessageWith(message protocol.Message, wanted string, names map[string]string) bool {
 	if message.From == wanted || message.To == wanted {
 		return true
@@ -235,12 +249,8 @@ func roGetMessage(ctx context.Context, call Caller, in roMessageGetIn) (roMessag
 	if err != nil {
 		return roMessageGetOut{}, err
 	}
-	raw, err := call(ctx, "message_status", map[string]any{"message_id": in.Message})
+	result, err := roLoadMessage(ctx, call, in.Message)
 	if err != nil {
-		return roMessageGetOut{}, err
-	}
-	var result protocol.MessageResult
-	if err := json.Unmarshal(raw, &result); err != nil {
 		return roMessageGetOut{}, err
 	}
 	message := result.Message

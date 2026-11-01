@@ -13,9 +13,9 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The MCP registry in this server: two read-only tools, and the registered
-// servers' tools, added and removed at run time as `<server>__<tool>`. The
-// SDK sends notifications/tools/list_changed to the client on every change.
+// The MCP registry tools: the test tool, and the registered servers' tools,
+// added and removed at run time as `<server>__<tool>`. The SDK sends
+// notifications/tools/list_changed to the client on every change.
 
 const (
 	appliesToAll = "This change applies to every agent on every machine."
@@ -25,20 +25,9 @@ type mcpNameIn struct {
 	Name string `json:"name" jsonschema:"the server name from agent_mcp_list"`
 }
 
-type mcpListIn struct{}
-
 func addRegistryTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
 	tool := func(name, desc string) *mcp.Tool { return &mcp.Tool{Name: name, Description: desc} }
 
-	mcp.AddTool(s, tool("agent_mcp_list",
-		"List the registered MCP servers: host machine, transport, auth source (a name or path, never a value), enabled, health, who added it, and tool names."),
-		func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpListIn) (*mcp.CallToolResult, any, error) {
-			out, err := run(ctx, "mcp_list", nil)
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, summarize(out, ""), nil
-		})
 	mcp.AddTool(s, tool("agent_mcp_test",
 		"Check a registered MCP server now: its host connects, lists the tools and reports health."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in mcpNameIn) (*mcp.CallToolResult, any, error) {

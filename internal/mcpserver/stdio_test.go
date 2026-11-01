@@ -139,7 +139,7 @@ func TestExecWaitsForIdleAndHandsOverUnreadBytes(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	call := func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		if method == "list" {
+		if method == "sessions_find" {
 			started <- struct{}{}
 			<-release
 		}

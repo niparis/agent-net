@@ -14,8 +14,17 @@ func TestWorkerStartAndNodesShowTrackAndPlaybook(t *testing.T) {
 		switch method {
 		case "worker_start":
 			return json.RawMessage(`{"status":"started","session_id":"s_w","harness":"opencode","model":"a/x","project":"p","hostname":"mac","permissions":"sandboxed","track":{"harness":"opencode","model":"a/x","runs":3,"complete":1,"partial":2,"median_run_seconds":60,"resumable":true},"playbooks":[{"subject_kind":"model","subject":"a/x","note":"ask for the diff"}]}`), nil
-		case "nodes":
-			return json.RawMessage(`{"nodes":[{"node_id":"n_1","hostname":"mac","online":true,"version":"v1","harnesses":[],"tracks":[{"harness":"opencode","model":"a/x","runs":14,"complete":13,"median_run_seconds":1560,"resumable":true}]}],"playbook":[{"subject_kind":"model","subject":"a/x","note":"ask for the diff","support":3,"source":"auto"}]}`), nil
+		case "machines_find":
+			return json.RawMessage(`{"items":[{"id":"n_1","name":"mac","online":true,"version":"v1","harnesses":[{"name":"opencode","version":"1.0"}],"sessions_online":0,"workers_running":0,"last_seen":"2023-11-14T22:13:20Z"}],"total":1}`), nil
+		case "machine_get":
+			raw, _ := json.Marshal(params)
+			if strings.Contains(string(raw), "track_record") {
+				return json.RawMessage(`{"track_record":{"items":[{"harness":"opencode","model":"a/x","runs":14,"complete":13,"median_minutes":26}],"total":1}}`), nil
+			}
+			if strings.Contains(string(raw), "playbook") {
+				return json.RawMessage(`{"playbook":{"items":[{"subject":"a/x","note":"ask for the diff"}],"total":1}}`), nil
+			}
+			return json.RawMessage(`{}`), nil
 		}
 		return json.RawMessage(`{}`), nil
 	})
@@ -36,7 +45,7 @@ func TestWorkerStartAndNodesShowTrackAndPlaybook(t *testing.T) {
 	}
 	text = nres.Content[0].(*mcp.TextContent).Text
 	if !strings.Contains(text, "mac: a/x · opencode: 14 runs: 13 complete (median 26 min) · resumes") ||
-		!strings.Contains(text, "playbook [a/x] 3 findings: ask for the diff") {
+		!strings.Contains(text, "playbook [a/x]: ask for the diff") {
 		t.Errorf("agent_nodes output lacks the track or playbook line:\n%s", text)
 	}
 }
