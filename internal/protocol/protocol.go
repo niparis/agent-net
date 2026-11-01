@@ -235,17 +235,26 @@ type AgentCharter struct {
 	FeatureRequests string `json:"feature_requests,omitempty"`
 }
 
+type PendingRequest struct {
+	MessageID string `json:"message_id"`
+	PeerID    string `json:"peer_id"`
+	PeerName  string `json:"peer_name"`
+	Since     int64  `json:"since"`
+	Outgoing  bool   `json:"outgoing"`
+}
+
 type AgentView struct {
-	ProjectDisplayName string       `json:"project_display_name,omitempty"`
-	Charter            AgentCharter `json:"charter"`
-	SessionID          string       `json:"session_id"`
-	NodeID             string       `json:"node_id"`
-	Hostname           string       `json:"hostname"`
-	Harness            string       `json:"harness"`
-	Cwd                string       `json:"cwd"`
-	Status             string       `json:"status"`
-	Online             bool         `json:"online"`
-	LastSeen           int64        `json:"last_seen"`
+	Pending            []PendingRequest `json:"pending,omitempty"`
+	ProjectDisplayName string           `json:"project_display_name,omitempty"`
+	Charter            AgentCharter     `json:"charter"`
+	SessionID          string           `json:"session_id"`
+	NodeID             string           `json:"node_id"`
+	Hostname           string           `json:"hostname"`
+	Harness            string           `json:"harness"`
+	Cwd                string           `json:"cwd"`
+	Status             string           `json:"status"`
+	Online             bool             `json:"online"`
+	LastSeen           int64            `json:"last_seen"`
 	// LastActive is when the session last did something, in Unix seconds.
 	// It is not when its daemon last reported it. 0 from an older gateway.
 	LastActive int64   `json:"last_active,omitempty"`

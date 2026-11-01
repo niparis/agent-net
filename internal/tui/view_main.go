@@ -955,10 +955,24 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 	}
 	avail := w - 2 // two columns for the selection marker
+	statusWidth := 6
 	if len(m.needsRows()) > 0 {
-		avail -= 3
-	} // reserve the wider status
-	cols := m.needsColumns(columnsForProject(avail, nameWant, projectWant, policy))
+		statusWidth = 9
+	}
+	for _, g := range m.groups() {
+		for _, a := range g.agents {
+			if a.Online && a.Status == "idle" && len(a.Pending) > 0 {
+				statusWidth = max(statusWidth, min(26, ansi.StringWidth(m.statusCell(a))))
+			}
+		}
+	}
+	avail -= statusWidth - 6
+	cols := columnsForProject(avail, nameWant, projectWant, policy)
+	for i := range cols {
+		if cols[i].name == "STATUS" {
+			cols[i].width = statusWidth
+		}
+	}
 	wanted := 5
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
@@ -1137,6 +1151,11 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v = "hidden"
 			} else {
 				v = m.statusCell(a)
+				if strings.HasPrefix(v, "waiting on ") && ansi.StringWidth(v) > c.width {
+					p := a.Pending[0]
+					suffix := " · " + needsAge(m.now(), p.Since)
+					v = "waiting on " + strings.TrimSpace(cellDots(p.PeerName, max(0, c.width-ansi.StringWidth("waiting on ")-ansi.StringWidth(suffix)))) + suffix
+				}
 			}
 		case "TRUST":
 			v = m.requestRuleBadge(a)

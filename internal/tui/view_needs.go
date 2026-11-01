@@ -319,6 +319,15 @@ func (m Model) statusCell(a protocol.AgentView) string {
 	if s := waitingStatus(a); s != "" {
 		return s
 	}
+	if a.Status == "idle" && len(a.Pending) > 0 {
+		for _, p := range a.Pending {
+			if !p.Outgoing {
+				return "owes reply"
+			}
+		}
+		p := a.Pending[0]
+		return "waiting on " + sanitize(p.PeerName) + " · " + needsAge(m.now(), p.Since)
+	}
 	return statusShort(a.Status)
 }
 

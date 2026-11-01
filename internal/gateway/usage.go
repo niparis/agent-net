@@ -222,6 +222,9 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 		COALESCE(SUM(CASE WHEN online = 0 AND last_seen >= ? THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN online = 0 THEN 1 ELSE 0 END), 0)
 		FROM sessions WHERE harness != 'owner'`, cutoff).Scan(&c.Online, &c.Offline24h, &c.OfflineTotal)
+	s.pendingMu.Lock()
+	c.PendingStalls = s.pendingStalls
+	s.pendingMu.Unlock()
 	return c, err
 }
 

@@ -121,6 +121,14 @@ func (m Model) detailLeft(a protocol.AgentView, w, n int) (string, []string) {
 	}
 	model = dashIfEmpty(strings.TrimPrefix(model, ", "))
 	var out []string
+	for _, p := range a.Pending {
+		verb := "from"
+		if p.Outgoing {
+			verb = "to"
+		}
+		out = append(out, kv("request", fmt.Sprintf("%s %s %s", verb, p.PeerName, m.clock(time.Unix(p.Since, 0)))))
+		out = append(out, kv("", p.MessageID))
+	}
 	if a.Worker != nil {
 		// Who started it matters most, so it comes first. Its ID is on the id
 		// line: the table shows the task instead (decision 0017).
