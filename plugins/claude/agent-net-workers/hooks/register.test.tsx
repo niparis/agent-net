@@ -276,4 +276,24 @@ test('worker tasks use the remaining width, end with an ellipsis and stay on one
 test('worker model shortening drops effort then whole segments as the TUI does', () => {
   const row = formatWorkerRows([running({ model: 'provider/claude-sonnet-5:very-long-effort' })], NOW / 1000, 100)[0]!
   expect(row.fields[1]?.trim()).toBe('sonnet-5')
+  const long = formatWorkerRows([running({ model: 'provider/deepseek-v4.1-flash-preview-extra' })], NOW / 1000, 100)[0]!
+  expect(long.fields[1]?.trim()).toBe('deepseek-v4.1-flash…')
+})
+
+test('exception states and high context have visible colors', () => {
+  for (const status of ['idle', 'waiting', 'needs you', 'starting', 'queued', 'stopping']) {
+    const row = formatWorkerRows([running({ status })], NOW / 1000, 100)[0]!
+    expect(row.fields[2]?.trim()).toBe(status)
+    expect(row.statusColor).toBe('warning')
+  }
+  const rows = formatWorkerRows([
+    running({ contextTokens: 70000, contextLimit: 100000 }),
+    running({ contextTokens: 90000, contextLimit: 100000 }),
+    running({ endStatus: 'done', endedAt: NOW / 1000 }),
+    running({ endStatus: 'failed', endedAt: NOW / 1000 }),
+  ], NOW / 1000, 100)
+  expect(rows[0]?.contextColor).toBe('warning')
+  expect(rows[1]?.contextColor).toBe('error')
+  expect(rows[2]?.statusColor).toBe('success')
+  expect(rows[3]?.statusColor).toBe('error')
 })
