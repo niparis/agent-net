@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/phrasing"
@@ -1802,6 +1803,134 @@ func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protoco
 		out = append(out, m)
 	}
 	return out, total, rows.Err()
+}
+
+// ConversationsPage lists every stored conversation on the gateway, newest
+// activity first, with a keyset cursor. The caller is the owner, so it is not
+// limited to one machine's sessions (docs/security.md). It is one grouped query
+// on messages, so the two indexes (messages_conv and messages_created) carry
+// the work; it never loads every message body at once.
+func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
+	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
+	if q.Limit <= 0 || q.Limit > 100 {
+		q.Limit = 50
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT m.conversation_id FROM messages m WHERE m.conversation_id <> '' GROUP BY m.conversation_id)`).Scan(&page.Total); err != nil {
+		return page, err
+	}
+
+	sqlText := `WITH page AS (
+		SELECT m.conversation_id AS cid, MAX(m.created_at) AS last_at
+		FROM messages m WHERE m.conversation_id <> ''
+		GROUP BY m.conversation_id`
+	args := []any{}
+	if at, id, ok := parseConversationCursor(q.Cursor); ok {
+		sqlText += ` HAVING last_at < ? OR (last_at = ? AND cid < ?)`
+		args = append(args, at, at, id)
+	}
+	sqlText += ` ORDER BY last_at DESC, cid DESC LIMIT ?)
+	SELECT p.cid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type,
+		(SELECT COUNT(*) FROM messages c WHERE c.conversation_id = p.cid),
+		COALESCE(NULLIF(fp.name,''), fs.name, ''),
+		COALESCE(NULLIF(rp.name,''), rs.name, ''),
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id)
+	FROM page p
+	JOIN messages m ON m.conversation_id = p.cid AND m.created_at = p.last_at
+		AND m.rowid = (SELECT MAX(m2.rowid) FROM messages m2
+			WHERE m2.conversation_id = p.cid AND m2.created_at = p.last_at)
+	LEFT JOIN sessions fs ON fs.id = m.sender
+	LEFT JOIN profiles fp ON fp.session_id = m.sender
+	LEFT JOIN sessions rs ON rs.id = m.recipient
+	LEFT JOIN profiles rp ON rp.session_id = m.recipient
+	ORDER BY p.last_at DESC, p.cid DESC`
+	args = append(args, q.Limit+1)
+	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
+	if err != nil {
+		return page, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v protocol.ConversationView
+		var at int64
+		var senderCTO, ownerInstruction int
+		var typ string
+		if err := rows.Scan(&v.ID, &at, &v.LastMessageID, &v.From, &v.To, &v.LastLine, &v.State,
+			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction); err != nil {
+			return page, err
+		}
+		v.Type = typ
+		v.At = time.Unix(0, at).UTC()
+		v.LastLine = conversationLine(v.LastLine)
+		v.FromCTO = senderCTO != 0
+		v.OwnerInstruction = ownerInstruction != 0
+		page.Conversations = append(page.Conversations, v)
+	}
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	if len(page.Conversations) > q.Limit {
+		page.Conversations = page.Conversations[:q.Limit]
+		last := page.Conversations[len(page.Conversations)-1]
+		page.Next = fmt.Sprintf("%d|%s", last.At.UnixNano(), last.ID)
+	}
+	return page, nil
+}
+
+// ConversationMessages returns every stored message of one conversation,
+// newest first. The caller is the owner, so it is not limited to one machine's
+// sessions. Agents keep the node-scoped MessagesPage read.
+func (s *Store) ConversationMessages(conversationID string, limit int) ([]protocol.Message, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(context.Background(), msgSelect+`
+		WHERE m.conversation_id = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`, conversationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.Message{}
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// parseConversationCursor reads the Next value of a page.
+func parseConversationCursor(cursor string) (int64, string, bool) {
+	at, id, ok := strings.Cut(cursor, "|")
+	if !ok || id == "" {
+		return 0, "", false
+	}
+	n, err := strconv.ParseInt(at, 10, 64)
+	if err != nil {
+		return 0, "", false
+	}
+	return n, id, true
+}
+
+// conversationLine keeps the first line of a body for a list row: no control
+// characters, no line break, and at most 200 characters.
+func conversationLine(body string) string {
+	line, _, _ := strings.Cut(body, "\n")
+	line = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\r' || r == '\t':
+			return ' '
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(line))
+	if r := []rune(line); len(r) > 200 {
+		line = string(r[:199]) + "…"
+	}
+	return line
 }
 
 // SetAllOffline is run at start: no daemon is connected to a new process.

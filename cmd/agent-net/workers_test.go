@@ -30,6 +30,12 @@ func (f *fakeOp) Snapshot(context.Context) (operator.Snapshot, error) {
 func (f *fakeOp) Events(context.Context, int64, int) ([]protocol.FeedEvent, error) {
 	return nil, nil
 }
+func (f *fakeOp) Conversations(context.Context, protocol.QueryConversations) (protocol.ConversationPage, error) {
+	return protocol.ConversationPage{}, nil
+}
+func (f *fakeOp) ConversationMessages(context.Context, string) ([]protocol.Message, error) {
+	return nil, nil
+}
 func (f *fakeOp) Message(context.Context, string) (protocol.Message, error) {
 	return protocol.Message{}, nil
 }

@@ -1,0 +1,34 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy · workers 1 running, 0 queued
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
+╭─Messages · conversations───────────────────────────────────────╮╭─Conversation───────────────────────────────────────╮
+│ ▸ tenebrae-53 ↔ strategies · Stored conversat… 1 message · now ││   14:03 tenebrae-53                                │
+│   tenebrae-53 ↔ strategies · Stored conve… 2 messages · 7m ago ││ Show the whole stored history of this conversatio… │
+│   you → worker: Polish the sessions pane… 3 messages · running ││   14:04 strategies                                 │
+│   tenebrae-53 ↔ strategies · Stored conv… 4 messages · 21m ago ││ The full stored conversation is in the right pane. │
+│   tenebrae-53 ↔ strategies · Stored conv… 5 messages · 28m ago ││ It comes from the gateway, not the feed.           │
+│   tenebrae-53 ↔ strategies · Stored conve… 1 message · 35m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored conv… 2 messages · 42m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored conv… 3 messages · 49m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored conv… 4 messages · 56m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored con… 5 messages · 1h3m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored con… 1 message · 1h10m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 2 messages · 1h17m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 3 messages · 1h24m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 4 messages · 1h31m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 5 messages · 1h38m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored con… 1 message · 1h45m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 2 messages · 1h52m ago ││                                                    │
+│ 0 system events · e to show · w hide workers                   ││                                                    │
+╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ enter: open the CTO · tab: back                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit

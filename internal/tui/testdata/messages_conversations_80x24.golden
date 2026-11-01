@@ -2,7 +2,7 @@
 you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╭─Messages · conversations─────────────────────────────────────────────────────╮
 │   tenebrae-53 ↔ strategies · The deploy is ready.         1 message · 6m ago │
-│ ▸ tenebrae-53 → worker 8                                   4 messages · done │
+│ ▸ tenebrae-53 → worker: Polish the sessions panel          4 messages · done │
 │ 2 system events · e to show · w hide workers                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮

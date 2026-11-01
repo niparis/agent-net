@@ -28,6 +28,13 @@ type Operator interface {
 	// Events returns feed events after afterID, oldest first. With afterID 0
 	// it returns the newest limit events.
 	Events(ctx context.Context, afterID int64, limit int) ([]protocol.FeedEvent, error)
+	// Conversations lists every stored conversation on the gateway, newest
+	// activity first. Owner only. It pages with the Next cursor of the answer.
+	Conversations(ctx context.Context, q protocol.QueryConversations) (protocol.ConversationPage, error)
+	// ConversationMessages reads every stored message of one conversation,
+	// newest first, across the whole network. Owner only: agents keep the
+	// node-scoped messages read.
+	ConversationMessages(ctx context.Context, conversationID string) ([]protocol.Message, error)
 	// Message fetches one message with its body. The gateway only gives it to
 	// the machines that have a session in the conversation.
 	Message(ctx context.Context, id string) (protocol.Message, error)

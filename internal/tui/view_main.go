@@ -1377,7 +1377,7 @@ func (m Model) messagesView(w, h int) []string {
 		filter = "no session/worker events"
 	}
 	rows := m.messageConversations()
-	selected := m.conversationIndex(rows)
+	selected := m.selectedConversationIndex(rows)
 	list := []string{}
 	listW := w - 4
 	chatW := w - 4

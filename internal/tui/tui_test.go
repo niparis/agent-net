@@ -198,6 +198,35 @@ type fakeSource struct {
 	// The graph the map reads, and the error it answers with.
 	graph    protocol.GraphView
 	graphErr error
+
+	// Stored conversations: the first page, later pages by cursor, and the
+	// messages of one conversation when it is opened.
+	convFirst    protocol.ConversationPage
+	convMore     map[string]protocol.ConversationPage
+	convErr      error
+	convCalls    []protocol.QueryConversations
+	convMsgs     map[string][]protocol.Message
+	convMsgErr   error
+	convMsgCalls []string
+}
+
+func (f *fakeSource) Conversations(_ context.Context, q protocol.QueryConversations) (protocol.ConversationPage, error) {
+	f.convCalls = append(f.convCalls, q)
+	if f.convErr != nil {
+		return protocol.ConversationPage{}, f.convErr
+	}
+	if q.Cursor == "" {
+		return f.convFirst, nil
+	}
+	return f.convMore[q.Cursor], nil
+}
+
+func (f *fakeSource) ConversationMessages(_ context.Context, id string) ([]protocol.Message, error) {
+	f.convMsgCalls = append(f.convMsgCalls, id)
+	if f.convMsgErr != nil {
+		return nil, f.convMsgErr
+	}
+	return f.convMsgs[id], nil
 }
 
 func (f *fakeSource) GraphView(_ context.Context, _ protocol.QueryGraph) (protocol.GraphView, error) {
