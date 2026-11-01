@@ -216,7 +216,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		plan := d.openInHerdr("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
 		r.EnterPlan = &plan
 		if notify {
-			d.notifySessionStart(r)
+			d.notifyApprovedSessionStart(ctx, r)
 		}
 		return r, nil
 	}
@@ -261,19 +261,20 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	res = d.remoteStartResult(ctx, res, socket, pane)
 	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
 	if p.CTOProposal && !remoteOwner && res.Status == "starting" {
-		d.watchApprovedSessionStart(res.ID)
+		d.watchApprovedSessionStart(ctx, res.ID)
 	} else if p.CTOProposal && !remoteOwner && res.Status == "started" {
-		d.notifySessionStart(res)
+		d.notifyApprovedSessionStart(ctx, res)
 	}
 	return res, nil
 }
 
 // An approved remote start must be opened even when no form is polling it.
-func (d *Daemon) watchApprovedSessionStart(id string) {
+func (d *Daemon) watchApprovedSessionStart(approval context.Context, id string) {
+	loc, _ := approval.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
 	d.wg.Add(1)
 	go func() {
 		defer d.wg.Done()
-		ctx, cancel := context.WithTimeout(d.ctoCtx, d.cfg.Workers.filled().StartTimeout)
+		ctx, cancel := context.WithTimeout(context.WithValue(d.ctoCtx, proposalHerdrLocationKey{}, loc), d.cfg.Workers.filled().StartTimeout)
 		defer cancel()
 		ticker := time.NewTicker(150 * time.Millisecond)
 		defer ticker.Stop()
@@ -285,7 +286,7 @@ func (d *Daemon) watchApprovedSessionStart(id string) {
 				result, err := d.sessionStartGet(ctx, id)
 				if err != nil || result.Status != "starting" {
 					if err == nil && result.Status == "started" {
-						d.notifySessionStart(result)
+						d.notifyApprovedSessionStart(ctx, result)
 					}
 					return
 				}

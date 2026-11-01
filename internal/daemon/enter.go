@@ -191,7 +191,20 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		return base, nil
 	}
 	name := firstNonEmpty(info.Name, info.NativeID)
+	if info.Worker != nil {
+		if a, err := d.agentView(ctx, q.SessionID); err == nil && a.Profile.Name != "" {
+			name = a.Profile.Name
+		}
+	}
 	base.Name = name
+	if info.Harness == "pi" && d.workerBySession(q.SessionID) != nil {
+		// An RPC worker has no terminal, even if it inherited Herdr variables
+		// from the daemon. Do not mistake the daemon's pane for the worker.
+		if viaGateway {
+			return base, nil
+		}
+		return d.openInHerdr(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, base), nil
+	}
 	private := viaGateway && (base.Env["OPENCODE_SERVER_PASSWORD"] != "" || base.Env["AGENT_NET_CODEX_TOKEN"] != "")
 	remotePane := func(pane string) protocol.EnterPlan {
 		if private {
@@ -263,13 +276,16 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		if p, ok := d.adapters["claude"].(EnterRefProvider); ok {
 			kind, job = p.EnterRef(info.NativeID)
 		}
+		if w != nil {
+			// Claude workers always run as background jobs.
+			d.wmu.Lock()
+			kind, job = "bg", firstNonEmpty(w.ref, job)
+			d.wmu.Unlock()
+		}
 		if kind != "bg" {
 			return d.terminalPlan(info, q, plan, name, viaGateway)
 		}
 		id := job
-		if w != nil && w.ref != "" {
-			id = w.ref
-		}
 		if id == "" && len(info.NativeID) >= 8 {
 			id = info.NativeID[:8] // the job ID is the first 8 characters of the session ID
 		}
@@ -359,6 +375,9 @@ func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, vi
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. The daemon also drives this thread.", name)
 		return plan, nil
 	case "pi":
+		if w != nil {
+			return no("Pi workers run in RPC mode without a terminal; read this session with agent-net show %s", cleanLine(q.SessionID))
+		}
 		return d.terminalPlan(info, q, plan, name, viaGateway)
 	}
 	return no("entering %s sessions is not supported", info.Harness)

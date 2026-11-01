@@ -214,7 +214,14 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return nil, true, errors.New("bad proposal request")
 		}
 		if method == protocol.OpProposalAnswer {
-			ctx = context.WithValue(ctx, proposalHerdrLocationKey{}, proposalHerdrLocation{socket: q.HerdrSocket, pane: q.HerdrPaneID})
+			lc.mu.Lock()
+			tui := lc.client == "cli" && lc.tui
+			lc.mu.Unlock()
+			loc := proposalHerdrLocation{socket: q.HerdrSocket, pane: q.HerdrPaneID}
+			if tui {
+				loc.approver = lc
+			}
+			ctx = context.WithValue(ctx, proposalHerdrLocationKey{}, loc)
 		}
 		if method == protocol.OpProposalList && q.NodeID == "" {
 			value, err := d.networkProposals(ctx)

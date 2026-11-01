@@ -18,7 +18,10 @@ type proposalActorKey struct{}
 type proposalHerdrLocationKey struct{}
 type proposalRemoteOwnerKey struct{}
 
-type proposalHerdrLocation struct{ socket, pane string }
+type proposalHerdrLocation struct {
+	socket, pane string
+	approver     *localConn
+}
 
 func proposalActor(ctx context.Context) string {
 	s, _ := ctx.Value(proposalActorKey{}).(string)

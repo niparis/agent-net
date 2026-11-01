@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -52,6 +53,12 @@ func cleanupHerdrEnvironment(t *testing.T, log string) {
 
 func herdrNoticeChannel(t *testing.T, n *node) <-chan map[string]any {
 	t.Helper()
+	_, ch := herdrUIClient(t, n)
+	return ch
+}
+
+func herdrUIClient(t *testing.T, n *node) (*client.Client, <-chan map[string]any) {
+	t.Helper()
 	ch := make(chan map[string]any, 4)
 	c, err := client.DialPushData(n.sock, func(method string, raw json.RawMessage) {
 		if method == "cto_ui" {
@@ -68,7 +75,7 @@ func herdrNoticeChannel(t *testing.T, n *node) <-chan map[string]any {
 	if _, err := c.Call(context.Background(), "hello", map[string]any{"client": "cli", "tui": true}); err != nil {
 		t.Fatal(err)
 	}
-	return ch
+	return c, ch
 }
 
 func waitHerdrNotice(t *testing.T, ch <-chan map[string]any) map[string]any {
@@ -192,6 +199,197 @@ func TestSessionStartHerdrCodex(t *testing.T) {
 		t.Errorf("start %+v", r)
 	}
 	requireHerdrOpened(t, log, "garden", bins["codex"], "hello")
+}
+
+func TestWorkerStartOpensHerdr(t *testing.T) {
+	for _, harness := range []string{"claude", "opencode", "codex"} {
+		t.Run(harness, func(t *testing.T) {
+			_, log := fakeOpenHerdr(t)
+			g := startGateway(t, t.TempDir(), "")
+			var n *workerNode
+			switch harness {
+			case "claude":
+				n = startClaudeNode(t, g, shortSet).workerNode
+			case "codex":
+				n = startCodexNode(t, g, shortSet)
+			default:
+				n = startWorkerNode(t, g, shortSet, nil)
+			}
+			repo := newRepo(t, "garden")
+			n.register(t, repo)
+			r := n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: harness, Task: "FAKE:ignore"})
+			eventually(t, "worker opened in herdr", func() bool {
+				raw, _ := os.ReadFile(log)
+				return strings.Contains(string(raw), "pane run w1:p1")
+			})
+			info := n.d.infoOf(n.d.sessionByID(r.SessionID))
+			agent := n.agentOf(t, r.SessionID)
+			if agent == nil || agent.Profile.Name == "" {
+				t.Fatal("worker has no display name")
+			}
+			switch harness {
+			case "claude":
+				requireHerdrOpened(t, log, agent.Profile.Name, "attach")
+			case "opencode":
+				requireHerdrOpened(t, log, agent.Profile.Name, "--server", "--session", info.NativeID)
+			case "codex":
+				requireHerdrOpened(t, log, agent.Profile.Name, "resume", info.NativeID, "--remote-auth-token-env")
+			}
+			plan := enterOf(t, n.node, r.SessionID, "")
+			calls, _ := os.ReadFile(log)
+			if !plan.OpenedHerdr || strings.Count(string(calls), "pane run w1:p1") != 1 || !strings.Contains(string(calls), "tab focus w1:t1") {
+				t.Fatalf("enter duplicated the worker view: %+v, calls %s", plan, calls)
+			}
+		})
+	}
+}
+
+func TestWorkerStartOpensViewBeforeDeliveringTask(t *testing.T) {
+	bin, log := fakeOpenHerdr(t)
+	dir := filepath.Dir(bin)
+	entered, release := filepath.Join(dir, "entered"), filepath.Join(dir, "release")
+	raw, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait := "\"pane list\") : > " + shellQuote(entered) + "; while [ ! -f " + shellQuote(release) + " ]; do sleep 0.01; done; "
+	script := strings.Replace(string(raw), `"pane list") `, wait, 1)
+	if script == string(raw) {
+		t.Fatal("fake herdr has no pane list")
+	}
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	defer os.WriteFile(release, nil, 0600)
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "garden")
+	n.register(t, repo)
+	done := make(chan error, 1)
+	go func() {
+		_, err := n.cli.call("worker_start", protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Isolation: protocol.IsolationNone, Task: "FAKE:ignore"})
+		done <- err
+	}()
+	eventually(t, "herdr opening the worker", func() bool { _, err := os.Stat(entered); return err == nil })
+	select {
+	case err := <-done:
+		t.Fatalf("worker started its task before the view opened: %v", err)
+	case <-time.After(time.Second):
+	}
+	if err := os.WriteFile(release, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "worker start completed", func() bool {
+		select {
+		case err := <-done:
+			if err != nil {
+				t.Fatal(err)
+			}
+			return true
+		default:
+			return false
+		}
+	})
+	calls, _ := os.ReadFile(log)
+	if !strings.Contains(string(calls), "pane run w1:p1") {
+		t.Fatalf("worker start returned without a view: %s", calls)
+	}
+}
+
+func TestWorkerResumeOpensHerdr(t *testing.T) {
+	bin, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, nil)
+	repo := newRepo(t, "garden")
+	n.register(t, repo)
+	r := n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
+	eventually(t, "initial worker view", func() bool {
+		raw, _ := os.ReadFile(log)
+		return strings.Contains(string(raw), "pane run w1:p1")
+	})
+	n.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: r.SessionID, Body: "FAKE:handback first"})
+	n.waitNotice(t, 1)
+	eventually(t, "worker ended", func() bool { return n.d.workerCount() == 0 })
+	if err := os.Remove(filepath.Join(filepath.Dir(bin), "created")); err != nil {
+		t.Fatal(err)
+	}
+	n.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: r.SessionID, Body: "one more thing"})
+	eventually(t, "resumed worker view", func() bool {
+		raw, _ := os.ReadFile(log)
+		return strings.Count(string(raw), "pane run w1:p1") == 2
+	})
+}
+
+func TestEnterRemoteStartedWorkerUsesHerdrClient(t *testing.T) {
+	remoteBin, remoteLog := fakeOpenHerdr(t)
+	localBin, localLog := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	local := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} })
+	remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"herdr": remoteBin} })
+	repo := newRepo(t, "garden")
+	remote.register(t, repo)
+	r := remote.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
+	eventually(t, "remote worker view", func() bool {
+		raw, _ := os.ReadFile(remoteLog)
+		return strings.Contains(string(raw), "pane run w1:p1")
+	})
+	waitSessionOnGateway(t, local.node, r.SessionID)
+	p := enterOf(t, local.node, r.SessionID, "")
+	if !p.OpenedHerdr {
+		t.Fatalf("remote worker plan: %+v", p)
+	}
+	agent := remote.agentOf(t, r.SessionID)
+	if agent == nil {
+		t.Fatal("worker absent from gateway")
+	}
+	requireHerdrOpened(t, localLog, agent.Profile.Name, "--remote", remote.d.hostName())
+	raw, _ := os.ReadFile(remoteLog)
+	if strings.Count(string(raw), "pane run w1:p1") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
+		t.Fatalf("remote worker view was duplicated: %s", raw)
+	}
+}
+
+func TestEnterPiRPCWorkerExplainsNoTerminal(t *testing.T) {
+	_, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startPiNode(t, g, shortSet)
+	repo := newRepo(t, "garden")
+	n.register(t, repo)
+	r := n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:ignore"})
+	p := enterOf(t, n.node, r.SessionID, "")
+	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(p.Note, "RPC") || !strings.Contains(p.Note, "agent-net show") {
+		t.Fatalf("Pi RPC worker did not explain the missing terminal: %+v", p)
+	}
+	raw, _ := os.ReadFile(log)
+	if strings.Contains(string(raw), "tab create") || strings.Contains(string(raw), "pane run") {
+		t.Fatalf("Pi RPC worker got a false terminal view: %s", raw)
+	}
+}
+
+func TestWorkerStartWithoutHerdrShowsInstallNotice(t *testing.T) {
+	for _, serverFails := range []bool{false, true} {
+		t.Run(fmt.Sprint("server-fails=", serverFails), func(t *testing.T) {
+			withoutLocalHerdr(t)
+			if serverFails {
+				dir := t.TempDir()
+				if err := os.WriteFile(filepath.Join(dir, "herdr"), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			}
+			g := startGateway(t, t.TempDir(), "")
+			n := startWorkerNode(t, g, shortSet, nil)
+			repo := newRepo(t, "garden")
+			n.register(t, repo)
+			notices := herdrNoticeChannel(t, n.node)
+			n.mustStart(t, protocol.WorkerStartRequest{Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
+			q := waitHerdrNotice(t, notices)
+			line, _ := q["text"].(string)
+			if q["daemon_notice"] != true || !strings.Contains(line, "Herdr was not found") || !strings.Contains(line, "install") {
+				t.Fatalf("worker fallback notice: %v", q)
+			}
+		})
+	}
 }
 
 func TestEnterHerdrFocusesExistingPane(t *testing.T) {
@@ -797,6 +995,93 @@ func TestCTOProposalWithoutHerdrShowsInstallNotice(t *testing.T) {
 	text, _ := q["text"].(string)
 	if q["daemon_notice"] != true || !strings.Contains(text, "Herdr was not found") || !strings.Contains(text, "install") {
 		t.Fatalf("notice %v", q)
+	}
+}
+
+func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
+	withoutLocalHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	home := pathTestHome(t)
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newHomeRepo(t, home, "code/garden")
+	n.register(t, repo)
+	other := herdrNoticeChannel(t, n.node)
+	approver, notices := herdrUIClient(t, n.node)
+	args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
+	if _, err := n.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+		t.Fatal(err)
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("proposals %v %v", items, err)
+	}
+	if _, err := approver.Call(context.Background(), "proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a"}); err != nil {
+		t.Fatal(err)
+	}
+	q := waitHerdrNotice(t, notices)
+	plan, ok := q["start_plan"].(map[string]any)
+	if !ok || q["start_name"] != "garden ("+n.d.hostName()+")" {
+		t.Fatalf("approving TUI did not receive the start: %v", q)
+	}
+	argv, ok := plan["argv"].([]any)
+	if !ok || len(argv) != 2 || argv[0] != bins["codex"] || argv[1] != "hello" || plan["dir"] != repo || !strings.Contains(plan["note"].(string), "Herdr was not found") {
+		t.Fatalf("incorrect fallback plan: %v", plan)
+	}
+	select {
+	case q := <-other:
+		if q["start_plan"] != nil {
+			t.Fatalf("another TUI received the same start: %v", q)
+		}
+	default:
+	}
+}
+
+func TestRemoteCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
+	for _, all := range []bool{false, true} {
+		t.Run(fmt.Sprint("approve-all=", all), func(t *testing.T) {
+			withoutLocalHerdr(t)
+			g := startGateway(t, t.TempDir(), "")
+			home := pathTestHome(t)
+			local := startWorkerNode(t, g, shortSet, nil)
+			bins := fakeBin(t, "codex")
+			remote := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+			repo := newHomeRepo(t, home, "code/garden")
+			remote.register(t, repo)
+			other := herdrNoticeChannel(t, local.node)
+			approver, notices := herdrUIClient(t, local.node)
+			args, _ := json.Marshal(map[string]any{"action": "session_start", "project": "garden", "harness": "codex", "first_message": "hello"})
+			if _, err := remote.d.runCTOToolRaw(context.Background(), "session_change", args); err != nil {
+				t.Fatal(err)
+			}
+			items, err := remote.d.proposalRunner().list()
+			if err != nil || len(items) != 1 {
+				t.Fatalf("proposals %v %v", items, err)
+			}
+			answer := map[string]string{"node_id": remote.d.NodeID(), "proposal_id": items[0].ID, "action": "a"}
+			if all {
+				answer = map[string]string{"action": "A"}
+			}
+			if _, err := approver.Call(context.Background(), "proposal_answer", answer); err != nil {
+				t.Fatal(err)
+			}
+			q := waitHerdrNotice(t, notices)
+			plan, ok := q["start_plan"].(map[string]any)
+			if !ok || q["start_name"] != "garden ("+remote.d.hostName()+")" {
+				t.Fatalf("approving TUI did not receive the remote start: %v", q)
+			}
+			argv, ok := plan["argv"].([]any)
+			if !ok || len(argv) == 0 || argv[0] != "ssh" || !strings.Contains(fmt.Sprint(argv), bins["codex"]) {
+				t.Fatalf("incorrect remote fallback plan: %v", plan)
+			}
+			select {
+			case q := <-other:
+				if q["start_plan"] != nil {
+					t.Fatalf("another TUI received the same start: %v", q)
+				}
+			default:
+			}
+		})
 	}
 }
 

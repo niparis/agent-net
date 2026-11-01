@@ -3,10 +3,27 @@ package tui
 import (
 	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCTOApprovedCodexFallbackRunsInApprovingTUI(t *testing.T) {
+	m, _ := workerModel(100, 24)
+	got, dir, _, _ := captureName(&m, "garden (test-host)")
+	var q protocol.UIRequest
+	if err := json.Unmarshal([]byte(`{"start_name":"garden (test-host)","start_plan":{"argv":["fake-codex","hello"],"dir":"/test/garden","note":"Herdr was not found; install it."}}`), &q); err != nil {
+		t.Fatal(err)
+	}
+	model, cmd := m.applyCTOUI(q)
+	if cmd == nil || !reflect.DeepEqual(*got, []string{"fake-codex", "hello"}) || *dir != "/test/garden" {
+		t.Fatalf("fallback did not run: command=%v dir=%q", *got, *dir)
+	}
+	if model.(Model).enterNote != "Herdr was not found; install it." {
+		t.Fatalf("missing fallback note: %q", model.(Model).enterNote)
+	}
+}
 
 func TestCTOUIShowAndNotice(t *testing.T) {
 	m := mapModel(120, 40, fakeGraph())

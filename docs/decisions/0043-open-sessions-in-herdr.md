@@ -29,5 +29,14 @@ terminal handover. An interactive session outside herdr and tmux cannot be
 attached twice; its existing window remains the way to enter it. A headless
 server needs an attached herdr client to display its panes.
 
+Claude, OpenCode and Codex workers open a view on their own machine after
+they register, including when a worker is resumed. A Pi worker uses RPC mode,
+which has no interactive terminal to attach. Its live conversation remains
+available through agent-net, but it cannot be opened as a Pi terminal session.
+
+When an approved Codex session needs the terminal fallback, only the TUI that
+approved it runs the command. This prevents multiple open TUIs from starting
+the same session more than once.
+
 This changes the terminal handover in decisions 0032 and 0039 when herdr is
 available. Their selection and resume rules remain in force.

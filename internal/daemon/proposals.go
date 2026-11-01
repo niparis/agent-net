@@ -179,9 +179,9 @@ func (d *Daemon) openApprovedRemoteSession(ctx context.Context, node, id string)
 			res = d.remoteStartResult(ctx, res, loc.socket, loc.pane)
 		}
 		if res.Status == "starting" {
-			d.watchApprovedSessionStart(res.ID)
+			d.watchApprovedSessionStart(ctx, res.ID)
 		} else if res.Status == "started" {
-			d.notifySessionStart(res)
+			d.notifyApprovedSessionStart(ctx, res)
 		}
 		return
 	}

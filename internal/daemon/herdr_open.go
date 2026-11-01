@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -256,6 +257,58 @@ func herdrPaneActive(bin, socket, pane string) (active, known bool) {
 
 func openedHerdrPlan(host, name, pane string) protocol.EnterPlan {
 	return protocol.EnterPlan{Host: host, Note: "opened " + cleanLine(name) + " in herdr", HerdrPane: pane, OpenedHerdr: true}
+}
+
+// Workers start without a requesting TUI. Open their view after registration
+// and before delivering a task that might finish and close the worker.
+func (d *Daemon) openWorkerInHerdr(w *worker, sessionID string) {
+	if sessionID == "" {
+		return
+	}
+	d.wmu.Lock()
+	harness, project := w.harness, w.project
+	d.wmu.Unlock()
+	if harness != "claude" && harness != "opencode" && harness != "codex" {
+		return
+	}
+	if d.workerBySession(sessionID) != w || d.gone(w) {
+		return
+	}
+	notice := protocol.UIRequest{}
+	if d.herdrBinary("") == "" {
+		notice = protocol.UIRequest{Text: "Started " + cleanLine(project) + " worker. " + herdrInstallNote, DaemonNotice: true}
+	} else {
+		ctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
+		defer cancel()
+		plan, err := d.localEnter(ctx, protocol.EnterRequest{SessionID: sessionID}, false)
+		if err == nil && plan.OpenedHerdr {
+			notice = protocol.UIRequest{Text: plan.Note, HerdrOpened: true}
+		} else if err == nil && plan.Note != "" {
+			notice = protocol.UIRequest{Text: plan.Note, DaemonNotice: true}
+		}
+	}
+	if notice.Text != "" {
+		d.goBackground(func() { d.broadcastCTOUI(notice) })
+	}
+}
+
+// Only the approving TUI gets a command to run. Broadcasting it would start
+// the same session once per open TUI, and a CLI has no terminal push handler.
+func (d *Daemon) notifyApprovedSessionStart(ctx context.Context, r protocol.StartedSession) {
+	if r.Harness == "codex" && r.EnterPlan != nil && !r.EnterPlan.OpenedHerdr && len(r.EnterPlan.Argv) != 0 {
+		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
+		if c := loc.approver; c != nil {
+			name := cleanLine(r.Project)
+			if host := cleanLine(r.Hostname); host != "" {
+				name += " (" + host + ")"
+			}
+			q := protocol.UIRequest{StartPlan: r.EnterPlan, StartName: name}
+			if c.writeJSON(map[string]any{"method": "cto_ui", "params": q}) == nil {
+				return
+			}
+		}
+	}
+	d.notifySessionStart(r)
 }
 
 func (d *Daemon) notifySessionStart(r protocol.StartedSession) {
