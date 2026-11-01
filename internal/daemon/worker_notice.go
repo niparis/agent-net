@@ -135,7 +135,27 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 		return err
 	}
 	branch := protocol.WorktreeBranch(w.id)
-	if _, err := gitOutWithContext(ctx, main, "worktree", "add", dir, "-b", branch, base); err != nil {
+	d.wmu.Lock()
+	previousBase := w.base
+	d.wmu.Unlock()
+	// A resumed worker's branch stays after its worktree folder is removed (a
+	// disk cleanup). Make the worktree on that branch instead of failing on
+	// -b, so the commits the branch holds are still there.
+	reuse := false
+	if _, err := gitOut(ctx, main, "rev-parse", "--verify", "refs/heads/"+branch+"^{commit}"); err == nil {
+		reuse = true
+	}
+	args := []string{"worktree", "add", dir}
+	if reuse {
+		// A registration of the removed folder would block the add.
+		if _, err := gitOut(ctx, main, "worktree", "prune"); err != nil {
+			return fmt.Errorf("cannot make a worktree: git worktree prune: %w", err)
+		}
+		args = append(args, branch)
+	} else {
+		args = append(args, "-b", branch, base)
+	}
+	if _, err := gitOutWithContext(ctx, main, args...); err != nil {
 		var gitErr *workerGitError
 		if errors.As(err, &gitErr) {
 			message := gitErr.stderr
@@ -151,7 +171,10 @@ func (d *Daemon) createWorktree(ctx context.Context, w *worker, requestedBase ..
 		return fmt.Errorf("cannot make a worktree: %w", err)
 	}
 	d.wmu.Lock()
-	w.mainPath, w.path, w.worktree, w.branch, w.base = main, dir, dir, branch, base
+	w.mainPath, w.path, w.worktree, w.branch = main, dir, dir, branch
+	if !reuse || previousBase == "" {
+		w.base = base
+	}
 	d.wmu.Unlock()
 	return nil
 }
