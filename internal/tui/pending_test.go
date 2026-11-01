@@ -12,18 +12,18 @@ import (
 func TestPendingStatusOnlyIdle(t *testing.T) {
 	m := Model{now: time.Now}
 	a := protocol.AgentView{Online: true, Status: "idle", Pending: []protocol.PendingRequest{{PeerName: "bob", Since: time.Now().Add(-12 * time.Minute).Unix(), Outgoing: true}}}
-	if got := m.statusCell(a); !strings.HasPrefix(got, "waiting on bob · ") {
+	if got := m.statusCell(a); got != "waiting" {
 		t.Fatalf("idle: %q", got)
 	}
 	for _, status := range []string{"busy", "shell", "unknown"} {
 		a.Status = status
-		if got := m.statusCell(a); strings.Contains(got, "waiting on") {
+		if got := m.statusCell(a); got == "waiting" || got == "owes" {
 			t.Fatalf("%s: %q", status, got)
 		}
 	}
 	a.Status = "idle"
 	a.Pending[0].Outgoing = false
-	if got := m.statusCell(a); got != "owes reply" {
+	if got := m.statusCell(a); got != "owes" {
 		t.Fatalf("incoming: %q", got)
 	}
 }
@@ -57,5 +57,44 @@ func TestPendingDetail(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q in %q", want, text)
 		}
+	}
+}
+
+func TestPendingTaskAndLayout(t *testing.T) {
+	for _, width := range []int{80, 120} {
+		m := newModel(width, 34)
+		before := m.sessionsTable(width, 12)
+		for i := range m.snap.Agents {
+			if m.snap.Agents[i].Profile.Name == "strategies" {
+				m.snap.Agents[i].Pending = []protocol.PendingRequest{{PeerName: "a-very-long-name", Since: t0.Add(-12 * time.Minute).Unix(), Outgoing: true}}
+			}
+		}
+		after := m.sessionsTable(width, 12)
+		if before[0] != after[0] || !strings.Contains(after[0], "MODEL") || !strings.Contains(after[0], "TASK") {
+			t.Fatalf("width %d: headers %q vs %q", width, before[0], after[0])
+		}
+		for i := range before {
+			if strings.Contains(before[i], "strategies") {
+				if !strings.Contains(after[i], "12m") || !strings.Contains(after[i], "waiting") {
+					t.Fatalf("width %d: %q", width, after[i])
+				}
+				continue
+			}
+			if before[i] != after[i] {
+				t.Fatalf("width %d: row shifted: %q vs %q", width, before[i], after[i])
+			}
+		}
+	}
+	m := newModel(120, 34)
+	a := protocol.AgentView{Online: true, Status: "idle", Pending: []protocol.PendingRequest{{PeerName: "alice", Since: t0.Add(-5 * time.Minute).Unix()}}}
+	if got := m.pendingTask(a, 50); got != "owes reply to alice · 5m" {
+		t.Fatalf("owed task: %q", got)
+	}
+	if got := m.pendingTask(a, 10); !strings.HasSuffix(got, " · 5m") {
+		t.Fatalf("lost time: %q", got)
+	}
+	a.Status = "busy"
+	if got := m.pendingTask(a, 50); got != "" {
+		t.Fatalf("busy task: %q", got)
 	}
 }

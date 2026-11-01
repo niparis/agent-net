@@ -959,13 +959,6 @@ func (m Model) sessionsTable(w, n int) []string {
 	if len(m.needsRows()) > 0 {
 		statusWidth = 9
 	}
-	for _, g := range m.groups() {
-		for _, a := range g.agents {
-			if a.Online && a.Status == "idle" && len(a.Pending) > 0 {
-				statusWidth = max(statusWidth, min(26, ansi.StringWidth(m.statusCell(a))))
-			}
-		}
-	}
 	avail -= statusWidth - 6
 	cols := columnsForProject(avail, nameWant, projectWant, policy)
 	for i := range cols {
@@ -1121,6 +1114,37 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 	return cells
 }
 
+// pendingTask fits the request description while preserving its age.
+func (m Model) pendingTask(a protocol.AgentView, width int) string {
+	if !a.Online || a.Status != "idle" || len(a.Pending) == 0 || width <= 0 {
+		return ""
+	}
+	p := a.Pending[0]
+	for _, request := range a.Pending {
+		if !request.Outgoing {
+			p = request
+			break
+		}
+	}
+	prefix := "waiting on "
+	if !p.Outgoing {
+		prefix = "owes reply to "
+	}
+	prefix += sanitize(p.PeerName)
+	age := needsAge(m.now(), p.Since)
+	suffix := " · " + age
+	if ansi.StringWidth(prefix+suffix) <= width {
+		return prefix + suffix
+	}
+	if width < ansi.StringWidth(suffix) {
+		if width >= ansi.StringWidth(age) {
+			return age
+		}
+		return ""
+	}
+	return strings.TrimSpace(cellDots(prefix, width-ansi.StringWidth(suffix))) + suffix
+}
+
 func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int) string {
 	selected := a.SessionID == m.selected && (m.selIdx == visibleIndex && !m.selNeeds || m.selNeeds && m.selIdx >= maxNeedsRows)
 	marker := "  "
@@ -1128,6 +1152,12 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	uc := m.usageCells(a, cols)
+	overflow := false
+	for _, c := range cols {
+		if c.name == "STATUS" && c.width == 6 && m.statusCell(a) == "waiting" && !(m.hiddenSessions[a.SessionID] && m.showHiddenSessions) {
+			overflow = true
+		}
+	}
 	var parts []string
 	for _, c := range cols {
 		if v, ok := uc[c.name]; ok {
@@ -1151,24 +1181,27 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 				v = "hidden"
 			} else {
 				v = m.statusCell(a)
-				if strings.HasPrefix(v, "waiting on ") && ansi.StringWidth(v) > c.width {
-					p := a.Pending[0]
-					suffix := " · " + needsAge(m.now(), p.Since)
-					v = "waiting on " + strings.TrimSpace(cellDots(p.PeerName, max(0, c.width-ansi.StringWidth("waiting on ")-ansi.StringWidth(suffix)))) + suffix
-				}
 			}
 		case "TRUST":
 			v = m.requestRuleBadge(a)
 		case "POLICY":
 			v = policyBadge(a.Delegation)
 		case "TASK":
+			if overflow {
+				c.width = max(c.width-1, 0)
+			}
 			v = taskText(a)
+			if pending := m.pendingTask(a, c.width); pending != "" {
+				v = pending
+			}
 		}
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
 		}
 		if c.name == "TASK" {
 			v = cellDots(v, c.width)
+		} else if c.name == "STATUS" && v == "waiting" && c.width == 6 {
+			// The waiting row borrows one character from its TASK cell.
 		} else {
 			v = cell(v, c.width)
 		}

@@ -4,14 +4,14 @@
 │  ● build-vm   v0.4.0 cpu ██████░░ 71% of 4  mem ██░░ 3.2/8.0G disk 31G free  │
 │  ○ old-box    v0.3.2 cpu ?                  mem ?             disk ?         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-  NAME           AGENT    PROJECT   STATUS                     TRUST   CPU   RAM
+  NAME         AGENT    PROJECT   MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────
-  tenebrae-53    claude   tenebrae  busy                       -       38%  1.2G
-  strategies     claude   strategi… waiting on a-very-l… · 12m -      240%  4.6G
-  web            opencode shop      owes reply                 -         ?     ?
+  tenebrae-53  claude   tenebrae  opus-5-5   busy   -       38%  1.2G
+  strategies   claude   strategi… sonnet-5-5 waiting -      240%  4.6G wa… · 12m
+  web          opencode shop      sonnet-5   owes   -         ?     ? owes… · 3m
  build-vm 2 sessions ───────────────────────────────────────────────────────────
-  ci-runner      pi       agent-net idle                       -        5%  300M
-  scratch        pi       -         shell                      -       <1%   80M
+  ci-runner    pi       agent-net gpt-6      idle   -        5%  300M
+  scratch      pi       -         -          shell  -       <1%   80M
 
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
