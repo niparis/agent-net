@@ -420,7 +420,12 @@ CREATE INDEX IF NOT EXISTS worker_defects_model ON worker_defects (model, at);
 -- adds that many points of rework to the worker's task. Rows made before this
 -- column existed count as severity 1.
 SELECT 1 /* worker defect severity */;
-`, `SELECT 1 /* worker blast radius columns */;`}
+`, `SELECT 1 /* worker blast radius columns */;`, `
+-- Automatic continues the daemon sent for a worker run. They cost the caller
+-- no rework, so they are kept apart from continue_count and never enter the
+-- difficulty calibration.
+SELECT 1 /* worker auto continue */;
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -602,6 +607,19 @@ func (s *Store) migrate() error {
 				// An older report had no severity; one point is the least a
 				// defect can cost.
 				if _, err := tx.Exec(`ALTER TABLE worker_defects ADD COLUMN severity INTEGER NOT NULL DEFAULT 1`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker auto continue") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = 'auto_continue_count'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN auto_continue_count INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
@@ -1145,11 +1163,11 @@ func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 	return err
 }
 
-// SetSessionWorkerRework keeps the rework counters and the difficulties on a
-// worker's session record. The end report is the reliable last word, so the
-// gateway does not depend on the session sync that came before it. A session
-// that is not a worker is left alone.
-func (s *Store) SetSessionWorkerRework(nodeID, sessionID string, cont, fix int, asked, used string) error {
+// SetSessionWorkerRework keeps the rework counters, the automatic continues and
+// the difficulties on a worker's session record. The end report is the reliable
+// last word, so the gateway does not depend on the session sync that came before
+// it. A session that is not a worker is left alone.
+func (s *Store) SetSessionWorkerRework(nodeID, sessionID string, cont, fix int, asked, used string, auto ...int) error {
 	var raw string
 	err := s.db.QueryRow(`SELECT worker FROM sessions WHERE id = ? AND node_id = ?`, sessionID, nodeID).Scan(&raw)
 	if err == sql.ErrNoRows || raw == "" {
@@ -1163,6 +1181,9 @@ func (s *Store) SetSessionWorkerRework(nodeID, sessionID string, cont, fix int, 
 		return nil
 	}
 	w.Continue, w.Fix = cont, fix
+	if len(auto) > 0 {
+		w.AutoContinue = auto[0]
+	}
 	if asked != "" {
 		w.DifficultyAsked = asked
 	}

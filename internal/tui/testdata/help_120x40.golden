@@ -20,6 +20,8 @@ Keys ─────────────────────────
   up/down, j/k         select a subscription
   p                    protect or unprotect the selected subscription
   s                    show or hide subscriptions that are not set up
+  left/right           cycle the Quality panel agent: all agents, then each caller
+  d                    show or hide the Quality panel detail (fixes and continues)
   r                    refresh the readings
 
  Graph
@@ -34,7 +36,5 @@ Keys ─────────────────────────
   enter                open Sessions filtered to this agent's project
   n                    start a new session in this project (the same form, filled from here)
   esc                  return to Graph with the same node selected
-  D                    name project (empty clears)
-  a                    toggle autonomy off or wake
   more below
 up/down scroll  esc close help  q quit

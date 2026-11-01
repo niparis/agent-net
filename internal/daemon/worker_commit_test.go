@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -65,13 +66,21 @@ func gitWithEnv(t *testing.T, dir string, extra map[string]string, args ...strin
 // changed in the worktree, with the environment the daemon gave it.
 func fakeHarnessCommit(t *testing.T, dir string, env map[string]string, message string) {
 	t.Helper()
+	if err := runFakeHarnessCommit(dir, env, message); err != nil {
+		t.Fatalf("fake harness: %v", err)
+	}
+}
+
+func runFakeHarnessCommit(dir string, env map[string]string, message string) error {
 	script := "set -e\ngit add -A\ngit commit -q -m " + testShellQuote(message) + "\n"
 	cmd := exec.Command("sh", "-c", script)
 	cmd.Dir = dir
 	cmd.Env = gitTestEnv(env)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("fake harness: %v\n%s", err, out)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w\n%s", err, out)
 	}
+	return nil
 }
 
 func testShellQuote(s string) string {
@@ -145,6 +154,49 @@ func TestWorkerWithoutWorktreeHasNoCommitHook(t *testing.T) {
 	w := &worker{id: protocol.NewID("w"), harness: "codex", sessionID: protocol.NewID("s")}
 	if env := d.workerCommitEnv(w); env != nil {
 		t.Fatalf("a worker without a worktree got a commit environment: %v", env)
+	}
+}
+
+func TestWorkerCommitPreCommitHookCanBlock(t *testing.T) {
+	d := commitTestDaemon(t)
+	w, dir := commitTestWorker(t, d)
+	hooks := filepath.Join(w.mainPath, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooks, "pre-commit"), []byte("#!/bin/sh\nexit 1\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := d.workerCommitEnv(w)
+	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := runFakeHarnessCommit(dir, env, "this commit must be blocked"); err == nil {
+		t.Fatal("the project's pre-commit hook did not block the worker's commit")
+	}
+	if n := gitWithEnv(t, dir, nil, "rev-list", "--count", "HEAD"); n != "1" {
+		t.Fatalf("the blocked commit was made: %s commits", n)
+	}
+}
+
+func TestWorkerCommitMsgHookRuns(t *testing.T) {
+	d := commitTestDaemon(t)
+	w, dir := commitTestWorker(t, d)
+	hooks := filepath.Join(w.mainPath, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(hooks, "commit-msg"), []byte("#!/bin/sh\necho 'Commit-Msg-Ran: yes' >> \"$1\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := d.workerCommitEnv(w)
+	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("done\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fakeHarnessCommit(t, dir, env, "work with a commit-msg hook")
+	msg := gitWithEnv(t, dir, nil, "log", "-1", "--format=%B")
+	if !strings.Contains(msg, "Commit-Msg-Ran: yes") {
+		t.Errorf("the project's commit-msg hook did not run:\n%s", msg)
 	}
 }
 

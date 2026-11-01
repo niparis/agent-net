@@ -153,6 +153,75 @@ func fitQuality(samples []qualitySample) qualityFit {
 	return f
 }
 
+// qualityRunSamples reads one rework sample per worker session. The counters
+// are spread over the session's runs, so they add up; model, harness and
+// difficulty come from the first row that is not a stopped run. A session with
+// a run from before the counters existed stays out. Late defects add their
+// severity points to the task's fix count, like Calibration.
+func (s *Store) qualityRunSamples() ([]qualitySample, error) {
+	cut := s.now().Add(-calibrationWindow).Unix()
+	rows, err := s.db.Query(`SELECT session_id, model, harness, difficulty, outcome, continue_count, fix_count, counters_known
+		FROM worker_runs WHERE ended_at >= ? ORDER BY ended_at, id`, cut)
+	if err != nil {
+		return nil, err
+	}
+	type session struct {
+		sample    qualitySample
+		cont, fix int
+		unknown   bool
+	}
+	sessions := map[string]*session{}
+	order := []string{}
+	for rows.Next() {
+		var sessionID, model, harness, difficulty, outcome string
+		var cont, fix, known int
+		if err := rows.Scan(&sessionID, &model, &harness, &difficulty, &outcome, &cont, &fix, &known); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if sessionID == "" || outcome == protocol.OutcomeStopped {
+			continue
+		}
+		sess := sessions[sessionID]
+		if sess == nil {
+			// The first row holds the model, harness and difficulty of the task.
+			sess = &session{}
+			sess.sample.Model, sess.sample.Effort = protocol.SplitModelLevel(model)
+			sess.sample.Model = qualityModel(sess.sample.Model)
+			sess.sample.Harness = harness
+			sess.sample.Difficulty = difficulty
+			sessions[sessionID] = sess
+			order = append(order, sessionID)
+		}
+		sess.cont += cont
+		sess.fix += fix
+		if known == 0 {
+			sess.unknown = true
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defects, err := s.DefectReworkBySession(cut)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]qualitySample, 0, len(order))
+	for _, sessionID := range order {
+		sess := sessions[sessionID]
+		if sess.unknown || sess.sample.Model == "" {
+			continue
+		}
+		sample := sess.sample
+		sample.Value = protocol.ReworkWeight(sess.fix+defects[sessionID], sess.cont)
+		sample.Weight = 1
+		out = append(out, sample)
+	}
+	return out, nil
+}
+
 // refreshQuality is called on source writes and startup, never by a read or
 // a TUI redraw. Holding qualityMu serializes rebuilds and snapshot reads.
 func (s *Store) refreshQuality() error {
@@ -189,36 +258,16 @@ func (s *Store) refreshQuality() error {
 	if err != nil {
 		return err
 	}
-	rows, err = s.db.Query(`SELECT model,harness,difficulty,continue_count,fix_count FROM worker_runs
- WHERE model <> '' AND (session_id = '' OR id IN (SELECT MAX(id) FROM worker_runs WHERE session_id <> '' GROUP BY session_id)) ORDER BY id`)
-	if err != nil {
-		return err
-	}
-	var runs []qualitySample
-	for rows.Next() {
-		var x qualitySample
-		var model string
-		var cont, fix int
-		if err := rows.Scan(&model, &x.Harness, &x.Difficulty, &cont, &fix); err != nil {
-			rows.Close()
-			return err
-		}
-		x.Model, x.Effort = protocol.SplitModelLevel(model)
-		x.Model = qualityModel(x.Model)
-		x.Value = protocol.ReworkWeight(fix, cont)
-		x.Weight = 1
-		runs = append(runs, x)
-	}
-	err = rows.Err()
-	rows.Close()
+	runs, err := s.qualityRunSamples()
 	if err != nil {
 		return err
 	}
 	q, r := fitQuality(ratings), fitQuality(runs)
 	out := protocol.QualityAnalysis{Status: "not enough ratings", Ratings: len(ratings), Average: q.Average, ReworkAverage: r.Average}
-	if len(ratings) >= 5 {
+	if len(ratings) >= protocol.QualityMinRatings {
 		out.Status = "tentative: overlap and more ratings needed"
 	}
+	out.Summary = qualitySummary(q)
 	keys := map[string]bool{}
 	for key := range q.Counts {
 		keys[key] = true
@@ -242,7 +291,7 @@ func (s *Store) refreshQuality() error {
 	for _, p := range profiles {
 		v := qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, "normal")
 		row := protocol.ProfileQuality{Name: p.Name, Quality: v, Weights: map[string]float64{}}
-		if len(ratings) >= 5 {
+		if len(ratings) >= protocol.QualityMinRatings {
 			for _, level := range protocol.DifficultyLevels {
 				row.Weights[level] = qualityRotationWeight(qualityPrediction(q, strong, p.Model, p.Harness, p.Effort, level), q.Average)
 			}
@@ -260,9 +309,20 @@ func (s *Store) refreshQuality() error {
 				row.Runs++
 			}
 		}
-		row.Unexpected = row.Ratings >= 5 && math.Abs(actual-predicted)/float64(row.Ratings) > .75
+		row.Unexpected = row.Ratings >= protocol.QualityMinRatings && math.Abs(actual-predicted)/float64(row.Ratings) > .75
 		out.Profiles = append(out.Profiles, row)
 	}
+	sort.SliceStable(out.Profiles, func(i, j int) bool {
+		if out.Profiles[i].Runs != out.Profiles[j].Runs {
+			return out.Profiles[i].Runs > out.Profiles[j].Runs
+		}
+		return out.Profiles[i].Name < out.Profiles[j].Name
+	})
+	families, agents, err := s.qualityFamilyTables()
+	if err != nil {
+		return err
+	}
+	out.Levels, out.Agents = families, agents
 	settings, err := s.qualitySettings()
 	if err != nil {
 		return err
@@ -273,6 +333,31 @@ func (s *Store) refreshQuality() error {
 	s.qualityStrong = strong
 	return nil
 }
+
+// qualitySummary gives the size of each factor's effect: the largest absolute
+// effect of that kind. The TUI shows the three largest as one line.
+func qualitySummary(f qualityFit) []protocol.QualityFactor {
+	sizes := map[string]float64{}
+	for key, effect := range f.Effects {
+		kind, _, _ := strings.Cut(key, "\x00")
+		if kind == "difficulty" {
+			continue
+		}
+		sizes[kind] = math.Max(sizes[kind], math.Abs(effect))
+	}
+	out := make([]protocol.QualityFactor, 0, len(sizes))
+	for kind, size := range sizes {
+		out = append(out, protocol.QualityFactor{Kind: kind, Size: size})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Size != out[j].Size {
+			return out[i].Size > out[j].Size
+		}
+		return out[i].Kind < out[j].Kind
+	})
+	return out
+}
+
 func qualityPrediction(f qualityFit, strong map[string]int, model, harness, effort, difficulty string) float64 {
 	if len(f.Effects) == 0 {
 		return 0
@@ -289,6 +374,12 @@ func (s *Store) QualityAnalysis() protocol.QualityAnalysis {
 	defer s.qualityMu.Unlock()
 	out := s.quality
 	out.Effects = append([]protocol.QualityEffect(nil), out.Effects...)
+	out.Summary = append([]protocol.QualityFactor(nil), out.Summary...)
+	out.Levels = copyQualityLevels(out.Levels)
+	out.Agents = append([]protocol.QualityAgent(nil), out.Agents...)
+	for i := range out.Agents {
+		out.Agents[i].Levels = copyQualityLevels(out.Agents[i].Levels)
+	}
 	out.Profiles = append([]protocol.ProfileQuality(nil), out.Profiles...)
 	for i, p := range out.Profiles {
 		out.Profiles[i].Weights = make(map[string]float64, len(p.Weights))
@@ -305,7 +396,7 @@ func (s *Store) applyQualityWeights(candidates []protocol.WorkerModelCandidate, 
 	}
 	s.qualityMu.Lock()
 	defer s.qualityMu.Unlock()
-	if s.quality.Ratings < 5 {
+	if s.quality.Ratings < protocol.QualityMinRatings {
 		return nil
 	}
 	for i, c := range candidates {

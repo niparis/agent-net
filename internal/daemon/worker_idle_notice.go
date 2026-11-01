@@ -115,6 +115,11 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		if !valid {
 			return
 		}
+		// The worker stopped early without a hand-back: send it our own
+		// continue, up to the limit, instead of telling the caller yet.
+		if d.tryAutoContinue(ctx, w) {
+			return
+		}
 		n := d.notice(w, "idle without hand-back", "This is the worker's last assistant message, not a hand-back. The worker is still running.", stats)
 		d.wmu.Lock()
 		valid = d.workers[w.id] == w && !w.stopping && w.doneStatus == "" && w.idleNoticeGeneration == generation && w.idleNoticePending

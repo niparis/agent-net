@@ -119,6 +119,8 @@ session. The extra actions apply only when such a row is selected.
 | `up`/`down`, `j`/`k` | Select a subscription. |
 | `p` | Protect or unprotect, then `y`/`n`. |
 | `s` | Show or hide subscriptions that are not set up. |
+| `left`/`right` | Cycle the Quality panel agent: all agents, then each caller. |
+| `d` | Show or hide the Quality panel detail: fixes and continues. |
 | `r` | Refresh the readings. |
 | `?` | Help. |
 | `q` | Quit. |

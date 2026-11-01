@@ -363,7 +363,7 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: idle without hand-back", "run time:", "work.txt", "last assistant message", "finished without hand-back", protocol.ChecklistMarker} {
 		if !strings.Contains(n.Body, want) {
@@ -432,7 +432,7 @@ func TestCodexWorkerIdleNoticeAfterAutomaticHandbackFails(t *testing.T) {
 	w := startCodexNode(t, g, set)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	eventually(t, "codex turn held", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "fake-codex-held")); return err == nil })
 	worker := w.d.workerBySession(res.SessionID)
 	w.d.wmu.Lock()

@@ -22,7 +22,7 @@ func TestPartialHandbackTrackRecordAndPlaybook(t *testing.T) {
 	}
 
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
-		Task: "FAKE:handback FAKE:partial"})
+		Task: "FAKE:handback FAKE:partial", AutoContinue: autoContinueOff()})
 	if len(res.Playbooks) != 1 || res.Playbooks[0].Note != "Ask for the diff before you trust it." {
 		t.Errorf("playbook note in the start result: %+v", res.Playbooks)
 	}

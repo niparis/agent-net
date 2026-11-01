@@ -317,6 +317,10 @@ type WorkerStartRequest struct {
 	// its first task. Project, harness and model default to the old worker's.
 	// Task is then optional and is added as "Also: ...".
 	Continue string `json:"continue,omitempty"`
+	// AutoContinue lets the daemon send the worker its own continues when it
+	// stops early (a partial hand-back, or idle without a hand-back), up to
+	// DefaultAutoContinues times, before the caller is told. Absent means on.
+	AutoContinue *bool `json:"auto_continue,omitempty"`
 }
 
 // WorkerStartResult answers OpWorkerStart.
@@ -396,6 +400,9 @@ type WorkerHandbackResult struct {
 	Complete bool     `json:"complete"`
 	Sent     *Message `json:"sent,omitempty"`
 	Queued   bool     `json:"queued,omitempty"`
+	// AutoContinued is true when the daemon kept the worker running with its
+	// own continue instead of telling the caller.
+	AutoContinued bool `json:"auto_continued,omitempty"`
 }
 
 // WorkersQuery is the optional request of OpWorkers. An empty query lists the

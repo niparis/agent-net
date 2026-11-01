@@ -786,9 +786,21 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 			}
 			call := map[string]any{"report": "finished the task in " + cwd, "status": status}
 			if strings.Contains(body, "FAKE:partial") {
+				// Two automatic continues may hand back partial again.
+				os.WriteFile(filepath.Join(cwd, "fake-partial-continues"), []byte("2"), 0600)
 				call["complete"] = false
 			}
 			send("worker_handback", call)
+		case strings.Contains(body, "[agent-net] continue:"):
+			// The daemon's own continue. Record it, and while the test asks for
+			// partial hand-backs, hand back partial again after a moment, so a
+			// test can see each phase before the next hand-back.
+			noteFakeAutoContinue(cwd, body)
+			if left := fakePartialLeft(cwd); left > 0 {
+				time.Sleep(scaled(150 * time.Millisecond))
+				os.WriteFile(filepath.Join(cwd, "fake-partial-continues"), []byte(strconv.Itoa(left-1)), 0600)
+				send("worker_handback", map[string]any{"report": "finished the task in " + cwd, "complete": false})
+			}
 		case strings.Contains(body, "FAKE:edit"):
 			fakeEdit(cwd)
 			send("reply", map[string]any{"message_id": msg.ID, "body": "edited"})
@@ -798,4 +810,34 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 		send("status", map[string]any{"status": "idle"})
 	}
 	return generation
+}
+
+// noteFakeAutoContinue records a continue from the daemon, so a test can see
+// that and how often the worker got one.
+func noteFakeAutoContinue(cwd, body string) {
+	f, err := os.OpenFile(filepath.Join(cwd, "fake-auto-continues"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return
+	}
+	fmt.Fprintln(f, body)
+	f.Close()
+}
+
+// fakeAutoContinueCount is how many automatic continues the fake got.
+func fakeAutoContinueCount(cwd string) int {
+	b, err := os.ReadFile(filepath.Join(cwd, "fake-auto-continues"))
+	if err != nil {
+		return 0
+	}
+	return len(strings.Split(strings.TrimSpace(string(b)), "\n"))
+}
+
+// fakePartialLeft is how many more partial hand-backs the fake makes.
+func fakePartialLeft(cwd string) int {
+	b, err := os.ReadFile(filepath.Join(cwd, "fake-partial-continues"))
+	if err != nil {
+		return 0
+	}
+	n, _ := strconv.Atoi(strings.TrimSpace(string(b)))
+	return n
 }

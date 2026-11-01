@@ -93,7 +93,6 @@ CREATE TABLE IF NOT EXISTS workers (
 	// not have these columns.
 	for _, col := range []struct{ name, spec string }{
 		{"task_text", `task_text TEXT NOT NULL DEFAULT ''`},
-		{"owner_name", `owner_name TEXT NOT NULL DEFAULT ''`},
 		{"resumable", `resumable INTEGER NOT NULL DEFAULT 0`},
 		{"reported", `reported INTEGER NOT NULL DEFAULT 0`},
 		{"task_full", `task_full TEXT NOT NULL DEFAULT ''`},
@@ -108,6 +107,10 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"difficulty_asked", `difficulty_asked TEXT NOT NULL DEFAULT ''`},
 		{"difficulty_used", `difficulty_used TEXT NOT NULL DEFAULT ''`},
 		{"touches", `touches TEXT NOT NULL DEFAULT ''`},
+		{"auto_continue", `auto_continue INTEGER NOT NULL DEFAULT 1`},
+		{"auto_continue_count", `auto_continue_count INTEGER NOT NULL DEFAULT 0`},
+		{"auto_continue_run", `auto_continue_run INTEGER NOT NULL DEFAULT 0`},
+		{"owner_name", `owner_name TEXT NOT NULL DEFAULT ''`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)
@@ -120,7 +123,7 @@ CREATE TABLE IF NOT EXISTS workers (
 	}
 	// base and record_task keep a continued or based start in the queue. A
 	// queue table from an older version does not have them.
-	for _, col := range []string{"base", "record_task", "permissions", "owner_name", "difficulty_asked", "difficulty_used", "touches"} {
+	for _, col := range []string{"base", "record_task", "permissions", "difficulty_asked", "difficulty_used", "touches"} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = ?`, col).Scan(&has)
 		if has == 0 {
@@ -134,6 +137,22 @@ CREATE TABLE IF NOT EXISTS workers (
 	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'sender_cto'`).Scan(&hasCTO)
 	if hasCTO == 0 {
 		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	var hasAutoContinue int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'auto_continue'`).Scan(&hasAutoContinue)
+	if hasAutoContinue == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN auto_continue INTEGER NOT NULL DEFAULT 1`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	var hasOwnerName int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'owner_name'`).Scan(&hasOwnerName)
+	if hasOwnerName == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN owner_name TEXT NOT NULL DEFAULT ''`); err != nil {
 			db.Close()
 			return nil, err
 		}

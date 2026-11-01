@@ -183,6 +183,235 @@ func TestQualityChooserEnabledAndBounded(t *testing.T) {
 	}
 }
 
+func TestQualityModelFamily(t *testing.T) {
+	for model, want := range map[string]string{
+		"openai/gpt-6.1-sol:high": "sol",
+		"gpt-6.1-terra":           "terra",
+		"gpt-6.1-luna:medium":     "luna",
+		"claude-opus-5-5:high":    "opus",
+		"claude-sonnet-4-5":       "sonnet",
+		"deepseek-v4.1-flash":     "deepseek",
+	} {
+		if got := qualityModelFamily(model); got != want {
+			t.Errorf("family of %q = %q, want %q", model, got, want)
+		}
+	}
+}
+
+func qualityLevel(t *testing.T, levels []protocol.QualityLevel, name string) protocol.QualityLevel {
+	t.Helper()
+	for _, l := range levels {
+		if l.Difficulty == name {
+			return l
+		}
+	}
+	t.Fatalf("no level %q in %+v", name, levels)
+	return protocol.QualityLevel{}
+}
+
+func qualityFamily(t *testing.T, families []protocol.QualityFamily, name string) protocol.QualityFamily {
+	t.Helper()
+	for _, f := range families {
+		if f.Family == name {
+			return f
+		}
+	}
+	t.Fatalf("no family %q in %+v", name, families)
+	return protocol.QualityFamily{}
+}
+
+func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	callerName := func(id, name, model string) string {
+		t.Helper()
+		session, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: id, Name: name, Model: model, Status: "idle"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return session
+	}
+	alpha := callerName("alpha", "agent-net", "claude-opus-5-5")
+	beta := callerName("beta", "homelab-agent", "gpt-6.1-terra")
+	now := s.now().Unix()
+	add := func(session, caller, model, difficulty string, fix, cont int, outcome string) {
+		t.Helper()
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: session, Harness: "opencode", Model: model,
+			Outcome: outcome, EndedAt: now, Caller: caller, Difficulty: difficulty, Fix: fix, Continue: cont}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One task is one session: the two runs of t1 add up to 2 fixes and 1 continue.
+	add("t1", alpha, "gpt-6.1-terra:high", "normal", 1, 1, protocol.OutcomeComplete)
+	add("t1", alpha, "gpt-6.1-terra:high", "normal", 1, 0, protocol.OutcomeComplete)
+	add("t2", alpha, "gpt-6.1-terra:high", "normal", 0, 0, protocol.OutcomeComplete)
+	// A stopped task says nothing about the model and stays out.
+	add("t3", alpha, "gpt-6.1-terra:high", "normal", 5, 5, protocol.OutcomeStopped)
+	add("d1", alpha, "deepseek-v4.1-flash", "normal", 1, 0, protocol.OutcomeComplete)
+	add("s1", alpha, "gpt-6.1-sol:high", "hard", 0, 3, protocol.OutcomeComplete)
+	add("x1", alpha, "deepseek-v4.1-flash", "", 2, 0, protocol.OutcomeComplete)
+	add("l1", beta, "gpt-6.1-luna", "simple", 0, 0, protocol.OutcomeComplete)
+	add("o1", beta, "claude-opus-5-5", "normal", 0, 0, protocol.OutcomeComplete)
+	// A session with one unknown run stays out, even after a later known run.
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, caller, difficulty)
+		VALUES (?,?,?,?,?,?,?,?,?)`, node, "u1", "opencode", "gpt-6.1-luna", protocol.OutcomeComplete, now, now, alpha, "normal"); err != nil {
+		t.Fatal(err)
+	}
+	add("u1", alpha, "gpt-6.1-luna", "normal", 2, 0, protocol.OutcomeComplete)
+	// Later defects belong to the worker's task, not to a new task. The real
+	// worker_defects table comes from the rating work in the base migration.
+	for _, d := range []struct {
+		session  string
+		severity int
+	}{{"t1", 3}, {"x1", 4}, {"x1", 2}} {
+		if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, severity, at) VALUES (?,?,?)`, d.session, d.severity, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.refreshQuality(); err != nil {
+		t.Fatal(err)
+	}
+
+	q := s.QualityAnalysis()
+	// Only levels with tasks appear, in hardest-to-easiest protocol order.
+	wantOrder := []string{"simple", "normal", "hard", "unknown"}
+	if len(q.Levels) != len(wantOrder) {
+		t.Fatalf("levels: %+v", q.Levels)
+	}
+	for i, name := range wantOrder {
+		if q.Levels[i].Difficulty != name {
+			t.Fatalf("level %d = %q, want %q (%+v)", i, q.Levels[i].Difficulty, name, q.Levels)
+		}
+	}
+	normal := qualityLevel(t, q.Levels, "normal")
+	if normal.Tasks != 4 {
+		t.Fatalf("normal tasks = %d, want 4 (%+v)", normal.Tasks, normal)
+	}
+	terra := qualityFamily(t, normal.Families, "terra")
+	if terra.Tasks != 2 || terra.Fixes != 2 || terra.Continues != 1 {
+		t.Fatalf("terra counts: %+v", terra)
+	}
+	if want := (2 + protocol.CalibrationContinueWeight) / 2; terra.FollowUps != want {
+		t.Fatalf("terra follow-ups: %+v, want %.4f", terra, want)
+	}
+	if terra.LateDefects != 1 || terra.LateDefectSeverity != 3 {
+		t.Fatalf("terra defects: %+v", terra)
+	}
+	if want := (float64(protocol.QualityContinueMinutes) + 2*float64(protocol.QualityFixMinutes) + float64(protocol.QualityDefectMinutesSeverity3)) / 2; terra.Headache != want {
+		t.Fatalf("terra headache: %+v, want %.4f", terra, want)
+	}
+	deepseek := qualityFamily(t, normal.Families, "deepseek")
+	if deepseek.Tasks != 1 || deepseek.FollowUps != 1 || deepseek.LateDefects != 0 || deepseek.LateDefectSeverity != 0 {
+		t.Fatalf("deepseek normal: %+v", deepseek)
+	}
+	if got := normal.Families[0].Family; got != "terra" {
+		t.Fatalf("families are not sorted by tasks: %+v", normal.Families)
+	}
+	for _, f := range normal.Families {
+		if f.Family == "luna" {
+			t.Fatalf("unknown-counter task counted: %+v", normal.Families)
+		}
+	}
+	hard := qualityLevel(t, q.Levels, "hard")
+	if f := qualityFamily(t, hard.Families, "sol"); f.Tasks != 1 || f.Continues != 3 {
+		t.Fatalf("hard sol: %+v", f)
+	}
+	if f := qualityFamily(t, qualityLevel(t, q.Levels, "simple").Families, "luna"); f.Tasks != 1 || f.FollowUps != 0 {
+		t.Fatalf("simple luna: %+v", f)
+	}
+	unknown := qualityLevel(t, q.Levels, "unknown")
+	if f := qualityFamily(t, unknown.Families, "deepseek"); f.Tasks != 1 || f.LateDefects != 2 ||
+		f.LateDefectSeverity != 3 || f.Headache != 230 {
+		t.Fatalf("unknown deepseek: %+v", f)
+	}
+	if len(q.Agents) != 2 || q.Agents[0].Name != "agent-net" || q.Agents[1].Name != "homelab-agent" {
+		t.Fatalf("agents: %+v", q.Agents)
+	}
+	if f := qualityFamily(t, qualityLevel(t, q.Agents[0].Levels, "normal").Families, "terra"); f.Tasks != 2 || f.Fixes != 2 {
+		t.Fatalf("agent-net terra: %+v", f)
+	}
+	if f := qualityFamily(t, qualityLevel(t, q.Agents[1].Levels, "simple").Families, "luna"); f.Tasks != 1 {
+		t.Fatalf("homelab-agent simple: %+v", f)
+	}
+	if f := qualityFamily(t, qualityLevel(t, q.Agents[1].Levels, "normal").Families, "opus"); f.Tasks != 1 {
+		t.Fatalf("homelab-agent normal: %+v", f)
+	}
+}
+
+func TestQualityReworkSumsEveryRunOfASession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	caller := ratingCaller(t, s, node, "caller", "unknown")
+	now := s.now().Unix()
+	// One session, three runs: the continue is on the first row and the fix on
+	// the second. The task's rework is the sum of all rows, not the last one.
+	for i, run := range []struct{ cont, fix int }{{1, 0}, {0, 1}, {0, 0}} {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_multi", Harness: "opencode",
+			Model: "m:high", Outcome: protocol.OutcomeComplete, EndedAt: now + int64(i), Caller: caller,
+			Difficulty: "normal", Continue: run.cont, Fix: run.fix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := protocol.ReworkWeight(1, 1)
+	if got := s.QualityAnalysis(); got.ReworkAverage != want {
+		t.Fatalf("session rework = %v, want %v (continue 1, fix 1)", got.ReworkAverage, want)
+	}
+	// A defect found later adds its severity points to the task's fix count.
+	if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, severity, at) VALUES (?,?,?)`, "s_multi", 2, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.refreshQuality(); err != nil {
+		t.Fatal(err)
+	}
+	want = protocol.ReworkWeight(3, 1)
+	if got := s.QualityAnalysis(); got.ReworkAverage != want {
+		t.Fatalf("session rework with a severity 2 defect = %v, want %v", got.ReworkAverage, want)
+	}
+}
+
+func TestQualityReworkSkipsUnknownCountersAndStoppedSessions(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	caller := ratingCaller(t, s, node, "caller", "unknown")
+	now := s.now().Unix()
+	add := func(session string, outcome string, cont, fix int) {
+		t.Helper()
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: session, Harness: "opencode",
+			Model: "m:high", Outcome: outcome, EndedAt: now, Caller: caller, Difficulty: "normal",
+			Continue: cont, Fix: fix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("s_good", protocol.OutcomeComplete, 0, 1)
+	add("s_stopped", protocol.OutcomeStopped, 0, 9)
+	// A session with one run from before the counters existed stays out.
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, caller, difficulty)
+		VALUES (?,?,?,?,?,?,?,?)`, node, "s_unknown", "opencode", "m:high", protocol.OutcomeComplete, now, caller, "normal"); err != nil {
+		t.Fatal(err)
+	}
+	add("s_unknown", protocol.OutcomeComplete, 0, 9)
+	if got, want := s.QualityAnalysis().ReworkAverage, protocol.ReworkWeight(1, 0); got != want {
+		t.Fatalf("only the known, non-stopped task should count: got %v, want %v", got, want)
+	}
+}
+
+func TestQualitySummarySortsEffectSizes(t *testing.T) {
+	f := qualityFit{
+		Effects: map[string]float64{
+			"model\x00a":           .8,
+			"model\x00b":           -.2,
+			"effort\x00a high":     .3,
+			"harness\x00codex":     .1,
+			"difficulty\x00normal": .9,
+		},
+	}
+	got := qualitySummary(f)
+	want := []protocol.QualityFactor{{Kind: "model", Size: .8}, {Kind: "effort", Size: .3}, {Kind: "harness", Size: .1}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary = %+v, want %+v", got, want)
+	}
+}
+
 func TestQualityUnratedProfileHasNoInventedScore(t *testing.T) {
 	s, _ := newTestStore(t)
 	if err := s.AddWorkerProfile(protocol.WorkerProfile{Name: "new", Harness: "codex", Model: "m"}); err != nil {
