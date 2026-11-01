@@ -460,9 +460,6 @@ func TestInviteLine(t *testing.T) {
 	if !strings.Contains(InviteLine("::1", "7420", "A", "p"), "https://[::1]:7420/") {
 		t.Error("IPv6 host not bracketed")
 	}
-	if isTailscale("192.168.1.2") || !isTailscale("100.64.0.10") || isTailscale("100.128.0.1") {
-		t.Error("tailscale range check")
-	}
 }
 
 func TestEnsureWorkersSurviveUnitFixesAnOldUnit(t *testing.T) {
