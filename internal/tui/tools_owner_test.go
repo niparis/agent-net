@@ -319,3 +319,48 @@ func TestToolsVersionDriftOffersCompare(t *testing.T) {
 		t.Fatal("version comparison must name both machines")
 	}
 }
+
+func TestToolsFilteredAttentionReasons(t *testing.T) {
+	m, _ := newToolsModel(120, 34)
+	m = openTools(m)
+	for _, filter := range []string{"node:homelab", "project:homelab", "node:homelab machine:research", "node:homelab code-review"} {
+		t.Run(filter, func(t *testing.T) {
+			m.tl.search = filter
+			for _, r := range m.shownRows() {
+				if strings.Contains(m.toolStatus(r), "available to turn on") {
+					t.Fatalf("repetitive off status: %s", m.toolStatus(r))
+				}
+				switch r.Name {
+				case "code-review":
+					status := m.toolStatus(r)
+					for _, want := range []string{"on for homelab", "v1", "v3", "Nicolas-MBP", "research"} {
+						if !strings.Contains(status, want) {
+							t.Errorf("flagged drift lacks %q: %s", want, status)
+						}
+					}
+				case "imnplementing-clean-architecture":
+					if !strings.Contains(m.toolStatus(r), "off for homelab · looks like a copy of clean-architecture-python") {
+						t.Errorf("flagged duplicate lacks its reason: %s", m.toolStatus(r))
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestToolsUnfilteredAttentionReasons(t *testing.T) {
+	m, _ := newToolsModel(120, 34)
+	m = openTools(m)
+	for _, r := range m.shownRows() {
+		switch r.Name {
+		case "diagnosing-bugs":
+			if m.toolAttention(r) && !strings.Contains(m.toolStatus(r), "scripts folder") {
+				t.Errorf("harness limitation needs a concrete reason or no flag: %s", m.toolStatus(r))
+			}
+		case "web-design-guidelines":
+			if !m.toolAttention(r) || !strings.Contains(m.toolStatus(r), "repo copy in sovl-clone hides yours") {
+				t.Errorf("shadowed skill needs its reason: %s", m.toolStatus(r))
+			}
+		}
+	}
+}

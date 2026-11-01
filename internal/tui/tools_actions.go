@@ -58,15 +58,66 @@ func (m Model) toolMatches(r toolsdiff.Row) bool {
 	// status says off in this scope, and Enter can turn one on directly.
 	return true
 }
+
+// The flag and its explanation use the same source in every filter.
 func (m Model) toolAttention(r toolsdiff.Row) bool {
+	return m.toolAttentionReason(r) != ""
+}
+
+func (m Model) toolAttentionReason(r toolsdiff.Row) string {
 	for _, d := range m.tl.cat.Diffs {
-		if d.Name == r.Name && !d.Info && !m.tl.accepted[d.Key] {
-			return true
+		if d.Name != r.Name || d.Info || m.tl.accepted[d.Key] {
+			continue
+		}
+		switch d.Kind {
+		case toolsdiff.KindDrift:
+			var versions []string
+			for i, c := range r.Cells {
+				if i >= len(m.tl.cat.Machines) || c.State == toolsdiff.CellOff {
+					continue
+				}
+				label := c.Label
+				if label == "" {
+					label = r.Version
+				}
+				if label != "" {
+					versions = append(versions, label+" on "+m.tl.cat.Machines[i].Name)
+				}
+			}
+			if len(versions) > 0 {
+				return strings.Join(versions, ", ")
+			}
+		case toolsdiff.KindHidden:
+			if len(d.Projects) > 0 {
+				kind := "repo"
+				if strings.HasPrefix(d.Key, "hidden-local:") {
+					kind = "local"
+				}
+				return kind + " copy in " + strings.Join(d.Projects, ", ") + " hides yours"
+			}
+		case toolsdiff.KindTwoCopies:
+			return strings.TrimPrefix(d.Title, r.Name+" has ")
+		}
+		if d.Title != "" {
+			return strings.TrimPrefix(d.Title, r.Name+" ")
 		}
 	}
-	return r.Note != ""
+	// A harness feature limit is informational; there is no fix to request.
+	if r.Note == "limited on one harness" {
+		return ""
+	}
+	return r.Note
 }
+
 func (m Model) toolStatus(r toolsdiff.Row) string {
+	status := m.toolBaseStatus(r)
+	if reason := m.toolAttentionReason(r); reason != "" && !strings.Contains(status, reason) {
+		status += " · " + reason
+	}
+	return status
+}
+
+func (m Model) toolBaseStatus(r toolsdiff.Row) string {
 	if r.Kind == protocol.InventorySkill && r.Item.Desired == nil && len(r.Item.Locations) == 0 {
 		return "in the store, off everywhere"
 	}
@@ -96,7 +147,7 @@ func (m Model) toolStatus(r toolsdiff.Row) string {
 				on = on || p.Name == scope
 			}
 			if !on {
-				return "off for " + scope + "; available to turn on"
+				return "off for " + scope
 			}
 		}
 		return "on for " + strings.Join(m.toolScope().projects, ", ")

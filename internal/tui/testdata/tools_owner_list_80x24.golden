@@ -3,15 +3,15 @@
 │   NAME                            KIND   STATUS                              │
 │ ! code-review                     skill  v1 on Nicolas-MBP, v3 on research   │
 │ ! design-taste-frontend           skill  2 different copies on research      │
-│ ! diagnosing-bugs                 skill  on everywhere; limited on one       │
-│                                          harness                             │
-│ ! imnplementing-clean-architectu… skill  found on 1 machine, not managed     │
-│ ! web-design-guidelines           skill  on for wbg-housing, sovl-clone      │
+│ ! imnplementing-clean-architectu… skill  found on 1 machine, not managed ·   │
+│                                          looks like a copy of                │
+│                                          clean-architecture-python           │
+│ ! web-design-guidelines           skill  on for wbg-housing, sovl-clone ·    │
+│                                          repo copy in sovl-clone hides yours │
 │   clean-architecture-python       skill  on everywhere                       │
 │   deploy-test-server              skill  in the sovl-clone repo              │
-│   estate-runbook                  skill  in the homelab repo                 │
-│   found-skill-00                  skill  found on 2 machines, not managed    │
-│   found-skill-01                  skill  found on 2 machines, not managed    │
+│   diagnosing-bugs                 skill  on everywhere; limited on one       │
+│                                          harness                             │
 │ 40 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
