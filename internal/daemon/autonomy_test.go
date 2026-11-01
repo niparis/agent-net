@@ -72,7 +72,7 @@ func TestAutonomyCTOChangeIsAProposal(t *testing.T) {
 	cli := cliClient(t, n)
 	cli.mustCall("charter_set", map[string]any{"node": "shop", "attr": "maturity", "value": "growing"})
 	ctx := context.Background()
-	value, err := n.d.runCTOToolRaw(ctx, "node_settings_set", json.RawMessage(`{"node":"shop","setting":"autonomy","value":"wake"}`))
+	value, err := n.d.runCTOToolRaw(ctx, "graph_change", json.RawMessage(`{"action":"settings_set","node":"shop","setting":"autonomy","value":"wake"}`))
 	if err != nil {
 		t.Fatal(err)
 	}

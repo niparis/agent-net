@@ -2,6 +2,7 @@ package gateway
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,7 +78,17 @@ func TestCalibrationMigrationBackfillsCaller(t *testing.T) {
 		VALUES (?,?,?,?,?,?)`, node, wid, "opencode", "m", protocol.OutcomeComplete, s.now().Unix()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version = ?`, len(migrations)); err != nil {
+	// Replay the calibration migration and every migration appended after it.
+	// New migrations always go at the end, so the calibration one is no longer
+	// necessarily the last.
+	calibration := len(migrations)
+	for i, m := range migrations {
+		if strings.Contains(m, "worker calibration columns") {
+			calibration = i + 1
+			break
+		}
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version >= ?`, calibration); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.migrate(); err != nil {
