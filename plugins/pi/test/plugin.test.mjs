@@ -257,6 +257,7 @@ await test("worker profile tools reach the daemon", async () => {
     const tool = p.tools.get(name); if (!tool) throw new Error("missing " + name);
     await tool.execute("id", args); if (requests.at(-1).method !== method) throw new Error("wrong method " + name);
   }
+  await p.fire("session_shutdown", {});
 });
 
 await test("agent_nodes and agent_start show the track record and playbook", async () => {
@@ -631,6 +632,49 @@ await test("without a connection the turn is not blocked and no policy is invent
 await test("owner instruction follows the body", async () => {
   const text = await delivered({ ...peer, owner_instruction: "ask alice" });
   if (!text.includes("sent on your user's instruction: «ask alice»")) throw new Error(text);
+});
+
+await test("in-process RPC helpers never register or take foreground deliveries", async () => {
+  const start = hellos.length;
+  const foreground = makePi();
+  const delivered = [];
+  foreground.api.sendMessage = (m) => delivered.push(m);
+  extension(foreground.api);
+  const helper = makePi();
+  // Pi can load the extension through a separate module instance for an SDK session.
+  const reloaded = (await import(pathToFileURL(jsPath).href + "?helper")).default;
+  reloaded(helper.api);
+  try {
+    await foreground.fire("session_start", {}, sessionCtx());
+    await until("foreground hello", () => hellos.length > start);
+    await helper.fire("session_start", {}, sessionCtx({ mode: "rpc", sessionManager: { getSessionId: () => "helper" } }));
+    await helper.fire("agent_start", {});
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (hellos.length !== start + 1) throw new Error("helper registered: " + JSON.stringify(hellos.slice(start)));
+    conn.write(JSON.stringify({ method: "deliver", params: { message: { message_id: "foreground-only", body: "hello" } } }) + "\n");
+    await until("foreground delivery", () => delivered.length === 1);
+    await helper.fire("session_shutdown", {});
+    await foreground.fire("agent_start", {});
+    if (hellos.length !== start + 1) throw new Error("helper shutdown changed registration");
+  } finally {
+    await helper.fire("session_shutdown", {});
+    await foreground.fire("session_shutdown", {});
+  }
+});
+
+await test("standalone non-TUI sessions still register after foreground shutdown", async () => {
+  for (const mode of ["rpc", "json", "print"]) {
+    const start = hellos.length;
+    const p = makePi();
+    extension(p.api);
+    try {
+      await p.fire("session_start", {}, sessionCtx({ mode }));
+      await until(mode + " hello", () => hellos.length === start + 1);
+      if (hellos[start].mode !== "background") throw new Error(JSON.stringify(hellos[start]));
+    } finally {
+      await p.fire("session_shutdown", {});
+    }
+  }
 });
 
 server.close();

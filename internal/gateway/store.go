@@ -568,7 +568,7 @@ func (s *Store) upsertSession(q interface {
 	name := ""
 	if protocol.IsOwner(in.Harness) {
 		name = protocol.CleanModel(in.Name)
-	} else if name, err = chooseSessionName(q, knownID, knownName, in); err != nil {
+	} else if name, err = chooseSessionName(q, nodeID, knownID, knownName, in); err != nil {
 		return "", false, err
 	}
 	title := protocol.CleanModel(in.Name)
@@ -694,21 +694,36 @@ func isAutomaticName(name, base string, worker bool) bool {
 // sessions hold a name (decision 0024).
 func chooseSessionName(q interface {
 	Query(string, ...any) (*sql.Rows, error)
-}, sessionID, current string, in protocol.SessionInfo) (string, error) {
+}, nodeID, sessionID, current string, in protocol.SessionInfo) (string, error) {
 	base, worker := sessionBaseName(in), in.Worker != nil
 	used := map[string]bool{}
-	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name) FROM sessions s
-		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.online = 1 AND s.id <> ?`, sessionID)
+	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name), s.online,
+		s.node_id, s.harness, s.mode, s.pid, s.worker FROM sessions s
+		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id <> ? AND
+		((s.online = 1 AND NOT (`+piChildSQL+`)) OR
+		(? = 'pi' AND ? = 'foreground' AND ? > 0 AND s.node_id = ?
+		 AND s.harness = 'pi' AND s.mode = 'background' AND s.pid = ? AND s.worker = ''))`,
+		sessionID, in.Harness, in.Mode, in.PID, nodeID, in.PID)
 	if err != nil {
 		return "", err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
+		var name, node, harness, mode, workerJSON string
+		var online, pid int
+		if err := rows.Scan(&name, &online, &node, &harness, &mode, &pid, &workerJSON); err != nil {
 			return "", err
 		}
-		if name != "" {
+		// Before the first TUI report there may be no foreground row to join.
+		// Ignore its SDK helpers, and repair a suffix they previously caused.
+		if in.Harness == "pi" && in.Mode == protocol.ModeForeground && in.PID > 0 &&
+			node == nodeID && harness == "pi" && mode == protocol.ModeBackground && pid == in.PID && workerJSON == "" {
+			if name == base {
+				current = ""
+			}
+			continue
+		}
+		if online == 1 && name != "" {
 			used[name] = true
 		}
 	}
@@ -1082,8 +1097,17 @@ func (s *Store) Agent(sessionID string) (protocol.AgentView, bool, error) {
 	return one[0], true, nil
 }
 
+// Older Pi extensions registered SDK helpers as independent sessions. Match
+// only background non-workers with a foreground session in the same process.
+// Overlapping lifetimes keep a later reuse of the PID from hiding old sessions.
+const piChildSQL = `s.harness = 'pi' AND s.mode = 'background' AND s.pid > 0 AND s.worker = ''
+	AND EXISTS (SELECT 1 FROM sessions parent WHERE parent.node_id = s.node_id
+		AND parent.harness = 'pi' AND parent.mode = 'foreground' AND parent.pid = s.pid
+		AND (parent.online = 1 OR parent.last_seen >= s.created_at)
+		AND (s.online = 1 OR s.last_seen >= parent.created_at))`
+
 func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
-	rows, err := s.db.Query(agentSelect + ` ORDER BY s.last_seen DESC, s.id`)
+	rows, err := s.db.Query(agentSelect + ` WHERE NOT (` + piChildSQL + `) ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
 	}

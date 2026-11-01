@@ -302,6 +302,13 @@ function piTextEntries(branch: any[]): TextEntry[] {
 }
 
 export default function (pi: ExtensionAPI) {
+  // SDK helpers load their own extension instance, sometimes through another
+  // module loader. Keep ownership on globalThis so only the TUI owns messaging.
+  const processState = globalThis as typeof globalThis & {
+    __agentNetPiSessions?: Map<object, string | undefined>;
+  };
+  const sessions = processState.__agentNetPiSessions ??= new Map();
+  const sessionKey = {};
   let sock: Socket | undefined;
   let connected = false;
   let stopped = true;
@@ -480,6 +487,9 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("session_start", async (_event, ctx) => {
+    sessions.delete(sessionKey);
+    if (ctx.mode !== "tui" && [...sessions.values()].includes("tui")) return;
+    sessions.set(sessionKey, ctx.mode);
     hello = {
       client: "pi",
       harness: "pi",
@@ -512,6 +522,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("agent_settled", async () => sendStatus("idle"));
 
   pi.on("session_shutdown", async () => {
+    sessions.delete(sessionKey);
     stopped = true;
     if (mcpTimer) clearInterval(mcpTimer);
     mcpTimer = undefined;
