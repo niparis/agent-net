@@ -132,6 +132,7 @@ type Model struct {
 	composeTo   string          // session ID the message goes to
 	composeName string
 	form        workerForm
+	sform       sessionForm
 	confirmID   string // worker the stop question is about
 	confirmName string
 	pol         policyForm
@@ -690,6 +691,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return next, cmd
 
+	case sessionStartedMsg:
+		return m.onSessionStarted(msg)
 	case actionMsg:
 		next, cmd := m.onAction(msg)
 		if msg.err == nil && msg.onboarding != "" {
@@ -912,6 +915,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.composeKey(k)
 	case modeForm:
 		return m.formKey(k)
+	case modeSessionForm:
+		return m.sessionFormKey(k)
 	case modeConfirm:
 		return m.confirmKey(k)
 	case modeQuotaConfirm:
@@ -1188,6 +1193,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m.startForm()
+	case "n":
+		if m.tab == 0 {
+			return m.startSessionForm()
+		}
 	case "e":
 		if m.tab == 1 {
 			m.messageShowEvents = !m.messageShowEvents

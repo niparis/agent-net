@@ -143,6 +143,10 @@ func (m Model) View() string {
 		}
 		contentHeight := h - 1 - box
 		switch {
+		case m.mode == modeSessionForm:
+			// The New session form replaces the Graph card too, so n on the
+			// card keeps the Graph tab and Esc returns to the card.
+			out = append(out, m.mainView(w, contentHeight)...)
 		case m.mapOn:
 			out = append(out, m.titleLine(w))
 			out = append(out, m.mapView(w, contentHeight-1)...)
@@ -222,6 +226,12 @@ func (m Model) mainView(w, h int) []string {
 	}
 	if m.mode == modeForm {
 		for _, s := range m.formView(w, l.detail+l.feed+2) {
+			add(s)
+		}
+		return out
+	}
+	if m.mode == modeSessionForm {
+		for _, s := range m.sessionFormView(w, l.detail+l.feed+2) {
 			add(s)
 		}
 		return out

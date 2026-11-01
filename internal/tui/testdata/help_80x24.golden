@@ -10,15 +10,15 @@ Keys ─────────────────────────
   enter                enter the selected session (ctrl+] to return)
   e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
+  n                    start a new session: project, harness, model, project
+                       folder, first message (a form). Empty first message
+                       starts it and enters it; text starts it in the background
+                       and sends it.
   s                    start a worker (a form: project, harness, model, task)
   x, h, H              stop worker; h hides/unhides; H shows hidden sessions
                        (dim)
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a
                        form)
-  I                    integrations for all machines: 7 checkboxes (a form)
-
- Quotas
-  up/down, j/k         select a subscription
   more below
 up/down scroll  esc close help  q quit

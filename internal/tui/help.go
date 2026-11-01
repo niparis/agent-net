@@ -37,7 +37,7 @@ func (m Model) hints() []hint {
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"enter", "sessions", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"U/u", "learned/undo", 2}, {"?", "help", 0}, {"q", "quit", 0}}
+		return []hint{{"enter", "sessions", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"n", "new", 2}, {"U/u", "learned/undo", 2}, {"?", "help", 0}, {"q", "quit", 0}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -67,7 +67,7 @@ func (m Model) hints() []hint {
 			return []hint{{"up/down", "select", 1}, {"a", "approve", 1}, {"r", "refuse", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
 	}
-	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"/", "filter", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"n", "new", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
@@ -112,6 +112,8 @@ func (m Model) helpLine(w int) string {
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
 	case modeForm:
 		return sDim.Render(clip("tab or up/down: field  enter: next or start  esc cancels", w))
+	case modeSessionForm:
+		return sDim.Render(clip("enter start  up/down field  esc cancel", w))
 	case modeQuotaConfirm:
 		if m.quotaUnprotect {
 			return clip("Unprotect "+m.quotaConfirm+"? workers may use this provider freely. y/n", w)
@@ -168,6 +170,7 @@ func (m Model) helpContent(w int) []string {
 		{"enter", "enter the selected session (ctrl+] to return)"},
 		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
+		{"n", "start a new session: project, harness, model, project folder, first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
 		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x, h, H", "stop worker; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
@@ -190,6 +193,7 @@ func (m Model) helpContent(w int) []string {
 		{"enter", "open the selected agent card"},
 		{"Agent card", ""},
 		{"enter", "open Sessions filtered to this agent's project"},
+		{"n", "start a new session in this project (the same form, filled from here)"},
 		{"esc", "return to Graph with the same node selected"},
 		{"D", "name project (empty clears)"},
 		{"h, H", "hide or unhide the selected project; show hidden projects"},

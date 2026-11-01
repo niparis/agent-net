@@ -42,6 +42,12 @@ func (f *fakeOp) StartWorker(_ context.Context, r protocol.WorkerStartRequest) (
 	return f.result, f.err
 }
 func (f *fakeOp) StopWorker(_ context.Context, s string) error { f.stopped = s; return f.err }
+func (f *fakeOp) SessionStart(context.Context, protocol.SessionStartRequest) (protocol.StartedSession, error) {
+	return protocol.StartedSession{}, f.err
+}
+func (f *fakeOp) SessionStartGet(context.Context, string) (protocol.StartedSession, error) {
+	return protocol.StartedSession{}, f.err
+}
 func (f *fakeOp) Workers(_ context.Context, q protocol.WorkersQuery) ([]protocol.WorkerView, error) {
 	f.workersQ = q
 	return f.workers, f.err
