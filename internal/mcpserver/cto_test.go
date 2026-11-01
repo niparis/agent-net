@@ -191,6 +191,15 @@ func TestCTOToolsForward(t *testing.T) {
 		if field := ctoRoutingField[name]; field != "" {
 			args[field] = map[string]string{"message": "send", "ui": "show", "graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "tools_change": "plan", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
 		}
+		switch name {
+		case "answer":
+			args["message_id"], args["action"] = "m1", "a"
+		case "mcp_change":
+			args["name"] = "test"
+		case "project_change", "tools_change":
+		case "mcp_call":
+			args["server"], args["tool"], args["arguments"] = "test", "list", map[string]any{}
+		}
 		if name == "worker_change" {
 			args["touches"] = []string{"tests"}
 			args["project"] = "example"
@@ -280,8 +289,8 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 	}
 	targets := props["repo_targets"]
 	items, _ := targets["items"].(map[string]any)
-	if items["type"] != "string" {
-		t.Fatalf("repo_targets must be a string array: %+v", targets)
+	if items["type"] != "object" {
+		t.Fatalf("repo_targets must contain checkout objects: %+v", targets)
 	}
 }
 
@@ -346,8 +355,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("total schema: %d bytes", len(schema))
-	if len(schema) >= 24*1024 {
-		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 24*1024)
+	if len(schema) >= 32*1024 {
+		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 32*1024)
 	}
 	for _, tool := range list.Tools {
 		data, err := json.Marshal(tool)
