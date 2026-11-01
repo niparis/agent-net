@@ -110,7 +110,10 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"auto_continue", `auto_continue INTEGER NOT NULL DEFAULT 1`},
 		{"auto_continue_count", `auto_continue_count INTEGER NOT NULL DEFAULT 0`},
 		{"auto_continue_run", `auto_continue_run INTEGER NOT NULL DEFAULT 0`},
-		{"owner_name", `owner_name TEXT NOT NULL DEFAULT ''`},
+		{"task_id", `task_id TEXT NOT NULL DEFAULT ''`},
+		{"midrun_count", `midrun_count INTEGER NOT NULL DEFAULT 0`},
+		{"midrun_run", `midrun_run INTEGER NOT NULL DEFAULT 0`},
+		{"notice_since_request", `notice_since_request INTEGER NOT NULL DEFAULT 0`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)
@@ -121,9 +124,32 @@ CREATE TABLE IF NOT EXISTS workers (
 			}
 		}
 	}
+	var hasMidrunSeen int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name='midrun_seen'`).Scan(&hasMidrunSeen); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if hasMidrunSeen == 0 {
+		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN midrun_seen INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+		if _, err := db.Exec(`UPDATE workers SET midrun_seen=1 WHERE task_msg<>''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	var hasWorkerOwnerName int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'owner_name'`).Scan(&hasWorkerOwnerName)
+	if hasWorkerOwnerName == 0 {
+		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN owner_name TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	// base and record_task keep a continued or based start in the queue. A
 	// queue table from an older version does not have them.
-	for _, col := range []string{"base", "record_task", "permissions", "difficulty_asked", "difficulty_used", "touches"} {
+	for _, col := range []string{"base", "record_task", "permissions", "difficulty_asked", "difficulty_used", "touches", "task_id"} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = ?`, col).Scan(&has)
 		if has == 0 {
@@ -131,6 +157,17 @@ CREATE TABLE IF NOT EXISTS workers (
 				db.Close()
 				return nil, err
 			}
+		}
+	}
+	var hasContinuationPartial int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name='continuation_partial'`).Scan(&hasContinuationPartial); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if hasContinuationPartial == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN continuation_partial INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
 		}
 	}
 	var hasCTO int

@@ -296,6 +296,9 @@ func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
 	for _, row := range rows {
 		if row.SessionID == sid {
 			found = true
+			if row.TaskID != old.SessionID || row.FixRun != 1 || row.ContinueRun != 0 {
+				t.Errorf("queued continuation lost its root or rework: %+v", row)
+			}
 			if got := gitOutT(t, row.Worktree, "show", "HEAD:half.txt"); got != "half" {
 				t.Errorf("half.txt in the new worktree: %q", got)
 			}

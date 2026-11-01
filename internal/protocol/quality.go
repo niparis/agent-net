@@ -31,13 +31,13 @@ type QualityFactor struct {
 }
 
 // QualityFamily is one model family's work at one requested difficulty. The
-// gateway folds harnesses and efforts together and sums one task per worker
-// session.
+// gateway folds harnesses and efforts together and sums one row per task.
 type QualityFamily struct {
 	Family             string  `json:"family"`
 	Tasks              int     `json:"tasks"`
 	Fixes              int     `json:"fixes"`
 	Continues          int     `json:"continues"`
+	Midrun             int     `json:"midrun"`
 	FollowUps          float64 `json:"follow_ups"`
 	LateDefects        int     `json:"late_defects"`
 	LateDefectSeverity float64 `json:"late_defect_severity"`

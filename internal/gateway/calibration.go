@@ -15,60 +15,16 @@ import (
 // prunes worker_runs after TrackRecordDays, so the window is the same.
 const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 
-// calibrationSession gathers the rows of one worker session. A task is the
-// session (one agent_start), not one row per turn: a continue after a hand-back
-// starts another run and leaves its counters on a new row.
-type calibrationSession struct {
-	caller, difficulty string
-	cont, fix          int
-	unknown            bool
-	endedAt            int64
-}
-
 // Calibration reads the read-only difficulty table: per caller and
 // difficulty, the weighted rework median of the last seven finished tasks,
 // the two offsets and what the loop would do. It never writes state and the
 // chooser never reads it.
 func (s *Store) Calibration() (protocol.Calibration, error) {
 	cut := s.now().Add(-calibrationWindow).Unix()
-	rows, err := s.db.Query(`SELECT session_id, caller, difficulty, ended_at, continue_count, fix_count, counters_known
-		FROM worker_runs WHERE ended_at >= ? AND outcome <> ? ORDER BY ended_at, id`, cut, protocol.OutcomeStopped)
+	tasks, _, err := s.reworkTasks(cut)
 	if err != nil {
 		return protocol.Calibration{}, err
 	}
-	sessions := map[string]*calibrationSession{}
-	order := []string{}
-	for rows.Next() {
-		var sessionID, caller, difficulty string
-		var ended int64
-		var cont, fix, known int
-		if err := rows.Scan(&sessionID, &caller, &difficulty, &ended, &cont, &fix, &known); err != nil {
-			rows.Close()
-			return protocol.Calibration{}, err
-		}
-		if sessionID == "" {
-			continue
-		}
-		sess := sessions[sessionID]
-		if sess == nil {
-			// The first row holds what the task asked for. A follow-up run
-			// may have no caller or difficulty of its own.
-			sess = &calibrationSession{caller: caller, difficulty: difficulty}
-			sessions[sessionID] = sess
-			order = append(order, sessionID)
-		}
-		sess.cont += cont
-		sess.fix += fix
-		if known == 0 {
-			sess.unknown = true
-		}
-		sess.endedAt = ended
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return protocol.Calibration{}, err
-	}
-	rows.Close()
 
 	// A defect reported later adds its severity points of rework to that
 	// worker's task. The sums are per session, so the per-session loop below
@@ -86,18 +42,20 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 		totalDefects += n
 	}
 	samples := []protocol.CalibrationSample{}
-	for _, sessionID := range order {
-		sess := sessions[sessionID]
-		// A run from before the counters shipped says nothing about rework.
-		if sess.caller == "" || sess.unknown {
+	for _, task := range tasks {
+		if task.caller == "" {
 			continue
 		}
-		difficulty := sess.difficulty
+		difficulty := task.difficulty
 		if difficulty == "" {
 			difficulty = "normal"
 		}
-		samples = append(samples, protocol.CalibrationSample{Caller: sess.caller, Difficulty: difficulty,
-			Continue: sess.cont, Fix: sess.fix + defectRework[sessionID], EndedAt: sess.endedAt})
+		fix := task.fixCount
+		for session := range task.sessions {
+			fix += defectRework[session]
+		}
+		samples = append(samples, protocol.CalibrationSample{Caller: task.caller, Difficulty: difficulty,
+			Continue: task.continueCount, Fix: fix, EndedAt: task.endedAt})
 	}
 
 	scores, err := s.scores()

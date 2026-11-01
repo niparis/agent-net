@@ -49,7 +49,8 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	}
 	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner, OwnerName: r.OwnerName,
 		Permissions: r.Permissions, FromCTO: p.FromCTO, // the old worker's level, not the project's current one
-		DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches)}
+		DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches),
+		TaskID: first(p.TaskID, first(r.TaskID, r.SessionID)), ContinuationPartial: r.DoneStatus != "" && r.DonePartial}
 	where := ""
 	switch {
 	case r.Worktree == "":

@@ -249,10 +249,10 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 	add("t3", alpha, "gpt-6.1-terra:high", "normal", 5, 5, protocol.OutcomeStopped)
 	add("d1", alpha, "deepseek-v4.1-flash", "normal", 1, 0, protocol.OutcomeComplete)
 	add("s1", alpha, "gpt-6.1-sol:high", "hard", 0, 3, protocol.OutcomeComplete)
-	add("x1", alpha, "deepseek-v4.1-flash", "", 2, 0, protocol.OutcomeComplete)
+	add("x1", alpha, "deepseek-v4.1-flash", "other", 2, 0, protocol.OutcomeComplete)
 	add("l1", beta, "gpt-6.1-luna", "simple", 0, 0, protocol.OutcomeComplete)
 	add("o1", beta, "claude-opus-5-5", "normal", 0, 0, protocol.OutcomeComplete)
-	// A session with one unknown run stays out, even after a later known run.
+	// A task with an unknown run still includes its known rework.
 	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, caller, difficulty)
 		VALUES (?,?,?,?,?,?,?,?,?)`, node, "u1", "opencode", "gpt-6.1-luna", protocol.OutcomeComplete, now, now, alpha, "normal"); err != nil {
 		t.Fatal(err)
@@ -284,8 +284,8 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 		}
 	}
 	normal := qualityLevel(t, q.Levels, "normal")
-	if normal.Tasks != 4 {
-		t.Fatalf("normal tasks = %d, want 4 (%+v)", normal.Tasks, normal)
+	if normal.Tasks != 5 {
+		t.Fatalf("normal tasks = %d, want 5 (%+v)", normal.Tasks, normal)
 	}
 	terra := qualityFamily(t, normal.Families, "terra")
 	if terra.Tasks != 2 || terra.Fixes != 2 || terra.Continues != 1 {
@@ -307,10 +307,8 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 	if got := normal.Families[0].Family; got != "terra" {
 		t.Fatalf("families are not sorted by tasks: %+v", normal.Families)
 	}
-	for _, f := range normal.Families {
-		if f.Family == "luna" {
-			t.Fatalf("unknown-counter task counted: %+v", normal.Families)
-		}
+	if f := qualityFamily(t, normal.Families, "luna"); f.Tasks != 1 || f.Fixes != 2 {
+		t.Fatalf("older task's known rework: %+v", f)
 	}
 	hard := qualityLevel(t, q.Levels, "hard")
 	if f := qualityFamily(t, hard.Families, "sol"); f.Tasks != 1 || f.Continues != 3 {
@@ -369,7 +367,7 @@ func TestQualityReworkSumsEveryRunOfASession(t *testing.T) {
 	}
 }
 
-func TestQualityReworkSkipsUnknownCountersAndStoppedSessions(t *testing.T) {
+func TestQualityReworkIncludesUnknownCountersAndSkipsStoppedTasks(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("test", "linux")
 	caller := ratingCaller(t, s, node, "caller", "unknown")
@@ -384,14 +382,14 @@ func TestQualityReworkSkipsUnknownCountersAndStoppedSessions(t *testing.T) {
 	}
 	add("s_good", protocol.OutcomeComplete, 0, 1)
 	add("s_stopped", protocol.OutcomeStopped, 0, 9)
-	// A session with one run from before the counters existed stays out.
+	// A task with an older run still contributes the counters that are known.
 	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, caller, difficulty)
 		VALUES (?,?,?,?,?,?,?,?)`, node, "s_unknown", "opencode", "m:high", protocol.OutcomeComplete, now, caller, "normal"); err != nil {
 		t.Fatal(err)
 	}
 	add("s_unknown", protocol.OutcomeComplete, 0, 9)
-	if got, want := s.QualityAnalysis().ReworkAverage, protocol.ReworkWeight(1, 0); got != want {
-		t.Fatalf("only the known, non-stopped task should count: got %v, want %v", got, want)
+	if got, want := s.QualityAnalysis().ReworkAverage, 5.0; got != want {
+		t.Fatalf("non-stopped tasks should count: got %v, want %v", got, want)
 	}
 }
 

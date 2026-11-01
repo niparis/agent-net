@@ -110,6 +110,7 @@ type WorkerContinue struct {
 	// Session is the old worker's session ID.
 	Session   string `json:"session"`
 	Requester string `json:"requester_session"`
+	TaskID    string `json:"task_id,omitempty"`
 	// Harness and Model are empty to keep the old worker's.
 	Harness string `json:"harness,omitempty"`
 	Model   string `json:"model,omitempty"`
@@ -310,6 +311,10 @@ type (
 		// RecordTask is what the machine keeps as the worker's first task.
 		// Empty means Task.
 		RecordTask string `json:"record_task,omitempty"`
+		// TaskID and ContinuationPartial carry a continued task through the
+		// admission queue to the new worker's first run.
+		TaskID              string `json:"task_id,omitempty"`
+		ContinuationPartial bool   `json:"continuation_partial,omitempty"`
 		// DifficultyAsked and DifficultyUsed are kept on the worker record for
 		// the difficulty calibration (empty from an older gateway).
 		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
@@ -401,12 +406,14 @@ type (
 		// this run. AutoContinue and AutoContinueRun are the daemon's own
 		// continues, which cost the caller no rework. An older daemon sends
 		// none of them.
-		Continue        int `json:"continue,omitempty"`
-		Fix             int `json:"fix,omitempty"`
-		ContinueRun     int `json:"continue_run,omitempty"`
-		FixRun          int `json:"fix_run,omitempty"`
-		AutoContinue    int `json:"auto_continue,omitempty"`
-		AutoContinueRun int `json:"auto_continue_run,omitempty"`
+		Continue        int    `json:"continue,omitempty"`
+		Fix             int    `json:"fix,omitempty"`
+		ContinueRun     int    `json:"continue_run,omitempty"`
+		FixRun          int    `json:"fix_run,omitempty"`
+		AutoContinue    int    `json:"auto_continue,omitempty"`
+		AutoContinueRun int    `json:"auto_continue_run,omitempty"`
+		TaskID          string `json:"task_id,omitempty"`
+		MidrunRun       int    `json:"midrun_run,omitempty"`
 		// DifficultyAsked and DifficultyUsed are the difficulty the caller
 		// asked for and the level the chooser used.
 		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
