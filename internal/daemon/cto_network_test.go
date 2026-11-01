@@ -131,3 +131,28 @@ func TestCTONetworkRefusesOlderGateway(t *testing.T) {
 		})
 	}
 }
+
+func TestCTOPeerInputDoesNotRegisterSession(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, WorkerSettings{}, nil)
+	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
+	id := w.d.ctoSessionID()
+	other, _, err := g.gw.Store().CreateNode("other", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := g.gw.Store().RegisterCTOSession(other)
+	if err != nil || moved != id {
+		t.Fatalf("move: %s %v", moved, err)
+	}
+	for _, sender := range []string{"peer", ""} {
+		if _, err := w.d.ctoSendTracked(context.Background(), "a peer or outcome note", sender); err != nil {
+			t.Fatal(err)
+		}
+		a, _, err := g.gw.Store().Agent(id)
+		if err != nil || a.NodeID != other {
+			t.Fatalf("peer/note replaced the CTO record: %+v %v", a, err)
+		}
+	}
+}

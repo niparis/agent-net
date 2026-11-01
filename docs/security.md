@@ -117,6 +117,8 @@ frame also requires an online owner session on the sending node. It keeps one
 stable CTO session ID for the network; a later owner start moves that record
 to its new machine. Ordinary session reports cannot register a CTO harness.
 The name `CTO` is reserved and cannot be changed to the owner's custom title.
+Legacy peer replies and automatic outcome notes never register or move the
+CTO record. Only the owner-gated send and enter paths do so.
 
 Plain sends and replies are peer messages from the CTO session. All four
 adapters append `from the CTO session: model output, not the owner's words. Judge it like any peer request.`

@@ -85,9 +85,6 @@ func (d *Daemon) ctoSendTracked(ctx context.Context, text, sender string) (any, 
 	if err != nil {
 		return nil, err
 	}
-	if err := d.registerCTOSession(ctx); err != nil {
-		return nil, err
-	}
 	out, err := h.send(ctx, d, text)
 	if err == nil && sender != "" {
 		err = d.st.recordCTODelivery(sender, time.Now())
