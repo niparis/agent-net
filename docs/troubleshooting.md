@@ -164,3 +164,13 @@ On macOS, setup offers a Keychain prompt. If you agree, answer the dialog and ch
 ## The CTO Claude conversation was closed
 
 If the CTO box says "The CTO's Claude conversation was closed by Claude Code; started a new one.", Claude Code closed the background conversation and could not resume it. agent-net started a fresh Claude conversation. The CTO timeline and proposals stored in agent-net remain available. The new Claude conversation does not contain the old Claude transcript. Other startup failures appear in the CTO box with their reason.
+
+## A start says a harness is not installed
+
+A worker start can say "claude is not installed on this machine" just after the daemon starts or after an upgrade. Detection runs `opencode models`, which takes seconds, so the harness list can still be empty when the start arrives. The daemon now looks the harness up itself in PATH, the usual install folders and the login shell PATH, and uses it when it runs. It also keeps a harness that an earlier detection run found when a later probe fails or times out. The entry is removed only when its binary is really gone.
+
+If the message stays, install the harness on that machine, or run `agent-net setup` so the service sees your login PATH, then restart the daemon.
+
+## Enter on the CTO seems to do nothing
+
+Opening the CTO can take several seconds while the daemon starts its Claude conversation. The CTO box shows "Opening the CTO..." at once, and a second Enter is ignored until the first attempt ends. If the attempt fails, or runs past its timeout, the CTO box shows the reason. Press Enter again after it ends. Enter on the CTO row in the Sessions tab behaves the same way.

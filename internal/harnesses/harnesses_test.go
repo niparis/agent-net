@@ -65,6 +65,40 @@ func TestDetectUsesLoginShellPathToo(t *testing.T) {
 	}
 }
 
+func TestLocateFindsACopyThatRuns(t *testing.T) {
+	root := t.TempDir()
+	known := filepath.Join(root, "home", ".local", "bin")
+	want := script(t, known, "claude", `echo "2.1.0 (Claude Code)"`)
+	got := Locate(context.Background(), "claude", Options{
+		PATH: t.TempDir(), Dirs: []string{known},
+		LoginShellPATH: func(context.Context) string { return "" },
+	})
+	if got != want {
+		t.Fatalf("Locate = %q, want %q", got, want)
+	}
+}
+
+func TestLocateSkipsACopyThatDoesNotRun(t *testing.T) {
+	root := t.TempDir()
+	broken := script(t, filepath.Join(root, "broken"), "claude", `exit 3`)
+	good := script(t, filepath.Join(root, "good"), "claude", `echo "2.1.0"`)
+	got := Locate(context.Background(), "claude", Options{
+		PATH: filepath.Join(root, "broken"), Dirs: []string{filepath.Join(root, "good")},
+		LoginShellPATH: func(context.Context) string { return "" },
+	})
+	if got != good {
+		t.Fatalf("Locate = %q (broken %q), want %q", got, broken, good)
+	}
+}
+
+func TestLocateNothingGivesEmpty(t *testing.T) {
+	if got := Locate(context.Background(), "claude", Options{
+		PATH: t.TempDir(), Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" },
+	}); got != "" {
+		t.Fatalf("Locate = %q, want empty", got)
+	}
+}
+
 func TestDetectNothingGivesEmptyNonNilList(t *testing.T) {
 	got := Detect(context.Background(), Options{PATH: t.TempDir(), Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }})
 	if got == nil || len(got) != 0 {

@@ -159,6 +159,11 @@ type Config struct {
 	// HarnessPaths overrides where a harness binary is, by harness name.
 	// Default: the path from the inventory. Tests use it.
 	HarnessPaths map[string]string
+	// HarnessSearch changes where harnessBinary looks when the inventory has
+	// no answer yet. Nil searches PATH, the usual install folders and the
+	// login shell's PATH. Tests set it so they never run the harnesses of the
+	// machine.
+	HarnessSearch *harnesses.Options
 	// EnterSSH lets the TUI enter a session on another machine through `ssh -t`
 	// (enter_ssh in node.json, on unless false). EnterSSHHosts maps a host name
 	// to its ssh target.
