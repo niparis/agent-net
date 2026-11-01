@@ -1,4 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { formatWorkerRows } from './register'
+import type { AgentNetWorker } from '../types'
 
 const NOW = 1_700_000_000_000
 
@@ -53,7 +55,7 @@ test('the band lists a running worker and the status line counts it', async ($, 
 
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface, ...BAND })
-    expect(await ui.find({ type: 'Text', text: /ab12 claude · claude-sonnet-5 busy 2m/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /claude +sonnet-5 +2m/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /write the tests/ })).toBeDefined()
     await ui.unmount()
   }
@@ -188,8 +190,8 @@ test('the band adds the context window after the run time', async ($, on) => {
   await clock.settle()
 
   const ui = await $.ui.mount({ plugin: 'agent-net-workers', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /ctx 84k\/1M 8%/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /ctx 950k\/1M 95%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ctx 8%/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ctx 95%/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -226,4 +228,52 @@ test('a refused notice is ignored and not tried again', async ($, on) => {
 
   await clock.advance(3000)
   expect(attempts).toBe(1)
+})
+
+function running(overrides: Partial<AgentNetWorker> = {}): AgentNetWorker {
+  return {
+    sessionId: 's_hidden1234', harness: 'codex', model: 'openai/gpt-6.1-sol:medium',
+    project: 'shop', status: 'busy', online: true, startedAt: NOW / 1000 - 720,
+    task: 'Build part 5 of the documentation', contextTokens: 105000, contextLimit: 475000,
+    tokens: 0, endedAt: 0, endStatus: '', endNote: '', ...overrides,
+  }
+}
+
+test('worker columns omit ids, busy and token counts and align every task', () => {
+  const rows = formatWorkerRows([
+    running(),
+    running({ harness: 'claude', model: 'anthropic/claude-sonnet-5', status: 'idle',
+      contextTokens: 0, contextLimit: 0, task: 'Read the specification', startedAt: NOW / 1000 - 42 }),
+    running({ harness: 'opencode', model: 'provider/deepseek-v4.1-flash', status: 'needs you', task: 'Check the parser' }),
+  ], NOW / 1000, 100)
+  const lines = rows.map(r => r.fields.join('') + r.task)
+  expect(lines[0]?.includes('1234')).toBe(false)
+  expect(lines[0]?.includes('busy')).toBe(false)
+  expect(lines[0]?.includes('○')).toBe(false)
+  expect(lines[0]?.includes('105k')).toBe(false)
+  expect(lines[0]?.includes('ctx 22%')).toBe(true)
+  expect(lines[0]?.includes('gpt-6.1-sol:medium')).toBe(true)
+  expect(lines[1]?.includes('sonnet-5')).toBe(true)
+  expect(lines[1]?.includes('anthropic/')).toBe(false)
+  expect(lines[1]?.includes('idle')).toBe(true)
+  expect(rows[1]?.statusColor).toBe('warning')
+  expect(rows[2]?.statusColor).toBe('warning')
+  const taskColumn = lines[0]!.indexOf('Build')
+  expect(lines[1]!.indexOf('Read')).toBe(taskColumn)
+  expect(lines[2]!.indexOf('Check')).toBe(taskColumn)
+})
+
+test('worker tasks use the remaining width, end with an ellipsis and stay on one line', () => {
+  for (const width of [48, 80, 100]) {
+    const row = formatWorkerRows([running({ task: 'Build '.repeat(40) + '\nsecond line' })], NOW / 1000, width)[0]!
+    const line = row.fields.join('') + row.task
+    expect(Array.from(line).length).toBe(width)
+    expect(line.endsWith('…')).toBe(true)
+    expect(line.includes('\n')).toBe(false)
+  }
+})
+
+test('worker model shortening drops effort then whole segments as the TUI does', () => {
+  const row = formatWorkerRows([running({ model: 'provider/claude-sonnet-5:very-long-effort' })], NOW / 1000, 100)[0]!
+  expect(row.fields[1]?.trim()).toBe('sonnet-5')
 })
