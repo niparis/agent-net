@@ -640,10 +640,10 @@ The daemon sets `CLAUDE_CODE_DISABLE_MOUSE=1` on both ends of a Claude Code back
 | | `--data DIR` | `~/.local/state/agent-net/gateway` |
 | | `--dist DIR` | `~/.local/share/agent-net/dist` |
 | | `--san LIST` | none. Extra host names or IPs for the TLS certificate, comma separated. |
-| | `--keep-messages D` | `720h` (30 days). Message bodies and delivery records older than this are deleted. `0` keeps them for ever. |
+| | `--keep-messages D` | `0` (keep for ever). Message bodies and delivery records are kept until deleted. A period deletes the ones older than it. |
 | | `--keep-events D` | `2160h` (90 days). Events older than this are deleted. `0` keeps them for ever. |
 | | `--keep-sessions D` | `720h` (30 days). Offline sessions not seen for this long are deleted. `0` keeps them for ever. |
-| | `--keep-worker-runs D` | `720h` (30 days). Worker runs behind the [model track record](#the-playbook-and-the-track-record) older than this are deleted. `0` keeps them for ever. |
+| | `--keep-worker-runs D` | `0` (keep for ever). Worker runs behind the [model track record](#the-playbook-and-the-track-record) are kept until deleted. A period deletes the ones older than it. |
 | `daemon` | `--gateway URL` | from `node.json` |
 | | `--config-dir DIR` | `~/.config/agent-net` |
 | `setup` | `--join STRING` | none. A join string from `invite` or `enroll`. |
@@ -675,7 +675,7 @@ The daemon sets `CLAUDE_CODE_DISABLE_MOUSE=1` on both ends of a Claude Code back
 | `uninstall` | `--purge` | off. Also remove credentials and daemon state. |
 | | `--no-service` | off |
 
-`setup --gateway` does not pass the `--keep-*` flags, so the gateway service uses the defaults. To change them, add the flags to the `ExecStart` line of the systemd unit (or to `ProgramArguments` in the launchd plist) and restart the service. Setup keeps your edit only until the next `setup` run, which rewrites the unit.
+`setup --gateway` does not pass the `--keep-*` flags, so the gateway service uses the defaults: messages and worker runs are kept for ever, events for 90 days and offline sessions for 30 days. To change them, add the flags to the `ExecStart` line of the systemd unit (or to `ProgramArguments` in the launchd plist) and restart the service. Setup keeps your edit only until the next `setup` run, which rewrites the unit.
 
 `install.sh` takes `--gateway`, `--client`, `--binary-only`, `--all`, `--none`, `--accept-peer-messages`, `--no-accept-peer-messages` and `--version vX.Y.Z`. The integrations and peer-message flags are passed to `setup`. See [setup.md](setup.md).
 
@@ -1415,7 +1415,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 
 ### The playbook and the track record
 
-The gateway learns which harness and model do well from the runs it already records. When a machine reports `worker.stopped`, the gateway adds one row to `worker_runs` (node, harness, model, outcome, start, end, run time, the run's `continue`, `fix` and `auto_continue` counts). The outcome is `complete`, `partial` (`complete: false`), `failed` (a blocked or failed hand-back, a process that ended by itself, or a run that errored), `timed_out` (the idle or longest-run limit) or `stopped` (a stop on request, a worker lost at a daemon restart, an owner that went away, or a start that never ran the task). A stopped run is neither a success nor a failure: it is counted apart and never makes a model look bad. The gateway keeps the rows for 30 days (`--keep-worker-runs`) and counts them per harness and model. It also sums the two caller rework counters there: `continue` counts the owner's messages after a hand-back with `complete: no`, and `fix` after `complete: yes`. Automatic continues are summed apart, in `auto_continue`; they never enter the caller's rework or the calibration.
+The gateway learns which harness and model do well from the runs it already records. When a machine reports `worker.stopped`, the gateway adds one row to `worker_runs` (node, harness, model, outcome, start, end, run time, the run's `continue`, `fix` and `auto_continue` counts). The outcome is `complete`, `partial` (`complete: false`), `failed` (a blocked or failed hand-back, a process that ended by itself, or a run that errored), `timed_out` (the idle or longest-run limit) or `stopped` (a stop on request, a worker lost at a daemon restart, an owner that went away, or a start that never ran the task). A stopped run is neither a success nor a failure: it is counted apart and never makes a model look bad. The gateway keeps the rows for ever by default (`--keep-worker-runs` sets a period) and counts the last 30 days per harness and model. It also sums the two caller rework counters there: `continue` counts the owner's messages after a hand-back with `complete: no`, and `fix` after `complete: yes`. Automatic continues are summed apart, in `auto_continue`; they never enter the caller's rework or the calibration.
 
 The line it shows, in `agent_nodes` for each machine and in every `agent_start` (and `agent-net start`) result for the chosen harness and model, is:
 

@@ -373,12 +373,15 @@ func (s *Store) nodeIDs(idOrHost string) ([]string, error) {
 
 // Default retention periods. A period of 0 keeps the data for ever.
 const (
-	DefaultKeepMessages = 30 * 24 * time.Hour
+	// DefaultKeepMessages is 0: messages (with their bodies) and delivery
+	// rows are kept until they are deleted by hand.
+	DefaultKeepMessages = 0
 	DefaultKeepEvents   = 90 * 24 * time.Hour
 	DefaultKeepSessions = 30 * 24 * time.Hour
-	// DefaultKeepWorkerRuns is how long the model track record stays
-	// (decision 0022).
-	DefaultKeepWorkerRuns = protocol.TrackRecordDays * 24 * time.Hour
+	// DefaultKeepWorkerRuns is 0: the worker runs behind the model track
+	// record are kept for ever (decision 0022). protocol.TrackRecordDays is
+	// only the read window of the track record and the calibration.
+	DefaultKeepWorkerRuns = 0
 )
 
 // Retention says how long the gateway keeps data. A zero period keeps it for ever.
