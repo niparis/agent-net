@@ -246,6 +246,37 @@ func TestFindSessionsFullDetail(t *testing.T) {
 	}
 }
 
+func TestSessionReadCarriesLegacyCharter(t *testing.T) {
+	s, c := newTestStore(t)
+	ids := findFixture(t, s, c)
+	for attr, value := range map[string]string{"purpose": "Housing tools", "accepts": "bug fixes; new pages", "refuses": "payment changes", "feature_requests": "ask the owner"} {
+		if err := s.SetCharter("housing", attr, value, "owner"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacy, ok, err := s.Agent(ids["s01"])
+	if err != nil || !ok {
+		t.Fatalf("legacy agent_get source: %+v %v", legacy, err)
+	}
+	one, err := s.GetSession(protocol.SessionGetRequest{Session: ids["s01"]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if one.Session.Charter == nil || strings.Join(one.Session.Charter.Accepts, "; ") != legacy.Charter.Accepts || strings.Join(one.Session.Charter.Refuses, "; ") != legacy.Charter.Refuses {
+		t.Fatalf("session charter %+v, legacy %+v", one.Session.Charter, legacy.Charter)
+	}
+	checkOutput(t, "agent_session_get", one)
+	full, err := s.FindSessions(protocol.SessionsFindRequest{Text: "s01", Online: "any", Detail: "full"})
+	if err != nil || len(full.Items) != 1 || full.Items[0].Charter == nil || strings.Join(full.Items[0].Charter.Accepts, "; ") != legacy.Charter.Accepts {
+		t.Fatalf("full session find charter: %+v %v", full, err)
+	}
+	checkOutput(t, "agent_sessions_find", full)
+	concise, err := s.FindSessions(protocol.SessionsFindRequest{Text: "s01", Online: "any"})
+	if err != nil || len(concise.Items) != 1 || concise.Items[0].Charter != nil {
+		t.Fatalf("concise session row: %+v %v", concise, err)
+	}
+}
+
 func TestAnnounceTaskStarted(t *testing.T) {
 	s, c := newTestStore(t)
 	node, _, err := s.CreateNode("research", "linux")

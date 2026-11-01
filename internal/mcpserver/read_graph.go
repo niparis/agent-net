@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -19,11 +20,12 @@ type roGraphReadIn struct {
 }
 
 type roGraphNode struct {
-	Name     string            `json:"name"`
-	Kind     string            `json:"kind"`
-	Maturity string            `json:"maturity"`
-	Purpose  string            `json:"purpose"`
-	Rules    map[string]string `json:"rules"`
+	Name     string                `json:"name"`
+	Kind     string                `json:"kind"`
+	Maturity string                `json:"maturity"`
+	Purpose  string                `json:"purpose"`
+	Charter  *protocol.ReadCharter `json:"charter,omitempty"`
+	Rules    map[string]string     `json:"rules"`
 }
 
 type roGraphEdge struct {
@@ -127,17 +129,38 @@ func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
 	out := make([]roGraphNode, 0, len(nodes))
 	for _, node := range nodes {
 		purpose, maturity := "", node.Maturity
+		var charter *protocol.ReadCharter
 		if node.Charter != nil {
 			purpose = node.Charter.Purpose
 			if node.Charter.Maturity != "" {
 				maturity = node.Charter.Maturity
+			}
+			charter = &protocol.ReadCharter{
+				Purpose:         node.Charter.Purpose,
+				Accepts:         roCharterList(node.Charter.Accepts),
+				Refuses:         roCharterList(node.Charter.Refuses),
+				FeatureRequests: node.Charter.FeatureRequests,
 			}
 		}
 		rules := map[string]string{}
 		for _, rule := range node.Rules {
 			rules[rule.Name] = rule.Value
 		}
-		out = append(out, roGraphNode{Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Rules: rules})
+		out = append(out, roGraphNode{Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Charter: charter, Rules: rules})
+	}
+	return out
+}
+
+func roCharterList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	items := strings.Split(value, ";")
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
 	}
 	return out
 }

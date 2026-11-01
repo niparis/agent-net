@@ -58,6 +58,30 @@ func TestGraphReadPagesNodesAndReadsOneNode(t *testing.T) {
 	}
 }
 
+func TestGraphReadCarriesCharterAndKeepsConciseRowsShort(t *testing.T) {
+	f := &roFakeDaemon{graph: protocol.PublicGraphPage{
+		Nodes: []protocol.PublicGraphNode{{Name: "shop", Kind: "component", Maturity: "mature", Charter: &protocol.Charter{
+			Purpose: "Sells things", Accepts: "bug fixes; new pages", Refuses: "payment changes", FeatureRequests: "ask the owner",
+		}}},
+	}}
+	cs := connect(t, f.call)
+	one := roCall(t, cs, "agent_graph_read", map[string]any{"node": "shop"})
+	nodes := one["nodes"].([]any)
+	charter, ok := nodes[0].(map[string]any)["charter"].(map[string]any)
+	if !ok || charter["purpose"] != "Sells things" || len(charter["accepts"].([]any)) != 2 || charter["refuses"].([]any)[0] != "payment changes" {
+		t.Fatalf("graph charter: %+v", nodes[0])
+	}
+	listFake := &roFakeDaemon{graph: protocol.PublicGraphPage{
+		Nodes: []protocol.PublicGraphNode{{Name: "shop", Kind: "component", Maturity: "mature"}},
+	}}
+	listCS := connect(t, listFake.call)
+	concise := roCall(t, listCS, "agent_graph_read", map[string]any{})
+	conciseNode := concise["nodes"].([]any)[0].(map[string]any)
+	if _, exists := conciseNode["charter"]; exists {
+		t.Fatalf("concise graph node has charter: %+v", conciseNode)
+	}
+}
+
 // MCP servers default to the ones this caller may use, with their tool names.
 func TestMCPServersFindUsableOnly(t *testing.T) {
 	t.Setenv("CLAUDE_CODE_SESSION_ID", "n_me")
