@@ -148,3 +148,31 @@ func TestCTOReservedNameUpgrade(t *testing.T) {
 		t.Fatal("an old session retained the reserved CTO name")
 	}
 }
+
+func TestCTOLegacyReplyRoutesToRegisteredSession(t *testing.T) {
+	s, _ := newTestStore(t)
+	agent, peer := twoSessions(t, s)
+	node := mustNode(t, s, agent)
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _, err := s.StoreMessage(protocol.MsgSend{Sender: owner, Recipient: peer, Body: "legacy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE messages SET sender_cto=1 WHERE id=?`, root.ID); err != nil {
+		t.Fatal(err)
+	}
+	cto, err := s.RegisterCTOSession(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reply, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: owner, ParentID: root.ID, Body: "answer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reply.To != cto {
+		t.Fatalf("reply went to %s, want CTO %s", reply.To, cto)
+	}
+}

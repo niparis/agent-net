@@ -1315,6 +1315,22 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		if parent.To != p.Sender || parent.From != p.Recipient {
 			return msg, false, reject("a reply must come from the parent's recipient and go to its sender")
 		}
+		// Before the network CTO existed, its messages came from the owner.
+		// Route replies to those roots to the registered identity for 30 days
+		// from its first registration. The parent check above still applies.
+		var legacyCTO string
+		err = tx.QueryRow(`SELECT c.value FROM owner_settings c JOIN owner_settings start ON start.key='cto_legacy_route_start'
+			JOIN messages root ON root.conversation_id=? AND root.parent_id=''
+			JOIN sessions sender ON sender.id=root.sender
+			WHERE c.key='cto_session' AND root.sender_cto=1 AND sender.harness=?
+			AND root.created_at<=start.updated_at AND ?>=start.updated_at AND ?<start.updated_at+?`,
+			parent.ConversationID, protocol.OwnerHarness, now.UnixNano(), now.UnixNano(), int64(30*24*time.Hour)).Scan(&legacyCTO)
+		if err != nil && err != sql.ErrNoRows {
+			return msg, false, err
+		}
+		if legacyCTO != "" && m.To == parent.From {
+			m.To = legacyCTO
+		}
 		m.ParentID = parent.ID
 		m.ConversationID = parent.ConversationID
 		m.Hop = parent.Hop + 1
