@@ -21,6 +21,7 @@
 - [../RELEASING.md](../RELEASING.md): cut a release and update machines.
 - [design/onboarding.md](design/onboarding.md): onboarding design.
 - [design/start-sessions.md](design/start-sessions.md): proposed owner session starts.
+- [design/tool-redesign.md](design/tool-redesign.md): the agent and CTO tool redesign: contracts, owner decisions and the task list.
 - [design/keys-audit.md](design/keys-audit.md): every TUI key, where the meanings collide, and a proposed consistent key map.
 
 ## Design history
