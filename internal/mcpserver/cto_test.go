@@ -192,6 +192,9 @@ func TestCTOToolsForward(t *testing.T) {
 		if field := ctoRoutingField[name]; field != "" {
 			args[field] = map[string]string{"message": "send", "ui": "show", "graph_change": "charter_set", "session_change": "rename", "worker_change": "start", "answer": "held", "tools_change": "plan", "mcp_change": "test", "settings_change": "onboarding", "project_change": "add"}[name]
 		}
+		if name == "worker_change" {
+			args["touches"] = []string{"tests"}
+		}
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil || out.IsError || !seen[name] {
 			t.Errorf("%s: %+v %v", name, out, err)
@@ -372,5 +375,39 @@ func TestCTOCharterGuideView(t *testing.T) {
 		if strings.Contains(string(raw), "1200") {
 			t.Errorf("guide text in %s schema", tool.Name)
 		}
+	}
+}
+
+func TestCTOWorkerStartRequiresTouches(t *testing.T) {
+	for _, tc := range []struct{ name, args string }{
+		{"worker_start", `{"task":"x"}`}, {"worker_change", `{"action":"start","task":"x"}`},
+	} {
+		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err == nil {
+			t.Errorf("%s accepted missing touches", tc.name)
+		}
+	}
+	for _, tc := range []struct{ name, args string }{
+		{"worker_start", `{"continue":"old"}`}, {"worker_change", `{"action":"start","continue":"old"}`}, {"worker_change", `{"action":"stop"}`},
+	} {
+		if err := CTOArguments(tc.name, json.RawMessage(tc.args)); err != nil {
+			t.Errorf("%s %s: %v", tc.name, tc.args, err)
+		}
+	}
+}
+
+func TestCTOWorkerStartMissingTouchesError(t *testing.T) {
+	cs := ctoTestSession(t)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "worker_change", Arguments: map[string]any{"action": "start", "task": "x"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := ""
+	for _, c := range res.Content {
+		if v, ok := c.(*mcp.TextContent); ok {
+			text += v.Text
+		}
+	}
+	if !res.IsError || !strings.Contains(text, protocol.WorkerTouchesError) {
+		t.Fatalf("missing actionable refusal: %+v %s", res, text)
 	}
 }

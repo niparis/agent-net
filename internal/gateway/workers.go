@@ -272,6 +272,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, reject("%v", err)
 		}
 	}
+	if len(p.Touches) == 0 && p.Continue == "" {
+		return none, reject(protocol.WorkerTouchesError)
+	}
 	for _, touch := range p.Touches {
 		switch touch {
 		case "db", "hot-path", "ui", "docs", "tests", "config", "other":
@@ -946,7 +949,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, err
 	}
 	raw, err := target.call(cctx, "worker.continue", protocol.WorkerContinue{Session: old.SessionID, Requester: p.Owner, FromCTO: p.FromCTO, TaskID: taskID,
-		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task)})
+		Harness: p.Harness, Model: p.Model, Task: strings.TrimSpace(p.Task), Touches: p.Touches})
 	if err != nil {
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {
 			return none, reject("machine %s did not start the worker: %v", old.Hostname, err)

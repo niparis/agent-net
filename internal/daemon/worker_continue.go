@@ -51,6 +51,10 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		Permissions: r.Permissions, FromCTO: p.FromCTO, // the old worker's level, not the project's current one
 		DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches),
 		TaskID: first(p.TaskID, first(r.TaskID, r.SessionID)), ContinuationPartial: r.DoneStatus != "" && r.DonePartial}
+	if len(p.Touches) > 0 {
+		l.Touches = p.Touches
+		l.DifficultyUsed, _ = protocol.WorkerEffectiveDifficulty(l.DifficultyAsked, l.Touches)
+	}
 	where := ""
 	switch {
 	case r.Worktree == "":

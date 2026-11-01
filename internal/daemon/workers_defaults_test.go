@@ -143,7 +143,7 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 	}
 	// An agent session that runs in the repository.
 	pi, piID := helloPi(t, w.node, "caller-pi", repo, true)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Harness: "opencode", Task: "x"}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Touches: []string{"other"}, Harness: "opencode", Task: "x"}))
 	if res.Project != "shop" || res.Path != repo || res.Worktree == "" || res.Status != "starting" {
 		t.Errorf("worker for the caller's project: %+v", res)
 	}
@@ -159,7 +159,7 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 	// project, and the worker gets no worktree there.
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	other, _ := helloPi(t, w.node, "plain-pi", dir, true)
-	res = mustWorker(t, other.mustCall("worker_start", protocol.WorkerStartRequest{Harness: "opencode", Task: "x"}))
+	res = mustWorker(t, other.mustCall("worker_start", protocol.WorkerStartRequest{Touches: []string{"other"}, Harness: "opencode", Task: "x"}))
 	if res.Path != dir || res.Worktree != "" {
 		t.Errorf("worker in a plain folder: %+v", res)
 	}
@@ -177,7 +177,7 @@ func TestWorkerCallerProjectPicksTheMachine(t *testing.T) {
 	owner := a.ownerID()
 	call := func(from *workerNode, callerProject bool) (res protocol.WorkerStartAnswer, err error) {
 		data, err := from.d.call(context.Background(), "worker.start", protocol.WorkerStartFrame{
-			WorkerStartRequest: protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone},
+			WorkerStartRequest: protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone},
 			Owner:              owner, CallerProject: callerProject})
 		if err == nil {
 			err = json.Unmarshal(data, &res)

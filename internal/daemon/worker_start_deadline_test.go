@@ -132,7 +132,7 @@ func TestWorkerStartReturnsStartingThroughGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
-	raw, err := pi.call("worker_start", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "do work", Isolation: protocol.IsolationWorktree})
+	raw, err := pi.call("worker_start", protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "do work", Isolation: protocol.IsolationWorktree})
 	if err != nil {
 		t.Fatal(err)
 	}

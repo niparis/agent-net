@@ -888,8 +888,12 @@ await test("agent_start and agent_stop reach the daemon and print a short result
     if (bad in start.input.properties) throw new Error("agent_start exposes " + bad);
   }
   if (!start.input.properties.difficulty) throw new Error("missing difficulty schema");
+  const areas = start.input.properties.touches?.items?.enum;
+  if (JSON.stringify(areas) !== JSON.stringify(["db", "hot-path", "ui", "docs", "tests", "config", "other"])) throw new Error("wrong touches schema");
+  const missing = (await start.execute({ project: "alpha", task: "say ok" }, { sessionID: "ses_w" })).content;
+  if (!missing.includes('touches is required') || !missing.includes('{"touches":["ui"]}')) throw new Error("missing touches was not refused: " + missing);
   const before = calls.length;
-  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x", difficulty: "hard" }, { sessionID: "ses_w" })).content;
+  const out = (await start.execute({ project: "alpha", task: "say ok", model: "a/x", difficulty: "hard", touches: ["ui"] }, { sessionID: "ses_w" })).content;
   const [method, params] = calls[before];
   if (method !== "worker_start" || params.project !== "alpha" || params.task !== "say ok" || params.model !== "a/x" || params.difficulty !== "hard") {
     throw new Error("wrong call: " + JSON.stringify(calls[before]));
@@ -898,6 +902,8 @@ await test("agent_start and agent_stop reach the daemon and print a short result
                       "a/x · opencode: 4 runs: 1 complete, 2 partial, 1 stopped (median 1 min) · resumes", "playbook [a/x]: ask for the diff"]) {
     if (!out.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(out));
   }
+  await start.execute({ continue: "old" }, { sessionID: "ses_w" });
+  if (calls.at(-1)[0] !== "worker_start" || calls.at(-1)[1].continue !== "old") throw new Error("continue without touches not forwarded");
   const gone = (await stopTool.execute({ session: "s_worker" }, { sessionID: "ses_w" })).content;
   const last = calls[calls.length - 1];
   if (last[0] !== "worker_stop" || last[1].session !== "s_worker" || !gone.includes("Stopped worker s_worker")) {
@@ -1033,7 +1039,7 @@ await test("agent_handback reaches the daemon; agent_start can ask for a worktre
   }
   const start = tools.find((t) => t.name === "agent_start");
   if (!("isolation" in start.input.properties)) throw new Error("agent_start has no isolation");
-  await start.execute({ project: "alpha", task: "t", isolation: "worktree" }, { sessionID: "ses_h" });
+  await start.execute({ project: "alpha", task: "t", isolation: "worktree", touches: ["other"] }, { sessionID: "ses_h" });
   if (calls[calls.length - 1][1].isolation !== "worktree") throw new Error("isolation was not passed");
   stop();
 });

@@ -98,7 +98,7 @@ func TestInsideSessionAdvice(t *testing.T) {
 	fa.setSessions(info)
 	eventually(t, "session known", func() bool { return len(n.d.Sessions()) == 1 })
 	cli := cliClient(t, n)
-	_, err := cli.call(protocol.OpWorkerStart, protocol.WorkerStartRequest{Project: "p", Harness: "opencode", Task: "t"})
+	_, err := cli.call(protocol.OpWorkerStart, protocol.WorkerStartRequest{Touches: []string{"other"}, Project: "p", Harness: "opencode", Task: "t"})
 	if err == nil {
 		t.Fatal("worker_start was allowed from inside a session")
 	}

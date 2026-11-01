@@ -112,12 +112,12 @@ func TestStartCommand(t *testing.T) {
 	f := &fakeOp{result: protocol.WorkerStartResult{SessionID: "s_w", Harness: "opencode", Model: "a/b", Project: "shop", Hostname: "mac",
 		Worktree: "/wt", Branch: "agent-net/w_1", Task: &protocol.Message{ID: "m_9"}}}
 	var out bytes.Buffer
-	err := runStart(context.Background(), f, &out, []string{"--project", "shop", "--harness", "opencode", "--model", "a/b",
+	err := runStart(context.Background(), f, &out, []string{"--touches", "tests", "--project", "shop", "--harness", "opencode", "--model", "a/b",
 		"--isolation", "worktree", "write", "the", "tests", "--machine", "mac"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := protocol.WorkerStartRequest{Project: "shop", Machine: "mac", Harness: "opencode", Model: "a/b", Task: "write the tests", Isolation: "worktree"}
+	want := protocol.WorkerStartRequest{Project: "shop", Machine: "mac", Harness: "opencode", Model: "a/b", Task: "write the tests", Isolation: "worktree", Touches: []string{"tests"}}
 	if !reflect.DeepEqual(f.start, want) {
 		t.Errorf("request %+v, want %+v", f.start, want)
 	}
@@ -129,7 +129,7 @@ func TestStartCommand(t *testing.T) {
 	}
 	// The harness defaults to opencode.
 	f2 := &fakeOp{}
-	runStart(context.Background(), f2, &bytes.Buffer{}, []string{"--project", "shop", "do it"})
+	runStart(context.Background(), f2, &bytes.Buffer{}, []string{"--touches", "other", "--project", "shop", "do it"})
 	if f2.start.Harness != "opencode" || f2.start.Task != "do it" {
 		t.Errorf("defaults: %+v", f2.start)
 	}
@@ -139,7 +139,7 @@ func TestStartCommand(t *testing.T) {
 		}
 	}
 	// A refusal comes back as the error.
-	err = runStart(context.Background(), &fakeOp{err: errors.New("machine mac is offline")}, &bytes.Buffer{}, []string{"--project", "shop", "x"})
+	err = runStart(context.Background(), &fakeOp{err: errors.New("machine mac is offline")}, &bytes.Buffer{}, []string{"--touches", "other", "--project", "shop", "x"})
 	if err == nil || err.Error() != "machine mac is offline" {
 		t.Errorf("error: %v", err)
 	}
@@ -233,10 +233,17 @@ func (f *fakeOp) SetProjectDisplayName(context.Context, string, string) (protoco
 func TestStartCommandReportsStarting(t *testing.T) {
 	f := &fakeOp{result: protocol.WorkerStartResult{Status: "starting", SessionID: "s_w", Harness: "opencode", Project: "shop", Hostname: "mac", Worktree: "/wt", Branch: "agent-net/w_1"}}
 	var out bytes.Buffer
-	if err := runStart(context.Background(), f, &out, []string{"--project", "shop", "work"}); err != nil {
+	if err := runStart(context.Background(), f, &out, []string{"--touches", "other", "--project", "shop", "work"}); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out.String(), "starting worker s_w") || !strings.Contains(out.String(), "notice") {
 		t.Fatalf("output: %s", out.String())
+	}
+}
+
+func TestStartRequiresTouches(t *testing.T) {
+	err := runStart(context.Background(), &fakeOp{}, &bytes.Buffer{}, []string{"--project", "shop", "work"})
+	if err == nil || !strings.Contains(err.Error(), `{"touches":["ui"]}`) {
+		t.Fatalf("missing actionable refusal: %v", err)
 	}
 }

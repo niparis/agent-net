@@ -874,6 +874,9 @@ export default function (pi: ExtensionAPI) {
       parameters,
       async execute(_toolCallId: string, params: any) {
         try {
+          if (method === "worker_start" && !String(params?.continue ?? "").trim() && (!Array.isArray(params?.touches) || params.touches.length === 0)) {
+            throw new Error('touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}');
+          }
           // The daemon does not default online_only; the tool says it does.
           const args = method === "list" ? { online_only: true, ...(params ?? {}) } : mapParams(params);
           const result = await request(method, args);
@@ -1252,6 +1255,7 @@ export default function (pi: ExtensionAPI) {
       task: Type.Optional(Type.String({ description: "What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply. Optional only with continue" })),
       harness: Type.Optional(Type.String({ description: "claude, opencode, pi or codex; empty lets automatic selection choose a harness (with continue, the old worker's harness). agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree." })),
       model: Type.Optional(Type.String({ description: "The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_nodes). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty or auto selects a registered worker profile by task difficulty and quota; an empty roster uses the harness default." })),
+      touches: Type.Optional(Type.Array(Type.Union([Type.Literal("db"), Type.Literal("hot-path"), Type.Literal("ui"), Type.Literal("docs"), Type.Literal("tests"), Type.Literal("config"), Type.Literal("other")]), { description: "Required areas touched; optional for continue. db means schema, migrations or stored data; hot-path means code run on every request, refresh, redraw or message." })),
       difficulty: Type.Optional(Type.Union([Type.Literal("trivial"), Type.Literal("simple"), Type.Literal("normal"), Type.Literal("hard"), Type.Literal("very_complex")], { description: "Task difficulty for automatic model choice (default normal)." })),
       machine: Type.Optional(Type.String({ description: "The machine, only when the project is on more than one" })),
       base: Type.Optional(Type.String({ description: "Existing local branch to start the worktree from." })),

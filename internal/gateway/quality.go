@@ -279,11 +279,11 @@ func (s *Store) refreshQuality() error {
 		}
 		return out.Profiles[i].Name < out.Profiles[j].Name
 	})
-	families, agents, err := s.qualityFamilyTables()
+	families, areas, agents, err := s.qualityFamilyTables()
 	if err != nil {
 		return err
 	}
-	out.Levels, out.Agents = families, agents
+	out.Levels, out.Areas, out.Agents = families, areas, agents
 	settings, err := s.qualitySettings()
 	if err != nil {
 		return err
@@ -337,9 +337,11 @@ func (s *Store) QualityAnalysis() protocol.QualityAnalysis {
 	out.Effects = append([]protocol.QualityEffect(nil), out.Effects...)
 	out.Summary = append([]protocol.QualityFactor(nil), out.Summary...)
 	out.Levels = copyQualityLevels(out.Levels)
+	out.Areas = append([]protocol.QualityFamily(nil), out.Areas...)
 	out.Agents = append([]protocol.QualityAgent(nil), out.Agents...)
 	for i := range out.Agents {
 		out.Agents[i].Levels = copyQualityLevels(out.Agents[i].Levels)
+		out.Agents[i].Areas = append([]protocol.QualityFamily(nil), out.Agents[i].Areas...)
 	}
 	out.Profiles = append([]protocol.ProfileQuality(nil), out.Profiles...)
 	for i, p := range out.Profiles {

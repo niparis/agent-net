@@ -20,7 +20,7 @@ func TestWorkerStartAndNodesShowTrackAndPlaybook(t *testing.T) {
 		return json.RawMessage(`{}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_start",
-		Arguments: map[string]any{"project": "p", "task": "t"}})
+		Arguments: map[string]any{"project": "p", "task": "t", "touches": []string{"ui"}}})
 	if err != nil || res.IsError || len(res.Content) == 0 {
 		t.Fatalf("agent_start: %v %+v", err, res)
 	}
@@ -142,5 +142,16 @@ func TestWorkerProfilesListToolReturnsRoster(t *testing.T) {
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_worker_profiles"})
 	if err != nil || res.IsError || len(res.Content) == 0 || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "demo") {
 		t.Fatalf("profiles: %+v %v", res, err)
+	}
+}
+
+func TestStartRequiresTouches(t *testing.T) {
+	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
+		t.Fatal("start forwarded")
+		return nil, nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_start", Arguments: map[string]any{"task": "x"}})
+	if err != nil || !res.IsError {
+		t.Fatalf("expected refusal: %+v %v", res, err)
 	}
 }

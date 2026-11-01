@@ -121,6 +121,7 @@ var ctoTools = map[string]ctoToolDef{
 			"harness":       {typ: "string", desc: "Harness; empty is auto.", enum: []string{"opencode", "claude", "pi", "codex"}},
 			"model":         {typ: "string", desc: "Model; empty is auto."},
 			"difficulty":    {typ: "string", desc: "Default normal.", enum: []string{"trivial", "simple", "normal", "hard", "very_complex"}},
+			"touches":       {typ: "array", desc: `Required unless continuing: db, hot-path, ui, docs, tests, config, other. E.g. {"touches":["ui"]}.`, items: map[string]any{"type": "string", "enum": []string{"db", "hot-path", "ui", "docs", "tests", "config", "other"}}},
 			"base":          {typ: "string", desc: "Branch."},
 			"continue":      {typ: "string", desc: "Worker ID."},
 			"task":          {typ: "string", desc: "Brief and limits."},
@@ -285,6 +286,16 @@ func CTOArguments(name string, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return err
 	}
+	if name == "worker_start" || name == "worker_change" {
+		if obj, ok := value.(map[string]any); ok {
+			start := name == "worker_start" || obj["action"] == "start"
+			cont, _ := obj["continue"].(string)
+			areas, _ := obj["touches"].([]any)
+			if start && strings.TrimSpace(cont) == "" && len(areas) == 0 {
+				return fmt.Errorf("%s", protocol.WorkerTouchesError)
+			}
+		}
+	}
 	return resolved.Validate(value)
 }
 
@@ -351,6 +362,14 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 		props[k] = prop
 	}
 	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	if name == "worker_change" || name == "worker_start" {
+		start := map[string]any{"not": map[string]any{"required": []string{"continue"}, "properties": map[string]any{"continue": map[string]any{"type": "string", "minLength": 1}}}}
+		if name == "worker_change" {
+			start = map[string]any{"allOf": []any{start, map[string]any{"required": []string{"action"}, "properties": map[string]any{"action": map[string]any{"const": "start"}}}}}
+		}
+		schema["if"] = start
+		schema["then"] = map[string]any{"required": []string{"touches"}, "properties": map[string]any{"touches": map[string]any{"minItems": 1}}}
+	}
 	if field := ctoRoutingField[name]; field != "" {
 		schema["required"] = []string{field}
 	}
@@ -365,6 +384,11 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if method == "worker_change" {
+				if err := CTOArguments(method, req.Params.Arguments); err != nil {
+					return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
+				}
+			}
 			raw, err := call(ctx, method, req.Params.Arguments)
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil

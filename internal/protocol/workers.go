@@ -106,7 +106,8 @@ type WorkerResume struct {
 // WorkerContinue is "worker.continue", gateway to the machine: start a new
 // worker from an ended one. Only the owner of the old worker may ask.
 type WorkerContinue struct {
-	FromCTO bool `json:"sender_cto,omitempty"`
+	Touches []string `json:"touches,omitempty"`
+	FromCTO bool     `json:"sender_cto,omitempty"`
 	// Session is the old worker's session ID.
 	Session   string `json:"session"`
 	Requester string `json:"requester_session"`
@@ -697,3 +698,6 @@ func noticeChecklist(worktree string, learned bool) string {
 	}
 	return line
 }
+
+// WorkerTouchesError explains the required worker start areas.
+const WorkerTouchesError = `touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}`
