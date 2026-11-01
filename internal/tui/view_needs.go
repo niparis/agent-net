@@ -70,7 +70,7 @@ func (m Model) needsRows() []protocol.AgentView {
 		out = append(out, a)
 	}
 	for _, item := range m.inboxItems {
-		if item.Kind != "approval" || item.Status != "open" {
+		if item.Status != "open" || (item.Kind != "approval" && item.Kind != "check") {
 			continue
 		}
 		var a protocol.AgentView

@@ -228,6 +228,9 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 	if err == nil {
 		err = s.reminderCounts(&c)
 	}
+	if err == nil {
+		err = s.checkCounts(&c)
+	}
 	return c, err
 }
 

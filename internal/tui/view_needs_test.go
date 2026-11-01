@@ -391,3 +391,12 @@ func TestWorkerWaitingScreen(t *testing.T) {
 		})
 	}
 }
+
+func TestCheckInboxItemShowsInNeedsYou(t *testing.T) {
+	m := newModel(100, 30)
+	m.snap.Agents = []protocol.AgentView{agent("s_check", "n_mac", "test-host", "pi", "checker", nil)}
+	m.inboxItems = []protocol.InboxItem{{ID: "i_check", Kind: "check", SessionID: "s_check", Text: "checker stopped with work left: write the docs", Status: "open", CreatedAt: t0}}
+	if got := m.needsRows(); len(got) != 1 || !strings.Contains(got[0].Waiting.Text, "stopped with work left") {
+		t.Fatalf("check row = %+v", got)
+	}
+}

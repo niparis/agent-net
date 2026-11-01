@@ -814,3 +814,28 @@ an answer. The only new stored fact is the request's `reminded` flag, set
 atomically with the normal notification record. A restart cannot create
 another reminder for that request. Reminder and answer counters use retained
 message history; the count of offline requests skipped is kept in memory.
+
+
+## Idle checks
+
+The gateway can send one notification from the reserved `agent-net` identity
+to an online, idle session that has open work. Open work is a request it owes
+an answer, a running worker it started, or an announced task. It never checks
+a worker session, the CTO, an owner session or an offline session. It checks
+a session at most once per idle period, and at most 6 times a day.
+
+A check is a notification, not a request or an approval, and carries no owner
+authority. It asks the session to answer with `agent_announce`: done, more with
+one line, or blocked on X. The gateway reads only the next announce. It does
+not start or resume a session, and it routes nothing to the CTO. `more` and
+`blocked` leave one open row per session in the owner's Needs you queue. The
+row text is cleaned and the `[agent-net` marker is neutralized.
+
+The gateway stores the activity time it has checked, the small stopping
+counters for "more", the daily cap and counts of answer kinds. It does not
+store the announced task or the answer line as check state. The Needs you row
+does hold the line the agent supplied, like any other inbox item. Ordinary
+senders cannot use the `agent-net` identity, so a peer cannot forge a check.
+A check reaches the session's own model, which may use a paid or protected
+provider, so the cap and the stopping rule keep it rare.
+

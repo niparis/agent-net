@@ -32,6 +32,7 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 type Store struct {
 	reminderMu        sync.Mutex
 	reminderOffline   map[string]bool
+	checkMu           sync.Mutex
 	pendingMu         sync.Mutex
 	pendingEpisodes   map[string]pendingEpisode
 	pendingStalls     int
@@ -320,7 +321,22 @@ ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
 -- Reserve CTO for the network session, including names saved before part 6.
 UPDATE profiles SET name = '' WHERE name = 'CTO';
 UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harness <> 'cto';
-`, `SELECT 1 /* CTO legacy route upgrade */;`, `ALTER TABLE messages ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0;`}
+`, `SELECT 1 /* CTO legacy route upgrade */;`, `ALTER TABLE messages ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0;`, `
+-- The idle check keeps only the high-water mark of the last activity it
+-- covered, the small stopping counters, and the daily cap. Task content is
+-- never stored here.
+CREATE TABLE IF NOT EXISTS session_checks (
+ session_id TEXT PRIMARY KEY,
+ check_active INTEGER NOT NULL DEFAULT 0,
+ check_waiting INTEGER NOT NULL DEFAULT 0,
+ check_more INTEGER NOT NULL DEFAULT 0,
+ check_open INTEGER NOT NULL DEFAULT 0,
+ check_msgs INTEGER NOT NULL DEFAULT 0,
+ check_day TEXT NOT NULL DEFAULT '',
+ check_day_count INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS check_answer_counts (
+ day TEXT NOT NULL, kind TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(day, kind));
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -1050,6 +1066,9 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 		updated_at=excluded.updated_at`,
 		p.SessionID, p.Project, caps, p.Task, s.now().UnixNano(), p.Expertise, p.Capabilities == nil)
 	if err != nil {
+		return protocol.Profile{}, err
+	}
+	if err := s.answerCheck(p.SessionID, p.Task); err != nil {
 		return protocol.Profile{}, err
 	}
 	a, ok, err := s.Agent(p.SessionID)

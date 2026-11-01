@@ -25,7 +25,7 @@ type inboxExecer interface {
 
 func (s *Store) createInboxItem(db inboxExecer, item protocol.InboxItem) (protocol.InboxItem, error) {
 	switch item.Kind {
-	case "approval", "feature_idea", "question", "rejection", "escalation":
+	case "approval", "feature_idea", "question", "rejection", "escalation", "check":
 	default:
 		return item, reject("invalid inbox kind")
 	}

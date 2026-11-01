@@ -299,7 +299,12 @@ type SessionCounts struct {
 	PendingRemindersOffline      int `json:"pending_reminders_offline"`
 	PendingAnsweredAfterReminder int `json:"pending_answered_after_reminder"`
 	PendingStalls                int `json:"pending_stalls"`
-	Online                       int `json:"online"`
+	// The idle check: messages sent, and what the sessions answered.
+	ChecksSent          int `json:"checks_sent"`
+	CheckAnswersDone    int `json:"check_answers_done"`
+	CheckAnswersMore    int `json:"check_answers_more"`
+	CheckAnswersBlocked int `json:"check_answers_blocked"`
+	Online              int `json:"online"`
 	// Offline24h is the sessions that are offline and were seen in the last
 	// 24 hours.
 	Offline24h int `json:"offline_24h"`
