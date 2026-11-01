@@ -129,3 +129,15 @@ func TestCTOPeerNote(t *testing.T) {
 		}
 	}
 }
+
+func TestDeliverClaudeReminder(t *testing.T) {
+	m := protocol.Message{ID: "m_note", From: "agent-net", FromHarness: "agent-net", Type: protocol.TypeNotification, Body: "[agent-net] reminder: alice is waiting for your answer to m_request (sent 3m0s ago). Answer with agent_reply, or say you cannot."}
+	raw, err := BuildFrame(m, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(raw)
+	if !strings.Contains(got, m.Body) || strings.Contains(got, "This is from another agent") || strings.Contains(got, "SendMessage") {
+		t.Fatalf("reminder = %s", got)
+	}
+}

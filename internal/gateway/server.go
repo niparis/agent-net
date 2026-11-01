@@ -256,6 +256,13 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 			if err := g.store.samplePendingStalls(); err != nil {
 				g.logLine("error", "where", "pending sample", "err", err)
 			}
+			reminders, err := g.store.remindPending()
+			if err != nil {
+				g.logLine("error", "where", "pending reminders", "err", err)
+			}
+			for _, m := range reminders {
+				g.dispatch(ctx, m)
+			}
 			// Expire writes one log line per message.
 			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)
@@ -1499,6 +1506,13 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 }
 
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
+	if m.From == "agent-net" {
+		ok, err := g.store.reminderEligible(m.ParentID)
+		if err != nil || !ok {
+			return
+		}
+	}
+
 	g.mu.Lock()
 	nc := g.conns[nodeID]
 	g.mu.Unlock()

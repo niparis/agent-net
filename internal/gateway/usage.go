@@ -225,6 +225,9 @@ func (s *Store) SessionCounts(recent time.Duration) (protocol.SessionCounts, err
 	s.pendingMu.Lock()
 	c.PendingStalls = s.pendingStalls
 	s.pendingMu.Unlock()
+	if err == nil {
+		err = s.reminderCounts(&c)
+	}
 	return c, err
 }
 
