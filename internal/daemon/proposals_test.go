@@ -182,6 +182,34 @@ func TestProposalConcurrentOutcomeDelivery(t *testing.T) {
 	}
 }
 
+func TestProposalMessageContextSnapshot(t *testing.T) {
+	s, err := openState(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	for i := 0; i < 4; i++ {
+		if err := s.recordCTODelivery(fmt.Sprintf("sender-%d", i), time.Unix(int64(100+i), 0)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p := proposalRunner{state: s, now: func() time.Time { return time.Unix(200, 0) }, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) { return nil, nil }}
+	_, err = p.propose(context.Background(), proposalCall{Tool: "one", Args: json.RawMessage(`{}`)}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.recordCTODelivery("later", time.Unix(201, 0)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := p.list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 || len(items[0].Messages) != 3 || items[0].Messages[0].Sender != "sender-1" || items[0].Messages[2].Sender != "sender-3" {
+		t.Fatalf("messages: %+v", items)
+	}
+}
+
 func TestProposalWaitsForCTOIdle(t *testing.T) {
 	f := startCTOCompactionFixture(t)
 	f.setActive(t, true)

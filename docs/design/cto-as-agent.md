@@ -2,8 +2,12 @@
 
 Status: accepted by the owner as option A on 2026-10-31. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
-Part 2 is in progress: the daemon proposal store and selected call runners exist;
-the remaining call runners and the Needs you interface are not built yet.
+Part 2 supplies the proposal store, decision runner and Needs you interface.
+
+The daemon runs validators and calls for charter changes, edge sets and machine
+renames. Validators and runners for the other change operations belong to Part
+3. The 20-proposal cap and deduplication apply to the CTO's daemon; this is
+sufficient while the CTO runs on one machine at a time.
 
 Base: [0022](../decisions/0022-component-graph-and-cto.md) (the CTO section), [0029](../decisions/0029-cto-shared-timeline.md) (one timeline), [0034](../decisions/0034-cto-box-is-read-only.md) (the read-only CTO box), [docs/reference.md](../reference.md#cto-settings-and-conversation), [docs/security.md](../security.md), and the spike `docs/design/cto-as-agent-spike.md` on branch `agent-net/w_3eefacd613258158`.
 

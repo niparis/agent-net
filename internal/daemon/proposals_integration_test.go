@@ -120,3 +120,22 @@ func TestProposalApproveAllAcrossMachines(t *testing.T) {
 		t.Fatalf("all: %+v %v", items, err)
 	}
 }
+
+func TestProposalApprovalConfirmMustMatch(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	cli := cliClient(t, n)
+	cli.mustCall("node_add", map[string]string{"name": "first"})
+	_, err := n.d.Propose(context.Background(), "graph_change", "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"new"}`), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = cli.call("proposal_answer", protocol.CTOProposalAnswer{Action: "A", Confirm: []protocol.CTOProposalRef{{NodeID: n.d.cfg.NodeID, ID: "p_999"}}})
+	if err == nil || !strings.Contains(err.Error(), "review") {
+		t.Fatalf("confirmation: %v", err)
+	}
+	var items []protocol.CTOProposal
+	if err = json.Unmarshal(cli.mustCall("proposal_list", nil), &items); err != nil || len(items) != 1 || items[0].Status != "open" {
+		t.Fatalf("proposal changed: %+v %v", items, err)
+	}
+}

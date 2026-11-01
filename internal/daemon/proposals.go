@@ -17,12 +17,29 @@ import (
 
 // Propose validates and stores a call for the owner's decision.
 func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.RawMessage, reason string) (string, error) {
+	d.ctoDispatchMu.Lock()
+	defer d.ctoDispatchMu.Unlock()
 	return d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 }
 
 // ProposalToolResult is the brief response intended for the CTO tool call.
 func ProposalToolResult(id string) string {
 	return "proposal " + id + " is in Needs you; the owner decides. You will get a note with the outcome."
+}
+
+func (s *state) recordCTODelivery(sender string, at time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`INSERT INTO cto_deliveries(sender,at) VALUES(?,?)`, sender, at.UnixNano()); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`DELETE FROM cto_deliveries WHERE id NOT IN (SELECT id FROM cto_deliveries ORDER BY id DESC LIMIT 3)`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (d *Daemon) networkProposals(ctx context.Context) ([]protocol.CTOProposal, error) {
@@ -62,10 +79,26 @@ func (d *Daemon) networkProposals(ctx context.Context) ([]protocol.CTOProposal, 
 	return out, nil
 }
 
-func (d *Daemon) approveNetworkProposals(ctx context.Context) error {
+func (d *Daemon) approveNetworkProposals(ctx context.Context, confirmed []protocol.CTOProposalRef) error {
 	items, err := d.networkProposals(ctx)
 	if err != nil {
 		return err
+	}
+	if confirmed != nil {
+		var open []protocol.CTOProposalRef
+		for _, p := range items {
+			if p.Status == "open" {
+				open = append(open, protocol.CTOProposalRef{NodeID: p.NodeID, ID: p.ID})
+			}
+		}
+		if len(open) != len(confirmed) {
+			return errors.New("proposals changed; review them again")
+		}
+		for i := range open {
+			if open[i] != confirmed[i] {
+				return errors.New("proposals changed; review them again")
+			}
+		}
 	}
 	for _, item := range items {
 		if item.Status != "open" {
@@ -179,7 +212,7 @@ func (d *Daemon) proposalOperator(ctx context.Context, method string, q protocol
 	}
 	out := make([]protocol.CTOProposal, 0, len(items))
 	for _, v := range items {
-		out = append(out, protocol.CTOProposal{ID: v.ID, NodeID: d.cfg.NodeID, Tool: v.Call.Tool, Action: v.Call.Action, Args: v.Call.Args, Reason: v.Reason, CreatedAt: v.CreatedAt, Status: v.Status, Note: v.Note, Result: v.Result})
+		out = append(out, protocol.CTOProposal{ID: v.ID, NodeID: d.cfg.NodeID, Tool: v.Call.Tool, Action: v.Call.Action, Args: v.Call.Args, Reason: v.Reason, CreatedAt: v.CreatedAt, Status: v.Status, Note: v.Note, Result: v.Result, Messages: v.Messages})
 	}
 	return out, true, nil
 }
@@ -193,6 +226,7 @@ type proposalCall struct {
 }
 
 type proposal struct {
+	Messages  []protocol.CTOProposalMessage
 	ID        string
 	Call      proposalCall
 	Reason    string
@@ -264,6 +298,9 @@ func (p proposalRunner) propose(ctx context.Context, call proposalCall, reason s
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
+		return "", err
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO cto_proposal_messages(proposal_id,sender,at) SELECT ?,sender,at FROM (SELECT id,sender,at FROM cto_deliveries ORDER BY id DESC LIMIT 3) ORDER BY id`, id); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {
@@ -340,7 +377,6 @@ func (p proposalRunner) list() ([]proposal, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []proposal
 	for rows.Next() {
 		var v proposal
@@ -357,7 +393,33 @@ func (p proposalRunner) list() ([]proposal, error) {
 		}
 		out = append(out, v)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for i := range out {
+		rows, err := p.state.db.Query(`SELECT sender,at FROM cto_proposal_messages WHERE proposal_id=? ORDER BY rowid`, strings.TrimPrefix(out[i].ID, "p_"))
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var item protocol.CTOProposalMessage
+			var at int64
+			if err = rows.Scan(&item.Sender, &at); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			item.At = time.Unix(0, at)
+			out[i].Messages = append(out[i].Messages, item)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 func (p proposalRunner) decide(ctx context.Context, id string, approve bool) error {

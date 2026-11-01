@@ -213,7 +213,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			return value, true, err
 		}
 		if method == protocol.OpProposalAnswer && q.Action == "A" {
-			return nil, true, d.approveNetworkProposals(ctx)
+			return nil, true, d.approveNetworkProposals(ctx, q.Confirm)
 		}
 		if q.NodeID == "" || q.NodeID == d.cfg.NodeID {
 			return d.proposalOperator(ctx, method, q)
@@ -587,7 +587,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {
 			return nil, true, errors.New("cto_send needs text")
 		}
-		res, err = d.ctoSend(ctx, q.Text)
+		res, err = d.ctoSendTracked(ctx, q.Text, "owner")
 	case protocol.OpCTONew:
 		res, err = d.ctoNew(ctx)
 	case protocol.OpCTOEvents:

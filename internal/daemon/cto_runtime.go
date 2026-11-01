@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -51,13 +52,20 @@ func (d *Daemon) prepareCTOHarness(settings protocol.CTOSettings) (ctoHarness, e
 	return h, err
 }
 func (d *Daemon) ctoSend(ctx context.Context, text string) (any, error) {
+	return d.ctoSendTracked(ctx, text, "")
+}
+func (d *Daemon) ctoSendTracked(ctx context.Context, text, sender string) (any, error) {
 	d.ctoDispatchMu.Lock()
 	defer d.ctoDispatchMu.Unlock()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return h.send(ctx, d, text)
+	out, err := h.send(ctx, d, text)
+	if err == nil && sender != "" {
+		err = d.st.recordCTODelivery(sender, time.Now())
+	}
+	return out, err
 }
 func (d *Daemon) ctoNew(ctx context.Context) (any, error) {
 	d.ctoDispatchMu.Lock()

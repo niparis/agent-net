@@ -11,6 +11,12 @@ approves open proposals across online machines in order, stopping on an error. T
 daemon validates a call again before running it. Outcomes are queued for the
 CTO's next idle moment without the call's result data.
 
+Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
+and the sender and time of up to three messages delivered before the proposal.
+Press `a` to approve, `x` to decline, or `A` to review and approve all. The
+decision screen shows the full result; after approve-all, select an outcome and
+press Enter to inspect it. A changed proposal list requires a new confirmation.
+
 Replies to conversations started by the CTO reach its active conversation and
 remain visible in the owner's Messages tab. This includes replies sent through
 Claude Code's reply socket. Replies to the owner's own messages stay in the

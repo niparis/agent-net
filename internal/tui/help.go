@@ -25,6 +25,15 @@ type hint struct {
 // seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
 	switch {
+	case m.proposalConfirm:
+		return []hint{{"up/down", "scroll", 1}, {"y", "approve all", 1}, {"n/esc", "cancel", 1}}
+	case m.proposalHistory && m.proposalDetail == nil && !m.help:
+		return []hint{{"up/down", "select", 1}, {"enter", "detail", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+	case m.proposalDetail != nil && !m.help:
+		if m.proposalDetail.proposal.Status != "open" {
+			return []hint{{"up/down", "scroll", 1}, {"esc", "back", 1}, {"?", "help", 1}}
+		}
+		return []hint{{"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"esc", "back", 1}, {"?", "help", 1}}
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO && m.mp.overview:
@@ -48,6 +57,9 @@ func (m Model) hints() []hint {
 		if m.selected == "outcome:"+e.ReplyID {
 			return []hint{{"s", "let stand", 1}, {"o", "overrule", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
+	}
+	if _, ok := m.selectedProposal(); ok {
+		return []hint{{"enter", "detail", 1}, {"a", "approve", 1}, {"x", "decline", 1}, {"A", "approve all", 1}, {"?", "help", 1}}
 	}
 	if strings.HasPrefix(m.selected, "learned:") {
 		return []hint{{"up/down", "select", 1}, {"a", "accept", 1}, {"r", "reject", 1}, {"?", "help", 2}, {"q", "quit", 0}}
@@ -151,6 +163,7 @@ func (m Model) helpContent(w int) []string {
 
 	rows := [][2]string{
 		{"Sessions", ""},
+		{"proposal", "enter details; a approve; x decline; A approve all after confirmation"},
 		{"1-6", "switch between Sessions, Messages, Quotas, Map, Tools and Graph"},
 		{"up/down, j/k", "select a session"},
 		{"pgup/pgdn, g/G", "page, first, last"},

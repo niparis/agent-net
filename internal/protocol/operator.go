@@ -496,22 +496,34 @@ func CleanNodeName(s string) (string, error) {
 
 // CTOProposal is an owner-visible stored proposal and its outcome.
 type CTOProposal struct {
-	ID        string          `json:"id"`
-	NodeID    string          `json:"node_id"`
-	Tool      string          `json:"tool"`
-	Action    string          `json:"action"`
-	Args      json.RawMessage `json:"args"`
-	Reason    string          `json:"reason"`
-	CreatedAt time.Time       `json:"created_at"`
-	Status    string          `json:"status"`
-	Note      string          `json:"note,omitempty"`
-	Result    json.RawMessage `json:"result,omitempty"`
+	Messages  []CTOProposalMessage `json:"messages,omitempty"`
+	ID        string               `json:"id"`
+	NodeID    string               `json:"node_id"`
+	Tool      string               `json:"tool"`
+	Action    string               `json:"action"`
+	Args      json.RawMessage      `json:"args"`
+	Reason    string               `json:"reason"`
+	CreatedAt time.Time            `json:"created_at"`
+	Status    string               `json:"status"`
+	Note      string               `json:"note,omitempty"`
+	Result    json.RawMessage      `json:"result,omitempty"`
+}
+
+type CTOProposalMessage struct {
+	Sender string    `json:"sender"`
+	At     time.Time `json:"at"`
 }
 
 type CTOProposalAnswer struct {
+	NodeID  string           `json:"node_id"`
+	ID      string           `json:"proposal_id"`
+	Action  string           `json:"action"`
+	Confirm []CTOProposalRef `json:"confirm,omitempty"`
+}
+
+type CTOProposalRef struct {
 	NodeID string `json:"node_id"`
 	ID     string `json:"proposal_id"`
-	Action string `json:"action"`
 }
 
 // HeldAnswer is an owner decision for a request awaiting approval.

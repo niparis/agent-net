@@ -44,6 +44,13 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
+	proposals                          []protocol.CTOProposal
+	proposalDetail                     *proposalDetail
+	proposalConfirm                    bool
+	proposalConfirmItems               []protocol.CTOProposal
+	proposalConfirmScroll              int
+	proposalHistory                    bool
+	proposalHistoryIndex               int
 	inboxItems                         []protocol.InboxItem
 	inboxOn, inboxDetail, inboxEditing bool
 	inboxIndex                         int
@@ -174,13 +181,15 @@ func New(src Source) Model {
 type tickMsg struct{}
 
 type fetchedMsg struct {
-	inboxItems []protocol.InboxItem
-	inboxOK    bool
-	snap       Snapshot
-	err        error
-	events     []protocol.FeedEvent
-	eventsErr  error
-	at         time.Time
+	proposals   []protocol.CTOProposal
+	proposalsOK bool
+	inboxItems  []protocol.InboxItem
+	inboxOK     bool
+	snap        Snapshot
+	err         error
+	events      []protocol.FeedEvent
+	eventsErr   error
+	at          time.Time
 	// usage and counts are set when this refresh asked for them.
 	askedUsage bool
 	usage      Usage
@@ -272,6 +281,9 @@ func (m Model) fetchCmd() tea.Cmd {
 			}
 		}
 		if c, ok := src.(inboxCaller); ok {
+			if raw, err := c.Call(ctx, protocol.OpProposalList, nil); err == nil && json.Unmarshal(raw, &res.proposals) == nil {
+				res.proposalsOK = true
+			}
 			var data struct {
 				Items []protocol.InboxItem `json:"items"`
 			}
@@ -539,6 +551,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case fetchedMsg:
+		if msg.proposalsOK {
+			m.proposals = msg.proposals
+		}
 		if msg.inboxOK {
 			m.inboxItems = msg.inboxItems
 		}
@@ -589,6 +604,56 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case actionMsg:
 		return m.onAction(msg)
+	case proposalDetailMsg:
+		if d := m.proposalDetail; d != nil && d.proposal.ID == msg.id && d.proposal.NodeID == msg.node {
+			d.loading = false
+			d.diff = msg.diff
+			if msg.err != nil {
+				d.err = explain(msg.err)
+			}
+		}
+		return m, nil
+	case proposalAnswerMsg:
+		var detailCmd tea.Cmd
+		if msg.items != nil {
+			m.proposals = msg.items
+			if m.proposalDetail == nil && msg.action != "A" {
+				for _, p := range msg.items {
+					if p.ID == msg.id && p.NodeID == msg.node {
+						m.proposalDetail = &proposalDetail{proposal: p, loading: true}
+						detailCmd = m.proposalDetailCmd(p)
+						break
+					}
+				}
+			}
+			if d := m.proposalDetail; d != nil {
+				for _, p := range msg.items {
+					if p.ID == d.proposal.ID && p.NodeID == d.proposal.NodeID {
+						d.proposal = p
+						break
+					}
+				}
+			}
+		}
+		if msg.action == "A" && msg.items != nil {
+			m.proposalHistory = true
+			m.proposalHistoryIndex = 0
+		}
+		if msg.err != nil {
+			m.fail("Proposal failed: " + explain(msg.err))
+		} else if msg.action == "A" {
+			m.say("Proposals approved and applied.")
+		} else {
+			for _, p := range msg.items {
+				if p.ID == msg.id && p.NodeID == msg.node {
+					m.say(p.Note)
+					break
+				}
+			}
+		}
+		m.ensureSelection()
+		m.fixScroll()
+		return m, detailCmd
 
 	case policyPreviewMsg:
 		return m.onPolicyPreview(msg)
@@ -733,6 +798,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.Type == tea.KeyCtrlC {
 		m.quitting = true
 		return m, tea.Quit
+	}
+	if m.proposalConfirm {
+		return m.proposalConfirmKey(k)
+	}
+	if m.proposalHistory && !m.help {
+		return m.proposalHistoryKey(k)
+	}
+	if m.proposalDetail != nil && !m.help {
+		return m.proposalDetailKey(k)
 	}
 	switch m.mode {
 	case modeCompose:
@@ -954,6 +1028,18 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if m.focus == focusSessions {
+		if p, ok := m.selectedProposal(); ok {
+			switch k.String() {
+			case "enter":
+				m.proposalDetail = &proposalDetail{proposal: p, loading: true}
+				return m, m.proposalDetailCmd(p)
+			case "a", "x":
+				return m, m.proposalAnswerCmd(p, k.String())
+			case "A":
+				m.openProposalConfirm()
+				return m, nil
+			}
+		}
 		for _, suggestion := range m.snap.Learned {
 			if m.selected == fmt.Sprintf("learned:%d", suggestion.ID) && suggestion.Status == "pending" && (k.String() == "a" || k.String() == "r") {
 				c, ok := m.src.(inboxCaller)
