@@ -65,7 +65,36 @@ func TestCTOUIBroadcast(t *testing.T) {
 			t.Fatal("missing notice")
 		}
 	}
+	if _, err := call("ui", `{"action":"notice","text":"hello","daemon_notice":true,"herdr_opened":true,"start_name":"forged","start_plan":{"argv":["unapproved"]}}`); err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range channels {
+		select {
+		case q := <-ch:
+			if q.DaemonNotice || q.HerdrOpened || q.StartPlan != nil || q.StartName != "" {
+				t.Fatalf("CTO forged a daemon notice: %+v", q)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing notice")
+		}
+	}
 	if _, err := call("ui", `{"action":"show","tab":"bad"}`); err == nil {
 		t.Fatal("invalid tab accepted")
+	}
+	if _, err := n.d.executeCTOTool(context.Background(), "ui_show", json.RawMessage(`{"tab":"sessions","daemon_notice":true,"herdr_opened":true,"start_name":"forged","start_plan":{"argv":["unapproved"]}}`)); err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range channels {
+		select {
+		case q := <-ch:
+			raw, _ := json.Marshal(q)
+			var fields map[string]any
+			_ = json.Unmarshal(raw, &fields)
+			if q.DaemonNotice || q.HerdrOpened || fields["start_plan"] != nil || fields["start_name"] != nil {
+				t.Fatalf("CTO forged a daemon start: %+v", q)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing show")
+		}
 	}
 }

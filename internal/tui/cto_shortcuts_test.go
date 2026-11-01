@@ -25,7 +25,7 @@ func TestCTOTabDoesNotFocusFromAnyTab(t *testing.T) {
 func TestCTOBackHintsAndKeys(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
-			m := keys(newModel(size[0], size[1]), "c")
+			m := keys(newModel(size[0], size[1]), "C")
 			box := ansi.Strip(strings.Join(m.ctoView(size[0], m.ctoBoxHeight(m.tab)), "\n"))
 			bar := ansi.Strip(m.helpLine(size[0]))
 			if !strings.Contains(box, "ctrl+]: back") || strings.Contains(box, "tab: back") {
@@ -63,7 +63,7 @@ func TestCTOOnboardingTipCanStillBeSkipped(t *testing.T) {
 
 func TestCTOShortcutFromEveryTab(t *testing.T) {
 	for _, tab := range []string{"1", "2", "3", "4", "5"} {
-		for _, key := range []string{"c", "C"} {
+		for _, key := range []string{"C"} {
 			t.Run(tab+"/"+key, func(t *testing.T) {
 				m := keys(newModel(120, 34), tab, key)
 				if m.focus != focusCTO || m.tab != sessionsTab {
@@ -77,11 +77,11 @@ func TestCTOShortcutFromEveryTab(t *testing.T) {
 func TestCTOShortcutFromCardAndStartsWhenMissing(t *testing.T) {
 	m := graphModel(80, 24)
 	m.mapOn = true
-	m = keys(m, "c")
+	m = keys(m, "C")
 	if m.mapOn || m.tab != sessionsTab || m.focus != focusCTO {
 		t.Fatal("c did not leave the Graph card for the CTO")
 	}
-	for _, key := range []string{"c", "C"} {
+	for _, key := range []string{"C"} {
 		src := &fakeCTOSource{fakeSource: &fakeSource{}}
 		m := New(src)
 		m.cto = nil
@@ -181,5 +181,41 @@ func TestCTOCompactSettingsAndTextInputs(t *testing.T) {
 	m = keys(m, "enter")
 	if m.cto.settingsForm == nil || !strings.Contains(ansi.Strip(m.View()), "agent-net") {
 		t.Fatalf("the compact settings form hid the title error:\n%s", ansi.Strip(m.View()))
+	}
+}
+
+// c opens the CTO session in one key from every tab: no box focus, no Enter.
+func TestCTOcOpensSessionDirectly(t *testing.T) {
+	for _, tab := range []string{"1", "2", "3", "4", "5"} {
+		t.Run(tab, func(t *testing.T) {
+			src := &fakeCTOSource{fakeSource: &fakeSource{}}
+			m := keys(New(src), tab)
+			focus := m.focus
+			next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+			m = next.(Model)
+			if m.focus != focus {
+				t.Errorf("c moved focus from %v to %v", focus, m.focus)
+			}
+			if cmd == nil || m.cto == nil || !m.cto.opening {
+				t.Fatal("c did not open the CTO")
+			}
+			runCmds(cmd)
+			if len(src.enters) != 1 || src.enters[0].SessionID != m.ctoSessionID() {
+				t.Fatalf("c sent %+v, want one session_enter for the CTO", src.enters)
+			}
+		})
+	}
+}
+
+// runCmds runs a command and the commands of a batch, without following the
+// messages they return.
+func runCmds(cmd tea.Cmd) {
+	if cmd == nil {
+		return
+	}
+	if batch, ok := cmd().(tea.BatchMsg); ok {
+		for _, c := range batch {
+			runCmds(c)
+		}
 	}
 }

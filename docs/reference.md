@@ -296,13 +296,13 @@ session name or project node, filter text and a short reason. `ui` with
 `action: notice` shows a short note. Both show a `CTO:` line and return
 `no TUI open` when no subscribed local TUI is connected.
 
-In the TUI, `c` or `C` focuses the CTO box from every tab.
+In the TUI, `c` opens the CTO session from every tab, and `C` focuses the CTO box.
 Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
 `enter: open the <title> · ctrl+]: back`. Enter opens the full CTO harness UI through
-`session_enter` on the CTO session, the same terminal transfer a session uses; ctrl+]
-returns. The title also shows how many CTO proposals are open. `n` asks before
+`session_enter` on the CTO session in herdr. When herdr is unavailable, ctrl+]
+returns from the terminal fallback. The title also shows how many CTO proposals are open. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and ctrl+] returns focus to Sessions. Esc skips the
 current onboarding tip. The chat
@@ -620,9 +620,9 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_IGNORE` | daemon | `1` in a session's environment keeps that session off the network: the daemon registers no session and no project for it, and removes one it had. Set it on the harness process (`AGENT_NET_IGNORE=1 claude`, or the equivalent for Pi and OpenCode). A Codex thread has no process of its own, so set it where the shared Codex app server starts; it then hides every thread of that server. A worker started by the daemon is always registered. |
 | `AGENT_NET_MCP_HANDOVER` | `agent-net mcp` | Set by `agent-net mcp` on itself when it switches to a newer binary. It holds the path of a private temp file (`agent-net-mcp-handover-*` in `$TMPDIR`) with the start-up messages and unread input. The new process reads it, deletes the file and unsets the variable. Do not set it. |
 | `CLAUDE_CODE_SESSION_ID` | `agent-net mcp` | Set by Claude Code for the MCP servers it starts. Not set by you. |
-| `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `1` in the environment of every Claude Code background session agent-net starts (the CTO and Claude workers) and in the plan for `claude attach`. Claude Code then writes no mouse tracking modes, so the terminal handles the mouse and a plain drag selects text. |
+| `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `1` in the environment of Claude Code background sessions agent-net starts and in the fallback `claude attach` plan. Herdr attach clients unset it, so mouse tracking is on there. |
 
-The daemon sets `CLAUDE_CODE_DISABLE_MOUSE=1` on both ends of a Claude Code background session: at start, through the `env` of its `--settings`, and again on the `claude attach` command. A running CTO keeps its old environment until it restarts. It restarts when its settings change or after a daemon restart, so change a CTO setting once after an upgrade to pick up the new environment.
+The daemon starts Claude Code background sessions with `CLAUDE_CODE_DISABLE_MOUSE=1`. It unsets the variable for a herdr attach client, and keeps it for a terminal fallback so a plain drag selects text there.
 
 ## Flags
 
@@ -1348,6 +1348,8 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   **Codex only for now.** The Codex worker is started with approval policy `never` and the sandbox of its level (`thread/start` and `thread/resume`: `approvalPolicy`, `sandbox`, `config.sandbox_workspace_write`; `turn/start`: `approvalPolicy`, `sandboxPolicy`). Its private app server also gets `-c mcp_servers.agent-net.enabled=false` when `$CODEX_HOME/config.toml` defines the agent-net MCP server, so it does not call agent-net tools (its brief does not mention them either: the end of its turn is the report). Other MCP servers stay. The daemon still declines any approval that arrives. Claude Code, OpenCode and Pi workers record the level, and the TUI detail pane shows it on a `sandbox` line with "not enforced yet", but they behave as before.
 - **How, per harness.** All run in the project folder (or the worker's worktree), and none gets a flag that turns permission checks off: a worker uses the project's own permission settings.
 
+  When herdr is available, Claude, OpenCode and Codex workers open a named view on the machine that runs them after registration, including on resume. A herdr client must be attached there to see it; use Enter to open a remote worker from the local TUI. If herdr is unavailable, an open TUI on that machine shows an installation hint and the worker continues in the background. Pi workers use RPC mode and have no interactive terminal to open; `agent-net show <session>` reads the conversation.
+
 | Harness | Command | The model | The task and the report | Enter it later |
 |---|---|---|---|---|
 | OpenCode | `opencode serve` on `127.0.0.1`, random password | `provider/model`, checked against the machine's list | A normal message. The worker ends with `agent_handback`; the owner's next message starts the same session again. | `opencode --session <id>` |
@@ -1450,7 +1452,7 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has five tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages and `5` Tools. On each tab, `c` or `C` focuses the CTO box and ctrl+] returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · ctrl+]: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `f` on a worker conversation to report a defect found later, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
+`agent-net tui` has five tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages and `5` Tools. On each tab, `c` opens the CTO session in herdr, `C` focuses the CTO box and ctrl+] returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · ctrl+]: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI in herdr (ctrl+] returns from the fallback), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `f` on a worker conversation to report a defect found later, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. A Braille renderer is the fallback everywhere. On a terminal that speaks the kitty graphics protocol, the same scene is drawn to an RGBA image with anti-aliased shapes and shown through Unicode placeholder cells; labels stay ordinary terminal text, so they remain crisp and selectable. The renderer and the pixel size of a cell are chosen once at start. `AGENT_NET_GRAPH` is `auto` (the default), `pixel` or `braille`. Auto sends a tiny `a=q` image query followed by a device attributes query to bound the wait, and reads the cell size from the `TIOCGWINSZ` pixel fields or a CSI 16 t reply. It stays on Braille when the terminal does not answer the image query with OK, when the cell size in pixels is unknown, or inside a multiplexer that drops images: `$TMUX`, or herdr, which sets `HERDR_ENV=1`. `pixel` overrides the multiplexer veto, and `braille` always falls back. Each image is transmitted once with `U=1` and only again when its hash changes; the old image is deleted by id first. In pixel mode the scene also carries motion: a comet with a fading tail for each message, a ring when it arrives, the phase of a busy node's slow glow, and the eased camera. Rendering never blocks the UI: `View` and `Update` build only the cheap scene, a scene hash decides whether a frame is needed, and a `tea.Cmd` goroutine rasterizes and PNG-encodes at most one frame at a time. New frames are dropped while one is in flight, and the last finished frame stays on screen. The image is capped at 1600 by 900 pixels and the terminal scales it to the cell area. A 120x34 frame with 20 nodes costs about 90 ms to rasterize, so pixel frames are requested at 8 a second; idle ticks stay at the existing 250 ms and reuse the last frame. Braille keeps its own picture and tick, and its goldens do not change. Zooming past 1.9 times the fitted zoom shows a rounded charter card next to a node; the card box is drawn in the image and its text stays ordinary terminal cells.
 
@@ -1487,7 +1489,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | Key | What it does |
 |---|---|
 | up, down, `k`, `j`, `g`, home, end, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
-| enter, `e` | Enter the selected session: the TUI hands the terminal to it and comes back when you leave. In Messages, Enter selects the latest message of the selected thread in the right pane. See [Enter a session](#enter-a-session). |
+| enter, `e` | Open the selected session in herdr. When herdr is unavailable, the TUI uses the fallback enter plan. In Messages, Enter selects the latest message of the selected thread in the right pane. See [Enter a session](#enter-a-session). |
 | `v` | In Messages, open the full body of the selected message. |
 | `w` | In Messages, hide or show the collapsed worker threads. |
 | `l` | Cycle the session and worker lines in the feed: worker lines (the default), all of them, none. |
@@ -1502,7 +1504,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | esc | Leave the help or a message body, or clear the filter. |
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
-| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder, Branch and First message. The form is filled from the selected row; the focus starts on First message. On a worktree form, four Up presses reach Harness, because Branch sits between it and First message. On a Graph node or its card, `n` opens the same form filled from the selected project. The key line reads `up/down field · left/right change · enter start · esc cancel`. Left and right act only on the field that has the focus. The project may be on another machine, shown as `name@machine`: the start is relayed through the gateway to the machine that holds it, and the form says `through ssh to <machine>` because Enter will use the existing remote enter plan. Harness is a switch: left and right cycle the harnesses the target machine reports, in the fixed order claude, codex, opencode and pi. The form skips a harness the machine does not report, and one this version cannot start. Harness takes no typed text. Model follows the harness: it is a switch whose first choice is `default`, then the models the target machine reports for that harness, in the order the machine reports them. A harness change resets Model to `default`. Left and right on a text field (Project, Branch or First message) move the cursor instead. Folder is a switch: left and right change it between `project folder` and `new worktree`. A new worktree is made next to the project, in `<project>.worktrees/<branch>`, on a new branch. The Branch line appears only for a worktree; its default is `agent-net/<project>-<n>` with the lowest free number, and the note says the branch it starts from, such as `from main (HEAD)`. When a live session is busy in the project folder, the form opens on `new worktree` and says so in one line (`<project> is busy in the project folder`); left or right on the focused Folder sets it back. The folder choice and the branch travel with a start on another machine. Project also takes a path, absolute or starting with `~`, and `path@machine` names another machine; Tab completes a known project name, and a dim line under the focused field says so. An existing folder that agent-net does not know is registered when the start runs. A missing folder asks `Create <path> on <machine> and run git init?` with `enter: yes · esc: no`; only yes creates it and runs git init. A folder that is not a git repository still starts, with no worktree choice and no branch. A relative path, a path with a control character, a path outside your home folder and a link that leaves home are refused. A bare name that is no project goes under the folder that holds most registered projects on that machine, such as `~/code`. For Claude, an existing folder that Claude does not trust shows a note, and the start asks `Trust <path> for Claude Code?` with `enter: yes · esc: no`; only yes trusts it, while a folder agent-net created is trusted at once. This version starts Claude Code, OpenCode, Codex and Pi sessions; an older row that names another harness is refused when you submit. An empty First message starts the session and enters it (ctrl+] returns). For Claude, OpenCode and Pi, text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent.` then `Enter opens it.` here or `Enter opens it through ssh to <machine>.` there. Pi runs in agent-net's private tmux server. Codex always starts and enters, with the first message as its prompt; on another machine it opens through ssh and starts there, in your terminal. A failure shows the reason the harness gave. Esc cancels. An owner worktree belongs to you: agent-net keeps it until you remove it, and worker cleanup never removes it. |
+| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder, Branch and First message. The form is filled from the selected row; the focus starts on First message. On a worktree form, four Up presses reach Harness, because Branch sits between it and First message. On a Graph node or its card, `n` opens the same form filled from the selected project. The key line reads `up/down field · left/right change · enter start · esc cancel`. Left and right act only on the field that has the focus. The project may be on another machine, shown as `name@machine`: the start is relayed through the gateway to the machine that holds it, and the form names that machine. Harness is a switch: left and right cycle the harnesses the target machine reports, in the fixed order claude, codex, opencode and pi. The form skips a harness the machine does not report, and one this version cannot start. Harness takes no typed text. Model follows the harness: it is a switch whose first choice is `default`, then the models the target machine reports for that harness, in the order the machine reports them. A harness change resets Model to `default`. Left and right on a text field (Project, Branch or First message) move the cursor instead. Folder is a switch: left and right change it between `project folder` and `new worktree`. A new worktree is made next to the project, in `<project>.worktrees/<branch>`, on a new branch. The Branch line appears only for a worktree; its default is `agent-net/<project>-<n>` with the lowest free number, and the note says the branch it starts from, such as `from main (HEAD)`. When a live session is busy in the project folder, the form opens on `new worktree` and says so in one line (`<project> is busy in the project folder`); left or right on the focused Folder sets it back. The folder choice and the branch travel with a start on another machine. Project also takes a path, absolute or starting with `~`, and `path@machine` names another machine; Tab completes a known project name, and a dim line under the focused field says so. An existing folder that agent-net does not know is registered when the start runs. A missing folder asks `Create <path> on <machine> and run git init?` with `enter: yes · esc: no`; only yes creates it and runs git init. A folder that is not a git repository still starts, with no worktree choice and no branch. A relative path, a path with a control character, a path outside your home folder and a link that leaves home are refused. A bare name that is no project goes under the folder that holds most registered projects on that machine, such as `~/code`. For Claude, an existing folder that Claude does not trust shows a note, and the start asks `Trust <path> for Claude Code?` with `enter: yes · esc: no`; only yes trusts it, while a folder agent-net created is trusted at once. This version starts Claude Code, OpenCode, Codex and Pi sessions; an older row that names another harness is refused when you submit. The session opens in herdr, and a first message is sent as your own words. When herdr is unavailable, an empty First message starts and enters the session in the TUI terminal (ctrl+] returns); Claude, OpenCode and Pi starts with text remain in the background, while Codex starts in the TUI terminal with the text as its prompt. A failure shows the reason the harness gave. Esc cancels. An owner worktree belongs to you: agent-net keeps it until you remove it, and worker cleanup never removes it. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
 | `x` | In Sessions, stop a worker as before, or stop a Claude background session, abort an OpenCode service turn, or kill a Pi window in the private agent-net tmux server. Owner sessions ask `Stop <name>? Conversation kept: Enter resumes it.` with `enter: yes · esc: no`. OpenCode stays in the service; an idle service session costs nothing. Interactive terminal sessions say `<name> runs in your terminal on <machine>: end it there`. A session on another machine is stopped by its own machine through the gateway. |
 | `t` | Cycle the selected node's wildcard request rule through `normal`, `ask` and `auto`. |
@@ -1518,37 +1520,34 @@ The TUI asks for each readable message body once and keeps it by message ID. Own
 
 ### Enter a session
 
-`Enter` (or `e`) in the TUI asks the daemon (`session_enter`) how to take over the terminal for the selected session, runs the answer, and draws the TUI again when you leave. The daemon of the machine that holds the session works out the command. The TUI builds none. Press `ctrl+]` to return to the TUI; the session keeps running. This also works when the session uses enhanced keyboard reporting. The TUI closes the attach client. Your own input in the session counts as yours, so approvals you give are yours.
+`Enter` (or `e`) asks the daemon (`session_enter`) to open the selected session. If herdr is available, the daemon focuses an existing herdr pane for that session. Otherwise it creates a pane beside the TUI when the TUI is in herdr, or a titled tab on the herdr server. The TUI keeps running and its result line says `opened <name> in herdr`. If the server is not running, the daemon tries to start its headless server. When no herdr client is attached, open herdr in a terminal to see its panes. See the [herdr installation instructions](https://herdr.dev/tui/docs/install/). Your input in a session counts as yours, so approvals you give there are yours.
 
-| Session | What it runs |
+When herdr is missing or cannot start, agent-net uses the existing enter plan. The TUI hands its terminal to that command; press `ctrl+]` to return and see the installation hint. A session that has neither an attach command nor an accessible herdr or tmux pane shows a note to open its existing window.
+
+| Session | Command used for a new view |
 |---|---|
-| Claude Code background session (`kind` bg, which includes Claude workers) | `claude attach <id>`. The left arrow returns to the agent view, ctrl+z drops to the shell, the session keeps running. |
-| Claude Code interactive session | Cannot be attached twice. If its process runs in a herdr pane, `herdr agent attach <pane>` (see below), or `herdr --remote <ssh-target>` when the session is on another machine and this machine has a herdr client. Else, if its process runs in a tmux pane, the TUI attaches a new client at that pane, including inside the same tmux server. Otherwise: "open its window on <machine>". |
-| Pi | An owner Pi session runs in agent-net's private tmux server (`tmux -L agent-net`), in the project folder. The daemon attaches its pane, the same way it attaches any other tmux pane. A Pi worker has no screen, so there is nothing to enter. |
-| OpenCode | `opencode --session <id>`, in the session's folder, through OpenCode's own background service. |
-| OpenCode worker | `opencode --server <its private url> --session <id>`, with its password in `OPENCODE_SERVER_PASSWORD`. Only from the machine that runs it. |
-| Codex | `codex resume <thread>`, in the thread's folder. It joins the shared Codex app server, so you get the thread that is open there. With a `CODEX_HOME` other than `~/.codex` the plan is `env CODEX_HOME=<it> codex resume <thread>`. |
-| Codex worker | `codex resume <thread> --remote ws://<its private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN`. Only from the machine that runs it. The daemon drives the same thread, so do not type while it works. |
+| Claude Code background session, including Claude workers | `claude attach <id>` |
+| Claude Code interactive session | Focus its existing herdr pane, or attach its tmux pane. An interactive session outside both cannot be attached twice. |
+| Pi | An owner session starts directly in herdr, or in agent-net's private tmux server as a fallback. Pi workers have no screen. |
+| OpenCode | `opencode --session <id>` in the session folder |
+| OpenCode worker | `opencode --server <private url> --session <id>` on its own machine; remote access uses herdr when both machines have it |
+| Codex | `codex resume <thread>` in the thread folder, using its configured Codex home |
+| Codex worker | `codex resume <thread> --remote ws://<private address> --remote-auth-token-env AGENT_NET_CODEX_TOKEN` on its own machine; remote access uses herdr when both machines have it |
 
-**herdr.** The daemon first looks for `HERDR_ENV=1`, `HERDR_PANE_ID` and `HERDR_SOCKET_PATH` in the session process and its parents. If those variables are not readable, it checks their command lines for a `herdr server` process. It uses a socket path from that command when available. Otherwise it tries the configured Herdr socket locations and keeps the one that answers `herdr pane list`. Herdr documents `~/.config/herdr/herdr.sock` as the default socket; agent-net also checks XDG config and macOS Application Support locations. It then checks the pane list with `herdr pane process-info` to find the pane that holds the session process or one of its parents. A moved pane is found the same way. The daemon enters with `herdr agent attach <pane>` (or `terminal attach <terminal id>` if Herdr has no agent for that pane). The same plan works when the TUI is outside herdr, inside the same herdr, or inside another one: `herdr agent focus` does not move a client that is already open, so the TUI attaches instead. The daemon sends the server socket in the command (`env -u HERDR_SESSION HERDR_SOCKET_PATH=<socket> herdr agent attach <pane>`), so it also works through `ssh -t`. The herdr program is found from the pane's `HERDR_BIN_PATH`, the server command line, `PATH`, then `~/.local/bin/herdr`.
+**herdr.** The daemon finds the binary from the session's `HERDR_BIN_PATH`, the server command line, the configured harness path, `PATH`, or `~/.local/bin/herdr`. It uses `herdr pane list` and `herdr pane process-info` to find the pane holding a session process. A moved pane is found the same way. `herdr agent focus` focuses a recognized agent, and `herdr tab focus` focuses the tab of a plain terminal. Herdr's existing clients can remain on their previous tab after a focus command; select the named tab if needed.
 
-- A session in herdr on another machine, entered from a machine that has a herdr binary, uses herdr's own remote client: `herdr --remote <target>`. The machine that holds the session focuses the pane first. The client runs here and a bridge runs there, so a copy on this machine includes the clipboard and image paste. The note names the machine and the pane, because the client can open on another tab. Detach with `ctrl+b q`. Without a local herdr binary the plan stays the `ssh -t ... herdr agent attach <pane>` above.
-- Herdr detach keys also work: `ctrl+b q`, or `ctrl+b ctrl+b q` when the TUI runs inside herdr.
-- A pane takes one direct attach. If another `herdr agent attach` is open on the same pane, the new one fails with "already has an attached client". agent-net never uses `--takeover`: close the other attach first. Your normal herdr window is not affected.
-- On macOS the daemon reads process environments and command lines with `sysctl kern.procargs2` when permitted. It can still find a Herdr server from its command line when macOS does not expose `HERDR_*` variables for a process such as `/bin/zsh`.
+For a new view, agent-net uses `herdr pane split --pane <tui-pane> --direction right --focus` and `herdr pane rename` inside herdr, or `herdr tab create --label <name> --focus` outside it. It uses `herdr pane run` to launch the session. A private one-use environment file keeps worker credentials out of command arguments and pane text. The pane removes the file after use; the daemon also removes it after one minute while it is running. Claude's herdr client has mouse tracking enabled; the old terminal fallback still disables it for text selection. A second Enter focuses the existing pane instead of creating another one, while that pane remains present. The daemon also remembers panes it opened during its current run.
 
-When the plan has nothing to run, the answer has only a note, and the TUI shows it in the result line.
+On macOS the daemon reads process environments and command lines with `sysctl kern.procargs2` when permitted. If Herdr's pane variables are not readable, it checks the process ancestry and candidate server sockets.
 
-**Mouse in a Claude Code background session.** agent-net starts the session and its `claude attach` client with `CLAUDE_CODE_DISABLE_MOUSE=1`, so Claude Code turns mouse tracking off and a plain drag selects text. The terminal copies the selection. The wheel no longer reaches Claude Code. In Ghostty the alternate screen turns wheel steps into up and down arrow keys, which move through the prompt history instead of scrolling, so scroll the transcript with PageUp and PageDown. A Claude Code session agent-net did not start keeps its own environment; hold Shift while dragging there to select text.
-
-**A session on another machine.** The question goes through the gateway to that machine. By default the TUI runs the command there through `ssh -t -o ConnectTimeout=5 -- <target> <command>`. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
+**A session on another machine.** The question goes through the gateway to that machine. When both machines have herdr, the remote daemon focuses or opens the session there and this machine opens `herdr --remote <target>` in a local pane. Otherwise the daemon uses `ssh -t -o ConnectTimeout=5 -- <target> <command>`, in a local herdr pane if available or in the TUI terminal as a fallback. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
 
 ```json
 "enter_ssh": false,
 "enter_ssh_hosts": {"build-box": "me@build-box.example"}
 ```
 
-`enter_ssh` is on by default. `"enter_ssh": false` turns it off, and then `e` shows the command to run there instead. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh runs in your terminal, with your own keys and ssh config, so it may ask for a password, a key passphrase or a Tailscale SSH check. If ssh exits with status 255 (it could not connect or log in), the TUI shows the command to run on the machine, with a hint to set `enter_ssh_hosts`. The same target is passed to `herdr --remote` when the session runs in herdr on the other machine and this machine has herdr. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can only be entered from a TUI on that machine.
+`enter_ssh` is on by default. `"enter_ssh": false` turns it off, and then `e` shows the command to run there instead. `enter_ssh_hosts` is optional: it maps the machine's name (as `agent-net nodes` shows it, so its [display name](#machine-names) when it has one) to the ssh target, which can be an alias from `~/.ssh/config`. Without an entry the name itself is used. The target must be a plain host name or `user@host`. ssh runs with your own keys and ssh config, so it may ask for a password, a key passphrase or a Tailscale SSH check. If ssh exits with status 255 (it could not connect or log in), the TUI shows the command to run on the machine, with a hint to set `enter_ssh_hosts`. The same target is passed to `herdr --remote` when the session runs in herdr on the other machine and this machine has herdr. The secrets of a worker's private server never leave the machine: workers of OpenCode and Codex on another machine can also be entered through herdr when both machines have it; their private server credentials stay on their own machine.
 
 ## Peer trust and hints
 
@@ -1733,7 +1732,7 @@ A rejection or escalation of another agent's request appears as a separate Needs
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when a known Claude worker worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
-`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing. The daemon waits for the background job to run before saving its session ID. If Claude Code has closed the conversation and a resume fails, or the resumed job crashes at startup, the daemon starts a fresh Claude conversation once. The CTO timeline and proposals remain in agent-net. The CTO box reports the restart or any startup error.
+`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it in herdr. If herdr is unavailable, ctrl+] returns from the terminal fallback. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing. The daemon waits for the background job to run before saving its session ID. If Claude Code has closed the conversation and a resume fails, or the resumed job crashes at startup, the daemon starts a fresh Claude conversation once. The CTO timeline and proposals remain in agent-net. The CTO box reports the restart or any startup error.
 
 The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell
@@ -1744,11 +1743,11 @@ current PATH. A daemon upgrade adds PATH to older service files.
 
 The CTO can propose `session_change` with action `session_start`, using `project` or `path`, `node_id`, `harness`, `model`, `folder`, `branch`, `first_message` and optional `create`. It can propose `project_change` with action `create` and a `path` plus the same start options. Creating a project authorizes creation of the missing folder and a git repository when the owner approves. A session start creates a missing folder only when `create` is true. These actions always appear in Needs you and never use the graph owner window. The row shows the project or path, machine, harness, folder choice and a cut of the first message. Select it and press `a` to approve.
 
-The daemon records the target machine and checks local paths before accepting a proposal. A remote machine checks its own path when the approved start reaches it; an offline or older machine refuses the request. Approval uses the same session start path as the `n` form. If Claude needs the owner's trust answer, the proposal result and note say so and no session starts. Answer through the normal new-session form. A missing folder without `create` likewise needs the owner's answer.
+The daemon records the target machine and checks local paths before accepting a proposal. A remote machine checks its own path when the approved start reaches it; an offline or older machine refuses the request. Approval uses the same session start path as the `n` form. A TUI in herdr supplies its pane to the local daemon so the new view can open beside it. For a session started on another machine, the owner's daemon follows the start and opens the remote client locally. When the view opens, the TUI shows `opened <name> in herdr`. If herdr is unavailable and a Codex start needs a terminal, the approving TUI runs the fallback plan. If Claude needs the owner's trust answer, the proposal result and note say so and no session starts. Answer through the normal new-session form. A missing folder without `create` likewise needs the owner's answer.
 
 ### Starting an owner session through the local API
 
-`session_start` starts Claude, OpenCode or Pi in the background, or prepares a Codex enter plan, in an existing project folder. The folder may be on another machine.
+`session_start` starts a Claude, OpenCode, Pi or Codex session in an existing project folder and opens it in herdr when available. The folder may be on another machine.
 This is the daemon part of the [accepted session-start design](design/start-sessions.md).
 
 The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project","node_id":"n_..."}`.
@@ -1800,8 +1799,7 @@ from `$XDG_STATE_HOME/opencode/service.json` (default:
 `~/.local/state/opencode/service.json`). It creates the session on that service
 with the project folder in `x-opencode-directory`. A model uses
 `provider/model[:level]`. A first message is queued as an owner prompt through
-OpenCode 2.2's `/api/session/{id}/prompt` API. Without a first message, the TUI
-enters with the existing `opencode --session <id>` plan. The service keeps the
+OpenCode 2.2's `/api/session/{id}/prompt` API. After registration, agent-net opens `opencode --session <id>` in herdr. Without herdr, an empty first message enters through the terminal fallback. The service keeps the
 conversation, including offline and dormant rows; Enter keeps its existing
 plan for those rows. The daemon never starts the owner's service. If its record
 is missing or its address cannot be reached, the start is refused with
@@ -1809,37 +1807,9 @@ is missing or its address cannot be reached, the start is refused with
 the status code. The service password stays in HTTP authentication; it is never
 logged or put in a command argument or notice.
 
-For Pi, the daemon needs tmux on the machine and hosts the session in its own
-tmux server, so no terminal tab is opened:
+For Pi, agent-net opens `pi --session-id <uuid> --name <project> [--model M]` in herdr. A resumed Pi conversation uses `pi --session <id>`. A first message is sent as an ordinary owner message after Pi registers. When herdr is unavailable, the daemon hosts Pi in its private tmux server and needs tmux installed.
 
-```
-tmux -L agent-net new-session -d -c <folder> -- pi --session-id <uuid> --name <project> [--model M]
-```
-
-The daemon picks the session ID before Pi starts, so the extension binds the
-session to that ID. A first message is sent after the session registers, as an
-ordinary message from the owner session through the Pi extension, the same
-path as a worker's first task; it is never a shell argument. The tmux server
-forks away from the daemon, and the service unit has `KillMode=process` (the
-launchd job has `AbandonProcessGroup`), so a daemon restart leaves it running.
-Enter uses the existing tmux pane plan (`findTmuxPane`) and ctrl+] detaches the
-attach client without ending the Pi session. If tmux is missing, the start is
-refused with `pi needs tmux on <machine> to run in the background`.
-
-`session_resume` opens an ended Pi conversation with `pi --session <id>` in a
-new window of the same tmux server, or a new session there when the server has
-no window left. Its first message is empty: the conversation already has its
-history.
-
-For Codex, the answer has `status: "started"` and an `enter_plan` instead of
-starting a background process. The TUI runs `codex [-m MODEL] [prompt]` in the
-project folder through its terminal. It always enters, even with a first
-message, so the owner can answer approval prompts. Ctrl+] returns to the TUI;
-a running turn continues in the shared app server. An idle thread can become
-dormant and Enter resumes it with `codex resume <thread>`. On another machine
-the other daemon builds the local Codex plan and this daemon wraps it in the
-normal remote enter plan (`ssh -t`, or `herdr --remote`), so Codex starts in
-the owner's terminal on the machine that holds the project.
+For Codex, agent-net opens `codex [-m MODEL] [prompt]` in herdr in the project folder. When herdr is unavailable, the answer contains an `enter_plan` and the TUI runs it in its own terminal. A remote start follows the same herdr or ssh rules as Enter.
 
 For Claude, OpenCode and Pi, the answer is a started-session record with `id`, `status: "starting"`,
 `node_id`, `hostname`, `harness`, `project`, `path`, `branch`, `model` and `started_at`
@@ -1850,10 +1820,7 @@ registration has `status: "failed"` and `error`. A typed path can first answer
 `needs_create` or `needs_trust`; those are not polled. An unknown id is refused. Records live in
 memory for this daemon run. A daemon restart loses the records; the harness's
 session remains discoverable as a normal session. Cancelling the requesting
-socket does not cancel the background launch. For a start on another machine,
-`session_start_get` is relayed to that machine too, and the record has
-`enter_note` for the result line, for example `Enter opens it through ssh to
-build-vm.` The TUI shows the note after a start with a first message.
+socket does not cancel the background launch. For a start on another machine, `session_start_get` is relayed to that machine too. A completed herdr opening is returned in `enter_plan` with `opened_herdr: true`; the TUI shows its note without running another command.
 
 `session_resume {"session_id":"<agent-net session id>"}` resumes an offline
 Claude or Pi conversation in its original folder, on this machine or on the
@@ -1870,8 +1837,4 @@ including CLI commands inside agent, Codex app-server and OpenCode serve
 process trees. They are not agent tools. The session uses the harness's normal
 project settings and MCP servers, with no worker brief, hand-back, worktree,
 worker list entry or completion notice. Idle and age limits do not stop it.
-Worker cleanup and daemon shutdown leave it running. Enter it through the
-existing `session_enter` method once its session_id is known. Enter on a
-session on another machine is planned by that machine and wrapped here in
-`ssh -t` (or herdr's remote client), using `enter_ssh` and `enter_ssh_hosts`
-from node.json as before.
+Worker cleanup and daemon shutdown leave it running. When herdr is available, starts and resumes open their view there after registration, including starts approved from a CTO proposal. Enter on a session on another machine uses `enter_ssh` and `enter_ssh_hosts` from node.json.

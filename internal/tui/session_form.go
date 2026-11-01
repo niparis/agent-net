@@ -821,7 +821,7 @@ func (m Model) submitSessionForm() (tea.Model, tea.Cmd) {
 		}
 	}
 	st := m.sessionPathState(*f)
-	req := protocol.SessionStartRequest{Harness: harness,
+	req := protocol.SessionStartRequest{Harness: harness, HerdrSocket: m.herdrSocket, HerdrPaneID: m.herdrPaneID,
 		Model: f.value(sModel), FirstMessage: f.value(sFirstMessage), Folder: folder, Branch: branch}
 	project = m.sessionFormProject(*f)
 	host := m.localHost()
@@ -926,6 +926,14 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 	harness := firstNonEmpty(r.res.Harness, r.req.Harness)
 	if harness == "" {
 		harness = "claude"
+	}
+	if r.res.EnterPlan != nil && r.res.EnterPlan.OpenedHerdr {
+		m.say(sanitize(r.res.EnterPlan.Note))
+		return m, refresh()
+	}
+	if r.res.EnterPlan != nil && len(r.res.EnterPlan.Argv) == 0 {
+		m.fail(sanitize(firstNonEmpty(r.res.EnterPlan.Note, "The session started but could not be opened.")))
+		return m, refresh()
 	}
 	if harness == "codex" {
 		if r.res.EnterPlan == nil {
@@ -1088,22 +1096,22 @@ func (m Model) sessionFormView(w, rows int) []string {
 	}
 	why := m.sessionFormRefusal(f)
 	remote := m.sessionRemoteHost(f)
-	enterHow := "empty: start it and enter it"
+	enterHow := "empty: start and open it in herdr"
 	if remote != "" {
-		enterHow += " (through ssh to " + remote + ")"
+		enterHow += " (on " + remote + ")"
 	}
 	if strings.EqualFold(f.value(sHarness), "codex") {
 		out = append(out, sDim.Render(clip(indent+enterHow, w)))
 		if remote != "" {
-			out = append(out, sDim.Render(clip(indent+"codex: opens it now through ssh to "+remote, w)))
+			out = append(out, sDim.Render(clip(indent+"codex: opens it now on "+remote, w)))
 		} else {
 			out = append(out, sDim.Render(clip(indent+"codex: opens it now", w)))
 		}
 	} else if strings.TrimSpace(f.in[sFirstMessage].Value()) == "" {
 		out = append(out, sDim.Render(clip(indent+enterHow, w)))
-		out = append(out, sDim.Render(clip(indent+"text: start it in the background and send this", w)))
+		out = append(out, sDim.Render(clip(indent+"text: send this and open it in herdr", w)))
 	} else {
-		out = append(out, sDim.Render(clip(indent+"enter: start in the background and send this", w)))
+		out = append(out, sDim.Render(clip(indent+"enter: send this and open it in herdr", w)))
 	}
 	switch {
 	case why != "":

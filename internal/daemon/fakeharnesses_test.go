@@ -207,10 +207,14 @@ func fakeClaudeCLI() {
 	var sf claudeSessionFile
 	deadline := time.Now().Add(scaled(5 * time.Second))
 	for time.Now().Before(deadline) {
-		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && sf.JobID != "" {
+		if raw, err := os.ReadFile(filepath.Join(dir, strconv.Itoa(spid)+".json")); err == nil && json.Unmarshal(raw, &sf) == nil && (sf.JobID != "" || os.Getenv("FAKE_CLAUDE_NO_JOB_ID") != "" && len(sf.SessionID) >= 8) {
+			job := sf.JobID
+			if job == "" {
+				job = sf.SessionID[:8]
+			}
 
 			fmt.Printf("backgrounded · %s · %s (idle - send a prompt to start)\n  claude attach %s    open in this terminal\n  claude stop %s      stop this session\n",
-				sf.JobID, argValue(os.Args, "--name"), sf.JobID, sf.JobID)
+				job, argValue(os.Args, "--name"), job, job)
 			return
 		}
 		time.Sleep(10 * time.Millisecond)
@@ -264,6 +268,9 @@ func fakeClaudeSession() {
 	writeRecord(in.Cwd, "fake-claude.json", rec)
 	sf := map[string]any{"pid": os.Getpid(), "sessionId": session, "jobId": id, "cwd": in.Cwd, "kind": "bg",
 		"name": argValue(in.Args, "--name"), "status": "idle", "messagingSocketPath": sock}
+	if os.Getenv("FAKE_CLAUDE_NO_JOB_ID") != "" {
+		sf["jobId"] = ""
+	}
 	b, _ := json.Marshal(sf)
 	tmp := filepath.Join(dir, "."+strconv.Itoa(os.Getpid())+".tmp")
 	os.WriteFile(tmp, b, 0o600)

@@ -85,7 +85,7 @@ func TestToolsHelpScrolls(t *testing.T) {
 func TestHelpShowsWaitingAndNotificationSettings(t *testing.T) {
 	m := keys(newModel(80, 24), "?")
 	content := ansi.Strip(strings.Join(m.helpContent(80), "\n"))
-	for _, want := range []string{"desktop notifications: on (toggle)", "enter the selected session (ctrl+] to return)", "alias for Enter"} {
+	for _, want := range []string{"desktop notifications: on (toggle)", "open session in herdr (ctrl+] returns on fallback)", "alias for Enter"} {
 		if !strings.Contains(content, want) {
 			t.Errorf("help lacks %q", want)
 		}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestResumeConfirmAgeAndCancel(t *testing.T) {
@@ -125,5 +126,19 @@ func TestResumeUnsupportedRowsAndExistingEnterPlans(t *testing.T) {
 				t.Fatalf("enter %+v resume %+v", src.enters, src.sessionResumes)
 			}
 		})
+	}
+}
+
+func TestResumeHerdrDoesNotEnterTwice(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m.snap.Agents[0].Online = false
+	m.showOffline = true
+	m = selectID(m, "s_0000000000000001")
+	src.sessionStart = startedSession("tenebrae", "claude")
+	src.sessionStart.EnterPlan = &protocol.EnterPlan{OpenedHerdr: true, Note: "opened tenebrae in herdr"}
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = press2(m, cmd())
+	if cmd != nil || len(src.enters) != 0 || m.notice.text != "opened tenebrae in herdr" {
+		t.Fatalf("notice %q, enters %+v, command %v", m.notice.text, src.enters, cmd != nil)
 	}
 }

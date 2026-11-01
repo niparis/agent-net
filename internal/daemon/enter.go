@@ -15,22 +15,21 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// Enter a session (decision 0002, W16). The owner presses a key on a session in
-// the TUI. The daemon says what to run to take over the terminal for it, and
-// the TUI runs that and comes back when it ends. The TUI builds no command, so
-// the phone app can show the same plan.
+// Enter a session (decisions 0032 and 0043). The daemon opens or focuses a
+// Herdr pane when available. Otherwise it returns the terminal handover plan;
+// the TUI builds no command itself.
 //
 //	Claude Code background session   claude attach <id>
-//	Claude Code, Pi in a terminal    its herdr pane (herdr agent attach), else
+//	Claude Code, Pi in a terminal    its herdr pane, else
 //	                                 its tmux pane, when there is one
 //	OpenCode                         its herdr pane, else opencode --session <id>
 //	                                 (in the folder)
 //	Codex (not a worker)             codex resume <thread>, on the shared app server
 //	a worker of OpenCode or Codex    their private server, with its password
-//	                                 in Env; only on the machine that has it
+//	                                 kept on the machine that has it
 //
 // A session on another machine is planned by that machine (the gateway relays
-// the question), and wrapped in `ssh -t` here unless enter_ssh is false in
+// the question), and wrapped in herdr's remote client or `ssh -t` unless enter_ssh is false in
 // node.json. Without it the plan has no argv and the note gives the command to
 // run there. The ssh plan also carries that command as Fallback, for when ssh
 // cannot connect (exit status 255).
@@ -45,7 +44,7 @@ type EnterRefProvider interface {
 
 // enterPlan answers session_enter for a session on any machine.
 func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protocol.EnterPlan, error) {
-	if handled, plan, err := d.ctoEnterQuery(ctx, q); handled {
+	if handled, plan, err := d.ctoEnterQuery(ctx, q, false); handled {
 		return plan, err
 	}
 	if d.sessionByID(q.SessionID) != nil {
@@ -66,7 +65,9 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	}
 	// The machine to ssh to is the one the gateway says holds the session, not
 	// the name in the answer.
-	return d.wrapRemoteEnter(d.hostOfSession(ctx, q.SessionID), plan), nil
+	name := firstNonEmpty(plan.Name, q.SessionID)
+	remote := d.wrapRemoteEnter(d.hostOfSession(ctx, q.SessionID), plan)
+	return d.openInHerdr("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, remote), nil
 }
 
 // wrapRemoteEnter turns the other machine's local plan into the command this
@@ -175,6 +176,84 @@ func remoteCommand(dir string, argv []string) string {
 // when the question came from another machine: a plan that needs a secret in
 // its environment is refused then, because the answer crosses the gateway.
 func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, error) {
+	// A remote owner with a Herdr client can open a private worker on the
+	// worker's own machine, without sending its credentials through the gateway.
+	base, err := d.localEnterBase(ctx, q, viaGateway && !q.HerdrClient)
+	if err != nil {
+		return base, err
+	}
+	ls := d.sessionByID(q.SessionID)
+	if ls == nil {
+		return base, nil
+	}
+	info := d.infoOf(ls)
+	if info.Harness == protocol.OwnerHarness {
+		return base, nil
+	}
+	name := firstNonEmpty(info.Name, info.NativeID)
+	if info.Worker != nil {
+		if a, err := d.agentView(ctx, q.SessionID); err == nil && a.Profile.Name != "" {
+			name = a.Profile.Name
+		}
+	}
+	base.Name = name
+	if info.Harness == "pi" && d.workerBySession(q.SessionID) != nil {
+		// An RPC worker has no terminal, even if it inherited Herdr variables
+		// from the daemon. Do not mistake the daemon's pane for the worker.
+		if viaGateway {
+			return base, nil
+		}
+		return d.openInHerdr(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, base), nil
+	}
+	private := viaGateway && (base.Env["OPENCODE_SERVER_PASSWORD"] != "" || base.Env["AGENT_NET_CODEX_TOKEN"] != "")
+	remotePane := func(pane string) protocol.EnterPlan {
+		if private {
+			return protocol.EnterPlan{Argv: []string{"herdr", "agent", "attach", pane}, Host: base.Host, Name: name, HerdrPane: pane}
+		}
+		base.HerdrPane = pane
+		return base
+	}
+	// A gateway caller without a Herdr client needs the old SSH attach plan.
+	if viaGateway && !q.HerdrClient {
+		return base, nil
+	}
+	// A private worker's connection details are never sent via the gateway.
+	if viaGateway && len(base.Argv) == 0 {
+		return base, nil
+	}
+	probe := q
+	probe.HerdrClient = true
+	if p, found := d.herdrPlan(info, probe, protocol.EnterPlan{Host: base.Host}, name, viaGateway); found {
+		if p.HerdrPane != "" {
+			p.Name = name
+			if viaGateway {
+				return p, nil
+			}
+			return openedHerdrPlan(base.Host, name, p.HerdrPane), nil
+		}
+		if strings.HasPrefix(p.Note, "cannot focus ") {
+			return p, nil
+		}
+	}
+	if p, found := d.focusHerdrSession(q.HerdrSocket, info.Harness, info.NativeID, base.Host, name); found {
+		if viaGateway && p.OpenedHerdr {
+			return remotePane(p.HerdrPane), nil
+		}
+		return p, nil
+	}
+	opened := d.openInHerdr(q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, base)
+	if viaGateway && opened.OpenedHerdr {
+		// Keep the attach command for old clients and the remote wrapper; the
+		// pane ID lets the asking machine use Herdr's remote client.
+		return remotePane(opened.HerdrPane), nil
+	}
+	if private {
+		return protocol.EnterPlan{Host: base.Host, Name: name, Note: "Herdr could not open this private worker on its own machine. " + herdrInstallNote}, nil
+	}
+	return opened, nil
+}
+
+func (d *Daemon) localEnterBase(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, error) {
 	ls := d.sessionByID(q.SessionID)
 	if ls == nil {
 		return protocol.EnterPlan{}, errors.New("no such session on this machine")
@@ -197,13 +276,16 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		if p, ok := d.adapters["claude"].(EnterRefProvider); ok {
 			kind, job = p.EnterRef(info.NativeID)
 		}
+		if w != nil {
+			// Claude workers always run as background jobs.
+			d.wmu.Lock()
+			kind, job = "bg", firstNonEmpty(w.ref, job)
+			d.wmu.Unlock()
+		}
 		if kind != "bg" {
 			return d.terminalPlan(info, q, plan, name, viaGateway)
 		}
 		id := job
-		if w != nil && w.ref != "" {
-			id = w.ref
-		}
 		if id == "" && len(info.NativeID) >= 8 {
 			id = info.NativeID[:8] // the job ID is the first 8 characters of the session ID
 		}
@@ -293,6 +375,9 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 		plan.Note = fmt.Sprintf("Press ctrl+] to come back here; %s keeps running. The daemon also drives this thread.", name)
 		return plan, nil
 	case "pi":
+		if w != nil {
+			return no("Pi workers run in RPC mode without a terminal; read this session with agent-net show %s", cleanLine(q.SessionID))
+		}
 		return d.terminalPlan(info, q, plan, name, viaGateway)
 	}
 	return no("entering %s sessions is not supported", info.Harness)

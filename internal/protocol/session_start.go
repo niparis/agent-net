@@ -104,6 +104,9 @@ type SessionStartRequest struct {
 	TrustClaude bool `json:"trust_claude,omitempty"`
 	// CTOProposal asks the destination to enforce proposal-specific folder limits.
 	CTOProposal bool `json:"cto_proposal,omitempty"`
+	// HerdrSocket names the owner's local Herdr server, if the TUI is in one.
+	HerdrSocket string `json:"herdr_socket,omitempty"`
+	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
 }
 
 // SessionStartRelay is "session.start" from the owner's machine. The gateway
@@ -165,8 +168,10 @@ type StartedSession struct {
 // machine that holds it, when the caller knows it; empty lets the daemon or
 // the gateway resolve it.
 type SessionResumeRequest struct {
-	SessionID string `json:"session_id"`
-	NodeID    string `json:"node_id,omitempty"`
+	SessionID   string `json:"session_id"`
+	NodeID      string `json:"node_id,omitempty"`
+	HerdrSocket string `json:"herdr_socket,omitempty"`
+	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
 }
 
 // SessionStopResult describes the harness stop without removing the conversation.

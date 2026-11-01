@@ -173,7 +173,9 @@ type Model struct {
 	// execProcess replaces tea.Exec in tests.
 	tmuxSocket string
 	// herdrSocket is the herdr server this terminal runs in, or "".
-	herdrSocket string
+	herdrSocket         string
+	herdrPaneID         string
+	sessionNoticeSerial uint64
 	// enterNote is the daemon's note for the command that runs now.
 	enterNote   string
 	execProcess func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
@@ -825,6 +827,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.fail("Proposal failed: " + explain(msg.err))
+		} else if msg.action != "x" && m.sessionNoticeSerial != msg.sessionBefore {
+			// Keep the session start result that arrived during approval.
 		} else if msg.action == "A" {
 			m.say("Proposals approved and applied.")
 		} else {
@@ -1109,7 +1113,21 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
 		return m.toolsKey(k)
 	}
-	if (k.String() == "c" || k.String() == "C") && !m.filtering {
+	// c opens the CTO session in one key; C focuses the box for its own keys
+	// (new conversation, undo, settings, scrolling).
+	if k.String() == "c" && !m.filtering {
+		var poll tea.Cmd
+		if m.cto == nil {
+			next, cmd := m.startCTO()
+			m, poll = next.(Model), cmd
+			if m.cto == nil {
+				return m, nil
+			}
+		}
+		next, enter := m.openCTO(m.ctoSessionID())
+		return next, tea.Batch(poll, enter)
+	}
+	if k.String() == "C" && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
 		m.open = nil
 		if m.cto == nil {
@@ -1899,10 +1917,19 @@ func (m *Model) fixScroll() {
 	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-1, 0))
 }
 
-// applyCTOUI applies an owner-authorized request from the local CTO channel.
+// applyCTOUI applies a CTO request or a daemon notice from the local channel.
 func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
+	if q.StartPlan != nil {
+		m.sessionNoticeSerial++
+		return m.onEnter(enterMsg{name: sanitize(q.StartName), plan: *q.StartPlan})
+	}
 	if q.Text != "" {
-		m.say("CTO: " + q.Text)
+		if q.HerdrOpened || q.DaemonNotice {
+			m.sessionNoticeSerial++
+			m.say(q.Text)
+		} else {
+			m.say("CTO: " + q.Text)
+		}
 		return m, nil
 	}
 	m.inboxOn, m.help, m.learned, m.mapOn = false, false, false, false

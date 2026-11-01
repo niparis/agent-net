@@ -201,29 +201,33 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
-	ctoGraph         ctoGraphWindow
-	operatorReads    operatorReadCache
-	startedSessions  map[string]protocol.StartedSession // guarded by mu
-	startedRelays    map[string]string                  // start ID -> machine, guarded by mu
-	ownerWorktrees   map[string]bool                    // folder -> true, guarded by mu
-	notify           notificationTracker
-	notifySend       func()
-	toolsMu          sync.Mutex
-	toolsReport      protocol.InventoryReport
-	toolsWake        chan struct{}
-	skillConflicts   map[string]string
-	toolsPlanKeyOnce sync.Once
-	toolsPlanKey     [32]byte
-	toolsPlanKeyErr  error
-	ctoDispatchMu    ctoDispatchLock
-	ctoEnterMu       sync.Mutex
-	ctoEntering      *ctoEnterCall
-	cto              ctoRuntime
-	claudeCTO        claudeCTOState
-	cfg              Config
-	log              *log.Logger
-	st               *state
-	client           *http.Client
+	ctoGraph            ctoGraphWindow
+	operatorReads       operatorReadCache
+	startedSessions     map[string]protocol.StartedSession // guarded by mu
+	startedRelays       map[string]string                  // start ID -> machine, guarded by mu
+	startedRelaySockets map[string]string                  // start ID -> local Herdr socket, guarded by mu
+	startedRelayPanes   map[string]string                  // start ID -> local TUI pane, guarded by mu
+	ownerWorktrees      map[string]bool                    // folder -> true, guarded by mu
+	notify              notificationTracker
+	notifySend          func()
+	toolsMu             sync.Mutex
+	toolsReport         protocol.InventoryReport
+	toolsWake           chan struct{}
+	skillConflicts      map[string]string
+	toolsPlanKeyOnce    sync.Once
+	toolsPlanKey        [32]byte
+	toolsPlanKeyErr     error
+	ctoDispatchMu       ctoDispatchLock
+	ctoEnterMu          sync.Mutex
+	ctoEntering         *ctoEnterCall
+	herdrOpenMu         sync.Mutex
+	herdrOpened         map[string]herdrOpenedPane
+	cto                 ctoRuntime
+	claudeCTO           claudeCTOState
+	cfg                 Config
+	log                 *log.Logger
+	st                  *state
+	client              *http.Client
 	// ctoNow and ctoCompactEvery are replaced in tests with a fake clock and
 	// no background loop.
 	ctoNow          func() time.Time

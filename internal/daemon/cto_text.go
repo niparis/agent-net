@@ -164,7 +164,7 @@ func (d *Daemon) ctoTextQuery(ctx context.Context, q protocol.TextQuery) (bool, 
 
 // ctoEnterQuery answers session_enter for the CTO session. handled is false
 // when the query is for another session.
-func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest) (bool, protocol.EnterPlan, error) {
+func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest, viaGateway bool) (bool, protocol.EnterPlan, error) {
 	id := d.ctoSessionID()
 	if q.SessionID == protocol.CTONodeName {
 		if id == "" {
@@ -178,6 +178,25 @@ func (d *Daemon) ctoEnterQuery(ctx context.Context, q protocol.EnterRequest) (bo
 	if !d.ctoOnThisNode(ctx) {
 		return false, protocol.EnterPlan{}, nil
 	}
-	plan, err := d.ctoEnter(ctx)
+	var plan protocol.EnterPlan
+	var err error
+	if viaGateway && !q.HerdrClient {
+		plan, err = d.ctoEnterBase(ctx)
+	} else {
+		plan, err = d.ctoEnterWithLocation(ctx, q.HerdrSocket, q.HerdrPaneID)
+	}
+	if viaGateway && err == nil {
+		if plan.OpenedHerdr && q.HerdrClient {
+			plan.Argv = []string{"herdr", "agent", "attach", plan.HerdrPane}
+			plan.OpenedHerdr = false
+		} else if len(plan.Env) > 0 {
+			// OpenCode's private server password must stay on this machine.
+			if plan.Env["OPENCODE_SERVER_PASSWORD"] != "" {
+				return true, protocol.EnterPlan{Note: "The CTO's private server can only be entered on its own machine."}, nil
+			}
+			plan.Env = nil
+		}
+		plan.Name = "CTO"
+	}
 	return true, plan, err
 }

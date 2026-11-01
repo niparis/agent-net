@@ -690,6 +690,7 @@ func (d *Daemon) finishWorkerStart(ctx context.Context, l protocol.WorkerLaunch,
 	d.wmu.Unlock()
 	d.Logf("worker.started worker=%s session=%s project=%s path=%s harness=%s model=%s owner=%s pid=%d worktree=%s branch=%s",
 		w.id, sid, w.project, w.path, w.harness, w.model, w.owner, w.pid, wt, br)
+	d.openWorkerInHerdr(w, sid)
 	return protocol.WorkerLaunched{SessionID: sid, WorkerID: w.id, Worktree: wt, Branch: br, ProjectRules: rules}, nil
 }
 
@@ -1098,6 +1099,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 	okStart = true
 	d.Logf("worker.resumed worker=%s session=%s project=%s harness=%s model=%s owner=%s pid=%d",
 		w.id, sessionID, w.project, w.harness, w.model, w.owner, w.pid)
+	d.openWorkerInHerdr(w, sessionID)
 	return nil
 }
 

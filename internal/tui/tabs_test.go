@@ -254,9 +254,9 @@ func TestTabsMoveFeedToMessages(t *testing.T) {
 func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m := New(src)
-	m = keys(m, "c")
+	m = keys(m, "C")
 	if m.focus != focusCTO {
-		t.Fatal("c did not focus CTO")
+		t.Fatal("C did not focus CTO")
 	}
 	m = keys(m, "h", "i")
 	if len(src.sent) != 0 {
@@ -418,7 +418,7 @@ func TestCTOFrameOnEveryTab(t *testing.T) {
 		if !strings.Contains(m.View(), "c: open the CTO") {
 			t.Errorf("%s missing CTO", key)
 		}
-		m = keys(m, "c")
+		m = keys(m, "C")
 		if m.focus != focusCTO {
 			t.Errorf("%s did not focus CTO", key)
 		}

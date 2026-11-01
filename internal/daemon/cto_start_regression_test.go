@@ -164,7 +164,7 @@ func TestCTOClaudeFailedResumeFallback(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.Note != "The CTO's Claude conversation was closed by Claude Code; started a new one." {
+			if !strings.HasPrefix(plan.Note, "The CTO's Claude conversation was closed by Claude Code; started a new one.") {
 				t.Fatalf("notice: %q", plan.Note)
 			}
 			id, err := n.d.claudeCTOSession()

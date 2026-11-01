@@ -84,6 +84,7 @@ echo "sock=$HERDR_SOCKET_PATH session=${HERDR_SESSION:-none} $*" >> ` + f.log + 
 case "$1 $2" in
   "pane list") cat ` + dir + `/panes ;;
   "pane process-info") cat ` + dir + `/info-$4 2>/dev/null || exit 1 ;;
+  "agent focus"|"tab focus") exit 0 ;;
   *) exit 1 ;;
 esac
 `
@@ -124,12 +125,17 @@ func (f *fakeHerdr) calls(t *testing.T) string {
 // session starts a process that looks like a session in the pane `pane`.
 func (f *fakeHerdr) session(t *testing.T, pane string) int {
 	t.Helper()
-	cmd := exec.Command("sleep", "30")
+	// A blocked pipe keeps the fake session alive without a timed sleep.
+	cmd := exec.Command("cat")
 	cmd.Env = append(os.Environ(), "HERDR_ENV=1", "HERDR_PANE_ID="+pane, "HERDR_SOCKET_PATH="+f.sock, "HERDR_BIN_PATH="+f.bin, "HERDR_SESSION=other")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { cmd.Process.Kill(); cmd.Wait() })
+	t.Cleanup(func() { stdin.Close(); cmd.Process.Kill(); cmd.Wait() })
 	waitProcessEnv(t, cmd.Process.Pid, "HERDR_ENV=1")
 	return cmd.Process.Pid
 }
@@ -483,8 +489,8 @@ func enterRemoteHerdr(t *testing.T, g *testGateway, pane string) (*node, *fakeHe
 func waitSessionOnGateway(t *testing.T, n *node, id string) {
 	t.Helper()
 	eventually(t, "session on the gateway", func() bool {
-		p := enterOfErr(n, id)
-		return p != nil && p.Note != ""
+		a, err := n.d.agentView(context.Background(), id)
+		return err == nil && a.SessionID == id
 	})
 }
 
@@ -494,46 +500,32 @@ func waitSessionOnGateway(t *testing.T, n *node, id string) {
 func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	remote, remoteHerdr, id := enterRemoteHerdr(t, g, "w1:pB")
-	localHerdr := newFakeHerdr(t) // the local client; its server is never asked
+	localHerdr, localLog := fakeOpenHerdr(t)
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) {
-		c.HarnessPaths = map[string]string{"herdr": localHerdr.bin}
+		c.HarnessPaths = map[string]string{"herdr": localHerdr}
 	}})
 	waitSessionOnGateway(t, local, id)
 
 	p := enterOf(t, local, id, "")
-	want := []string{localHerdr.bin, "--remote", remote.cfg.Hostname}
-	if !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("argv %v, want %v", p.Argv, want)
-	}
-	if p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname {
+	if !p.OpenedHerdr || len(p.Argv) != 0 || p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname {
 		t.Fatalf("plan %+v", p)
 	}
-	for _, want := range []string{"Opens herdr on " + remote.cfg.Hostname, "pane w1:pB", "ctrl+b", "q"} {
-		if !strings.Contains(p.Note, want) {
-			t.Errorf("note %q does not contain %q", p.Note, want)
-		}
-	}
-	if strings.Contains(p.Note, "ctrl+]") {
-		t.Errorf("note names the attach detach key: %q", p.Note)
-	}
+	requireHerdrOpened(t, localLog, "inter", "--remote", remote.cfg.Hostname)
 	// The remote pane is focused before the client opens.
 	if calls := remoteHerdr.calls(t); !strings.Contains(calls, "pane process-info --pane w1:pB") || !strings.Contains(calls, "agent focus w1:pB") {
 		t.Errorf("remote herdr calls %q", calls)
 	}
-	if calls := localHerdr.calls(t); calls != "" {
-		t.Errorf("the local herdr was asked to do something: %q", calls)
-	}
-
 	// The ssh target from enter_ssh_hosts is the one herdr's client gets.
 	alias := startNode(t, g, nodeOpts{cfg: func(c *Config) {
-		c.HarnessPaths = map[string]string{"herdr": localHerdr.bin}
+		c.HarnessPaths = map[string]string{"herdr": localHerdr}
 		c.EnterSSHHosts = map[string]string{remote.cfg.Hostname: "me@box"}
 	}})
 	waitSessionOnGateway(t, alias, id)
 	p = enterOf(t, alias, id, "")
-	if want := []string{localHerdr.bin, "--remote", "me@box"}; !reflect.DeepEqual(p.Argv, want) {
-		t.Fatalf("alias argv %v, want %v", p.Argv, want)
+	if !p.OpenedHerdr {
+		t.Fatalf("alias plan %+v", p)
 	}
+	requireHerdrOpened(t, localLog, "inter", "--remote", "me@box")
 }
 
 // Without a local herdr there is no client to carry the clipboard, so the plan
@@ -546,7 +538,7 @@ func TestEnterRemoteHerdrWithoutLocalClientKeepsSSH(t *testing.T) {
 	waitSessionOnGateway(t, local, id)
 
 	// What the remote machine plans on its own is the command ssh runs.
-	localEnter, err := remote.d.localEnter(context.Background(), protocol.EnterRequest{SessionID: id}, false)
+	localEnter, err := remote.d.localEnterBase(context.Background(), protocol.EnterRequest{SessionID: id}, true)
 	if err != nil || len(localEnter.Argv) == 0 {
 		t.Fatalf("remote plan %+v err %v", localEnter, err)
 	}
@@ -608,8 +600,7 @@ func TestEnterHerdrThroughSessionEnter(t *testing.T) {
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"env", "-u", "HERDR_SESSION", "HERDR_SOCKET_PATH=" + f.sock, f.bin, "agent", "attach", "w1:pB"}
-	if !reflect.DeepEqual(p.Argv, want) || !strings.Contains(p.Note, "Press ctrl+] to come back here;") {
+	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || p.Note != "opened inter in herdr" || !strings.Contains(f.calls(t), "agent focus w1:pB") {
 		t.Fatalf("plan %+v", p)
 	}
 }

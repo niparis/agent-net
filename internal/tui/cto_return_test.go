@@ -38,7 +38,7 @@ func TestCTOKeysReturnAndSkip(t *testing.T) {
 		}
 	})
 	t.Run("escape without tip stays", func(t *testing.T) {
-		m := keys(newModel(120, 34), "c", "esc")
+		m := keys(newModel(120, 34), "C", "esc")
 		if m.focus != focusCTO {
 			t.Errorf("esc changed focus to %v", m.focus)
 		}
@@ -57,7 +57,7 @@ func TestCTOKeysReturnAndSkip(t *testing.T) {
 func TestCTOKeysReturnHints(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
-			m := keys(newModel(size[0], size[1]), "c")
+			m := keys(newModel(size[0], size[1]), "C")
 			box := ansi.Strip(strings.Join(m.ctoView(size[0], m.ctoBoxHeight(m.tab)), "\n"))
 			bar := ansi.Strip(m.helpLine(size[0]))
 			if !strings.Contains(box, "ctrl+]: back") {
@@ -73,7 +73,7 @@ func TestCTOKeysReturnHints(t *testing.T) {
 func TestCTOKeysReturnDuringConfirmation(t *testing.T) {
 	for _, key := range []tea.KeyType{tea.KeyCtrlCloseBracket, tea.KeyTab} {
 		t.Run(tea.KeyMsg{Type: key}.String(), func(t *testing.T) {
-			m := keys(newModel(120, 34), "c")
+			m := keys(newModel(120, 34), "C")
 			m.cto.confirming = true
 			next, cmd := m.key(tea.KeyMsg{Type: key})
 			m = next.(Model)

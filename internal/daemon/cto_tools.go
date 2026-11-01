@@ -139,6 +139,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			if q.Why == "" {
 				q.Why = "Showing " + q.Tab
 			}
+			// CTO input cannot supply daemon-only notices or terminal commands.
+			q = protocol.UIRequest{Tab: q.Tab, Select: q.Select, Filter: q.Filter, Why: q.Why}
 		} else {
 			if q.Text == "" {
 				return nil, errors.New("ui_notice needs text")

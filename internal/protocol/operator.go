@@ -607,10 +607,12 @@ type CTOProposalMessage struct {
 }
 
 type CTOProposalAnswer struct {
-	NodeID  string           `json:"node_id"`
-	ID      string           `json:"proposal_id"`
-	Action  string           `json:"action"`
-	Confirm []CTOProposalRef `json:"confirm,omitempty"`
+	NodeID      string           `json:"node_id"`
+	ID          string           `json:"proposal_id"`
+	Action      string           `json:"action"`
+	Confirm     []CTOProposalRef `json:"confirm,omitempty"`
+	HerdrSocket string           `json:"herdr_socket,omitempty"`
+	HerdrPaneID string           `json:"herdr_pane_id,omitempty"`
 }
 
 type CTOProposalRef struct {

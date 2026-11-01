@@ -223,9 +223,10 @@ type EnterRequest struct {
 	// session's pane instead of attaching a second client.
 	TmuxSocket string `json:"tmux_socket,omitempty"`
 	// HerdrSocket is the value of $HERDR_SOCKET_PATH when the asking terminal
-	// runs inside herdr (HERDR_ENV=1), else "". The plan then names the detach
-	// key that works inside herdr.
+	// runs inside herdr (HERDR_ENV=1), else "". The daemon uses that server.
 	HerdrSocket string `json:"herdr_socket,omitempty"`
+	// HerdrPaneID is the pane containing the asking TUI, when known.
+	HerdrPaneID string `json:"herdr_pane_id,omitempty"`
 	// HerdrClient is set by the daemon of the asking machine when it has a
 	// herdr binary that can run `herdr --remote`. A session on another machine
 	// then answers a herdr pane for it, so the asking machine can use herdr's
@@ -234,12 +235,13 @@ type EnterRequest struct {
 	HerdrClient bool `json:"herdr_client,omitempty"`
 }
 
-// EnterPlan answers OpSessionEnter. A front end runs Argv in Dir with Env added
-// and comes back when it ends. It never builds a command itself. When Argv is
-// empty the session cannot be entered from here and Note says what to do.
+// EnterPlan answers OpSessionEnter. OpenedHerdr means the daemon already opened
+// the session. Otherwise a front end runs Argv in Dir with Env added and comes
+// back when it ends. When Argv is empty, Note explains the result.
 type EnterPlan struct {
 	Argv []string `json:"argv,omitempty"`
 	Dir  string   `json:"dir,omitempty"`
+	Name string   `json:"name,omitempty"`
 	// Env is added to the environment of the command. It holds secrets of a
 	// private worker server, so it only comes for a session on the asking
 	// machine and never crosses the gateway.
@@ -257,6 +259,8 @@ type EnterPlan struct {
 	// (EnterRequest.HerdrClient). That machine then opens the pane with
 	// `herdr --remote` instead of running the ssh attach command.
 	HerdrPane string `json:"herdr_pane,omitempty"`
+	// OpenedHerdr means the daemon already opened or focused the session.
+	OpenedHerdr bool `json:"opened_herdr,omitempty"`
 }
 
 // TextEntry is one step of a session: a prompt, a reply, a tool call or a tool

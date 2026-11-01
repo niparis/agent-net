@@ -234,7 +234,7 @@ func TestEnterIsInTheHelpAndFooter(t *testing.T) {
 	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("?")})
 	v := m.View()
-	if !strings.Contains(v, "enter the selected session (ctrl+] to return)") {
+	if !strings.Contains(v, "open session in herdr (ctrl+] returns on fallback)") {
 		t.Errorf("help does not list enter:\n%s", v)
 	}
 	if !strings.Contains(v, "alias for Enter") {
@@ -273,4 +273,17 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func TestEnterFallbackShowsHerdrInstallNoticeOnReturn(t *testing.T) {
+	m, _ := workerModel(80, 24)
+	m.enterNote = "Press ctrl+] to come back here. Herdr was not found or failed; install: https://herdr.dev/tui/docs/install/."
+	m, _ = m.onEnterDone(enterDoneMsg{name: "garden"})
+	if !strings.Contains(m.notice.text, "Herdr was not found") || !strings.Contains(m.notice.text, "install") {
+		t.Fatalf("notice %q", m.notice.text)
+	}
+	line, _ := m.noticeLine(80)
+	if !strings.Contains(line, "herdr.dev/tui/docs/install/") {
+		t.Fatalf("installation link is clipped: %q", line)
+	}
 }
