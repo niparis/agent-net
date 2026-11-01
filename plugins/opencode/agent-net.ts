@@ -6,8 +6,10 @@
 // per session (hello with native_id = the OpenCode session ID). Each tool call
 // carries its session ID, so it is routed to that session's connection.
 import type { Plugin } from "@opencode/plugin";
+import { TOOL_CATALOG } from "./tools.gen.js";
 import { readFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 
 type Context = Plugin.Context;
@@ -1174,6 +1176,43 @@ const TOOLS: ToolDef[] = [
   },
 ];
 
+const catalogNames = new Set<string>(TOOL_CATALOG.map((tool) => tool.name));
+const LEGACY_TOOLS = TOOLS.filter((tool) => !catalogNames.has(tool.name));
+const CATALOG_TOOLS: ToolDef[] = TOOL_CATALOG.map((tool) => {
+  const schema = tool.inputSchema as any;
+  return {
+    name: tool.name,
+    description: tool.description,
+    properties: schema.properties ?? {},
+    required: schema.required ?? [],
+    method: tool.method,
+    mapParams: (params) => mapCatalogParams(tool.name, params ?? {}),
+    format: (result) => formatCatalogResult(tool.name, result ?? {}),
+  };
+});
+const ALL_TOOLS: ToolDef[] = [...LEGACY_TOOLS, ...CATALOG_TOOLS];
+
+function formatCatalogResult(name: string, result: any): string {
+  if (name === "agent_learn") return result.accepted === false ? `Not recorded: ${result.reason}` : `Recorded finding ${result.id} (${result.status}). ${result.remaining} left today.`;
+  if (name === "agent_handback") return `Handed back (${result.status}${result.complete === false ? ", partial" : ""}). The caller has your report and the facts. You can still receive follow-up messages.`;
+  if (name === "agent_project_add") return formatProjectAdd(result);
+  return JSON.stringify(result ?? {}, null, 2);
+}
+
+function mapCatalogParams(name: string, params: any): any {
+  switch (name) {
+    case "agent_message_send": return { ...params, type: params.type || "request", receipt: true, idempotency_key: randomUUID() };
+    case "agent_message_reply": return { ...params, message_id: params.message, receipt: true, idempotency_key: randomUUID() };
+    case "agent_mcp_test": return { name: params.server };
+    case "agent_worker_stop": return { session: params.worker };
+    case "agent_owner_ask":
+      if (params.kind === "approval") return { __method: "request_approval", __params: { action: params.text, recommendation: params.recommendation } };
+      if (params.kind === "idea") return { __method: "propose_idea", __params: { text: params.text, recommendation: params.recommendation } };
+      return { ...params, explicit: true };
+    default: return params;
+  }
+}
+
 // OpenCode loads this plugin once per project directory, and every instance
 // sees the events of every session. The state that decides who owns a session
 // therefore lives in one hub per process, shared by all instances.
@@ -1709,7 +1748,10 @@ export default {
     const announced = new Set<string>();
 
     ctx.tool.transform((editor) => {
-      for (const def of TOOLS) {
+      for (const def of ALL_TOOLS) {
+        const workerRole = Boolean(process.env.AGENT_NET_WORKER);
+        const generated = TOOL_CATALOG.find((tool) => tool.name === def.name);
+        if (generated && (workerRole ? !(generated.roles as readonly string[]).includes("worker") : !(generated.roles as readonly string[]).includes("agent"))) continue;
         editor.add({
           name: def.name,
           description: def.description,
@@ -1725,9 +1767,11 @@ export default {
               const link = await ensureLink(sid);
               if (!link) return text("agent-net: this session is not registered with the daemon.");
               link.touch(); // using an agent-net tool is activity
-              const params = def.method === "list" ? { online_only: true, ...(input ?? {}) } : (def.mapParams ? def.mapParams(input ?? {}) : (input ?? {}));
-              const result = await link.request(def.method, params);
-              if (def.method === "announce") announced.add(sid);
+              const mapped = def.mapParams ? def.mapParams(input ?? {}) : (input ?? {});
+              const method = mapped?.__method ?? def.method;
+              const params = mapped?.__params ?? (def.method === "list" ? { online_only: true, ...(mapped ?? {}) } : mapped);
+              const result = await link.request(method, params);
+              if (method === "announce") announced.add(sid);
               return text((def.format ?? ((r) => JSON.stringify(r ?? {}, null, 2)))(result ?? {}));
             } catch (error) {
               return text(error instanceof Error ? error.message : String(error));

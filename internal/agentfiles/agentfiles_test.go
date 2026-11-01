@@ -93,6 +93,9 @@ func TestSyncRefreshesOldFiles(t *testing.T) {
 	if !bytes.Equal([]byte(read(t, OpencodePluginPath())), opencode.Plugin) {
 		t.Error("opencode plugin is not the embedded one")
 	}
+	if !bytes.Equal([]byte(read(t, PiToolsPath())), pi.Tools) || !bytes.Equal([]byte(read(t, OpencodeToolsPath())), opencode.Tools) {
+		t.Error("generated tool catalog is not the embedded one")
+	}
 	cm := read(t, filepath.Join(h, ".claude", "CLAUDE.md"))
 	if want := "# mine\n\n" + guidance.Block(guidance.Claude) + "\n# after\n"; cm != want {
 		t.Errorf("CLAUDE.md = %q, want %q", cm, want)
@@ -304,7 +307,9 @@ func TestSyncAndLog(t *testing.T) {
 	SyncAndLog(logf)
 	want := []string{
 		"agent files: pi extension updated: ~/.pi/agent/extensions/agent-net.ts",
+		"agent files: pi tool catalog created: ~/.pi/agent/extensions/tools.gen.ts",
 		"agent files: opencode plugin left alone (symlink): ~/.config/opencode/plugins/agent-net.ts",
+		"agent files: opencode tool catalog created: ~/.config/opencode/plugins/tools.gen.ts",
 		"agent files: agent guidance created: ~/.pi/agent/AGENTS.md",
 		"agent files: opencode guidance created: ~/.config/opencode/AGENTS.md",
 	}

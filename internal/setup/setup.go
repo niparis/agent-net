@@ -444,6 +444,7 @@ func firstLine(out string, err error) string {
 
 func (r *runner) piExtension() {
 	r.stepResult(agentfiles.SyncPi())
+	r.stepResult(agentfiles.SyncPiTools())
 }
 
 // ---- OpenCode ----
@@ -451,6 +452,7 @@ func (r *runner) piExtension() {
 func (r *runner) opencodePlugin() {
 	res := agentfiles.SyncOpencode()
 	r.stepResult(res)
+	r.stepResult(agentfiles.SyncOpencodeTools())
 	if res.Err == nil && res.Changed {
 		// The service hosts every OpenCode session, so setup never restarts it;
 		// the user decides when.
