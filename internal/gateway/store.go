@@ -418,6 +418,49 @@ func (s *Store) migrate() error {
 				tx.Rollback()
 				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
+			// Runs made before these columns existed can still be attributed
+			// while their worker session is kept (a few hours after a start).
+			rows, err := tx.Query(`SELECT id, worker FROM sessions WHERE worker <> ''`)
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			type runFacts struct{ caller, asked, used string }
+			facts := map[string]runFacts{}
+			for rows.Next() {
+				var id, raw string
+				if err := rows.Scan(&id, &raw); err != nil {
+					rows.Close()
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				var w protocol.WorkerInfo
+				if json.Unmarshal([]byte(raw), &w) == nil {
+					facts[id] = runFacts{caller: w.Owner, asked: w.DifficultyAsked, used: w.DifficultyUsed}
+				}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			rows.Close()
+			for id, f := range facts {
+				if f.caller == "" {
+					continue
+				}
+				difficulty := f.asked
+				if difficulty == "" {
+					difficulty = f.used
+				}
+				if difficulty == "" {
+					difficulty = "normal"
+				}
+				if _, err := tx.Exec(`UPDATE worker_runs SET caller = ?, difficulty = ? WHERE session_id = ? AND caller = ''`, f.caller, difficulty, id); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
 		}
 		if strings.Contains(migrations[i], "CTO legacy route upgrade") {
 			if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_legacy_route_start','',?) ON CONFLICT(key) DO NOTHING`, s.now().UnixNano()); err != nil {

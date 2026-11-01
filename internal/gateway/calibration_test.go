@@ -62,6 +62,40 @@ func TestCalibrationReadsCallerAndDifficulty(t *testing.T) {
 	}
 }
 
+// A run recorded before part 2 can be attributed from its worker session
+// while that session is still kept.
+func TestCalibrationMigrationBackfillsCaller(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller", Name: "agent-net"})
+	wid, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "opencode", NativeID: "w",
+		Worker: &protocol.WorkerInfo{ID: "w", Owner: caller, DifficultyAsked: "hard"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at)
+		VALUES (?,?,?,?,?,?)`, node, wid, "opencode", "m", protocol.OutcomeComplete, s.now().Unix()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE version = ?`, len(migrations)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatal(err)
+	}
+	cal, err := s.Calibration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
+		t.Fatalf("backfilled calibration: %+v", cal)
+	}
+	l := cal.Callers[0].Levels[0]
+	if cal.Callers[0].Caller != caller || l.Difficulty != "hard" || l.Tasks != 1 || l.Action != protocol.CalibrationNotEnough {
+		t.Fatalf("backfilled row: %+v %+v", cal.Callers[0], l)
+	}
+}
+
 func TestWorkerSessionOwner(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("mac", "linux")
