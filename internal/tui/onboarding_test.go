@@ -138,10 +138,10 @@ func TestOnboardingSkipAndRestart(t *testing.T) {
 		t.Fatal("unfocused escape skipped")
 	}
 	m.focus = focusCTO
-	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyEsc})
+	next, cmd = m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
 	m = onboardingRun(next.(Model), cmd)
 	if src.progress.Steps["see"] != "skipped" {
-		t.Fatalf("focused escape: %+v", src.progress)
+		t.Fatalf("focused skip: %+v", src.progress)
 	}
 	fresh := New(src)
 	fresh.snap = src.snap

@@ -300,12 +300,12 @@ In the TUI, `c` or `C` focuses the CTO box from every tab.
 Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
-`enter: open the <title> · tab: back`. Enter opens the full CTO harness UI through
+`enter: open the <title> · esc: back`. Enter opens the full CTO harness UI through
 `session_enter` on the CTO session, the same hand-over a session uses; ctrl+]
 returns. The title also shows how many CTO proposals are open. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
-harness and model form, and Tab returns focus to Sessions. Esc skips a current
-onboarding tip, or returns to Sessions when there is no tip. The chat
+harness and model form, and Esc returns focus to Sessions. `>` skips the
+current onboarding tip. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
 
@@ -372,7 +372,7 @@ feeds (the per-turn context, a neighbour's 40-character view, a worker's brief,
 the Tools tab, or the agent lookup). RECENT on the last row lists the newest
 changes. Leaving the card marks its current changes viewed. Esc returns to the
 Graph with the same node selected. Enter on the card's sessions line opens
-Sessions filtered to the agent's project. `c` focuses the CTO box; Tab
+Sessions filtered to the agent's project. `c` focuses the CTO box; Esc
 returns to Sessions.
 
 Hidden item preferences are shared by every machine's TUI through the
@@ -389,7 +389,7 @@ The gateway also stores onboarding progress in `owner_settings`. The owner-only
 operator methods `onboarding_get`, `onboarding_set`, and `onboarding_restart`
 read, update, and reset it across machines. The CTO proposes a reset with
 `settings_change` area `onboarding`. The TUI shows one tip in the CTO box. `c` focuses
-the box and Escape skips the current tip. In help, `T` turns tips off or on
+the box and `>` skips the current tip. In help, `T` turns tips off or on
 and `R` restarts them from the first step. Progress is shared across machines.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
@@ -1387,7 +1387,7 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has five tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages and `5` Tools. On each tab, `c` or `C` focuses the CTO box and Tab returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · tab: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip or returns to the list when there is no tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `f` on a worker conversation to report a defect found later, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
+`agent-net tui` has five tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages and `5` Tools. On each tab, `c` or `C` focuses the CTO box and Esc returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · esc: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and `>` skips a tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `f` on a worker conversation to report a defect found later, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. A Braille renderer is the fallback everywhere. On a terminal that speaks the kitty graphics protocol, the same scene is drawn to an RGBA image with anti-aliased shapes and shown through Unicode placeholder cells; labels stay ordinary terminal text, so they remain crisp and selectable. The renderer and the pixel size of a cell are chosen once at start. `AGENT_NET_GRAPH` is `auto` (the default), `pixel` or `braille`. Auto sends a tiny `a=q` image query followed by a device attributes query to bound the wait, and reads the cell size from the `TIOCGWINSZ` pixel fields or a CSI 16 t reply. It stays on Braille when the terminal does not answer the image query with OK, when the cell size in pixels is unknown, or inside a multiplexer that drops images: `$TMUX`, or herdr, which sets `HERDR_ENV=1`. `pixel` overrides the multiplexer veto, and `braille` always falls back. Each image is transmitted once with `U=1` and only again when its hash changes; the old image is deleted by id first. In pixel mode the scene also carries motion: a comet with a fading tail for each message, a ring when it arrives, the phase of a busy node's slow glow, and the eased camera. Rendering never blocks the UI: `View` and `Update` build only the cheap scene, a scene hash decides whether a frame is needed, and a `tea.Cmd` goroutine rasterizes and PNG-encodes at most one frame at a time. New frames are dropped while one is in flight, and the last finished frame stays on screen. The image is capped at 1600 by 900 pixels and the terminal scales it to the cell area. A 120x34 frame with 20 nodes costs about 90 ms to rasterize, so pixel frames are requested at 8 a second; idle ticks stay at the existing 250 ms and reuse the last frame. Braille keeps its own picture and tick, and its goldens do not change. Zooming past 1.9 times the fitted zoom shows a rounded charter card next to a node; the card box is drawn in the image and its text stays ordinary terminal cells.
 
@@ -1434,7 +1434,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `h`, `H` | In Sessions and the Graph card, hide or unhide the selected session or project node; `H` toggles showing hidden ones. |
 | `a` | Active only: hide sessions that are idle and have had no report for more than an hour. Each machine heading says how many it hides, and the header lists the active filters. On the Graph agent card, `a` toggles the node's autonomy between `off` and `wake`. |
 | `1` to `5` | Open Sessions, Graph, Quotas, Messages or Tools. `M` and `G` also open Graph. |
-| `c`, `C` | Focus the CTO box; Tab returns to Sessions, and Esc skips a tip or returns when there is no tip. |
+| `c`, `C` | Focus the CTO box; Esc returns to Sessions and `>` skips a tip. |
 | `b` | Preview a hand-over of the selected Sessions row or message to the CTO. |
 | `d` | Toggle selected session details in place of the session list. |
 | `?` | Show or hide the help. |

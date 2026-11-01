@@ -3,7 +3,8 @@
 **Date:** 2026-10-31
 **Status:** Accepted.
 
-**Key update:** `c` and `C` now focus the CTO box. Tab returns to Sessions.
+**Key update:** `c` and `C` now focus the CTO box. Esc returns to Sessions;
+Tab remains an unadvertised alias.
 
 ## Context
 

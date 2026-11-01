@@ -238,7 +238,7 @@ New session ──────────────────────�
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │ ...                                                                          │
-│ enter: open the CTO · tab: back                                              │
+│ enter: open the CTO · esc: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter start  up/down field  left/right folder  esc cancel
 ```

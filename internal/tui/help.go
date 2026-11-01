@@ -43,7 +43,7 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
+		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"esc", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == messagesTab:
 		if m.selectedWorkerConversation() {
 			// The defect key only applies here. It takes the slot of the
@@ -236,7 +236,7 @@ func (m Model) helpContent(w int) []string {
 		{"m", "change the machine on By project"},
 		{"/", "search or filter"},
 		{"r", "rescan"},
-		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
+		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", esc returns, > skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},

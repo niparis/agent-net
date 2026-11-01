@@ -67,8 +67,8 @@
   m                    change the machine on By project
   /                    search or filter
   r                    rescan
-  c, C                 focus the Atlas box: enter opens the full Atlas, tab
-                       returns, esc skips a tip; n new, u undo, w drive 30m, m
+  c, C                 focus the Atlas box: enter opens the full Atlas, esc
+                       returns, > skips a tip; n new, u undo, w drive 30m, m
                        title, harness and model; pgup/pgdn scroll
   N                    name the machine of the session (every machine sees it;
                        empty resets)

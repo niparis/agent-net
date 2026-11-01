@@ -527,11 +527,11 @@ func TestCTOBoxHintAndHelp(t *testing.T) {
 	m = model.(Model)
 	m.focus = focusCTO
 	view := ansi.Strip(strings.Join(m.ctoView(80, 8), "\n"))
-	if !strings.Contains(view, "enter: open the CTO · tab: back") {
+	if !strings.Contains(view, "enter: open the CTO · esc: back") {
 		t.Fatalf("box hint missing:\n%s", view)
 	}
 	line := ansi.Strip(m.helpLine(100))
-	for _, want := range []string{"enter", "open CTO", "tab", "back"} {
+	for _, want := range []string{"enter", "open CTO", "esc", "back"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("key line missing %q: %s", want, line)
 		}

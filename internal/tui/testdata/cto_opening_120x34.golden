@@ -29,6 +29,6 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │ Opening the CTO…                                                                                                     │
-│ enter: open the Atlas · tab: back · w: drive 30m                                                                     │
+│ enter: open the Atlas · esc: back · w: drive 30m                                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter open Atlas  tab back  m model  n new  u undo
+enter open Atlas  esc back  m model  n new  u undo

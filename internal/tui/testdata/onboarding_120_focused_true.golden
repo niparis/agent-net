@@ -35,6 +35,6 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│ 1/7 See  All your agents, live. Enter opens tenebrae-53.  esc skip                                                   │
+│ 1/7 See  All your agents, live. Enter opens tenebrae-53.  > skip                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter open CTO  tab back  m model  n new  u undo
+enter open CTO  esc back  m model  n new  u undo

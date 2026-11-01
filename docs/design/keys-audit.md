@@ -23,7 +23,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 |---|---|
 | `1`-`5` | Open Sessions, Graph, Quotas, Messages or Tools. Not while filtering or in a text field. |
 | `c`, `C` | Focus the CTO box. |
-| `tab` | While the CTO box has focus, return to Sessions. |
+| `esc` | While the CTO box has focus, return to Sessions. |
 | `ctrl+c` | Quit at once. |
 | `q` | Quit, except in a text field or a modal that uses `q` for typing. |
 
@@ -259,8 +259,8 @@ the scrolling card body, so it never needs a second screen.
 
 | Key | Action |
 |---|---|
-| `tab` | Return focus to Sessions. |
-| `esc` | Skip the current onboarding tip, or return to Sessions when there is no tip. |
+| `esc` | Return focus to Sessions. `tab` is an unadvertised alias. |
+| `>` | Skip the current onboarding tip. |
 | `enter` | Open the full CTO through `cto_enter`; ctrl+] returns. |
 | `pgup`, `ctrl+u` | Scroll up, and load an older page at the top. |
 | `pgdown`, `ctrl+d` | Scroll down. |
@@ -348,7 +348,7 @@ Rules:
    - `space` toggles. Pause on Graph stays `space`; it is the same idea.
    - `y`/`n` answer a confirmation inside a modal only. They do no action on a
      list or overlay.
-7. **Digits stay global tabs.** `c` and `C` focus the CTO box; `tab` returns
+7. **Digits stay global tabs.** `c` and `C` focus the CTO box; `esc` returns
    from it. Text fields keep their typed letters and form-specific Tab actions.
 
 ### Proposed changes

@@ -129,7 +129,7 @@ func (m Model) onboardingLine(w int) string {
 	if step.id == "" {
 		line := "c: open the " + m.ctoTitle()
 		if m.focus == focusCTO {
-			line = "enter: open the " + m.ctoTitle() + " · tab: back"
+			line = "enter: open the " + m.ctoTitle() + " · esc: back"
 			now := time.Now()
 			if m.now != nil {
 				now = m.now()
@@ -144,8 +144,8 @@ func (m Model) onboardingLine(w int) string {
 	}
 	label := lipgloss.NewStyle().Foreground(roleAccent).Render(step.label)
 	line := label + "  " + step.text
-	if m.focus == focusCTO && lipgloss.Width(line)+len("  esc skip") <= w {
-		line += sDim.Render("  esc skip")
+	if m.focus == focusCTO && lipgloss.Width(line)+len("  > skip") <= w {
+		line += sDim.Render("  > skip")
 	}
 	return clip(line, w)
 }
