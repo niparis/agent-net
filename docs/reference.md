@@ -352,6 +352,8 @@ The bottom key bar always names the current mode's keys.
 
 These actions use owner-only daemon methods. New MCP wrappers are
 `tools_mcp_add`, `tools_mcp_remove`, `tools_mcp_test` and `tools_mcp_list`.
+Adding and removing a shared MCP server are owner-only: use the TUI or approve
+a CTO `mcp_change` proposal. Agent sessions can still list and test servers.
 `tools_import_folder` imports a folder on a chosen machine; `tools_keep_copy`
 authorizes the exact observed copies being replaced. Agent clients, including
 an agent running the owner CLI, cannot use them. Existing `tools_plan`,
@@ -857,9 +859,10 @@ manual inspection. A row summarizes observations, not proof that a running sessi
 A server in the [MCP registry](mcp-registry.md) is also a tool item of kind
 `mcp`. `tools_items` marks it `federated` and shows its `scope` (`global`,
 `projects` or `uninstalled`), the projects, its `host` and whether the host is
-online. A server added with `agent_mcp_add` or `agent-net mcp add` starts
-global, and a server that existed before scoping keeps that scope: no
-assignment means global.
+online. A server added by the owner with `agent-net mcp add` or the TUI, or by
+an approved CTO `mcp_change` proposal, starts global. A server that existed
+before scoping keeps that scope: no assignment means global. Agents can list
+and test shared servers but cannot add or remove them.
 
 Assign it the same way as a skill, with the exact item ID from `tools_items`:
 

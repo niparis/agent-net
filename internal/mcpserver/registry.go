@@ -13,31 +13,13 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-// The MCP registry in this server: four tools to manage it, and the registered
+// The MCP registry in this server: two read-only tools, and the registered
 // servers' tools, added and removed at run time as `<server>__<tool>`. The
 // SDK sends notifications/tools/list_changed to the client on every change.
 
 const (
 	appliesToAll = "This change applies to every agent on every machine."
-	secretNote   = " Never put a secret value in any argument: give an environment variable NAME or a file PATH that exists on this machine."
 )
-
-type mcpHeaderIn struct {
-	Name string `json:"name" jsonschema:"header name, for example Authorization"`
-	Env  string `json:"env,omitempty" jsonschema:"NAME of an environment variable on this machine that holds the value"`
-	File string `json:"file,omitempty" jsonschema:"PATH of a file on this machine that holds the value"`
-}
-
-type mcpAddIn struct {
-	Name           string        `json:"name" jsonschema:"server name: lowercase letters, numbers and hyphens, at most 24 characters"`
-	Command        string        `json:"command,omitempty" jsonschema:"stdio server: the program to run on this machine"`
-	Args           []string      `json:"args,omitempty" jsonschema:"stdio server: arguments for the program (stored in the registry and shown to everyone: no secrets)"`
-	Env            []string      `json:"env,omitempty" jsonschema:"stdio server: NAMES of environment variables to pass to the process, read on this machine"`
-	URL            string        `json:"url,omitempty" jsonschema:"remote server: its MCP endpoint URL"`
-	Transport      string        `json:"transport,omitempty" jsonschema:"remote server: http (streamable HTTP, default) or sse"`
-	Headers        []mcpHeaderIn `json:"headers,omitempty" jsonschema:"remote server: headers to send, each with the value's source (env var NAME or file PATH on this machine)"`
-	TimeoutSeconds int           `json:"timeout_seconds,omitempty" jsonschema:"per-call timeout in seconds (default 60, at most 600)"`
-}
 
 type mcpNameIn struct {
 	Name string `json:"name" jsonschema:"the server name from agent_mcp_list"`
@@ -48,35 +30,6 @@ type mcpListIn struct{}
 func addRegistryTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
 	tool := func(name, desc string) *mcp.Tool { return &mcp.Tool{Name: name, Description: desc} }
 
-	mcp.AddTool(s, tool("agent_mcp_add",
-		"Register an MCP server so that EVERY agent session on EVERY machine can use its tools, named `<server>__<tool>`. "+
-			"A stdio server (command, args) runs on THIS machine. A remote server (url) is reached from this machine. "+
-			"The server is connected and its tools listed before it is saved; the result names the tools. "+
-			"Ask your user before adding a server."+secretNote),
-		func(ctx context.Context, _ *mcp.CallToolRequest, in mcpAddIn) (*mcp.CallToolResult, any, error) {
-			srv := protocol.MCPServer{Name: in.Name, Command: in.Command, Args: in.Args, Env: in.Env,
-				URL: in.URL, TimeoutSec: in.TimeoutSeconds}
-			switch {
-			case in.URL != "":
-				srv.Transport = in.Transport
-				if srv.Transport == "" {
-					srv.Transport = protocol.MCPHTTP
-				}
-				for _, h := range in.Headers {
-					srv.Headers = append(srv.Headers, protocol.MCPHeader{Name: h.Name, Env: h.Env, File: h.File})
-				}
-			default:
-				srv.Transport = protocol.MCPStdio
-			}
-			if err := srv.Validate(); err != nil {
-				return nil, nil, err
-			}
-			out, err := run(ctx, "mcp_add", protocol.MCPAdd{Server: srv})
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, summarize(out, "added"), nil
-		})
 	mcp.AddTool(s, tool("agent_mcp_list",
 		"List the registered MCP servers: host machine, transport, auth source (a name or path, never a value), enabled, health, who added it, and tool names."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ mcpListIn) (*mcp.CallToolResult, any, error) {
@@ -91,15 +44,6 @@ func addRegistryTools(s *mcp.Server, run func(context.Context, string, any) (any
 		func(ctx context.Context, _ *mcp.CallToolRequest, in mcpNameIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "mcp_test", in)
 			return nil, out, err
-		})
-	mcp.AddTool(s, tool("agent_mcp_remove",
-		"Remove a registered MCP server. Its tools disappear for every agent on every machine. Ask your user first."),
-		func(ctx context.Context, _ *mcp.CallToolRequest, in mcpNameIn) (*mcp.CallToolResult, any, error) {
-			_, err := run(ctx, "mcp_remove", in)
-			if err != nil {
-				return nil, nil, err
-			}
-			return nil, map[string]any{"removed": in.Name, "note": appliesToAll}, nil
 		})
 }
 

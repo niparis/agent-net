@@ -133,6 +133,9 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 		if err != nil {
 			return nil, reject("bad mcp.remove")
 		}
+		if p.AddedBySession != "" && !validatingProposal(ctx) {
+			return nil, reject("shared MCP server changes are owner-only")
+		}
 		srv, ok, err := st.MCPServer(p.Name)
 		if err != nil {
 			return nil, err
@@ -222,6 +225,9 @@ func (g *Gateway) mcpList() ([]protocol.MCPServer, error) {
 }
 
 func (g *Gateway) mcpAdd(ctx context.Context, nc *nodeConn, p protocol.MCPAdd, validate ...bool) (any, error) {
+	if p.AddedBySession != "" && !validatingProposal(ctx) {
+		return nil, reject("shared MCP server changes are owner-only")
+	}
 	srv := p.Server
 	if err := srv.Validate(); err != nil {
 		return nil, reject("%v", err)

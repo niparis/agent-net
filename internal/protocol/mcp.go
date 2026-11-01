@@ -218,15 +218,19 @@ func (s *MCPServer) Validate() error {
 // Request payloads for the MCP registry frames.
 type (
 	// MCPAdd registers a server. On is a host name or node ID; only the CLI
-	// may set it, the daemon clears it for agents.
+	// may set it. AddedBySession attributes session-originated requests, which
+	// the gateway refuses outside proposal validation.
 	MCPAdd struct {
 		Server         MCPServer `json:"server"`
 		On             string    `json:"on,omitempty"`
 		AddedBySession string    `json:"added_by_session,omitempty"`
 		AddedByHarness string    `json:"added_by_harness,omitempty"`
 	}
+	// MCPName names a server. AddedBySession attributes a session-originated
+	// removal request for the gateway's owner check.
 	MCPName struct {
-		Name string `json:"name"`
+		Name           string `json:"name"`
+		AddedBySession string `json:"added_by_session,omitempty"`
 	}
 	MCPSetEnabled struct {
 		Name    string `json:"name"`
