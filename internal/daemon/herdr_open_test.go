@@ -267,7 +267,7 @@ func TestWorkerStartOpensViewBeforeDeliveringTask(t *testing.T) {
 	n.register(t, repo)
 	done := make(chan error, 1)
 	go func() {
-		_, err := n.cli.call("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Isolation: protocol.IsolationNone, Task: "FAKE:ignore"})
+		_, err := n.cli.call("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Project: "garden", Harness: "opencode", Isolation: protocol.IsolationNone, Task: "FAKE:ignore"})
 		done <- err
 	}()
 	eventually(t, "herdr opening the worker", func() bool { _, err := os.Stat(entered); return err == nil })
