@@ -220,3 +220,135 @@ func TestCTOV2ActionArgumentsReachExistingHandler(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOChangePart2CatalogAndActionValidation(t *testing.T) {
+	cs := ctoTestSession(t)
+	list, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range toolcatalog.ForRole(toolcatalog.RoleCTO) {
+		if !ctoV2Tools[entry.Name] {
+			continue
+		}
+		var got *mcp.Tool
+		for _, tool := range list.Tools {
+			if tool.Name == entry.Name {
+				got = tool
+				break
+			}
+		}
+		if got == nil {
+			t.Errorf("missing catalog tool %s", entry.Name)
+			continue
+		}
+		actual, _ := json.Marshal(got.InputSchema)
+		var want any
+		_ = json.Unmarshal(entry.InputSchema, &want)
+		wantBytes, _ := json.Marshal(want)
+		if !reflect.DeepEqual(actual, wantBytes) {
+			t.Errorf("%s input differs from catalog", entry.Name)
+		}
+	}
+	cases := []struct{ name, raw, want string }{
+		{"answer", `{"kind":"held","message_id":"m1","action":"a","id":"other"}`, `id`},
+		{"answer", `{"kind":"held","message_id":"m1"}`, `action`},
+		{"tools_change", `{"action":"apply"}`, `plan_id`},
+		{"tools_change", `{"action":"import"}`, `candidate`},
+		{"mcp_change", `{"action":"add"}`, `server`},
+		{"settings_change", `{"area":"notifications"}`, `disabled`},
+		{"project_change", `{"action":"create"}`, `path`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name+tc.want, func(t *testing.T) {
+			if err := ValidateCTOActionSchema(tc.name, json.RawMessage(tc.raw)); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestCTOChangePart2RoutesAndOutputs(t *testing.T) {
+	ctx := context.Background()
+	calls := []struct {
+		name string
+		args json.RawMessage
+	}{}
+	st, ct := mcp.NewInMemoryTransports()
+	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		b, _ := json.Marshal(params)
+		calls = append(calls, struct {
+			name string
+			args json.RawMessage
+		}{method, b})
+		return json.RawMessage(`"proposal test-id is in Needs you; the owner decides"`), nil
+	}, "test")
+	ss, err := srv.Connect(ctx, st, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ss.Close()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	cases := []struct{ name, raw string }{
+		{"answer", `{"kind":"held","message_id":"m","action":"a"}`}, {"answer", `{"kind":"inbox","id":"i","answer":"yes"}`}, {"answer", `{"kind":"outcome","reply_id":"m","action":"overrule"}`},
+		{"tools_change", `{"action":"plan","item":"i","target":{"scope":"global"}}`}, {"tools_change", `{"action":"apply","plan_id":"p"}`}, {"tools_change", `{"action":"undo","item":"i"}`}, {"tools_change", `{"action":"import","candidate":"c"}`}, {"tools_change", `{"action":"native_remove","undo_plan_id":"p"}`},
+		{"mcp_change", `{"action":"add","server":{"name":"s","transport":"stdio","command":"/bin/true"}}`}, {"mcp_change", `{"action":"remove","name":"s"}`}, {"mcp_change", `{"action":"test","name":"s"}`}, {"mcp_change", `{"action":"enable","name":"s","enabled":true}`},
+		{"settings_change", `{"area":"worker_profile_add","name":"p","harness":"anything","model":"m"}`}, {"settings_change", `{"area":"worker_profile_remove","name":"p"}`}, {"settings_change", `{"area":"worker_providers","providers":["p"]}`}, {"settings_change", `{"area":"protected_providers","protected_providers":["p"]}`}, {"settings_change", `{"area":"score","model":"m","score":50}`}, {"settings_change", `{"area":"integrations","peer_messages":true}`}, {"settings_change", `{"area":"notifications","disabled":true}`}, {"settings_change", `{"area":"cto","title":"CTO"}`}, {"settings_change", `{"area":"playbook","note":"hello"}`}, {"settings_change", `{"area":"machine_name","name":"desk"}`}, {"settings_change", `{"area":"invite"}`}, {"settings_change", `{"area":"onboarding"}`},
+		{"project_change", `{"action":"add","paths":["/tmp/project"]}`}, {"project_change", `{"action":"remove","name":"p"}`}, {"project_change", `{"action":"display","project":"p","name":"P"}`}, {"project_change", `{"action":"create","path":"~/project"}`},
+		{"mcp_call", `{"server":"s","tool":"list","arguments":{}}`}, {"cto_new", `{}`},
+	}
+	for _, tc := range cases {
+		var args map[string]any
+		_ = json.Unmarshal([]byte(tc.raw), &args)
+		res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: tc.name, Arguments: args})
+		if err != nil || res.IsError {
+			t.Fatalf("%s %s: result=%+v err=%v", tc.name, tc.raw, res, err)
+		}
+		var entry *toolcatalog.Tool
+		for i := range toolcatalog.Tools {
+			if toolcatalog.Tools[i].Name == tc.name {
+				entry = &toolcatalog.Tools[i]
+				break
+			}
+		}
+		if entry == nil {
+			t.Fatalf("missing catalog entry %s", tc.name)
+		}
+		var schema jsonschema.Schema
+		if err = json.Unmarshal(entry.OutputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		resolved, err := schema.Resolve(nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, _ := json.Marshal(res.StructuredContent)
+		var value any
+		_ = json.Unmarshal(encoded, &value)
+		if err = resolved.Validate(value); err != nil {
+			t.Errorf("%s output %s: %v", tc.name, encoded, err)
+		}
+		if len(res.Content) != 1 || res.Content[0].(*mcp.TextContent).Text != string(encoded) {
+			t.Errorf("%s text and structured content differ", tc.name)
+		}
+		if tc.name == "mcp_change" && strings.Contains(tc.raw, `"action":"add"`) {
+			got := res.StructuredContent.(map[string]any)
+			if got["state"] != "proposed" || got["proposal_id"] != "test-id" {
+				t.Errorf("mcp add was not returned as a proposal: %#v", got)
+			}
+		}
+	}
+	if len(calls) != len(cases) {
+		t.Fatalf("calls=%d want %d", len(calls), len(cases))
+	}
+	// mcp_change add must go through the proposal tool route and preserve args.
+	var result map[string]any
+	_ = json.Unmarshal([]byte(calls[8].args), &result)
+	if calls[8].name != "mcp_change" || result["action"] != "add" {
+		t.Fatalf("mcp add route: %s %s", calls[8].name, calls[8].args)
+	}
+}
