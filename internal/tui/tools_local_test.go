@@ -38,24 +38,16 @@ func TestToolsShowRepoOnlyForTrackedCopiesAndLocalForOthers(t *testing.T) {
 	if local == nil || local.Origin != toolsdiff.OriginLocal || local.From != "local homelab" {
 		t.Fatalf("uncommitted copy: %+v", local)
 	}
-	v := plain(m)
-	if !strings.Contains(v, "⌂ deploy-test-server") {
-		t.Errorf("a committed copy keeps the repo mark:\n%s", v)
+	if !strings.Contains(m.toolStatus(*repo), "in the sovl-clone repo") || !strings.Contains(m.toolStatus(*local), "not managed") {
+		t.Fatal("plain origin words missing")
 	}
-	if strings.Contains(v, "⌂ scratch-notes") {
-		t.Errorf("a local copy must not carry the repo mark:\n%s", v)
-	}
-	m = rowByNameFrom(m, "scratch-notes", "local")
-	v = plain(m)
-	if !strings.Contains(v, "local homelab") || !strings.Contains(v, "not committed") {
-		t.Errorf("local row or details missing:\n%s", v)
-	}
+
 }
 
 func TestToolsLocalCopyIsManagedLikeAUserCopy(t *testing.T) {
 	m, src := toolsAtScreen(120, 34, 1)
 	m = rowByNameFrom(m, "scratch-notes", "local")
-	m = pressKey(m, "a")
+	m = resolveTools(m.openRowPlan(true))
 	if m.tl.modal == nil {
 		t.Fatalf("a must open a plan: %q", m.tl.toast)
 	}
@@ -78,8 +70,8 @@ func TestToolsLocalCopyTurnOffUsesTheAssignmentPlan(t *testing.T) {
 	m, src := toolsAtScreen(120, 34, 1)
 	m = rowByNameFrom(m, "scratch-notes", "local")
 	// The first machine column is Nicolas-MBP; the copy lives on research.
-	m = pressKey(m, "l")
-	m = pressKey(m, "u")
+	m.tl.col++
+	m = resolveTools(m.openRowPlan(false))
 	if m.tl.modal == nil {
 		t.Fatalf("u must open a plan: %q", m.tl.toast)
 	}

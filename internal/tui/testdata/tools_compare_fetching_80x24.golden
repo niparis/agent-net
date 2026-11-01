@@ -1,5 +1,4 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────╮
 │   summary unavailable: compare the files below                               │
 │ a  keep the copy on Nicolas-MBP                                              │
@@ -12,8 +11,9 @@
 │                                                                              │
 │ a keep Nicolas-MBP  b keep research  d exact folders  esc cancel             │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-│ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
-╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
@@ -21,4 +21,4 @@
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+a keep Nicolas-MBP  b keep research  d exact folders  esc cancel

@@ -204,6 +204,11 @@ func (m Model) startGraph() (tea.Model, tea.Cmd) {
 	m.smoothCamera()
 	m.graphGeneration++
 	commands := []tea.Cmd{graphTick(m.graphGeneration)}
+	if !m.tl.loaded && !m.tl.loading {
+		model, cmd := m.loadTools()
+		m = model.(Model)
+		commands = append(commands, cmd)
+	}
 	if !m.graphTalkLoading {
 		m.graphTalkLoading = true
 		m.graphTalkPending = nil
@@ -292,7 +297,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		w, h := m.graphSize()
 		action = graphview.SelectNext{Viewport: graphview.Viewport{Width: float64(w), Height: float64(h)}}
 	case "t":
-		action = graphview.ToggleTalk{}
+		return m.startNodeTools(m.graphState.Graph.Selected())
 	case "o":
 		action = graphview.ToggleOrbit{}
 	case " ":
@@ -325,7 +330,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t talk  enter card  space pause  ? close  tab CTO  q quit"), sDim.Render("  n new session from selected project"))
+		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t tools  enter card  space pause  ? close  tab CTO  q quit"), sDim.Render("  n new session from selected project"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))
@@ -441,11 +446,11 @@ func (m Model) graphTalkCmd() tea.Cmd {
 // graphHintLine drops whole hints, starting with the least important. It holds
 // the keys used most on the graph; the full list is in the graph help panel.
 func graphHintLine(w int, paused bool) string {
-	hs := []hint{{"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"o", "orbit", 2}, {"t", "talk", 1}, {"enter", "card", 2}, {"?", "help", 0}}
+	hs := []hint{{"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"o", "orbit", 2}, {"t", "tools", 1}, {"enter", "card", 2}, {"?", "help", 0}}
 	if paused {
 		// The paused marker takes the place of the least used hint, so the
 		// line never grows past seven.
-		hs = []hint{{"paused", "·", 0}, {"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"t", "talk", 1}, {"enter", "card", 2}, {"?", "help", 0}}
+		hs = []hint{{"paused", "·", 0}, {"arrows", "select", 1}, {"+ -", "zoom", 1}, {"0", "fit", 2}, {"t", "tools", 1}, {"enter", "card", 2}, {"?", "help", 0}}
 	}
 	text := func() string {
 		parts := make([]string, 0, len(hs))

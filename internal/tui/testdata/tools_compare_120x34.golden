@@ -1,24 +1,24 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 7 sessions, 6 online · 1 busy                    updated 14:05:00
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
-Things that do not match across your machines. enter fixes the selected one, x accepts it as it is.
-╭─What differs · 1 to look at──────────────────────────────────────────────────────────────────────────────────────────╮
-│ ▸ ! demo has 2 different copies on research, 3 files differ                                                          │
-│     fix: compare, then keep one                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ 9 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │
+╭─Tools────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   NAME                            KIND   STATUS                                                                      │
+│ ! code-review                     skill  v1 on Nicolas-MBP, v3 on research                                           │
+│ ! design-taste-frontend           skill  found on 1 machine, not managed                                             │
+│ ! diagnosing-bugs                 skill  on everywhere; limited on one harness                                       │
+│   clean-architecture-python       skill  on everywhere                                                               │
+│   deploy-test-server              skill  in the sovl-clone repo                                                      │
+│   estate-runbook                  skill  in the homelab repo                                                         │
+│   found-skill-00                  skill  found on 2 machines, not managed                                            │
+│   found-skill-01                  skill  found on 2 machines, not managed                                            │
+│   found-skill-02                  skill  found on 2 machines, not managed                                            │
+│   found-skill-03                  skill  found on 2 machines, not managed                                            │
+│   found-skill-04                  skill  found on 1 machine, not managed                                             │
+│   found-skill-05                  skill  found on 1 machine, not managed                                             │
+│   found-skill-06                  skill  found on 1 machine, not managed                                             │
+│   found-skill-07                  skill  found on 1 machine, not managed                                             │
+│   found-skill-08                  skill  found on 1 machine, not managed                                             │
+│   found-skill-09                  skill  found on 1 machine, not managed                                             │
+│   found-skill-10                  skill  found on 1 machine, not managed                                             │
+│ 40 tools · ! needs attention · enter opens actions                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ Things that do not match across your machines. enter fixes the selected one, x a
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+j/k move  enter actions  / filter  n add  esc clear  ? help  q quit
