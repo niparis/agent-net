@@ -4,6 +4,7 @@
       "Activity": 1,
       "Name": "architect",
       "Label": "architect",
+      "Kind": "architect",
       "Role": "architect",
       "PreferredSide": "right",
       "Position": {
@@ -30,6 +31,7 @@
       "Activity": 1,
       "Name": "project-01",
       "Label": "project-01",
+      "Kind": "component",
       "Role": "busy",
       "PreferredSide": "right",
       "Position": {
@@ -56,6 +58,7 @@
       "Activity": 1,
       "Name": "project-02",
       "Label": "project-02",
+      "Kind": "component",
       "Role": "idle",
       "PreferredSide": "right",
       "Position": {
@@ -82,6 +85,7 @@
       "Activity": 1,
       "Name": "project-03",
       "Label": "project-03",
+      "Kind": "component",
       "Role": "idle",
       "PreferredSide": "right",
       "Position": {
@@ -108,6 +112,7 @@
       "Activity": 1,
       "Name": "project-04",
       "Label": "project-04",
+      "Kind": "component",
       "Role": "idle",
       "PreferredSide": "right",
       "Position": {
@@ -134,6 +139,7 @@
       "Activity": 1,
       "Name": "project-05",
       "Label": "project-05",
+      "Kind": "component",
       "Role": "idle",
       "PreferredSide": "right",
       "Position": {
@@ -160,6 +166,7 @@
       "Activity": 1,
       "Name": "project-06",
       "Label": "project-06",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -186,6 +193,7 @@
       "Activity": 1,
       "Name": "project-07",
       "Label": "project-07",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -212,6 +220,7 @@
       "Activity": 1,
       "Name": "project-08",
       "Label": "project-08",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -238,6 +247,7 @@
       "Activity": 1,
       "Name": "project-09",
       "Label": "project-09",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -264,6 +274,7 @@
       "Activity": 1,
       "Name": "project-10",
       "Label": "project-10",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -290,6 +301,7 @@
       "Activity": 1,
       "Name": "project-11",
       "Label": "project-11",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -316,6 +328,7 @@
       "Activity": 1,
       "Name": "project-12",
       "Label": "project-12",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -342,6 +355,7 @@
       "Activity": 1,
       "Name": "project-13",
       "Label": "project-13",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -368,6 +382,7 @@
       "Activity": 1,
       "Name": "project-14",
       "Label": "project-14",
+      "Kind": "component",
       "Role": "none",
       "PreferredSide": "right",
       "Position": {
@@ -406,7 +421,9 @@
         "Y": 0.7462223039630714
       },
       "Kind": "governs",
-      "Dashed": true
+      "Dashed": true,
+      "Selected": true,
+      "Dimmed": false
     },
     {
       "From": {
@@ -422,7 +439,9 @@
         "Y": 0.6481782875287557
       },
       "Kind": "depends",
-      "Dashed": false
+      "Dashed": false,
+      "Selected": false,
+      "Dimmed": true
     },
     {
       "From": {
@@ -438,7 +457,9 @@
         "Y": 0.5469358146490296
       },
       "Kind": "deploys",
-      "Dashed": false
+      "Dashed": false,
+      "Selected": false,
+      "Dimmed": true
     },
     {
       "From": {
@@ -454,7 +475,9 @@
         "Y": 0.44881257847129147
       },
       "Kind": "depends",
-      "Dashed": false
+      "Dashed": false,
+      "Selected": false,
+      "Dimmed": true
     },
     {
       "From": {
@@ -470,7 +493,9 @@
         "Y": 0.358292606396402
       },
       "Kind": "depends",
-      "Dashed": false
+      "Dashed": false,
+      "Selected": false,
+      "Dimmed": true
     }
   ],
   "Talk": null,

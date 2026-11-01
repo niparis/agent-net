@@ -39,7 +39,7 @@ func TestBrailleFeatures(t *testing.T) {
 			t.Errorf("missing %s in\n%s", want, out)
 		}
 	}
-	for _, role := range []string{"depends", "governs", "busy", "comet", "trail"} {
+	for _, role := range []string{"edgeDim", "busy", "comet", "trail"} {
 		if !roles[role] {
 			t.Errorf("missing role %s", role)
 		}
@@ -62,11 +62,92 @@ func TestBrailleSelectionAndFlash(t *testing.T) {
 	roles := map[string]bool{}
 	b := Braille{Color: func(role, text string) string { roles[role] = true; return text }}
 	out := strings.Join(renderGraph(b, g, g.Fit(80, 20), 80, 20, time.Unix(13, 100000000)), "\n")
-	if !strings.Contains(out, "▸") || !roles["selected"] {
+	if !strings.Contains(out, "(") || !strings.Contains(out, ")") || !roles["selected"] {
 		t.Fatal("selection not visible")
 	}
 	if !roles["flash"] {
 		t.Fatal("arrival flash not visible")
+	}
+}
+
+// selectionMarker reports where the selected node's disc sits in the output.
+func selectionMarker(t *testing.T, out Output, name string) (int, int, bool) {
+	t.Helper()
+	for y, line := range out.Lines {
+		for x, r := range []rune(line) {
+			if (r == '●' || r == '○') && out.Hits[Cell{X: x, Y: y}] == name {
+				return x, y, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+func TestSelectedNodeLabelAndMarkerUseSelectionStyle(t *testing.T) {
+	g := NewWithoutLayout(protocol.GraphView{
+		Nodes: []protocol.Node{{Name: "alpha", Kind: "component"}, {Name: "beta", Kind: "component"}},
+		Edges: []protocol.Edge{{From: "alpha", To: "beta", Kind: "depends"}},
+	})
+	g.Positions = map[string]Point{"alpha": {-2, 0}, "beta": {2, 0}}
+	scene := BuildScene(State{Graph: g, Camera: Camera{Zoom: 2, FitZoom: 2}}, Viewport{Width: 60, Height: 12})
+	roles := map[string][]rune{}
+	out := (Braille{Color: func(role, text string) string {
+		roles[role] = append(roles[role], []rune(text)...)
+		return text
+	}}).Render(scene, Size{Width: 60, Height: 12})
+	selectedLabel := string(roles["selectedLabel"])
+	if !strings.Contains(selectedLabel, "alpha") || strings.Contains(selectedLabel, "beta") {
+		t.Errorf("selected label style on %q", selectedLabel)
+	}
+	markerRole := string(roles["selected"])
+	if !strings.Contains(markerRole, "(") || !strings.Contains(markerRole, ")") {
+		t.Errorf("selection marker is not a bracket ring: %q", markerRole)
+	}
+	x, y, ok := selectionMarker(t, out, "alpha")
+	if !ok {
+		t.Fatalf("no selected marker:\n%s", strings.Join(out.Lines, "\n"))
+	}
+	line := []rune(out.Lines[y])
+	if x == 0 || x+1 >= len(line) || line[x-1] != '(' || line[x+1] != ')' {
+		t.Errorf("no bracket ring around the disc at %d,%d: %q", x, y, string(line))
+	}
+}
+
+func TestSelectionRingFollowsZoomAndPan(t *testing.T) {
+	for _, cam := range []Camera{
+		{Zoom: 2, FitZoom: 2},
+		{Zoom: 3.5, FitZoom: 2, Center: Point{0.2, -0.1}},
+	} {
+		g := NewWithoutLayout(protocol.GraphView{Nodes: []protocol.Node{{Name: "alpha"}, {Name: "beta"}}})
+		g.Positions = map[string]Point{"alpha": {-2, 0}, "beta": {2, 0}}
+		scene := BuildScene(State{Graph: g, Camera: cam}, Viewport{Width: 60, Height: 12})
+		out := (Braille{}).Render(scene, Size{Width: 60, Height: 12})
+		x, y, ok := selectionMarker(t, out, "alpha")
+		if !ok {
+			t.Fatalf("camera %+v lost the selected marker:\n%s", cam, strings.Join(out.Lines, "\n"))
+		}
+		line := []rune(out.Lines[y])
+		if x == 0 || x+1 >= len(line) || line[x-1] != '(' || line[x+1] != ')' {
+			t.Fatalf("camera %+v moved the ring off the disc at %d,%d: %q", cam, x, y, string(line))
+		}
+	}
+}
+
+func TestRendererAccentsSelectedEdgesAndDimsTheRest(t *testing.T) {
+	g := NewWithoutLayout(protocol.GraphView{
+		Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}},
+		Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}, {From: "c", To: "d", Kind: "depends"}},
+	})
+	g.Positions = map[string]Point{"a": {-3, -1}, "b": {-1, -1}, "c": {1, 1}, "d": {3, 1}}
+	g.selected = 0
+	scene := BuildScene(State{Graph: g, Camera: Camera{Zoom: 2, FitZoom: 2}}, Viewport{Width: 60, Height: 14})
+	roles := map[string]bool{}
+	(Braille{Color: func(role, text string) string { roles[role] = true; return text }}).Render(scene, Size{Width: 60, Height: 14})
+	if !roles["selectedEdge"] {
+		t.Error("neighbour edge is not accented")
+	}
+	if !roles["edgeDim"] {
+		t.Error("other edge is not dimmed")
 	}
 }
 
@@ -78,10 +159,10 @@ func TestBrailleDashAndEdgeRoles(t *testing.T) {
 	}
 	dots := func(kind string) int {
 		n := 0
-		roleSeen := false
+		seen := false
 		b := Braille{Color: func(role, text string) string {
-			if role == kind {
-				roleSeen = true
+			if role == "selectedEdge" || role == "edgeDim" || role == kind {
+				seen = true
 			}
 			for _, r := range text {
 				if r >= 0x2800 && r <= 0x28ff {
@@ -91,8 +172,8 @@ func TestBrailleDashAndEdgeRoles(t *testing.T) {
 			return text
 		}}
 		renderGraph(b, makeGraph(kind), Camera{Zoom: 3, FitZoom: 3}, 70, 10, time.Time{})
-		if !roleSeen {
-			t.Errorf("missing edge role %s", kind)
+		if !seen {
+			t.Errorf("missing edge role for %s", kind)
 		}
 		return n
 	}

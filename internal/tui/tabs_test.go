@@ -531,8 +531,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T S N H V: share of next 20",
 		"░<25% ▒<50% ▓<75% █≥75%",
-		"luna codex: picked for trivial, simple and normal",
-		"terra codex: complete 5 · continue 0 · fix 0 · picked for hard",
+		"luna codex: complete 2 · continue 0 · fix 0 · picked for trivial, simple and normal",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {

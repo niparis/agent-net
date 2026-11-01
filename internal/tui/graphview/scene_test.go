@@ -74,6 +74,28 @@ func TestSceneFixture(t *testing.T) {
 	}
 }
 
+func TestSceneMarksSelectionEdges(t *testing.T) {
+	g := NewWithoutLayout(protocol.GraphView{
+		Nodes: []protocol.Node{{Name: "a", Kind: "component"}, {Name: "b", Kind: "component"}, {Name: "c", Kind: "component"}, {Name: "d", Kind: "component"}},
+		Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}, {From: "c", To: "d", Kind: "depends"}},
+	})
+	g.Positions = map[string]Point{"a": {-3, -1}, "b": {-1, -1}, "c": {1, 1}, "d": {3, 1}}
+	g.selected = 0
+	scene := BuildScene(State{Graph: g, Camera: Camera{Zoom: 2, FitZoom: 2}}, Viewport{Width: 60, Height: 14})
+	if len(scene.Edges) != 2 {
+		t.Fatalf("scene has %d edges", len(scene.Edges))
+	}
+	if !scene.Edges[0].Selected || scene.Edges[0].Dimmed {
+		t.Errorf("neighbour edge is not accented: %+v", scene.Edges[0])
+	}
+	if scene.Edges[1].Selected || !scene.Edges[1].Dimmed {
+		t.Errorf("unrelated edge is not dimmed: %+v", scene.Edges[1])
+	}
+	if !scene.Nodes[0].Selected || scene.Nodes[0].Kind != "component" {
+		t.Errorf("selected node lost its kind: %+v", scene.Nodes[0])
+	}
+}
+
 func TestTalkSceneBucketsAndToggle(t *testing.T) {
 	s, _ := Update(State{}, GraphChanged{Graph: protocol.GraphView{Nodes: []protocol.Node{{Name: "a"}, {Name: "b"}, {Name: "c"}, {Name: "d"}}, Edges: []protocol.Edge{{From: "a", To: "b", Kind: "depends"}}}})
 	s, _ = Update(s, TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "a", To: "b", Count: 1, HasEdge: true}, {From: "a", To: "c", Count: 5}, {From: "a", To: "d", Count: 20}}})
