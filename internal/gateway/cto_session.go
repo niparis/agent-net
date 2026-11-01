@@ -7,6 +7,17 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// CTOSessionID returns the registered CTO network session, or "" when the
+// owner has not started the CTO yet.
+func (s *Store) CTOSessionID() (string, error) {
+	var id string
+	err := s.db.QueryRow(`SELECT value FROM owner_settings WHERE key='cto_session'`).Scan(&id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+	return id, nil
+}
+
 // RegisterCTOSession moves the one network identity to the owner's current
 // machine. Native harness conversations do not determine its identity.
 func (s *Store) RegisterCTOSession(node string) (string, error) {

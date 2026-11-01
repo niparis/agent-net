@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -181,6 +182,14 @@ type WorkerInfo struct {
 	// Permissions is the level the worker was started with (decision 0020):
 	// sandboxed, no-network or read-only. Only Codex workers apply it today.
 	Permissions string `json:"permissions,omitempty"`
+	// Continue counts the messages the caller sent after a hand-back with
+	// complete:no; Fix counts those after a hand-back with complete:yes.
+	Continue int `json:"continue,omitempty"`
+	Fix      int `json:"fix,omitempty"`
+	// DifficultyAsked is the difficulty the caller asked for (empty when it
+	// named none); DifficultyUsed is the level the chooser used.
+	DifficultyAsked string `json:"difficulty_asked,omitempty"`
+	DifficultyUsed  string `json:"difficulty_used,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -269,6 +278,10 @@ type (
 		// RecordTask is what the machine keeps as the worker's first task.
 		// Empty means Task.
 		RecordTask string `json:"record_task,omitempty"`
+		// DifficultyAsked and DifficultyUsed are kept on the worker record for
+		// the difficulty calibration (empty from an older gateway).
+		DifficultyAsked string `json:"difficulty_asked,omitempty"`
+		DifficultyUsed  string `json:"difficulty_used,omitempty"`
 	}
 	// WorkerLaunched answers "worker.launch". When the machine queued the
 	// start, Queued is true and SessionID is empty.
@@ -347,6 +360,17 @@ type (
 		// StartedAt is when the run began, in unix seconds. The gateway falls
 		// back to the worker session's start when an older daemon sends none.
 		StartedAt int64 `json:"started_at,omitempty"`
+		// Continue and Fix are the worker's counts after hand-backs, over its
+		// whole record. ContinueRun and FixRun are the part counted during
+		// this run. An older daemon sends none of them.
+		Continue    int `json:"continue,omitempty"`
+		Fix         int `json:"fix,omitempty"`
+		ContinueRun int `json:"continue_run,omitempty"`
+		FixRun      int `json:"fix_run,omitempty"`
+		// DifficultyAsked and DifficultyUsed are the difficulty the caller
+		// asked for and the level the chooser used.
+		DifficultyAsked string `json:"difficulty_asked,omitempty"`
+		DifficultyUsed  string `json:"difficulty_used,omitempty"`
 	}
 )
 
@@ -541,6 +565,10 @@ type WorkerNotice struct {
 	// Saved is true when the daemon committed the worker's unfinished changes
 	// on its branch.
 	Saved bool
+	// Continue and Fix are the worker's rework counters: the messages the
+	// caller sent after a hand-back with complete:no and complete:yes.
+	Continue int
+	Fix      int
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -570,6 +598,10 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 	}
 	if n.Cost != "" {
 		b.WriteString("cost: " + n.Cost + "\n")
+	}
+	if n.Continue > 0 || n.Fix > 0 {
+		// A first run has no rework; the line appears once there is one.
+		b.WriteString(fmt.Sprintf("continue: %d, fix: %d\n", n.Continue, n.Fix))
 	}
 	if n.Worktree != "" {
 		b.WriteString("worktree: " + n.Worktree + " (branch " + n.Branch + ")\n")

@@ -881,6 +881,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 			if p == "" {
 				p = a.Profile.Project
 			}
+			if a.Harness == "cto" {
+				p = protocol.CTONodeName
+			}
 			projects[a.SessionID] = p
 		}
 		events := graphview.FeedEvents{Events: r.events, LastID: lastID, CountAfter: m.graphTalkLastID, Now: r.at, Projects: projects}

@@ -83,7 +83,7 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 		if err = st.SetNodeHello(node, name, "1"); err != nil {
 			t.Fatal(err)
 		}
-		id, err := st.UpsertSession(w.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: name, Cwd: "/tmp/" + name, Repo: protocol.RepoInfo{Project: name}, Worker: &protocol.WorkerInfo{Project: name, Task: name}})
+		id, err := st.UpsertSession(w.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: name, Cwd: "/src/" + name, Repo: protocol.RepoInfo{Root: "/src/" + name, Project: name}, Worker: &protocol.WorkerInfo{Project: name, Task: name}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -130,6 +130,8 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 	source("mcp_list", map[string]any{}, &mcp)
 	var profiles []protocol.WorkerProfile
 	source(protocol.OpWorkerProfiles, map[string]any{}, &profiles)
+	var publicGraph protocol.PublicGraphPage
+	source("agent_graph", map[string]any{}, &publicGraph)
 	proposals, err := w.d.proposalRunner().list()
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +177,7 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 	if string(gotJSON) != string(directJSON) {
 		t.Fatalf("message differs from agent source: %s / %s", gotJSON, directJSON)
 	}
-	totals := map[string]int{"sessions": len(agents.Agents), "proposals": len(proposals), "feed": messages.Total, "messages": messages.Total, "graph": len(projects.Projects), "machines": len(nodes.Nodes), "projects": len(projects.Projects), "workers": len(protocol.WorkersOf(agents.Agents)), "tools": len(mcp.Servers), "settings": len(profiles)}
+	totals := map[string]int{"sessions": len(agents.Agents), "proposals": len(proposals), "feed": messages.Total, "messages": messages.Total, "graph": publicGraph.Total, "machines": len(nodes.Nodes), "projects": len(projects.Projects), "workers": len(protocol.WorkersOf(agents.Agents)), "tools": len(mcp.Servers), "settings": len(profiles)}
 	detail, err := w.d.runCTOToolRaw(ctx, "proposals", json.RawMessage(`{"id":"p_1"}`))
 	if err != nil {
 		t.Fatal(err)

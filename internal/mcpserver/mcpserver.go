@@ -62,6 +62,12 @@ type getIn struct {
 	SessionID string `json:"session_id" jsonschema:"the agent's session_id from agent_list"`
 }
 
+type graphIn struct {
+	Node   string `json:"node,omitempty" jsonschema:"one node: return its full charter and the edges that touch it"`
+	Offset int    `json:"offset,omitempty" jsonschema:"page start; 0 is the first node"`
+	Limit  int    `json:"limit,omitempty" jsonschema:"page size; default 20, at most 50"`
+}
+
 type announceIn struct {
 	Task         string   `json:"task" jsonschema:"your current task, in one short line"`
 	Function     string   `json:"function,omitempty" jsonschema:"ignored: the function is read from the project's AGENTS.md"`
@@ -179,6 +185,14 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	mcp.AddTool(s, tool("agent_get", "Show one agent session by session_id."),
 		func(ctx context.Context, _ *mcp.CallToolRequest, in getIn) (*mcp.CallToolResult, any, error) {
 			out, err := run(ctx, "get", in)
+			return nil, out, err
+		})
+	mcp.AddTool(s, tool("agent_graph",
+		"Read the component graph that every agent may see: every node's charter with its maturity, and every edge's kind, mode and request rule. "+
+			"With node, show that one node's full charter and the edges that touch it. Without node, offset and limit page the list; "+
+			"total counts the nodes and next is the next page offset. This is the public graph: node settings, learned-change history with evidence, hidden items, paths and sessions stay owner-only."),
+		func(ctx context.Context, _ *mcp.CallToolRequest, in graphIn) (*mcp.CallToolResult, any, error) {
+			out, err := run(ctx, "agent_graph", in)
 			return nil, out, err
 		})
 	mcp.AddTool(s, tool("agent_announce",

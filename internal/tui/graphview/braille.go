@@ -168,6 +168,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			marker = '●'
 		}
 		role := "node"
+		if n.Role == "cto" {
+			role = "cto"
+		}
 		if n.Role == "busy" {
 			role = "busy"
 			if n.Pulse {
@@ -390,6 +393,8 @@ func colorRole(role, text string) string {
 	case "depends", "trail":
 		color = lipgloss.AdaptiveColor{Light: "#00666b", Dark: "#5fc4c9"}
 	case "governs":
+		color = lipgloss.AdaptiveColor{Light: "#6445a1", Dark: "#b49cf5"}
+	case "cto":
 		color = lipgloss.AdaptiveColor{Light: "#6445a1", Dark: "#b49cf5"}
 	case "deploys", "selected", "flash", "busyPulse":
 		color = lipgloss.AdaptiveColor{Light: "#865000", Dark: "#f0b35a"}

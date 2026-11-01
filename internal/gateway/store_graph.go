@@ -24,6 +24,9 @@ func validGraphName(name string) bool {
 }
 
 func graphKind(tx *sql.Tx, name string) (string, error) {
+	if name == protocol.CTONodeName {
+		return "cto", nil
+	}
 	var kind string
 	err := tx.QueryRow(`SELECT kind FROM graph_nodes WHERE name=?`, name).Scan(&kind)
 	if err == nil {

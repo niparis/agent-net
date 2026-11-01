@@ -52,6 +52,20 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 	}
 }
 
+// Every agent can read the whole graph, so the guidance tells it to look at a
+// peer's charter before asking for something.
+func TestGuidanceSaysAgentsCanReadCharters(t *testing.T) {
+	for _, v := range []string{Claude, Other, Combined} {
+		b := Block(v)
+		if !strings.Contains(b, "agent_graph") {
+			t.Errorf("%s block does not name agent_graph", v)
+		}
+		if !strings.Contains(b, "charter") {
+			t.Errorf("%s block does not mention a charter", v)
+		}
+	}
+}
+
 func TestApplyInsertAndRerun(t *testing.T) {
 	out, changed := Apply("# Mine\n\n- rule\n", Claude)
 	if !changed || !strings.HasPrefix(out, "# Mine\n\n- rule\n\n"+Begin+"\n## agent-net") || !strings.HasSuffix(out, End+"\n") {

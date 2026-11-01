@@ -12,9 +12,9 @@ contains `[agent-net` or `<cross-session`, so it cannot imitate a note that
 agent-net writes. Agents never receive it: the notes and guidance they match
 always say `CTO`. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
-that token is an owner credential and must not be shared with agents. The
-`cto_send`, `cto_enter`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
-same gate. The daemon keeps CTO action lines in its private state database;
+that token is an owner credential and must not be shared with agents. The owner sends to the CTO with `owner_send` and reads its timeline with
+`session_text`; `session_enter` enters it. `cto_new`, `cto_settings` and
+`cto_graph_history` stay. All use the same gate. The daemon keeps CTO action lines in its private state database;
 these can include message and task text.
 
 Model score overrides, difficulty minimums and the worker provider allowlist are owner settings. The daemon's
@@ -79,10 +79,10 @@ payload, including MCP responses and tool plan paths.
 The read rule follows decision 0035: a CTO data view calls the same daemon
 function as its matching ordinary agent tool, with the CTO caller identity,
 never a CLI or owner identity. The parity table in [reference.md](reference.md)
-lists every source. Views with no ordinary tool are removed, including graph
-and charter history, Needs you, inboxes, settings, tools inventory, session
-text, the network feed and worker lists. Static charter guidance and the CTO's
-own timeline are the only exceptions. A protected-provider read schema exists
+lists every source. Views with no ordinary tool are removed, including charter
+history and the owner-only parts of the graph, Needs you, inboxes, settings,
+tools inventory, session text, the network feed and worker lists. Static
+charter guidance and the CTO's own timeline are the only exceptions. A protected-provider read schema exists
 for ordinary agents, but its daemon method is owner-gated, so it is removed
 from the CTO too. Caller-scoped reads use the registered CTO session ID, never
 the owner's ID. Before registration they fail closed.
@@ -92,7 +92,19 @@ reads retain them. Agent message lists force the bound caller's session ID;
 message status requires that caller to be a sender or recipient and never
 uses the owner-only body relay. The CTO uses those same checks. Public model
 playbook notes in `agent_nodes` remain public; the owner-only full playbook
-view is removed. No ordinary agent read is widened for the CTO.
+view is removed. No ordinary agent read is widened for the CTO, except where
+the owner widened it for every agent.
+
+**Charters and edges are public.** The owner decided that every agent may read
+the whole graph, so `agent_graph` returns every node's charter fields and
+maturity and every edge's kind, mode and request rule. The charter guide
+forbids secrets, IP addresses, tokens and paths in a charter. Everything else
+about a node stays owner-only: its policy settings (worker sandbox, delegation
+and owner settings), learned-change history and evidence, hidden items, and
+its locations, paths and sessions. The public read projects the graph onto
+those fields; it never copies a node's settings, even from old data the
+validator would now refuse. The CTO's `graph` view calls the same read with
+the CTO caller.
 
 A parity test pins every data view to its ordinary source and rejects a view
 without a source. A canary test plants private markers in waiting questions,
@@ -399,7 +411,7 @@ removed. Static charter guidance and the CTO's own timeline remain. Outcome
 notes carry no private result. The parity and canary tests enforce this rule.
 The CTO now uses its registered network session for these checks. The owner
 can hand one item over from the TUI with `c`: the preview shows the exact
-text, Enter sends it through the owner-gated `cto_send` method, and the text is
+text, Enter sends it with `owner_send` to the CTO session, and the text is
 capped at 4,000 characters. An agent session cannot call that method.
 Peer messages reach the CTO through normal delivery to its session (design part 7).
 
@@ -705,7 +717,7 @@ The link is an inference from the prompt and first matching send, not a signatur
 
 ## Graph foundation
 
-Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
+Graph operator methods use the owner gate, including history and graph reads. They refuse agent clients and CLI processes inside an agent session. The public agent graph read is separate: `agent_graph` is open to every agent and returns only charters, maturity and edges, never node settings or history. As with session policy, an enrolled machine can send the gateway frames, so the gateway trusts enrolled daemons. Charter values are at most 2048 UTF-8 bytes after control characters other than newline are removed. Charters and edge history must not contain secrets.
 
 ## Playbook notes
 

@@ -206,3 +206,39 @@ func TestVoiceFeedReplaysAndAnimates(t *testing.T) {
 		t.Fatalf("pulses: %+v", scene.Comets)
 	}
 }
+
+// The CTO is a node of its own. Only a send the owner approved as their own
+// words is a gold (voice) line; plain CTO talk is ordinary talk.
+func TestCTOFeedUsesTheCTONodeAndOnlyApprovedSendsAreVoice(t *testing.T) {
+	now := time.Unix(100, 0)
+	view := protocol.GraphView{
+		Nodes: []protocol.Node{{Name: "a", Kind: "component"}, {Name: "b", Kind: "component"}, {Name: protocol.CTONodeName, Kind: "cto"}},
+		Edges: []protocol.Edge{{From: "a", To: protocol.CTONodeName, Kind: "depends", Rule: "ask"}},
+	}
+	s := State{Now: now, TalkReady: true}
+	s, _ = Update(s, GraphChanged{Graph: view})
+	events := []protocol.FeedEvent{
+		{Event: protocol.Event{ID: 1, Kind: "msg.stored", Time: now}, From: "cto-session", To: "a", FromCTO: true, OwnerApproved: true},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", Time: now}, From: "cto-session", To: "b"},
+	}
+	s, _ = Update(s, FeedEvents{Events: events, Now: now, Projects: map[string]string{"cto-session": protocol.CTONodeName, "a": "a", "b": "b"}})
+	voice := map[string]bool{}
+	for _, talk := range s.Talk {
+		if talk.From == protocol.CTONodeName || talk.To == protocol.CTONodeName {
+			other := talk.From
+			if other == protocol.CTONodeName {
+				other = talk.To
+			}
+			voice[other] = talk.Voice
+		}
+	}
+	if !voice["a"] {
+		t.Fatalf("the approved CTO send is not a gold line: %+v", s.Talk)
+	}
+	if voice["b"] {
+		t.Fatalf("plain CTO talk is a gold line: %+v", s.Talk)
+	}
+	if len(s.Graph.Edges) != 1 || s.Graph.Edges[0].To != protocol.CTONodeName {
+		t.Fatalf("the edge to the CTO was lost: %+v", s.Graph.Edges)
+	}
+}

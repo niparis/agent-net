@@ -59,14 +59,14 @@ func TestCTONetworkMessages(t *testing.T) {
 		return protocol.Message{}
 	}
 	plain := send(false)
-	if plain.From != id || plain.FromCTO || plain.FromHarness != "cto" {
+	if plain.From != id || plain.FromCTO || plain.FromHarness != "cto" || plain.OwnerApproved {
 		t.Fatalf("plain: %+v", plain)
 	}
 	w.d.ctoGraph.mu.Lock()
 	w.d.ctoGraph.toggle(time.Now())
 	w.d.ctoGraph.mu.Unlock()
 	approved := send(true)
-	if approved.From != id || !approved.FromCTO {
+	if approved.From != id || !approved.FromCTO || !approved.OwnerApproved {
 		t.Fatalf("approved: %+v", approved)
 	}
 	result, err := w.d.readCTOTool(context.Background(), "messages", json.RawMessage(`{}`))

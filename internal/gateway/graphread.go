@@ -46,6 +46,15 @@ func projectOfSession(a protocol.AgentView) string {
 	return strings.TrimSpace(p)
 }
 
+// nodeName is the graph node a session speaks for. The CTO session speaks for
+// the fixed CTO node.
+func nodeName(a protocol.AgentView) string {
+	if a.Harness == "cto" {
+		return protocol.CTONodeName
+	}
+	return projectOfSession(a)
+}
+
 // RelationFor returns the relation line for a request from one session to
 // another. It is empty for a pair of sessions of the same node or when a node
 // is unknown.
@@ -62,7 +71,7 @@ func (s *Store) RelationFor(fromSession, toSession string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return protocol.RelationText(g, projectOfSession(from), projectOfSession(to)), nil
+	return protocol.RelationText(g, nodeName(from), nodeName(to)), nil
 }
 
 // handleGraphRead serves "graph.read".
@@ -102,7 +111,7 @@ func (s *Store) RequestRule(fromSession, toSession string) (string, error) {
 	if err != nil || !ok {
 		return "normal", err
 	}
-	source, target := projectOfSession(from), projectOfSession(to)
+	source, target := nodeName(from), nodeName(to)
 	if target == "" {
 		if to.PeerTrust {
 			return "auto", nil

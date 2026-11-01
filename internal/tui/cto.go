@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,11 +17,9 @@ import (
 )
 
 type ctoSource interface {
-	CTOEnter(context.Context) (protocol.EnterPlan, error)
 	CTONew(context.Context) error
 	CTOSettings(context.Context) (protocol.CTOSettings, error)
 	SetCTOSettings(context.Context, protocol.CTOSettingsRequest) (protocol.CTOSettings, error)
-	CTOEvents(context.Context, int) (protocol.CTOEvents, error)
 	CTOGraphHistory(context.Context, int64) ([]protocol.CTOGraphChange, error)
 	CTOUndo(context.Context, int64) error
 }
@@ -108,9 +107,34 @@ func (m Model) startCTO() (tea.Model, tea.Cmd) {
 	m.ctoGeneration++
 	return m, m.ctoPollCmd()
 }
+
+// ctoSessionID is the network session of the CTO. Before the snapshot lists it
+// the fixed name is used, and the daemon resolves it.
+func (m Model) ctoSessionID() string {
+	for _, a := range m.snap.Agents {
+		if a.Harness == "cto" {
+			return a.SessionID
+		}
+	}
+	return protocol.CTONodeName
+}
+
+// ctoEnterCmd asks session_enter for the CTO session. The Sessions row and the
+// CTO box use it, so both show the same plan.
+func (m Model) ctoEnterCmd(id string) tea.Cmd {
+	src, sock, hsock := m.src, m.tmuxSocket, m.herdrSocket
+	name := m.ctoTitle()
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
+		defer cancel()
+		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock})
+		return enterMsg{name: name, plan: plan, err: err, cto: true}
+	}
+}
 func (m Model) ctoPollCmd() tea.Cmd {
 	src := m.src.(ctoSource)
 	generation := m.cto.generation
+	session := m.ctoSessionID()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
@@ -126,15 +150,13 @@ func (m Model) ctoPollCmd() tea.Cmd {
 		if err != nil {
 			return ctoPollMsg{err: err, generation: generation}
 		}
-		events, err := src.CTOEvents(ctx, 0)
+		page, err := m.src.SessionText(ctx, protocol.TextQuery{SessionID: session, Limit: protocol.TextMaxLimit})
 		if err != nil {
 			return ctoPollMsg{err: err, generation: generation}
 		}
-		history, err := src.CTOGraphHistory(ctx, events.GraphAfter)
-		model := events.Model
-		if model == "" {
-			model = settings.Model
-		}
+		events := ctoEventsFromPage(page)
+		history, err := src.CTOGraphHistory(ctx, m.cto.lastGraphID)
+		model := settings.Model
 		if model == "" {
 			model = "default"
 		}
@@ -154,14 +176,40 @@ func (m Model) ctoPollCmd() tea.Cmd {
 	}
 }
 func (m Model) ctoOlderCmd() tea.Cmd {
-	src := m.src.(ctoSource)
-	generation, index := m.cto.generation, -m.cto.olderCursor
+	generation, cursor := m.cto.generation, m.cto.olderCursor
+	session := m.ctoSessionID()
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
-		events, err := src.CTOEvents(ctx, index)
-		return ctoOlderMsg{events: events, err: err, generation: generation}
+		page, err := m.src.SessionText(ctx, protocol.TextQuery{SessionID: session, Before: strconv.Itoa(cursor), Limit: protocol.TextMaxLimit})
+		return ctoOlderMsg{events: ctoEventsFromPage(page), err: err, generation: generation}
 	}
+}
+
+// ctoEventsFromPage turns a page of the CTO session's text into the timeline
+// the box draws. The daemon marks a graph action with the cto_action tool and a
+// harness failure with cto_error.
+func ctoEventsFromPage(page protocol.TextPage) protocol.CTOEvents {
+	out := protocol.CTOEvents{Messages: []json.RawMessage{}, Actions: []protocol.CTOAction{}}
+	for _, e := range page.Entries {
+		switch e.Tool {
+		case "cto_action":
+			out.Actions = append(out.Actions, protocol.CTOAction{Text: e.Text, At: e.Time * int64(time.Millisecond)})
+		case "cto_error":
+			raw, _ := json.Marshal(map[string]any{"type": "assistant", "error": map[string]string{"message": e.Text}})
+			out.Messages = append(out.Messages, raw)
+		default:
+			raw, _ := json.Marshal(map[string]any{"type": e.Role, "text": e.Text, "time": map[string]int64{"created": e.Time}})
+			out.Messages = append(out.Messages, raw)
+		}
+	}
+	if n, err := strconv.Atoi(page.Older); err == nil {
+		out.Older = n
+	}
+	if n, err := strconv.Atoi(page.Newer); err == nil {
+		out.Next = n
+	}
+	return out
 }
 
 func mergeCTOEventPages(older []protocol.CTOEvents, latest protocol.CTOEvents) protocol.CTOEvents {
@@ -297,7 +345,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 			defer cancel()
-			history, err := src.CTOGraphHistory(ctx, 0)
+			history, err := src.CTOGraphHistory(ctx, m.cto.lastGraphID)
 			if err != nil {
 				return ctoUndoMsg{err: err, generation: g}
 			}
@@ -312,17 +360,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if k.Type == tea.KeyEnter {
-		src, ok := m.src.(ctoSource)
-		if !ok {
-			c.err = "CTO is unavailable"
-			return m, nil
-		}
-		return m, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), operator.StartTimeout)
-			defer cancel()
-			plan, err := src.CTOEnter(ctx)
-			return enterMsg{name: "CTO", plan: plan, err: err}
-		}
+		return m, m.ctoEnterCmd(m.ctoSessionID())
 	}
 	return m, nil
 }
