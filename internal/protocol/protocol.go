@@ -404,6 +404,7 @@ type (
 		SessionID      string `json:"session_id,omitempty"`
 		ConversationID string `json:"conversation_id,omitempty"`
 		Limit          int    `json:"limit,omitempty"`
+		Offset         int    `json:"offset,omitempty"`
 	}
 	QueryMessage struct {
 		MessageID string `json:"message_id"`

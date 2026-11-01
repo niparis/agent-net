@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"charter_guide", "rule auto", "depends", "diff", "undo", "Every owner-only change is a proposal in Needs you", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"graph with view guide", "rule auto", "depends", "diff", "undo", "Every owner-only change is a proposal in Needs you", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -525,12 +525,12 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("graph_undo", map[string]any{})
 	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
 	call("node_remove", map[string]any{"name": "component"})
-	call("nodes", map[string]any{})
+	call("machines", map[string]any{})
 	call("projects", map[string]any{})
 	call("node_settings_set", map[string]any{"node": "architecture", "setting": "merge_authority", "value": "ask"})
 	call("playbook_set", map[string]any{"model": "fake/m1", "note": "use tests"})
-	call("mcp_list", map[string]any{})
-	call("agents", map[string]any{})
+	call("tools", map[string]any{"view": "mcp"})
+	call("sessions", map[string]any{})
 	var agents protocol.AgentsResult
 	json.Unmarshal(w.cli.mustCall("list", nil), &agents)
 	target := ""
@@ -565,7 +565,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("CTO reply not delivered")
 	}
-	call("get", map[string]any{"session_id": target})
+	call("session", map[string]any{"session_id": target})
 	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
 	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
@@ -590,7 +590,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read agents", "charter_set: proposal", "sent to", "worker_start: proposal"} {
+	for _, want := range []string{"read sessions", "charter_set: proposal", "sent to", "worker_start: proposal"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}

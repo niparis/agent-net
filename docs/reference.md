@@ -34,9 +34,9 @@ a proposal. `cto_settings` and `notification_settings` only propose changes,
 including empty calls. They never return owner settings to the CTO.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
-registered CTO session as caller rather than the owner. Static `charter_guide`
-text and the CTO's own `cto_events` timeline are the only exceptions. Message
-lists and status return only the CTO's own conversations. Owner-only data
+registered CTO session as caller rather than the owner. Static charter guidance
+and the CTO's own proposals are the exceptions. Message lists and details
+return only the CTO's own conversations. Owner-only data
 enters the conversation only when the owner shares it.
 
 Starting or entering the CTO through the owner gate registers one network
@@ -190,7 +190,7 @@ Missing capabilities or permissions stop startup before an owner prompt is sent.
 Harness versions are logged for diagnosis, without a version allowlist.
 No model call was used to verify runtime enforcement.
 
-The `charter_guide` CTO tool returns the charter writing guide on demand.
+The CTO reads the charter writing guide with `graph` and `view: "guide"`.
 The `charter_set` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
@@ -199,38 +199,31 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. Needs you shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The table pins CTO read views to ordinary agent-net tools or an explicit
-static/own-conversation source. CTO tool names are private to the CTO and
-are not in the shared MCP registry.
+The CTO starts with `overview`, which counts online sessions, machines,
+running workers and its own open proposals. List views return `items`, `total`
+and, when another page exists, `next`. Pass `next` as `offset` to read the
+next page. The default page is 20 items and the maximum is 50. Rows contain
+short fields; use a detail view when needed.
 
-| Ordinary agent tool or source | CTO read view |
+| CTO read | Source and detail |
 |---|---|
-| `agent_list` via `list` | `agents` |
-| `agent_get` via `get` | `get` |
-| `agent_nodes` via `nodes` | `nodes` |
-| `agent_project_list` via `projects` | `projects` |
-| `agent_messages` via `messages` | `messages`, scoped to the CTO caller |
-| `agent_message_status` via `message_status` | `message_status`, scoped to the CTO caller; no owner relay |
-| `agent_mcp_list` via `mcp_list` | `mcp_list` |
-| `agent_worker_profiles` via `worker_profiles` | `worker_profile_list` |
-| Static `protocol.CharterGuideText` | `charter_guide` |
-| The CTO's own timeline | `cto_events` |
+| `overview` | `agent_list`, `agent_nodes` and the CTO's own proposals |
+| `sessions`, `session` | `agent_list` and `agent_get`; `session` takes `session_id` |
+| `proposals` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
+| `feed`, `messages` | The CTO's conversations via `agent_messages`; feed has metadata only. `messages` takes `message_id` for a body via `agent_message_status`. |
+| `graph`, `projects` | Public projects via `agent_project_list`. `graph` takes `node` for project detail or `view: "guide"` for charter guidance. Agent tools do not expose graph edges. |
+| `machines` | `agent_nodes`; `machine` selects a machine, and `harness` lists its models. |
+| `workers` | Workers from `agent_list`; `id` reads a worker profile via `agent_get`. |
+| `tools` | Shared MCP server rows from `agent_mcp_list`; `view` is `mcp`. |
+| `settings` | Public worker profiles via `agent_worker_profiles`; `area` is `worker_profiles`. |
 
-The parity test pins every read view to this source. A new read without a
-source fails the test. `agents` and `get` omit waiting-question contents on
-ordinary agent connections as well as the CTO channel. Owner CLI/TUI views
-keep them. `messages` ignores a supplied `session_id`; `message_status`
-requires the caller to be a sender or recipient.
-
-Removed CTO reads: `needs_you`, `held_list`, `inbox_list`, `outcome_inbox`,
-`session_text`, `usage`, `usage_top`, `counts`, `graph_get`, `graph_view`,
-`charter_history`, `edge_history`, `charter_suggestions`, `tools_list`,
-`tools_differences`, `tools_history`, `mcp_import_candidates`, `integrations_get`,
-`node_settings_get`, `playbook_get`, `project_display_get`, `protected_providers_get`,
-`info`, `workers`, `feed`, `session_enter`, `cto_enter` and `cto_graph_history`.
-`protected_providers_get` has an ordinary MCP schema but its daemon method is
-owner-gated, so the CTO cannot use it. `feed` and `workers` have no ordinary
-agent MCP tool. Public model notes remain visible through `nodes`.
+The parity and canary tests cover the views. Session reads omit waiting-question
+contents. Message reads use the registered CTO caller and cannot access another
+conversation. Message lists require a gateway that supports pagination; older
+gateways return an upgrade error. `protected_providers_get` has an ordinary MCP schema but its daemon
+method is owner-gated, so the CTO cannot read that setting. Needs you, other
+sessions' text, owner inboxes, tool inventory and owner settings remain outside
+the CTO's read tools.
 
 Change tools remain proposals: graph and charter writes, worker start/stop,
 session trust/policy/names, held/inbox/outcome answers, settings and playbook
@@ -1177,7 +1170,7 @@ Each entry has the machine, the path of the main working tree, the identity deri
 
 **Project identity and display name.** The last part of the `origin` URL, without `.git`, is the project identity. For example, `https://example.com/team/agent-net.git` gives `agent-net` even when the checkout folder has another name. With no usable origin, the main tree folder name is used. Repositories with the same last remote path part share an identity, even when their owners or hosts differ.
 
-The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, and reads display names through `projects`, `agents` or `get`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
+The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, and reads display names through `projects` or `session`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
 
 On upgrade, the gateway uses stored origin URLs to move old folder-based project data to the repository identity. When charters meet, both texts are kept and `project.identity_merge` is logged. If graph controls conflict, that pair is left unchanged, `project.identity_conflict` is logged with `from` and `to`, and the gateway continues with other projects. Ambiguous folder names that point to different repository identities are left alone. This migration runs once; logged conflicts and ambiguous mappings need review.
 

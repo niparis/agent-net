@@ -44,6 +44,16 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
+	"workers":               {desc: "List workers or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"tools":                 {desc: "List shared MCP servers.", fields: map[string]ctoField{"view": {typ: "string", enum: []string{"mcp"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"settings":              {desc: "List public worker profiles.", fields: map[string]ctoField{"area": {typ: "string", enum: []string{"worker_profiles"}}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"graph":                 {desc: "List public project nodes or read the guide.", fields: map[string]ctoField{"view": {typ: "string"}, "node": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"machines":              {desc: "List machines or a harness's models.", fields: map[string]ctoField{"machine": {typ: "string"}, "harness": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"proposals":             {desc: "List own proposals or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"feed":                  {desc: "List own conversation metadata.", fields: map[string]ctoField{"limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"overview":              {desc: "Public network counts."},
+	"sessions":              {desc: "List sessions.", fields: map[string]ctoField{"limit": {typ: "integer"}, "offset": {typ: "integer"}, "text": {typ: "string"}, "project": {typ: "string"}, "harness": {typ: "string"}, "capability": {typ: "string"}, "online_only": {typ: "boolean"}, "include_owners": {typ: "boolean"}}},
+	"session":               {desc: "Read a session profile.", fields: map[string]ctoField{"session_id": {typ: "string"}}},
 	"charter_guide":         {desc: "Read charter guide.", fields: map[string]ctoField{}},
 	"onboarding_restart":    {desc: "Restart the getting-started steps.", fields: map[string]ctoField{}},
 	"notification_settings": {desc: "Propose notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true."}}},
@@ -254,9 +264,6 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-			if method == "charter_guide" {
-				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: protocol.CharterGuideText()}}}, nil
-			}
 			raw, err := call(ctx, method, req.Params.Arguments)
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil

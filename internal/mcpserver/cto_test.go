@@ -16,6 +16,9 @@ func ctoTestSession(t *testing.T) *mcp.ClientSession {
 	ctx := context.Background()
 	st, ct := mcp.NewInMemoryTransports()
 	srv := NewCTO(func(_ context.Context, method string, params any) (json.RawMessage, error) {
+		if method == "graph" {
+			return json.Marshal(protocol.CharterGuideText())
+		}
 		if method == "charter_set" {
 			return json.RawMessage(`{"ok":true,"warnings":["needs: too long/too detailed for a charter: keep it to names and pointers; put detail in AGENTS.md"]}`), nil
 		}
@@ -64,7 +67,7 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	for _, tl := range list.Tools {
 		tools[tl.Name] = tl
 	}
-	wantTools := []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "agents", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove", "worker_profile_list"}
+	wantTools := []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "sessions", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove"}
 	have := map[string]bool{}
 	for _, name := range tools {
 		have[name.Name] = true
@@ -187,7 +190,7 @@ func TestCTOToolsForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cs.Close()
-	for _, name := range []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "agents", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove", "worker_profile_list"} {
+	for _, name := range []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "sessions", "send", "worker_start", "score_set", "worker_providers_set", "worker_profile_add", "worker_profile_remove"} {
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: map[string]any{}})
 		if err != nil || out.IsError || !seen[name] {
 			t.Errorf("%s: %+v %v", name, out, err)
@@ -205,7 +208,7 @@ func TestCTOParityTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		got[tool.Name] = true
 	}
-	for _, name := range []string{"nodes", "projects", "project_add", "project_remove", "get", "messages", "message_status", "session_trust", "session_policy", "node_rename", "integrations_set", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "node_settings_set", "playbook_set", "learn", "mcp_list", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings", "cto_send", "cto_new", "cto_events", "invite"} {
+	for _, name := range []string{"machines", "projects", "project_add", "project_remove", "session", "messages", "session_trust", "session_policy", "node_rename", "integrations_set", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "node_settings_set", "playbook_set", "learn", "tools", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings", "cto_send", "cto_new", "invite"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
@@ -369,7 +372,7 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 
 func TestCTOCharterGuideView(t *testing.T) {
 	cs := ctoTestSession(t)
-	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "charter_guide"})
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "graph", Arguments: map[string]any{"view": "guide"}})
 	if err != nil || result.IsError {
 		t.Fatalf("guide: %v %v", result, err)
 	}
