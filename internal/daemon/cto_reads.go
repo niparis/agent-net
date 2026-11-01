@@ -248,18 +248,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		if err != nil {
 			return nil, err
 		}
-		var result struct {
-			Messages []protocol.Message `json:"messages"`
-			Total    int                `json:"total"`
-		}
-		if err = ctoDecode(value, &result); err != nil {
-			return nil, err
-		}
-		page := ctoList[ctoConversationRow]{Items: ctoConversationRows(result.Messages, name == "feed"), Total: result.Total}
-		if q.Offset+len(result.Messages) < result.Total {
-			page.Next = q.Offset + len(result.Messages)
-		}
-		return page, nil
+		return ctoDecodeMessagePage(value, q.Offset, name == "feed")
 
 	case "sessions", "overview":
 		var q struct {
@@ -441,4 +430,22 @@ func ctoWorkerRows(agents []protocol.AgentView) []ctoWorkerRow {
 		rows = append(rows, ctoWorkerRow{w.SessionID, ctoCut(w.Project, 80), ctoCut(w.Status, 30), ctoCut(w.Task, 80)})
 	}
 	return rows
+}
+
+func ctoDecodeMessagePage(value any, offset int, feed bool) (ctoList[ctoConversationRow], error) {
+	var result struct {
+		Messages []protocol.Message `json:"messages"`
+		Total    *int               `json:"total"`
+	}
+	if err := ctoDecode(value, &result); err != nil {
+		return ctoList[ctoConversationRow]{}, err
+	}
+	if result.Total == nil {
+		return ctoList[ctoConversationRow]{}, errors.New("gateway does not support message pagination; upgrade the gateway")
+	}
+	page := ctoList[ctoConversationRow]{Items: ctoConversationRows(result.Messages, feed), Total: *result.Total}
+	if offset+len(result.Messages) < *result.Total {
+		page.Next = offset + len(result.Messages)
+	}
+	return page, nil
 }

@@ -219,7 +219,8 @@ short fields; use a detail view when needed.
 
 The parity and canary tests cover the views. Session reads omit waiting-question
 contents. Message reads use the registered CTO caller and cannot access another
-conversation. `protected_providers_get` has an ordinary MCP schema but its daemon
+conversation. Message lists require a gateway that supports pagination; older
+gateways return an upgrade error. `protected_providers_get` has an ordinary MCP schema but its daemon
 method is owner-gated, so the CTO cannot read that setting. Needs you, other
 sessions' text, owner inboxes, tool inventory and owner settings remain outside
 the CTO's read tools.

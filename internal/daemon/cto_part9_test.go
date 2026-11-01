@@ -221,3 +221,9 @@ func TestCTOGraphGuideExplainsEdges(t *testing.T) {
 		}
 	}
 }
+
+func TestCTOMessagePageRequiresTotal(t *testing.T) {
+	if _, err := ctoDecodeMessagePage(json.RawMessage(`{"messages":[]}`), 0, false); err == nil {
+		t.Fatal("old gateway without total accepted")
+	}
+}
