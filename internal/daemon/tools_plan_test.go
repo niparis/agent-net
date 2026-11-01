@@ -139,8 +139,8 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 			t.Fatal("charter need created assignment")
 		}
 	}
-	req, _ := json.Marshal(protocol.ToolPlanRequest{Item: item.ID, Target: protocol.ToolAssignment{Scope: "global"}})
-	value, err := n.d.runCTOToolRaw(context.Background(), "tools_plan", req)
+	req, _ := json.Marshal(map[string]any{"action": "plan", "item": item.ID, "target": protocol.ToolAssignment{Scope: "global"}})
+	value, err := n.d.runCTOToolRaw(context.Background(), "tools_change", req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,8 +149,8 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 	if json.Unmarshal(b, &p) != nil || !strings.HasPrefix(p.Actor, "owner (CTO proposal p_") {
 		t.Fatalf("CTO actor: %s", b)
 	}
-	apply, _ := json.Marshal(protocol.ToolPlanID{ID: p.ID})
-	if value, err = n.d.runCTOToolRaw(context.Background(), "tools_apply", apply); err != nil {
+	apply, _ := json.Marshal(map[string]string{"action": "apply", "plan_id": p.ID})
+	if value, err = n.d.runCTOToolRaw(context.Background(), "tools_change", apply); err != nil {
 		t.Fatal(err)
 	}
 	approveCTOToolResult(t, n.d, value)

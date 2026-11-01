@@ -86,6 +86,13 @@ func TestCTOWindowExpiryAndRestart(t *testing.T) {
 	}
 }
 
+func ctoGraphArgs(action, args string) json.RawMessage {
+	if args == "" || args == "{}" {
+		return json.RawMessage(`{"action":"` + action + `"}`)
+	}
+	return json.RawMessage(`{"action":"` + action + `",` + strings.TrimPrefix(args, "{"))
+}
+
 func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -97,7 +104,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	if _, err := g.gw.Store().UpsertSession(n.d.cfg.NodeID, protocol.SessionInfo{Harness: "pi", NativeID: "component", Name: "component", Repo: protocol.RepoInfo{Project: "component", Root: "/work/component"}}); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range []struct{ tool, args string }{
+	for _, c := range []struct{ action, args string }{
 		{"charter_set", `{"node":"first","attr":"purpose","value":"Help with work"}`},
 		{"charter_set", `{"node":"first","attr":"accepts","value":"features"}`},
 		{"charter_set", `{"node":"first","attr":"needs","value":"help"}`},
@@ -105,13 +112,13 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 		{"node_add", `{"name":"helper"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends"}`},
 		{"edge_remove", `{"from":"first","to":"second","kind":"depends"}`},
-		{"graph_undo", `{"id":0}`},
+		{"undo", `{"id":0}`},
 	} {
-		t.Run(c.tool+c.args, func(t *testing.T) {
-			if c.tool == "edge_remove" {
+		t.Run(c.action+c.args, func(t *testing.T) {
+			if c.action == "edge_remove" {
 				cli.mustCall("edge_set", map[string]string{"from": "first", "to": "second", "kind": "depends"})
 			}
-			if c.tool == "graph_undo" {
+			if c.action == "undo" {
 				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "notes", "value": "base note"})
 				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "notes", "value": "temporary note"})
 			}
@@ -119,7 +126,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 			if err := n.d.st.db.QueryRow(`SELECT count(*) FROM cto_actions WHERE text LIKE 'CTO (minor): applied %'`).Scan(&before); err != nil {
 				t.Fatal(err)
 			}
-			got, err := n.d.runCTOToolRaw(ctx, c.tool, json.RawMessage(c.args))
+			got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(c.action, c.args))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -135,7 +142,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 				t.Fatalf("notice %d %v", notices, err)
 			}
 			cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: h[len(h)-1].ID})
-			if c.tool == "edge_remove" {
+			if c.action == "edge_remove" {
 				cli.mustCall("edge_remove", map[string]string{"from": "first", "to": "second", "kind": "depends"})
 			}
 		})
@@ -144,7 +151,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
-	if _, err := n.d.runCTOToolRaw(ctx, "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"Routine wording"}`)); err != nil {
+	if _, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Routine wording"}`)); err != nil {
 		t.Fatal(err)
 	}
 	changes, err := g.gw.Store().CharterHistory("first", 1)
@@ -155,29 +162,29 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
-	for _, c := range []struct{ tool, args string }{
+	for _, c := range []struct{ action, args string }{
 		{"charter_set", `{"node":"first","attr":"purpose","value":"Only local work"}`},
 		{"charter_set", `{"node":"first","attr":"refuses","value":"deployments"}`},
 		{"charter_set", `{"node":"first","attr":"escalate","value":"owner"}`},
 		{"charter_set", `{"node":"first","attr":"maturity","value":"mature"}`},
-		{"node_settings_set", `{"node":"first","setting":"deploy_rule","value":"brief"}`},
+		{"settings_set", `{"node":"first","setting":"deploy_rule","value":"brief"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"auto"}`},
 		{"edge_set", `{"from":"first","to":"component","kind":"governs","mode":"owner"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"deploys"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"ask"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"never"}`},
 		{"edge_remove", `{"from":"first","to":"second","kind":"depends"}`},
-		{"graph_undo", `{"id":0}`},
+		{"undo", `{"id":0}`},
 		{"node_remove", `{"name":"second"}`},
 	} {
-		t.Run("major/"+c.tool+c.args, func(t *testing.T) {
-			if c.tool == "edge_remove" {
+		t.Run("major/"+c.action+c.args, func(t *testing.T) {
+			if c.action == "edge_remove" {
 				cli.mustCall("edge_set", map[string]string{"from": "first", "to": "second", "kind": "depends", "rule": "auto"})
 			}
-			if c.tool == "graph_undo" {
+			if c.action == "undo" {
 				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "refuses", "value": "deployments"})
 			}
-			got, err := n.d.runCTOToolRaw(ctx, c.tool, json.RawMessage(c.args))
+			got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(c.action, c.args))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -191,7 +198,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 			n.d.ctoGraph.mu.Lock()
 			n.d.ctoGraph.toggle(time.Now())
 			n.d.ctoGraph.mu.Unlock()
-			_, err = n.d.runCTOToolRaw(ctx, c.tool, json.RawMessage(c.args))
+			_, err = n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs(c.action, c.args))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -207,13 +214,13 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 				t.Fatalf("history %v %v", h, err)
 			}
 			cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: h[len(h)-1].ID})
-			if c.tool == "edge_remove" {
+			if c.action == "edge_remove" {
 				cli.mustCall("edge_remove", map[string]string{"from": "first", "to": "second", "kind": "depends"})
 			}
 		})
 	}
 	cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "maturity", "value": "critical - production"})
-	got, err := n.d.runCTOToolRaw(ctx, "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"Helpful wording"}`))
+	got, err := n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Helpful wording"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,10 +230,10 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.toggle(time.Now())
 	n.d.ctoGraph.mu.Unlock()
-	if _, err = n.d.runCTOToolRaw(ctx, "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"Helpful wording"}`)); err != nil {
+	if _, err = n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Helpful wording"}`)); err != nil {
 		t.Fatal(err)
 	}
-	got, err = n.d.runCTOToolRaw(ctx, "notification_settings", json.RawMessage(`{"disabled":true}`))
+	got, err = n.d.runCTOToolRaw(ctx, "settings_change", json.RawMessage(`{"area":"notifications","disabled":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +243,7 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	n.d.ctoGraph.mu.Lock()
 	n.d.ctoGraph.until = time.Now().Add(-time.Second)
 	n.d.ctoGraph.mu.Unlock()
-	got, err = n.d.runCTOToolRaw(ctx, "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"Only after expiry"}`))
+	got, err = n.d.runCTOToolRaw(ctx, "graph_change", ctoGraphArgs("charter_set", `{"node":"first","attr":"purpose","value":"Only after expiry"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,21 +253,25 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 }
 
 func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
-	for _, name := range strings.Fields("worker_start worker_stop tools_plan tools_apply tools_undo mcp_add mcp_remove mcp_call mcp_test mcp_enable cto_settings notification_settings session_trust session_policy message") {
-		if isCTOGraphTool(name) {
+	for _, name := range strings.Fields("graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new message") {
+		if isCTOGraphTool(name) && name != "graph_change" {
 			t.Fatalf("non graph %s is covered by window", name)
 		}
 	}
-	cases := map[string]json.RawMessage{"message": json.RawMessage(`{"action":"send","as_owner":true}`)}
-	for name, class := range ctoToolClasses {
-		if class == ctoProposal && !isCTOGraphTool(name) {
-			cases[name] = json.RawMessage(`{}`)
-		}
+	cases := map[string]json.RawMessage{
+		"message":         json.RawMessage(`{"action":"send","as_owner":true}`),
+		"graph_change":    json.RawMessage(`{"action":"charter_set","node":"first","attr":"purpose","value":"x"}`),
+		"session_change":  json.RawMessage(`{"action":"rename","session_id":"s","name":"n"}`),
+		"worker_change":   json.RawMessage(`{"action":"stop","session":"s"}`),
+		"answer":          json.RawMessage(`{"kind":"held","message_id":"m","action":"a"}`),
+		"tools_change":    json.RawMessage(`{"action":"undo","item":"i"}`),
+		"mcp_change":      json.RawMessage(`{"action":"test","name":"n"}`),
+		"mcp_call":        json.RawMessage(`{"server":"s","tool":"t"}`),
+		"settings_change": json.RawMessage(`{"area":"notifications","disabled":true}`),
+		"project_change":  json.RawMessage(`{"action":"remove","name":"p"}`),
+		"cto_new":         json.RawMessage(`{}`),
 	}
 	for name, args := range cases {
-		if isCTOGraphTool(name) {
-			continue
-		}
 		t.Run(name, func(t *testing.T) {
 			d := Daemon{}
 			d.ctoGraph.toggle(time.Now())

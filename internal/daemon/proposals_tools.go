@@ -21,41 +21,42 @@ func proposalActor(ctx context.Context) string {
 }
 
 func concreteProposal(call proposalCall) (proposalCall, error) {
-	if call.Tool == "graph_change" {
-		switch call.Action {
-		case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo":
-			call.Tool = call.Action
-			if call.Tool == "settings_set" {
-				call.Tool = "node_settings_set"
-			}
-			if call.Tool == "undo" {
-				call.Tool = "graph_undo"
-			}
-			call.Action = ""
-		default:
-			return call, errors.New("unsupported proposal action")
-		}
+	// A proposal stored before part 10 already names the concrete call.
+	if mcpserver.IsCTOConcreteTool(call.Tool) {
+		return call, nil
 	}
 	class, err := ctoClass(call.Tool, call.Args)
 	if err != nil {
-		return call, err
+		// Propose may carry the routing value separately from the arguments.
+		field := ctoActionField[call.Tool]
+		if field == "" || call.Action == "" {
+			return call, err
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(call.Args, &fields) != nil {
+			return call, err
+		}
+		fields[field], _ = json.Marshal(call.Action)
+		if call.Args, err = json.Marshal(fields); err != nil {
+			return call, err
+		}
+		if class, err = ctoClass(call.Tool, call.Args); err != nil {
+			return call, err
+		}
 	}
 	if class != ctoProposal {
 		return call, errors.New("tool call is not a proposal")
 	}
-	var fields map[string]json.RawMessage
-	if err := json.Unmarshal(call.Args, &fields); err != nil {
+	concrete, args, action, err := ctoConcreteCall(call.Tool, call.Args)
+	if err != nil {
 		return call, err
 	}
-	var action string
-	if v, ok := fields["action"]; ok {
-		if err := json.Unmarshal(v, &action); err != nil {
-			return call, err
-		}
-	}
-	if call.Action != action {
+	if call.Action != "" && call.Action != action {
 		return call, errors.New("proposal action differs from arguments")
 	}
+	call.Tool = concrete
+	call.Action = ""
+	call.Args = args
 	return call, nil
 }
 
@@ -247,7 +248,11 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 	if err != nil {
 		return nil, err
 	}
-	if err := d.recordCTOAction(actor + ": applied " + call.Tool); err != nil {
+	auditName := call.Tool
+	if concrete, _, _, err := ctoConcreteCall(call.Tool, call.Args); err == nil {
+		auditName = concrete
+	}
+	if err := d.recordCTOAction(actor + ": applied " + auditName); err != nil {
 		return nil, err
 	}
 	return raw, nil

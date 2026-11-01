@@ -67,10 +67,14 @@ func (d *Daemon) routeCTOGraph(ctx context.Context, name string, raw json.RawMes
 	if err := d.validateProposal(ctx, call); err != nil {
 		return nil, err
 	}
+	concrete, args, _, err := ctoConcreteCall(name, raw)
+	if err != nil {
+		return nil, err
+	}
 	w := &d.ctoGraph
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	data, err := d.call(ctx, "cto.graph_class", map[string]any{"tool": name, "args": raw})
+	data, err := d.call(ctx, "cto.graph_class", map[string]any{"tool": concrete, "args": args})
 	if err != nil {
 		return nil, err
 	}
@@ -86,11 +90,11 @@ func (d *Daemon) routeCTOGraph(ctx context.Context, name string, raw json.RawMes
 		}
 		actor = "CTO (owner window)"
 	}
-	result, err := d.executeCTOTool(context.WithValue(ctx, proposalActorKey{}, actor), name, raw)
+	result, err := d.executeCTOTool(context.WithValue(ctx, proposalActorKey{}, actor), concrete, args)
 	if err != nil {
 		return nil, err
 	}
-	text := actor + ": applied " + name + "; u to undo"
+	text := actor + ": applied " + concrete + "; u to undo"
 	if err = d.recordCTOAction(text); err != nil {
 		return nil, err
 	}

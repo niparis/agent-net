@@ -290,7 +290,7 @@ func TestCTOMCPImportOwnerGate(t *testing.T) {
 		t.Fatal("a refused request registered a server")
 	}
 	// The CTO proposes the import; approval runs it with the proposal actor.
-	v, err := f.n.d.runCTOToolRaw(context.Background(), "mcp_import", importJSON(t, protocol.MCPImportRequest{PlanID: plan.ID}))
+	v, err := f.n.d.runCTOToolRaw(context.Background(), "tools_change", importActionJSON(t, "import", protocol.MCPImportRequest{PlanID: plan.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,6 +311,15 @@ func importJSON(t *testing.T, v any) json.RawMessage {
 		t.Fatal(err)
 	}
 	return b
+}
+
+func importActionJSON(t *testing.T, action string, v any) json.RawMessage {
+	t.Helper()
+	m := map[string]any{}
+	b, _ := json.Marshal(v)
+	_ = json.Unmarshal(b, &m)
+	m["action"] = action
+	return importJSON(t, m)
 }
 
 // A plan binds to what was scanned: a changed native entry makes it stale.

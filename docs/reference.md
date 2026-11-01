@@ -53,11 +53,11 @@ MCP results and invite lines, are shown to the owner. The CTO gets a short
 outcome note at its next idle moment, without the call's result data.
 
 The class table in the daemon fixes every tool and action as read, talk or
-proposal. Reads still run immediately. Talk (`send`, `reply`, `learn`,
-`ui_show`, `ui_notice`) also runs immediately. `message` takes action `send` or
-`reply` and the same arguments as those tools; with `as_owner: true` it becomes
-a proposal. `cto_settings` and `notification_settings` only propose changes,
-including empty calls. They never return owner settings to the CTO.
+proposal. Reads still run immediately. Talk (`message`, `ask_owner`, `learn`,
+`ui`) also runs immediately. `message` takes action `send` or `reply`; with
+`as_owner: true` it becomes a proposal. `settings_change` with `area: cto` or
+`area: notifications` only proposes changes. It never returns owner settings to
+the CTO.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
 registered CTO session as caller rather than the owner. Static charter guidance
@@ -217,7 +217,7 @@ Harness versions are logged for diagnosis, without a version allowlist.
 No model call was used to verify runtime enforcement.
 
 The CTO reads the charter writing guide with `graph` and `view: "guide"`.
-The `charter_set` schema contains no guide text.
+The `graph_change` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
 process-tree check, then use the same daemon implementations as the owner's
@@ -252,26 +252,47 @@ method is owner-gated, so the CTO cannot read that setting. Needs you, other
 sessions' text, owner inboxes, tool inventory and owner settings remain outside
 the CTO's read tools.
 
-Major graph changes outside the owner window and all non-graph change tools
-remain proposals: worker start/stop,
-session trust/policy/names, held/inbox/outcome answers, settings and playbook
-writes, projects, tools plans/apply/undo/import, MCP changes/calls, invites,
-onboarding restart, `cto_send` and `cto_new`. `send`, `reply`, `message`, `learn`,
-`ui_show` and `ui_notice` remain talk, except `message` with `as_owner: true`.
-These names are private to the CTO; ordinary tools keep their existing names.
+Major graph changes outside the owner window and every non-graph owner change
+are proposals. The CTO has one action tool per area:
 
-`held_answer` accepts `a` (approve once), `A` (approve and set auto), `r`
-(decline once), or `R` (decline and set never). `edge_set` takes kind `depends`,
-`governs` or `deploys`, governance mode `advisor`, `arbiter` or `owner`, and
-request rule `normal`, `auto`, `ask` or `never`. `charter_set` takes the nine
-charter attributes. Node settings can override merge authority and worker
-sandbox defaults. The tool schemas describe the other fields and fixed values.
+| CTO change tool | Actions or area |
+|---|---|
+| `message` | `action: send` or `reply`; `as_owner: true` proposes a send as the owner |
+| `ask_owner` | a question with optional answers, a recommendation and urgency, into Needs you |
+| `learn` | one finding, under the daily limit |
+| `ui` | `action: show` with `tab`, `select`, `filter` and `why`, or `action: notice` with `text` |
+| `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set` or `undo` |
+| `session_change` | `action: rename`, `trust` or `policy` |
+| `worker_change` | `action: start` or `stop` |
+| `answer` | `kind: held`, `inbox` or `outcome` |
+| `tools_change` | `action: plan`, `apply`, `undo`, `import` or `native_remove` |
+| `mcp_change` | `action: add`, `remove`, `test` or `enable` |
+| `mcp_call` | one call on a shared MCP server |
+| `settings_change` | `area: worker_profile_add`, `worker_profile_remove`, `worker_providers`, `protected_providers`, `score`, `integrations`, `notifications`, `cto`, `playbook`, `machine_name`, `invite` or `onboarding` |
+| `project_change` | `action: add`, `remove` or `display` |
+| `cto_new` | a new conversation for the active harness |
 
+Minor graph changes apply at once. Major graph changes become proposals unless
+the owner opened the window with `w`. All non-graph changes are proposals, even
+during the window. A plain `message`, `ask_owner`, `learn` and `ui` are talk.
+Every proposal tool takes an optional `reason`. The daemon validates the stored
+call and keeps the concrete implementation, its authority checks and its audit
+records, so a rename does not change what a call is allowed to do.
 
-`ui_show` switches every open local TUI to `sessions`, `messages`, `quotas`,
-`graph` or `tools`, with an optional session ID, exact session name or project node,
-filter text and a short reason. `ui_notice` shows a short note. Both show a
-`CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
+`answer` with `kind: held` takes `action` `a` (approve once), `A` (approve and
+set auto), `r` (decline once) or `R` (decline and set never). `kind: outcome`
+takes `action` `let_stand` or `overrule`. `graph_change` with `action: edge_set`
+takes kind `depends`, `governs` or `deploys`, governance mode `advisor`,
+`arbiter` or `owner`, and request rule `normal`, `auto`, `ask` or `never`.
+`graph_change` with `action: charter_set` takes the nine charter attributes.
+Node settings use `action: settings_set` with `node`, `setting` and `value`.
+The tool schemas describe the other fields and fixed values.
+
+`ui` with `action: show` switches every open local TUI to `sessions`,
+`messages`, `quotas`, `graph` or `tools`, with an optional session ID, exact
+session name or project node, filter text and a short reason. `ui` with
+`action: notice` shows a short note. Both show a `CTO:` line and return
+`no TUI open` when no subscribed local TUI is connected.
 
 In the TUI, `C` or `tab` focuses the CTO box on every tab.
 Its title shows the owner's CTO title, the selected harness and model.
@@ -305,7 +326,7 @@ gap is between them inside one project.
 - **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. `a` or `u` on a machine cell plans the change for that machine only (a global assignment limited to it), and the plan says "only on NAME: other machines are not changed". With a single machine there is no limit to set. A machine the desired state does not name is never reported as drift and never shows a pending cell. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply. A skill inside a project folder is `⌂ repo` only when the repository tracks files under it. One that is not tracked is `local` (shown as `local PROJECT`, with a `PROJECT (local)` project cell): a copy on one machine. A local copy is managed like a copy found on a machine: `a` imports it and turns it on, `u` turns it off, and there is no branch plan.
 - **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
 
-Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. A project MCP coverage row plans every file it would write, in the harness's own format: `.mcp.json` for Claude, `.pi/mcp.json` for Pi, `opencode.json` for OpenCode, and `.codex/config.toml` only when the project already has that file. Environment variables stay references such as `${TOKEN}`; a value is never copied. The plan is read again from the machine that holds the project before you see it. Apply checks each file again, saves the whole file under `mcp-backups` first and writes only if it still has the planned hash. `u` on the result restores the files. A same-name declaration with a different definition is never replaced: it stays a conflict row. Codex without a project config shows `codex: global only`. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo`. The CTO cannot read tool differences; the owner can share a plan or comparison.
+Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. A project MCP coverage row plans every file it would write, in the harness's own format: `.mcp.json` for Claude, `.pi/mcp.json` for Pi, `opencode.json` for OpenCode, and `.codex/config.toml` only when the project already has that file. Environment variables stay references such as `${TOKEN}`; a value is never copied. The plan is read again from the machine that holds the project before you see it. Apply checks each file again, saves the whole file under `mcp-backups` first and writes only if it still has the planned hash. `u` on the result restores the files. A same-name declaration with a different definition is never replaced: it stays a conflict row. Codex without a project config shows `codex: global only`. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods. The CTO reaches the same calls with `tools_change` action `plan` or `apply`. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo`. The CTO cannot read tool differences; the owner can share a plan or comparison.
 
 Press `2`, `M` or `G` to open the Graph tab, the network screen. Each node
 is an agent with a lasting identity and charter. The CTO is a fixed node named
@@ -346,8 +367,8 @@ until unhidden. The owner-only methods are `hidden_get` and `hidden_set`.
 
 The gateway also stores onboarding progress in `owner_settings`. The owner-only
 operator methods `onboarding_get`, `onboarding_set`, and `onboarding_restart`
-read, update, and reset it across machines. The CTO can reset it with the
-`onboarding_restart` tool. The TUI shows one tip in the CTO box. Tab focuses
+read, update, and reset it across machines. The CTO proposes a reset with
+`settings_change` area `onboarding`. The TUI shows one tip in the CTO box. Tab focuses
 the box and Escape skips the current tip. In help, `T` turns tips off or on
 and `R` restarts them from the first step. Progress is shared across machines.
 
@@ -623,7 +644,7 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 - `worktree`: the working tree the session's folder is in. It is the same as `root`, except in a linked git worktree.
 - `project`: the last path part of the `origin` remote, without a trailing `.git`. With no usable origin, the main tree folder name is used. Outside a repository, the session folder name is used. Linked worktrees share their repository identity.
 - The name of every session is its project identity plus a number ([0024](decisions/0024-session-names.md), [0033](decisions/0033-session-names-are-owner-only.md)). The identity is the last part of the origin remote when present, else the main working tree folder, else the session folder; a linked worktree uses the same identity as its main tree ([0031](decisions/0031-project-identity-and-display-name.md)). Two live sessions with the same name on the network get ` 2`, ` 3` (the lowest free number), and a worker is `<project> worker <n>`. A worker's TASK is the first line of its task. The name a harness gives the session (a Codex thread name, a Claude session title, an OpenCode session title) is not the name: it goes to TASK when the session announced no task.
-- **Only the owner names a session.** An announce cannot: it sets a task, a project, capability tags and expertise, and a `name` in an older client's announce is ignored. The owner renames by approving the CTO tool `session_rename` (`session_id`, `name`) or the operator method of the same name; an empty `name` returns the automatic project name, with the next free number if another live session took it. The name survives reports and is shown wherever an automatic name is. A rename to a name another live session holds is refused, because `agent_send` and `agent-net send` match exact names among online agents. The gateway migration at upgrade clears names that older agents had set through announce, so those sessions show their automatic name at the next report.
+- **Only the owner names a session.** An announce cannot: it sets a task, a project, capability tags and expertise, and a `name` in an older client's announce is ignored. The owner renames by approving the CTO tool `session_change` with action `rename` (`session_id`, `name`) or the operator method `session_rename`; an empty `name` returns the automatic project name, with the next free number if another live session took it. The name survives reports and is shown wherever an automatic name is. A rename to a name another live session holds is refused, because `agent_send` and `agent-net send` match exact names among online agents. The gateway migration at upgrade clears names that older agents had set through announce, so those sessions show their automatic name at the next report.
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
 - `description`: the one-line description of the project, read from `AGENTS.md` (else `CLAUDE.md`) in the main working tree, or in the session's folder when there is no repository. See "FUNCTION and the task" below.
@@ -797,7 +818,7 @@ Nothing is copied to any machine: the gateway enforces the assignment. Apply
 records the revision (with actor and audit event, like any assignment), and it
 is in effect at once. `tools_undo` restores the earlier scope. Only the owner,
 can plan and apply; the CTO can propose these calls for approval. An agent session cannot.
-The CTO proposes `tools_plan` and `tools_apply`; it cannot read `tools_list`.
+The CTO proposes `tools_change` with action `plan` or `apply`; it cannot read the owner-only tools inventory.
 
 What a session sees:
 
@@ -898,7 +919,7 @@ An environment value counts as a variable name only when it is empty or a
 plain reference to the same name (`"API_TOKEN": "${API_TOKEN}"`). The
 federation runs the server on its host with the host's own environment.
 
-**Plan and apply.** `mcp_import` (daemon method, owner only; CTO tool) takes
+**Plan and apply.** `mcp_import` (daemon method, owner only; the CTO uses `tools_change` action `import`) takes
 either a `candidate` key and answers a plan, or a `plan_id` and applies it. A
 plan changes nothing. It shows the server that would be registered (command,
 arguments, variable names), the scope, and any conflict (an existing server of
@@ -936,7 +957,8 @@ records the plan, the actor and the result.
 
 After an import both the native entry and the federated server exist. The
 owner may remove the native entry. `mcp_native_remove` (daemon method, owner
-only; CTO tool) takes exactly one of `candidate`, `plan_id` or `undo_plan_id`.
+only; the CTO uses `tools_change` action `native_remove`) takes exactly one of
+`candidate`, `plan_id` or `undo_plan_id`.
 
 **Rules.** The plan refuses an entry whose server was not imported from that
 exact entry, is switched off, is not healthy, reports no tools, or whose native
@@ -1210,7 +1232,7 @@ Each entry has the machine, the path of the main working tree, the identity deri
 
 **Project identity and display name.** The last part of the `origin` URL, without `.git`, is the project identity. For example, `https://example.com/team/agent-net.git` gives `agent-net` even when the checkout folder has another name. With no usable origin, the main tree folder name is used. Repositories with the same last remote path part share an identity, even when their owners or hosts differ.
 
-The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, and reads display names through `projects` or `session`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
+The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO uses `project_change` with action `display`, `project` and `name`, and reads display names through `projects` or `session`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
 
 On upgrade, the gateway uses stored origin URLs to move old folder-based project data to the repository identity. When charters meet, both texts are kept and `project.identity_merge` is logged. If graph controls conflict, that pair is left unchanged, `project.identity_conflict` is logged with `from` and `to`, and the gateway continues with other projects. Ambiguous folder names that point to different repository identities are left alone. This migration runs once; logged conflicts and ambiguous mappings need review.
 
@@ -1282,7 +1304,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
   A Codex effort is checked at start against the model's `supported_reasoning_levels` in `codex debug models`. An effort the model does not list is refused, and the error names the levels it does. The model itself goes to `thread/start`; the effort goes to every `turn/start`, so it also holds after `thread/resume` and for a continued worker. The session, the start result and the notices show the full `model:effort`.
 
 - **Difficulty and automatic model choice.** `agent_start` and the CTO's `worker_start` accept `difficulty`: `trivial`, `simple`, `normal`, `hard` or `very_complex`. Empty means `normal`. With an empty model or `auto`, the gateway chooses a registered worker profile whose harness and model are available on the selected machine. The default minimum scores are 0, 20, 30, 40 and 50. A score at least 10 above the minimum is excellent; one at or above the minimum is good; one up to 10 below is poor; a lower score is denied. Only scores at or above the minimum qualify. Unprotected providers come first. A model with fewer than half complete among at least five complete, partial and failed runs in the recent track record is used only when no other adequate candidate remains. The remaining models rotate with a smooth weighted round robin: a candidate gets more weight when its provider is further behind its quota pace, when it is the weakest adequate candidate rather than far above it (an over-qualification penalty of `exp(-(score - weakestAdequateScore) / 8)`, which keeps stronger models available for harder work), and when its track record is good. A recent success adds weight and a recent failure lowers it. It skips exhausted providers and windows above 90 percent, and subtracts five quota-room points per running worker on the provider. For a monthly window, it estimates elapsed time from the preceding calendar-month reset. A missing or stale quota reading is neutral. Every adequate candidate keeps a positive weight, so over a run of starts each one gets a share. The rotation state is kept per difficulty in the gateway's `owner_settings` (`worker_rotation`) and survives a restart. The result's `model_note` explains the choice, its rotation weight and the shares of the last ten starts. When the roster is empty, the harness default is used and the result says how to register a worker. Explicit model requests keep the resolution rules below.
-- **Worker profiles.** The gateway stores a network roster with each profile's name, harness, model, optional effort, creator session and creation time. `agent-net workers profiles` lists it; `agent-net workers profiles add <harness> <model> [effort]` adds an entry, and `agent-net workers profiles remove <name>` removes one. The CTO can list, add and remove profiles. Non-worker agent sessions have `agent_worker_profiles`, `agent_worker_profile_add` and `agent_worker_profile_remove`; they should change the roster when the owner asks. Model names can be loose and must resolve to a model advertised by a machine for that harness. The default profile name combines the harness, resolved model and effort. Adding a profile with an existing name replaces its harness, model and effort in one call; the change is recorded as a profile add.
+- **Worker profiles.** The gateway stores a network roster with each profile's name, harness, model, optional effort, creator session and creation time. `agent-net workers profiles` lists it; `agent-net workers profiles add <harness> <model> [effort]` adds an entry, and `agent-net workers profiles remove <name>` removes one. The CTO lists profiles with `settings` and changes them with `settings_change` areas `worker_profile_add` and `worker_profile_remove`. Non-worker agent sessions have `agent_worker_profiles`, `agent_worker_profile_add` and `agent_worker_profile_remove`; they should change the roster when the owner asks. Model names can be loose and must resolve to a model advertised by a machine for that harness. The default profile name combines the harness, resolved model and effort. Adding a profile with an existing name replaces its harness, model and effort in one call; the change is recorded as a profile add.
 
   Each machine resolves the exact model ID first. If that ID is missing, it can use the same model name after the first `/` under another provider, but only when exactly one provider lists that name. Several matches make the profile unavailable on that machine. Automatic selection skips the profile only on machines where it does not resolve. A start result reports a provider change in `model_note`, for example `terra pi: openai-codex/gpt-6.1-terra resolved to openai/gpt-6.1-terra on research`.
 
@@ -1291,7 +1313,7 @@ A worker is an agent session that agent-net starts for you, with nobody watching
 - **Protected providers.** The gateway stores the owner setting `protected_providers` and its `reason` in `owner_settings`. The owner orchestrates with one model of choice, today often Claude on an Anthropic subscription. Workers on that same subscription spend the limit the orchestrator needs to keep working. Automatic choice uses other subscriptions first and uses a protected provider only when no other available profile meets the difficulty minimum or the others are out of quota. The same difficulty, track record, quota, score and rotation rules choose among the remaining profiles. The result explains protected profiles skipped or used, including the reason for a fallback. An explicitly requested model is not blocked by this setting and the result notes when its provider is protected. Claude harness and unprefixed `claude-*` models map to `anthropic`; Codex `gpt-*` maps to `openai`; OpenCode and Pi model prefixes identify their providers.
 
   In the TUI Quotas tab, select a subscription with up/down and press `p` to protect or unprotect it, then answer `enter: yes · esc: no`: Enter or `y` protects, Esc or `n` leaves it unchanged. Press `s` to show subscriptions that are folded away. The CTO can propose replacing the list and reason; it cannot read them. For scripts, use `agent-net workers protect anthropic` or `agent-net workers unprotect anthropic`. The `protected_providers_get` and `protected_providers_set` operator methods are owner-gated: agent clients and command lines inside an agent session's process tree are refused. The Quotas tab marks protected profiles and subscriptions with a lock. Setup does not protect a provider and does not teach the protect command: the TUI teaches it when the owner starts using workers.
-- **Scores.** The bundled table contains 85 model and effort scores from [Artificial Analysis](https://artificialanalysis.ai/). An effort suffix selects that effort; for a bare model the medium entry is used when no harness default is known, falling back to a default entry. Unknown scores are not candidates for automatic choice. Owner overrides win: `agent-net scores` lists scores, `agent-net scores set <model> <score>` adds an override, and `agent-net scores clear <model>` removes it. The CTO's private `score_set` tool can also change an override on the owner's instruction. The owner-only `difficulty_get` and `difficulty_set` operator methods read and replace the difficulty minimum overrides.
+- **Scores.** The bundled table contains 85 model and effort scores from [Artificial Analysis](https://artificialanalysis.ai/). An effort suffix selects that effort; for a bare model the medium entry is used when no harness default is known, falling back to a default entry. Unknown scores are not candidates for automatic choice. Owner overrides win: `agent-net scores` lists scores, `agent-net scores set <model> <score>` adds an override, and `agent-net scores clear <model>` removes it. The CTO proposes an override with `settings_change` area `score` on the owner's instruction. The owner-only `difficulty_get` and `difficulty_set` operator methods read and replace the difficulty minimum overrides.
 - **The task** is sent as a message from the caller, after the fixed brief. For Claude Code, Pi and OpenCode the worker ends its work with `agent_handback(report)`. For Codex the daemon does it when a turn ends: status `done` for a finished turn, `failed` for a failed or interrupted one, and `blocked` when Codex asked for an approval (the daemon declines every approval, which should not happen now that the worker runs in a sandbox, and the report names the command, the reason and the Codex thread to open). The caller gets one message with the facts (status, run time, model, tokens, the context at the end, the cost if the harness reports it, the worktree and branch, `git diff --stat`) and the report below them. Tokens come from OpenCode, from the Claude transcript, from Codex, and from Pi's session file. Cost comes from OpenCode only. The context at the end is the tokens of the last assistant message or turn (input plus cache reads and cache writes) and the model's context window. A worker that ends without a hand-back sends the same notice with the status `timed out`, `failed` or `stopped`. A worker that nobody messages for the idle time (60 minutes by default) ends as `timed out`; one that runs longer than 4 hours ends as `timed out` too. A worker is not idle while its harness says its session is busy, or while its token count grows: a long task does not hit the idle limit. An OpenCode worker whose model call fails (a provider, billing or auth error) ends at once as `failed`, and the note holds the error text (one line, secrets masked, cut to 300 characters). The daemon looks at the OpenCode session every few seconds: a run with outcome `failed` ends the worker. Only recognized provider errors demote the model; local and unknown failures do not. Codex reports a failed turn as a hand-back. Claude Code and Pi workers have no such check yet: a model error there shows only as the idle time-out.
 - **Idle without a hand-back.** When an OpenCode worker ends a turn without `agent_handback` and stays idle for 2 minutes, the daemon sends its owner a notice with status `idle without hand-back`. The worker stays running. The notice includes its worktree diff, run time and last assistant message, marked as a last message rather than a hand-back, followed by the usual checklist. The daemon sends one notice per idle period, including across a daemon restart; a new turn starts a new period. Codex normally hands back automatically when its turn ends. If that automatic hand-back fails, the daemon keeps the worker running and sends this idle notice instead. Claude Code and Pi do not use this notice. Set `workers.idle_notice` in `node.json` to change the delay.
 - **Complete or partial hand-back.** `agent_handback` takes `complete`, a boolean that defaults to true. A worker that did only part of its task calls it with `complete: false`, and the run is counted as partial. The brief tells every worker to set it honestly. A Codex worker has no tools, so its brief asks it to end its report with `complete: yes` or `complete: no`; the daemon reads that last line. A Codex turn that failed or was interrupted counts as failed, whatever the line says.
@@ -1454,7 +1476,7 @@ The daemon stores the question as a `question` waiting state with the options, u
 
 Select a session in Needs you and press Enter to open a one-line answer box. The first option, if any, is filled in. Enter sends the text as an owner message; Esc cancels. The wait clears when the owner message is delivered. It also clears when the owner types a Claude Code prompt (with the `needs-hook` installed), a Pi or OpenCode prompt, or a Codex turn starts; when a permission or form settles; when the session becomes busy; or on an announce without `waiting`. If the gateway is down, a queued owner message clears the wait when delivered.
 
-For a new explicit `agent_ask_owner` question, the daemon on each machine with an owner TUI open shows a desktop notification, at most once per session in five minutes. The limit survives a daemon restart. On macOS it uses `osascript`; on Linux it uses `notify-send` when available. Otherwise it does nothing. The notification does not contain the question text. Open `?` help and press `n` to toggle desktop notifications for that machine; the setting is on by default and persists locally. The CTO tool `notification_settings` proposes changing the setting with `{"disabled": true}` or `{"disabled": false}` on the CTO's machine.
+For a new explicit `agent_ask_owner` question, the daemon on each machine with an owner TUI open shows a desktop notification, at most once per session in five minutes. The limit survives a daemon restart. On macOS it uses `osascript`; on Linux it uses `notify-send` when available. Otherwise it does nothing. The notification does not contain the question text. Open `?` help and press `n` to toggle desktop notifications for that machine; the setting is on by default and persists locally. The CTO proposes changing the setting with `settings_change` area `notifications` and `{"disabled": true}` or `{"disabled": false}` on the CTO's machine.
 
 The local daemon method is `waiting` (`{"kind", "text"}` or `{"clear": true}`). A plugin is bound to its session; a command line names `harness` and `native_id`, and is silent when the session is unknown. It is not an owner-only method: a harness hook must be able to call it for its own session, like `hint`. Explicit asks also carry `options`, `urgency` and `explicit` through this path. Claude Code's `needs-hook` hooks are installed with `agent-net setup --claude-needs-hook`; they use `UserPromptSubmit` to clear the wait.
 
@@ -1493,7 +1515,7 @@ Decisions: [0022](decisions/0022-component-graph-and-cto.md) and [0030](decision
 
 Today the gateway stores a graph of components and architects: a node keyed by project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`; `deploys`: deployer to each app it deploys). The project-keyed node represents the agent; the project is its home. A session speaks for that node as the PROJECT column resolves it. The graph is visible to every enrolled machine.
 
-**Writing a charter.** The project's own agent reads its charter on every turn, so budget about 1200 characters (roughly 300 tokens) for the whole charter. Neighbors read only the first 40 characters of `accepts` and `refuses`, so put the most important item first, in a few words. The owner reads `purpose` on the Graph card: use one sentence up to 160 characters, or 2-3 lines at 80 columns. For `accepts`, `refuses` and `escalate`, use at most 6 categories, each a short phrase separated by semicolons or newlines. Use names and pointers for `feature_requests`, `consumers` and `needs`; use `notes` only for rules nothing else covers. Never put secrets, IP addresses, tokens or paths in a charter. `charter_set` and `agent-net charter set` return advisory warnings about the budget and sensitive details; those warnings do not stop a write. The existing 2 KiB value limit still applies. Put detail in the project's `AGENTS.md`. The shared source for the guidance is `internal/protocol/charter_guide.go`.
+**Writing a charter.** The project's own agent reads its charter on every turn, so budget about 1200 characters (roughly 300 tokens) for the whole charter. Neighbors read only the first 40 characters of `accepts` and `refuses`, so put the most important item first, in a few words. The owner reads `purpose` on the Graph card: use one sentence up to 160 characters, or 2-3 lines at 80 columns. For `accepts`, `refuses` and `escalate`, use at most 6 categories, each a short phrase separated by semicolons or newlines. Use names and pointers for `feature_requests`, `consumers` and `needs`; use `notes` only for rules nothing else covers. Never put secrets, IP addresses, tokens or paths in a charter. `graph_change` with action `charter_set` and `agent-net charter set` return advisory warnings about the budget and sensitive details; those warnings do not stop a write. The existing 2 KiB value limit still applies. Put detail in the project's `AGENTS.md`. The shared source for the guidance is `internal/protocol/charter_guide.go`.
 
 | Attribute | Answers | Size | Good example | Bad example |
 |---|---|---|---|---|

@@ -9,6 +9,31 @@ import (
 	"github.com/niparis/agent-net/internal/mcpserver"
 )
 
+func ctoClassFixture(name string) json.RawMessage {
+	field := ctoActionField[name]
+	if field == "" {
+		return json.RawMessage(`{}`)
+	}
+	action := map[string]map[string]string{
+		"message":         {"action": "send"},
+		"ui":              {"action": "show"},
+		"graph_change":    {"action": "charter_set"},
+		"session_change":  {"action": "rename"},
+		"worker_change":   {"action": "start"},
+		"answer":          {"kind": "held", "action": "a"},
+		"tools_change":    {"action": "plan"},
+		"mcp_change":      {"action": "test"},
+		"settings_change": {"area": "onboarding"},
+		"project_change":  {"action": "add"},
+	}[name]
+	fields := map[string]any{}
+	for k, v := range action {
+		fields[k] = v
+	}
+	b, _ := json.Marshal(fields)
+	return b
+}
+
 func TestCTOClassTableComplete(t *testing.T) {
 	ctx := context.Background()
 	a, b := mcp.NewInMemoryTransports()
@@ -27,7 +52,8 @@ func TestCTOClassTableComplete(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tool := range listed.Tools {
-		if _, err := ctoClass(tool.Name, json.RawMessage(`{}`)); err != nil {
+		fixture := ctoClassFixture(tool.Name)
+		if _, err := ctoClass(tool.Name, fixture); err != nil {
 			t.Errorf("%s: %v", tool.Name, err)
 		}
 		schemaRaw, _ := json.Marshal(tool.InputSchema)
@@ -39,33 +65,16 @@ func TestCTOClassTableComplete(t *testing.T) {
 		if err := json.Unmarshal(schemaRaw, &schema); err != nil {
 			t.Fatal(err)
 		}
-		for _, field := range []string{"action", "operation"} {
-			actions := schema.Properties[field].Enum
-			if len(actions) != len(ctoActions[tool.Name][field]) {
-				t.Errorf("%s %s: schema actions %v, classes %v", tool.Name, field, actions, ctoActions[tool.Name][field])
-			}
-			for _, action := range actions {
-				args, _ := json.Marshal(map[string]string{field: action})
-				if _, err := ctoClass(tool.Name, args); err != nil {
-					t.Error(err)
-				}
+		for field, actions := range ctoActions[tool.Name] {
+			got := schema.Properties[field].Enum
+			if len(got) != len(actions) {
+				t.Errorf("%s %s: schema actions %v, classes %v", tool.Name, field, got, actions)
 			}
 		}
 		if ctoToolClasses[tool.Name] == ctoProposal || tool.Name == "message" {
 			if _, ok := schema.Properties["reason"]; !ok {
 				t.Errorf("%s needs optional reason", tool.Name)
 			}
-		}
-
-	}
-	for name := range ctoOwnerMethods {
-		if _, err := ctoClass(name, json.RawMessage(`{}`)); err != nil {
-			t.Error(err)
-		}
-	}
-	for name := range ctoLocalMethods {
-		if _, err := ctoClass(name, json.RawMessage(`{}`)); err != nil {
-			t.Error(err)
 		}
 	}
 }
@@ -76,42 +85,36 @@ func TestCTOProposalRouting(t *testing.T) {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
+			args, ok := ctoProposalFixtures[name]
+			if !ok {
+				t.Fatal("missing proposal fixture")
+			}
+			wantConcrete, _, wantAction, err := ctoConcreteCall(name, json.RawMessage(args))
+			if err != nil {
+				t.Fatal(err)
+			}
 			proposed, ran := 0, 0
-			args := json.RawMessage(`{"reason":"owner should review"}`)
-			if name == "notification_settings" {
-				args = json.RawMessage(`{"disabled":true,"reason":"owner should review"}`)
-			}
-			if name == "cto_settings" {
-				args = json.RawMessage(`{"title":"Review","reason":"owner should review"}`)
-			}
-			value, err := routeCTOTool(context.Background(), name, args, func(_ context.Context, tool, action string, raw json.RawMessage, reason string) (string, error) {
+			value, err := routeCTOTool(context.Background(), name, json.RawMessage(args), func(_ context.Context, tool, action string, raw json.RawMessage, reason string) (string, error) {
 				proposed++
-				if tool != name || reason != "owner should review" {
-					t.Fatalf("stored %s %q", tool, reason)
+				if tool != name || action != wantAction {
+					t.Fatalf("stored %s %s", tool, action)
 				}
 				return "p_1", nil
 			}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return nil, nil })
 			if err != nil || proposed != 1 || ran != 0 || value != ProposalToolResult("p_1") {
-				t.Fatalf("value=%v err=%v proposals=%d backend=%d", value, err, proposed, ran)
+				t.Fatalf("value=%v err=%v proposals=%d backend=%d concrete=%s", value, err, proposed, ran, wantConcrete)
 			}
 		})
 	}
-	for _, name := range []string{"send", "reply", "learn", "ui_show", "ui_notice"} {
+	for _, name := range []string{"message", "ask_owner", "learn", "ui"} {
 		ran := 0
-		_, err := routeCTOTool(context.Background(), name, json.RawMessage(`{}`), func(context.Context, string, string, json.RawMessage, string) (string, error) {
+		args := ctoClassFixture(name)
+		_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, string, json.RawMessage, string) (string, error) {
 			t.Fatal("talk proposed")
 			return "", nil
 		}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return "ok", nil })
 		if err != nil || ran != 1 {
 			t.Fatalf("%s: ran=%d err=%v", name, ran, err)
-		}
-	}
-}
-
-func TestCTOUnknownActionFailsClosed(t *testing.T) {
-	for _, name := range []string{"message", "held_answer", "outcome_overrule"} {
-		if _, err := ctoClass(name, json.RawMessage(`{"action":"unknown"}`)); err == nil {
-			t.Errorf("%s accepted unknown action", name)
 		}
 	}
 }

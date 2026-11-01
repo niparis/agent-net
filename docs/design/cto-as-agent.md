@@ -433,6 +433,11 @@ Status: implemented. The graph is limited to public project data, and protected 
 - Tests: every list has a working cursor and a total; a page of 20 sessions stays below 3,000 bytes; the canary test still passes.
 
 **Part 10. Merged change tools.**
+
+Status: implemented. Every change is one action tool. The old concrete names are
+internal only: they still validate stored calls and keep their authority checks
+and audit records.
+
 - `message`, `ask_owner`, `learn`, `ui`, `graph_change`, `session_change`, `worker_change`, `answer`, `tools_change`, `mcp_change`, `mcp_call`, `settings_change`, `project_change`, `cto_new`; remove the old names.
 - Tests: every old change is reachable through an action (parity test); an unknown action is refused; the whole schema list stays below 16 KB; the brief names only tools that exist.
 
