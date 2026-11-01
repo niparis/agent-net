@@ -622,13 +622,11 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 		// same signal: the worker stopped early without saying so, so the
 		// owner's follow-up is a continue. A notice or another session does
 		// not count.
-		if w.pendingHandback && !w.pendingPartial {
-			w.fixCount++
-			w.fixRun++
-		} else {
-			w.continueCount++
-			w.continueRun++
-		}
+		cont, fix := protocol.ReworkCounts(w.pendingHandback, w.pendingPartial, w.idleNoticeSent || w.idleFollowUp)
+		w.continueCount += cont
+		w.continueRun += cont
+		w.fixCount += fix
+		w.fixRun += fix
 		w.idleFollowUp = false
 		counted = true
 	}
