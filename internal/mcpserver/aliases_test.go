@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // The alias inventory of docs/design/tool-redesign.md: old names keep their
@@ -35,16 +36,58 @@ var aliasNewTools = map[string]string{
 
 const aliasMessageJSON = `{"message_id":"m_1","conversation_id":"c_1","sender_session_id":"s_1","recipient_session_id":"s_2","message_type":"request","body":"hello","hop":1,"idempotency_key":"k_1","created_at":"2026-01-01T12:00:00Z","expires_at":"2026-01-02T12:00:00Z","state":"delivered","sender_name":"s01"}`
 
-const aliasSessionJSON = `{"id":"s_1","name":"s01","kind":"agent","machine":"research","project":"housing","harness":"claude","model":"standard","online":true,"status":"idle","task":"work on s01","last_seen":"2023-11-14T22:13:20Z","task_started":null,"last_seen_ago":"2h ago","folder":"/work/housing","branch":"main","remote":"https://example.com/r.git","function":"housing work","expertise":"Go","capabilities":["go"],"purpose":"Sells things","rules":{"deploy_rule":"owner"}}`
+// aliasOldAgent and aliasOldProject are the full old records the three legacy
+// read tools still return. They mirror the fixtures the goldens were recorded
+// from in testdata/legacy_shapes.json.
+func aliasOldAgent() protocol.AgentView {
+	return protocol.AgentView{
+		NativeID: "n_1",
+		Pending: []protocol.PendingRequest{{MessageID: "m_1", PeerID: "s_2", PeerName: "s02",
+			Since: 1700000000, Outgoing: true}},
+		ProjectDisplayName: "Housing",
+		Charter: protocol.AgentCharter{Purpose: "Sells things", PurposeFallback: true, Maturity: "mature",
+			Accepts: "bugs", Refuses: "secrets", FeatureRequests: "ask",
+			Rules: []protocol.PublicRule{{Name: "deploy_rule", Value: "owner"}}},
+		SessionID: "s_1", NodeID: "n_1", Hostname: "research", Harness: "claude", Cwd: "/work/housing",
+		Status: "idle", Online: true, LastSeen: 1700000000, LastActive: 1700000100,
+		Profile: protocol.Profile{Name: "s01", Function: "housing work", Project: "housing",
+			Capabilities: []string{"go"}, Task: "work on s01", Expertise: "Go"},
+		Repo: protocol.RepoInfo{Root: "/work/housing", Worktree: "/work/housing/.wt", Project: "housing",
+			Remote: "https://example.com/r.git", Branch: "main", Description: "housing service"},
+		Mode: "foreground", Model: "standard",
+		Worker:       &protocol.WorkerInfo{ID: "w_1", Owner: "s_0", Project: "housing", StartedAt: 1700000000, Task: "work"},
+		ToolsVersion: "v0.3.2", ToolsOld: true, PID: 4242, FirstSeen: 1699999999, Title: "Housing session",
+		PeerTrust: true,
+	}
+}
+
+func aliasOldProject() protocol.ProjectView {
+	return protocol.ProjectView{
+		DisplayName: "Housing", Permissions: "sandboxed", Name: "housing", NodeID: "n_1", Hostname: "research",
+		Path: "/work/housing", Worktrees: []string{"/work/housing/.wt"},
+		Remote: "https://example.com/r.git", Harnesses: []string{"claude", "opencode"},
+		Sessions: 2, Online: 1, LastSeen: 1700000000, Source: "both", DefaultBranch: "main",
+		AddedBy: "cli", AddedAt: 1700000000, CheckedAt: 1700000100,
+	}
+}
+
+func aliasOldJSON(v any) string {
+	raw, _ := json.Marshal(v)
+	return string(raw)
+}
 
 // aliasFixture answers the new tools' daemon methods with the same data the
 // legacy shapes were recorded from.
 func aliasFixture(method string, params map[string]any) string {
 	switch method {
-	case "sessions_find":
-		return `{"items":[` + aliasSessionJSON + `],"total":1}`
-	case "session_get":
-		return `{"session":` + aliasSessionJSON + `}`
+	case "list":
+		return aliasOldJSON(protocol.AgentsResult{Agents: []protocol.AgentView{aliasOldAgent()}})
+	case "get":
+		return aliasOldJSON(struct {
+			Agent protocol.AgentView `json:"agent"`
+		}{aliasOldAgent()})
+	case "projects":
+		return aliasOldJSON(protocol.ProjectsResult{Projects: []protocol.ProjectView{aliasOldProject()}})
 	case "machines_find":
 		return `{"items":[{"id":"n_1","name":"research","online":true,"version":"v0.3.2","harnesses":[{"name":"claude","version":"1.0"}],"sessions_online":3,"workers_running":1,"os":"linux","last_seen":"2023-11-14T22:13:20Z"}],"total":1}`
 	case "machine_get":
@@ -59,8 +102,6 @@ func aliasFixture(method string, params map[string]any) string {
 			return `{"machine":{"id":"n_1","name":"research","online":true,"version":"v0.3.2","harnesses":[],"sessions_online":0,"workers_running":0},"playbook":{"items":[{"subject":"claude-a","note":"fine"}],"total":1}}`
 		}
 		return `{}`
-	case "projects_find":
-		return `{"items":[{"name":"housing","display_name":"","machine":"research","folder":"/work/housing","sessions_online":1,"sessions_total":2,"source":"both","remote":"https://example.com/r.git"}],"total":1}`
 	case "messages":
 		return `{"messages":[` + aliasMessageJSON + `],"total":1}`
 	case "message_status":
@@ -150,18 +191,19 @@ func TestAliasNamesAndDeprecation(t *testing.T) {
 	}
 }
 
-// Each alias reaches the new tool's daemon method, not the old one.
-func TestAliasCallsTheNewPath(t *testing.T) {
+// Each alias reaches the daemon method its operation uses. The three legacy
+// read records keep their old method, so their full old answer survives.
+func TestAliasCallsTheExpectedDaemonMethod(t *testing.T) {
 	t.Setenv("AGENT_NET_WORKER", "")
 	cases := []struct {
 		old    string
 		args   map[string]any
 		method string
 	}{
-		{"agent_list", map[string]any{"text": "go"}, "sessions_find"},
-		{"agent_get", map[string]any{"session_id": "s_1"}, "session_get"},
+		{"agent_list", map[string]any{"text": "go"}, "list"},
+		{"agent_get", map[string]any{"session_id": "s_1"}, "get"},
 		{"agent_nodes", map[string]any{}, "machines_find"},
-		{"agent_project_list", map[string]any{"name": "housing"}, "projects_find"},
+		{"agent_project_list", map[string]any{"name": "housing"}, "projects"},
 		{"agent_messages", map[string]any{"limit": 5}, "messages"},
 		{"agent_message_status", map[string]any{"message_id": "m_1"}, "message_status"},
 		{"agent_send", map[string]any{"to": "s_2", "body": "hi"}, "send"},

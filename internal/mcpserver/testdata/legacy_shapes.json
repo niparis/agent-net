@@ -14,7 +14,12 @@
   "agent_get": {
     "agent": {
       "charter": {
+        "accepts": "string",
+        "feature_requests": "string",
+        "maturity": "string",
         "purpose": "string",
+        "purpose_fallback": "bool",
+        "refuses": "string",
         "rules": [
           {
             "name": "string",
@@ -23,12 +28,27 @@
         ]
       },
       "cwd": "string",
+      "first_seen": "number",
       "harness": "string",
       "hostname": "string",
+      "last_active": "number",
       "last_seen": "number",
+      "mode": "string",
       "model": "string",
+      "native_id": "string",
       "node_id": "string",
       "online": "bool",
+      "peer_trust": "bool",
+      "pending": [
+        {
+          "message_id": "string",
+          "outgoing": "bool",
+          "peer_id": "string",
+          "peer_name": "string",
+          "since": "number"
+        }
+      ],
+      "pid": "number",
       "profile": {
         "capabilities": [
           "string"
@@ -39,15 +59,27 @@
         "project": "string",
         "task": "string"
       },
+      "project_display_name": "string",
       "repo": {
         "branch": "string",
+        "description": "string",
         "project": "string",
         "remote": "string",
         "root": "string",
         "worktree": "string"
       },
       "session_id": "string",
-      "status": "string"
+      "status": "string",
+      "title": "string",
+      "tools_old": "bool",
+      "tools_version": "string",
+      "worker": {
+        "id": "string",
+        "owner": "string",
+        "project": "string",
+        "started_at": "number",
+        "task": "string"
+      }
     }
   },
   "agent_graph": {
@@ -92,7 +124,12 @@
     "agents": [
       {
         "charter": {
+          "accepts": "string",
+          "feature_requests": "string",
+          "maturity": "string",
           "purpose": "string",
+          "purpose_fallback": "bool",
+          "refuses": "string",
           "rules": [
             {
               "name": "string",
@@ -101,12 +138,27 @@
           ]
         },
         "cwd": "string",
+        "first_seen": "number",
         "harness": "string",
         "hostname": "string",
+        "last_active": "number",
         "last_seen": "number",
+        "mode": "string",
         "model": "string",
+        "native_id": "string",
         "node_id": "string",
         "online": "bool",
+        "peer_trust": "bool",
+        "pending": [
+          {
+            "message_id": "string",
+            "outgoing": "bool",
+            "peer_id": "string",
+            "peer_name": "string",
+            "since": "number"
+          }
+        ],
+        "pid": "number",
         "profile": {
           "capabilities": [
             "string"
@@ -117,15 +169,27 @@
           "project": "string",
           "task": "string"
         },
+        "project_display_name": "string",
         "repo": {
           "branch": "string",
+          "description": "string",
           "project": "string",
           "remote": "string",
           "root": "string",
           "worktree": "string"
         },
         "session_id": "string",
-        "status": "string"
+        "status": "string",
+        "title": "string",
+        "tools_old": "bool",
+        "tools_version": "string",
+        "worker": {
+          "id": "string",
+          "owner": "string",
+          "project": "string",
+          "started_at": "number",
+          "task": "string"
+        }
       }
     ]
   },
@@ -252,7 +316,14 @@
   "agent_project_list": {
     "projects": [
       {
-        "harnesses": "null",
+        "added_at": "number",
+        "added_by": "string",
+        "checked_at": "number",
+        "default_branch": "string",
+        "display_name": "string",
+        "harnesses": [
+          "string"
+        ],
         "hostname": "string",
         "last_seen": "number",
         "name": "string",
@@ -263,7 +334,9 @@
         "remote": "string",
         "sessions": "number",
         "source": "string",
-        "worktrees": "null"
+        "worktrees": [
+          "string"
+        ]
       }
     ]
   },

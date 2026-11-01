@@ -167,87 +167,22 @@ func addAliasTools(s *mcp.Server, call Caller, run aliasRun) {
 		})
 }
 
-// aliasList renders agent_sessions_find rows as the old AgentsResult.
-func aliasList(ctx context.Context, run aliasRun, in listIn) (protocol.AgentsResult, error) {
+// aliasList calls the old list method, so the legacy answer is exactly what it
+// was: the full AgentView with charter details, pending requests and repo
+// information. This name is removed next release, so it keeps its own read.
+func aliasList(ctx context.Context, run aliasRun, in listIn) (any, error) {
 	online := true
 	if in.OnlineOnly != nil {
 		online = *in.OnlineOnly
 	}
-	q := map[string]any{"harness": in.Harness, "project": in.Project, "text": in.Text,
-		"detail": "full", "limit": roMaxLimit}
-	if !online {
-		q["online"] = "any"
-	}
-	rows, err := aliasCollect(ctx, run, "agent_sessions_find", q)
-	if err != nil {
-		return protocol.AgentsResult{}, err
-	}
-	out := protocol.AgentsResult{Agents: []protocol.AgentView{}}
-	for _, raw := range rows {
-		var row protocol.SessionRow
-		if err := aliasDecode(raw, &row); err != nil {
-			return protocol.AgentsResult{}, err
-		}
-		if in.Capability != "" && !containsString(row.Capabilities, in.Capability) {
-			continue
-		}
-		out.Agents = append(out.Agents, aliasAgent(row))
-	}
-	return out, nil
+	return run(ctx, "list", map[string]any{"harness": in.Harness, "capability": in.Capability,
+		"project": in.Project, "online_only": online, "text": in.Text})
 }
 
-// aliasGet renders agent_session_get as the old {"agent": ...} answer.
+// aliasGet calls the old get method, so the legacy answer keeps the full
+// AgentView.
 func aliasGet(ctx context.Context, run aliasRun, in getIn) (any, error) {
-	out, err := readToolCall(ctx, run, "agent_session_get", map[string]any{"session": in.SessionID})
-	if err != nil {
-		return nil, err
-	}
-	var got protocol.SessionGetResult
-	if err := aliasDecode(out, &got); err != nil {
-		return nil, err
-	}
-	return struct {
-		Agent protocol.AgentView `json:"agent"`
-	}{aliasAgent(got.Session)}, nil
-}
-
-// aliasAgent fills the old AgentView with what the session row carries. Fields
-// the new model no longer reads (pending requests, charter accepts/refuses,
-// repo root) stay at their zero value.
-func aliasAgent(row protocol.SessionRow) protocol.AgentView {
-	agent := protocol.AgentView{
-		SessionID: row.ID,
-		Hostname:  row.Machine,
-		Harness:   row.Harness,
-		Cwd:       row.Folder,
-		Status:    row.Status,
-		Online:    row.Online,
-		Model:     row.Model,
-		Profile: protocol.Profile{
-			Name: row.Name, Function: row.Function, Project: row.Project,
-			Capabilities: row.Capabilities, Task: row.Task, Expertise: row.Expertise,
-		},
-		Repo: protocol.RepoInfo{Root: row.Folder, Worktree: row.Folder, Project: row.Project,
-			Remote: row.Remote, Branch: row.Branch},
-		Charter: protocol.AgentCharter{Purpose: row.Purpose},
-	}
-	if t, err := time.Parse(time.RFC3339, row.LastSeen); err == nil {
-		agent.LastSeen = t.Unix()
-	}
-	if len(row.Rules) > 0 {
-		names := make([]string, 0, len(row.Rules))
-		for name := range row.Rules {
-			names = append(names, name)
-		}
-		sort.Strings(names)
-		for _, name := range names {
-			agent.Charter.Rules = append(agent.Charter.Rules, protocol.PublicRule{Name: name, Value: row.Rules[name]})
-		}
-	}
-	if row.Worker != nil {
-		agent.Worker = &protocol.WorkerInfo{ID: row.Worker.ID, Owner: row.Worker.Caller.ID, Project: row.Project}
-	}
-	return agent
+	return run(ctx, "get", in)
 }
 
 // aliasNodes reads every machine category, so models and quotas are kept.
@@ -400,26 +335,10 @@ func aliasText(info protocol.NodesInfo) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
-// aliasProjects renders agent_projects_find as the old ProjectsResult.
-func aliasProjects(ctx context.Context, run aliasRun, in projectListIn) (protocol.ProjectsResult, error) {
-	rows, err := aliasCollect(ctx, run, "agent_projects_find", map[string]any{"name": in.Name,
-		"detail": "full", "limit": roMaxLimit})
-	if err != nil {
-		return protocol.ProjectsResult{}, err
-	}
-	out := protocol.ProjectsResult{Projects: []protocol.ProjectView{}}
-	for _, raw := range rows {
-		var row protocol.ProjectRow
-		if err := aliasDecode(raw, &row); err != nil {
-			return protocol.ProjectsResult{}, err
-		}
-		out.Projects = append(out.Projects, protocol.ProjectView{
-			Name: row.Name, DisplayName: row.DisplayName, Hostname: row.Machine, Path: row.Folder,
-			Remote: row.Remote, Sessions: row.SessionsTotal, Online: row.SessionsOnline,
-			Source: row.Source, DefaultBranch: row.DefaultBranch,
-		})
-	}
-	return out, nil
+// aliasProjects calls the old projects method, so the legacy answer keeps the
+// full ProjectView (worktrees, harnesses, permissions and registration data).
+func aliasProjects(ctx context.Context, run aliasRun, in projectListIn) (any, error) {
+	return run(ctx, "projects", protocol.QueryProjects{Name: in.Name})
 }
 
 // aliasMessages reads every message through the new tool's loader and returns
