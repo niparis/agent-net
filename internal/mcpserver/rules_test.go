@@ -29,13 +29,19 @@ func TestPluginsCarryTheSameNotesAndRules(t *testing.T) {
 		}
 		src := joinedLiterals(string(b))
 		for name, want := range map[string]string{
-			"TrustNote":         protocol.TrustNote,
-			"CTONote":           protocol.CTONote,
-			"NoAuthorityNote":   protocol.NoAuthorityNote,
-			"PeerCheckNote":     protocol.PeerCheckNote,
-			"AskPeerRule":       AskPeerRule,
-			"RelayRule":         RelayRule,
-			"peer note (tools)": strings.TrimSpace(peerNote),
+			"TrustNotePrefix":        protocol.TrustNotePrefix,
+			"TrustNoteSuffix":        protocol.TrustNoteSuffix,
+			"MergeFullText":          protocol.MergeFullText,
+			"MergeDelegatedText":     protocol.MergeDelegatedText,
+			"MergeAskText":           protocol.MergeAskText,
+			"OwnerInstructionPrefix": protocol.OwnerInstructionPrefix,
+			"OwnerInstructionSuffix": protocol.OwnerInstructionSuffix,
+			"CTONote":                protocol.CTONote,
+			"NoAuthorityNote":        protocol.NoAuthorityNote,
+			"PeerCheckNote":          protocol.PeerCheckNote,
+			"AskPeerRule":            AskPeerRule,
+			"RelayRule":              RelayRule,
+			"peer note (tools)":      strings.TrimSpace(peerNote),
 		} {
 			if !strings.Contains(src, want) {
 				t.Errorf("%s does not carry %s:\n%s", path, name, want)
