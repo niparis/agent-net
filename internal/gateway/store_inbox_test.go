@@ -1,14 +1,13 @@
 package gateway
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestInboxStore(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "inbox.db"))
+	s, err := OpenStore(seededStorePath(t, "inbox.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

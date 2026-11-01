@@ -13,7 +13,7 @@ import (
 )
 
 func TestRepoRemovalRejectsUntrackedProjectCopy(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestRepoRemovalRejectsUntrackedProjectCopy(t *testing.T) {
 }
 
 func TestToolAssignmentRevisions(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestToolAssignmentRevisions(t *testing.T) {
 }
 
 func TestToolPlanRejectsChangedObservation(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestToolPlanRejectsChangedObservation(t *testing.T) {
 }
 
 func TestToolItemsShowDesiredAndPending(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestToolItemsShowDesiredAndPending(t *testing.T) {
 }
 
 func TestToolPlanAndApplyAudit(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestToolPlanAndApplyAudit(t *testing.T) {
 }
 
 func TestGatewayToolPlanRequiresOwnerSession(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestGatewayToolPlanRequiresOwnerSession(t *testing.T) {
 }
 
 func TestApplyReportsStaleWhenItemDisappears(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestApplyReportsStaleWhenItemDisappears(t *testing.T) {
 }
 
 func TestGatewayToolHistoryRequiresOwnerSession(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestGatewayToolHistoryRequiresOwnerSession(t *testing.T) {
 }
 
 func TestRejectedToolPlanIsAudited(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestRejectedToolPlanIsAudited(t *testing.T) {
 }
 
 func TestToolPlanReportsIncompleteScan(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,7 +249,7 @@ func TestToolPlanReportsIncompleteScan(t *testing.T) {
 }
 
 func TestPlanAuditRecordsBaseRevision(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +273,7 @@ func TestPlanAuditRecordsBaseRevision(t *testing.T) {
 }
 
 func TestManagedToolRemainsListedWithoutLocations(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -296,7 +296,7 @@ func TestManagedToolRemainsListedWithoutLocations(t *testing.T) {
 }
 
 func TestToolPlanNamesStoredSourceCommit(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +337,7 @@ func TestToolPlanNamesStoredSourceCommit(t *testing.T) {
 }
 
 func TestToolPlanIncludesUnseenEnrolledMachines(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -363,7 +363,7 @@ func TestToolPlanIncludesUnseenEnrolledMachines(t *testing.T) {
 }
 
 func TestUninstallPlanShowsOfflineMachinesWithoutObservedCopies(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +451,7 @@ func TestApplyRemovalRequiresImportedSkill(t *testing.T) {
 		{name: "imported", imported: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+			s, err := OpenStore(seededStorePath(t, "gateway.db"))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -498,7 +498,7 @@ func TestApplyRemovalRequiresImportedSkill(t *testing.T) {
 }
 
 func TestGatewaySkillSummaryRequiresOwnerSession(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

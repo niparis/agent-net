@@ -116,6 +116,7 @@ func startGatewayPageSize(t *testing.T, dir, addr string, size int) *testGateway
 		t.Fatal(err)
 	}
 	logs := &logBuf{}
+	seedDatabase(t, dir, "gateway.db", gatewayTemplateBytes)
 	gw, err := gateway.New(gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond, Logger: log.New(logs, "", 0)})
 	if err != nil {
 		t.Fatal(err)
@@ -256,7 +257,7 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 	}
 	sock := filepath.Join(shortDir(t), "d.sock")
 	cfg := Config{testStopCTOOnExit: true, GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
-		Hostname: "host-" + nc.NodeID, StateDir: t.TempDir(), SocketPath: sock,
+		Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
 		EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger}

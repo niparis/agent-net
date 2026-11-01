@@ -12,7 +12,7 @@ import (
 )
 
 func TestCTOSettingsRoutes(t *testing.T) {
-	gw, err := New(Options{DataDir: t.TempDir()})
+	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestCTOSettingsRoutes(t *testing.T) {
 }
 
 func TestCTOSettingsTitle(t *testing.T) {
-	gw, err := New(Options{DataDir: t.TempDir()})
+	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

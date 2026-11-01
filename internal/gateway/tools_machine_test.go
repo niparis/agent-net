@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -35,7 +34,7 @@ func TestNormalizeAssignmentMachines(t *testing.T) {
 
 func machineStore(t *testing.T) (*Store, string, string, string) {
 	t.Helper()
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +142,7 @@ func TestMachineScopedRemovalKeepsLastCopyCheckHonest(t *testing.T) {
 }
 
 func TestGatewayPlansForChosenMachineOnly(t *testing.T) {
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

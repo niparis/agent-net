@@ -102,7 +102,7 @@ func TestCTONetworkRefusesOlderGateway(t *testing.T) {
 	for _, caps := range []map[string]bool{nil, {"attribution": true}} {
 		t.Run(fmt.Sprint(caps), func(t *testing.T) {
 			url, _ := fakeOldGateway(t, caps)
-			d, err := New(Config{GatewayURL: url, NodeID: "n_old", Token: "test", StateDir: t.TempDir(), SocketPath: filepath.Join(shortDir(t), "d.sock"), DetectHarnesses: fakeInventory})
+			d, err := New(Config{GatewayURL: url, NodeID: "n_old", Token: "test", StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"), DetectHarnesses: fakeInventory})
 			if err != nil {
 				t.Fatal(err)
 			}

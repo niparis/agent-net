@@ -3,12 +3,11 @@ package gateway
 import (
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 )
 
 func TestPhoneOwnerAndAuthentication(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

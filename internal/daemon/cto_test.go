@@ -617,7 +617,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 }
 
 func TestCTOQueuedStartPersistsAttribution(t *testing.T) {
-	s, err := openState(t.TempDir())
+	s, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -714,7 +714,7 @@ func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 }
 
 func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

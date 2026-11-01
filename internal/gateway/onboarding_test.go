@@ -1,14 +1,13 @@
 package gateway
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestOnboardingPersistsAndValidatesUpdates(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gateway.db")
+	path := seededStorePath(t, "gateway.db")
 	s, err := OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"errors"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ func (c *clock) now() time.Time { return c.t }
 
 func newTestStore(t *testing.T) (*Store, *clock) {
 	t.Helper()
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gw.db"))
+	s, err := OpenStore(seededStorePath(t, "gw.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +49,7 @@ func send(s *Store, from, to, key, parent string) (protocol.Message, bool, error
 }
 
 func TestMigrationsFromEmpty(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gw.db")
+	path := seededStorePath(t, "gw.db")
 	s, err := OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

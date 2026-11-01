@@ -193,7 +193,7 @@ func TestCTOReadParity(t *testing.T) {
 func TestCTOOutcomeCanary(t *testing.T) {
 	for _, status := range []string{"applied", "failed", "declined", "expired"} {
 		t.Run(status, func(t *testing.T) {
-			state, err := openState(t.TempDir())
+			state, err := openState(seededStateDir(t))
 			if err != nil {
 				t.Fatal(err)
 			}

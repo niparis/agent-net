@@ -12,7 +12,7 @@ import (
 )
 
 func TestCTOTitleRoutes(t *testing.T) {
-	gw, err := New(Options{DataDir: t.TempDir()})
+	gw, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}

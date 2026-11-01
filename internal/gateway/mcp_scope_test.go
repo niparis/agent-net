@@ -13,7 +13,7 @@ import (
 // one federated server named "files".
 func scopeGateway(t *testing.T) (*Gateway, string) {
 	t.Helper()
-	g, err := New(Options{DataDir: t.TempDir()})
+	g, err := New(Options{DataDir: seededDataDir(t)})
 	if err != nil {
 		t.Fatal(err)
 	}
