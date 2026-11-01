@@ -997,6 +997,15 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"message": m}, nil
 
+	case "cto.graph_class":
+		var q struct {
+			Tool string          `json:"tool"`
+			Args json.RawMessage `json:"args"`
+		}
+		if json.Unmarshal(raw, &q) != nil {
+			return nil, reject("bad graph classification")
+		}
+		return st.CTOGraphClass(q.Tool, q.Args)
 	case "cto.capabilities":
 		return map[string]bool{"attribution": true, "network_session": true}, nil
 	case "graph.get":
