@@ -423,7 +423,10 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	logf := func(format string, a ...any) { fmt.Fprintf(os.Stderr, "agent-net cto: "+format+"\n", a...) }
 	conn := newStdioConn(0, os.Stdout, takeHandover(logf), logf)
 	go conn.readLoop()
-	ch, err := dialCTOChannel(ctx, socket)
+	exe, _ := os.Executable()
+	opts := Options{Version: version, Exe: exe, NoAutoUpgrade: os.Getenv("AGENT_NET_NO_AUTO_UPGRADE") == "1"}
+	sw := &switcher{opts: opts, conn: conn, logf: logf}
+	ch, err := dialCTOChannel(ctx, socket, func(v string) { go sw.consider(ctx, v) })
 	if err != nil {
 		return err
 	}
@@ -443,13 +446,17 @@ const ctoReconnectWait = 30 * time.Second
 // hello again when the connection drops, so a daemon restart does not leave
 // the CTO without its tools.
 type ctoChannel struct {
-	socket string
-	mu     sync.Mutex
-	c      *client.Client
+	socket  string
+	onHello func(string)
+	mu      sync.Mutex
+	c       *client.Client
 }
 
-func dialCTOChannel(ctx context.Context, socket string) (*ctoChannel, error) {
+func dialCTOChannel(ctx context.Context, socket string, onHello ...func(string)) (*ctoChannel, error) {
 	ch := &ctoChannel{socket: socket}
+	if len(onHello) > 0 {
+		ch.onHello = onHello[0]
+	}
 	if err := ch.connect(ctx); err != nil {
 		return nil, err
 	}
@@ -463,11 +470,19 @@ func (ch *ctoChannel) connect(ctx context.Context) error {
 	for {
 		c, err := client.Dial(ch.socket)
 		if err == nil {
-			_, err = c.Call(ctx, "hello", map[string]string{"client": "cto-mcp"})
+			var raw json.RawMessage
+			raw, err = c.Call(ctx, "hello", map[string]string{"client": "cto-mcp"})
 			if err == nil {
+				var hello struct {
+					Version string `json:"version"`
+				}
+				_ = json.Unmarshal(raw, &hello)
 				ch.mu.Lock()
 				ch.c = c
 				ch.mu.Unlock()
+				if ch.onHello != nil && hello.Version != "" {
+					ch.onHello(hello.Version)
+				}
 				return nil
 			}
 			c.Close()

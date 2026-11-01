@@ -86,6 +86,50 @@ func TestCTOChannelWaitsForTheDaemonAtStart(t *testing.T) {
 	ch.close()
 }
 
+func TestCTOChannelReportsDaemonVersion(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "d.sock")
+	ln, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		r := bufio.NewScanner(c)
+		if !r.Scan() {
+			return
+		}
+		var req struct {
+			ID json.RawMessage `json:"id"`
+		}
+		if json.Unmarshal(r.Bytes(), &req) != nil {
+			return
+		}
+		out, _ := json.Marshal(map[string]any{"id": req.ID, "result": map[string]string{"version": "v9.8.7"}})
+		_, _ = c.Write(append(out, '\n'))
+	}()
+	versions := make(chan string, 1)
+	ctx, cancel := context.WithTimeout(context.Background(), waitMax)
+	defer cancel()
+	ch, err := dialCTOChannel(ctx, socket, func(v string) { versions <- v })
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ch.close()
+	select {
+	case got := <-versions:
+		if got != "v9.8.7" {
+			t.Fatalf("daemon version = %q", got)
+		}
+	case <-ctx.Done():
+		t.Fatal("CTO channel did not report daemon version")
+	}
+}
+
 // dropForTest closes the current connection, as a daemon restart does.
 func (ch *ctoChannel) dropForTest() {
 	ch.mu.Lock()
