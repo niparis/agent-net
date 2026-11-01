@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,6 +61,159 @@ func TestInventoryGatewayAndOwnerGate(t *testing.T) {
 	pi, _ := helloPi(t, n, "pi-inventory", "/work", true)
 	if _, err := pi.call("inventory_get", map[string]any{}); err == nil {
 		t.Fatal("agent got owner inventory")
+	}
+}
+
+func TestInventoryRescansAfterVersionChange(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	logs := &logBuf{}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) {
+		c.InventoryHome = home
+		c.Version = "v0.4.34"
+		c.Logger = log.New(logs, "", 0)
+	}})
+	eventually(t, "first inventory", func() bool {
+		reports, err := g.gw.Store().Inventories()
+		return err == nil && len(reports) == 1 && len(reports[0].Items) > 0
+	})
+	// Simulate an inventory stored before file manifests existed.
+	old := protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Harness: "claude", Scope: "user", Location: dir, Hash: "old", State: protocol.InventoryOK}}}
+	if err := g.gw.Store().SetInventory(n.d.cfg.NodeID, old); err != nil {
+		t.Fatal(err)
+	}
+	n.cfg.Version = "v0.4.35"
+	n.restart()
+	eventually(t, "upgrade rescan logged", func() bool {
+		return len(logs.lines("inventory: rescanning after upgrade from v0.4.34 to v0.4.35")) > 0
+	})
+	eventually(t, "manifest after upgrade", func() bool {
+		reports, err := g.gw.Store().Inventories()
+		if err != nil || len(reports) != 1 {
+			return false
+		}
+		for _, item := range reports[0].Items {
+			if item.Name == "demo" && item.Manifest != nil && len(item.Manifest.Files) == 1 {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+func TestPartialScanKeepsFreshManifests(t *testing.T) {
+	home := t.TempDir()
+	good := filepath.Join(home, ".claude/skills/good")
+	if err := os.MkdirAll(good, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(good, "SKILL.md"), []byte("good"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// A skill folder linked from outside the home makes the scan partial.
+	outside := t.TempDir()
+	linked := filepath.Join(outside, "linked")
+	if err := os.MkdirAll(linked, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(linked, "SKILL.md"), []byte("linked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(linked, filepath.Join(home, ".claude/skills/linked")); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	eventually(t, "good skill observed", func() bool {
+		items, err := g.gw.Store().ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+		if err != nil {
+			return false
+		}
+		for _, item := range items {
+			if item.Name == "good" {
+				return true
+			}
+		}
+		return false
+	})
+	// The stored report predates file manifests.
+	old := protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{{Kind: "skill", Name: "good", Harness: "claude", Scope: "user", Location: good, Hash: "old", State: protocol.InventoryOK}}}
+	if err := g.gw.Store().SetInventory(n.d.cfg.NodeID, old); err != nil {
+		t.Fatal(err)
+	}
+	cli.mustCall("inventory_scan", struct{}{})
+	eventually(t, "fresh manifest kept beside the failed source", func() bool {
+		items, err := g.gw.Store().ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+		if err != nil {
+			return false
+		}
+		for _, item := range items {
+			if item.Name != "good" {
+				continue
+			}
+			for _, location := range item.Locations {
+				if location.Manifest != nil && len(location.Manifest.Files) == 1 {
+					return true
+				}
+			}
+		}
+		return false
+	})
+}
+
+func TestToolsSkillDetailsRefreshesOneCopy(t *testing.T) {
+	home := t.TempDir()
+	dir := filepath.Join(home, ".claude/skills/demo")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "SKILL.md"), []byte("demo"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "notes.md"), []byte("notes"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.InventoryHome = home }})
+	cli := cliClient(t, n)
+	var loc, hash string
+	eventually(t, "inventory item", func() bool {
+		items, err := g.gw.Store().ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+		if err != nil {
+			return false
+		}
+		for _, item := range items {
+			if item.Name == "demo" && len(item.Locations) > 0 {
+				loc, hash = item.Locations[0].Location, item.Hash
+				return true
+			}
+		}
+		return false
+	})
+	// Drop the details from the stored report, as an old scan would have.
+	without := protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{{Kind: "skill", Name: "demo", Harness: "claude", Scope: "user", Location: loc, Hash: hash, State: protocol.InventoryOK}}}
+	if err := g.gw.Store().SetInventory(n.d.cfg.NodeID, without); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := cli.call("tools_skill_details", protocol.ToolSkillScan{NodeID: n.d.cfg.NodeID, Name: "demo", Location: loc, Hash: hash})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var details protocol.ToolSkillDetails
+	if err = json.Unmarshal(raw, &details); err != nil || details.Manifest == nil || len(details.Manifest.Files) != 2 {
+		t.Fatalf("details: %s %v", raw, err)
+	}
+	items, err := g.gw.Store().ToolsItems(protocol.ToolsFilter{Kind: protocol.InventorySkill}, func(string) bool { return true })
+	if err != nil || len(items) != 1 || len(items[0].Locations) != 1 || items[0].Locations[0].Manifest == nil || len(items[0].Locations[0].Manifest.Files) != 2 {
+		t.Fatalf("stored details: %+v %v", items, err)
 	}
 }
 

@@ -51,6 +51,18 @@ type toolsModal struct {
 	compareIndex int
 	back         *toolsModal
 	picker       *projPicker
+	choose       *chooseState
+}
+
+// chooseState is the compare plan's own data. It survives a background detail
+// fetch so the panel can be drawn again when an answer arrives.
+type chooseState struct {
+	title    string
+	act      toolsdiff.Action
+	fetching map[int]bool
+	errors   map[int]string
+	online   map[string]bool
+	now      time.Time
 }
 
 // toolsModalMsg changes the open modal when a background call ends.
@@ -1092,6 +1104,145 @@ func (m Model) openFix() (tea.Model, tea.Cmd) {
 // openChoose lets the owner keep one of several copies: a, b, c ...
 func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cmd) {
 	md := m.openModal(title)
+	online := map[string]bool{}
+	for _, machine := range m.tl.cat.Machines {
+		online[machine.ID] = machine.Online
+	}
+	st := &chooseState{title: title, act: act, fetching: map[int]bool{}, errors: map[int]string{}, online: online, now: m.now()}
+	md.choose = st
+	var fetch []int
+	for i, c := range act.Copies {
+		if i >= 6 || c.Manifest != nil || c.NodeID == "" || !st.isOnline(c) {
+			continue
+		}
+		st.fetching[i] = true
+		fetch = append(fetch, i)
+	}
+	renderChoose(md)
+	if len(fetch) == 0 {
+		return m, nil
+	}
+	ts, ok := m.toolsSource()
+	if !ok {
+		for _, i := range fetch {
+			delete(st.fetching, i)
+			st.errors[i] = "this daemon cannot read file details"
+		}
+		renderChoose(md)
+		return m, nil
+	}
+	id := md.id
+	copies := append([]toolsdiff.Copy(nil), act.Copies...)
+	return m, func() tea.Msg {
+		type answer struct {
+			index   int
+			details protocol.ToolSkillDetails
+			err     error
+		}
+		answers := make([]answer, 0, len(fetch))
+		ctx, cancel := context.WithTimeout(context.Background(), 2*Timeout)
+		defer cancel()
+		for _, i := range fetch {
+			c := copies[i]
+			name := c.Name
+			if name == "" {
+				name = act.Name
+			}
+			details, err := ts.ToolsSkillDetails(ctx, protocol.ToolSkillScan{NodeID: c.NodeID, Name: name, Location: c.Location, Hash: c.Hash})
+			answers = append(answers, answer{index: i, details: details, err: err})
+		}
+		return toolsModalMsg{id: id, update: func(md *toolsModal) {
+			if md.choose != st {
+				return
+			}
+			for _, a := range answers {
+				delete(st.fetching, a.index)
+				if a.err != nil {
+					st.errors[a.index] = sanitize(a.err.Error())
+					continue
+				}
+				st.act.Copies[a.index].Manifest = a.details.Manifest
+				if !a.details.ScannedAt.IsZero() {
+					st.act.Copies[a.index].Seen = a.details.ScannedAt
+				}
+			}
+			renderChoose(md)
+		}}
+	}
+}
+
+func (st *chooseState) isOnline(c toolsdiff.Copy) bool {
+	online, ok := st.online[c.NodeID]
+	return !ok || online
+}
+
+// sideLine says what is known about one copy, so a side is never blank. A
+// missing manifest names the machine and why it is missing.
+func (st *chooseState) sideLine(i int, c toolsdiff.Copy) string {
+	who := sanitize(c.Machine)
+	if who == "" {
+		who = "this machine"
+	}
+	if c.Manifest != nil {
+		if c.Manifest.TooLarge {
+			return "too large to compare (more than 200 files or 64 KiB)"
+		}
+		return copySummary(c, st.act.Copies, st.now)
+	}
+	known := knownCopy(c, st.now)
+	if !st.isOnline(c) {
+		return who + " is offline: no details" + known
+	}
+	if st.fetching[i] {
+		return "fetching details from " + who + "..."
+	}
+	if err := st.errors[i]; err != "" {
+		return who + ": no details (" + err + ")" + known
+	}
+	return "no file details from " + who + " yet: its scan has no file list" + known
+}
+
+func knownCopy(c toolsdiff.Copy, now time.Time) string {
+	var parts []string
+	if version := c.Version(); version != "" {
+		parts = append(parts, "version "+version)
+	}
+	if !c.Seen.IsZero() {
+		parts = append(parts, "last seen "+whenText(c.Seen, now))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, ", ") + ")"
+}
+
+func whenText(t, now time.Time) string {
+	age := now.Sub(t)
+	when := "just now"
+	switch {
+	case age >= 24*time.Hour:
+		when = nounCount(int(age.Hours()/24), "day", "days") + " ago"
+	case age >= time.Hour:
+		when = nounCount(int(age.Hours()), "hour", "hours") + " ago"
+	case age >= time.Minute:
+		when = nounCount(int(age.Minutes()), "minute", "minutes") + " ago"
+	}
+	return when + ", " + t.Format("2 Jan")
+}
+
+// renderChoose draws the compare plan from its chooseState. It runs again when
+// a detail answer arrives, without losing the keys the owner can press.
+func renderChoose(md *toolsModal) {
+	st := md.choose
+	if st == nil {
+		return
+	}
+	act := st.act
+	md.lines = nil
+	md.paths = nil
+	md.foot = nil
+	md.compareFiles = nil
+	md.actions = map[string]func(Model) (Model, tea.Cmd){}
 	for i, c := range act.Copies {
 		if i >= 6 {
 			break
@@ -1103,8 +1254,8 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 			who += " (" + sanitize(c.Harness) + ")"
 		}
 		md.lines = append(md.lines, tsAcc.Render(letter+"  ")+"keep the copy on "+who)
-		if summary := copySummary(c, act.Copies, m.now()); summary != "" {
-			md.lines = append(md.lines, "     "+summary)
+		if line := st.sideLine(i, c); line != "" {
+			md.lines = append(md.lines, "     "+line)
 		}
 		md.paths = append(md.paths, c.Machine+"  "+c.Location)
 		label := sanitize(c.Machine)
@@ -1140,25 +1291,29 @@ func (m Model) openChoose(title string, act toolsdiff.Action) (tea.Model, tea.Cm
 		}
 	}
 	if len(act.Copies) == 2 {
-		md.lines = append(md.lines, chooseComparison(act.Copies[0], act.Copies[1])...)
-		_, _, changed, ok := toolsdiff.CompareFiles(act.Copies[0], act.Copies[1])
-		if ok && len(changed) > 0 {
-			md.compareFiles = changed
-			md.foot = append(md.foot, "n/p", "select file", "v", "view diff")
-			md.actions["v"] = func(m Model) (Model, tea.Cmd) { return m.openSkillDiff(act.Copies[0], act.Copies[1]) }
+		both := act.Copies[0].Manifest != nil && act.Copies[1].Manifest != nil
+		if both {
+			md.lines = append(md.lines, chooseComparison(act.Copies[0], act.Copies[1])...)
+			_, _, changed, ok := toolsdiff.CompareFiles(act.Copies[0], act.Copies[1])
+			if ok && len(changed) > 0 {
+				md.compareFiles = changed
+				md.foot = append(md.foot, "n/p", "select file", "v", "view diff")
+				md.actions["v"] = func(m Model) (Model, tea.Cmd) { return m.openSkillDiff(act.Copies[0], act.Copies[1]) }
+			}
+		} else if act.Copies[0].Manifest == nil && act.Copies[1].Manifest == nil {
+			md.lines = append(md.lines, noDetailsLine(act.Copies[0], act.Copies[1]))
 		}
 	}
-	if title == "Keep the newer one in both places" && len(act.Copies) == 2 {
+	if st.title == "Keep the newer one in both places" && len(act.Copies) == 2 {
 		md.actions["enter"] = md.actions["a"]
 		md.foot = append([]string{"enter", "keep newer"}, md.foot...)
 	}
 	destination := "  the one you keep goes into agent-net and to every machine"
-	if len(act.Copies) == 2 && act.Copies[0].NodeID != "" && act.Copies[0].NodeID == act.Copies[1].NodeID && len(m.tl.cat.Machines) > 1 {
+	if len(act.Copies) == 2 && act.Copies[0].NodeID != "" && act.Copies[0].NodeID == act.Copies[1].NodeID && len(st.online) > 1 {
 		destination = "  the one you keep goes into agent-net and to " + sanitize(act.Copies[0].Machine)
 	}
 	md.lines = append(md.lines, tsDim.Render(destination))
 	md.foot = append(md.foot, "d", "exact folders", "esc", "cancel")
-	return m, nil
 }
 
 type skillFileReader interface {
@@ -1278,6 +1433,22 @@ func copySummary(c toolsdiff.Copy, copies []toolsdiff.Copy, now time.Time) strin
 	return detail
 }
 
+// noDetailsLine names the machines and says why there is nothing to compare,
+// instead of the old line that left the owner guessing.
+func noDetailsLine(a, b toolsdiff.Copy) string {
+	var names []string
+	for _, c := range []toolsdiff.Copy{a, b} {
+		who := sanitize(c.Machine)
+		if who == "" {
+			who = "this machine"
+		}
+		if !hasStr(names, who) {
+			names = append(names, who)
+		}
+	}
+	return tsDim.Render("  no file details from " + strings.Join(names, " and ") + " yet: neither copy has sent a file list")
+}
+
 func chooseComparison(a, b toolsdiff.Copy) []string {
 	label := func(c toolsdiff.Copy) string {
 		if a.Machine == b.Machine && a.Harness != "" && b.Harness != "" && a.Harness != b.Harness {
@@ -1290,7 +1461,7 @@ func chooseComparison(a, b toolsdiff.Copy) []string {
 		if (a.Manifest != nil && a.Manifest.TooLarge) || (b.Manifest != nil && b.Manifest.TooLarge) {
 			return []string{tsDim.Render("  a copy is too large to compare")}
 		}
-		return []string{tsDim.Render("  no file details from these machines yet")}
+		return []string{noDetailsLine(a, b)}
 	}
 	var parts []string
 	for _, p := range changed {

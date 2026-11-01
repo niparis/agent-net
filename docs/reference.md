@@ -190,7 +190,7 @@ A harness limit shows as a `◐` cell and a note in the details pane.
 - **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. `a` or `u` on a machine cell plans the change for that machine only (a global assignment limited to it), and the plan says "only on NAME: other machines are not changed". With a single machine there is no limit to set. A machine the desired state does not name is never reported as drift and never shows a pending cell. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply. A skill inside a project folder is `⌂ repo` only when the repository tracks files under it. One that is not tracked is `local` (shown as `local PROJECT`, with a `PROJECT (local)` project cell): a copy on one machine. A local copy is managed like a copy found on a machine: `a` imports it and turns it on, `u` turns it off, and there is no branch plan.
 - **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
 
-Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences in pages (default 20, maximum 60). Pass `next` as `offset` to read the next page.
+Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences in pages (default 20, maximum 60). Pass `next` as `offset` to read the next page.
 
 Press `4` or `M` to open the Map tab. The focus view shows the selected
 project as a card: name, maturity, the start of the purpose, and its live sessions
@@ -606,7 +606,7 @@ hash. Each row shows scope, harnesses, machines, the number of same-name
 variants and state, desired assignment and pending application. Scope lists global and registered project observations;
 unassigned identifies project locations that do not match the registry. Offline
 machines retain their last observations as stale. The daemon scans at startup,
-after reconnecting and every five minutes.
+after reconnecting, after its binary version changes and every five minutes.
 
 An in-home skill folder reached through a skill-entry symlink is recorded at its real path, with the link path in `aliases`. Links outside the home are not followed. A separate content fingerprint ignores executable bits, `.DS_Store`, `Thumbs.db`, and editor swap and backup files when comparing copies. The strict hash used for imports and integrity checks still includes these files and executable bits. Older observations without a content fingerprint are compared using their strict hash.
 
@@ -619,11 +619,23 @@ returns report pages with an `offset` request field and a `next` cursor.
 `tools_items` returns item pages with optional `kind`, `harness`, `project`,
 `state` and `offset` filters. `tools_item` takes an `id` from that list and
 returns its locations and file-list differences against same-name variants.
-These methods require the owner connection and cannot be called by an agent
-session. A variant count includes all observed versions, even with filters.
+The owner-only `tools_skill_details` reads the file manifest of one observed
+copy on one machine, so a comparison does not wait for a whole scan. The
+machine checks that the skill is still observed and that its hash has not
+changed before it reads the files. These methods require the owner connection
+and cannot be called by an agent session. A variant count includes all observed
+versions, even with filters.
 
-A failed scan leaves the previous observations marked stale. The inventory is
-read-only and does not execute skills or servers. MCP fingerprints omit
+When a compare plan opens and one side has no file manifest, the Tools tab asks
+that machine for the one skill and shows `fetching details from <machine>...`
+until the answer arrives. An offline machine shows `<machine> is offline: no
+details` with the version and the last time the gateway saw the copy. A failed
+read names the machine and the reason. A scan that fails for one source keeps
+every other fresh observation and marks only that source stale, so one
+unreadable or linked-out skill no longer hides new file manifests. A scan that
+produces no successful observation at all leaves the previous observations
+marked stale. The inventory is read-only and does not execute skills or servers.
+MCP fingerprints omit
 sensitive descriptor values. Extension-provided MCP servers, package-managed skills, OpenCode custom config
 locations, Pi standalone Markdown skills and session-specific trust overrides need
 manual inspection. A row summarizes observations, not proof that a running session has loaded it.

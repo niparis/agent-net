@@ -41,6 +41,7 @@ CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS workers (
 	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,
 	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, native_id TEXT NOT NULL DEFAULT '',
@@ -165,6 +166,22 @@ CREATE TABLE IF NOT EXISTS workers (
 }
 
 func (s *state) close() error { return s.db.Close() }
+
+// inventoryScanVersion is the agent-net version that produced the last
+// inventory scan on this machine. An upgrade changes it, which forces a fresh
+// scan so new observation fields (such as file manifests) appear.
+func (s *state) inventoryScanVersion() string {
+	var version string
+	if err := s.db.QueryRow(`SELECT version FROM inventory_scan WHERE id=1`).Scan(&version); err != nil {
+		return ""
+	}
+	return version
+}
+
+func (s *state) setInventoryScanVersion(version string) error {
+	_, err := s.db.Exec(`INSERT INTO inventory_scan(id,version,at) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET version=excluded.version, at=excluded.at`, version, time.Now().Unix())
+	return err
+}
 
 func (s *state) isDelivered(id string) bool {
 	var n int

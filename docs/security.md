@@ -323,7 +323,8 @@ The daemon scans its own machine at start, after it reconnects and every five mi
 - A skill bundle: at most 10,000 entries and 64 MiB of regular file data. Special files, absolute or escaping symlinks and files that change while being read are rejected.
 - Pi source discovery: at most 10,000 directories and 32 path components.
 - MCP and settings files: 1 MiB. A report: 10,000 entries, 512 KiB of field text, 1 MiB of manifests and 3 MiB encoded. A single file list is limited to 256 KiB. Reads are paged to 240 KiB.
-- An oversized source or report fails the scan. It is never silently cut. A failed scan leaves the old records marked stale.
+- An oversized source or report fails the scan. It is never silently cut. A scan that fails for one source keeps the other fresh observations and marks only that source stale. A scan that produces no successful observation leaves the old records marked stale.
+- The owner-only `tools_skill_details` reads the file manifest of one observed skill on one machine. The gateway checks the owner session; the machine checks that the name, location and hash are in its current inventory before it reads the folder, and it checks the hash again before answering. It sends file names, sizes, fingerprints and the newest modification time, never file contents. An agent session cannot call it.
 
 ### The private skill store
 
