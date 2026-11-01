@@ -131,51 +131,18 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 			d.claudeStartMu.Unlock()
 		}
 	}()
-	cmd := exec.CommandContext(ctx, bin, args...)
-	cmd.Dir = w.path
-	cmd.Env = workerEnv(os.Environ(), map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"})
-	out, err := cmd.CombinedOutput()
-	logf, lerr := os.OpenFile(filepath.Join(dir, "worker.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
-	if lerr == nil {
-		logf.Write(out)
-		logf.Close()
-	}
+	launchedJob := ""
+	sf, err := d.launchClaudeBackground(ctx, bin, w.path, args, filepath.Join(dir, "worker.log"), resume, func(id string) {
+		launchedJob = id
+		d.wmu.Lock()
+		w.ref = id
+		d.wmu.Unlock()
+	})
 	if err != nil {
-		if claudeTrustPrompt(out) {
-			return fmt.Errorf("Claude Code does not trust %s", w.path)
-		}
-		return fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
+		claudeLauncher{}.stopID(d, launchedJob)
+		return err
 	}
-	m := claudeBgID.FindStringSubmatch(string(out))
-	if m == nil {
-		return errors.New("claude --bg did not say the background session id")
-	}
-	id := m[1]
-	d.wmu.Lock()
-	w.ref = id
-	d.wmu.Unlock()
 
-	// The launcher identifies the new job, including when resume changes the
-	// native session ID. Match the job, not the old conversation ID.
-	var sf claudeSessionFile
-	find := func() (claudeSessionFile, bool) {
-		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
-	}
-	for {
-		if f, ok := find(); ok {
-			sf = f
-			break
-		}
-		select {
-		case <-ctx.Done():
-			claudeLauncher{}.stopID(d, id)
-			if resume != "" {
-				return fmt.Errorf("the Claude background session %s wrote no session file in time; retry the message or resume the conversation with `claude --resume %s`", id, resume)
-			}
-			return fmt.Errorf("the Claude background session %s wrote no session file in time; check Claude Code and retry the worker start", id)
-		case <-time.After(50 * time.Millisecond):
-		}
-	}
 	d.attachWorkerProcess(w, sf.PID)
 	if resume != "" && sf.SessionID != resume {
 		d.wmu.Lock()
@@ -408,4 +375,67 @@ func claudeContextLimit(model string) int64 {
 		return 200_000
 	}
 	return 0
+}
+
+// launchClaudeBackground is shared by workers and owner sessions. The caller
+// holds claudeStartMu until the session file is known, before discovery runs.
+// Worker settings, records and lifetime rules belong to the caller.
+func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, args []string, logPath, resume string, onJob func(string)) (claudeSessionFile, error) {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd.Dir = path
+	env := os.Environ()
+	if logPath == "" {
+		filtered := env[:0]
+		for _, item := range env {
+			if !strings.HasPrefix(item, "AGENT_NET_WORKER=") && !strings.HasPrefix(item, "AGENT_NET_WORKER_") {
+				filtered = append(filtered, item)
+			}
+		}
+		env = filtered
+	}
+	cmd.Env = workerEnv(env, map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"})
+	out, err := cmd.CombinedOutput()
+	if logPath != "" {
+		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+		if lerr == nil {
+			logf.Write(out)
+			logf.Close()
+		}
+	}
+	if err != nil {
+		if claudeTrustPrompt(out) {
+			return claudeSessionFile{}, fmt.Errorf("Claude Code does not trust %s", path)
+		}
+		return claudeSessionFile{}, fmt.Errorf("claude --bg failed: %v", err) // its output is added from the log
+	}
+	m := claudeBgID.FindStringSubmatch(string(out))
+	if m == nil {
+		return claudeSessionFile{}, errors.New("claude --bg did not say the background session id")
+	}
+	id := m[1]
+	if onJob != nil {
+		onJob(id)
+	}
+
+	// The launcher identifies the new job, including when resume changes the
+	// native session ID. Match the job, not the old conversation ID.
+	var sf claudeSessionFile
+	find := func() (claudeSessionFile, bool) {
+		return findClaudeBg(d.cfg.ClaudeSessionsDir, id)
+	}
+	for {
+		if f, ok := find(); ok {
+			sf = f
+			break
+		}
+		select {
+		case <-ctx.Done():
+			if resume != "" {
+				return claudeSessionFile{}, fmt.Errorf("the Claude background session %s wrote no session file in time; retry the message or resume the conversation with `claude --resume %s`", id, resume)
+			}
+			return claudeSessionFile{}, fmt.Errorf("the Claude background session %s wrote no session file in time; check Claude Code and retry the session start", id)
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+	return sf, nil
 }

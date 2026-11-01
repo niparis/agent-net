@@ -670,3 +670,24 @@ on a network or put an untrusted proxy in front of it.
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
 
 The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.
+
+### Starting an owner session
+
+`session_start` and `session_start_get` use the owner gate. Agent connections
+are refused. A CLI inside an agent session, a Codex app-server process tree
+or an OpenCode serve process tree is refused too. No agent tool exposes these
+methods. An owner session has the owner's normal harness permissions, so an
+agent must never be able to start one to escape worker limits.
+
+For now, starts are limited to Claude in an existing project folder known on
+the local machine. The daemon resolves the project from the gateway registry;
+it accepts no executable, command, settings, environment or arbitrary folder
+parameter. It creates no folder, worktree or trust entry. Folder creation and
+its home-folder and symlink checks belong to a later part of the design.
+The model and optional first message are separate command arguments, with
+`--` before the message. There is no shell interpolation.
+
+Claude loads the owner's own settings and MCP servers. The launch adds no
+worker settings, MCP override, brief or hand-back tools. Normal discovery
+registers the session without a worker flag. Worker limits, stop rules,
+notices and cleanup do not apply. Stopping the daemon leaves it running.
