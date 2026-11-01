@@ -144,7 +144,7 @@ func TestCTOStartingOperatorReadsAndConcurrentEnter(t *testing.T) {
 }
 
 func TestCTOClaudeFailedResumeFallback(t *testing.T) {
-	for _, mode := range []string{"missing", "crash"} {
+	for _, mode := range []string{"missing", "crash", "cli-missing"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 			t.Setenv("FAKE_CLAUDE_RESUME_FAILURE", mode)

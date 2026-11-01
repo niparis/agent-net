@@ -122,6 +122,11 @@ type claudeCTOJobFailure struct {
 
 func (e *claudeCTOJobFailure) Error() string { return "CTO Claude job failed: " + e.detail }
 
+func recoverableClaudeResumeFailure(status, detail string) bool {
+	lower := strings.ToLower(detail)
+	return status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))
+}
+
 func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	d.claudeCTO.restarted = false
 	err := d.startClaudeCTOOnce(ctx, id, model)
@@ -215,6 +220,9 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		}
 		detail := claudeCTOErrorOutput(output)
 		if detail != "" {
+			if id != "" && recoverableClaudeResumeFailure("", detail) {
+				return &claudeCTOJobFailure{detail: detail, recoverable: true}
+			}
 			return fmt.Errorf("start CTO Claude: %s", detail)
 		}
 		return fmt.Errorf("start CTO Claude: %w", err)

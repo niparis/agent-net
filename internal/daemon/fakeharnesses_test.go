@@ -165,6 +165,10 @@ func fakeClaudeCLI() {
 		os.Exit(1)
 	}
 	if mode := os.Getenv("FAKE_CLAUDE_RESUME_FAILURE"); mode != "" && argValue(os.Args, "--resume") != "" {
+		if mode == "cli-missing" {
+			fmt.Fprintln(os.Stderr, "source session not found")
+			os.Exit(1)
+		}
 		id := "failed-copy"
 		job := filepath.Join(filepath.Dir(dir), "jobs", id)
 		os.MkdirAll(job, 0700)
