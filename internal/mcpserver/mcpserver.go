@@ -145,6 +145,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	addReadSessionTools(s, run)
 	addAliasTools(s, call, run)
 	addRedesignedTools(s, run)
+	filterCatalogTools(s, callerRole())
 	return s
 }
 

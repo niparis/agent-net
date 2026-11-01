@@ -84,14 +84,16 @@ func TestMessageToolsUseTheCatalogSchemas(t *testing.T) {
 			t.Errorf("%s description differs from the catalog", name)
 		}
 		for label, pair := range map[string][2]any{
-			"input":  {got.InputSchema, want.InputSchema},
-			"output": {got.OutputSchema, want.OutputSchema},
+			"input": {got.InputSchema, want.InputSchema},
 		} {
 			gotRaw, _ := json.Marshal(pair[0])
 			wantRaw, _ := json.Marshal(pair[1])
 			if !reflect.DeepEqual(normalizeJSON(t, gotRaw), normalizeJSON(t, wantRaw)) {
 				t.Errorf("%s %s schema differs from the catalog:\ngot  %s\nwant %s", name, label, gotRaw, wantRaw)
 			}
+		}
+		if got.OutputSchema != nil {
+			t.Errorf("%s lists an output schema", name)
 		}
 	}
 }

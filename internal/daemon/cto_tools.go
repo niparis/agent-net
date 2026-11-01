@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"strings"
 	"time"
@@ -65,6 +66,90 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "agent_message_send":
+		var p map[string]any
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_message_send arguments")
+		}
+		if p == nil {
+			p = map[string]any{}
+		}
+		p["receipt"] = true
+		if p["idempotency_key"] == nil {
+			p["idempotency_key"] = protocol.NewID("k")
+		}
+		b, _ := json.Marshal(p)
+		return d.localSend(ctx, d.ctoReadConn(), b)
+	case "agent_message_reply":
+		var p map[string]any
+		if len(raw) > 0 && json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_message_reply arguments")
+		}
+		if p == nil {
+			p = map[string]any{}
+		}
+		if message, ok := p["message"]; ok {
+			delete(p, "message")
+			p["message_id"] = message
+		}
+		p["receipt"] = true
+		if p["idempotency_key"] == nil {
+			p["idempotency_key"] = protocol.NewID("k")
+		}
+		b, _ := json.Marshal(p)
+		return d.localReply(ctx, d.ctoReadConn(), b)
+	case "agent_owner_ask":
+		var p struct {
+			Kind           string   `json:"kind"`
+			Text           string   `json:"text"`
+			Recommendation string   `json:"recommendation"`
+			Options        []string `json:"options"`
+			Urgency        string   `json:"urgency"`
+		}
+		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" {
+			return nil, errors.New("agent_owner_ask needs kind, text and recommendation")
+		}
+		sid := d.ctoSessionID()
+		if sid == "" {
+			return nil, errors.New("CTO network session is not registered; start the CTO from the owner interface")
+		}
+		kind := map[string]string{"question": "question", "approval": "approval", "idea": "feature_idea"}[p.Kind]
+		if kind == "" {
+			return nil, errors.New("kind must be question, approval or idea")
+		}
+		value, err := d.call(ctx, "inbox.create", map[string]any{"session_id": sid, "kind": kind, "text": p.Text, "recommendation": p.Recommendation, "options": p.Options, "urgency": p.Urgency})
+		if err != nil {
+			return nil, err
+		}
+		var item struct {
+			ID     string `json:"id"`
+			State  string `json:"state"`
+			Status string `json:"status"`
+		}
+		_ = json.Unmarshal(value, &item)
+		state := item.State
+		if state == "" {
+			state = item.Status
+		}
+		return map[string]any{"item_id": item.ID, "kind": p.Kind, "state": state}, nil
+	case "agent_learn":
+		var p protocol.LearnRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, errors.New("bad agent_learn params")
+		}
+		sid := d.ownerSessionID()
+		if sid == "" {
+			return nil, errNotConnected
+		}
+		value, err := d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid})
+		if err != nil {
+			return nil, err
+		}
+		var out protocol.LearnResult
+		if err := json.Unmarshal(value, &out); err != nil {
+			return nil, err
+		}
+		return map[string]any{"recorded": out.Accepted, "id": strconv.FormatInt(out.ID, 10), "left_today": out.Remaining}, nil
 	case "message":
 		var q struct {
 			Action string `json:"action"`

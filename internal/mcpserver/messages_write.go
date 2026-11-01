@@ -137,11 +137,10 @@ func addCatalogTool(s *mcp.Server, name string, h mcp.ToolHandler) {
 		annotations.DestructiveHint = &destructive
 	}
 	s.AddTool(&mcp.Tool{
-		Name:         tool.Name,
-		Description:  tool.Description,
-		InputSchema:  tool.InputSchema,
-		OutputSchema: tool.OutputSchema,
-		Annotations:  annotations,
+		Name:        tool.Name,
+		Description: tool.Description,
+		InputSchema: tool.InputSchema,
+		Annotations: annotations,
 	}, h)
 }
 

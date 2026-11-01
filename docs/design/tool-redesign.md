@@ -376,7 +376,8 @@ page cut includes a `note` with a narrowing hint. Times use RFC 3339 UTC.
 
 Every successful tool result sets `structuredContent` to the value described by
 its output schema and includes the same JSON as one text content block. Validate
-the structured value before returning it. Keep the text representation semantically
+the structured value before returning it; the schema stays on the server and is
+not advertised in `tools/list`. Keep the text representation semantically
 identical. Do not use a resource link for essential content.
 
 The `detail` parameter on lists selects concise or full records. Concise records
@@ -400,7 +401,7 @@ external MCP tool data may be any JSON value. A proposed change returns a
 proposal ID and state, and a minor graph change may return an immediate result.
 
 
-The CTO action schemas below reproduce concrete MCP validation. The semantic rules below also apply, including gateway business checks. All input roots are flat objects. Server checks apply the selected action schema. Input and business failures return `isError: true` with a concise explanation, corrective action and example, such as `Choose exactly one of to or to_set. Example: {"to":"s01","body":"Please review."}`. Unknown tools and malformed JSON-RPC requests use protocol errors. `$defs` are copied into each output schema when registered. Descriptions and schemas below are the proposed list for measurement, not the current list.
+The CTO action schemas below reproduce concrete MCP validation. The semantic rules below also apply, including gateway business checks. All input roots are flat objects. Server checks apply the selected action schema. Input and business failures return `isError: true` with a concise explanation, corrective action and example, such as `Choose exactly one of to or to_set. Example: {"to":"s01","body":"Please review."}`. Unknown tools and malformed JSON-RPC requests use protocol errors. Output schemas are kept on the server for validation and are not sent in `tools/list`; their `$defs` are resolved before a result is checked. Descriptions and schemas below are the proposed list for measurement, not the current list.
 
 Roles: one catalog in the code. Each server lists only the tools for its caller's role: an agent sees agent tools, a worker sees only worker-marked tools, the CTO sees CTO-marked tools. The daemon checks the role on every call. `R D I O` stands for read-only, destructive, idempotent, open-world hints, respectively; a dash means false. The three tools `agent_announce`, `agent_sessions_find`, and `agent_message_send` set `_meta: {"anthropic/alwaysLoad": true}` when present. Other tools omit that metadata. Lists are sorted by name.
 
@@ -1331,13 +1332,18 @@ Each JSON object below is the routed concrete input schema plus its selector and
 
 ## Proposed list measurement
 
-Compact UTF-8 JSON encoding of the proposed tool arrays above, including `name`, `title`, `description`, input and output schemas, all four annotations, and the three always-load metadata entries where applicable: agent 43262 bytes (about 10816 tokens), worker 30592 bytes (about 7648 tokens), CTO 59680 bytes (about 14920 tokens). A throwaway Go program unmarshaled each proposed array and used `encoding/json.Marshal`, the baseline method; its output matched these counts. The estimate is bytes divided by four, not a tokenizer measurement.
+Compact UTF-8 JSON encoding of the proposed tool arrays above, including `name`, `title`, `description`, input and output schemas, all four annotations, and the three always-load metadata entries where applicable: agent 43262 bytes (about 10816 tokens), worker 30592 bytes (about 7648 tokens), CTO 59680 bytes (about 14920 tokens). A throwaway Go program unmarshaled each proposed array and used `encoding/json.Marshal`, the baseline method; its output matched these counts. The estimate is bytes divided by four, not a tokenizer measurement. The implemented list does not send output schemas, so this proposed measurement is an upper bound; see Results for the current sizes.
 
 ## Results
 
-The current tools/list JSON sizes are 53,814 bytes for agent, 36,094 bytes for
-worker, and 26,602 bytes for CTO. The baseline was 26,097 bytes for agent and
-15,902 bytes for CTO. Catalog-only lists are 34,934 bytes for agent, 25,088
-bytes for worker, and 20,983 bytes for CTO. The test marshals the tools array
-with `encoding/json`, as the baseline did. Catalog-only sizes include names in
-`toolcatalog.ForRole` that the server currently lists.
+The current tools/list JSON sizes are 35,383 bytes for agent (42 tools),
+21,411 bytes for worker (29 tools), and 31,972 bytes for CTO (43 tools).
+Catalog-only lists are 17,239 bytes for agent, 12,085 bytes for worker, and
+26,353 bytes for CTO. Output schemas are no longer advertised, which accounts
+for most of the reduction from the previous measure: 53,814 bytes for agent,
+36,094 bytes for worker, and 26,602 bytes for CTO, with catalog-only lists of
+34,934, 25,088, and 20,983 bytes. The CTO list grew because it now serves the
+15 shared catalog tools. The baseline was 26,097 bytes for agent and 15,902
+bytes for CTO. The test marshals the tools array with `encoding/json`, as the
+baseline did. Catalog-only sizes include names in `toolcatalog.ForRole` that the
+server lists.

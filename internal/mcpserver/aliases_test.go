@@ -313,13 +313,21 @@ func TestAliasKeepsOldResultShapes(t *testing.T) {
 		{"agent_announce", map[string]any{"task": "t"}},
 	}
 	cs := connect(t, aliasFake(t, nil))
+	// agent_handback is a worker tool: only a worker server lists it.
+	t.Setenv("AGENT_NET_WORKER", "w_test")
+	worker := connect(t, aliasFake(t, nil))
+	t.Setenv("AGENT_NET_WORKER", "")
 	for _, tc := range cases {
 		want, ok := golden[tc.name]
 		if !ok {
 			t.Errorf("no recorded shape for %s", tc.name)
 			continue
 		}
-		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
+		client := cs
+		if tc.name == "agent_handback" {
+			client = worker
+		}
+		res, err := client.CallTool(context.Background(), &mcp.CallToolParams{Name: tc.name, Arguments: tc.args})
 		if err != nil || res.IsError {
 			t.Errorf("%s: %v %+v", tc.name, err, res)
 			continue

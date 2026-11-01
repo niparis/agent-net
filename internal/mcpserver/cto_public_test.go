@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 func TestCTOPublicReadTools(t *testing.T) {
@@ -22,8 +24,9 @@ func TestCTOPublicReadTools(t *testing.T) {
 	}
 }
 
-func TestCTOSessionNeverOfferedOrdinaryAgentTools(t *testing.T) {
+func TestCTOSessionNeverOfferedAgentOnlyTools(t *testing.T) {
 	ctx := context.Background()
+	t.Setenv("AGENT_NET_WORKER", "")
 	ordinary, err := connect(t, func(context.Context, string, any) (json.RawMessage, error) { return nil, nil }).ListTools(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -36,9 +39,13 @@ func TestCTOSessionNeverOfferedOrdinaryAgentTools(t *testing.T) {
 	for _, tool := range ordinary.Tools {
 		names[tool.Name] = true
 	}
+	catalog := map[string]bool{}
+	for _, tool := range toolcatalog.Tools {
+		catalog[tool.Name] = true
+	}
 	for _, tool := range cto.Tools {
-		if names[tool.Name] {
-			t.Errorf("ordinary tool %s offered to CTO", tool.Name)
+		if names[tool.Name] && catalog[tool.Name] && !toolcatalog.Allows(toolcatalog.RoleCTO, tool.Name) {
+			t.Errorf("agent-only catalog tool %s offered to CTO", tool.Name)
 		}
 	}
 	if len(cto.Tools) == 0 {

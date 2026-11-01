@@ -54,14 +54,14 @@ func TestCTOV2CatalogSchemasAndStructuredResults(t *testing.T) {
 			t.Fatalf("missing %s", entry.Name)
 		}
 		in, _ := json.Marshal(tool.InputSchema)
-		out, _ := json.Marshal(tool.OutputSchema)
-		var wantIn, wantOut any
+		var wantIn any
 		_ = json.Unmarshal(entry.InputSchema, &wantIn)
-		_ = json.Unmarshal(entry.OutputSchema, &wantOut)
 		wantInBytes, _ := json.Marshal(wantIn)
-		wantOutBytes, _ := json.Marshal(wantOut)
-		if !reflect.DeepEqual(in, wantInBytes) || !reflect.DeepEqual(out, wantOutBytes) {
-			t.Errorf("%s schema differs from catalog", entry.Name)
+		if !reflect.DeepEqual(in, wantInBytes) {
+			t.Errorf("%s input schema differs from catalog", entry.Name)
+		}
+		if tool.OutputSchema != nil {
+			t.Errorf("%s lists an output schema", entry.Name)
 		}
 	}
 	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "graph_change", Arguments: map[string]any{"action": "node_add", "name": "example"}})

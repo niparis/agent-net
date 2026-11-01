@@ -84,7 +84,7 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		var m map[string]any
 		json.Unmarshal(raw, &m)
 		calls = append(calls, call{method, m})
-		return json.RawMessage(`{"ok":true}`), nil
+		return json.RawMessage(`{"ok":true,"accepted":true,"id":1,"remaining":2}`), nil
 	})
 	ctx := context.Background()
 	for _, c := range []struct {
@@ -106,10 +106,6 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 		{"agent_rate", "agent_rate", map[string]any{"worker": "s_w1", "score": 4, "note": "the diff was right"},
 			func(p map[string]any) bool {
 				return p["worker"] == "s_w1" && p["score"] == float64(4) && p["note"] == "the diff was right"
-			}},
-		{"agent_handback", "worker_handback", map[string]any{"report": "done", "status": "blocked", "complete": false},
-			func(p map[string]any) bool {
-				return p["report"] == "done" && p["status"] == "blocked" && p["complete"] == false
 			}},
 	} {
 		n := len(calls)
