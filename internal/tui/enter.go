@@ -49,8 +49,8 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 		return m, nil
 	}
 	if !a.Online && a.Harness != "opencode" && a.Harness != "codex" {
-		if (a.Harness != "claude" && a.Harness != "pi") || a.NodeID != m.snap.NodeID {
-			m.fail("resume works for Claude and Pi on this machine for now")
+		if a.Harness != "claude" && a.Harness != "pi" {
+			m.fail("resume works for Claude and Pi for now")
 			return m, nil
 		}
 		if m.now().Sub(time.Unix(a.LastSeen, 0)) > time.Hour {
@@ -77,7 +77,7 @@ func (m Model) resumeOwnerSession(a protocol.AgentView) (Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID})
+		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID, NodeID: a.NodeID})
 		for err == nil && res.Status == "starting" {
 			select {
 			case <-ctx.Done():

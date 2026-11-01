@@ -61,44 +61,66 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	if err := json.Unmarshal(data, &plan); err != nil {
 		return protocol.EnterPlan{}, err
 	}
-	// The other machine's words are shown on this terminal: no control codes.
+	// The machine to ssh to is the one the gateway says holds the session, not
+	// the name in the answer.
+	return d.wrapRemoteEnter(d.hostOfSession(ctx, q.SessionID), plan), nil
+}
+
+// wrapRemoteEnter turns the other machine's local plan into the command this
+// terminal runs: ssh, or herdr's remote client, or a note with the command.
+// The other machine's words are shown here, so control codes are removed.
+func (d *Daemon) wrapRemoteEnter(host string, plan protocol.EnterPlan) protocol.EnterPlan {
 	plan.Note = cleanLine(plan.Note)
 	plan.Host, plan.Env = cleanLine(plan.Host), nil // a secret never crosses the gateway; ignore one
 	plan.HerdrPane = cleanLine(plan.HerdrPane)
 	if len(plan.Argv) == 0 {
-		return protocol.EnterPlan{Host: plan.Host, Note: plan.Note}, nil
+		return protocol.EnterPlan{Host: plan.Host, Note: plan.Note}
 	}
-	// The machine to ssh to is the one the gateway says holds the session, not
-	// the name in the answer.
-	host := d.hostOfSession(ctx, q.SessionID)
 	run := remoteCommand(plan.Dir, plan.Argv)
 	where := firstNonEmpty(host, "the other machine")
 	fallback := fmt.Sprintf("On %s run: %s", where, run)
 	if host == "" {
-		return protocol.EnterPlan{Host: host, Note: fallback}, nil
+		return protocol.EnterPlan{Host: host, Note: fallback}
 	}
 	if !d.cfg.EnterSSH {
-		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh is off in node.json)"}, nil
+		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh is off in node.json)"}
 	}
 	target := host
 	if t := d.cfg.EnterSSHHosts[host]; t != "" {
 		target = t
 	}
 	if !sshTargetOK(target) {
-		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh_hosts gives a bad ssh target)"}, nil
+		return protocol.EnterPlan{Host: host, Note: fallback + "   (enter_ssh_hosts gives a bad ssh target)"}
 	}
 	// The session runs in herdr and this machine has a herdr client: use it.
 	// herdr's remote client carries the clipboard, so an image copied here can
 	// be pasted into the session there. The other machine focused the pane
 	// before answering.
-	if localHerdr != "" && herdrIDRe.MatchString(plan.HerdrPane) {
+	if localHerdr := d.herdrBinary(""); localHerdr != "" && herdrIDRe.MatchString(plan.HerdrPane) {
 		return protocol.EnterPlan{
 			Argv: []string{localHerdr, "--remote", target}, Host: host,
 			Note: fmt.Sprintf("Opens herdr on %s; the session is pane %s. Detach with ctrl+b then q (herdr's prefix + q) to come back here; the session keeps running.", host, plan.HerdrPane),
-		}, nil
+		}
 	}
 	return protocol.EnterPlan{Argv: []string{"ssh", "-t", "-o", "ConnectTimeout=5", "--", target, run}, Host: host,
-		Note: "Through ssh to " + target + ". " + plan.Note, Fallback: fallback}, nil
+		Note: "Through ssh to " + target + ". " + plan.Note, Fallback: fallback}
+}
+
+// remoteEnterNote is the result-line sentence after a start with a first
+// message on another machine: Enter reaches it, and how.
+func (d *Daemon) remoteEnterNote(host string) string {
+	where := firstNonEmpty(host, "the other machine")
+	if !d.cfg.EnterSSH {
+		return "Enter shows the command to run on " + where + " (enter_ssh is off in node.json)."
+	}
+	target := host
+	if t := d.cfg.EnterSSHHosts[host]; t != "" {
+		target = t
+	}
+	if !sshTargetOK(target) {
+		return "Enter shows the command to run on " + where + " (enter_ssh_hosts gives a bad ssh target)."
+	}
+	return "Enter opens it through ssh to " + target + "."
 }
 
 // hostOfSession is the host name the gateway lists for a session, or "".

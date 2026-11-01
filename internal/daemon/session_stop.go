@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -14,11 +15,45 @@ import (
 
 // sessionStop is owner-gated by dispatchOperator. It never signals processes
 // or kills a terminal: only the harness's background home may end a session.
+// A session on another machine is relayed through the gateway.
 func (d *Daemon) sessionStop(ctx context.Context, id string) (protocol.SessionStopResult, error) {
+	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
+	if d.sessionByID(id) == nil {
+		a, err := d.agentView(ctx, id)
+		if err != nil {
+			return no(errors.New("session is not known on this machine or through the gateway"))
+		}
+		if a.NodeID != "" && a.NodeID != d.cfg.NodeID {
+			return d.relaySessionStop(ctx, a.NodeID, id)
+		}
+	}
+	return d.sessionStopLocal(ctx, id)
+}
+
+// relaySessionStop asks the gateway to stop a session on another machine.
+func (d *Daemon) relaySessionStop(ctx context.Context, nodeID, id string) (protocol.SessionStopResult, error) {
+	owner := d.ownerSessionID()
+	if owner == "" {
+		return protocol.SessionStopResult{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+	}
+	data, err := d.call(ctx, protocol.FrameSessionStop, protocol.SessionRelay{Owner: owner, NodeID: nodeID, SessionID: id})
+	if err != nil {
+		return protocol.SessionStopResult{}, tooOldGateway(err)
+	}
+	var res protocol.SessionStopResult
+	if err := json.Unmarshal(data, &res); err != nil {
+		return protocol.SessionStopResult{}, err
+	}
+	return res, nil
+}
+
+// sessionStopLocal stops a session on this machine. It is also the gateway's
+// path, so it refuses a session that is not here instead of relaying again.
+func (d *Daemon) sessionStopLocal(ctx context.Context, id string) (protocol.SessionStopResult, error) {
 	no := func(err error) (protocol.SessionStopResult, error) { return protocol.SessionStopResult{}, err }
 	ls := d.sessionByID(id)
 	if ls == nil {
-		return no(errors.New("session_stop supports local sessions only for now"))
+		return no(errors.New("session is not known on this machine"))
 	}
 	info := d.infoOf(ls)
 	if info.Worker != nil {

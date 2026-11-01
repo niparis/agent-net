@@ -12,8 +12,12 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
+// sessionStart starts an owner session on this machine, or relays the request
+// to the machine that holds the project. See docs/design/start-sessions.md,
+// build plan part 8.
 func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartRequest) (protocol.StartedSession, error) {
 	p.Project = strings.TrimSpace(p.Project)
+	p.NodeID = strings.TrimSpace(p.NodeID)
 	if p.Project == "" {
 		return protocol.StartedSession{}, errors.New("session_start needs project")
 	}
@@ -21,11 +25,79 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 		p.Harness = "claude"
 	}
 	if p.Harness != "claude" && p.Harness != "opencode" && p.Harness != "codex" && p.Harness != "pi" {
-		return protocol.StartedSession{}, errors.New("session_start currently supports only local Claude, OpenCode, Codex and Pi sessions")
+		return protocol.StartedSession{}, errors.New("session_start supports only Claude, OpenCode, Codex and Pi sessions")
 	}
 	if len(p.FirstMessage) > protocol.MaxBodyBytes {
 		return protocol.StartedSession{}, errors.New("first_message is too long")
 	}
+	target, err := d.sessionStartMachine(ctx, p)
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	if target != "" {
+		return d.relaySessionStart(ctx, p, target)
+	}
+	return d.sessionStartLocal(ctx, p)
+}
+
+// agentView reads one session from the gateway.
+func (d *Daemon) agentView(ctx context.Context, id string) (protocol.AgentView, error) {
+	raw, err := d.call(ctx, "query.agent", protocol.QueryAgent{SessionID: id})
+	if err != nil {
+		return protocol.AgentView{}, err
+	}
+	var result struct {
+		Agent protocol.AgentView `json:"agent"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return protocol.AgentView{}, err
+	}
+	return result.Agent, nil
+}
+
+// sessionStartMachine picks the machine that runs the start. Empty means this
+// machine. An explicit NodeID is trusted; the target checks the project.
+func (d *Daemon) sessionStartMachine(ctx context.Context, p protocol.SessionStartRequest) (string, error) {
+	if p.NodeID != "" && p.NodeID != d.cfg.NodeID && !strings.EqualFold(p.NodeID, d.cfg.Hostname) {
+		return p.NodeID, nil
+	}
+	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+	if err != nil {
+		return "", err
+	}
+	var projects protocol.ProjectsResult
+	if err := json.Unmarshal(raw, &projects); err != nil {
+		return "", err
+	}
+	var local bool
+	remote := map[string]bool{}
+	for _, project := range projects.Projects {
+		hit := project.Name == p.Project || project.Path == p.Project
+		if !hit {
+			continue
+		}
+		if project.NodeID == d.cfg.NodeID {
+			local = true
+			continue
+		}
+		remote[project.NodeID] = true
+	}
+	if local || p.NodeID != "" {
+		return "", nil
+	}
+	switch len(remote) {
+	case 0:
+		return "", errors.New("project is not known on this machine or another one")
+	case 1:
+		for node := range remote {
+			return node, nil
+		}
+	}
+	return "", errors.New("project is on more than one machine: use name@machine")
+}
+
+// sessionStartLocal starts the session on this machine.
+func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartRequest) (protocol.StartedSession, error) {
 	bin, err := d.harnessBinary(p.Harness)
 	if err != nil {
 		return protocol.StartedSession{}, err
@@ -58,7 +130,7 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if !info.IsDir() {
 		return protocol.StartedSession{}, errors.New("project path is not a folder")
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: p.Harness, Project: found.Name, Path: found.Path, Model: p.Model, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: found.Path, Model: p.Model, StartedAt: time.Now().Unix()}
 	r.Branch, _ = gitOut(ctx, r.Path, "branch", "--show-current")
 	if p.Harness == "codex" {
 		args := []string{bin}
@@ -91,20 +163,79 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	return d.launchOwnerClaude(r, bin, args, ""), nil
 }
 
+// relaySessionStart asks the gateway to start the session on another machine.
+func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartRequest, target string) (protocol.StartedSession, error) {
+	owner := d.ownerSessionID()
+	if owner == "" {
+		return protocol.StartedSession{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+	}
+	frame := protocol.SessionStartRelay{Owner: owner, NodeID: target, SessionStartRequest: p}
+	data, err := d.call(ctx, protocol.FrameSessionStart, frame)
+	if err != nil {
+		return protocol.StartedSession{}, tooOldGateway(err)
+	}
+	var res protocol.StartedSession
+	if err := json.Unmarshal(data, &res); err != nil {
+		return protocol.StartedSession{}, err
+	}
+	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, target))
+	return d.remoteStartResult(res), nil
+}
+
+// remoteStartResult fills the fields that only the owner's machine can know:
+// the other machine's host name, the ssh note, and a remote Codex plan.
+func (d *Daemon) remoteStartResult(res protocol.StartedSession) protocol.StartedSession {
+	if res.NodeID == "" || res.NodeID == d.cfg.NodeID {
+		return res
+	}
+	res.Hostname = firstNonEmpty(res.Hostname, res.NodeID)
+	if res.EnterPlan != nil {
+		plan := d.wrapRemoteEnter(res.Hostname, *res.EnterPlan)
+		res.EnterPlan = &plan
+	}
+	res.EnterNote = d.remoteEnterNote(res.Hostname)
+	return res
+}
+
+func (d *Daemon) rememberRelayedStart(id, node string) {
+	if id == "" || node == "" {
+		return
+	}
+	d.mu.Lock()
+	if d.startedRelays == nil {
+		d.startedRelays = make(map[string]string)
+	}
+	d.startedRelays[id] = node
+	d.mu.Unlock()
+}
+
 func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequest) (protocol.StartedSession, error) {
-	raw, err := d.call(ctx, "query.agent", protocol.QueryAgent{SessionID: p.SessionID})
+	a, err := d.agentView(ctx, p.SessionID)
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	var result struct {
-		Agent protocol.AgentView `json:"agent"`
+	if a.NodeID != d.cfg.NodeID {
+		return d.relaySessionResume(ctx, a, p.SessionID)
 	}
-	if err = json.Unmarshal(raw, &result); err != nil {
+	return d.resumeAgent(ctx, a)
+}
+
+// sessionResumeLocal resumes an offline session that must be on this machine.
+// It is the gateway's path, so it never bounces the request again.
+func (d *Daemon) sessionResumeLocal(ctx context.Context, sessionID string) (protocol.StartedSession, error) {
+	a, err := d.agentView(ctx, sessionID)
+	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	a := result.Agent
-	if a.NodeID != d.cfg.NodeID || a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi") {
-		return protocol.StartedSession{}, errors.New("resume works for Claude and Pi on this machine for now")
+	if a.NodeID != d.cfg.NodeID {
+		return protocol.StartedSession{}, errors.New("session is not on this machine")
+	}
+	return d.resumeAgent(ctx, a)
+}
+
+func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView) (protocol.StartedSession, error) {
+	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi") {
+		return protocol.StartedSession{}, errors.New("resume works for Claude and Pi for now")
 	}
 	if a.Online {
 		return protocol.StartedSession{}, errors.New("session is already online")
@@ -113,7 +244,7 @@ func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequ
 	if err != nil || !info.IsDir() {
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: a.Harness, Project: a.Profile.Name, Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: a.Profile.Name, Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
 	if a.Harness == "pi" {
 		return d.launchOwnerPi(r, "", a.NativeID)
 	}
@@ -122,6 +253,24 @@ func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequ
 		return protocol.StartedSession{}, err
 	}
 	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID), nil
+}
+
+func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID string) (protocol.StartedSession, error) {
+	owner := d.ownerSessionID()
+	if owner == "" {
+		return protocol.StartedSession{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+	}
+	frame := protocol.SessionRelay{Owner: owner, NodeID: a.NodeID, SessionID: sessionID}
+	data, err := d.call(ctx, protocol.FrameSessionResume, frame)
+	if err != nil {
+		return protocol.StartedSession{}, tooOldGateway(err)
+	}
+	var res protocol.StartedSession
+	if err := json.Unmarshal(data, &res); err != nil {
+		return protocol.StartedSession{}, err
+	}
+	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, a.NodeID))
+	return d.remoteStartResult(res), nil
 }
 
 func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume string) protocol.StartedSession {
@@ -180,7 +329,39 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 	return r
 }
 
-func (d *Daemon) sessionStartGet(id string) (protocol.StartedSession, error) {
+// sessionStartGet answers for a local start or asks the machine that holds a
+// relayed one.
+func (d *Daemon) sessionStartGet(ctx context.Context, id string) (protocol.StartedSession, error) {
+	d.mu.Lock()
+	r, ok := d.startedSessions[id]
+	node := d.startedRelays[id]
+	d.mu.Unlock()
+	if ok {
+		return r, nil
+	}
+	if node == "" {
+		return r, errors.New("unknown session start")
+	}
+	owner := d.ownerSessionID()
+	if owner == "" {
+		return r, errors.New("the owner session is not registered yet (is the gateway reachable?)")
+	}
+	data, err := d.call(ctx, protocol.FrameSessionGet, protocol.SessionRelay{Owner: owner, NodeID: node, StartID: id})
+	if err != nil {
+		return r, tooOldGateway(err)
+	}
+	var remote protocol.StartedSession
+	if err := json.Unmarshal(data, &remote); err != nil {
+		return r, err
+	}
+	if remote.NodeID == "" {
+		remote.NodeID = node
+	}
+	return d.remoteStartResult(remote), nil
+}
+
+// sessionStartGetLocal answers the gateway for a start on this machine.
+func (d *Daemon) sessionStartGetLocal(id string) (protocol.StartedSession, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	r, ok := d.startedSessions[id]
