@@ -12,12 +12,12 @@ import (
 func TestPendingStatusOnlyIdle(t *testing.T) {
 	m := Model{now: time.Now}
 	a := protocol.AgentView{Online: true, Status: "idle", Pending: []protocol.PendingRequest{{PeerName: "bob", Since: time.Now().Add(-12 * time.Minute).Unix(), Outgoing: true}}}
-	if got := m.statusCell(a); got != "waiting" {
+	if got := m.statusCell(a); got != "wait" {
 		t.Fatalf("idle: %q", got)
 	}
 	for _, status := range []string{"busy", "shell", "unknown"} {
 		a.Status = status
-		if got := m.statusCell(a); got == "waiting" || got == "owes" {
+		if got := m.statusCell(a); got == "wait" || got == "owes" {
 			t.Fatalf("%s: %q", status, got)
 		}
 	}
@@ -75,8 +75,13 @@ func TestPendingTaskAndLayout(t *testing.T) {
 		}
 		for i := range before {
 			if strings.Contains(before[i], "strategies") {
-				if !strings.Contains(after[i], "12m") || !strings.Contains(after[i], "waiting") {
+				if !strings.Contains(after[i], "12m") || !strings.Contains(after[i], "wait") {
 					t.Fatalf("width %d: %q", width, after[i])
+				}
+				for _, marker := range []string{" - ", "240%", "4.6G"} {
+					if strings.Index(before[i], marker) != strings.Index(after[i], marker) {
+						t.Fatalf("width %d: %s shifted: %q vs %q", width, marker, before[i], after[i])
+					}
 				}
 				continue
 			}

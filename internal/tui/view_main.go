@@ -1152,12 +1152,6 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		marker = lipgloss.NewStyle().Foreground(roleAccent).Render("▸") + " "
 	}
 	uc := m.usageCells(a, cols)
-	overflow := false
-	for _, c := range cols {
-		if c.name == "STATUS" && c.width == 6 && m.statusCell(a) == "waiting" && !(m.hiddenSessions[a.SessionID] && m.showHiddenSessions) {
-			overflow = true
-		}
-	}
 	var parts []string
 	for _, c := range cols {
 		if v, ok := uc[c.name]; ok {
@@ -1187,9 +1181,6 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		case "POLICY":
 			v = policyBadge(a.Delegation)
 		case "TASK":
-			if overflow {
-				c.width = max(c.width-1, 0)
-			}
 			v = taskText(a)
 			if pending := m.pendingTask(a, c.width); pending != "" {
 				v = pending
@@ -1200,8 +1191,6 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 		}
 		if c.name == "TASK" {
 			v = cellDots(v, c.width)
-		} else if c.name == "STATUS" && v == "waiting" && c.width == 6 {
-			// The waiting row borrows one character from its TASK cell.
 		} else {
 			v = cell(v, c.width)
 		}

@@ -7,7 +7,7 @@
   NAME               AGENT    PROJECT    MODEL      STATUS TRUST   CPU   RAM TASK
  Mac (here) 3 sessions ─────────────────────────────────────────────────────────────────────────────────────────────────
   tenebrae-53        claude   tenebrae   opus-5-5   busy   -       38%  1.2G
-  strategies         claude   strategies sonnet-5-5 waiting -      240%  4.6G waiting on a-very-long-recipient-na… · 12m
+  strategies         claude   strategies sonnet-5-5 wait   -      240%  4.6G waiting on a-very-long-recipient-name · 12m
   web                opencode shop       sonnet-5   owes   -         ?     ? owes reply to alice · 3m
  build-vm 2 sessions ───────────────────────────────────────────────────────────────────────────────────────────────────
   ci-runner          pi       agent-net  gpt-6      idle   -        5%  300M

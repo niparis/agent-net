@@ -325,7 +325,7 @@ func (m Model) statusCell(a protocol.AgentView) string {
 				return "owes"
 			}
 		}
-		return "waiting"
+		return "wait"
 	}
 	return statusShort(a.Status)
 }
