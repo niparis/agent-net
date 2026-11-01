@@ -93,7 +93,7 @@ func (r *runner) ctoTitleForSetup() (ctoTitleStore, bool) {
 // title is cosmetic and owner-facing, so every other run keeps the default:
 // a joining machine, a rerun, an upgrade, and a run without a terminal.
 func (r *runner) askCTOTitle(ctx context.Context) {
-	if !r.Gateway || r.joining || !r.interactive {
+	if !r.Gateway || !r.freshGateway || r.joining || !r.interactive {
 		return
 	}
 	store, ok := r.ctoTitleForSetup()

@@ -35,6 +35,7 @@ func TestCTOTitleQuestionOnlyOnAFreshGatewayWithATerminal(t *testing.T) {
 	tests := []struct {
 		name        string
 		gateway     bool
+		fresh       bool
 		joining     bool
 		interactive bool
 		stored      bool
@@ -43,22 +44,24 @@ func TestCTOTitleQuestionOnlyOnAFreshGatewayWithATerminal(t *testing.T) {
 		reads       int
 		opens       int
 	}{
-		{name: "fresh gateway with a terminal", gateway: true, interactive: true, ask: true, reads: 1, opens: 1},
+		{name: "fresh gateway with a terminal", gateway: true, fresh: true, interactive: true, ask: true, reads: 1, opens: 1},
 		{name: "joining machine", gateway: false, joining: true, interactive: true},
 		{name: "rerun without the gateway", gateway: false, interactive: true},
-		{name: "rerun with a title", gateway: true, interactive: true, stored: true, reads: 1},
-		{name: "upgrade without a terminal", gateway: true},
-		{name: "gateway run whose terminal is gone", gateway: true, interactive: true, ttyErr: true, reads: 1, opens: 1},
+		{name: "rerun on an existing gateway", gateway: true, interactive: true},
+		{name: "rerun with a title", gateway: true, fresh: true, interactive: true, stored: true, reads: 1},
+		{name: "upgrade without a terminal", gateway: true, fresh: true},
+		{name: "gateway run whose terminal is gone", gateway: true, fresh: true, interactive: true, ttyErr: true, reads: 1, opens: 1},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
 			store := &fakeTitleStore{title: protocol.CTOTitle{Title: protocol.DefaultCTOTitle, Set: tc.stored}}
 			r := &runner{
-				Options:     Options{Out: &out, Gateway: tc.gateway},
-				joining:     tc.joining,
-				interactive: tc.interactive,
-				titleStore:  store,
+				Options:      Options{Out: &out, Gateway: tc.gateway},
+				freshGateway: tc.fresh,
+				joining:      tc.joining,
+				interactive:  tc.interactive,
+				titleStore:   store,
 			}
 			old := openTTY
 			opened := 0
@@ -116,7 +119,7 @@ func TestCTOTitleValueRulesInSetup(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
 			store := &fakeTitleStore{title: protocol.CTOTitle{Title: protocol.DefaultCTOTitle}}
-			r := &runner{Options: Options{Out: &out, Gateway: true}, interactive: true, titleStore: store}
+			r := &runner{Options: Options{Out: &out, Gateway: true}, freshGateway: true, interactive: true, titleStore: store}
 			old := openTTY
 			openTTY = func() (io.ReadCloser, error) { return io.NopCloser(strings.NewReader(tc.input)), nil }
 			t.Cleanup(func() { openTTY = old })

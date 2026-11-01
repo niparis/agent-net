@@ -75,6 +75,7 @@ type runner struct {
 	statusClient   *client.Client
 	statusInfo     daemonInfo
 	interactive    bool
+	freshGateway   bool
 	titleStore     ctoTitleStore
 	// want is the answer for the seven integrations. When it is set, the steps
 	// apply it and turn an item off as well as on. When it is nil, the steps
@@ -152,6 +153,7 @@ func Setup(ctx context.Context, o Options) error {
 	}
 	defer r.finish(ctx)
 	if r.Gateway {
+		r.freshGateway = !gatewayDataExists(r.gatewayData())
 		r.setupGateway(ctx)
 		if r.failed != nil {
 			return r.failed
@@ -310,6 +312,13 @@ func (r *runner) gatewayData() string {
 		return d
 	}
 	return filepath.Join(home(), ".local", "state", "agent-net", "gateway")
+}
+
+// gatewayDataExists says whether a gateway already ran with this data folder.
+// A gateway that ran before is a rerun or an upgrade, not a fresh install.
+func gatewayDataExists(dir string) bool {
+	_, err := os.Stat(filepath.Join(dir, "ca.pem"))
+	return err == nil
 }
 
 // waitForCA waits for the gateway service to create its CA.
