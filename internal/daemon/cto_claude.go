@@ -156,7 +156,8 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		if root != nil {
 			tok, alive = procToken(root.pid)
 		}
-		if ok && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
+		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
+		if ok && status == "running" && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
 			d.cto.mu.Unlock()
 			return nil
 		}
