@@ -124,12 +124,12 @@ func TestCTOReservedNameUpgrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, migration := range migrations[:len(migrations)-1] {
+	for _, migration := range migrations[:len(migrations)-2] {
 		if _, err := db.Exec(migration); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := db.Exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(?)`, len(migrations)-1); err != nil {
+	if _, err := db.Exec(`CREATE TABLE schema_version(version INTEGER NOT NULL); INSERT INTO schema_version VALUES(?)`, len(migrations)-2); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := db.Exec(`INSERT INTO nodes(id,hostname,os,token_hash,created_at) VALUES('n_old','test','linux','hash',1); INSERT INTO sessions(id,node_id,harness,native_id,name,last_seen,online) VALUES('s_old','n_old','pi','native','CTO',1,1); INSERT INTO profiles(session_id,name,updated_at) VALUES('s_old','CTO',1)`); err != nil {
