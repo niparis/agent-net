@@ -10,8 +10,8 @@ import (
 	"strings"
 )
 
-// processHasOpenPath is conservative: if a process cannot be inspected it
-// returns an error, so the caller keeps the entry.
+// processHasOpenPath returns an error when a process cannot be inspected.
+// The caller uses a positive match to keep an entry and otherwise uses age.
 func processHasOpenPath(path string) (bool, error) {
 	return processHasOpenPathIn("/proc", path)
 }
