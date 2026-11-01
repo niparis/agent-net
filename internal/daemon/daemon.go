@@ -620,6 +620,28 @@ func (d *Daemon) sessionByID(id string) *localSession {
 	return nil
 }
 
+// activitySession returns the local session with this gateway ID when exactly
+// one session has it. If two local sessions share an ID, touching either one
+// could register it under another ID on the gateway, so it returns nil.
+func (d *Daemon) activitySession(id string) *localSession {
+	if id == "" {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var found *localSession
+	for _, ls := range d.sessions {
+		if ls.sessionID != id {
+			continue
+		}
+		if found != nil {
+			return nil
+		}
+		found = ls
+	}
+	return found
+}
+
 func (d *Daemon) infoOf(ls *localSession) protocol.SessionInfo {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -769,7 +791,7 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 		p.IdempotencyKey = protocol.NewID("k")
 	}
 	d.touchWorker(p.Sender, p.Recipient) // a message to or from a worker keeps it alive
-	if ls := d.sessionByID(p.Sender); ls != nil {
+	if ls := d.activitySession(p.Sender); ls != nil {
 		d.touchSession(ls, time.Now())
 	}
 	d.sendMu.Lock()
@@ -948,7 +970,9 @@ retryWorker:
 		d.wmu.Unlock()
 	}
 	d.touchWorker(m.To, m.From)
-	d.touchSession(ls, time.Now()) // it received a message
+	if sender := d.activitySession(m.To); sender != nil {
+		d.touchSession(sender, time.Now()) // it received a message
+	}
 	d.noteAsk(m)
 	var res Result
 	if targetWorker != nil && targetWorker.harness == "codex" {
