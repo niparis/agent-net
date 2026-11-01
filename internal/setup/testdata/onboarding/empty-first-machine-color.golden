@@ -6,7 +6,7 @@ daemon status         connected to https://gateway.example:7420 as node n_laptop
         [2ma project: it shows up here by itself.[0m
 [36m2 Talk[0m  Your agents will be able to ask each other.
 [36m3 CTO[0m   Your CTO runs the network for you. Ask it in plain words.
-[36m4 Graph[0m No projects yet. Each project you work in becomes one.
+[36m2 Graph[0m No projects yet. Each project you work in becomes one.
 [36m5 Work[0m  Workers can use: codex. Nothing to protect yet.
 [36m6 Tools[0m Skills and MCP servers are checked on every machine.
 

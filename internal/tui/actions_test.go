@@ -107,7 +107,7 @@ func TestOwnerIsNotARowButIsNamedInTheFeed(t *testing.T) {
 	if got := m.who(ownerID); got != "you (on Mac)" {
 		t.Errorf("who(owner) = %q", got)
 	}
-	v := keys(send(m, tea.WindowSizeMsg{Width: 80, Height: 40}), "2").View() // the feed needs room
+	v := keys(send(m, tea.WindowSizeMsg{Width: 80, Height: 40}), "4").View() // the feed needs room
 	if !strings.Contains(v, "you → tenebrae") {
 		t.Errorf("the feed does not show the owner:\n%s", v)
 	}

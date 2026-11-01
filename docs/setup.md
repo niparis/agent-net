@@ -133,9 +133,9 @@ From source: `scripts/dist.sh`, then `agent-net setup --gateway`. The install li
 
 Start a Pi session on one machine and a Claude Code session on another. Ask one to use `agent_list`, then message the other. On either machine, `agent-net messages` should show the request as `replied` and the answer as `delivered`.
 
-In the TUI, press `4`, `M` or `G` for Graph. Find an agent with `/`, then
+In the TUI, press `2`, `M` or `G` for Graph. Find an agent with `/`, then
 press Enter for its charter card. Esc returns to the Graph with the same node
-selected. The tabs are 1 Sessions, 2 Messages, 3 Quotas, 4 Graph and 5 Tools.
+selected. The tabs are 1 Sessions, 2 Graph, 3 Quotas, 4 Messages and 5 Tools.
 
 ## Workers on a machine
 

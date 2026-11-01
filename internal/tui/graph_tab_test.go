@@ -78,7 +78,7 @@ func TestGraphTabKeys(t *testing.T) {
 		t.Fatal("enter did not open selected map node")
 	}
 	n := mapModel(80, 24, graphFixture())
-	next, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
+	next, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("2")})
 	n = next.(Model)
 	if n.tab != graphTab || cmd == nil {
 		t.Fatal("4 did not open graph")

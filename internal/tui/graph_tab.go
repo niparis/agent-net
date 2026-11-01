@@ -13,8 +13,6 @@ import (
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
-const graphTab = 3
-
 var graphSelectionStyle = lipgloss.NewStyle().Bold(true).Foreground(graphview.AccentColor)
 
 type graphTickMsg struct{ generation int }

@@ -260,7 +260,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if k.Type == tea.KeyEsc || k.String() == "tab" {
 		m.focus = focusSessions
-		if m.tab == 1 && !m.mapOn {
+		if m.tab == messagesTab && !m.mapOn {
 			m.focus = focusFeed
 		}
 		return m, nil

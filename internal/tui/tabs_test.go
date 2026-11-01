@@ -18,20 +18,35 @@ import (
 
 func TestTabSwitching(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Messages  3 Quotas") {
-		t.Fatal(m.titleLine(80))
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools") {
+		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m = keys(m, "3")
-	if m.tab != 2 {
-		t.Fatal("2 did not select quotas")
+	if m.tab != quotasTab {
+		t.Fatal("3 did not select quotas")
 	}
 	m = keys(m, "1")
-	if m.tab != 0 {
+	if m.tab != sessionsTab {
 		t.Fatal("1 did not select sessions")
 	}
 	m = keys(m, "/", "2")
-	if m.tab != 0 || m.filter != "2" {
+	if m.tab != sessionsTab || m.filter != "2" {
 		t.Fatal("filter intercepted tab key")
+	}
+}
+
+func TestNumberKeysOpenGraphAndMessages(t *testing.T) {
+	m := newModel(80, 24)
+	m = keys(m, "2")
+	if m.tab != graphTab {
+		t.Fatalf("2 opened tab %d, not Graph (%d)", m.tab, graphTab)
+	}
+	m = keys(m, "4")
+	if m.tab != messagesTab {
+		t.Fatalf("4 opened tab %d, not Messages (%d)", m.tab, messagesTab)
+	}
+	if m.focus != focusFeed {
+		t.Fatal("4 did not focus the message thread")
 	}
 }
 
@@ -186,11 +201,11 @@ func TestTabStyleAndTitleSeparator(t *testing.T) {
 		t.Fatal("active tab must be bold with a background")
 	}
 	m := newModel(80, 24)
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ ") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ ") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 	m.tab = 2
-	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ ") {
+	if !strings.HasPrefix(ansi.Strip(m.titleLine(80)), "1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ ") {
 		t.Fatal(ansi.Strip(m.titleLine(80)))
 	}
 }
@@ -200,8 +215,8 @@ func TestTabsMoveFeedToMessages(t *testing.T) {
 	if !strings.Contains(m.View(), "1 Sessions") {
 		t.Fatal("sessions tab missing")
 	}
-	m = keys(m, "2")
-	if !strings.Contains(m.View(), "2 Messages") || !strings.Contains(m.View(), "Messages") {
+	m = keys(m, "4")
+	if !strings.Contains(m.View(), "4 Messages") || !strings.Contains(m.View(), "Messages") {
 		t.Fatal("messages tab missing")
 	}
 	m = keys(m, "3")
@@ -240,7 +255,7 @@ func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
 	if !strings.Contains(m.View(), "enter: open the CTO · tab: back") {
 		t.Fatal("CTO box hint missing")
 	}
-	m = keys(m, "2", "C")
+	m = keys(m, "4", "C")
 	if m.tab != 0 || m.focus != focusCTO {
 		t.Fatal("C did not focus CTO from Messages")
 	}
@@ -308,7 +323,7 @@ func TestLayoutGoldens(t *testing.T) {
 			}
 			golden(t, fmt.Sprintf("sessions_%dx%d_%s_focused", size[0], size[1], kind), v)
 		}
-		m := keys(newModel(size[0], size[1]), "2")
+		m := keys(newModel(size[0], size[1]), "4")
 		for id, body := range map[string]string{
 			"m_1": "Can you check the latest deployment plan?\nThe release is planned for tonight.",
 			"m_2": "The deployment plan looks good.\nI checked the rollback steps too.",
@@ -353,7 +368,7 @@ func TestLayoutGoldens(t *testing.T) {
 
 func TestCTOFocusFromMessageBody(t *testing.T) {
 	m := newModel(80, 24)
-	m = keys(m, "esc", "2")
+	m = keys(m, "esc", "4")
 	m.open = &openMsg{id: "message"}
 	m = keys(m, "C")
 	if m.focus != focusCTO || m.open != nil || m.tab != 0 {
@@ -372,7 +387,7 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 }
 
 func TestCTOFrameOnEveryTab(t *testing.T) {
-	for _, key := range []string{"1", "2", "3", "M"} {
+	for _, key := range []string{"1", "2", "3", "4", "M"} {
 		m := keys(newModel(80, 24), key)
 		if !strings.Contains(m.View(), "enter: open the CTO") {
 			t.Errorf("%s missing CTO", key)
@@ -383,7 +398,7 @@ func TestCTOFrameOnEveryTab(t *testing.T) {
 		}
 		m = keys(m, "tab")
 		want := focusSessions
-		if key == "2" {
+		if key == "4" {
 			want = focusFeed
 		}
 		if m.focus != want {
@@ -459,7 +474,7 @@ func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
 }
 
 func TestMessagesHintShowsCTOFocus(t *testing.T) {
-	m := keys(newModel(120, 34), "2")
+	m := keys(newModel(120, 34), "4")
 	if !strings.Contains(ansi.Strip(m.helpLine(120)), "tab CTO") {
 		t.Fatal("Messages help omits CTO focus")
 	}

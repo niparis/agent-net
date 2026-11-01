@@ -12,8 +12,8 @@ import (
 // list lives in the help overlay; no line may grow past seven hints.
 func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 	for _, tc := range []struct{ name, key string }{
-		{"Sessions", "1"}, {"Messages", "2"}, {"Quotas", "3"},
-		{"Graph", "4"}, {"Tools", "5"},
+		{"Sessions", "1"}, {"Messages", "4"}, {"Quotas", "3"},
+		{"Graph", "2"}, {"Tools", "5"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		line := ansi.Strip(m.helpLine(120))
@@ -36,10 +36,10 @@ func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 func TestKeyLineContentPerTab(t *testing.T) {
 	for _, tc := range []struct{ name, key, want string }{
 		{"Sessions", "1", "up/down select  enter open  m msg  n new  tab CTO  ? help  q quit"},
-		{"Messages", "2", "up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit"},
+		{"Messages", "4", "up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit"},
 		{"Tools", "5", "j/k move  enter fix  x accept  [ ] screen  ? help  q quit"},
-		{"Graph", "4", "1-5 tabs  tab CTO  ? help  q quit"},
+		{"Graph", "2", "1-5 tabs  tab CTO  ? help  q quit"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		if got := ansi.Strip(m.helpLine(120)); got != tc.want {
@@ -56,9 +56,9 @@ func TestKeysRemovedFromKeyLineStayInHelp(t *testing.T) {
 		removed   []string
 	}{
 		{"Sessions", "1", []string{"1-5", "s", "x", "h", "H", "t", "p", "N", "L", "o", "a", "d", "r", "/"}},
-		{"Messages", "2", []string{"w", "e", "l"}},
+		{"Messages", "4", []string{"w", "e", "l"}},
 		{"Quotas", "3", []string{"1-5"}},
-		{"Graph", "4", []string{"D", "[ ]", "U", "u", "h", "H", "c"}},
+		{"Graph", "2", []string{"D", "[ ]", "U", "u", "h", "H", "c"}},
 		{"Tools", "5", []string{".", "r", "tab"}},
 	} {
 		m := keys(newModel(120, 34), tc.key)

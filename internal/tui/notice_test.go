@@ -38,7 +38,7 @@ func noticeScreens(w, h int) []struct {
 	out = append(out, struct {
 		name string
 		m    Model
-	}{"map", keys(newModel(w, h), "4")})
+	}{"map", keys(newModel(w, h), "2")})
 	return out
 }
 

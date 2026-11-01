@@ -13,33 +13,33 @@ import (
 
 func TestGraphCardReturnKeepsSelection(t *testing.T) {
 	m := graphModel(120, 34)
-	m.tab = 3
+	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
 	camera := m.graphState.Camera
 	m = keys(m, "enter")
-	if !m.mapOn || m.tab != 3 || m.mp.selected != "project-02" {
+	if !m.mapOn || m.tab != graphTab || m.mp.selected != "project-02" {
 		t.Fatalf("Enter did not open card: tab=%d card=%v node=%s", m.tab, m.mapOn, m.mp.selected)
 	}
 	m = keys(m, "esc")
-	if m.mapOn || m.tab != 3 || m.graphState.Graph.Selected() != "project-02" || m.graphState.Camera != camera {
+	if m.mapOn || m.tab != graphTab || m.graphState.Graph.Selected() != "project-02" || m.graphState.Camera != camera {
 		t.Fatal("Esc did not return to selected graph node")
 	}
 }
 func TestNetworkTabsAndAliases(t *testing.T) {
 	m := mapModel(120, 34, fakeGraph())
-	if len(tabNames) != 5 || !strings.Contains(ansi.Strip(m.titleLine(120)), "4 Graph  5 Tools") {
+	if len(tabNames) != 5 || !strings.Contains(ansi.Strip(m.titleLine(120)), "2 Graph  3 Quotas") {
 		t.Fatalf("wrong tabs: %v", tabNames)
 	}
-	for _, key := range []string{"4", "M", "G"} {
+	for _, key := range []string{"2", "M", "G"} {
 		n := keys(m, key)
-		if n.tab != 3 || n.mapOn {
+		if n.tab != graphTab || n.mapOn {
 			t.Fatalf("%s did not open Graph", key)
 		}
 	}
 }
 func TestGraphFindSelectsMatch(t *testing.T) {
 	m := graphModel(120, 34)
-	m.tab = 3
+	m.tab = graphTab
 	m = keys(m, "/", "project-12", "enter")
 	if m.graphState.Graph.Selected() != "project-12" || m.mapOn || m.mp.finding {
 		t.Fatal("graph search did not select match")
@@ -47,7 +47,7 @@ func TestGraphFindSelectsMatch(t *testing.T) {
 }
 func TestGraphCardLearnedUndo(t *testing.T) {
 	m := graphModel(120, 40)
-	m.tab = 3
+	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 1, Node: "project-02", Field: "needs", Phrase: "ops", Status: "applied", By: "learned", HistoryID: 42}, {ID: 2, Node: "project-02", Field: "needs", Phrase: "backup", Status: "applied", By: "learned", HistoryID: 43}}
 	m = keys(m, "enter", "U")

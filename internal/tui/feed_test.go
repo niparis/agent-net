@@ -262,7 +262,7 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 		ev(2, -time.Minute, "session.new", "", "", "", "", func(e *protocol.FeedEvent) { e.Detail = "name=fresh harness=claude" }),
 	}
 	m, _ := feedModel(events, nil)
-	m = keys(m, "2")
+	m = keys(m, "4")
 	if it := m.feedItemAt(m.feedCur); it == nil || it.Kind != "msg.stored" {
 		t.Fatalf("the cursor sits on a hidden line: %+v", it)
 	}
@@ -274,7 +274,7 @@ func TestFeedCursorSkipsHiddenLines(t *testing.T) {
 
 func TestFeedEnterSelectsTheLatestMessageInTheThread(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
-	m = keys(m, "2")
+	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_1")
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
@@ -288,7 +288,7 @@ func TestFeedEnterSelectsTheLatestMessageInTheThread(t *testing.T) {
 
 func TestFeedVOpensTheMessageBody(t *testing.T) {
 	m, _ := feedModel(fakeEvents(), nil)
-	m = keys(m, "2")
+	m = keys(m, "4")
 	m = selectFeedMessage(m, "m_1")
 	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("v")})
 	m = next.(Model)
@@ -325,7 +325,7 @@ func TestHelpListsTheMessageStates(t *testing.T) {
 }
 
 func TestMessagesPanelAndCTOColors(t *testing.T) {
-	m := keys(newModel(120, 34), "2")
+	m := keys(newModel(120, 34), "4")
 	it := m.feed.items[m.feedCur]
 	it.FromCTO = true
 	old := lipgloss.ColorProfile()
@@ -376,7 +376,7 @@ func selectFeedMessage(m Model, id string) Model {
 }
 
 func TestMessagesOwnerInstruction(t *testing.T) {
-	m := keys(newModel(120, 34), "2")
+	m := keys(newModel(120, 34), "4")
 	it := m.feed.items[m.feedCur]
 	m.applySnippet(snippetMsg{id: it.MsgID, msg: protocol.Message{Body: "work", OwnerInstruction: "ask the agent"}})
 	v := m.View()
