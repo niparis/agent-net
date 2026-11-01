@@ -117,7 +117,10 @@ func startGatewayPageSize(t *testing.T, dir, addr string, size int) *testGateway
 	}
 	logs := &logBuf{}
 	seedDatabase(t, dir, "gateway.db", gatewayTemplateBytes)
-	gw, err := gateway.New(gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond, Logger: log.New(logs, "", 0)})
+	gw, err := gateway.New(gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond,
+		Logger: log.New(logs, "", 0),
+		// The test sessions live in the test's own temporary folders.
+		TempFolders: []string{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -260,7 +263,10 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
 		EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
-		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger}
+		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger,
+		// The helper sessions live in the test's own temporary folders. A
+		// test that wants the temp rule sets TempFolders itself.
+		TempFolders: []string{}}
 	if o.adapter != nil {
 		cfg.Adapters = []Adapter{o.adapter}
 	}

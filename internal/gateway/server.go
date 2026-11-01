@@ -45,6 +45,9 @@ type Options struct {
 	Restart func()
 	// Retention says how long data is kept. The zero value keeps everything.
 	Retention Retention
+	// TempFolders lists folders whose sessions belong to no project. Nil uses
+	// the system temporary folders; an empty list turns the rule off (tests).
+	TempFolders []string
 }
 
 type Gateway struct {
@@ -163,6 +166,9 @@ func New(opts Options) (*Gateway, error) {
 	}
 	if opts.Now != nil {
 		store.now = opts.Now
+	}
+	if opts.TempFolders != nil {
+		store.tempFolders = opts.TempFolders
 	}
 	if err := store.SetAllOffline(); err != nil {
 		store.Close()

@@ -20,6 +20,7 @@ import (
 	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/phrasing"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/temppath"
 	_ "modernc.org/sqlite"
 )
 
@@ -47,7 +48,10 @@ type Store struct {
 	graphJunkMigrated bool
 	identityMerges    [][2]string
 	identityConflicts [][2]string
-	now               func() time.Time
+	// tempFolders lists folders whose sessions belong to no project. Nil
+	// uses the system temporary folders; an empty list turns the rule off.
+	tempFolders []string
+	now         func() time.Time
 	// logf writes a structured log line; the gateway sets it. Never pass a
 	// message body to it.
 	logf func(event string, kv ...any)
@@ -63,6 +67,15 @@ type Store struct {
 type bucket struct {
 	tokens float64
 	last   time.Time
+}
+
+// tempRoots is the list of folders that hold no project. Nil means the system
+// temporary folders; an empty list turns the rule off (tests).
+func (s *Store) tempRoots() []string {
+	if s.tempFolders != nil {
+		return s.tempFolders
+	}
+	return temppath.Default()
 }
 
 // migrations are applied in order. Never edit one that has shipped.
@@ -429,6 +442,10 @@ SELECT 1 /* worker auto continue */;
 -- Continued sessions belong to one task. Mid-run requests are kept apart
 -- from the existing rework counters until the owner assigns a weight.
 SELECT 1 /* worker task rework columns */;
+`, `
+-- A session whose folder is temporary belongs to no project, so temp test
+-- runs do not fill the project list. The session itself stays.
+SELECT 1 /* session no project column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -646,6 +663,19 @@ func (s *Store) migrate() error {
 			}
 			if has == 0 {
 				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN auto_continue_count INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "session no project column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions') WHERE name = 'no_project'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN no_project INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
@@ -908,8 +938,8 @@ func (s *Store) upsertSession(q interface {
 	lastActive := in.LastActive * int64(time.Second)
 	_, err = q.Exec(`INSERT INTO sessions (id, node_id, harness, native_id, name, title, cwd, pid, status, delivery, last_seen, last_active, online,
 		repo_root, repo_project, repo_remote, repo_branch, repo_worktree, mode, model, worker, repo_description, worker_started,
-		tools_version, tools_old, created_at, waiting, graph_excluded)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		tools_version, tools_old, created_at, waiting, graph_excluded, no_project)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (node_id, harness, native_id) DO UPDATE SET
 		name=excluded.name, title=excluded.title, cwd=excluded.cwd, pid=excluded.pid, status=excluded.status,
 		delivery=excluded.delivery, last_seen=excluded.last_seen, online=1,
@@ -918,10 +948,12 @@ func (s *Store) upsertSession(q interface {
 		repo_remote=excluded.repo_remote, repo_branch=excluded.repo_branch,
 		repo_worktree=excluded.repo_worktree, mode=excluded.mode, model=excluded.model, worker=excluded.worker,
 		repo_description=excluded.repo_description, worker_started=excluded.worker_started,
-		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded`,
+		tools_version=excluded.tools_version, tools_old=excluded.tools_old, waiting=excluded.waiting, graph_excluded=excluded.graph_excluded,
+		no_project=excluded.no_project`,
 		newID, nodeID, in.Harness, in.NativeID, name, title, in.Cwd, in.PID, in.Status, in.Delivery, now, lastActive,
 		in.Repo.Root, in.Repo.Project, in.Repo.Remote, in.Repo.Branch, in.Repo.Worktree, in.Mode, in.Model, worker,
-		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting, graphExclusion(in.GraphExcluded, in.GraphChecked))
+		in.Repo.Description, workerStarted, protocol.CleanModel(in.ToolsVersion), boolInt(in.ToolsOld), now, waiting,
+		graphExclusion(in.GraphExcluded, in.GraphChecked), boolInt(in.NoProject))
 	if err != nil {
 		return "", false, err
 	}

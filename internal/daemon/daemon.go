@@ -130,6 +130,10 @@ type Config struct {
 	MCPBackoffMin, MCPBackoffMax time.Duration
 	// Repo finds the project of a session's folder. Default: repoinfo.New().
 	Repo *repoinfo.Resolver
+	// TempFolders lists the folders whose sessions belong to no project.
+	// Nil uses the system temporary folders (see package temppath). An empty
+	// list turns the rule off, which tests use for their own temp sessions.
+	TempFolders []string
 	// DetectHarnesses lists the installed harnesses. Default: harnesses.Detect
 	// with the usual install folders.
 	DetectHarnesses func(ctx context.Context) []protocol.HarnessInfo
@@ -532,6 +536,7 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 		}
 		infos = kept
 	}
+	kept := infos[:0]
 	for i := range infos {
 		infos[i].Harness = harness
 		// A session that agent-net started as a worker carries the worker flag,
@@ -546,22 +551,29 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 			infos[i].Mode = protocol.ModeBackground
 			infos[i].Name = ""
 		}
+		// A session whose process asks to stay off the network is not
+		// registered at all. A worker started by this daemon is always
+		// registered: its caller waits for it.
+		if infos[i].Worker == nil && d.sessionIgnored(infos[i].PID) {
+			continue
+		}
 		old, known := before[key(harness, infos[i].NativeID)]
 		old.Repo, old.SessionID = protocol.RepoInfo{}, ""
+		old.NoProject = false
 		old.GraphExcluded, old.GraphChecked = false, false
 		old.ToolsVersion, old.ToolsOld = "", false // set by the MCP hello, not by discovery
 		old.Waiting = nil                          // set by the local hello, not by discovery
 		probe := infos[i]
 		probe.Repo, probe.SessionID, probe.Waiting = protocol.RepoInfo{}, "", nil
+		probe.NoProject = false
 		probe.GraphExcluded, probe.GraphChecked = false, false
-		if known && old != probe {
-			infos[i].Repo = d.repo.Refresh(infos[i].Cwd)
-		} else {
-			infos[i].Repo = d.repo.Lookup(infos[i].Cwd)
-		}
+		fresh := known && old != probe
+		infos[i].Repo, infos[i].NoProject = d.sessionRepo(infos[i].Cwd, fresh)
 		infos[i].GraphExcluded = !repoinfo.GraphProjectRoot(infos[i].Repo.Root)
 		infos[i].GraphChecked = true
+		kept = append(kept, infos[i])
 	}
+	infos = kept
 	d.mu.Lock()
 	seen := map[string]bool{}
 	var changed []*localSession
