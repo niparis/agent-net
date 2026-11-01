@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
@@ -243,6 +245,100 @@ func (m Model) quotaModels() []quotaModel {
 	return rows
 }
 
+// workerForecastMemo keeps the Workers panel forecast for one snapshot. The
+// forecast runs the chooser for every start of every level, which is too slow
+// to repeat on every redraw: the screen redraws on every tick, key and fetch.
+type workerForecastMemo struct {
+	key    string
+	picks  []protocol.WorkerModelChoice
+	shares []string
+	counts [][]int
+}
+
+// workerForecastLevels are the difficulty columns of the Workers panel.
+var workerForecastLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
+
+// workerForecastInputs is what the Workers forecast depends on.
+type workerForecastInputs struct {
+	rows       []quotaModel
+	rowKeys    []string
+	candidates []protocol.WorkerModelCandidate
+	quotas     *protocol.Quotas
+	running    map[string]int
+}
+
+func (m Model) workerForecastInputs() workerForecastInputs {
+	in := workerForecastInputs{rows: m.quotaModels(), quotas: &protocol.Quotas{}, running: map[string]int{}}
+	for _, r := range in.rows {
+		in.rowKeys = append(in.rowKeys, protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model}))
+		if r.available && r.allowed && r.scored {
+			in.candidates = append(in.candidates, protocol.WorkerModelCandidate{Name: r.name, Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
+		}
+	}
+	for _, r := range m.quotaRows() {
+		in.quotas.Providers = append(in.quotas.Providers, r.provider)
+		if r.at > in.quotas.GeneratedAt {
+			in.quotas.GeneratedAt = r.at
+		}
+	}
+	for _, a := range m.snap.Agents {
+		if a.Online && a.Worker != nil {
+			in.running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
+		}
+	}
+	return in
+}
+
+// refreshWorkerForecast runs on events that can change the forecast: new data
+// from a fetch, or a change of the rows shown. The chooser runs again only
+// when an input changed, which is rare: a profile, a score, a quota reading,
+// a running worker or the rotation. Drawing the screen only reads the result.
+func (m *Model) refreshWorkerForecast() {
+	if m.workerForecastMemo == nil {
+		return
+	}
+	m.workerForecastMemo.refresh(*m, m.workerForecastInputs())
+}
+
+func (f *workerForecastMemo) refresh(m Model, in workerForecastInputs) {
+	inputs, _ := json.Marshal([]any{in.rowKeys, in.candidates, in.quotas.Providers, in.running,
+		m.snap.Scores, m.snap.DifficultyMinimums, m.snap.WorkerRotation, m.snap.ProtectedProviders})
+	sum := sha256.Sum256(inputs)
+	key := string(sum[:])
+	if f.key == key {
+		return
+	}
+	levels := workerForecastLevels
+	picks := make([]protocol.WorkerModelChoice, len(levels))
+	shares := make([]string, len(levels))
+	counts := make([][]int, len(levels))
+	forecast := m.snap.WorkerRotation.Clone()
+	for i, level := range levels {
+		counts[i] = make([]int, len(in.rows))
+		shares[i] = protocol.WorkerRotationShares(level, in.candidates, &m.snap.WorkerRotation)
+		normal, protected := m.workerCandidateTiers(level, in.candidates)
+		for start := 0; start < workerShareStarts; start++ {
+			choice, err := protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, in.quotas, in.running, &forecast)
+			if err != nil {
+				choice, err = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, in.quotas, in.running, &forecast)
+			}
+			if err != nil {
+				break
+			}
+			if start == 0 {
+				picks[i] = choice
+			}
+			key := protocol.WorkerModelKey(choice.WorkerModelCandidate)
+			for rowIndex, rowKey := range in.rowKeys {
+				if rowKey == key {
+					counts[i][rowIndex]++
+				}
+			}
+		}
+	}
+	*f = workerForecastMemo{key: key, picks: picks, shares: shares, counts: counts}
+}
+
 // workerShareStarts is how many future starts the Workers panel forecasts.
 const workerShareStarts = 20
 
@@ -329,64 +425,29 @@ func shortWorkerModel(model string, w int) string {
 }
 
 func (m Model) quotaModelsView(w int) []string {
-	rows := m.quotaModels()
-	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
+	in := m.workerForecastInputs()
+	rows, levels := in.rows, workerForecastLevels
 	levelText := []string{"trivial", "simple", "normal", "hard", "very complex"}
-	candidates := make([]protocol.WorkerModelCandidate, 0, len(rows))
-	for _, r := range rows {
-		if r.available && r.allowed && r.scored {
-			candidates = append(candidates, protocol.WorkerModelCandidate{Name: r.name, Harness: r.harness, Model: r.model, DefaultEffort: r.defaultEffort, Failed: r.failed, Succeeded: r.succeeded, Track: r.track})
-		}
-	}
-	q := &protocol.Quotas{}
-	for _, r := range m.quotaRows() {
-		q.Providers = append(q.Providers, r.provider)
-		if r.at > q.GeneratedAt {
-			q.GeneratedAt = r.at
-		}
-	}
-	running := map[string]int{}
-	for _, a := range m.snap.Agents {
-		if a.Online && a.Worker != nil {
-			running[protocol.QuotaProviderForStart(a.Harness, a.Model)]++
-		}
-	}
 	runningCount := 0
 	for _, a := range m.snap.Agents {
 		if a.Online && a.Worker != nil {
 			runningCount++
 		}
 	}
-	picks := make([]protocol.WorkerModelChoice, len(levels))
-	shares := make([]string, len(levels))
-	counts := make([][]int, len(levels))
-	rowKeys := make([]string, len(rows))
-	for i, r := range rows {
-		rowKeys[i] = protocol.WorkerModelKey(protocol.WorkerModelCandidate{Harness: r.harness, Model: r.model})
-	}
-	forecast := m.snap.WorkerRotation.Clone()
-	for i, level := range levels {
-		counts[i] = make([]int, len(rows))
-		shares[i] = protocol.WorkerRotationShares(level, candidates, &m.snap.WorkerRotation)
-		normal, protected := m.workerCandidateTiers(level, candidates)
-		for start := 0; start < workerShareStarts; start++ {
-			choice, err := protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &forecast)
-			if err != nil {
-				choice, err = protocol.ChooseWorkerModel(protected, level, m.snap.Scores, m.snap.DifficultyMinimums, q, running, &forecast)
-			}
-			if err != nil {
-				break
-			}
-			if start == 0 {
-				picks[i] = choice
-			}
-			key := protocol.WorkerModelKey(choice.WorkerModelCandidate)
-			for rowIndex, rowKey := range rowKeys {
-				if rowKey == key {
-					counts[i][rowIndex]++
-				}
-			}
+	f := m.workerForecastMemo
+	if f == nil || f.key == "" {
+		// A model drawn before any fetch event, as in tests, computes it once.
+		f = &workerForecastMemo{}
+		f.refresh(m, in)
+		if m.workerForecastMemo != nil {
+			*m.workerForecastMemo = *f
 		}
+	}
+	picks, shares, counts := f.picks, f.shares, f.counts
+	if len(counts) != len(levels) || (len(counts) > 0 && len(counts[0]) != len(rows)) {
+		f = &workerForecastMemo{}
+		f.refresh(m, in)
+		picks, shares, counts = f.picks, f.shares, f.counts
 	}
 	nameWidth, harnessWidth, modelWidth, scoreWidth := 18, 8, 25, 12
 	if w < 110 {

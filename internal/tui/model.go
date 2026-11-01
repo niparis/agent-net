@@ -83,21 +83,23 @@ type Model struct {
 	hideWorkerThreads bool
 
 	// What the daemon last told us. It stays on screen when a refresh fails.
-	snap             Snapshot
-	haveData         bool
-	lastOK           time.Time
-	problem          Problem
-	problemT         string // text of the last error
-	graphState       graphview.State
-	graphPixel       *graphPixelState
-	graphHelp        bool
-	graphGeneration  int
-	graphTalkLoading bool
-	graphTalkLastID  int64
-	graphTalkPending []graphview.FeedEvents
-	graphTalkAt      time.Time
-	feed             feed
-	fetching         bool
+	snap       Snapshot
+	haveData   bool
+	lastOK     time.Time
+	problem    Problem
+	problemT   string // text of the last error
+	graphState graphview.State
+	graphPixel *graphPixelState
+	// workerForecastMemo is shared by copies of the model, like graphPixel.
+	workerForecastMemo *workerForecastMemo
+	graphHelp          bool
+	graphGeneration    int
+	graphTalkLoading   bool
+	graphTalkLastID    int64
+	graphTalkPending   []graphview.FeedEvents
+	graphTalkAt        time.Time
+	feed               feed
+	fetching           bool
 
 	// What the person chose.
 	sessionOrder              map[string]sessionOrder
@@ -181,7 +183,7 @@ func New(src Source) Model {
 	ti.Cursor.SetMode(cursor.CursorHide)
 	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
-		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
+		graphPixel: &graphPixelState{imageID: graphview.ImageID}, workerForecastMemo: &workerForecastMemo{}}
 	m.ctoGeneration = 1
 	m.cto = &ctoState{generation: 1}
 	if _, ok := src.(ctoSource); ok {
@@ -868,6 +870,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 		m.setHiddenItems(r.hidden)
 	}
 	m.applyUsage(r)
+	m.refreshWorkerForecast()
 	if r.eventsErr != nil {
 		if errors.Is(r.eventsErr, ErrFeedUnavailable) {
 			m.feed.unavailable = "no message feed: the daemon or the gateway is older than the event feed"
@@ -1144,6 +1147,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.quotaSelected = 0
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
+			m.refreshWorkerForecast()
 		case "q":
 			m.quitting = true
 			return m, tea.Quit
