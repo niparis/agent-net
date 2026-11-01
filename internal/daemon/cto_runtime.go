@@ -149,6 +149,9 @@ func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string) 
 	if err != nil {
 		return plan, err
 	}
+	if !callerInHerdr(socket, pane) {
+		return plan, nil
+	}
 	harness, native := "opencode", ""
 	if len(plan.Argv) > 2 && plan.Argv[1] == "attach" {
 		harness = "claude"

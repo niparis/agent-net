@@ -201,7 +201,9 @@ func TestSessionStartHerdrCodex(t *testing.T) {
 	requireHerdrOpened(t, log, "garden", bins["codex"], "hello")
 }
 
-func TestWorkerStartOpensHerdr(t *testing.T) {
+// A worker opens no view by itself: a view would take the owner's focus and,
+// for Codex, run its self-updater. Enter opens it in herdr.
+func TestWorkerStartOpensNoViewUntilEnter(t *testing.T) {
 	for _, harness := range []string{"claude", "opencode", "codex"} {
 		t.Run(harness, func(t *testing.T) {
 			_, log := fakeOpenHerdr(t)
@@ -218,14 +220,17 @@ func TestWorkerStartOpensHerdr(t *testing.T) {
 			repo := newRepo(t, "garden")
 			n.register(t, repo)
 			r := n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: harness, Task: "FAKE:ignore"})
-			eventually(t, "worker opened in herdr", func() bool {
-				raw, _ := os.ReadFile(log)
-				return strings.Contains(string(raw), "pane run w1:p1")
-			})
+			if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+				t.Fatalf("worker start opened a view: %s", raw)
+			}
 			info := n.d.infoOf(n.d.sessionByID(r.SessionID))
 			agent := n.agentOf(t, r.SessionID)
 			if agent == nil || agent.Profile.Name == "" {
 				t.Fatal("worker has no display name")
+			}
+			plan := enterOf(t, n.node, r.SessionID, "")
+			if !plan.OpenedHerdr {
+				t.Fatalf("enter did not open the worker: %+v", plan)
 			}
 			switch harness {
 			case "claude":
@@ -235,91 +240,26 @@ func TestWorkerStartOpensHerdr(t *testing.T) {
 			case "codex":
 				requireHerdrOpened(t, log, agent.Profile.Name, "resume", info.NativeID, "--remote-auth-token-env")
 			}
-			plan := enterOf(t, n.node, r.SessionID, "")
-			calls, _ := os.ReadFile(log)
-			if !plan.OpenedHerdr || strings.Count(string(calls), "pane run w1:p1") != 1 || !strings.Contains(string(calls), "tab focus w1:t1") {
-				t.Fatalf("enter duplicated the worker view: %+v, calls %s", plan, calls)
-			}
 		})
 	}
 }
-
-func TestWorkerStartOpensViewBeforeDeliveringTask(t *testing.T) {
-	bin, log := fakeOpenHerdr(t)
-	dir := filepath.Dir(bin)
-	entered, release := filepath.Join(dir, "entered"), filepath.Join(dir, "release")
-	raw, err := os.ReadFile(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wait := "\"pane list\") : > " + shellQuote(entered) + "; while [ ! -f " + shellQuote(release) + " ]; do sleep 0.01; done; "
-	script := strings.Replace(string(raw), `"pane list") `, wait, 1)
-	if script == string(raw) {
-		t.Fatal("fake herdr has no pane list")
-	}
-	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	defer os.WriteFile(release, nil, 0600)
-	g := startGateway(t, t.TempDir(), "")
-	n := startWorkerNode(t, g, shortSet, nil)
-	repo := newRepo(t, "garden")
-	n.register(t, repo)
-	done := make(chan error, 1)
-	go func() {
-		_, err := n.cli.call("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Touches: []string{"other"}, Project: "garden", Harness: "opencode", Isolation: protocol.IsolationNone, Task: "FAKE:ignore"})
-		done <- err
-	}()
-	eventually(t, "herdr opening the worker", func() bool { _, err := os.Stat(entered); return err == nil })
-	select {
-	case err := <-done:
-		t.Fatalf("worker started its task before the view opened: %v", err)
-	case <-time.After(time.Second):
-	}
-	if err := os.WriteFile(release, nil, 0600); err != nil {
-		t.Fatal(err)
-	}
-	eventually(t, "worker start completed", func() bool {
-		select {
-		case err := <-done:
-			if err != nil {
-				t.Fatal(err)
-			}
-			return true
-		default:
-			return false
-		}
-	})
-	calls, _ := os.ReadFile(log)
-	if !strings.Contains(string(calls), "pane run w1:p1") {
-		t.Fatalf("worker start returned without a view: %s", calls)
-	}
-}
-
-func TestWorkerResumeOpensHerdr(t *testing.T) {
+func TestWorkerResumeOpensNoView(t *testing.T) {
 	bin, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	n := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
 	r := n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
-	eventually(t, "initial worker view", func() bool {
-		raw, _ := os.ReadFile(log)
-		return strings.Contains(string(raw), "pane run w1:p1")
-	})
 	n.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: r.SessionID, Body: "FAKE:handback first"})
 	n.waitNotice(t, 1)
 	eventually(t, "worker ended", func() bool { return n.d.workerCount() == 0 })
-	if err := os.Remove(filepath.Join(filepath.Dir(bin), "created")); err != nil {
-		t.Fatal(err)
-	}
 	n.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: r.SessionID, Body: "one more thing"})
-	eventually(t, "resumed worker view", func() bool {
-		raw, _ := os.ReadFile(log)
-		return strings.Count(string(raw), "pane run w1:p1") == 2
-	})
+	eventually(t, "worker resumed", func() bool { return n.d.workerCount() == 1 })
+	_ = bin
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") {
+		t.Fatalf("resumed worker opened a view: %s", raw)
+	}
 }
-
 func TestEnterRemoteStartedWorkerUsesHerdrClient(t *testing.T) {
 	remoteBin, remoteLog := fakeOpenHerdr(t)
 	localBin, localLog := fakeOpenHerdr(t)
@@ -363,32 +303,6 @@ func TestEnterPiRPCWorkerExplainsNoTerminal(t *testing.T) {
 	raw, _ := os.ReadFile(log)
 	if strings.Contains(string(raw), "tab create") || strings.Contains(string(raw), "pane run") {
 		t.Fatalf("Pi RPC worker got a false terminal view: %s", raw)
-	}
-}
-
-func TestWorkerStartWithoutHerdrShowsInstallNotice(t *testing.T) {
-	for _, serverFails := range []bool{false, true} {
-		t.Run(fmt.Sprint("server-fails=", serverFails), func(t *testing.T) {
-			withoutLocalHerdr(t)
-			if serverFails {
-				dir := t.TempDir()
-				if err := os.WriteFile(filepath.Join(dir, "herdr"), []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
-					t.Fatal(err)
-				}
-				t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-			}
-			g := startGateway(t, t.TempDir(), "")
-			n := startWorkerNode(t, g, shortSet, nil)
-			repo := newRepo(t, "garden")
-			n.register(t, repo)
-			notices := herdrNoticeChannel(t, n.node)
-			n.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
-			q := waitHerdrNotice(t, notices)
-			line, _ := q["text"].(string)
-			if q["daemon_notice"] != true || !strings.Contains(line, "Herdr was not found") || !strings.Contains(line, "install") {
-				t.Fatalf("worker fallback notice: %v", q)
-			}
-		})
 	}
 }
 

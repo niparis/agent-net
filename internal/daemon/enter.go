@@ -55,7 +55,7 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	// here, because that decides between herdr's remote client and an attach
 	// over ssh.
 	localHerdr := d.herdrBinary("")
-	data, err := d.call(ctx, "query.session_enter", protocol.EnterRequest{SessionID: q.SessionID, HerdrClient: localHerdr != ""})
+	data, err := d.call(ctx, "query.session_enter", protocol.EnterRequest{SessionID: q.SessionID, HerdrClient: localHerdr != "" && callerInHerdr(q.HerdrSocket, q.HerdrPaneID)})
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}
@@ -67,7 +67,7 @@ func (d *Daemon) enterPlan(ctx context.Context, q protocol.EnterRequest) (protoc
 	// the name in the answer.
 	name := firstNonEmpty(plan.Name, q.SessionID)
 	remote := d.wrapRemoteEnter(d.hostOfSession(ctx, q.SessionID), plan)
-	return d.openInHerdr("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, remote), nil
+	return d.openForCaller("remote:"+q.SessionID, name, q.HerdrSocket, q.HerdrPaneID, remote), nil
 }
 
 // wrapRemoteEnter turns the other machine's local plan into the command this
@@ -181,6 +181,10 @@ func (d *Daemon) localEnter(ctx context.Context, q protocol.EnterRequest, viaGat
 	base, err := d.localEnterBase(ctx, q, viaGateway && !q.HerdrClient)
 	if err != nil {
 		return base, err
+	}
+	// A TUI outside herdr cannot see a herdr pane: hand over its terminal.
+	if !viaGateway && !callerInHerdr(q.HerdrSocket, q.HerdrPaneID) {
+		return base, nil
 	}
 	ls := d.sessionByID(q.SessionID)
 	if ls == nil {

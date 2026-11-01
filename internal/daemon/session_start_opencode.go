@@ -135,7 +135,7 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 			if err == nil {
 				plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname,
 					Note: "Press ctrl+] to come back here; the session keeps running."}
-				opened := d.openInHerdr(r.SessionID, r.Project, socket, pane, plan)
+				opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
 				if opened.OpenedHerdr || len(opened.Argv) == 0 {
 					r.EnterPlan = &opened
 				} else {
