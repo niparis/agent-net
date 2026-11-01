@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -390,96 +388,16 @@ func CTOToolNames() []string {
 }
 
 func RunCTO(ctx context.Context, socket, version string) error {
-	ch, err := dialCTOChannel(ctx, socket)
+	c, err := client.Dial(socket)
 	if err != nil {
 		return err
 	}
-	defer ch.close()
+	defer c.Close()
+	if _, err = c.Call(ctx, "hello", map[string]string{"client": "cto-mcp"}); err != nil {
+		return fmt.Errorf("CTO channel: %w", err)
+	}
 	s := NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
-		return ch.call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
+		return c.Call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
 	}, version)
 	return s.Run(ctx, &mcp.StdioTransport{})
-}
-
-// ctoReconnectWait bounds how long the CTO channel waits for the daemon, at
-// start and after its connection drops. The daemon restarts on every
-// automatic upgrade, and the CTO's Claude job, with this process, outlives it.
-const ctoReconnectWait = 30 * time.Second
-
-// ctoChannel is the CTO's connection to the daemon. It dials again and says
-// hello again when the connection drops, so a daemon restart does not leave
-// the CTO without its tools.
-type ctoChannel struct {
-	socket string
-	mu     sync.Mutex
-	c      *client.Client
-}
-
-func dialCTOChannel(ctx context.Context, socket string) (*ctoChannel, error) {
-	ch := &ctoChannel{socket: socket}
-	if err := ch.connect(ctx); err != nil {
-		return nil, err
-	}
-	return ch, nil
-}
-
-// connect dials and says hello, retrying while the daemon is unreachable. A
-// refusal from the daemon (not the CTO's process tree) is final.
-func (ch *ctoChannel) connect(ctx context.Context) error {
-	deadline := time.Now().Add(ctoReconnectWait)
-	for {
-		c, err := client.Dial(ch.socket)
-		if err == nil {
-			_, err = c.Call(ctx, "hello", map[string]string{"client": "cto-mcp"})
-			if err == nil {
-				ch.mu.Lock()
-				ch.c = c
-				ch.mu.Unlock()
-				return nil
-			}
-			c.Close()
-			if !client.IsConnError(err) {
-				return fmt.Errorf("CTO channel: %w", err)
-			}
-		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("CTO channel: %w", err)
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(250 * time.Millisecond):
-		}
-	}
-}
-
-// call sends one request, and on a dropped connection reconnects and sends it
-// once more.
-func (ch *ctoChannel) call(ctx context.Context, method string, params any) (json.RawMessage, error) {
-	ch.mu.Lock()
-	c := ch.c
-	ch.mu.Unlock()
-	if c != nil {
-		res, err := c.Call(ctx, method, params)
-		if err == nil || !client.IsConnError(err) {
-			return res, err
-		}
-		c.Close()
-	}
-	if err := ch.connect(ctx); err != nil {
-		return nil, err
-	}
-	ch.mu.Lock()
-	c = ch.c
-	ch.mu.Unlock()
-	return c.Call(ctx, method, params)
-}
-
-func (ch *ctoChannel) close() {
-	ch.mu.Lock()
-	defer ch.mu.Unlock()
-	if ch.c != nil {
-		ch.c.Close()
-		ch.c = nil
-	}
 }
