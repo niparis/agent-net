@@ -391,6 +391,103 @@ func TestCTOEnterOnFocusedBoxRequestsPlan(t *testing.T) {
 	}
 }
 
+func TestCTOEnterShowsOpeningAtOnce(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := ctoPart8Model(size[0], size[1], "Atlas", 0)
+		m.focus = focusCTO
+		next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil {
+			t.Fatalf("%dx%d: enter did not ask for a plan", size[0], size[1])
+		}
+		m = next.(Model)
+		view := m.View()
+		if plain := ansi.Strip(view); !strings.Contains(plain, "Opening the CTO") {
+			t.Fatalf("%dx%d: no opening line in the CTO box:\n%s", size[0], size[1], plain)
+		}
+		golden(t, fmt.Sprintf("cto_opening_%dx%d", size[0], size[1]), view)
+	}
+}
+
+func TestCTOEnterIgnoresASecondPressWhileOpening(t *testing.T) {
+	t.Run("box", func(t *testing.T) {
+		src := &fakeCTOSource{fakeSource: &fakeSource{snap: ctoSnapshot(), enterPlan: protocol.EnterPlan{Argv: []string{"fake-cto"}}}}
+		m := ctoPart8Model(80, 24, "Atlas", 0)
+		m.src = src
+		m.focus = focusCTO
+		next, cmd := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if cmd == nil {
+			t.Fatal("the first enter did not ask for a plan")
+		}
+		_ = cmd() // the daemon answers; the model has not seen the answer yet
+		m = next.(Model)
+		if !m.cto.opening || !strings.Contains(m.cto.enterNotice, "Opening the CTO") {
+			t.Fatalf("the box does not show the open as in flight: %+v", m.cto)
+		}
+		_, second := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+		if second != nil {
+			_ = second()
+		}
+		if len(src.enters) != 1 {
+			t.Fatalf("a second enter during the open asked again: %+v", src.enters)
+		}
+	})
+	t.Run("sessions row", func(t *testing.T) {
+		src := &fakeCTOSource{fakeSource: &fakeSource{snap: ctoSnapshot(), enterPlan: protocol.EnterPlan{Argv: []string{"fake-cto"}}}}
+		m := ctoPart8Model(80, 24, "Atlas", 0)
+		m.src = src
+		m.selected = ctoTestSession
+		m.ensureSelection()
+		next, cmd := m.startEnter()
+		if cmd == nil {
+			t.Fatal("the first enter did not ask for a plan")
+		}
+		_ = cmd()
+		m = next
+		if !m.cto.opening || !strings.Contains(m.cto.enterNotice, "Opening the CTO") {
+			t.Fatalf("the row does not show the open as in flight: %+v", m.cto)
+		}
+		_, second := m.startEnter()
+		if second != nil {
+			_ = second()
+		}
+		if len(src.enters) != 1 {
+			t.Fatalf("a second enter during the open asked again: %+v", src.enters)
+		}
+	})
+}
+
+func TestCTOEnterFailureShowsTheReason(t *testing.T) {
+	m := ctoPart8Model(120, 34, "Atlas", 0)
+	m.focus = focusCTO
+	next, _ := m.ctoKey(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(Model)
+	m, _ = m.onEnter(enterMsg{name: "CTO", cto: true, err: errors.New("startup failed: permission denied")})
+	if m.cto.opening {
+		t.Fatal("the open is still marked as in flight")
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "startup failed: permission denied") {
+		t.Fatalf("missing failure reason in the CTO box:\n%s", view)
+	}
+	if strings.Contains(view, "Opening the CTO") {
+		t.Fatalf("the opening line stayed after the failure:\n%s", view)
+	}
+}
+
+func TestCTOEnterTimeoutShowsTheReason(t *testing.T) {
+	m := ctoPart8Model(120, 34, "Atlas", 0)
+	m.cto.opening = true
+	m.cto.enterNotice = "Opening the CTO…"
+	m, _ = m.onEnter(enterMsg{name: "CTO", cto: true, err: context.DeadlineExceeded})
+	if m.cto.opening {
+		t.Fatal("the open is still marked as in flight")
+	}
+	view := ansi.Strip(m.View())
+	if !strings.Contains(view, "timed out") || !strings.Contains(view, "context deadline exceeded") {
+		t.Fatalf("missing timeout reason in the CTO box:\n%s", view)
+	}
+}
+
 func TestCTOBoxHasNoInput(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m := New(src)

@@ -148,7 +148,7 @@ func TestNewDaemonAgainstOldGateway(t *testing.T) {
 	url, helloSeen := fakeOldGateway(t)
 	detected := make(chan struct{}, 4)
 	fa := &fakeAdapter{harness: "fake"}
-	cfg := Config{GatewayURL: url, NodeID: "n_old", Token: "t", Hostname: "newbox", StateDir: t.TempDir(),
+	cfg := Config{GatewayURL: url, NodeID: "n_old", Token: "t", Hostname: "newbox", StateDir: seededStateDir(t),
 		SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		Adapters: []Adapter{fa}, HarnessInterval: 50 * time.Millisecond,
 		DetectHarnesses: func(context.Context) []protocol.HarnessInfo {

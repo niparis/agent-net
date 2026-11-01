@@ -2,7 +2,6 @@ package gateway
 
 import (
 	"fmt"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 // edges, and returns it.
 func graphTestStore(t *testing.T) *Store {
 	t.Helper()
-	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	s, err := OpenStore(seededStorePath(t, "graph.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

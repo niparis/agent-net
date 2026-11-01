@@ -36,6 +36,33 @@ func TestMessageConversationsGroupAndSort(t *testing.T) {
 	}
 }
 
+func TestFeedGroupsAnEndedWorkerByItsTaskAndNotice(t *testing.T) {
+	const owner, ended = "s_owner_fixture", "s_ended_worker_fixture"
+	m := newModel(120, 34)
+	m.tab, m.focus = messagesTab, focusFeed
+	m.feed = newFeed()
+	m.feed.apply([]protocol.FeedEvent{
+		{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "task", Time: t0.Add(-2 * time.Minute)}, ConversationID: "c_task", From: owner, To: ended, Type: protocol.TypeRequest},
+		{Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "started", Time: t0.Add(-time.Minute)}, ConversationID: "c_started", From: ended, To: owner, Type: protocol.TypeNotification},
+	})
+	m.feed.byMsg["task"].Body = protocol.WorkerTaskBody("Polish the sessions panel\nRun the checks.", "", "")
+	m.feed.byMsg["started"].Body = protocol.WorkerStartedText(ended, "opencode", "m1", "shop", "mac", time.Minute)
+	rows := m.messageConversations()
+	if len(rows) != 1 || !rows[0].worker || rows[0].workerSession != ended {
+		t.Fatalf("the ended worker was not grouped: %+v", rows)
+	}
+	if rows[0].task != "Polish the sessions panel" {
+		t.Errorf("task = %q", rows[0].task)
+	}
+	if rows[0].count != 1 {
+		t.Errorf("count = %d, want the task only", rows[0].count)
+	}
+	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	if !strings.Contains(line, "worker: Polish the sessions panel") || strings.Contains(line, "unknown session") {
+		t.Fatalf("row = %q", line)
+	}
+}
+
 func TestMessageThreadShowsLongBriefAndShortReply(t *testing.T) {
 	const a, b = "remote-a", "remote-b"
 	brief := "Worker brief: " + strings.Repeat("run the checks and report what changed; ", 40)
@@ -103,13 +130,13 @@ func TestMessagePartiesNeverShowRawSessionIDs(t *testing.T) {
 	m.snap.OwnerSession = owner
 	const nameless = "s_nameless_fixture"
 	m.snap.Agents = append(m.snap.Agents, agent(nameless, "n_mac", "Mac", "pi", "", nil))
-	if got := m.conversationName(nameless); got != "unknown session" {
-		t.Fatalf("a session without a name should be labeled unknown, got %q", got)
+	if got := m.conversationName(nameless); got != "ended session" {
+		t.Fatalf("a session without a name should be labeled as ended, got %q", got)
 	}
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "unknown-party", Time: t0}, ConversationID: "unknown-party", From: "s_missing_fixture", To: owner, Type: "request"}})
 	line := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 110, false))
-	if !strings.Contains(line, "unknown session ↔ you") || strings.Contains(line, "s_missing_fixture") || strings.Contains(line, owner) {
+	if !strings.Contains(line, "ended session ↔ you") || strings.Contains(line, "unknown session") || strings.Contains(line, "s_missing_fixture") || strings.Contains(line, owner) {
 		t.Fatalf("message parties should use safe session labels, got %q", line)
 	}
 }

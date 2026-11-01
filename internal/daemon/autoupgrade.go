@@ -18,6 +18,9 @@ const defaultAutoUpgradeDelay = 10 * time.Second
 // node.upgrade request and restarts. Failures are remembered in the state dir
 // so the same version is not tried again within upgrade.RetryAfter.
 func (d *Daemon) autoUpgrade(ctx context.Context) {
+	if d.cfg.AutoUpgradeDone != nil {
+		defer d.cfg.AutoUpgradeDone()
+	}
 	if d.cfg.NoAutoUpgrade || d.helloVersion() == "dev" {
 		return
 	}

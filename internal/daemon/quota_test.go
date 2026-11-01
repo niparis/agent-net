@@ -303,7 +303,7 @@ func TestFindQuotaAXIPrefersTheUserCopy(t *testing.T) {
 }
 
 func TestUsageReportCarriesQuotaNote(t *testing.T) {
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +356,7 @@ func TestQuotaIntegrationConsent(t *testing.T) {
 }
 
 func TestUsageReportCarriesQuotas(t *testing.T) {
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -416,7 +416,7 @@ func TestQuotaLoopReadsAgain(t *testing.T) {
 }
 
 func TestUsageReportCarriesQuotaError(t *testing.T) {
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,7 +495,7 @@ func TestQuotaReadingCarriesCopy(t *testing.T) {
 }
 
 func TestQuotaUsageReportsCopyBeforeReading(t *testing.T) {
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

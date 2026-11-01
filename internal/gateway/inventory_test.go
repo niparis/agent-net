@@ -15,7 +15,7 @@ import (
 )
 
 func TestInventoryStorePreservesFailedScan(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestInventoryStorePreservesFailedScan(t *testing.T) {
 }
 
 func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
 }
 
 func TestInventoryItemManifestIsStored(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestInventoryPagesAreBounded(t *testing.T) {
 }
 
 func TestInventoryIdentitiesAndReplacement(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func TestInventoryOfflineIsStale(t *testing.T) {
 }
 
 func TestToolsItemsVariantsAndProjects(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestInventoryNativeSecretsStayOutOfStoreAndJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	report := inventory.Scan(inventory.Options{Home: home})
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func backfillMigrationsBack() int {
 }
 
 func TestInventoryMigrationBackfillsReports(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestInventoryMigrationBackfillsReports(t *testing.T) {
 }
 
 func TestToolsFilterReturnsAllLocationsOfMatchingIdentity(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,7 +284,7 @@ func TestToolsFilterReturnsAllLocationsOfMatchingIdentity(t *testing.T) {
 }
 
 func TestIdenticalScannedSkillsShareIdentityAcrossMachines(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	s, err := OpenStore(seededStorePath(t, "gateway.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

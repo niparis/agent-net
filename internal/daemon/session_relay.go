@@ -22,6 +22,10 @@ func (d *Daemon) sessionOwnerRelay(ctx context.Context, typ string, raw []byte) 
 		return nil, err
 	}
 	switch typ {
+	case protocol.FrameSessionOwnerProposalStart:
+		p.CTOProposal = true
+		p.TrustClaude = false
+		return d.sessionStartLocal(ctx, p.SessionStartRequest)
 	case protocol.FrameSessionOwnerStart:
 		return d.sessionStartLocal(ctx, p.SessionStartRequest)
 	case protocol.FrameSessionOwnerResume:

@@ -42,7 +42,7 @@ func TestHomeDiskFreeUsesConfiguredTestHome(t *testing.T) {
 }
 
 func TestMachineUsageAddsCachedDiskFree(t *testing.T) {
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

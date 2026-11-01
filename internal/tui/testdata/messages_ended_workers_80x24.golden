@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
+╭─Messages · conversations─────────────────────────────────────────────────────╮
+│ ▸ tenebrae-53 → worker: Polish the sessions panel and ma… 2 messages · ended │
+│   tenebrae-53 → worker: Review the deploy                  1 message · ended │
+│   strategies ↔ web · A conversation whose sides are sti… 1 message · 30m ago │
+│ 0 system events · e to show · w hide workers                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│   13:55 tenebrae-53                                                          │
+│ [agent-net worker brief] Another agent started you through agent-net to do … │
+│ - Do the whole task. Do not gold-plate it, and do not stop halfway.          │
+│ - Do it yourself. Do not pass the whole task to another agent. You cannot s… │
+│ …                                                                            │
+│   14:00 ended worker                                                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  v body  f defect  tab CTO  ? help  q quit

@@ -20,6 +20,7 @@ type messageConversation struct {
 	worker           bool
 	workerSession    string
 	workerOwner      string
+	task             string
 	ownerInstruction bool
 	// The stored side of a conversation from the gateway. A row may have
 	// both: convID names the gateway conversation and stored says the count,
@@ -43,11 +44,12 @@ type messageConversation struct {
 func (m Model) feedConversations() []messageConversation {
 	groups := map[string]*messageConversation{}
 	parentIDs := map[string]string{}
+	workers := m.feedWorkers()
 	for i, it := range m.feed.items {
 		if !it.isMessage() {
 			continue
 		}
-		workerSession, workerOwner, worker := m.workerPair(it)
+		workerSession, workerOwner, worker := m.workerPair(it, workers)
 		id := ""
 		if worker {
 			id = "worker:" + workerSession
@@ -77,17 +79,27 @@ func (m Model) feedConversations() []messageConversation {
 		}
 		g.items = append(g.items, i)
 		g.ownerInstruction = g.ownerInstruction || it.OwnerInstruction != ""
-		activity := it.At
-		if it.Updated.After(activity) {
-			activity = it.Updated
+		if g.task == "" && strings.HasPrefix(strings.TrimSpace(it.Body), "[agent-net worker brief]") {
+			g.task = sanitize(protocol.WorkerTaskSummary(it.Body))
 		}
-		if activity.After(g.at) {
-			g.at = activity
+		if !workerNoticeLifecycle(it.Body) {
+			g.count++
+			activity := it.At
+			if it.Updated.After(activity) {
+				activity = it.Updated
+			}
+			if activity.After(g.at) {
+				g.at = activity
+			}
 		}
 		g.cto = g.cto || it.FromCTO
 	}
 	out := make([]messageConversation, 0, len(groups))
 	for _, g := range groups {
+		if g.count == 0 {
+			// Only lifecycle notices: they do not make a row.
+			continue
+		}
 		if g.worker && m.hideWorkerThreads {
 			continue
 		}
@@ -141,10 +153,31 @@ func (m Model) feedConversations() []messageConversation {
 	return out
 }
 
-func (m Model) workerPair(it *feedItem) (workerSession, workerOwner string, ok bool) {
+// feedWorkers maps a worker session to its owner. The snapshot has the live
+// workers. The gateway deletes a worker's session record a few hours after the
+// start, but the task brief its caller sent still says which session is the
+// worker, so the feed can group its later notices too.
+func (m Model) feedWorkers() map[string]string {
+	workers := map[string]string{}
+	for _, a := range m.snap.Agents {
+		if a.Worker != nil {
+			workers[a.SessionID] = a.Worker.Owner
+		}
+	}
+	for _, it := range m.feed.items {
+		if !it.isMessage() {
+			continue
+		}
+		if strings.HasPrefix(strings.TrimSpace(it.Body), "[agent-net worker brief]") && it.To != "" {
+			workers[it.To] = it.From
+		}
+	}
+	return workers
+}
+
+func (m Model) workerPair(it *feedItem, workers map[string]string) (workerSession, workerOwner string, ok bool) {
 	for _, pair := range [][2]string{{it.From, it.To}, {it.To, it.From}} {
-		a, exists := m.agentByID(pair[0])
-		if exists && a.Worker != nil && a.Worker.Owner == pair[1] {
+		if owner, exists := workers[pair[0]]; exists && owner == pair[1] {
 			return pair[0], pair[1], true
 		}
 	}
@@ -288,11 +321,12 @@ func (m Model) workerConversationLine(c messageConversation, w int, selected boo
 	} else if len(c.items) > 0 && c.typ == protocol.TypeRequest && c.state != protocol.StateReplied && c.state != protocol.StateFailed && c.state != protocol.StateExpired {
 		statusStyle = lipgloss.NewStyle().Foreground(roleWarning)
 	}
-	content := m.partyName(c.workerOwner, "") + " → worker"
-	if task := m.workerTaskLine(c.workerSession); task != "" {
+	caller := m.partyName(c.workerOwner, c.fromName)
+	content := caller + " → worker"
+	if task := firstNonEmpty(c.task, m.workerTaskLine(c.workerSession)); task != "" {
 		content += ": " + task
-	} else if name := m.conversationName(c.workerSession); name != "unknown session" {
-		content = m.partyName(c.workerOwner, "") + " → " + name
+	} else if name := m.conversationName(c.workerSession); name != "ended session" {
+		content = caller + " → " + name
 	}
 	count := c.count
 	if count == 0 {
@@ -330,7 +364,11 @@ func (m Model) workerTaskLine(session string) string {
 
 func (m Model) workerThreadStatus(c messageConversation) string {
 	for i := len(c.items) - 1; i >= 0; i-- {
-		if status, ok := workerNoticeStatus(m.feed.items[c.items[i]].Body); ok {
+		body := m.feed.items[c.items[i]].Body
+		if workerNoticeLifecycle(body) {
+			continue
+		}
+		if status, ok := workerNoticeStatus(body); ok {
 			return status
 		}
 	}
@@ -363,6 +401,21 @@ func workerNoticeStatus(body string) (string, bool) {
 		}
 	}
 	return "stopped", true
+}
+
+// workerNoticeLifecycle tells whether a worker notice is pure lifecycle: a
+// start that is queued or has begun, or a start that never became a worker.
+// The stored list hides these, and the thread draws them dim.
+func workerNoticeLifecycle(body string) bool {
+	status, ok := workerNoticeStatus(body)
+	if !ok {
+		return false
+	}
+	switch status {
+	case "started", "queued", "not started":
+		return true
+	}
+	return false
 }
 
 func (m Model) missingMessageBody(it *feedItem) string {
@@ -452,20 +505,20 @@ func (m Model) systemEventCount() int {
 
 func (m Model) conversationName(id string) string {
 	if id == "" {
-		return "unknown session"
+		return "ended session"
 	}
 	if m.snap.OwnerSession != "" && id == m.snap.OwnerSession {
 		return "you"
 	}
 	a, ok := m.agentByID(id)
 	if !ok {
-		return "unknown session"
+		return "ended session"
 	}
 	if protocol.IsOwner(a.Harness) {
 		return "you"
 	}
 	if strings.TrimSpace(a.Profile.Name) == "" {
-		return "unknown session"
+		return "ended session"
 	}
 	name := m.feedName(id)
 	if a.Worker != nil {

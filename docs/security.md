@@ -794,6 +794,12 @@ Skill file previews use the owner-only operator gate. The gateway checks the own
 
 The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.
 
+### CTO session and project proposals
+
+The CTO can only propose an owner session start or project creation. Neither the minor-change rule nor the graph owner window applies. The owner approves the stored call in Needs you. The proposal cannot supply Claude's trust confirmation. If the normal start path needs that answer, it returns `needs_trust` and starts no session. A newly created folder or worktree follows the same trust rule as the owner's form.
+
+A proposed typed path must have valid syntax; on the local machine it must also stay inside the owner's home, including through symbolic links. A remote target checks the path on that machine after approval. A proposed worktree is also checked against the destination owner's home before creation. The gateway requires the target to be online, and both the gateway and the destination must support the proposal start frame. Older versions refuse it rather than bypass the destination checks. As elsewhere, enrolled daemons are trusted to enforce their own checks.
+
 ### Starting an owner session
 
 `session_start`, `session_resume`, `session_start_get` and `session_stop` use the owner gate. Agent connections

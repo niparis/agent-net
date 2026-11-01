@@ -1,14 +1,13 @@
 package gateway
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestGraphUndoEdgeAndNode(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	s, err := OpenStore(seededStorePath(t, "graph.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +39,7 @@ func TestGraphUndoEdgeAndNode(t *testing.T) {
 }
 
 func TestGraphUndoRollsBackWhenHistoryFails(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	s, err := OpenStore(seededStorePath(t, "graph.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

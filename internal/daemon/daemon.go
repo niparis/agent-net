@@ -53,12 +53,15 @@ type Host interface {
 }
 
 type Config struct {
-	testFreePort  func() (int, error) // deterministic collision tests
-	InventoryHome string              // Empty disables tools inventory (used by tests).
-	GatewayURL    string
-	NodeID        string
-	Token         string
-	CAPEM         []byte // pinned CA; nil means the system roots (plain http in tests)
+	testFreePort func() (int, error) // deterministic collision tests
+	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
+	// leave fake processes behind. A real daemon leaves it running.
+	testStopCTOOnExit bool
+	InventoryHome     string // Empty disables tools inventory (used by tests).
+	GatewayURL        string
+	NodeID            string
+	Token             string
+	CAPEM             []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
 	GatewayData string
@@ -104,6 +107,10 @@ type Config struct {
 	// AutoUpgradeMaxDelay bounds the random wait before an automatic upgrade.
 	// Default: 10 s; a negative value means no wait.
 	AutoUpgradeMaxDelay time.Duration
+	// AutoUpgradeDone, if set, is called when an automatic upgrade attempt
+	// has finished, whether it upgraded or decided not to. Tests use it to
+	// know that nothing more will happen.
+	AutoUpgradeDone func()
 	// Served returns the version the gateway serves to this machine.
 	// Default: ask the gateway.
 	Served func(ctx context.Context) (string, error)
@@ -156,6 +163,11 @@ type Config struct {
 	// HarnessPaths overrides where a harness binary is, by harness name.
 	// Default: the path from the inventory. Tests use it.
 	HarnessPaths map[string]string
+	// HarnessSearch changes where harnessBinary looks when the inventory has
+	// no answer yet. Nil searches PATH, the usual install folders and the
+	// login shell's PATH. Tests set it so they never run the harnesses of the
+	// machine.
+	HarnessSearch *harnesses.Options
 	// EnterSSH lets the TUI enter a session on another machine through `ssh -t`
 	// (enter_ssh in node.json, on unless false). EnterSSHHosts maps a host name
 	// to its ssh target.
@@ -456,7 +468,14 @@ func (d *Daemon) Stop() {
 	// Wait for canceled startup to finish publishing before stopping its runtime.
 	_ = d.ctoDispatchMu.lock(context.Background())
 	d.cto.mu.Lock()
-	d.stopClaudeCTOLocked()
+	// The CTO's Claude job outlives the daemon: an upgrade restarts the daemon
+	// often, and killing the job lost the owner's CTO conversation. The next
+	// daemon adopts the running job again (startClaudeCTO).
+	if d.cfg.testStopCTOOnExit {
+		d.stopClaudeCTOLocked()
+	} else {
+		d.releaseClaudeCTOLocked()
+	}
 	d.cto.stopLocked()
 	d.cto.mu.Unlock()
 	d.ctoDispatchMu.unlock()

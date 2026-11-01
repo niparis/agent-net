@@ -21,6 +21,38 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 		return "", err
 	}
 	defer d.ctoDispatchMu.unlock()
+	if (tool == "session_change" && action == "session_start") || (tool == "project_change" && action == "create") {
+		var fields map[string]json.RawMessage
+		var req protocol.SessionStartRequest
+		if err := json.Unmarshal(args, &fields); err != nil {
+			return "", err
+		}
+		if fields == nil {
+			return "", errors.New("bad proposal arguments")
+		}
+		if err := json.Unmarshal(args, &req); err != nil {
+			return "", err
+		}
+		if req.NodeID == "" {
+			target := ""
+			if req.Path == "" && req.Project != "" {
+				var err error
+				target, err = d.sessionStartMachine(ctx, req)
+				if err != nil {
+					return "", err
+				}
+			}
+			if target == "" {
+				target = d.cfg.NodeID
+			}
+			fields["node_id"], _ = json.Marshal(target)
+			var err error
+			args, err = json.Marshal(fields)
+			if err != nil {
+				return "", err
+			}
+		}
+	}
 	return d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 }
 
@@ -407,6 +439,17 @@ func (p proposalRunner) decide(ctx context.Context, id string, approve bool) err
 		} else {
 			status = "applied"
 			note = id + " approved and applied"
+			if item.Call.Tool == "session_change" && item.Call.Action == "session_start" || item.Call.Tool == "project_change" && item.Call.Action == "create" {
+				var start protocol.StartedSession
+				if json.Unmarshal(result, &start) == nil {
+					switch start.Status {
+					case "needs_trust":
+						note = id + " approved; Claude folder trust needs the owner's answer; no session started"
+					case "needs_create":
+						note = id + " approved; folder creation needs the owner's answer; no session started"
+					}
+				}
+			}
 		}
 	}
 	_, saveErr := p.state.db.ExecContext(context.WithoutCancel(ctx), `UPDATE cto_proposals SET status=?,note=?,result=? WHERE id=?`, status, note, string(result), strings.TrimPrefix(id, "p_"))

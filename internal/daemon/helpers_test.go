@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -115,6 +116,7 @@ func startGatewayPageSize(t *testing.T, dir, addr string, size int) *testGateway
 		t.Fatal(err)
 	}
 	logs := &logBuf{}
+	seedDatabase(t, dir, "gateway.db", gatewayTemplateBytes)
 	gw, err := gateway.New(gateway.Options{DataDir: dir, ToolsPageSize: size, OfflineGrace: 200 * time.Millisecond, Logger: log.New(logs, "", 0)})
 	if err != nil {
 		t.Fatal(err)
@@ -254,8 +256,8 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		t.Fatal(err)
 	}
 	sock := filepath.Join(shortDir(t), "d.sock")
-	cfg := Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
-		Hostname: "host-" + nc.NodeID, StateDir: t.TempDir(), SocketPath: sock,
+	cfg := Config{testStopCTOOnExit: true, GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
+		Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: sock,
 		EnterSSH: nc.EnterSSHEnabled(), EnterSSHHosts: nc.EnterSSHHosts,
 		ClaudeSessionsDir: o.claudeDir, BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		PluginAckTimeout: 500 * time.Millisecond, Logger: o.logger}
@@ -263,6 +265,9 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		cfg.Adapters = []Adapter{o.adapter}
 	}
 	cfg.DetectHarnesses, cfg.HarnessInterval = o.detect, o.interval
+	// A test must never find a harness of the machine it runs on. A test that
+	// wants the direct lookup sets HarnessSearch itself.
+	cfg.HarnessSearch = &harnesses.Options{PATH: t.TempDir(), Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}
 	if o.cfg != nil {
 		o.cfg(&cfg)
 	}

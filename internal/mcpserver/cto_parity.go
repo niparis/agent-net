@@ -31,6 +31,15 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("graph_undo", "Undo a graph change.", map[string]ctoField{"id": n("ID; omit for latest.")})
 	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", ctoNodeSettings...), "value": s("Empty clears.")})
 
+	startFields := map[string]ctoField{"project": s("Project."), "path": s("Path."), "node_id": s("Machine."), "harness": harness, "model": model, "folder": en("Folder.", "project", "worktree"), "branch": s("Branch."), "first_message": s("First message."), "create": b("Create.")}
+	add("session_start", "Start an owner session.", startFields)
+	createFields := map[string]ctoField{}
+	for k, v := range startFields {
+		if k != "project" && k != "create" {
+			createFields[k] = v
+		}
+	}
+	add("project_create", "Create a project and start a session.", createFields)
 	add("session_rename", "Rename a session for the owner.", map[string]ctoField{"session_id": sid, "name": s("Name; empty resets.")})
 	add("session_trust", "Set session peer trust.", map[string]ctoField{"session_id": sid, "on": b("Enable.")})
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})

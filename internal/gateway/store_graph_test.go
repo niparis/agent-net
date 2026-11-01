@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,7 +8,7 @@ import (
 )
 
 func TestCharterStore(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	s, err := OpenStore(seededStorePath(t, "graph.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +48,7 @@ func TestCharterStore(t *testing.T) {
 }
 
 func TestDeployEdgeIsStoredWithoutAMode(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	s, err := OpenStore(seededStorePath(t, "graph.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +72,7 @@ func TestDeployEdgeIsStoredWithoutAMode(t *testing.T) {
 }
 
 func TestGraphEdges(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "graph.db"))
+	s, err := OpenStore(seededStorePath(t, "graph.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

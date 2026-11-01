@@ -123,7 +123,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onWorkerFrame(ctx, l, h, raw)
 			}()
-		case protocol.FrameSessionOwnerStart, protocol.FrameSessionOwnerResume, protocol.FrameSessionOwnerStop, protocol.FrameSessionOwnerGet:
+		case protocol.FrameSessionOwnerStart, protocol.FrameSessionOwnerProposalStart, protocol.FrameSessionOwnerResume, protocol.FrameSessionOwnerStop, protocol.FrameSessionOwnerGet:
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()

@@ -172,7 +172,12 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	}
 	sessionPath, branch := found.Path, ""
 	if p.Folder == protocol.FolderWorktree {
-		dir, name, _, err := d.createOwnerWorktree(ctx, found.Path, found.Name, p.Branch)
+		if p.CTOProposal {
+			if err := checkOwnerHome(ownerWorktreeRoot(found.Path)); err != nil {
+				return protocol.StartedSession{}, err
+			}
+		}
+		dir, name, _, err := d.createOwnerWorktreeChecked(ctx, found.Path, found.Name, p.Branch, p.CTOProposal)
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
@@ -231,7 +236,11 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 		return protocol.StartedSession{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
 	}
 	frame := protocol.SessionStartRelay{Owner: owner, NodeID: target, SessionStartRequest: p}
-	data, err := d.call(ctx, protocol.FrameSessionStart, frame)
+	typ := protocol.FrameSessionStart
+	if p.CTOProposal {
+		typ = protocol.FrameSessionProposalStart
+	}
+	data, err := d.call(ctx, typ, frame)
 	if err != nil {
 		return protocol.StartedSession{}, tooOldGateway(err)
 	}

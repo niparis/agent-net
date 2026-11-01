@@ -36,7 +36,7 @@ func firstNonEmpty(values ...string) string {
 
 func isSessionRelay(typ string) bool {
 	switch typ {
-	case protocol.FrameSessionStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionResume, protocol.FrameSessionStop, protocol.FrameSessionGet:
 		return true
 	}
 	return false
@@ -74,7 +74,7 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	}
 	sessionID := strings.TrimSpace(relay.SessionID)
 	switch typ {
-	case protocol.FrameSessionStart:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart:
 		if nodeID == "" {
 			if nodeID, err = g.sessionStartNode(relay.SessionStartRequest); err != nil {
 				return nil, err
@@ -122,10 +122,11 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 	frame := protocol.SessionOwnerRequest{Owner: relay.Owner, FromNode: nc.id,
 		SessionStartRequest: relay.SessionStartRequest, SessionID: sessionID, StartID: relay.StartID}
 	frameType := map[string]string{
-		protocol.FrameSessionStart:  protocol.FrameSessionOwnerStart,
-		protocol.FrameSessionResume: protocol.FrameSessionOwnerResume,
-		protocol.FrameSessionStop:   protocol.FrameSessionOwnerStop,
-		protocol.FrameSessionGet:    protocol.FrameSessionOwnerGet,
+		protocol.FrameSessionStart:         protocol.FrameSessionOwnerStart,
+		protocol.FrameSessionProposalStart: protocol.FrameSessionOwnerProposalStart,
+		protocol.FrameSessionResume:        protocol.FrameSessionOwnerResume,
+		protocol.FrameSessionStop:          protocol.FrameSessionOwnerStop,
+		protocol.FrameSessionGet:           protocol.FrameSessionOwnerGet,
 	}[typ]
 	cctx, cancel := context.WithTimeout(ctx, sessionRelayWait)
 	defer cancel()
@@ -141,7 +142,7 @@ func (g *Gateway) handleSessionRelay(ctx context.Context, nc *nodeConn, typ stri
 		return nil, reject("machine %s refused the session: %v", where, err)
 	}
 	switch typ {
-	case protocol.FrameSessionStart, protocol.FrameSessionResume:
+	case protocol.FrameSessionStart, protocol.FrameSessionProposalStart, protocol.FrameSessionResume:
 		var res protocol.StartedSession
 		if err := json.Unmarshal(data, &res); err != nil {
 			return nil, reject("machine %s answered without a start", firstNonEmpty(host, nodeID))

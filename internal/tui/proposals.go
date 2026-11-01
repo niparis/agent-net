@@ -42,6 +42,37 @@ func proposalSummary(p protocol.CTOProposal) string {
 	var a map[string]any
 	_ = json.Unmarshal(p.Args, &a)
 	value := func(k string) string { v, _ := a[k].(string); return sanitize(v) }
+	if (p.Tool == "session_change" && p.Action == "session_start") || (p.Tool == "project_change" && p.Action == "create") {
+		project := value("project")
+		if project == "" {
+			project = value("path")
+		}
+		machine := value("node_id")
+		if machine == "" {
+			machine = "here"
+		}
+		harness := value("harness")
+		if harness == "" {
+			harness = "claude"
+		}
+		folder := value("folder")
+		if folder == "" {
+			folder = "project folder"
+		}
+		message := []rune(strings.Join(strings.Fields(value("first_message")), " "))
+		first := ""
+		if len(message) > 0 {
+			if len(message) > 28 {
+				message = append(message[:27], '…')
+			}
+			first = " · " + string(message)
+		}
+		verb := "start"
+		if p.Action == "create" {
+			verb = "create"
+		}
+		return fmt.Sprintf("%s %s @ %s · %s · %s%s", verb, project, machine, harness, folder, first)
+	}
 	switch p.Action {
 	case "charter_set":
 		return fmt.Sprintf("charter %s %s", value("node"), value("attr"))

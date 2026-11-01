@@ -17,14 +17,16 @@ const (
 // owner session ID. The gateway checks it and asks the target machine; that
 // machine checks the flag again against the gateway.
 const (
-	FrameSessionStart       = "session.start"
-	FrameSessionResume      = "session.resume"
-	FrameSessionStop        = "session.stop"
-	FrameSessionGet         = "session.get"
-	FrameSessionOwnerStart  = "session.owner_start"
-	FrameSessionOwnerResume = "session.owner_resume"
-	FrameSessionOwnerStop   = "session.owner_stop"
-	FrameSessionOwnerGet    = "session.owner_get"
+	FrameSessionStart              = "session.start"
+	FrameSessionProposalStart      = "session.proposal_start"
+	FrameSessionResume             = "session.resume"
+	FrameSessionStop               = "session.stop"
+	FrameSessionGet                = "session.get"
+	FrameSessionOwnerStart         = "session.owner_start"
+	FrameSessionOwnerProposalStart = "session.owner_proposal_start"
+	FrameSessionOwnerResume        = "session.owner_resume"
+	FrameSessionOwnerStop          = "session.owner_stop"
+	FrameSessionOwnerGet           = "session.owner_get"
 )
 
 // The Folder choices of the New session form. Empty means FolderProject, so
@@ -100,6 +102,8 @@ type SessionStartRequest struct {
 	// TrustClaude is the owner's yes to trusting an existing folder for
 	// Claude Code. Without it an untrusted folder answers "needs_trust".
 	TrustClaude bool `json:"trust_claude,omitempty"`
+	// CTOProposal asks the destination to enforce proposal-specific folder limits.
+	CTOProposal bool `json:"cto_proposal,omitempty"`
 }
 
 // SessionStartRelay is "session.start" from the owner's machine. The gateway

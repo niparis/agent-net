@@ -62,36 +62,16 @@ type Options struct {
 // login shell does not find the harness, it is the first copy in the search
 // order and Primary is false.
 func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
-	if o.PATH == "" {
-		o.PATH = os.Getenv("PATH")
-	}
-	if o.Dirs == nil {
-		o.Dirs = DefaultDirs(o.Home)
-	}
-	if o.LoginShellPATH == nil {
-		o.LoginShellPATH = loginShellPATH
-	}
-	var loginDirs []string
-	if sp := o.LoginShellPATH(ctx); sp != "" {
-		loginDirs = splitPath(sp)
-	}
-	search := splitPath(o.PATH)
-	search = append(search, o.Dirs...)
-	search = append(search, loginDirs...)
-	if o.Run == nil {
-		o.Run = func(ctx context.Context, path string, args ...string) (string, error) {
-			return runProgram(ctx, path, strings.Join(search, string(os.PathListSeparator)), args...)
-		}
-	}
+	s := prepare(ctx, &o)
 
 	out := []protocol.HarnessInfo{}
 	for _, n := range Names {
-		installs := findAll(n, search)
+		installs := findAll(n, s.dirs)
 		if len(installs) == 0 {
 			continue
 		}
 		primary := false
-		if first := find(n, loginDirs); first != "" {
+		if first := find(n, s.loginDirs); first != "" {
 			real := realPath(first)
 			for i, p := range installs {
 				if realPath(p) == real {
@@ -108,10 +88,10 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		h.Version = version(ctx, o, installs[0])
 		if n == "codex" {
 			mctx, cancel := context.WithTimeout(ctx, ModelsTimeout)
-			h.Models, h.ModelDefaultEfforts = codexModels(mctx, installs[0], strings.Join(search, string(os.PathListSeparator)))
+			h.Models, h.ModelDefaultEfforts = codexModels(mctx, installs[0], s.path)
 			cancel()
 		} else {
-			h.Models = models(ctx, o, n, installs[0], search)
+			h.Models = models(ctx, o, n, installs[0], s.dirs)
 		}
 		for _, p := range installs[1:] {
 			h.Others = append(h.Others, protocol.HarnessInstall{Path: p, Version: version(ctx, o, p)})
@@ -119,6 +99,77 @@ func Detect(ctx context.Context, o Options) []protocol.HarnessInfo {
 		out = append(out, h)
 	}
 	return out
+}
+
+// Locate finds an installed copy of one harness the same way Detect does, and
+// returns it when it runs. It is the fallback for a start that arrives before
+// detection has finished, or after a detection run missed the harness.
+func Locate(ctx context.Context, name string, o Options) string {
+	s := prepare(ctx, &o)
+	installs := findAll(name, s.dirs)
+	if len(installs) == 0 {
+		return ""
+	}
+	if first := find(name, s.loginDirs); first != "" {
+		real := realPath(first)
+		for i, p := range installs {
+			if realPath(p) == real {
+				copy(installs[1:i+1], installs[:i])
+				installs[0] = first
+				break
+			}
+		}
+	}
+	for _, p := range installs {
+		if runs(ctx, o, p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// search is where Detect and Locate look, and the PATH a harness sees.
+type search struct {
+	dirs      []string
+	loginDirs []string
+	path      string
+}
+
+// prepare fills the defaults of o and builds the search order: PATH, the known
+// install folders, then the login shell's PATH.
+func prepare(ctx context.Context, o *Options) search {
+	if o.PATH == "" {
+		o.PATH = os.Getenv("PATH")
+	}
+	if o.Dirs == nil {
+		o.Dirs = DefaultDirs(o.Home)
+	}
+	if o.LoginShellPATH == nil {
+		o.LoginShellPATH = loginShellPATH
+	}
+	var loginDirs []string
+	if sp := o.LoginShellPATH(ctx); sp != "" {
+		loginDirs = splitPath(sp)
+	}
+	dirs := splitPath(o.PATH)
+	dirs = append(dirs, o.Dirs...)
+	dirs = append(dirs, loginDirs...)
+	s := search{dirs: dirs, loginDirs: loginDirs, path: strings.Join(dirs, string(os.PathListSeparator))}
+	if o.Run == nil {
+		o.Run = func(ctx context.Context, path string, args ...string) (string, error) {
+			return runProgram(ctx, path, s.path, args...)
+		}
+	}
+	return s
+}
+
+// runs proves that a copy starts, with the same bounded version probe Detect
+// uses.
+func runs(ctx context.Context, o Options, path string) bool {
+	vctx, cancel := context.WithTimeout(ctx, VersionTimeout)
+	defer cancel()
+	_, err := o.Run(vctx, path, "--version")
+	return err == nil
 }
 
 // models returns the model list of a harness, or nil when it cannot be read.

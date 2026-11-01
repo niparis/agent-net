@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -171,6 +172,38 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 		}
 		_, err := gateway.ServerPin(d.cfg.GatewayData)
 		return err
+	case "session_start", "project_create":
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(call.Args, &p); err != nil {
+			return err
+		}
+		if call.Tool == "project_create" && strings.TrimSpace(p.Path) == "" {
+			return errors.New("project_create needs path")
+		}
+		if strings.TrimSpace(p.Project) == "" && strings.TrimSpace(p.Path) == "" {
+			return errors.New("session_start needs project or path")
+		}
+		if p.Folder != "" && p.Folder != protocol.FolderProject && p.Folder != protocol.FolderWorktree {
+			return errors.New("invalid folder choice")
+		}
+		if len(p.FirstMessage) > protocol.MaxBodyBytes {
+			return errors.New("first_message is too long")
+		}
+		if p.Path != "" {
+			path := strings.TrimSpace(p.Path)
+			if strings.IndexFunc(p.Path, unicode.IsControl) >= 0 {
+				return errors.New("the path has a control character")
+			}
+			if !filepath.IsAbs(path) && path != "~" && !strings.HasPrefix(path, "~/") {
+				return errors.New("the path must be absolute or start with ~")
+			}
+			if p.NodeID == "" || p.NodeID == d.cfg.NodeID || strings.EqualFold(p.NodeID, d.cfg.Hostname) {
+				if _, err := cleanOwnerPath(path); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	case "project_add":
 		var p protocol.ProjectAddRequest
 		if err := json.Unmarshal(call.Args, &p); err != nil {
@@ -261,6 +294,21 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 // Only the approved proposal runner may attach the CTO owner-instruction flag.
 // The immediate tool path always builds an unflagged peer message.
 func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "session_start" || name == "project_create" {
+		if proposalActor(ctx) == "" {
+			return nil, errors.New("session start requires an approved proposal")
+		}
+		var p protocol.SessionStartRequest
+		if err := json.Unmarshal(raw, &p); err != nil {
+			return nil, err
+		}
+		if name == "project_create" {
+			p.Create = true
+		}
+		p.TrustClaude = false
+		p.CTOProposal = true
+		return d.sessionStart(ctx, p)
+	}
 	if name == "message" {
 		var q struct {
 			Action  string `json:"action"`

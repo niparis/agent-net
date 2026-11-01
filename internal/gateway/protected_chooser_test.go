@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -70,7 +69,7 @@ func terraWellBehindPace() *protocol.Quotas {
 }
 
 func TestWorkerRotationSurvivesStoreRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gw.db")
+	path := seededStorePath(t, "gw.db")
 	s, err := OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

@@ -50,7 +50,7 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 		m.fail("That is you, not a session.")
 		return m, nil
 	case a.Harness == "cto":
-		return m, m.ctoEnterCmd(a.SessionID)
+		return m.openCTO(a.SessionID)
 	}
 	if !a.Online && a.Harness != "opencode" && a.Harness != "codex" {
 		if a.Harness != "claude" && a.Harness != "pi" {
@@ -118,13 +118,17 @@ func (m Model) enterCmd(id, name string) tea.Cmd {
 
 // onEnter runs the plan, or says why there is none.
 func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
+	if r.cto && m.cto != nil {
+		m.cto.opening = false
+	}
 	switch {
 	case r.err != nil:
+		reason := enterFailure(r.name, r.err)
 		if r.cto && m.cto != nil {
-			m.cto.enterNotice = "Cannot enter " + r.name + ": " + explain(r.err)
+			m.cto.enterNotice = reason
 			m.cto.scroll = 0
 		}
-		m.fail("Cannot enter " + r.name + ": " + explain(r.err))
+		m.fail(reason)
 		return m, nil
 	case len(r.plan.Argv) == 0 && r.cto:
 		if m.cto != nil {
@@ -158,6 +162,15 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	return m, run(proxy, func(err error) tea.Msg {
 		return enterDoneMsg{name: name, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
 	})
+}
+
+// enterFailure is the reason the owner reads. An open that ran past its
+// deadline says so, and says it may still finish, instead of ending silently.
+func enterFailure(name string, err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "Opening " + name + " timed out: context deadline exceeded. It may still open; press Enter to try again."
+	}
+	return "Cannot enter " + name + ": " + explain(err)
 }
 
 // onEnterDone is the return from the session.

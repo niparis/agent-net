@@ -15,11 +15,12 @@ import (
 
 // upNode is a daemon with a version and fake install and restart steps.
 type upNode struct {
-	t   *testing.T
-	cfg Config
-	mu  sync.Mutex
-	d   *Daemon
-	ver string // the version after an install; empty until then
+	t    *testing.T
+	cfg  Config
+	mu   sync.Mutex
+	d    *Daemon
+	ver  string        // the version after an install; empty until then
+	done chan struct{} // the current daemon's automatic upgrade finished
 }
 
 func (n *upNode) daemon() *Daemon {
@@ -35,6 +36,15 @@ func (n *upNode) start() {
 	if n.ver != "" {
 		cfg.Version = n.ver
 	}
+	done := make(chan struct{}, 1)
+	// A fresh channel for each daemon: an upgrade attempt of a stopped one
+	// must not answer for the one that replaced it.
+	cfg.AutoUpgradeDone = func() {
+		select {
+		case done <- struct{}{}:
+		default:
+		}
+	}
 	n.mu.Unlock()
 	d, err := New(cfg)
 	if err != nil {
@@ -44,6 +54,7 @@ func (n *upNode) start() {
 	// Set before Start: an automatic upgrade can restart the node at once.
 	n.mu.Lock()
 	n.d = d
+	n.done = done
 	n.mu.Unlock()
 	if err := d.Start(context.Background()); err != nil {
 		n.t.Fatal(err)
@@ -65,7 +76,7 @@ func startUpNode(t *testing.T, g *testGateway, version string, install func(targ
 	}
 	n := &upNode{t: t}
 	n.cfg = Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca,
-		Hostname: "host-" + nc.NodeID, StateDir: t.TempDir(), SocketPath: filepath.Join(shortDir(t), "d.sock"),
+		Hostname: "host-" + nc.NodeID, StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"),
 		ClaudeSessionsDir: t.TempDir(), BackoffMin: 20 * time.Millisecond, BackoffMax: 100 * time.Millisecond,
 		Version: version}
 	if install != nil {
@@ -99,6 +110,23 @@ func startUpNode(t *testing.T, g *testGateway, version string, install func(targ
 
 var installedMu sync.Mutex
 var installedVersions = map[string]string{}
+
+// stays waits until the automatic upgrade after the last handshake has
+// finished, so a check that it did nothing needs no fixed sleep.
+func (n *upNode) stays(t *testing.T) {
+	t.Helper()
+	n.mu.Lock()
+	done := n.done
+	n.mu.Unlock()
+	if done == nil {
+		t.Fatal("the node was never started")
+	}
+	select {
+	case <-done:
+	case <-time.After(scaled(20 * time.Second)):
+		t.Fatal("the automatic upgrade did not finish")
+	}
+}
 
 func (n *upNode) installed() string {
 	installedMu.Lock()

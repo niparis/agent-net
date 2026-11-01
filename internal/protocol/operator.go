@@ -134,7 +134,7 @@ var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet, OpQualityGet, OpQualitySet,
-	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpLearn, OpRate, OpWorkerDefect}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpWorkerDefect}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
 // remain hidden across machines; node names identify graph items on Graph.
@@ -214,6 +214,16 @@ type ConversationView struct {
 	// OwnerInstruction tells whether the newest message carries the owner's
 	// prompt excerpt. It shows the same you→ marker as the live feed.
 	OwnerInstruction bool `json:"owner_instruction,omitempty"`
+	// WorkerSession groups every conversation that involves a worker session
+	// into one row, with the ID "worker:<session>". It survives the session
+	// record, because the gateway reads the worker's notice and task messages.
+	WorkerSession string `json:"worker_session,omitempty"`
+	// WorkerOwner is the session that started the worker, from the task
+	// message or its stored worker record.
+	WorkerOwner string `json:"worker_owner,omitempty"`
+	// Task is the first line of the task the caller sent the worker, cleaned
+	// and cut for a list row.
+	Task string `json:"task,omitempty"`
 }
 
 // ConversationPage answers OpConversations. Total counts every stored

@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"os"
 	"strings"
 	"time"
 
@@ -34,13 +35,14 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		if list == nil {
 			list = []protocol.HarnessInfo{} // "none installed", not "not reported"
 		}
+		d.hmu.Lock()
+		list = keepMissingHarnesses(d.installed, list, d.Logf)
 		for i := range list {
 			list[i].ModelProviders = d.cfg.ModelProviders
 			if list[i].Name == "claude" {
 				list[i].PolicyReady = policyHookInstalled()
 			}
 		}
-		d.hmu.Lock()
 		d.installed = list
 		d.hgen++
 		d.hmu.Unlock()
@@ -56,6 +58,41 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 		case <-t.C:
 		}
 	}
+}
+
+// keepMissingHarnesses keeps a harness that was found before when a detection
+// run does not report it but its binary is still there. A probe can fail or
+// time out under load, and dropping the entry then makes a start say the
+// harness is not installed. Only a missing binary removes it.
+func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, ...any)) []protocol.HarnessInfo {
+	seen := make(map[string]bool, len(next))
+	out := make([]protocol.HarnessInfo, 0, len(next)+len(prev))
+	for _, h := range next {
+		if h.Path == "" { // an entry a failed probe could not fill in
+			continue
+		}
+		out = append(out, h)
+		seen[h.Name] = true
+	}
+	for _, h := range prev {
+		if seen[h.Name] {
+			continue
+		}
+		if h.Path != "" {
+			if _, err := os.Stat(h.Path); err == nil {
+				if logf != nil {
+					logf("harnesses: %s probe failed; keeping the previous copy at %s", h.Name, h.Path)
+				}
+				out = append(out, h)
+				seen[h.Name] = true
+				continue
+			}
+		}
+		if logf != nil {
+			logf("harnesses: %s is gone (%s)", h.Name, h.Path)
+		}
+	}
+	return out
 }
 
 // publishHarnesses sends the current inventory if the link is up. If it is
