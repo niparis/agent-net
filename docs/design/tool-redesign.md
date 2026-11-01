@@ -1332,3 +1332,12 @@ Each JSON object below is the routed concrete input schema plus its selector and
 ## Proposed list measurement
 
 Compact UTF-8 JSON encoding of the proposed tool arrays above, including `name`, `title`, `description`, input and output schemas, all four annotations, and the three always-load metadata entries where applicable: agent 43262 bytes (about 10816 tokens), worker 30592 bytes (about 7648 tokens), CTO 59680 bytes (about 14920 tokens). A throwaway Go program unmarshaled each proposed array and used `encoding/json.Marshal`, the baseline method; its output matched these counts. The estimate is bytes divided by four, not a tokenizer measurement.
+
+## Results
+
+The current tools/list JSON sizes are 53,814 bytes for agent, 53,814 bytes for
+worker, and 26,602 bytes for CTO. The baseline was 26,097 bytes for agent and
+15,902 bytes for CTO. Catalog-only lists are 34,934 bytes for agent, 25,088
+bytes for worker, and 20,983 bytes for CTO. The test marshals the tools array
+with `encoding/json`, as the baseline did. Catalog-only sizes include names in
+`toolcatalog.ForRole` that the server currently lists.

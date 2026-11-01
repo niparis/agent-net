@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -419,6 +420,9 @@ func CTOToolNames() []string {
 }
 
 func RunCTO(ctx context.Context, socket, version string) error {
+	logf := func(format string, a ...any) { fmt.Fprintf(os.Stderr, "agent-net cto: "+format+"\n", a...) }
+	conn := newStdioConn(0, os.Stdout, takeHandover(logf), logf)
+	go conn.readLoop()
 	ch, err := dialCTOChannel(ctx, socket)
 	if err != nil {
 		return err
@@ -427,7 +431,7 @@ func RunCTO(ctx context.Context, socket, version string) error {
 	s := NewCTO(func(ctx context.Context, method string, params any) (json.RawMessage, error) {
 		return ch.call(ctx, "cto_tool", map[string]any{"name": method, "arguments": params})
 	}, version)
-	return s.Run(ctx, &mcp.StdioTransport{})
+	return s.Run(ctx, stdioTransport{conn})
 }
 
 // ctoReconnectWait bounds how long the CTO channel waits for the daemon, at
