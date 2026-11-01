@@ -338,6 +338,63 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 	}
 }
 
+func TestQualityReworkSumsEveryRunOfASession(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	caller := ratingCaller(t, s, node, "caller", "unknown")
+	now := s.now().Unix()
+	// One session, three runs: the continue is on the first row and the fix on
+	// the second. The task's rework is the sum of all rows, not the last one.
+	for i, run := range []struct{ cont, fix int }{{1, 0}, {0, 1}, {0, 0}} {
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_multi", Harness: "opencode",
+			Model: "m:high", Outcome: protocol.OutcomeComplete, EndedAt: now + int64(i), Caller: caller,
+			Difficulty: "normal", Continue: run.cont, Fix: run.fix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := protocol.ReworkWeight(1, 1)
+	if got := s.QualityAnalysis(); got.ReworkAverage != want {
+		t.Fatalf("session rework = %v, want %v (continue 1, fix 1)", got.ReworkAverage, want)
+	}
+	// A defect found later adds its severity points to the task's fix count.
+	if _, err := s.db.Exec(`INSERT INTO worker_defects (session_id, severity, at) VALUES (?,?,?)`, "s_multi", 2, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.refreshQuality(); err != nil {
+		t.Fatal(err)
+	}
+	want = protocol.ReworkWeight(3, 1)
+	if got := s.QualityAnalysis(); got.ReworkAverage != want {
+		t.Fatalf("session rework with a severity 2 defect = %v, want %v", got.ReworkAverage, want)
+	}
+}
+
+func TestQualityReworkSkipsUnknownCountersAndStoppedSessions(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	caller := ratingCaller(t, s, node, "caller", "unknown")
+	now := s.now().Unix()
+	add := func(session string, outcome string, cont, fix int) {
+		t.Helper()
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: session, Harness: "opencode",
+			Model: "m:high", Outcome: outcome, EndedAt: now, Caller: caller, Difficulty: "normal",
+			Continue: cont, Fix: fix}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("s_good", protocol.OutcomeComplete, 0, 1)
+	add("s_stopped", protocol.OutcomeStopped, 0, 9)
+	// A session with one run from before the counters existed stays out.
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, caller, difficulty)
+		VALUES (?,?,?,?,?,?,?,?)`, node, "s_unknown", "opencode", "m:high", protocol.OutcomeComplete, now, caller, "normal"); err != nil {
+		t.Fatal(err)
+	}
+	add("s_unknown", protocol.OutcomeComplete, 0, 9)
+	if got, want := s.QualityAnalysis().ReworkAverage, protocol.ReworkWeight(1, 0); got != want {
+		t.Fatalf("only the known, non-stopped task should count: got %v, want %v", got, want)
+	}
+}
+
 func TestQualitySummarySortsEffectSizes(t *testing.T) {
 	f := qualityFit{
 		Effects: map[string]float64{

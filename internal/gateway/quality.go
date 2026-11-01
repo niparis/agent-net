@@ -153,6 +153,75 @@ func fitQuality(samples []qualitySample) qualityFit {
 	return f
 }
 
+// qualityRunSamples reads one rework sample per worker session. The counters
+// are spread over the session's runs, so they add up; model, harness and
+// difficulty come from the first row that is not a stopped run. A session with
+// a run from before the counters existed stays out. Late defects add their
+// severity points to the task's fix count, like Calibration.
+func (s *Store) qualityRunSamples() ([]qualitySample, error) {
+	cut := s.now().Add(-calibrationWindow).Unix()
+	rows, err := s.db.Query(`SELECT session_id, model, harness, difficulty, outcome, continue_count, fix_count, counters_known
+		FROM worker_runs WHERE ended_at >= ? ORDER BY ended_at, id`, cut)
+	if err != nil {
+		return nil, err
+	}
+	type session struct {
+		sample    qualitySample
+		cont, fix int
+		unknown   bool
+	}
+	sessions := map[string]*session{}
+	order := []string{}
+	for rows.Next() {
+		var sessionID, model, harness, difficulty, outcome string
+		var cont, fix, known int
+		if err := rows.Scan(&sessionID, &model, &harness, &difficulty, &outcome, &cont, &fix, &known); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		if sessionID == "" || outcome == protocol.OutcomeStopped {
+			continue
+		}
+		sess := sessions[sessionID]
+		if sess == nil {
+			// The first row holds the model, harness and difficulty of the task.
+			sess = &session{}
+			sess.sample.Model, sess.sample.Effort = protocol.SplitModelLevel(model)
+			sess.sample.Model = qualityModel(sess.sample.Model)
+			sess.sample.Harness = harness
+			sess.sample.Difficulty = difficulty
+			sessions[sessionID] = sess
+			order = append(order, sessionID)
+		}
+		sess.cont += cont
+		sess.fix += fix
+		if known == 0 {
+			sess.unknown = true
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	defects, err := s.DefectReworkBySession(cut)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]qualitySample, 0, len(order))
+	for _, sessionID := range order {
+		sess := sessions[sessionID]
+		if sess.unknown || sess.sample.Model == "" {
+			continue
+		}
+		sample := sess.sample
+		sample.Value = protocol.ReworkWeight(sess.fix+defects[sessionID], sess.cont)
+		sample.Weight = 1
+		out = append(out, sample)
+	}
+	return out, nil
+}
+
 // refreshQuality is called on source writes and startup, never by a read or
 // a TUI redraw. Holding qualityMu serializes rebuilds and snapshot reads.
 func (s *Store) refreshQuality() error {
@@ -189,28 +258,7 @@ func (s *Store) refreshQuality() error {
 	if err != nil {
 		return err
 	}
-	rows, err = s.db.Query(`SELECT model,harness,difficulty,continue_count,fix_count FROM worker_runs
- WHERE model <> '' AND (session_id = '' OR id IN (SELECT MAX(id) FROM worker_runs WHERE session_id <> '' GROUP BY session_id)) ORDER BY id`)
-	if err != nil {
-		return err
-	}
-	var runs []qualitySample
-	for rows.Next() {
-		var x qualitySample
-		var model string
-		var cont, fix int
-		if err := rows.Scan(&model, &x.Harness, &x.Difficulty, &cont, &fix); err != nil {
-			rows.Close()
-			return err
-		}
-		x.Model, x.Effort = protocol.SplitModelLevel(model)
-		x.Model = qualityModel(x.Model)
-		x.Value = protocol.ReworkWeight(fix, cont)
-		x.Weight = 1
-		runs = append(runs, x)
-	}
-	err = rows.Err()
-	rows.Close()
+	runs, err := s.qualityRunSamples()
 	if err != nil {
 		return err
 	}
