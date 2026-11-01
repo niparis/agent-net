@@ -22,19 +22,20 @@ type SessionStartQuery struct {
 // StartedSession is separate from a worker. It has no owner agent, brief,
 // deadline or cleanup rules. SessionID is filled after normal registration.
 type StartedSession struct {
-	ID        string `json:"id"`
-	Status    string `json:"status"` // starting, started, failed
-	NodeID    string `json:"node_id"`
-	Harness   string `json:"harness"`
-	Project   string `json:"project"`
-	Path      string `json:"path"`
-	Branch    string `json:"branch,omitempty"`
-	Model     string `json:"model,omitempty"`
-	StartedAt int64  `json:"started_at"`
-	JobID     string `json:"job_id,omitempty"`
-	NativeID  string `json:"native_id,omitempty"`
-	SessionID string `json:"session_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+	ID        string     `json:"id"`
+	Status    string     `json:"status"` // starting, started, failed
+	NodeID    string     `json:"node_id"`
+	Harness   string     `json:"harness"`
+	Project   string     `json:"project"`
+	Path      string     `json:"path"`
+	Branch    string     `json:"branch,omitempty"`
+	Model     string     `json:"model,omitempty"`
+	StartedAt int64      `json:"started_at"`
+	JobID     string     `json:"job_id,omitempty"`
+	NativeID  string     `json:"native_id,omitempty"`
+	SessionID string     `json:"session_id,omitempty"`
+	Error     string     `json:"error,omitempty"`
+	EnterPlan *EnterPlan `json:"enter_plan,omitempty"`
 }
 
 // SessionResumeRequest identifies an offline conversation.

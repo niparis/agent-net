@@ -1300,7 +1300,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | esc | Leave the help or a message body, or clear the filter. |
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
-| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. Folder is `project folder` for now: this version starts local Claude Code and OpenCode sessions, so another harness or another machine says `only Claude and OpenCode on this machine for now`. An empty First message starts the session and enters it when it registers (ctrl+] returns). Text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent. Enter opens it.` A failure shows the reason the harness gave. Esc cancels. |
+| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. Folder is `project folder` for now: this version starts local Claude Code, OpenCode and Codex sessions, so another harness or another machine is refused. An empty First message starts the session and enters it (ctrl+] returns). For Claude and OpenCode, text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent. Enter opens it.` Codex always starts and enters, with the first message as its prompt. A failure shows the reason the harness gave. Esc cancels. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
 | `x` | In Sessions, stop the selected worker after a `y/n` question. Any other session is refused with a message. |
 | `t` | Cycle the selected node's wildcard request rule through `normal`, `ask` and `auto`. |
@@ -1534,7 +1534,7 @@ current PATH. A daemon upgrade adds PATH to older service files.
 
 ### Starting an owner session through the local API
 
-`session_start` starts Claude or OpenCode in an existing project folder on this machine.
+`session_start` starts Claude or OpenCode, or prepares a Codex enter plan, in an existing project folder on this machine.
 This is the daemon part of the [accepted session-start design](design/start-sessions.md);
 starts on other machines are not built yet.
 
@@ -1542,7 +1542,7 @@ The request is `{"project":"shop","harness":"claude","model":"haiku","first_mess
 Project is a known local project name or its exact path. Ambiguous names are
 refused; use the path. Harness may be omitted and defaults to `claude`. Model
 and first_message are optional. An empty model keeps the harness's own default.
-An empty first message starts an idle background session. For Claude, a nonempty
+For Claude and OpenCode, an empty first message starts an idle background session. For Claude, a nonempty
 message is the owner's first prompt, passed after `--` to `claude --bg`.
 
 For OpenCode, the daemon reads the owner's running service address and password
@@ -1559,7 +1559,14 @@ is missing or its address cannot be reached, the start is refused with
 the status code. The service password stays in HTTP authentication; it is never
 logged or put in a command argument or notice.
 
-The answer is a started-session record with `id`, `status: "starting"`,
+For Codex, the answer has `status: "started"` and an `enter_plan` instead of
+starting a background process. The TUI runs `codex [-m MODEL] [prompt]` in the
+project folder through its terminal. It always enters, even with a first
+message, so the owner can answer approval prompts. Ctrl+] returns to the TUI;
+a running turn continues in the shared app server. An idle thread can become
+dormant and Enter resumes it with `codex resume <thread>`.
+
+For Claude and OpenCode, the answer is a started-session record with `id`, `status: "starting"`,
 `node_id`, `harness`, `project`, `path`, `branch`, `model` and `started_at`
 (Unix seconds). Poll `session_start_get {"id":"<returned id>"}`. Once normal
 discovery and gateway registration finish, the record has `status: "started"`,

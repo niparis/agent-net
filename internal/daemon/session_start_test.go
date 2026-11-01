@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -411,5 +412,29 @@ func TestSessionStartOpenCodeRejectsUnsafeServiceAddress(t *testing.T) {
 				t.Fatal("unsafe service address accepted")
 			}
 		})
+	}
+}
+
+func TestSessionStartCodexPlan(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	bins := fakeBin(t, "codex")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newRepo(t, "shop space")
+	n.register(t, repo)
+	for _, tc := range []struct {
+		model, prompt string
+		args          []string
+	}{
+		{"", "", []string{bins["codex"]}},
+		{"model-x", "Inspect this project", []string{bins["codex"], "-m", "model-x", "Inspect this project"}},
+	} {
+		var r struct {
+			Status string             `json:"status"`
+			Plan   protocol.EnterPlan `json:"enter_plan"`
+		}
+		mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", Model: tc.model, FirstMessage: tc.prompt}), &r)
+		if r.Status != "started" || r.Plan.Dir != repo || !reflect.DeepEqual(r.Plan.Argv, tc.args) {
+			t.Fatalf("plan: %+v, want %v in %s", r, tc.args, repo)
+		}
 	}
 }

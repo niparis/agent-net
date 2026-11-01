@@ -12,7 +12,7 @@ New session ──────────────────────�
 > First message
                  empty: start it and enter it
                  text: start it in the background and send this
-  ! only Claude and OpenCode on this machine for now.
+  ! only Claude, OpenCode and Codex on this machine for now.
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
