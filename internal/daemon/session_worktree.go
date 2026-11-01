@@ -28,6 +28,10 @@ func ownerWorktreeRoot(projectPath string) string {
 // branch, and returns its folder, its branch and the branch it started from.
 // An empty branch asks for the lowest free agent-net/<project>-<n>.
 func (d *Daemon) createOwnerWorktree(ctx context.Context, projectPath, project, branch string) (dir, branchName, base string, err error) {
+	return d.createOwnerWorktreeChecked(ctx, projectPath, project, branch, false)
+}
+
+func (d *Daemon) createOwnerWorktreeChecked(ctx context.Context, projectPath, project, branch string, proposal bool) (dir, branchName, base string, err error) {
 	if !isGitRepo(ctx, projectPath) {
 		return "", "", "", fmt.Errorf("cannot make a worktree: %s is not a git repository with a commit", projectPath)
 	}
@@ -57,6 +61,11 @@ func (d *Daemon) createOwnerWorktree(ctx context.Context, projectPath, project, 
 	rel, err := filepath.Rel(root, dir)
 	if err != nil || rel == "." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || rel == ".." {
 		return "", "", "", fmt.Errorf("invalid branch %q", branch)
+	}
+	if proposal {
+		if err := checkOwnerHome(dir); err != nil {
+			return "", "", "", err
+		}
 	}
 	if _, err := os.Stat(dir); err == nil {
 		return "", "", "", fmt.Errorf("the worktree folder already exists: %s", dir)

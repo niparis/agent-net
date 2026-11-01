@@ -1668,6 +1668,12 @@ installed outside the system directories are available to workers. If the shell
 cannot supply it, setup adds common Homebrew and local binary directories to the
 current PATH. A daemon upgrade adds PATH to older service files.
 
+### CTO proposals for a session or project
+
+The CTO can propose `session_change` with action `session_start`, using `project` or `path`, `node_id`, `harness`, `model`, `folder`, `branch`, `first_message` and optional `create`. It can propose `project_change` with action `create` and a `path` plus the same start options. Creating a project authorizes creation of the missing folder and a git repository when the owner approves. A session start creates a missing folder only when `create` is true. These actions always appear in Needs you and never use the graph owner window. The row shows the project or path, machine, harness, folder choice and a cut of the first message. Select it and press `a` to approve.
+
+The daemon records the target machine and checks local paths before accepting a proposal. A remote machine checks its own path when the approved start reaches it; an offline or older machine refuses the request. Approval uses the same session start path as the `n` form. If Claude needs the owner's trust answer, the proposal result and note say so and no session starts. Answer through the normal new-session form. A missing folder without `create` likewise needs the owner's answer.
+
 ### Starting an owner session through the local API
 
 `session_start` starts Claude, OpenCode or Pi in the background, or prepares a Codex enter plan, in an existing project folder. The folder may be on another machine.
