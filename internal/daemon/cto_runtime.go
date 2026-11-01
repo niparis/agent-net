@@ -173,6 +173,9 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 	if err != nil {
 		return protocol.EnterPlan{}, err
 	}
+	if err := d.registerCTOSession(ctx); err != nil {
+		return protocol.EnterPlan{}, err
+	}
 	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}
 	bin, err := d.harnessBinary(h.name())
 	if err != nil {

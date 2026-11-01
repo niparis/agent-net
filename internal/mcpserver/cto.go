@@ -46,25 +46,13 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 var ctoTools = map[string]ctoToolDef{
 	"charter_guide":         {desc: "Read charter guide.", fields: map[string]ctoField{}},
 	"onboarding_restart":    {desc: "Restart the getting-started steps.", fields: map[string]ctoField{}},
-	"notification_settings": {desc: "Read or set notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true; omit to read."}}},
-	"charter_suggestions":   {desc: "Read charter suggestions.", fields: map[string]ctoField{}},
-	"graph_get": {
-		desc:   "Read graph and charters.",
-		fields: map[string]ctoField{"all": {typ: "boolean", desc: "Include empty projects."}},
-	},
+	"notification_settings": {desc: "Propose notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true."}}},
 	"charter_set": {
 		desc: "Set a charter attribute.",
 		fields: map[string]ctoField{
 			"node":  {typ: "string", desc: "Node."},
 			"attr":  {typ: "string", desc: "Attribute.", enum: ctoCharterAttrs},
 			"value": {typ: "string", desc: "2 KiB max; empty clears."},
-		},
-	},
-	"charter_history": {
-		desc: "Read charter history.",
-		fields: map[string]ctoField{
-			"node":  {typ: "string", desc: "Node."},
-			"limit": {typ: "integer", desc: "Limit; default/max 1000."},
 		},
 	},
 	"node_add": {
@@ -97,13 +85,6 @@ var ctoTools = map[string]ctoToolDef{
 			"kind": {typ: "string", desc: "Kind and direction.", enum: ctoEdgeKinds},
 		},
 	},
-	"edge_history": {
-		desc: "Read edge history.",
-		fields: map[string]ctoField{
-			"node":  {typ: "string", desc: "Node; empty means all."},
-			"limit": {typ: "integer", desc: "Limit; default/max 1000."},
-		},
-	},
 	"graph_undo": {
 		desc: "Undo a graph change.",
 		fields: map[string]ctoField{
@@ -119,20 +100,6 @@ var ctoTools = map[string]ctoToolDef{
 			"online_only":    {typ: "boolean", desc: "Online only."},
 			"include_owners": {typ: "boolean", desc: "Include owners."},
 			"project":        {typ: "string", desc: "Project."},
-		},
-	},
-	"workers": {
-		desc:   "List workers, newest first.",
-		fields: map[string]ctoField{"limit": {typ: "integer", desc: "20; max 50."}, "before": {typ: "string", desc: "Cursor."}},
-	},
-	"needs_you": {
-		desc: "List waiting sessions.",
-	},
-	"feed": {
-		desc: "Read network feed.",
-		fields: map[string]ctoField{
-			"limit":  {typ: "integer", desc: "20; max 50."},
-			"before": {typ: "integer", desc: "Cursor."},
 		},
 	},
 	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
@@ -156,7 +123,6 @@ var ctoTools = map[string]ctoToolDef{
 		"name": {typ: "string", desc: "Replaces an existing name."}, "harness": {typ: "string", desc: "Harness."}, "model": {typ: "string", desc: "Model ID or name."}, "effort": {typ: "string", desc: "Effort."},
 	}},
 	"worker_profile_remove":   {desc: "Remove a worker profile.", fields: map[string]ctoField{"name": {typ: "string", desc: "Name."}}},
-	"protected_providers_get": {desc: "Read protected providers."},
 	"protected_providers_set": {desc: "Set providers; ask the owner.", fields: map[string]ctoField{"protected_providers": {typ: "array", desc: "Provider IDs."}, "reason": {typ: "string", desc: "Reason."}}},
 	"worker_providers_set": {
 		desc:   "Set worker providers.",

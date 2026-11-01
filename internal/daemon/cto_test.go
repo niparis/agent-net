@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo", "Every owner-only change is a proposal in Needs you", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"charter_guide", "rule auto", "depends", "diff", "undo", "Every owner-only change is a proposal in Needs you", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -515,36 +515,22 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("node_add", map[string]any{"name": "architecture"})
 	call("node_add", map[string]any{"name": "component"})
 	call("charter_set", map[string]any{"node": "architecture", "attr": "purpose", "value": "design"})
-	call("charter_history", map[string]any{"node": "architecture"})
 	var changes []protocol.CharterChange
 	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || !strings.HasPrefix(changes[0].By, "owner (CTO proposal p_") {
 		t.Fatalf("CTO history: %+v %v", changes, err)
 	}
 
 	call("edge_set", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
-	call("edge_history", map[string]any{"node": "component"})
 	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
 	call("graph_undo", map[string]any{})
 	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
 	call("node_remove", map[string]any{"name": "component"})
-	call("graph_get", map[string]any{})
 	call("nodes", map[string]any{})
 	call("projects", map[string]any{})
-	call("messages", map[string]any{})
-	call("held_list", map[string]any{})
-	call("inbox_list", map[string]any{})
-	call("outcome_inbox", map[string]any{})
 	call("node_settings_set", map[string]any{"node": "architecture", "setting": "merge_authority", "value": "ask"})
-	call("node_settings_get", map[string]any{"node": "architecture"})
 	call("playbook_set", map[string]any{"model": "fake/m1", "note": "use tests"})
-	call("playbook_get", map[string]any{"model": "fake/m1"})
-	call("integrations_get", map[string]any{})
 	call("mcp_list", map[string]any{})
-	call("cto_settings", map[string]any{})
 	call("agents", map[string]any{})
-	call("workers", map[string]any{})
-	call("needs_you", map[string]any{})
-	call("feed", map[string]any{})
 	var agents protocol.AgentsResult
 	json.Unmarshal(w.cli.mustCall("list", nil), &agents)
 	target := ""
@@ -559,21 +545,21 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("send", map[string]any{"to": target, "body": "hello"})
 	select {
 	case msg := <-peer.Pushes:
-		if !msg.FromCTO {
-			t.Fatalf("missing CTO sender: %+v", msg)
+		if msg.FromCTO || msg.From != w.d.ctoSessionID() {
+			t.Fatalf("plain CTO sender: %+v", msg)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("message not delivered")
 	}
 	var incoming protocol.MessageSent
-	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ownerSessionID(), "body": "question"})
+	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ctoSessionID(), "body": "question"})
 	if err := json.Unmarshal(rawIncoming, &incoming); err != nil || incoming.Message == nil {
 		t.Fatalf("incoming message: %s %v", rawIncoming, err)
 	}
 	call("reply", map[string]any{"message_id": incoming.Message.ID, "body": "answer"})
 	select {
 	case msg := <-peer.Pushes:
-		if !msg.FromCTO || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
+		if msg.FromCTO || msg.From != w.d.ctoSessionID() || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
 			t.Fatalf("CTO reply: %+v", msg)
 		}
 	case <-time.After(2 * time.Second):
@@ -583,13 +569,13 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
 	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
-	eventually(t, "worker task carries CTO attribution", func() bool {
+	eventually(t, "approved worker task comes from the owner", func() bool {
 		workers := w.workers(t)
 		if len(workers) != 1 {
 			return false
 		}
 		for _, m := range w.messagesOf(t, workers[0].SessionID) {
-			if m.Type == protocol.TypeRequest && m.FromCTO {
+			if m.Type == protocol.TypeRequest && m.From == w.ownerID() && !m.FromCTO {
 				return true
 			}
 		}
@@ -604,7 +590,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter_set: proposal", "sent to", "worker_start: proposal"} {
+	for _, want := range []string{"read agents", "charter_set: proposal", "sent to", "worker_start: proposal"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}
@@ -717,7 +703,7 @@ func TestCTOEnterOpenCode(t *testing.T) {
 
 func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 	for _, want := range []string{
-		"To learn about a project, find it with the projects and agents tools or its graph node (machine, folder, live sessions).",
+		"To learn about a project, find it with the projects and agents tools (machine, folder, live sessions).",
 		"You have no built-in tools. For file work or to draft a charter, send its live session a request and use its answer.",
 		"Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.",
 	} {
@@ -764,7 +750,7 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 }
 
 func TestCTOBriefToolsWorkflow(t *testing.T) {
-	for _, want := range []string{"tools_differences", "Plans and full results go to the owner", "Wait for the outcome before proposing the next step"} {
+	for _, want := range []string{"ask the owner to share the relevant inventory or plan", "Plans and full results go to the owner", "Wait for the outcome before proposing the next step"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}
@@ -772,7 +758,7 @@ func TestCTOBriefToolsWorkflow(t *testing.T) {
 }
 
 func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
-	want := "Each graph node lists where its project lives and its live sessions: use that before searching any filesystem."
+	want := "Projects and agents list where a project lives and its live sessions."
 	if !strings.Contains(ctoBrief, want) {
 		t.Fatalf("CTO brief missing %q", want)
 	}

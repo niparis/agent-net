@@ -6,11 +6,11 @@ import (
 	"testing"
 )
 
-func TestCTOSenderIsPersistedAndRequiresOwner(t *testing.T) {
+func TestCTOSenderIsPersistedAndRequiresRegisteredSession(t *testing.T) {
 	s, _ := newTestStore(t)
 	agent, recipient := twoSessions(t, s)
 	node := mustNode(t, s, agent)
-	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID, Name: "owner"})
+	owner, err := s.RegisterCTOSession(node)
 	if err != nil {
 		t.Fatal(err)
 	}

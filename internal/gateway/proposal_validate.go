@@ -184,8 +184,12 @@ func (g *Gateway) validateCTOProposal(ctx context.Context, nc *nodeConn, raw []b
 			if err != nil {
 				return nil, err
 			}
-			if !ok || m.To != q.Owner {
-				return nil, reject("message was not sent to the owner")
+			var cto string
+			if err := st.db.QueryRow(`SELECT s.id FROM sessions s JOIN owner_settings o ON o.key='cto_session' AND o.value=s.id WHERE s.node_id=?`, nc.id).Scan(&cto); err != nil {
+				return nil, reject("CTO network session is not registered on this node")
+			}
+			if !ok || m.To != cto {
+				return nil, reject("message was not sent to the CTO")
 			}
 			return nil, nil
 		}

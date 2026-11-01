@@ -12,6 +12,7 @@ import (
 func TestDeliveredNotesDoNotNameTheOwner(t *testing.T) {
 	notes := []struct{ name, text string }{
 		{"CTONote", CTONote},
+		{"CTOPeerNote", CTOPeerNote},
 		{"OverruleNote", OverruleNote},
 		{"written approval", WrittenApprovalNote("the owner", "merge abc123", time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC))},
 	}
@@ -43,7 +44,7 @@ func TestPluginsCarryAllAuthorityNoteFragments(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{TrustNotePrefix, TrustNoteSuffix, MergeFullText, MergeDelegatedText, MergeAskText, OwnerInstructionPrefix, OwnerInstructionSuffix, CTONote, NoAuthorityNote, PeerCheckNote} {
+		for _, want := range []string{TrustNotePrefix, TrustNoteSuffix, MergeFullText, MergeDelegatedText, MergeAskText, OwnerInstructionPrefix, OwnerInstructionSuffix, CTONote, CTOPeerNote, NoAuthorityNote, PeerCheckNote} {
 			if !strings.Contains(string(b), want) {
 				t.Errorf("%s lacks %q", path, want)
 			}

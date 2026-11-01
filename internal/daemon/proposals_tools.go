@@ -243,7 +243,7 @@ func runStoredCTOProposal(ctx context.Context, call proposalCall, actor string, 
 }
 
 func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor string) (json.RawMessage, error) {
-	raw, err := runStoredCTOProposal(ctx, call, actor, d.executeCTOTool)
+	raw, err := runStoredCTOProposal(ctx, call, actor, d.executeApprovedCTOTool)
 	if err != nil {
 		return nil, err
 	}
@@ -251,4 +251,25 @@ func (d *Daemon) runProposal(ctx context.Context, call proposalCall, actor strin
 		return nil, err
 	}
 	return raw, nil
+}
+
+// Only the approved proposal runner may attach the CTO owner-instruction flag.
+// The immediate tool path always builds an unflagged peer message.
+func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if name == "message" {
+		var q struct {
+			Action  string `json:"action"`
+			AsOwner bool   `json:"as_owner"`
+		}
+		if json.Unmarshal(raw, &q) != nil || !q.AsOwner || proposalActor(ctx) == "" {
+			return nil, errors.New("CTO authority requires an approved as-owner message")
+		}
+		p, err := d.ctoMessage(ctx, q.Action, raw)
+		if err != nil {
+			return nil, err
+		}
+		p.FromCTO = true
+		return d.send(ctx, p)
+	}
+	return d.executeCTOTool(ctx, name, raw)
 }

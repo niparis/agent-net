@@ -250,6 +250,8 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 	var details string
 	if m.FromCTO && m.FromHarness == "cto" {
 		details = fmt.Sprintf("[agent-net] message %s %s Answer it directly with your SendMessage tool to this sender.", m.ID, protocol.CTONote)
+	} else if m.FromHarness == "cto" {
+		details = fmt.Sprintf("[agent-net] message %s %s Answer it directly with your SendMessage tool to this sender.", m.ID, protocol.CTOPeerNote)
 	} else if m.FromHarness == protocol.OwnerHarness {
 		// The person at the keyboard of a machine, not another agent.
 		answering := ""
