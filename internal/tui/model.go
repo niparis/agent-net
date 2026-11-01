@@ -922,7 +922,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a := *m.resumeConfirm
 		m.resumeConfirm = nil
 		if k.String() == "enter" {
-			return m.resumeClaude(a)
+			return m.resumeOwnerSession(a)
 		}
 		return m, nil
 	}

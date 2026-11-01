@@ -49,15 +49,15 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 		return m, nil
 	}
 	if !a.Online && a.Harness != "opencode" && a.Harness != "codex" {
-		if a.Harness != "claude" || a.NodeID != m.snap.NodeID {
-			m.fail("resume works for Claude on this machine for now")
+		if (a.Harness != "claude" && a.Harness != "pi") || a.NodeID != m.snap.NodeID {
+			m.fail("resume works for Claude and Pi on this machine for now")
 			return m, nil
 		}
 		if m.now().Sub(time.Unix(a.LastSeen, 0)) > time.Hour {
 			m.resumeConfirm = &a
 			return m, nil
 		}
-		return m.resumeClaude(a)
+		return m.resumeOwnerSession(a)
 	}
 	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
 	m.say("Looking up how to enter " + name + "...")
@@ -70,7 +70,7 @@ type resumeMsg struct {
 	name string
 }
 
-func (m Model) resumeClaude(a protocol.AgentView) (Model, tea.Cmd) {
+func (m Model) resumeOwnerSession(a protocol.AgentView) (Model, tea.Cmd) {
 	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
 	m.say("Resuming " + name + "...")
 	src := m.src

@@ -136,7 +136,6 @@ func TestNewSessionEnterWithTextStartsInTheBackground(t *testing.T) {
 func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
 	for _, tc := range []struct{ id, harness, why string }{
 		{"s_0000000000000004", "codex", "codex on another machine"},
-		{"s_0000000000000002", "pi", "pi on this machine"},
 		{"s_0000000000000002", "other", "unknown harness"},
 		{"s_0000000000000004", "pi", "pi on another machine"},
 	} {
@@ -148,14 +147,14 @@ func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
 				t.Fatalf("n opened mode %v", m.mode)
 			}
 			m.sform.in[sHarness].SetValue(tc.harness)
-			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude, opencode and codex on this machine for now") {
+			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude, opencode, codex and pi on this machine for now") {
 				t.Errorf("the form does not refuse:\n%s", v)
 			}
 			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("refused start still ran: cmd %v, asks %+v", cmd != nil, src.sessionStarts)
 			}
-			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude, opencode and codex on this machine for now") {
+			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude, opencode, codex and pi on this machine for now") {
 				t.Errorf("the refusal is not on the form:\n%s", m.View())
 			}
 		})
@@ -304,6 +303,8 @@ func TestNewSessionHarnessSupportGoldens(t *testing.T) {
 		m, _ = press(m, sessionKey())
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_opencode", m.View())
 		m.sform.in[sHarness].SetValue("pi")
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_pi", m.View())
+		m.sform.in[sHarness].SetValue("aider")
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_unsupported", m.View())
 	}
 }
