@@ -2,12 +2,60 @@ package protocol
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
+
+// DefaultCTOTitle is the name the owner's screens use when no title is set.
+// Agents always see the fixed word CTO in agent-net's notes.
+const DefaultCTOTitle = "CTO"
+
+// CTOTitle is the name on the owner's screens. Set is false on a gateway whose
+// owner has not been asked yet.
+type CTOTitle struct {
+	Title string `json:"title"`
+	Set   bool   `json:"set"`
+}
+
+// NormalizeCTOTitle trims and checks an owner-facing title. An empty value is
+// valid and means the caller keeps DefaultCTOTitle.
+func NormalizeCTOTitle(raw string) (string, error) {
+	title := strings.TrimSpace(raw)
+	if title == "" {
+		return "", nil
+	}
+	if utf8.RuneCountInString(title) > 24 {
+		return "", errors.New("the title is at most 24 characters")
+	}
+	if strings.Contains(title, "[agent-net") {
+		return "", errors.New("the title cannot contain \"[agent-net\"")
+	}
+	if strings.Contains(title, "<cross-session") {
+		return "", errors.New("the title cannot contain \"<cross-session\"")
+	}
+	for _, r := range title {
+		if !unicode.IsPrint(r) {
+			return "", errors.New("the title must be printable")
+		}
+	}
+	return title, nil
+}
+
+// CTOTitleOrDefault returns the title, or DefaultCTOTitle when it is empty.
+func CTOTitleOrDefault(title string) string {
+	if title = strings.TrimSpace(title); title != "" {
+		return title
+	}
+	return DefaultCTOTitle
+}
 
 // CTOSettings is the owner's CTO harness and per-harness model preferences,
 // plus the rules that keep the one long CTO conversation within its window.
 type CTOSettings struct {
+	Title         string                `json:"title,omitempty"`
 	Model         string                `json:"model"`
 	Harness       string                `json:"harness"`
 	OpenCodeModel string                `json:"opencode_model"`
@@ -62,6 +110,7 @@ func (s CTOCompactionSettings) CacheWindow(provider string) time.Duration {
 // harness when Harness is omitted. Pointers permit partial updates, including
 // a reset of a model to the harness default.
 type CTOSettingsRequest struct {
+	Title      *string                `json:"title,omitempty"`
 	Model      *string                `json:"model,omitempty"`
 	Harness    *string                `json:"harness,omitempty"`
 	Compaction *CTOCompactionSettings `json:"compaction,omitempty"`

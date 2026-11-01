@@ -51,10 +51,21 @@ Steps that do not apply say `skipped (reason)`. Setup:
 - writes and starts the daemon service (systemd user unit on Linux, launchd agent on macOS),
 - registers the MCP server with Claude Code (`claude mcp add -s user agent-net`) if `claude` is found,
 - asks one question for the seven integrations, or applies the answers your network already has (see [Integrations](#integrations)),
+- asks for the CTO title on the first machine only (see [CTO title](#cto-title)),
 - registers the MCP server `agent-net` (`agent-net mcp --codex`) in `~/.codex/config.toml` if Codex is found (see [codex.md](codex.md)),
 - writes the Pi extension to `~/.pi/agent/extensions/agent-net.ts` if `~/.pi` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone),
 - writes the OpenCode plugin to `~/.config/opencode/plugins/agent-net.ts` if `~/.config/opencode` exists (a symlink to an older agent-net copy is replaced; any other symlink is left alone; see [opencode.md](opencode.md)),
 - adds the guidance text between `<!-- agent-net:begin -->` and `<!-- agent-net:end -->` in `~/.claude/CLAUDE.md`, `~/.pi/agent/AGENTS.md`, `~/.config/opencode/AGENTS.md` and `~/.codex/AGENTS.md`. Other content is never touched. An older unmarked `## agent-net: working with other agents` section is replaced by the marked block.
+
+### CTO title
+
+On the first machine only, setup asks what the CTO should be called:
+
+```
+What should your CTO be called? [CTO]
+```
+
+Enter keeps `CTO`. The title is 1 to 24 printable characters, with spaces at the ends removed. It cannot contain `[agent-net` or `<cross-session`, so it cannot look like a note that agent-net writes. The gateway stores it in `owner_settings` as `cto_title`, so every machine shows the same name. Setup does not ask on a joining machine, a rerun, an upgrade, or a run without a terminal. Change it later in the CTO box with `m`, or ask the CTO. The title is for the owner's screens only: agent-net's notes and guidance always say `CTO`, so every agent sees the same fixed words.
 
 ### Integrations
 

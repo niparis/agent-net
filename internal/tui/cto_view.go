@@ -7,11 +7,21 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"strings"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
+
+// ctoTitle is the name on the owner's screens. Agents never see it.
+func (m Model) ctoTitle() string {
+	if m.cto != nil {
+		return sanitize(protocol.CTOTitleOrDefault(m.cto.title))
+	}
+	return protocol.DefaultCTOTitle
+}
 
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
-	title := "CTO"
+	title := m.ctoTitle()
 	if c.harness != "" {
 		title += " · " + sanitize(c.harness)
 	}
@@ -27,22 +37,34 @@ func (m Model) ctoView(w, h int) []string {
 	h = max(h-2, 1)
 	out := []string{}
 	if f := c.settingsForm; f != nil {
-		marker := ">"
-		other := " "
-		if f.modelFocus {
-			marker, other = " ", ">"
+		mark := func(n int) string {
+			if f.field == n {
+				return ">"
+			}
+			return " "
 		}
 		f.input.Width = max(w-12, 1)
+		f.titleInput.Width = max(w-12, 1)
 		model := f.input.View()
 		if f.input.Value() == "" {
 			model = sDim.Render("default")
 		}
-		out = append(out, clip(marker+" Harness: < "+f.harness+" >", w), clip(other+" Model:   "+model, w))
+		formTitle := f.titleInput.View()
+		if f.titleInput.Value() == "" {
+			formTitle = sDim.Render(protocol.DefaultCTOTitle)
+		}
+		out = append(out,
+			clip(mark(0)+" Harness: < "+f.harness+" >", w),
+			clip(mark(1)+" Title:   "+formTitle, w),
+			clip(mark(2)+" Model:   "+model, w))
 		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
 		if len(candidates) > 0 {
 			out = append(out, clip("  Suggestions: "+strings.Join(candidates, ", "), w))
 		}
-		out = append(out, clip("  up/down select  left/right harness  tab complete  enter save  esc cancel", w))
+		if f.err != "" {
+			out = append(out, clip(sBad.Render("  "+f.err), w))
+		}
+		out = append(out, clip("  up/down field  left/right harness  tab field  enter save  esc cancel", w))
 		for len(out) < h {
 			out = append(out, "")
 		}

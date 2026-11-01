@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestCTOSettingsRoutes(t *testing.T) {
@@ -92,5 +95,64 @@ func TestCTOSettingsRoutes(t *testing.T) {
 	}
 	if w := request(http.MethodPut, token, `{}`); w.Code != http.StatusBadRequest {
 		t.Fatalf("empty update: %d", w.Code)
+	}
+}
+
+func TestCTOSettingsTitle(t *testing.T) {
+	gw, err := New(Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gw.Close()
+	h := gw.Handler()
+	request := func(method, token, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "/v1/cto-settings", bytes.NewBufferString(body))
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	_, token, err := gw.Store().CreateNode("laptop", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got protocol.CTOSettings
+	w := request(http.MethodGet, token, "")
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Title != protocol.DefaultCTOTitle {
+		t.Fatalf("fresh title: %d %s", w.Code, w.Body)
+	}
+	if w := request(http.MethodPut, token, `{"title":"  Atlas  "}`); w.Code != http.StatusOK {
+		t.Fatalf("title PUT: %d %s", w.Code, w.Body)
+	}
+	w = request(http.MethodGet, token, "")
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Title != "Atlas" {
+		t.Fatalf("title after PUT: %d %s", w.Code, w.Body)
+	}
+	if w := request(http.MethodPut, token, `{"title":"`+strings.Repeat("a", 25)+`"}`); w.Code != http.StatusBadRequest {
+		t.Fatalf("long title: %d", w.Code)
+	}
+	if w := request(http.MethodPut, token, `{"title":""}`); w.Code != http.StatusOK {
+		t.Fatalf("clear title: %d %s", w.Code, w.Body)
+	}
+	w = request(http.MethodGet, token, "")
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Title != protocol.DefaultCTOTitle {
+		t.Fatalf("cleared title: %d %s", w.Code, w.Body)
+	}
+	// A model change keeps the title, and the title is a separate owner setting.
+	if w := request(http.MethodPut, token, `{"title":"Atlas"}`); w.Code != http.StatusOK {
+		t.Fatalf("title reset: %d %s", w.Code, w.Body)
+	}
+	if w := request(http.MethodPut, token, `{"model":"provider/model"}`); w.Code != http.StatusOK {
+		t.Fatalf("model PUT: %d %s", w.Code, w.Body)
+	}
+	w = request(http.MethodGet, token, "")
+	if w.Code != http.StatusOK || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Title != "Atlas" || got.Model != "provider/model" {
+		t.Fatalf("title after model change: %d %s", w.Code, w.Body)
+	}
+	var raw string
+	if err := gw.Store().db.QueryRow(`SELECT value FROM owner_settings WHERE key = ?`, "cto_title").Scan(&raw); err != nil || raw != "Atlas" {
+		t.Fatalf("cto_title row = %q, %v", raw, err)
 	}
 }

@@ -39,13 +39,16 @@ func (f *fakeCTOSource) CTOEvents(_ context.Context, index int) (protocol.CTOEve
 	return f.events, nil
 }
 func (f *fakeCTOSource) CTOSettings(context.Context) (protocol.CTOSettings, error) {
-	if f.settings.Harness == "" && f.settings.Model == "" && f.settings.OpenCodeModel == "" && f.settings.ClaudeModel == "" {
+	if f.settings.Harness == "" && f.settings.Model == "" && f.settings.OpenCodeModel == "" && f.settings.ClaudeModel == "" && f.settings.Title == "" {
 		return protocol.CTOSettings{Model: "fake/m1", Harness: "opencode", OpenCodeModel: "fake/m1"}, nil
 	}
 	return f.settings, nil
 }
 func (f *fakeCTOSource) SetCTOSettings(_ context.Context, req protocol.CTOSettingsRequest) (protocol.CTOSettings, error) {
 	f.saved = req
+	if req.Title != nil {
+		f.settings.Title = *req.Title
+	}
 	if req.Harness != nil {
 		f.settings.Harness = *req.Harness
 	}
@@ -389,6 +392,7 @@ func TestCTOModelFormSaveAndCancel(t *testing.T) {
 	}
 	m = send(m, tea.KeyMsg{Type: tea.KeyRight})
 	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
+	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
 	m.cto.settingsForm.input.SetValue("opus")
 	next, cmd := m.update(tea.KeyMsg{Type: tea.KeyEnter})
 	m = next.(Model)
@@ -461,6 +465,7 @@ func TestCTOModelFormSwapsPerHarnessModelsAndSuggestions(t *testing.T) {
 		}
 	}
 	m.cto.settingsForm.input.SetValue("claude-sonnet")
+	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
 	m = send(m, tea.KeyMsg{Type: tea.KeyDown})
 	m = send(m, tea.KeyMsg{Type: tea.KeyTab})
 	if got := m.cto.settingsForm.input.Value(); got != "claude-sonnet-5-5" {

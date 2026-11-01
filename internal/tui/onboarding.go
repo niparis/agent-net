@@ -126,7 +126,7 @@ func (m Model) onboardingStep() onboardingStep {
 func (m Model) onboardingLine(w int) string {
 	step := m.onboardingStep()
 	if step.id == "" {
-		return sDim.Render("enter: open the CTO · tab: back")
+		return sDim.Render("enter: open the " + m.ctoTitle() + " · tab: back")
 	}
 	label := lipgloss.NewStyle().Foreground(roleAccent).Render(step.label)
 	line := label + "  " + step.text

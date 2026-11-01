@@ -3,7 +3,12 @@
 The network-wide CTO harness, model preference and auto-compaction rules are
 owner settings. The daemon's `cto_settings` method uses the owner gate and
 refuses agent sessions. Values are bounded: a threshold from 10 to 100 percent,
-a floor up to 10 million tokens, and cache windows up to one day. Like the
+a floor up to 10 million tokens, and cache windows up to one day. The
+owner-facing CTO title is also an owner setting, stored at the gateway as
+`cto_title`: 1 to 24 printable characters, trimmed, and refused when it
+contains `[agent-net` or `<cross-session`, so it cannot imitate a note that
+agent-net writes. Agents never receive it: the notes and guidance they match
+always say `CTO`. Like the
 integration settings, the gateway endpoint requires an enrolled node token;
 that token is an owner credential and must not be shared with agents. The
 `cto_send`, `cto_enter`, `cto_new`, `cto_events`, and `cto_graph_history` methods use the
