@@ -109,6 +109,7 @@ type Snapshot struct {
 	Scores             []protocol.ModelScore
 	DifficultyMinimums map[string]float64
 	WorkerRotation     protocol.WorkerRotation
+	Calibration        protocol.Calibration
 	Nodes              []protocol.NodeView
 	// Agents are the sessions, with the owner pseudo-sessions.
 	Outcomes []protocol.OutcomeInboxEntry

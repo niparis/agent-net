@@ -586,6 +586,9 @@ type NodesInfo struct {
 	// Playbook is the fresh notes of the network, for agent_nodes and the
 	// owner's "Learned" list (decision 0022).
 	Playbook []PlaybookNote `json:"playbook,omitempty"`
+	// Calibration is the read-only difficulty table: per caller and
+	// difficulty, the recent rework median and what the loop would do.
+	Calibration Calibration `json:"calibration,omitempty"`
 }
 
 // Upgrade outcomes per node.

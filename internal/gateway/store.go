@@ -323,6 +323,11 @@ UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harnes
 `, `SELECT 1 /* CTO legacy route upgrade */;`, `ALTER TABLE messages ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0;`, `
 -- The two rework counters of a worker run (difficulty calibration, part 1).
 SELECT 1 /* worker rework counters */;
+`, `
+-- The caller and the level it asked for on every run (difficulty
+-- calibration, part 2). Kept on the run because a worker session is cleaned
+-- a few hours after it starts.
+SELECT 1 /* worker calibration columns */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -390,6 +395,28 @@ func (s *Store) migrate() error {
 						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
 				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker calibration columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"caller", `caller TEXT NOT NULL DEFAULT ''`},
+				{"difficulty", `difficulty TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = ?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+				}
+			}
+			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS worker_runs_caller ON worker_runs (caller, difficulty, ended_at)`); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
 			}
 		}
 		if strings.Contains(migrations[i], "CTO legacy route upgrade") {

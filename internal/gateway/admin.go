@@ -136,7 +136,11 @@ func (g *Gateway) NodesInfo() (protocol.NodesInfo, error) {
 	if err != nil {
 		return protocol.NodesInfo{}, err
 	}
-	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes, Playbook: notes}, nil
+	calibration, err := g.store.Calibration()
+	if err != nil {
+		return protocol.NodesInfo{}, err
+	}
+	return protocol.NodesInfo{GatewayVersion: g.opts.Version, Nodes: nodes, Playbook: notes, Calibration: calibration}, nil
 }
 
 // handleVersion serves the version of the gateway. With ?os=&arch= it serves
