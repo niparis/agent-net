@@ -266,6 +266,12 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		action = graphview.TogglePause{}
 	case "?":
 		m.graphHelp = true
+	case "n":
+		name := m.graphState.Graph.Selected()
+		if node, ok := m.mapNode(name); ok && node.Kind == "component" {
+			m.mp.selected = name
+			return m.startSessionFormFromNode()
+		}
 	case "enter":
 		action = graphview.OpenSelected{}
 	}
@@ -286,7 +292,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t talk  enter card  space pause  ? close  tab CTO  q quit"))
+		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t talk  enter card  space pause  ? close  tab CTO  q quit"), sDim.Render("  n new session from selected project"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))

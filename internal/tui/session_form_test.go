@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
 // The "n" form on Sessions and on the Graph card (docs/design/start-sessions.md,
@@ -355,5 +356,62 @@ func TestNewSessionCodexGoldens(t *testing.T) {
 		m, _ = press(m, sessionKey())
 		m.sform.in[sHarness].SetValue("codex")
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_codex", m.View())
+	}
+}
+
+func TestNewSessionFromGraphNodeAndCard(t *testing.T) {
+	for _, card := range []bool{false, true} {
+		t.Run(itoa(map[bool]int{false: 0, true: 1}[card]), func(t *testing.T) {
+			m := openMap(t, mapModel(120, 34, fakeGraph()))
+			m.mapOn = card
+			m.mp.selected = "tenebrae"
+			m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "tenebrae"})
+			a := m.snap.Agents[0]
+			a.Repo.Project, a.NodeID, a.Harness, a.Model, a.LastSeen = "tenebrae", m.snap.NodeID, "codex", "model-a", 1
+			b, c := a, a
+			b.LastSeen, c.LastSeen, c.Harness, c.Model = 2, 3, "claude", "model-b"
+			m.snap.Agents = []protocol.AgentView{a, b, c}
+			m, _ = press(m, sessionKey())
+			if m.mode != modeSessionForm {
+				t.Fatalf("n did not open form: %v", m.mode)
+			}
+			if m.sform.value(sProject) != "tenebrae" || m.sform.nodeID != a.NodeID || m.sform.value(sHarness) != "codex" || m.sform.value(sModel) != "model-a" {
+				t.Fatalf("defaults: project %q node %q harness %q model %q", m.sform.value(sProject), m.sform.nodeID, m.sform.value(sHarness), m.sform.value(sModel))
+			}
+		})
+	}
+}
+
+func TestNewSessionFromGraphNodeWithoutSessions(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	m.mapOn = false
+	m.snap.Agents = nil
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "shop"})
+	m, _ = press(m, sessionKey())
+	if m.mode != modeSessionForm || m.sform.value(sProject) != "shop" {
+		t.Fatalf("mode %v project %q", m.mode, m.sform.value(sProject))
+	}
+}
+
+func TestGraphNewSessionHelp(t *testing.T) {
+	m := openMap(t, mapModel(120, 34, fakeGraph()))
+	m.mapOn = false
+	m = keys(m, "?")
+	if !strings.Contains(ansi.Strip(m.View()), "n new session") {
+		t.Fatalf("Graph help: %s", m.View())
+	}
+	m.mapOn, m.graphHelp = true, false
+	if !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "n") || !strings.Contains(ansi.Strip(strings.Join(m.helpContent(120), "\n")), "filled from here") {
+		t.Fatal("card help missing new session")
+	}
+}
+
+func TestNewSessionGraphGoldens(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m := openMap(t, mapModel(size.w, size.h, fakeGraph()))
+		m.mapOn = false
+		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "tenebrae"})
+		m, _ = press(m, sessionKey())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_graph", m.View())
 	}
 }
