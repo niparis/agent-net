@@ -61,7 +61,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	reads := map[string]map[string]any{
-		"charter_guide": {}, "agents": {}, "nodes": {}, "projects": {},
+		"overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "charter_guide": {}, "agents": {}, "nodes": {}, "projects": {},
 		"get": {"session_id": ids[0]}, "messages": {}, "message_status": {"message_id": msg.ID},
 		"worker_profile_list": {}, "mcp_list": {}, "cto_events": {},
 	}
