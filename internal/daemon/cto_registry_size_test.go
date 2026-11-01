@@ -62,13 +62,13 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	}
 	reads := map[string]map[string]any{
 		"workers": {}, "tools": {}, "settings": {"area": "worker_profiles"}, "graph": {}, "machines": {}, "proposals": {}, "feed": {}, "overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "projects": {},
-		"messages": {},
+		"messages": {}, "cto_proposals_find": {},
 	}
 	_ = localID
 
 	// mcp_call and mcp_test can execute arbitrary external operations. Mutation
 	// tools are classified explicitly and are never invoked here.
-	mutations := strings.Fields("message ask_owner learn ui graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new")
+	mutations := strings.Fields("message ask_owner learn ui cto_ui_show graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new")
 	actions := map[string]bool{}
 	for _, name := range mutations {
 		actions[name] = true

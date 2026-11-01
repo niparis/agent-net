@@ -507,8 +507,22 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		if json.Unmarshal(body, &result) != nil || result.IsError {
 			t.Fatalf("%s: %s", name, body)
 		}
-		if len(result.Content) > 0 && strings.HasPrefix(result.Content[0].Text, "proposal p_") {
-			approveCTOToolResult(t, w.d, result.Content[0].Text)
+		if len(result.Content) > 0 {
+			text := result.Content[0].Text
+			// Catalog tools answer with JSON that names the proposal.
+			var quoted string
+			if json.Unmarshal([]byte(text), &quoted) == nil {
+				text = quoted
+			}
+			var structured struct {
+				ProposalID string `json:"proposal_id"`
+			}
+			if json.Unmarshal([]byte(text), &structured) == nil && strings.HasPrefix(structured.ProposalID, "p_") {
+				text = "proposal " + structured.ProposalID
+			}
+			if strings.HasPrefix(text, "proposal p_") {
+				approveCTOToolResult(t, w.d, text)
+			}
 		}
 
 	}

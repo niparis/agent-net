@@ -449,7 +449,7 @@ SELECT 1 /* session no project column */;
 `, `
 -- The recorded start of the announced task (tool redesign, task 2a). It moves
 -- only when the task changes, never on last activity.
-ALTER TABLE profiles ADD COLUMN task_started INTEGER NOT NULL DEFAULT 0;
+SELECT 1 /* profile task started column */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -680,6 +680,19 @@ func (s *Store) migrate() error {
 			}
 			if has == 0 {
 				if _, err := tx.Exec(`ALTER TABLE sessions ADD COLUMN no_project INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "profile task started column") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('profiles') WHERE name = 'task_started'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				if _, err := tx.Exec(`ALTER TABLE profiles ADD COLUMN task_started INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
