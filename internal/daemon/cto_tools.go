@@ -97,30 +97,12 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return "no TUI open", nil
 		}
 		return "shown", nil
-	case "reply":
-		var p struct {
-			MessageID string `json:"message_id"`
-			Body      string `json:"body"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" || p.Body == "" {
-			return nil, errors.New("reply needs message_id and body")
-		}
-		sid := d.ownerSessionID()
-		if sid == "" {
-			return nil, errNotConnected
-		}
-		data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: p.MessageID})
+	case "send", "reply":
+		p, err := d.ctoMessage(ctx, name, raw)
 		if err != nil {
 			return nil, err
 		}
-		var parent protocol.MessageResult
-		if err := json.Unmarshal(data, &parent); err != nil {
-			return nil, err
-		}
-		if parent.Message.To != sid {
-			return nil, errors.New("message was not sent to the owner")
-		}
-		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From, Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, FromCTO: true})
+		return d.send(ctx, p)
 	case "worker_stop":
 		var p protocol.WorkerStopRequest
 		if json.Unmarshal(raw, &p) != nil || p.Session == "" {
@@ -156,23 +138,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			args["by"] = actor
 		}
 		return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
-	case "send":
-		var p struct {
-			To   string `json:"to"`
-			Body string `json:"body"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.To == "" || p.Body == "" {
-			return nil, errors.New("send needs to and body")
-		}
-		sid := d.ownerSessionID()
-		if sid == "" {
-			return nil, errNotConnected
-		}
-		to, err := d.resolveTo(ctx, p.To)
-		if err != nil {
-			return nil, err
-		}
-		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: protocol.TypeRequest, Body: p.Body, FromCTO: true})
 	case "worker_profile_add", "worker_profile_remove":
 		var p protocol.WorkerProfileRequest
 		if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &p) != nil {
@@ -312,10 +277,14 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
 	}
 	var caps struct {
-		Attribution bool `json:"attribution"`
+		Attribution    bool `json:"attribution"`
+		NetworkSession bool `json:"network_session"`
 	}
 	if json.Unmarshal(b, &caps) != nil || !caps.Attribution {
 		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
+	}
+	if (typ == "msg.send" || typ == "cto.session.register") && !caps.NetworkSession {
+		return nil, errors.New("gateway does not support the CTO network session; upgrade the gateway")
 	}
 	return l.call(ctx, typ, params)
 }

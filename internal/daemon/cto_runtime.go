@@ -85,6 +85,9 @@ func (d *Daemon) ctoSendTracked(ctx context.Context, text, sender string) (any, 
 	if err != nil {
 		return nil, err
 	}
+	if err := d.registerCTOSession(ctx); err != nil {
+		return nil, err
+	}
 	out, err := h.send(ctx, d, text)
 	if err == nil && sender != "" {
 		err = d.st.recordCTODelivery(sender, time.Now())
@@ -171,6 +174,9 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 	defer d.ctoDispatchMu.unlock()
 	h, err := d.selectedCTOHarness(ctx)
 	if err != nil {
+		return protocol.EnterPlan{}, err
+	}
+	if err := d.registerCTOSession(ctx); err != nil {
 		return protocol.EnterPlan{}, err
 	}
 	plan := protocol.EnterPlan{Note: "Press ctrl+] to come back here; the CTO keeps running."}

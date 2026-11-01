@@ -42,6 +42,9 @@ func TestCTOReadCanary(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
+	if err := w.d.registerCTOSession(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	peer, id := helloPi(t, w.node, "private-fixture", "/fixture", true)
 	marker := "OWNER_ONLY_QUESTION_CANARY"
 	peer.mustCall("announce", map[string]any{"task": "fixture", "waiting": map[string]any{"kind": "question", "text": marker}})

@@ -1,6 +1,8 @@
 package gateway
 
 import (
+	"context"
+	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
 	"testing"
 )
@@ -21,7 +23,11 @@ func TestCTONetworkSession(t *testing.T) {
 	if err != nil || !ok || a.Profile.Name != "CTO" || a.Harness != "cto" {
 		t.Fatalf("directory: %+v %v", a, err)
 	}
-	for _, sender := range []string{agent, peer} {
+	owner, err := s.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sender := range []string{agent, peer, owner} {
 		if _, _, err := s.StoreMessage(protocol.MsgSend{Sender: sender, Recipient: peer, Body: "forged", FromCTO: true}); err == nil {
 			t.Fatal("accepted other session flag")
 		}
@@ -44,5 +50,64 @@ func TestCTONetworkSession(t *testing.T) {
 	a, _, _ = s.Agent(id)
 	if !a.Online {
 		t.Fatal("sync removed CTO")
+	}
+}
+
+func TestCTORegistrationRequiresOwnerAuthority(t *testing.T) {
+	g, node := scopeGateway(t)
+	owner, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: protocol.OwnerHarness, NativeID: protocol.OwnerNativeID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := g.store.UpsertSession(node, protocol.SessionInfo{Harness: "pi", NativeID: "agent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, caller := range []string{"", agent} {
+		raw, _ := json.Marshal(map[string]string{"owner": caller})
+		if _, err := g.handle(context.Background(), &nodeConn{id: node}, "cto.session.register", raw); err == nil {
+			t.Fatalf("accepted caller %q", caller)
+		}
+	}
+	raw, _ := json.Marshal(map[string]string{"owner": owner})
+	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "cto.session.register", raw); err != nil {
+		t.Fatal(err)
+	}
+	other, _, err := g.store.CreateNode("other", "linux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.handle(context.Background(), &nodeConn{id: other}, "cto.session.register", raw); err == nil {
+		t.Fatal("accepted another node's owner")
+	}
+}
+
+func TestCTOSessionMovesWithoutChangingIdentity(t *testing.T) {
+	s, _ := newTestStore(t)
+	agent, peer := twoSessions(t, s)
+	node := mustNode(t, s, agent)
+	id, err := s.RegisterCTOSession(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: id, Recipient: peer, Body: "before move"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := mustNode(t, s, peer)
+	if other == node {
+		t.Fatal("fixture needs different nodes")
+	}
+	moved, err := s.RegisterCTOSession(other)
+	if err != nil || moved != id {
+		t.Fatalf("move: %s %v", moved, err)
+	}
+	a, _, err := s.Agent(id)
+	if err != nil || a.NodeID != other || a.Profile.Name != "CTO" {
+		t.Fatalf("moved directory: %+v %v", a, err)
+	}
+	saved, ok, err := s.Message(m.ID)
+	if err != nil || !ok || saved.From != moved {
+		t.Fatalf("lost conversation: %+v %v", saved, err)
 	}
 }

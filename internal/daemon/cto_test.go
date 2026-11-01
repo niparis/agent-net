@@ -520,21 +520,21 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("send", map[string]any{"to": target, "body": "hello"})
 	select {
 	case msg := <-peer.Pushes:
-		if !msg.FromCTO {
-			t.Fatalf("missing CTO sender: %+v", msg)
+		if msg.FromCTO || msg.From != w.d.ctoSessionID() {
+			t.Fatalf("plain CTO sender: %+v", msg)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("message not delivered")
 	}
 	var incoming protocol.MessageSent
-	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ownerSessionID(), "body": "question"})
+	rawIncoming := peer.mustCall("send", map[string]any{"to": w.d.ctoSessionID(), "body": "question"})
 	if err := json.Unmarshal(rawIncoming, &incoming); err != nil || incoming.Message == nil {
 		t.Fatalf("incoming message: %s %v", rawIncoming, err)
 	}
 	call("reply", map[string]any{"message_id": incoming.Message.ID, "body": "answer"})
 	select {
 	case msg := <-peer.Pushes:
-		if !msg.FromCTO || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
+		if msg.FromCTO || msg.From != w.d.ctoSessionID() || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
 			t.Fatalf("CTO reply: %+v", msg)
 		}
 	case <-time.After(2 * time.Second):
@@ -544,13 +544,13 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
 	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
 	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
-	eventually(t, "worker task carries CTO attribution", func() bool {
+	eventually(t, "approved worker task comes from the owner", func() bool {
 		workers := w.workers(t)
 		if len(workers) != 1 {
 			return false
 		}
 		for _, m := range w.messagesOf(t, workers[0].SessionID) {
-			if m.Type == protocol.TypeRequest && m.FromCTO {
+			if m.Type == protocol.TypeRequest && m.From == w.ownerID() && !m.FromCTO {
 				return true
 			}
 		}

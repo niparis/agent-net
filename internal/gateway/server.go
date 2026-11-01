@@ -544,10 +544,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		id, err := st.RegisterCTOSession(nc.id)
 		return map[string]string{"session_id": id}, err
-	case "cto.session.get":
-		var id string
-		err := st.db.QueryRow(`SELECT s.id FROM sessions s JOIN owner_settings o ON o.key='cto_session' AND o.value=s.id WHERE s.node_id=? AND s.online=1`, nc.id).Scan(&id)
-		return map[string]string{"session_id": id}, err
 	case "cto.proposal.validate":
 		return g.validateCTOProposal(ctx, nc, raw)
 	case "hello":

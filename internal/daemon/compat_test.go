@@ -82,7 +82,7 @@ func TestOldDaemonAgainstNewGateway(t *testing.T) {
 // fakeOldGateway speaks the protocol of a gateway from before the inventory:
 // it accepts hello and session frames (ignoring fields it does not know) and
 // answers "unknown frame type" to node.harnesses and query.projects.
-func fakeOldGateway(t *testing.T) (url string, helloSeen func() map[string]json.RawMessage) {
+func fakeOldGateway(t *testing.T, ctoCaps ...map[string]bool) (url string, helloSeen func() map[string]json.RawMessage) {
 	t.Helper()
 	var mu sync.Mutex
 	var hello map[string]json.RawMessage
@@ -114,6 +114,13 @@ func fakeOldGateway(t *testing.T) (url string, helloSeen func() map[string]json.
 				reply["data"] = map[string]any{"sessions": []any{}}
 			case "session.upsert":
 				reply["data"] = map[string]string{"session_id": "s_old"}
+			case "cto.capabilities":
+				if len(ctoCaps) > 0 {
+					reply["data"] = ctoCaps[0]
+				} else {
+					reply["ok"] = false
+					reply["error"] = "unknown frame type cto.capabilities"
+				}
 			default:
 				reply["ok"] = false
 				reply["error"] = `unknown frame type "` + typ + `"`

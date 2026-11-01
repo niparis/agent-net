@@ -17,14 +17,11 @@ var ctoReadSources = map[string]string{
 }
 
 func (d *Daemon) ctoReadConn() *localConn {
-	// The private CTO has no network session until design part 6. Keep its
-	// caller distinct from the owner and every gateway session; reads requiring
-	// a registered caller fail closed in the meantime. Never borrow the owner ID.
-	var native string
-	// Use the active private conversation as the caller. The prefix cannot be a
-	// gateway session ID and cannot alias an ordinary session or the owner.
-	_ = d.st.db.QueryRow(`SELECT CASE active_harness WHEN 'claude' THEN claude_session_id ELSE session_id END FROM cto WHERE id=1`).Scan(&native)
-	return &localConn{d: d, client: "mcp", ls: &localSession{sessionID: "cto-private:" + d.cfg.NodeID + ":" + native}}
+	id := d.ctoSessionID()
+	if id == "" {
+		id = "cto-unregistered:" + d.cfg.NodeID
+	}
+	return &localConn{d: d, client: "mcp", ls: &localSession{sessionID: id}}
 }
 
 func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {

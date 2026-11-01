@@ -196,7 +196,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 		return errors.New("the owner of this queued start is not a session of this machine")
 	}
 	charter := d.charterBrief(ctx, p.Project)
-	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest, FromCTO: p.FromCTO,
+	_, err := d.send(ctx, protocol.MsgSend{Sender: p.Owner, Recipient: p.SessionID, Type: protocol.TypeRequest,
 		Body: protocol.WorkerTaskBodyWithCharter(p.Harness, p.Task, p.Worktree, p.Branch, p.ProjectRules, charter, p.Permissions)})
 	return err
 }
