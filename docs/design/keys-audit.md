@@ -85,7 +85,7 @@ session. The extra actions apply only when such a row is selected.
 | `enter` | Select the latest message in the thread. |
 | `v` | Open the selected message body. |
 | `c` | Hand over the selected message to the CTO: a preview first, then Enter sends it. |
-| `f` | On a worker conversation: report a defect found later. A one-line note, then the shared confirm. |
+| `f` | On a worker conversation: report a defect found later. A one-line note, a severity from 1 to 4, then the shared confirm. |
 | `w` | Show or hide worker threads. |
 | `e` | Show or hide system events. |
 | `l` | Cycle the event filter. |

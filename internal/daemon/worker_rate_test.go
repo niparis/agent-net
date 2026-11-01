@@ -53,7 +53,7 @@ func TestWorkerDefectOwnerPath(t *testing.T) {
 		Model: "fake/m1", Outcome: protocol.OutcomeComplete, EndedAt: time.Now().Unix(), Caller: owner, Difficulty: "hard"}); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := w.cli.call(protocol.OpWorkerDefect, protocol.DefectRequest{Worker: wid, Note: "the old path stayed in the merge"})
+	raw, err := w.cli.call(protocol.OpWorkerDefect, protocol.DefectRequest{Worker: wid, Severity: 3, Note: "the old path stayed in the merge"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +61,7 @@ func TestWorkerDefectOwnerPath(t *testing.T) {
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatal(err)
 	}
-	if !out.Accepted || out.Kind != protocol.RateKindDefectLater || out.Worker != wid {
+	if !out.Accepted || out.Kind != protocol.RateKindDefectLater || out.Worker != wid || out.Severity != 3 {
 		t.Fatalf("owner defect: %+v", out)
 	}
 	defects, err := g.gw.Store().DefectCountsBySession(0)
@@ -70,6 +70,13 @@ func TestWorkerDefectOwnerPath(t *testing.T) {
 	}
 	if defects[wid] != 1 {
 		t.Fatalf("defects: %v", defects)
+	}
+	rework, err := g.gw.Store().DefectReworkBySession(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rework[wid] != 3 {
+		t.Fatalf("defect severity points: %v", rework)
 	}
 	// The agent tool is still closed to the command line: the owner has its
 	// own call, so a score cannot arrive this way.

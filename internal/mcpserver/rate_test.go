@@ -50,20 +50,20 @@ func TestAgentRateDefectFoundLater(t *testing.T) {
 		}
 		raw, _ := json.Marshal(params)
 		json.Unmarshal(raw, &saw)
-		return json.RawMessage(`{"accepted":true,"worker":"s_w1","kind":"defect_found_later","model":"deepseek-v4.1-flash","difficulty":"hard"}`), nil
+		return json.RawMessage(`{"accepted":true,"worker":"s_w1","kind":"defect_found_later","severity":3,"model":"deepseek-v4.1-flash","difficulty":"hard"}`), nil
 	})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_rate",
-		Arguments: map[string]any{"worker": "s_w1", "kind": "defect_found_later", "note": "old path left in place"}})
+		Arguments: map[string]any{"worker": "s_w1", "kind": "defect_found_later", "severity": 3, "note": "old path left in place"}})
 	if err != nil || res.IsError || len(res.Content) == 0 {
 		t.Fatalf("agent_rate defect: %v %+v", err, res)
 	}
-	if saw["kind"] != "defect_found_later" || saw["note"] != "old path left in place" {
+	if saw["kind"] != "defect_found_later" || saw["note"] != "old path left in place" || saw["severity"] != float64(3) {
 		t.Fatalf("defect request: %+v", saw)
 	}
 	if _, ok := saw["score"]; ok {
 		t.Fatalf("a defect report sent a score: %+v", saw)
 	}
-	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "Recorded defect found later") ||
+	if text := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(text, "Recorded defect found later (severity 3)") ||
 		!strings.Contains(text, "s_w1") || !strings.Contains(text, "deepseek-v4.1-flash") {
 		t.Errorf("defect text: %q", text)
 	}

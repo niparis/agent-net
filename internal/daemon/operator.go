@@ -187,7 +187,7 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		var data json.RawMessage
 		if data, err = d.call(ctx, "rate.add", protocol.RateFrame{RateRequest: protocol.RateRequest{
-			Worker: p.Worker, Kind: protocol.RateKindDefectLater, Note: p.Note}, Rater: sid}); err != nil {
+			Worker: p.Worker, Kind: protocol.RateKindDefectLater, Severity: p.Severity, Note: p.Note}, Rater: sid}); err != nil {
 			return nil, true, tooOldGateway(err)
 		}
 		var out protocol.RateResult

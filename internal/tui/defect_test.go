@@ -57,8 +57,13 @@ func TestMessagesDefectKeyFilesReportAfterConfirm(t *testing.T) {
 	}
 	m.defect.SetValue("the old path stayed after the merge")
 	m, _ = press(m, keyEnter())
-	if m.mode != modeConfirm || !m.confirmDefect {
-		t.Fatalf("the note did not ask for confirmation: mode %v", m.mode)
+	if m.mode != modeDefectSeverity {
+		t.Fatalf("the note did not ask for severity: mode %v", m.mode)
+	}
+	m.defectSeverity.SetValue("3")
+	m, _ = press(m, keyEnter())
+	if m.mode != modeConfirm || !m.confirmDefect || m.defectLevel != 3 {
+		t.Fatalf("the severity did not ask for confirmation: mode %v level %d", m.mode, m.defectLevel)
 	}
 	confirmHintShown(t, m)
 	m, cmd := press(m, keyEnter())
@@ -70,11 +75,29 @@ func TestMessagesDefectKeyFilesReportAfterConfirm(t *testing.T) {
 		t.Fatalf("defects reported: %+v", src.defects)
 	}
 	got := src.defects[0]
-	if got.worker != "s_worker" || got.note != "the old path stayed after the merge" {
+	if got.worker != "s_worker" || got.note != "the old path stayed after the merge" || got.severity != 3 {
 		t.Fatalf("defect call: %+v", got)
 	}
 	if m.notice.err || !strings.Contains(strings.ToLower(m.notice.text), "defect") {
 		t.Fatalf("defect notice: %+v", m.notice)
+	}
+}
+
+// The severity must be 1 to 4 before the confirm opens.
+func TestMessagesDefectSeverityMustBeOneToFour(t *testing.T) {
+	m, src := defectMessagesModel(t, 120, 34)
+	m, _ = press(m, keyRune("f"))
+	m.defect.SetValue("the old path stayed")
+	m, _ = press(m, keyEnter())
+	for _, bad := range []string{"0", "5", "x"} {
+		m.defectSeverity.SetValue(bad)
+		m, _ = press(m, keyEnter())
+		if m.mode != modeDefectSeverity || !m.notice.err {
+			t.Fatalf("severity %q: mode %v notice %+v", bad, m.mode, m.notice)
+		}
+	}
+	if len(src.defects) != 0 {
+		t.Fatalf("an invalid severity filed a defect: %+v", src.defects)
 	}
 }
 

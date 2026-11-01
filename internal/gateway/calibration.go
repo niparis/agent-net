@@ -70,9 +70,14 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 	}
 	rows.Close()
 
-	// A defect reported later is one more fix on that worker's task. The
-	// counts are per session, so the per-session sum below adds them once.
+	// A defect reported later adds its severity points of rework to that
+	// worker's task. The sums are per session, so the per-session loop below
+	// adds them once.
 	defects, err := s.DefectCountsBySession(cut)
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
+	defectRework, err := s.DefectReworkBySession(cut)
 	if err != nil {
 		return protocol.Calibration{}, err
 	}
@@ -92,7 +97,7 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 			difficulty = "normal"
 		}
 		samples = append(samples, protocol.CalibrationSample{Caller: sess.caller, Difficulty: difficulty,
-			Continue: sess.cont, Fix: sess.fix + defects[sessionID], EndedAt: sess.endedAt})
+			Continue: sess.cont, Fix: sess.fix + defectRework[sessionID], EndedAt: sess.endedAt})
 	}
 
 	scores, err := s.scores()

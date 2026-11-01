@@ -216,9 +216,12 @@ func (s *Store) addRating(f protocol.RateFrame) (protocol.RateResult, error) {
 func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 	worker := strings.TrimSpace(f.Worker)
 	rater := strings.TrimSpace(f.Rater)
-	out := protocol.RateResult{Worker: worker, Kind: protocol.RateKindDefectLater}
+	out := protocol.RateResult{Worker: worker, Kind: protocol.RateKindDefectLater, Severity: f.Severity}
 	if worker == "" || rater == "" {
 		return out, reject("a defect report needs a worker session and the session that gives it")
+	}
+	if !protocol.ValidRateSeverity(f.Severity) {
+		return out, reject("severity must be 1 to 4, not %d", f.Severity)
 	}
 	facts, ok, err := s.workerRatingFacts(worker)
 	if err != nil {
@@ -243,9 +246,9 @@ func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
 	at := s.now().Unix()
 	if _, err := s.db.Exec(`INSERT INTO worker_defects
-		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, note, at)
-		VALUES (?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
-		facts.model, facts.effort, facts.difficulty, note, at); err != nil {
+		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
+		facts.model, facts.effort, facts.difficulty, f.Severity, note, at); err != nil {
 		return out, err
 	}
 	if err := s.refreshQuality(); err != nil {
@@ -317,10 +320,30 @@ func (s *Store) RatingCounts() ([]protocol.CalibrationRating, error) {
 }
 
 // DefectCountsBySession counts the late defects of each worker session, for
-// the calibration medians. It is one helper so the per-session sum can add
-// them wherever the samples are built.
+// the Quotas count. It is one helper so the per-session sum can add them
+// wherever the samples are built.
 func (s *Store) DefectCountsBySession(cut int64) (map[string]int, error) {
 	rows, err := s.db.Query(`SELECT session_id, COUNT(*) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var session string
+		var n int
+		if err := rows.Scan(&session, &n); err != nil {
+			return nil, err
+		}
+		out[session] = n
+	}
+	return out, rows.Err()
+}
+
+// DefectReworkBySession sums the severity points of each worker session's late
+// defects. The calibration adds this to the task's fix count.
+func (s *Store) DefectReworkBySession(cut int64) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT session_id, SUM(severity) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
 	if err != nil {
 		return nil, err
 	}

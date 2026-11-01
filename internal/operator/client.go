@@ -302,9 +302,9 @@ func (s *Client) StopWorker(ctx context.Context, session string) error {
 	return err
 }
 
-func (s *Client) ReportDefect(ctx context.Context, worker, note string) (protocol.RateResult, error) {
+func (s *Client) ReportDefect(ctx context.Context, worker, note string, severity int) (protocol.RateResult, error) {
 	var out protocol.RateResult
-	raw, err := s.action(ctx, protocol.OpWorkerDefect, protocol.DefectRequest{Worker: worker, Note: note})
+	raw, err := s.action(ctx, protocol.OpWorkerDefect, protocol.DefectRequest{Worker: worker, Severity: severity, Note: note})
 	if err != nil {
 		return out, err
 	}

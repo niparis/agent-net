@@ -83,7 +83,7 @@ func (m Model) calibrationView(w int) []string {
 		body = append(body, sDim.Render(clip("ratings: none yet", w-4)))
 	}
 	body = append(body, sDim.Render(clip(fmt.Sprintf("defects reported later: %d", cal.Defects), w-4)))
-	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue", w-4)))
+	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.33 * continue + defects", w-4)))
 	return append(panel("Difficulty calibration · read only", body, w, roleAccent), qualityView(cal.Quality, w)...)
 }
 

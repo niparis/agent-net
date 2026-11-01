@@ -18,8 +18,9 @@ const (
 	CalibrationMinTasks = 5
 	// CalibrationFixWeight and CalibrationContinueWeight make one task's
 	// weighted rework: a fix costs review attention, a continue is cheaper.
+	// The owner set the continue weight to 0.33 on 2026-11-01.
 	CalibrationFixWeight      = 1.0
-	CalibrationContinueWeight = 0.5
+	CalibrationContinueWeight = 0.33
 	// CalibrationStrongScore is the model score at or above which a caller is
 	// strong enough to lower a tier (decision 0026 scores).
 	CalibrationStrongScore = 45.0
@@ -81,11 +82,12 @@ type Calibration struct {
 	// read only, like the rest of the table.
 	Ratings []CalibrationRating `json:"ratings,omitempty"`
 	// Defects is how many defects were reported later on workers in the
-	// window. Each report also counts as one fix in the task's median.
+	// window. Each report also adds its severity to the task's median.
 	Defects int `json:"defects,omitempty"`
 }
 
-// ReworkWeight is one task's weighted rework: fix + 0.5 * continue.
+// ReworkWeight is one task's weighted rework: fix + 0.33 * continue. Defect
+// severities are added by the gateway before this is called.
 func ReworkWeight(fix, cont int) float64 {
 	if fix < 0 {
 		fix = 0

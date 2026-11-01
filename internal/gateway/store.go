@@ -415,6 +415,11 @@ CREATE TABLE IF NOT EXISTS worker_defects (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_defects_session ON worker_defects (session_id, at);
 CREATE INDEX IF NOT EXISTS worker_defects_model ON worker_defects (model, at);
+`, `
+-- The severity of a late defect report, 1 to 4 (difficulty calibration). It
+-- adds that many points of rework to the worker's task. Rows made before this
+-- column existed count as severity 1.
+SELECT 1 /* worker defect severity */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -567,6 +572,21 @@ func (s *Store) migrate() error {
 				// Rows that already exist were recorded before the counters
 				// shipped, so they keep the default 0: unknown.
 				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN counters_known INTEGER NOT NULL DEFAULT 0`); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker defect severity") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_defects') WHERE name = 'severity'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				// An older report had no severity; one point is the least a
+				// defect can cost.
+				if _, err := tx.Exec(`ALTER TABLE worker_defects ADD COLUMN severity INTEGER NOT NULL DEFAULT 1`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}

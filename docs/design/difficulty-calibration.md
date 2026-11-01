@@ -61,10 +61,11 @@ A worker that goes idle without a hand-back is the same signal as
 `complete: no`: it stopped early without saying so, and the caller's next
 message counts as a continue.
 
-The weighted rework of a task is `fix + 0.5 × continue`. A fix counts more
-because it costs review attention: the worker delivered the wrong thing, and
-someone had to notice. A continue is cheaper: the work so far was right, and
-a resumable harness picks it up.
+The weighted rework of a task is `fix + 0.33 × continue`, plus the severity
+points of late defect reports. A fix counts more because it costs review
+attention: the worker delivered the wrong thing, and someone had to notice. A
+continue is cheaper: the work so far was right, and a resumable harness picks
+it up. The owner set the continue weight to 0.33 on 2026-11-01; a fix stays 1.
 
 This split matters for real models. Today terra on Codex stops early (many
 continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
@@ -85,10 +86,12 @@ not "no rework".
 **A defect found later.** The counters only see a follow-up the caller sends.
 A defect found hours later, after the hand-back or after merge, would be lost.
 So the caller can report it with `agent_rate` and `kind:
-"defect_found_later"`: one line on what is wrong, no score, at any time within
-the gateway's worker run retention, also after a rating and more than once.
-Each report is one defect and counts as one fix on that worker's task. The
-owner can file one from the Messages tab, with `f` on a worker conversation.
+"defect_found_later"`: one line on what is wrong, a required severity from 1
+to 4, no score, at any time within the gateway's worker run retention, also
+after a rating and more than once. Each report is one defect and adds its
+severity in points of rework to that worker's task. The owner can file one
+from the Messages tab, with `f` on a worker conversation, where the prompt
+asks for the note and then the severity.
 
 Not counted in the first version: restarts on a new worker, reverts after
 landing, fix-up lines found in git. They are better signals but need more
@@ -319,8 +322,8 @@ few days before part 3 starts steering.
 
 ## Open questions for the owner
 
-1. **The weights.** A fix counts 1 and a continue 0.5. Recommendation: start
-   there, and adjust from part 2's table.
+1. **The weights.** Decided by the owner on 2026-11-01: a fix counts 1, a
+   continue 0.33, and a late defect adds its severity from 1 to 4.
 2. **The window.** The last 7 tasks, with at least 5. Recommendation: keep
    it; at today's pace that is about a day of work per caller.
 3. **The strong-caller threshold.** Recommendation: a score of 45 or more,

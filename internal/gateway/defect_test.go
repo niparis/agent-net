@@ -10,7 +10,7 @@ import (
 // defectFrame is one late defect report from rater.
 func defectFrame(worker, rater, note string) protocol.RateFrame {
 	return protocol.RateFrame{
-		RateRequest: protocol.RateRequest{Worker: worker, Kind: protocol.RateKindDefectLater, Note: note},
+		RateRequest: protocol.RateRequest{Worker: worker, Kind: protocol.RateKindDefectLater, Severity: 1, Note: note},
 		Rater:       rater,
 	}
 }
@@ -205,6 +205,72 @@ func TestRateRejectsUnknownKind(t *testing.T) {
 	wid := ratingRun(t, s, node, caller, "p/m", "normal")
 	if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Kind: "bug", Note: "x"}, Rater: caller}); err == nil {
 		t.Fatal("an unknown kind was accepted")
+	}
+}
+
+// A defect carries a required severity of 1 to 4, and the report adds that
+// many points of rework to the task.
+func TestDefectSeverityAddsPoints(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingRun(t, s, node, caller, "p/m", "hard")
+	frame := defectFrame(wid, caller, "the merge left data behind")
+	frame.Severity = 3
+	out, err := s.AddRating(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !out.Accepted || out.Severity != 3 {
+		t.Fatalf("severity 3 defect: %+v", out)
+	}
+	var stored int
+	if err := s.db.QueryRow(`SELECT severity FROM worker_defects WHERE session_id = ?`, wid).Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if stored != 3 {
+		t.Fatalf("stored severity = %d, want 3", stored)
+	}
+	tasks, median := defectTaskCalibration(t, s, caller)
+	if tasks != 1 || median != 3 {
+		t.Fatalf("calibration after a severity 3 defect: tasks %d median %v, want 1 and 3", tasks, median)
+	}
+}
+
+func TestDefectSeverityMustBeOneToFour(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingRun(t, s, node, caller, "p/m", "normal")
+	for _, severity := range []int{0, -1, 5, 9} {
+		frame := defectFrame(wid, caller, "no")
+		frame.Severity = severity
+		if _, err := s.AddRating(frame); err == nil {
+			t.Fatalf("severity %d was accepted", severity)
+		}
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_defects WHERE session_id = ?`, wid).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("an invalid severity was stored")
+	}
+}
+
+// A continue now weighs 0.33 in the task's rework, and a fix stays 1.
+func TestContinueWeighsThirtyThreeHundredths(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_cont", Harness: "opencode",
+		Model: "p/m", Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller,
+		Difficulty: "hard", Continue: 1}); err != nil {
+		t.Fatal(err)
+	}
+	tasks, median := defectTaskCalibration(t, s, caller)
+	if tasks != 1 || median != 0.33 {
+		t.Fatalf("one continue: tasks %d median %v, want 1 and 0.33", tasks, median)
 	}
 }
 

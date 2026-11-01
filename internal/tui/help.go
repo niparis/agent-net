@@ -126,14 +126,16 @@ func (m Model) helpLine(w int) string {
 		return confirmLine("Protect "+sanitize(m.quotaConfirm)+"?", w)
 	case modeConfirm:
 		if m.confirmDefect {
-			return clip(sBold.Render(confirmName("Report a defect found later on ", m.defectName, "?", w)), w)
+			return clip(sBold.Render(confirmName(fmt.Sprintf("Report a severity %d defect found later on ", m.defectLevel), m.defectName, "?", w)), w)
 		}
 		if m.confirmOwner {
 			return clip(sBold.Render(confirmName("Stop ", m.confirmName, "? Conversation kept: Enter resumes it.", w)), w)
 		}
 		return clip(sBold.Render(confirmName("Stop worker ", m.confirmName, "?", w)), w)
 	case modeDefectNote:
-		return clip(m.defect.View()+sDim.Render("   enter asks to confirm, esc cancels"), w)
+		return clip(m.defect.View()+sDim.Render("   enter asks for severity, esc cancels"), w)
+	case modeDefectSeverity:
+		return clip(m.defectSeverity.View()+sDim.Render("   enter asks to confirm, esc cancels"), w)
 	case modeProjectRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
 	case modeRename:

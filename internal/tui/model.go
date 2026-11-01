@@ -157,8 +157,10 @@ type Model struct {
 	confirmDefect  bool        // confirm reporting a defect found later
 	confirmName    string
 	defect         textinput.Model // the one-line defect note
+	defectSeverity textinput.Model // the 1 to 4 severity prompt
 	defectWorker   string          // worker session the defect is about
 	defectName     string          // how the prompt names the worker
+	defectLevel    int             // the severity the owner chose
 	pol            policyForm
 	intg           integrationsForm // the setup integrations of the whole network
 	rename         textinput.Model  // the machine name prompt
@@ -1032,6 +1034,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.confirmKey(k)
 	case modeDefectNote:
 		return m.defectKey(k)
+	case modeDefectSeverity:
+		return m.defectSeverityKey(k)
 	case modeQuotaConfirm:
 		return m.quotaConfirmKey(k)
 	case modeTrust:
