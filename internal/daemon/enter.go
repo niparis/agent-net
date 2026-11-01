@@ -332,6 +332,14 @@ func findTmuxPane(pid int) (tmuxPane, bool) {
 	if sock != "" {
 		args = append([]string{"-S", sock}, args...)
 	}
+	return findTmuxPaneWithArgs(pid, bin, sock, args)
+}
+
+// findTmuxPaneWithArgs matches a process or its parent to the selected server.
+func findTmuxPaneWithArgs(pid int, bin, sock string, args []string) (tmuxPane, bool) {
+	if pid <= 1 {
+		return tmuxPane{}, false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, bin, args...).Output()

@@ -1,6 +1,7 @@
 package protocol
 
 const (
+	OpSessionStop     = "session_stop"
 	OpSessionResume   = "session_resume"
 	OpSessionStart    = "session_start"
 	OpSessionStartGet = "session_start_get"
@@ -41,4 +42,9 @@ type StartedSession struct {
 // SessionResumeRequest identifies an offline conversation.
 type SessionResumeRequest struct {
 	SessionID string `json:"session_id"`
+}
+
+// SessionStopResult describes the harness stop without removing the conversation.
+type SessionStopResult struct {
+	Note string `json:"note"`
 }

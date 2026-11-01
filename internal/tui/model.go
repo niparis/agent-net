@@ -128,21 +128,22 @@ type Model struct {
 	quitting  bool
 
 	// Actions (forms.go).
-	mode        inputMode
-	notice      notice
-	compose     textinput.Model // the message prompt
-	composeTo   string          // session ID the message goes to
-	composeName string
-	form        workerForm
-	sform       sessionForm
-	confirmID   string // worker the stop question is about
-	confirmName string
-	pol         policyForm
-	intg        integrationsForm // the setup integrations of the whole network
-	rename      textinput.Model  // the machine name prompt
-	renameNode  string           // node ID the name is for
-	renameShown string           // the name shown when the prompt opened
-	renameSet   bool             // that name is the owner's, not the reported one
+	mode         inputMode
+	notice       notice
+	compose      textinput.Model // the message prompt
+	composeTo    string          // session ID the message goes to
+	composeName  string
+	form         workerForm
+	sform        sessionForm
+	confirmID    string // session the stop question is about
+	confirmOwner bool   // owner session rather than a worker
+	confirmName  string
+	pol          policyForm
+	intg         integrationsForm // the setup integrations of the whole network
+	rename       textinput.Model  // the machine name prompt
+	renameNode   string           // node ID the name is for
+	renameShown  string           // the name shown when the prompt opened
+	renameSet    bool             // that name is the owner's, not the reported one
 
 	// tmuxSocket is the socket of the tmux server this terminal runs in, or "".
 	// execProcess replaces tea.Exec in tests.

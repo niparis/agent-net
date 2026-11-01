@@ -90,6 +90,8 @@ func TestActionsUseTheOperatorMethodsAndTypes(t *testing.T) {
 			return protocol.MessageSent{Message: &protocol.Message{ID: "m_1", From: "s_me", To: "s_x"}}, ""
 		case protocol.OpWorkerStart:
 			return protocol.WorkerStartResult{SessionID: "s_w", Project: "shop", Harness: "opencode"}, ""
+		case protocol.OpSessionStop:
+			return protocol.SessionStopResult{Note: "Stopped owner session."}, ""
 		case protocol.OpWorkerStop:
 			return protocol.WorkerStopResult{Session: "s_w", Stopped: true}, ""
 		case protocol.OpWorkers:
@@ -132,6 +134,15 @@ func TestActionsUseTheOperatorMethodsAndTypes(t *testing.T) {
 	json.Unmarshal(d.params[protocol.OpWorkerStop], &stop)
 	if stop.Session != "s_w" {
 		t.Errorf("stop params: %+v", stop)
+	}
+	note, err := c.SessionStop(ctx, "s_owner")
+	if err != nil || note != "Stopped owner session." {
+		t.Fatalf("session stop: %q %v", note, err)
+	}
+	var ownerStop protocol.SessionResumeRequest
+	json.Unmarshal(d.params[protocol.OpSessionStop], &ownerStop)
+	if ownerStop.SessionID != "s_owner" {
+		t.Errorf("session stop params: %+v", ownerStop)
 	}
 	ws, err := c.Workers(ctx, protocol.WorkersQuery{})
 	if err != nil || len(ws) != 1 || ws[0].OwnerName != "you (on mac)" {

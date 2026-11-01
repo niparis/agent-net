@@ -187,6 +187,10 @@ func (m Model) View() string {
 }
 
 func (m Model) mainView(w, h int) []string {
+	// A stop question uses only the key line; keep the selected board in place.
+	if m.mode == modeConfirm {
+		m.mode = modeNormal
+	}
 	l := m.layout()
 	var out []string
 	add := func(s string) { out = append(out, s) }

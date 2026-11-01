@@ -122,6 +122,10 @@ func (m Model) helpLine(w int) string {
 		}
 		return clip("Protect "+m.quotaConfirm+"? y/n", w)
 	case modeConfirm:
+		if m.confirmOwner {
+			const suffix = "? The conversation is kept: Enter on its offline row resumes it. y/n"
+			return clip(sBold.Render("Stop "+clip(m.confirmName, max(w-5-len(suffix), 0))+suffix), w)
+		}
 		return clip(sBold.Render("Stop worker "+m.confirmName+"? y/n"), w)
 	case modeProjectRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
@@ -175,7 +179,7 @@ func (m Model) helpContent(w int) []string {
 		{"c", "hand over the selected row to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"n", "start a new session: project, harness, model, project folder, first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
 		{"s", "start a worker (a form: project, harness, model, task)"},
-		{"x, h, H", "stop worker; h hides/unhides; H shows hidden sessions (dim)"},
+		{"x, h, H", "stop session; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
 		{"I", fmt.Sprintf("integrations for all machines: %d checkboxes (a form)", len(protocol.IntegrationSpecs()))},

@@ -36,6 +36,8 @@ type Operator interface {
 	SendAsOwner(ctx context.Context, to, body string) (protocol.MessageSent, error)
 	// StartWorker starts a worker and sends it its task as the owner.
 	StartWorker(ctx context.Context, req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error)
+	// SessionStop ends a local owner session through its harness.
+	SessionStop(ctx context.Context, session string) (string, error)
 	// StopWorker ends a worker.
 	StopWorker(ctx context.Context, session string) error
 	// SessionStart starts an owner session in a project on this machine. It
