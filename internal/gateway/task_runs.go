@@ -1,6 +1,9 @@
 package gateway
 
-import "github.com/niparis/agent-net/internal/protocol"
+import (
+	"github.com/niparis/agent-net/internal/protocol"
+	"strings"
+)
 
 // taskRuns assembles retained runs into tasks. Root metadata always comes
 // from the root session's first run, even when that run was stopped. A task
@@ -11,10 +14,11 @@ type taskRuns struct {
 	endedAt                            int64
 	nonStopped, recent, hasRoot        bool
 	sessions                           map[string]bool
+	touches                            map[string]bool
 }
 
 func (s *Store) reworkTasks(cut int64) ([]*taskRuns, []string, error) {
-	rows, err := s.db.Query(`SELECT session_id,task_id,caller,model,harness,difficulty,outcome,ended_at,continue_count,fix_count,midrun_count FROM worker_runs ORDER BY ended_at,id`)
+	rows, err := s.db.Query(`SELECT session_id,task_id,caller,model,harness,difficulty,touches,outcome,ended_at,continue_count,fix_count,midrun_count FROM worker_runs ORDER BY ended_at,id`)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -23,10 +27,10 @@ func (s *Store) reworkTasks(cut int64) ([]*taskRuns, []string, error) {
 	var order, callers []string
 	seenCaller := map[string]bool{}
 	for rows.Next() {
-		var sid, root, caller, model, harness, difficulty, outcome string
+		var sid, root, caller, model, harness, difficulty, touches, outcome string
 		var ended int64
 		var cont, fix, mid int
-		if err := rows.Scan(&sid, &root, &caller, &model, &harness, &difficulty, &outcome, &ended, &cont, &fix, &mid); err != nil {
+		if err := rows.Scan(&sid, &root, &caller, &model, &harness, &difficulty, &touches, &outcome, &ended, &cont, &fix, &mid); err != nil {
 			return nil, nil, err
 		}
 		if ended >= cut && caller != "" && !seenCaller[caller] {
@@ -41,13 +45,18 @@ func (s *Store) reworkTasks(cut int64) ([]*taskRuns, []string, error) {
 		}
 		t := tasks[root]
 		if t == nil {
-			t = &taskRuns{caller: caller, model: model, harness: harness, difficulty: difficulty, sessions: map[string]bool{}}
+			t = &taskRuns{caller: caller, model: model, harness: harness, difficulty: difficulty, sessions: map[string]bool{}, touches: map[string]bool{}}
 			tasks[root] = t
 			order = append(order, root)
 		}
 		if sid == root && !t.hasRoot {
 			t.caller, t.model, t.harness, t.difficulty = caller, model, harness, difficulty
 			t.hasRoot = true
+		}
+		for _, area := range strings.Split(touches, ",") {
+			if area != "" {
+				t.touches[area] = true
+			}
 		}
 		t.sessions[sid] = true
 		t.continueCount += cont

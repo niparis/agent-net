@@ -40,6 +40,21 @@ func qualityView(cal protocol.Calibration, w, agent int, detail bool) []string {
 			body = append(body, clip(line, w-4))
 		}
 	}
+	areas := q.Areas
+	if agent > 0 && agent <= len(q.Agents) {
+		areas = q.Agents[agent-1].Areas
+	}
+	if len(areas) > 0 {
+		body = append(body, sBold.Render(clip("by touched area", w-4)))
+		body = append(body, sBold.Render(clip(strings.Replace(qualityColumnHeader(8, false), "FAMILY", "AREA  ", 1), w-4)))
+		for _, area := range areas {
+			line := qualityFamilyLine(area, 8, false)
+			if area.Tasks < protocol.CalibrationMinTasks {
+				line = sDim.Render(line)
+			}
+			body = append(body, clip(line, w-4))
+		}
+	}
 	if len(cal.Ratings) > 0 {
 		var parts []string
 		for _, r := range cal.Ratings {

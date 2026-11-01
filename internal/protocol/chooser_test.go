@@ -333,7 +333,7 @@ func TestWorkerEffectiveDifficulty(t *testing.T) {
 		touches []string
 		want    string
 	}{
-		{"normal", []string{"db"}, "hard"}, {"normal", []string{"ui"}, "normal"}, {"normal", nil, "normal"}, {"very_complex", []string{"hot-path"}, "very_complex"},
+		{"normal", []string{"docs"}, "simple"}, {"normal", []string{"tests"}, "simple"}, {"normal", []string{"docs", "db"}, "hard"}, {"trivial", []string{"docs"}, "trivial"}, {"normal", []string{"other"}, "normal"}, {"normal", []string{"db"}, "hard"}, {"normal", []string{"ui"}, "normal"}, {"normal", nil, "normal"}, {"very_complex", []string{"hot-path"}, "very_complex"},
 	} {
 		got, _ := WorkerEffectiveDifficulty(tc.level, tc.touches)
 		if got != tc.want {

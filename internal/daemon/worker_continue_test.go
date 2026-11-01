@@ -94,7 +94,7 @@ func TestContinueEndedWorker(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	long := "write half.txt " + strings.Repeat("detail line that is long. ", 40) + "\nsecond line of the task"
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: long, Isolation: protocol.IsolationWorktree})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: long, Isolation: protocol.IsolationWorktree, Touches: []string{"ui", "tests"}})
 
 	if _, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID}); err == nil || !strings.Contains(err.Error(), "still running") {
 		t.Errorf("continue of a running worker: %v", err)
@@ -113,6 +113,22 @@ func TestContinueEndedWorker(t *testing.T) {
 		res, err := w.startDefault(protocol.WorkerStartRequest{Continue: ref, Task: "then add tests"})
 		if err != nil {
 			t.Fatalf("continue %s: %v", ref, err)
+		}
+		rows, err := w.d.st.workers()
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, row := range rows {
+			if row.SessionID == res.SessionID {
+				found = true
+				if row.Touches != "ui,tests" {
+					t.Errorf("continued touches = %q", row.Touches)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("continued worker record missing")
 		}
 		if res.SessionID == old.SessionID || res.Branch == old.Branch || res.Branch == "" || res.Worktree == old.Worktree {
 			t.Fatalf("continue %d did not make a new worker: %+v", i, res)

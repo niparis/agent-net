@@ -10,6 +10,7 @@ type QualityAnalysis struct {
 	ReworkAverage    float64          `json:"rework_average"`
 	Effects          []QualityEffect  `json:"effects,omitempty"`
 	Summary          []QualityFactor  `json:"summary,omitempty"`
+	Areas            []QualityFamily  `json:"areas,omitempty"`
 	Levels           []QualityLevel   `json:"levels,omitempty"`
 	Agents           []QualityAgent   `json:"agents,omitempty"`
 	Profiles         []ProfileQuality `json:"profiles,omitempty"`
@@ -54,9 +55,10 @@ type QualityLevel struct {
 
 // QualityAgent is one caller's level tables. The TUI selector shows Name.
 type QualityAgent struct {
-	Caller string         `json:"caller"`
-	Name   string         `json:"name,omitempty"`
-	Levels []QualityLevel `json:"levels,omitempty"`
+	Areas  []QualityFamily `json:"areas,omitempty"`
+	Caller string          `json:"caller"`
+	Name   string          `json:"name,omitempty"`
+	Levels []QualityLevel  `json:"levels,omitempty"`
 }
 
 type ProfileQuality struct {

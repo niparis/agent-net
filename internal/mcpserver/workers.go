@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -65,6 +66,9 @@ func addWorkerTools(s *mcp.Server, run func(context.Context, string, any) (any, 
 	startTool.InputSchema = startSchema
 	mcp.AddTool(s, startTool,
 		func(ctx context.Context, _ *mcp.CallToolRequest, in startIn) (*mcp.CallToolResult, any, error) {
+			if len(in.Touches) == 0 && in.Continue == "" {
+				return nil, nil, errors.New(protocol.WorkerTouchesError)
+			}
 			if in.Harness == "" && in.Continue == "" && in.Model != "" && in.Model != "auto" {
 				in.Harness = "opencode"
 			}

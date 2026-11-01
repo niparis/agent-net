@@ -265,7 +265,8 @@ func TestWorkerTouchesDifficulty(t *testing.T) {
 	}{
 		{"db", []string{"db"}, "fake/m2", "touches db: chose as hard"},
 		{"ui", []string{"ui"}, "fake/m1", ""},
-		{"empty", nil, "fake/m1", ""},
+		{"other", []string{"other"}, "fake/m1", ""},
+		{"docs", []string{"docs"}, "fake/m1", "touches docs/tests only: chose as simple"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			g := startGateway(t, t.TempDir(), "")
@@ -286,6 +287,8 @@ func TestWorkerTouchesDifficulty(t *testing.T) {
 			used := "normal"
 			if tc.name == "db" {
 				used = "hard"
+			} else if tc.name == "docs" {
+				used = "simple"
 			}
 			if row.DifficultyAsked != "normal" || row.DifficultyUsed != used || row.Touches != strings.Join(tc.touches, ",") {
 				t.Fatalf("worker record: %+v", row)

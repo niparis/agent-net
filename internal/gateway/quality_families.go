@@ -14,6 +14,7 @@ import (
 type familyTask struct {
 	caller, model, harness, difficulty string
 	fix, cont, midrun                  int
+	touches                            map[string]bool
 	lateDefects                        int
 	lateSeverity                       float64
 	defectMinutes                      float64
@@ -178,7 +179,7 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 			continue
 		}
 		task := familyTask{caller: run.caller, model: run.model, harness: run.harness, difficulty: run.difficulty,
-			fix: run.fixCount, cont: run.continueCount, midrun: run.midrun}
+			fix: run.fixCount, cont: run.continueCount, midrun: run.midrun, touches: run.touches}
 		for session := range run.sessions {
 			d := defects[session]
 			task.lateDefects += d.count
@@ -193,14 +194,27 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 // qualityFamilyTables builds the all-agent level tables and one set per
 // caller. The fit calls it from refreshQuality, which holds the quality lock;
 // reads of the snapshot never touch the database.
-func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.QualityAgent, error) {
+func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.QualityFamily, []protocol.QualityAgent, error) {
 	tasks, callers, err := s.qualityFamilyTasks()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
+	allAreas := map[string]*familyCount{}
+	callerAreas := map[string]map[string]*familyCount{}
 	all := map[string]map[string]*familyCount{}
 	byCaller := map[string]map[string]map[string]*familyCount{}
 	for _, task := range tasks {
+		if callerAreas[task.caller] == nil {
+			callerAreas[task.caller] = map[string]*familyCount{}
+		}
+		areas := task.touches
+		if len(areas) == 0 {
+			areas = map[string]bool{"not set": true}
+		}
+		for area := range areas {
+			addFamilyTask(allAreas, area, task)
+			addFamilyTask(callerAreas[task.caller], area, task)
+		}
 		level := qualityLevelName(task.difficulty)
 		family := qualityModelFamily(task.model)
 		levelCounts := all[level]
@@ -223,11 +237,11 @@ func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.Quali
 	}
 	names, _, _, err := s.callerFacts(nil, callers)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	agents := make([]protocol.QualityAgent, 0, len(callers))
 	for _, caller := range callers {
-		agents = append(agents, protocol.QualityAgent{Caller: caller, Name: names[caller], Levels: levelRows(byCaller[caller])})
+		agents = append(agents, protocol.QualityAgent{Caller: caller, Name: names[caller], Levels: levelRows(byCaller[caller]), Areas: areaRows(callerAreas[caller])})
 	}
 	sort.SliceStable(agents, func(i, j int) bool {
 		a, b := agents[i], agents[j]
@@ -243,5 +257,20 @@ func (s *Store) qualityFamilyTables() ([]protocol.QualityLevel, []protocol.Quali
 		}
 		return a.Caller < b.Caller
 	})
-	return levelRows(all), agents, nil
+	return levelRows(all), areaRows(allAreas), agents, nil
+}
+
+func areaRows(counts map[string]*familyCount) []protocol.QualityFamily {
+	rows := familyRows(counts)
+	byName := map[string]protocol.QualityFamily{}
+	for _, row := range rows {
+		byName[row.Family] = row
+	}
+	out := make([]protocol.QualityFamily, 0, 8)
+	for _, name := range []string{"db", "hot-path", "ui", "docs", "tests", "config", "other", "not set"} {
+		row := byName[name]
+		row.Family = name
+		out = append(out, row)
+	}
+	return out
 }

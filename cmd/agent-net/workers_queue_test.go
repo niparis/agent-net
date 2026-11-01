@@ -17,7 +17,7 @@ func TestStartCommandQueued(t *testing.T) {
 		Project: "shop", Hostname: "research", QueueReason: "queued #2 on research: CPU 5-min average 82% (target 75%)",
 		MachineNote: "picked research: most room for a worker"}}
 	var out bytes.Buffer
-	if err := runStart(context.Background(), f, &out, []string{"--project", "shop", "do", "it"}); err != nil {
+	if err := runStart(context.Background(), f, &out, []string{"--touches", "other", "--project", "shop", "do", "it"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range []string{"queued #2 on research: CPU 5-min average 82% (target 75%)", "q_ab12", "A notice comes to you when it starts",

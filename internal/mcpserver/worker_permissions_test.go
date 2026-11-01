@@ -13,7 +13,7 @@ func TestStartShowsPermissions(t *testing.T) {
 	cs := connect(t, func(context.Context, string, any) (json.RawMessage, error) {
 		return json.RawMessage(`{"harness":"codex","permissions":"no-network","status":"queued"}`), nil
 	})
-	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_start", Arguments: map[string]any{"task": "test"}})
+	result, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_start", Arguments: map[string]any{"task": "test", "touches": []string{"ui"}}})
 	if err != nil {
 		t.Fatal(err)
 	}

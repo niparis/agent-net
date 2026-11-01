@@ -15,7 +15,7 @@ import (
 var ctoProposalFixtures = map[string]string{
 	"graph_change":    `{"action":"charter_set","node":"component","attr":"purpose","value":"review"}`,
 	"session_change":  `{"action":"rename","session_id":"s_test","name":"planner"}`,
-	"worker_change":   `{"action":"start","project":"project","task":"test","harness":"claude"}`,
+	"worker_change":   `{"action":"start","project":"project","task":"test","harness":"claude","touches":["tests"]}`,
 	"answer":          `{"kind":"held","message_id":"m_test","action":"a"}`,
 	"tools_change":    `{"action":"plan","item":"item","target":{"scope":"global"}}`,
 	"mcp_change":      `{"action":"add","server":{"name":"test","transport":"stdio","command":"/bin/true"}}`,
@@ -113,7 +113,7 @@ func TestCTOChangeParity(t *testing.T) {
 		"session_rename":          {"session_change", `{"action":"rename","session_id":"s_test","name":"planner"}`},
 		"session_trust":           {"session_change", `{"action":"trust","session_id":"s_test","on":true}`},
 		"session_policy":          {"session_change", `{"action":"policy","session_id":"s_test","policy":{"delegate":"off"}}`},
-		"worker_start":            {"worker_change", `{"action":"start","project":"project","task":"test","harness":"claude"}`},
+		"worker_start":            {"worker_change", `{"action":"start","project":"project","task":"test","harness":"claude","touches":["tests"]}`},
 		"worker_stop":             {"worker_change", `{"action":"stop","session":"s_test"}`},
 		"held_answer":             {"answer", `{"kind":"held","message_id":"m_test","action":"a"}`},
 		"inbox_answer":            {"answer", `{"kind":"inbox","id":"i_test","answer":"yes"}`},

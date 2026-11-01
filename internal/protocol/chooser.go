@@ -446,13 +446,27 @@ func WorkerEffectiveDifficulty(level string, touches []string) (string, string) 
 			break
 		}
 	}
-	if reason == "" {
+	lower := len(touches) > 0
+	for _, touch := range touches {
+		if touch != "docs" && touch != "tests" {
+			lower = false
+		}
+	}
+	if reason == "" && !lower {
 		return level, ""
+	}
+	if reason == "" {
+		reason = "docs/tests only"
 	}
 	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
 	for i, v := range levels {
-		if v == level && i+1 < len(levels) {
-			return levels[i+1], reason
+		if v == level {
+			if lower && reason == "docs/tests only" && i > 0 {
+				return levels[i-1], reason
+			}
+			if reason != "docs/tests only" && i+1 < len(levels) {
+				return levels[i+1], reason
+			}
 		}
 	}
 	return level, reason

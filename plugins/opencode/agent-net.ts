@@ -1107,6 +1107,7 @@ const TOOLS: ToolDef[] = [
       task: str("What the worker should do, with everything it needs to know; it can only ask you questions with agent_reply. Optional only with continue"),
       harness: str("claude, opencode, pi or codex; empty lets automatic selection choose a harness (with continue, the old worker's harness). agent_nodes shows which are installed on the machine. A pi worker needs isolation worktree."),
       model: str("The model, as the harness names it. A loose name works for every harness (opencode, claude, pi, codex): agent-net resolves it against the model list of the machine that runs the worker and tells you the result, for example luna 6 -> gpt-6-luna (exact ids are shown by agent_nodes). An exact id wins. Claude also takes an alias such as haiku, sonnet, opus or fable. Pi keeps a :thinking suffix such as :high, and Codex keeps an :effort suffix such as :high. If several models match equally, the error lists them; if none matches, it lists the closest names. Empty or auto selects a registered worker profile by task difficulty and quota; an empty roster uses the harness default."),
+      touches: { type: "array", items: { type: "string", enum: ["db", "hot-path", "ui", "docs", "tests", "config", "other"] }, description: "Required areas touched; optional for continue. db means schema, migrations or stored data; hot-path means code run on every request, refresh, redraw or message." },
       difficulty: { type: "string", enum: ["trivial", "simple", "normal", "hard", "very_complex"], description: "Task difficulty for automatic model choice (default normal)." },
       machine: str("The machine, only when the project is on more than one"),
       base: str("Existing local branch to start the worktree from."),
@@ -1718,6 +1719,9 @@ export default {
             const sid = String(context.sessionID);
             const text = (s: string) => ({ content: announced.has(sid) ? s : `${s}\n${ANNOUNCE_REMINDER}` });
             try {
+              if (def.method === "worker_start" && !String(input?.continue ?? "").trim() && (!Array.isArray(input?.touches) || input.touches.length === 0)) {
+                throw new Error('touches is required: choose db, hot-path, ui, docs, tests, config or other; for example {"touches":["ui"]}');
+              }
               const link = await ensureLink(sid);
               if (!link) return text("agent-net: this session is not registered with the daemon.");
               link.touch(); // using an agent-net tool is activity
