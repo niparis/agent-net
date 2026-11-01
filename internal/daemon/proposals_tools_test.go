@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/niparis/agent-net/internal/mcpserver"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
@@ -248,5 +249,25 @@ func TestCTOProposalMessageRequiresActionBeforeStoring(t *testing.T) {
 	items, err := n.d.proposalRunner().list()
 	if err != nil || len(items) != 0 {
 		t.Fatalf("invalid proposal stored: %v %v", items, err)
+	}
+}
+
+func TestCTOProposalProviderPayloadLimits(t *testing.T) {
+	d := &Daemon{cfg: Config{GatewayURL: "https://example.invalid", Token: "throwaway"}}
+	var providers []string
+	for i := 0; i < 128; i++ {
+		providers = append(providers, fmt.Sprintf("%060d", i))
+	}
+	for _, name := range []string{"worker_providers_set", "protected_providers_set"} {
+		t.Run(name, func(t *testing.T) {
+			fields := map[string]any{"providers": providers}
+			if name == "protected_providers_set" {
+				fields = map[string]any{"protected_providers": providers, "reason": strings.Repeat("r", 4096)}
+			}
+			raw, _ := json.Marshal(fields)
+			if err := d.validateProposal(context.Background(), proposalCall{Tool: name, Args: raw}); err == nil {
+				t.Fatal("accepted payload larger than the settings endpoint limit")
+			}
+		})
 	}
 }

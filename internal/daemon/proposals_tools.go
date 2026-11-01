@@ -97,12 +97,16 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 		return nil
 	case "protected_providers_set", "worker_providers_set":
 		var providers []string
+		var payload []byte
+		limit := 4096
 		if call.Tool == "protected_providers_set" {
 			var p protocol.ProtectedProviders
 			if err := json.Unmarshal(call.Args, &p); err != nil {
 				return err
 			}
 			providers = p.Providers
+			payload, _ = json.Marshal(p)
+			limit = 8192
 			if len(p.Reason) > 4096 {
 				return errors.New("bad protected providers")
 			}
@@ -112,6 +116,10 @@ func (d *Daemon) validateProposal(ctx context.Context, call proposalCall) error 
 				return err
 			}
 			providers = p.Providers
+			payload, _ = json.Marshal(p)
+		}
+		if len(payload) > limit {
+			return errors.New("provider settings payload exceeds the endpoint limit")
 		}
 		if err := validateProposalProviders(providers); err != nil {
 			return err
