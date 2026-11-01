@@ -129,7 +129,9 @@ func (r *runner) askCTOTitle(ctx context.Context) {
 		title = normalized
 		break
 	}
-	if err := store.SetTitle(callCtx, title); err != nil {
+	saveCtx, cancelSave := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelSave()
+	if err := store.SetTitle(saveCtx, title); err != nil {
 		r.hint("could not save the CTO title for your network: %v", err)
 	}
 	r.step("cto title", title, nil)
