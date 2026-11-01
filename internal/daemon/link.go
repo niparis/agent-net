@@ -263,8 +263,7 @@ func (d *Daemon) runLink(ctx context.Context) (up bool, err error) {
 	}
 	var missing []*localSession
 	for k, ls := range d.sessions {
-		info := ls.info
-		info.SessionID = ls.sessionID
+		info := d.infoLocked(ls)
 		if in, ok := sent[k]; ls.sessionID == "" || !ok || in != info {
 			missing = append(missing, ls)
 		}

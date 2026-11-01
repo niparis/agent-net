@@ -48,6 +48,9 @@ func agent(id, node, host, harness, name string, f func(*protocol.AgentView)) pr
 	if f != nil {
 		f(&a)
 	}
+	if a.LastActive == 0 {
+		a.LastActive = a.LastSeen // fixture activity, independent of later reports
+	}
 	return a
 }
 

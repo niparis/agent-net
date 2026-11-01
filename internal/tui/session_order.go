@@ -42,6 +42,15 @@ type sessionOrder struct {
 	pending  bool
 }
 
+// sessionActive is when a session last did something, from the gateway.
+// An unknown time stays unknown: a discovery report is not activity.
+func sessionActive(a protocol.AgentView) time.Time {
+	if a.LastActive > 0 {
+		return time.Unix(a.LastActive, 0)
+	}
+	return time.Time{}
+}
+
 func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 	now := m.now()
 	if m.sessionOrder == nil {
@@ -49,20 +58,20 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 	}
 	initialized := len(m.sessionOrder) > 0
 	agents := append([]protocol.AgentView(nil), m.snap.Agents...)
+	// The first rank of a band follows real activity, newest first. The time
+	// the daemon last reported a session says nothing about its use.
 	sort.SliceStable(agents, func(i, j int) bool {
-		if a, b := sessionStart(agents[i]), sessionStart(agents[j]); a != b {
-			return a < b
+		a, b := sessionActive(agents[i]), sessionActive(agents[j])
+		if !a.Equal(b) {
+			return a.After(b)
 		}
 		return agents[i].SessionID < agents[j].SessionID
 	})
 	for _, a := range agents {
 		old, exists := m.sessionOrder[a.SessionID]
-		seen := time.Time{}
-		if a.LastSeen > 0 {
-			seen = time.Unix(a.LastSeen, 0)
-		}
-		if seen.After(old.activity) {
-			old.activity = seen
+		before := old.activity
+		if active := sessionActive(a); active.After(old.activity) {
+			old.activity = active
 		}
 		waiting := a.Waiting != nil
 		if exists && ((a.Status != old.status && a.Status == "busy") || (waiting && !old.waiting) || !reflect.DeepEqual(a.Profile, old.profile)) {
@@ -91,7 +100,9 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 					old.rank = m.sessionFront
 				}
 			}
-		} else if (band != old.band || old.pending) && !now.Before(m.orderFrozenUntil) {
+		} else if (band != old.band || old.pending || old.activity.After(before)) && !now.Before(m.orderFrozenUntil) {
+			// A newer activity wins inside its band too: most recently active
+			// first, never oldest start first.
 			m.sessionFront--
 			old.rank = m.sessionFront
 			old.band = band

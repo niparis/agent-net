@@ -105,6 +105,40 @@ func TestNewBusySessionDoesNotMoveRowsDuringFreeze(t *testing.T) {
 	}
 }
 
+func TestRestartSortsByLastActiveNotLastSeen(t *testing.T) {
+	// After a daemon restart every session is reported in the same second, but
+	// only one of them has done something recently. The old order used the
+	// report time, then the oldest start.
+	snap := fakeSnapshot()
+	snap.Agents = nil
+	snap.Agents = append(snap.Agents,
+		agent("old-start", "n_mac", "Mac", "claude", "old-start", func(a *protocol.AgentView) {
+			a.FirstSeen, a.LastSeen = t0.Add(-60*time.Minute).Unix(), t0.Unix()
+			a.LastActive = t0.Add(-9 * time.Minute).Unix()
+		}),
+		agent("new-start", "n_mac", "Mac", "claude", "new-start", func(a *protocol.AgentView) {
+			a.FirstSeen, a.LastSeen = t0.Add(-10*time.Minute).Unix(), t0.Unix()
+			a.LastActive = t0.Add(-1 * time.Minute).Unix()
+		}),
+	)
+	m := treeModel(80, 24, snap)
+	if got := strings.Join(names(m), ","); got != "new-start,old-start" {
+		t.Fatalf("order after restart: %s, want newest activity first", got)
+	}
+
+	// A re-report after the restart moves LastSeen for every session again;
+	// the real activity did not change, so neither does the order.
+	now := t0.Add(30 * time.Second)
+	m.now = func() time.Time { return now }
+	for i := range snap.Agents {
+		snap.Agents[i].LastSeen = now.Unix()
+	}
+	m = refresh(m, &fakeSource{snap: snap})
+	if got := strings.Join(names(m), ","); got != "new-start,old-start" {
+		t.Fatalf("order after re-report: %s, want unchanged", got)
+	}
+}
+
 func orderedTableNames(m Model) []string {
 	var out []string
 	for _, g := range m.groups() {
@@ -167,5 +201,26 @@ func TestNeedsRowDownToTableKeepsActivityOrderDuringFreeze(t *testing.T) {
 	}
 	if m.selected != waitingID || m.selNeeds || m.selIdx != 2 {
 		t.Fatalf("post-freeze selection is %q at %d (Needs you: %v), want the moved table row", m.selected, m.selIdx, m.selNeeds)
+	}
+}
+
+func TestSessionActivityNeverFallsBackToLastSeen(t *testing.T) {
+	if got := sessionActive(protocol.AgentView{LastSeen: t0.Unix()}); !got.IsZero() {
+		t.Fatalf("report time became activity: %v", got)
+	}
+}
+
+func TestMultipleActivityUpdatesKeepNewestFirst(t *testing.T) {
+	snap := fakeSnapshot()
+	snap.Agents = []protocol.AgentView{
+		agent("older", "n_mac", "Mac", "pi", "older", func(a *protocol.AgentView) { a.LastActive = t0.Add(-5 * time.Minute).Unix() }),
+		agent("newer", "n_mac", "Mac", "pi", "newer", func(a *protocol.AgentView) { a.LastActive = t0.Add(-4 * time.Minute).Unix() }),
+	}
+	m := treeModel(80, 24, snap)
+	snap.Agents[0].LastActive = t0.Add(-2 * time.Minute).Unix()
+	snap.Agents[1].LastActive = t0.Add(-time.Minute).Unix()
+	m = refresh(m, &fakeSource{snap: snap})
+	if got := strings.Join(names(m), ","); got != "newer,older" {
+		t.Fatalf("simultaneous activity order: %s", got)
 	}
 }
