@@ -89,9 +89,20 @@ type SessionRow struct {
 	Expertise    string            `json:"expertise,omitempty"`
 	Capabilities []string          `json:"capabilities,omitempty"`
 	Purpose      string            `json:"purpose,omitempty"`
+	Charter      *ReadCharter      `json:"charter,omitempty"`
 	Rules        map[string]string `json:"rules,omitempty"`
 	Delegation   string            `json:"delegation,omitempty"`
 	Worker       *SessionWorker    `json:"worker,omitempty"`
+}
+
+// ReadCharter is the agent-facing charter subset carried by full read rows.
+// Accepts and refuses are lists split on the charter's semicolon separators.
+type ReadCharter struct {
+	Purpose         string   `json:"purpose,omitempty"`
+	PurposeFallback bool     `json:"purpose_fallback,omitempty"`
+	Accepts         []string `json:"accepts,omitempty"`
+	Refuses         []string `json:"refuses,omitempty"`
+	FeatureRequests string   `json:"feature_requests,omitempty"`
 }
 
 // SessionWorker is the worker part of a full session row.

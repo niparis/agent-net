@@ -272,6 +272,11 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 	row.Expertise = a.Profile.Expertise
 	row.Capabilities = a.Profile.Capabilities
 	row.Purpose = a.Charter.Purpose
+	row.Charter = &protocol.ReadCharter{
+		Purpose: a.Charter.Purpose, PurposeFallback: a.Charter.PurposeFallback,
+		Accepts: charterList(a.Charter.Accepts), Refuses: charterList(a.Charter.Refuses),
+		FeatureRequests: a.Charter.FeatureRequests,
+	}
 	if len(a.Charter.Rules) > 0 {
 		row.Rules = map[string]string{}
 		for _, rule := range a.Charter.Rules {
@@ -302,6 +307,20 @@ func sessionRow(a protocol.AgentView, full bool, now time.Time, name func(string
 		}
 	}
 	return row
+}
+
+func charterList(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	items := strings.Split(value, ";")
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // FindSessions answers agent_sessions_find.
