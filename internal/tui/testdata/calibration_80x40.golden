@@ -1,0 +1,40 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online  14:05:00
+╭─Subscriptions────────────────────────────────────────────────────────────────╮
+│ no provider protected · select a subscription and press p                    │
+│ No machine reads quotas yet: quota-axi is not installed on any machine (see  │
+│ docs/setup.md, Quota).                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Difficulty calibration · read only───────────────────────────────────────────╮
+│ CALLER           LEVEL         MEDIAN TASKS WOULD                            │
+│ agent-net        normal             0     9 lower                            │
+│ agent-net        hard               1     7 keep                             │
+│ homelab-agent *  simple           0.5     3 not enough tasks                 │
+│ homelab-agent *  normal             0     5 keep                             │
+│ * weak caller: follows the network and cannot lower a tier                   │
+│ network: normal 1 · 9 tasks · keep · hard 0.5 · 12 tasks · keep              │
+│ last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue            │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮
+│ NAME            HARNESS  MODEL               T     S     N     H     V       │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit

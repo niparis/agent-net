@@ -102,9 +102,20 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		if p.StartedAt > 0 && end > p.StartedAt {
 			runSeconds = end - p.StartedAt
 		}
+		caller, err := g.store.WorkerSessionOwner(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		difficulty := p.DifficultyAsked
+		if difficulty == "" {
+			difficulty = p.DifficultyUsed
+		}
+		if difficulty == "" {
+			difficulty = "normal"
+		}
 		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Outcome: protocol.WorkerOutcome(p.Reason, p.Status, p.Complete), StartedAt: p.StartedAt, EndedAt: end,
-			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun}
+			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, Caller: caller, Difficulty: difficulty}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
 		}
