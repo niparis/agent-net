@@ -474,6 +474,50 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 	}
 }
 
+func TestDefaultRetentionKeepsMessagesAndWorkerRunsForever(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	node := mustNode(t, s, a)
+	day := 24 * time.Hour
+
+	old, _, _ := send(s, a, b, "old", "")
+	s.ApplyDelivery(old.ID, protocol.StateDelivered, "")
+	now := s.now()
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_old",
+		Harness: "opencode", Model: "m1", Outcome: protocol.OutcomeComplete,
+		StartedAt: now.Add(-400 * day).Unix(), EndedAt: now.Add(-400 * day).Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	// An offline session older than the session period still goes.
+	gone, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "gone"})
+	s.SetSessionOffline(node, gone)
+
+	c.t = c.t.Add(400 * day)
+	res, err := s.Prune(DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Messages != 0 || res.Deliveries != 0 || res.WorkerRuns != 0 {
+		t.Fatalf("default retention deleted messages or worker runs: %+v", res)
+	}
+	if _, ok, _ := s.Message(old.ID); !ok {
+		t.Fatal("a message 400 days old was deleted")
+	}
+	var runs int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_runs`).Scan(&runs); err != nil {
+		t.Fatal(err)
+	}
+	if runs != 1 {
+		t.Fatalf("worker runs left: %d, want 1", runs)
+	}
+	if _, ok, _ := s.Agent(gone); ok {
+		t.Fatal("an offline session older than 30 days was kept")
+	}
+	if res.Sessions != 1 {
+		t.Fatalf("pruned %d offline sessions, want 1", res.Sessions)
+	}
+}
+
 func TestOfflineSessionClockStartsWhenItGoesOffline(t *testing.T) {
 	// A session that ran for 40 days was last upserted 40 days ago. It must not
 	// be deleted the moment it goes offline.

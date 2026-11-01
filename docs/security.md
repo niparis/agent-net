@@ -633,14 +633,15 @@ A registered project is a folder where workers may start sessions (see [decision
 
 | Data | Kept for | Flag |
 |---|---|---|
-| Messages (with bodies) and delivery records | 30 days | `--keep-messages` |
+| Messages (with bodies) and delivery records | until you delete them (for ever) | `--keep-messages` |
 | Events | 90 days | `--keep-events` |
 | Instruction signals, including matched owner prompt excerpts | 90 days | none |
 | Sessions that are offline and not seen | 30 days | `--keep-sessions` |
+| Worker runs behind the model track record | until you delete them (for ever) | `--keep-worker-runs` |
 | Registered projects | until you remove them | none |
 | Nodes and their token hashes | until you delete them | none |
 
-A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.
+A timer deletes older data once at start and then every hour. A period of `0` keeps the data controlled by that flag for ever. Messages and worker runs default to `0`, so they stay until you set a period with `--keep-messages` or `--keep-worker-runs`, or delete them by hand. Instruction signals have a fixed 90-day retention. The delete frees space inside the file, but the file does not shrink. A node's own `daemon.db` only keeps delivered message IDs and its outbox.
 
 **File modes.** `gateway.db` and the daemon's `daemon.db`, with their `-wal` and `-shm` files, are mode 0600. The gateway and the daemon create them with that mode and set it again at each start, so files made by an older version are fixed. The gateway creates its data folder with mode 0700.
 
@@ -715,7 +716,7 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 - **Prompt injection through a message.** A message is text that an agent will read. A hostile or confused peer, or a peer that read a poisoned web page, can send instructions. The wrapper, the sender label and the guidance text help the model see where the text came from. They do not stop a model that decides to obey. Your permission rules are the barrier.
 - **Anyone who is your user on a machine.** Any process running as your user can read `node.json` and the token, connect to the daemon socket (and claim to be a Pi session), and write to Claude's inbox sockets. agent-net adds no boundary between your own processes.
 - **Anyone who can reach the gateway port.** Without a valid code or token they cannot join, list agents or read messages. They can fetch the gateway CA certificate and the agent-net release binaries (`/v1/ca` and `/install/bin/<os>/<arch>` need no login). The gateway listens on `0.0.0.0:7420` by default. Keep it on a LAN, a VPN or Tailscale, and not on the public internet.
-- **Eavesdropping on the gateway machine.** Messages are stored as plain text in `gateway.db` for 30 days by default. They are encrypted on the wire, not at rest. Anyone with access to the gateway's disk can read them, and the files are readable by your user only (mode 0600), not by other users.
+- **Eavesdropping on the gateway machine.** Messages are stored as plain text in `gateway.db` until you delete them (for ever by default). They are encrypted on the wire, not at rest. Anyone with access to the gateway's disk can read them, and the files are readable by your user only (mode 0600), not by other users.
 - **A malicious gateway machine.** It hands out the binaries that other machines install, and it sees every message.
 
 ### Residual CTO risks
