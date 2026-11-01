@@ -14,7 +14,11 @@ type SceneNode struct {
 	Position                                  Point
 	Selected, Flashing, Wildcard              bool
 	Architect, HasSessions, Pulse, HasCharter bool
-	Card                                      SceneCard
+	// ShowCard is set when pixel mode is zoomed in far enough to draw the
+	// node's charter card; PulsePhase is the position in the slow busy pulse.
+	ShowCard   bool
+	PulsePhase float64
+	Card       SceneCard
 }
 type SceneCard struct {
 	Name, Maturity, Purpose      string
@@ -37,6 +41,19 @@ type SceneComet struct {
 	Position Point
 	Trail    []Point
 	Voice    bool
+	Kind     string
+	From, To Point
+	Progress float64
+	HasEdge  bool
+}
+
+// SceneRipple is the ring that marks a message arriving at its target. The
+// Braille renderer ignores it; the pixel renderer draws it.
+type SceneRipple struct {
+	Position Point
+	Kind     string
+	Voice    bool
+	Progress float64
 }
 
 type KeyHint struct {
@@ -46,14 +63,15 @@ type KeyHint struct {
 
 // Scene contains semantic elements in normalized viewport coordinates.
 type Scene struct {
-	Nodes  []SceneNode
-	Edges  []SceneEdge
-	Talk   []SceneTalk
-	Comets []SceneComet
-	Level  string
-	Feed   []Message
-	Paused bool
-	Hints  []KeyHint
+	Nodes   []SceneNode
+	Edges   []SceneEdge
+	Talk    []SceneTalk
+	Comets  []SceneComet
+	Ripples []SceneRipple
+	Level   string
+	Feed    []Message
+	Paused  bool
+	Hints   []KeyHint
 }
 
 // BuildScene derives a renderer-independent view without changing state.
@@ -73,11 +91,11 @@ func BuildScene(s State, viewport Viewport) Scene {
 		}
 		g.Positions = positions
 	}
-	cam := s.Camera
+	cam := s.ViewCamera()
 	if cam.Zoom <= 0 {
 		cam = g.Fit(int(viewport.Width), int(viewport.Height))
-		scene.Level = cam.Level()
 	}
+	scene.Level = cam.Level()
 	if ownerVisible {
 		sx, sy := cam.ScaleX, cam.ScaleY
 		if sx == 0 {
@@ -102,6 +120,7 @@ func BuildScene(s State, viewport Viewport) Scene {
 	if s.Paused {
 		now = s.PausedAt
 	}
+	showCards := cam.FitZoom > 0 && cam.Zoom >= cam.FitZoom*1.9
 	comets, flashes := g.Traffic(now)
 	flash := map[string]bool{}
 	for _, name := range flashes {
@@ -123,7 +142,14 @@ func BuildScene(s State, viewport Viewport) Scene {
 				break
 			}
 		}
-		node := SceneNode{Name: n.Name, Label: n.Name, Kind: n.Kind, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == selected, Flashing: flash[n.Name], HasCharter: n.Charter != (protocol.Charter{}), Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
+		node := SceneNode{Name: n.Name, Label: n.Name, Kind: n.Kind, Role: role, PreferredSide: "right", Position: project(g.Positions[n.Name]), Selected: n.Name == selected, Flashing: flash[n.Name], HasCharter: n.Charter != (protocol.Charter{}), Architect: n.Kind == "architect", HasSessions: n.SessionCount > 0 || len(n.Sessions) > 0, Pulse: role == "busy" && !s.ReducedMotion && now.UnixMilli()%1000 >= 500, ShowCard: showCards && n.Charter != (protocol.Charter{}), Card: SceneCard{Name: n.Name, Maturity: n.Charter.Maturity, Purpose: n.Charter.Purpose, Sessions: max(n.SessionCount, len(n.Sessions))}}
+		if role == "busy" {
+			if s.ReducedMotion {
+				node.PulsePhase = .5
+			} else {
+				node.PulsePhase = .5 + .5*math.Sin(float64(now.UnixMilli()%2200)/2200*2*math.Pi)
+			}
+		}
 		for _, e := range g.Edges {
 			if e.From == n.Name {
 				node.Card.Outgoing++
@@ -202,8 +228,15 @@ func BuildScene(s State, viewport Viewport) Scene {
 		scene.Edges = append(scene.Edges, SceneEdge{From: a, To: b, Arrow: Point{a.X*0.2 + b.X*0.8, a.Y*0.2 + b.Y*0.8}, Kind: e.Kind, Dashed: e.Kind == "governs", Selected: accented, Dimmed: selected != "" && !accented})
 	}
 	for _, c := range comets {
-		comet := SceneComet{Position: project(c.Position), Voice: c.Voice}
 		a, b := g.Positions[c.From], g.Positions[c.To]
+		hasEdge := false
+		for _, e := range g.Edges {
+			if e.From == c.From && e.To == c.To || e.From == c.To && e.To == c.From {
+				hasEdge = true
+				break
+			}
+		}
+		comet := SceneComet{Position: project(c.Position), Voice: c.Voice, Kind: c.Kind, From: project(a), To: project(b), Progress: c.Progress, HasEdge: hasEdge}
 		for i := 3; i >= 1; i-- {
 			u := c.Progress - float64(i)*0.035
 			if u >= 0 {
@@ -211,6 +244,20 @@ func BuildScene(s State, viewport Viewport) Scene {
 			}
 		}
 		scene.Comets = append(scene.Comets, comet)
+	}
+	for _, m := range g.messages {
+		age := now.Sub(m.At)
+		if age < travelTime || age >= travelTime+flashTime {
+			continue
+		}
+		if _, ok := g.Positions[m.From]; !ok {
+			continue
+		}
+		b, ok := g.Positions[m.To]
+		if !ok {
+			continue
+		}
+		scene.Ripples = append(scene.Ripples, SceneRipple{Position: project(b), Kind: m.Kind, Voice: m.Voice, Progress: float64(age-travelTime) / float64(flashTime)})
 	}
 	scene.Feed = g.Recent()
 	return scene

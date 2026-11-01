@@ -5,19 +5,36 @@ import (
 	"testing"
 )
 
+// renderGraphFrame runs the scheduled background frame and applies it, the way
+// the Bubble Tea runtime would.
+func renderGraphFrame(t *testing.T, m Model) Model {
+	t.Helper()
+	cmd := m.scheduleGraphRender()
+	if cmd == nil {
+		t.Fatal("no graph frame was scheduled")
+	}
+	msg := cmd()
+	frame, ok := msg.(graphFrameMsg)
+	if !ok {
+		t.Fatalf("render command returned %T", msg)
+	}
+	return send(m, frame)
+}
+
 func TestGraphPixelModeUsesPlaceholdersAndCachesImage(t *testing.T) {
 	m := graphModel(120, 34)
 	m.graphPixel.graphics = true
 	m.graphPixel.cellW, m.graphPixel.cellH = 8, 16
+	m = renderGraphFrame(t, m)
 
-	first := strings.Join(m.graphView(120, 34), "\n")
+	first := m.View()
 	if !strings.Contains(first, "\x1b_Ga=T") || !strings.Contains(first, "U=1") {
 		t.Fatalf("first frame does not transmit the image:\n%q", first)
 	}
 	if !strings.Contains(first, "\U0010EEEE") {
 		t.Fatal("first frame has no Unicode placeholders")
 	}
-	second := strings.Join(m.graphView(120, 34), "\n")
+	second := m.View()
 	if strings.Contains(second, "\x1b_G") {
 		t.Fatal("unchanged picture was transmitted again")
 	}

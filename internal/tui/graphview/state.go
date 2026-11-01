@@ -17,6 +17,8 @@ type State struct {
 	TalkReady                      bool
 	HideTalk                       bool
 	Camera                         Camera
+	Tween                          *CameraTween
+	Smooth                         bool
 	Orbit, Paused, ReducedMotion   bool
 	Now, PausedAt                  time.Time
 }
@@ -102,17 +104,25 @@ func Update(s State, action Action) (State, Effect) {
 	var effect Effect
 	switch a := action.(type) {
 	case ZoomIn:
+		from := s.ViewCamera()
 		s.Camera.Zoom = math.Min(s.Camera.Zoom*1.25, s.Camera.FitZoom*8)
+		s = s.ease(from, s.Camera)
 	case ZoomOut:
+		from := s.ViewCamera()
 		s.Camera.Zoom = math.Max(s.Camera.Zoom/1.25, s.Camera.FitZoom*0.3)
+		s = s.ease(from, s.Camera)
 	case Pan:
 		if s.Camera.Zoom != 0 {
+			from := s.ViewCamera()
 			s.Camera.Center.X += a.DX / s.Camera.Zoom
 			s.Camera.Center.Y += a.DY / s.Camera.Zoom
+			s = s.ease(from, s.Camera)
 		}
 	case Fit:
 		if s.Graph != nil {
+			from := s.ViewCamera()
 			s.Camera = s.Graph.Fit(int(a.Viewport.Width), int(a.Viewport.Height))
+			s = s.ease(from, s.Camera)
 		}
 	case SelectNode:
 		if s.Graph != nil {
@@ -124,6 +134,7 @@ func Update(s State, action Action) (State, Effect) {
 					break
 				}
 			}
+			s = s.easeToSelection()
 		}
 	case SelectDirection:
 		if s.Graph != nil {
@@ -169,12 +180,15 @@ func Update(s State, action Action) (State, Effect) {
 						break
 					}
 				}
+				s = s.easeToSelection()
 			}
 		}
 	case SelectNext:
 		s = selectNeighbour(s, a.Viewport, 1)
+		s = s.easeToSelection()
 	case SelectPrev:
 		s = selectNeighbour(s, a.Viewport, -1)
+		s = s.easeToSelection()
 	case ToggleTalk:
 		s.HideTalk = !s.HideTalk
 	case ToggleOrbit:
@@ -196,6 +210,9 @@ func Update(s State, action Action) (State, Effect) {
 		}
 	case Tick:
 		s.Now = a.Now
+		if s.Tween != nil && s.Tween.Done(a.Now) {
+			s.Tween = nil
+		}
 	case GraphChanged:
 		if s.Graph == nil {
 			s.Graph = New(a.Graph)

@@ -396,6 +396,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c)
 		}
 	}
+	if c := nm.scheduleGraphRender(); c != nil {
+		cmds = append(cmds, c)
+	}
 	return nm, tea.Batch(cmds...)
 }
 
@@ -423,9 +426,27 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case graphTickMsg:
 		if m.tab == graphTab && !m.mapOn && msg.generation == m.graphGeneration {
+			m.smoothCamera()
 			m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
-			return m, graphTick(m.graphGeneration)
+			return m, graphTickAfter(m.graphGeneration, m.graphFrameInterval())
 		}
+		return m, nil
+
+	case graphFrameMsg:
+		g := m.graphPixel
+		if g == nil || msg.key != g.key {
+			if g != nil {
+				g.rendering = false
+			}
+			return m, nil
+		}
+		g.rendering = false
+		g.size = msg.size
+		g.lines = msg.lines
+		g.hash = msg.hash
+		g.have = msg.have
+		g.transmit = msg.transmit
+		g.ready = len(msg.lines) > 0
 		return m, nil
 
 	case graphTalkMsg:
