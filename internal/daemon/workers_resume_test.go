@@ -101,8 +101,13 @@ func TestPiWorkerCannotBeResumed(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree,
-		Task: "FAKE:handback say ok"})
+		Task: "FAKE:wait-handback"})
+	// Hold the fake's hand-back until its record has been read. Otherwise the
+	// clean worktree, including the ignored record, can disappear first.
 	rec := readPi(t, res.Worktree)
+	if err := os.WriteFile(filepath.Join(res.Worktree, "fake-opencode-finish"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	w.waitNotice(t, 1)
 	eventually(t, "the Pi worker ends after its hand-back", func() bool { return !alive(rec.Pid) && w.d.workerCount() == 0 })
 
