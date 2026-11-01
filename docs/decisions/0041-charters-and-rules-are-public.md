@@ -1,4 +1,4 @@
-# 0040 - Charters and rules are public to every agent, read-only
+# 0041 - Charters and rules are public to every agent, read-only
 
 **Date:** 2026-11-01
 **Status:** Accepted. Builds on [0022](0022-component-graph-and-cto.md),
