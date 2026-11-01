@@ -149,6 +149,32 @@ func TestQuotaViewKeepsFooterWithManyRows(t *testing.T) {
 	}
 }
 
+func TestQuotaViewClosesPanelAtCTOWhenRowsOverflow(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := newModel(size[0], size[1])
+		m.tab = quotasTab
+		for i := 0; i < 30; i++ {
+			m.snap.WorkerProfiles = append(m.snap.WorkerProfiles, protocol.WorkerProfile{
+				Name: fmt.Sprintf("profile-%02d", i), Harness: "codex", Model: fmt.Sprintf("model-%02d", i),
+			})
+		}
+		m.refreshWorkerForecast()
+		view := lines(ansi.Strip(m.View()))
+		for i, line := range view {
+			if strings.HasPrefix(line, "╭─CTO") {
+				if i == 0 || !strings.HasPrefix(view[i-1], "╰") {
+					t.Fatalf("%dx%d: quota panel is not closed above the CTO:\n%s", size[0], size[1], strings.Join(view, "\n"))
+				}
+				break
+			}
+		}
+		m.quotaScroll = 100
+		if !strings.Contains(ansi.Strip(m.View()), "profile-29") {
+			t.Errorf("%dx%d: scrolling cannot reach the last profile", size[0], size[1])
+		}
+	}
+}
+
 func TestQuotaViewScrolls(t *testing.T) {
 	m := newModel(80, 24)
 	m.tab = 2
@@ -228,9 +254,9 @@ func TestTabsMoveFeedToMessages(t *testing.T) {
 func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{}}
 	m := New(src)
-	m = keys(m, "tab")
+	m = keys(m, "c")
 	if m.focus != focusCTO {
-		t.Fatal("tab did not focus CTO")
+		t.Fatal("c did not focus CTO")
 	}
 	m = keys(m, "h", "i")
 	if len(src.sent) != 0 {
@@ -244,15 +270,15 @@ func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	if _, ok := cmd().(enterMsg); !ok {
 		t.Fatal("enter did not return an enter plan")
 	}
-	m = keys(m, "esc")
+	m = send(m, tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	if m.focus != focusSessions {
-		t.Fatal("escape did not return focus")
+		t.Fatal("ctrl+] did not return focus")
 	}
 }
 
 func TestCTOBoxAlwaysVisibleAndFocusReturns(t *testing.T) {
 	m := newModel(80, 24)
-	if !strings.Contains(m.View(), "enter: open the CTO · tab: back") {
+	if !strings.Contains(m.View(), "c: open the CTO") {
 		t.Fatal("CTO box hint missing")
 	}
 	m = keys(m, "4", "C")
@@ -387,22 +413,18 @@ func TestCTOKeyHintsFitWithoutCuttingWords(t *testing.T) {
 }
 
 func TestCTOFrameOnEveryTab(t *testing.T) {
-	for _, key := range []string{"1", "2", "3", "4", "M"} {
+	for _, key := range []string{"1", "2", "3", "4", "5"} {
 		m := keys(newModel(80, 24), key)
-		if !strings.Contains(m.View(), "enter: open the CTO") {
+		if !strings.Contains(m.View(), "c: open the CTO") {
 			t.Errorf("%s missing CTO", key)
 		}
-		m = keys(m, "tab")
+		m = keys(m, "c")
 		if m.focus != focusCTO {
 			t.Errorf("%s did not focus CTO", key)
 		}
 		m = keys(m, "tab")
-		want := focusSessions
-		if key == "4" {
-			want = focusFeed
-		}
-		if m.focus != want {
-			t.Errorf("%s returned focus %v, want %v", key, m.focus, want)
+		if m.focus != focusSessions {
+			t.Errorf("%s returned focus %v, want %v", key, m.focus, focusSessions)
 		}
 	}
 }
@@ -475,7 +497,7 @@ func TestQuotaShowsOnlyWorkerProfiles(t *testing.T) {
 
 func TestMessagesHintShowsCTOFocus(t *testing.T) {
 	m := keys(newModel(120, 34), "4")
-	if !strings.Contains(ansi.Strip(m.helpLine(120)), "tab CTO") {
+	if !strings.Contains(ansi.Strip(m.helpLine(120)), "c CTO") {
 		t.Fatal("Messages help omits CTO focus")
 	}
 }

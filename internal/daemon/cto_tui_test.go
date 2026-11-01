@@ -75,18 +75,17 @@ func TestCTOSessionEnterAndCTOEnterGiveTheSamePlan(t *testing.T) {
 	}
 }
 
-// The hand-over and any other owner message to the CTO arrive as the owner's
-// words, not as another agent's peer message.
+// An owner message to the CTO arrives as the owner's words, not as a peer message.
 func TestOwnerSendReachesCTOAsTheOwnersWords(t *testing.T) {
 	f := startCTOCompactionFixture(t)
-	body := "Hand-over from the owner: a session row in Sessions\n\nSession: shop\n"
+	body := "Please review the project status."
 	if _, err := f.cli.call("owner_send", protocol.OwnerSendRequest{To: f.n.d.ctoSessionID(), Body: body}); err != nil {
 		t.Fatal(err)
 	}
 	path := filepath.Join(f.rec.Env["XDG_DATA_HOME"], "fake-session-"+f.id+".json")
-	eventually(t, "owner hand-over in the CTO conversation", func() bool {
+	eventually(t, "owner message in the CTO conversation", func() bool {
 		raw, err := os.ReadFile(path)
-		return err == nil && strings.Contains(string(raw), "Hand-over from the owner")
+		return err == nil && strings.Contains(string(raw), body)
 	})
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -95,7 +94,7 @@ func TestOwnerSendReachesCTOAsTheOwnersWords(t *testing.T) {
 	if strings.Contains(string(raw), "Message from another agent") {
 		t.Fatalf("the owner's message was framed as a peer message:\n%s", raw)
 	}
-	if !strings.Contains(string(raw), "Hand-over from the owner: a session row in Sessions") {
+	if !strings.Contains(string(raw), body) {
 		t.Fatalf("the owner's text did not reach the CTO:\n%s", raw)
 	}
 }

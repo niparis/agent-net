@@ -22,8 +22,8 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | Key | Action |
 |---|---|
 | `1`-`5` | Open Sessions, Graph, Quotas, Messages or Tools. Not while filtering or in a text field. |
-| `C` | Focus the CTO box. |
-| `tab` | Focus the CTO box. While the box has focus, return to the tab. |
+| `c`, `C` | Focus the CTO box. |
+| `ctrl+]` | While the CTO box has focus, return to the tab. |
 | `ctrl+c` | Quit at once. |
 | `q` | Quit, except in a text field or a modal that uses `q` for typing. |
 
@@ -38,7 +38,6 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | `e` | Enter the selected session (alias of Enter). |
 | `m` | Compose a message to the selected session. |
 | `n` | Start a new session in the selected session's project. On the Graph card, open the same form filled from the node. |
-| `c` | Hand over the selected row to the CTO: a preview first, then Enter sends it. |
 | `s` | On an outcome row, "let stand". No action on a session row. |
 | `o` | Toggle offline sessions. On an outcome row, "overrule". |
 | `x` | Stop the selected worker. |
@@ -58,7 +57,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | `esc` | Clear the filter. |
 | `i` | Open the inbox. |
 | `?` | Help. |
-| `tab`, `C` | Focus the CTO box. |
+| `c`, `C` | Focus the CTO box. |
 
 ### Needs you rows
 
@@ -69,7 +68,6 @@ session. The extra actions apply only when such a row is selected.
 |---|---|
 | `enter` | Enter the waiting session. |
 | `m` | Send a message without entering. |
-| `c` | Hand over the selected row to the CTO: a preview first, then Enter sends it. |
 | `a`, `A` | Accept a held request. |
 | `r`, `R` | Refuse a held request. |
 | `a` | Accept a learned suggestion. |
@@ -84,13 +82,12 @@ session. The extra actions apply only when such a row is selected.
 | `left`/`right` | Select a message inside the conversation. |
 | `enter` | Select the latest message in the thread. |
 | `v` | Open the selected message body. |
-| `c` | Hand over the selected message to the CTO: a preview first, then Enter sends it. |
 | `f` | On a worker conversation: report a defect found later. A one-line note, a severity from 1 to 4, then the shared confirm. |
 | `w` | Show or hide worker threads. |
 | `e` | Show or hide system events. |
 | `l` | Cycle the event filter. |
 | `pgup`/`pgdown`, `home`/`g`, `end` | Move or page the conversation list. |
-| `m`, `x`, `t`, `p`, `I`, `N`, `L`, `M`, `d`, `/`, `o`, `a`, `r`, `?`, `tab`, `q` | Same as Sessions, except that `e` is events, not enter. |
+| `m`, `x`, `t`, `p`, `I`, `N`, `L`, `M`, `d`, `/`, `o`, `a`, `r`, `?`, `c`, `C`, `q` | Same as Sessions, except that `e` is events, not enter. |
 
 ### Message body overlay
 
@@ -125,7 +122,7 @@ session. The extra actions apply only when such a row is selected.
 | `?` | Help. |
 | `q` | Quit. |
 
-Other global keys, including `enter`, are not handled on this tab.
+`enter` has no action on this tab. The global tab and CTO keys still work.
 
 ### Tools (tab 5)
 
@@ -165,7 +162,7 @@ and By project screens and their list shortcuts have been removed.
 | `n` | Open the new session form filled from the selected project. |
 | `?` | Graph help. `?` or `esc` closes it. |
 | `q` | Quit. |
-| `tab`, `C` | Focus the CTO box. |
+| `c`, `C` | Focus the CTO box. |
 
 ### Graph agent card
 
@@ -224,8 +221,9 @@ the scrolling card body, so it never needs a second screen.
 
 | Key | Action |
 |---|---|
-| `tab`, `esc` | Return focus to the tab. |
-| `enter` | Open the full CTO through `cto_enter`; ctrl+] returns. |
+| `ctrl+]` | Return focus to the tab. `tab` is an unadvertised alias. |
+| `esc` | Skip the current onboarding tip. |
+| `enter` | Open the full CTO through `session_enter`; ctrl+] returns. |
 | `pgup`, `ctrl+u` | Scroll up, and load an older page at the top. |
 | `pgdown`, `ctrl+d` | Scroll down. |
 | `m` | Harness and model form. |
@@ -241,7 +239,7 @@ only supplies ctrl+] to come back.
 | Key | Screen and meaning | Conflict |
 |---|---|---|
 | `enter` | Sessions: enter session. Messages: select latest. Card: open filtered sessions. Tools: expand, open fix, apply plan, or "details below". Graph: open its card. Quotas: nothing. Forms: send, save or next field. CTO: open full CTO. | The same key is "go into it", "send", "apply" and "do nothing". The intent is close, but the Tools All case says "details below" where every other list opens something. |
-| `esc` | Everywhere: back or cancel. Card: return to Graph. Help and body: close. Filter or search: clear text. Tools: clear search. CTO: return to the tab. | Usually back, but the card returns to its Graph node. |
+| `esc` | Card: return to Graph. Help and body: close. Filter or search: clear text. Tools: clear search. CTO: skip the current tip. | Usually back, but the card returns to its Graph node and the CTO skips a tip. |
 | `h` | Sessions: hide a session. Card: hide a project. Tools All: move left a column. Graph: pan left. | Four meanings, two of them a column move. |
 | `H` | Sessions and Card: show hidden items. | Consistent, but only for two of the four `h` meanings. |
 | `x` | Sessions: stop a worker. Tools Differences: accept a difference as it is. Tools picker: tick an item. | Stop, accept and tick share one letter. |
@@ -256,7 +254,7 @@ only supplies ctrl+] to come back.
 | `m` | Sessions and Messages: compose. Tools: next machine. CTO: model form. Body overlay: close. | Compose, machine and close. |
 | `p` | Sessions: policy. Quotas: protect. | Two settings actions. |
 | `t` | Sessions: cycle request rule. Graph: traffic. Inbox: type an answer. | Rule, visibility and text. |
-| `c` | Sessions and Messages: hand the selected item to the CTO. Graph card: focus the CTO box. | Two meanings on two kinds of screen. The card has no item to hand over, so it keeps the CTO focus it had. |
+| `b` | Tools removal plan: ask the project agent. | Only used in the plan. |
 | `d` | Sessions: detail. Tools plan: exact folders. | Both are details, so this one is acceptable. |
 | `l` | Messages and Sessions feed: event filter. Tools All: move right a column. Graph: pan right. | Filter and movement. |
 | `j`/`k` | Lists: move selection. Graph: pan. Modals: scroll. Picker: select. | Movement in all cases, but the axis and unit differ. |
@@ -270,7 +268,7 @@ only supplies ctrl+] to come back.
 | Action | Keys today | Where |
 |---|---|---|
 | Enter or open | `enter`, `e` | Sessions; Enter is also used for forms and plan verbs. |
-| Back or close | `esc`, `tab`, `backspace`, `M`, `L`, `enter`, `m` | Tab, CTO box, body overlay, card, learned overlay, help. |
+| Back or close | `esc`, `ctrl+]`, `tab`, `backspace`, `M`, `L`, `enter`, `m` | Tab, CTO box, body overlay, card, learned overlay, help. |
 | Move selection | arrows, `j`/`k`, `h`/`l`, `tab`, `shift+tab` | Lists, Tools columns, forms. |
 | Search or filter | `/`, then `esc` to clear | Sessions, Messages, Graph, Tools, picker. |
 | Show keys | `?` | Most screens; Graph has a separate help panel reached by `?`. |
@@ -312,8 +310,8 @@ Rules:
    - `space` toggles. Pause on Graph stays `space`; it is the same idea.
    - `y`/`n` answer a confirmation inside a modal only. They do no action on a
      list or overlay.
-7. **Digits stay global tabs.** `tab` and `C` stay the CTO box. No screen
-   steals a digit or `tab` while its own text field is open.
+7. **Digits stay global tabs.** `c` and `C` focus the CTO box; `ctrl+]` returns
+   from it. Text fields keep their typed letters and form-specific Tab actions.
 
 ### Proposed changes
 
@@ -339,16 +337,6 @@ Rules:
 | 18 | Card: Esc returns to the selected Graph node (implemented in decision 0038). | Medium | Esc must go back one level, not jump to Sessions. |
 | 19 | Make `?` open the same help overlay on Graph, with a Graph section, instead of the separate `graphHelp` panel. | Medium | One key, one help. |
 | 20 | Unify the confirmation keys on `y`/`n` and show them in every modal footer. They already agree except for `Y`/`N` aliases, which can stay. | Small | One confirmation convention. |
-
-### Hand-over key
-
-Part 5 of [the CTO design](cto-as-agent.md#6-reads-the-gap-option-a-leaves-and-the-rule)
-uses `c` on a Needs you row, a Sessions row and a message in Messages. It
-opens a preview of the exact text that Enter sends to the CTO. The key was
-free on Sessions and Messages; `C` is the global CTO-box key, and the Graph
-card already uses `c` to focus the CTO box. The card keeps that meaning
-because a card node is not an item the owner hands over. The text is capped
-at 4,000 characters; a longer item ends with a line that says it was cut.
 
 Items 8, 9, 10, 11 and 12 change everyday keys. They should be done together,
 one commit, after the owner approves the map. The implemented changes are the Graph/card merge in decision 0038 and

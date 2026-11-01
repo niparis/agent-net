@@ -314,7 +314,7 @@ func TestGraphMouseSelectsLabelAndIgnoresEmpty(t *testing.T) {
 }
 
 func TestGraphMouseDisabledWhenLeavingOrFocusingCTO(t *testing.T) {
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'1'}}, {Type: tea.KeyTab}} {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyRunes, Runes: []rune{'1'}}, {Type: tea.KeyRunes, Runes: []rune{'c'}}} {
 		m := graphModel(120, 34)
 		_, cmd := m.Update(key)
 		if cmd == nil {

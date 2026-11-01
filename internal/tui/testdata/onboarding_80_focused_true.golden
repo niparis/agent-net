@@ -14,11 +14,11 @@
   scratch      pi       -         -          shell  -         ?     ?
 
 
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
-│                                                                              │
-│                                                                              │
-│                                                                              │
 │                                                                              │
 │ 1/7 See  All your agents, live. Enter opens tenebrae-53.  esc skip           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter open CTO  tab back  m model  n new  u undo
+enter open CTO  ctrl+] back  m model  n new  u undo

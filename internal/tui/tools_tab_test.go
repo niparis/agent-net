@@ -686,3 +686,32 @@ func TestCompareSummaryGoldens(t *testing.T) {
 		golden(t, fmt.Sprintf("tools_summary_%dx%d", size[0], size[1]), m.View())
 	}
 }
+
+func TestToolsModalDoesNotLeavePanelRemnants(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, _ := toolsAtScreen(size[0], size[1], 0)
+		m.tl.modal = &toolsModal{title: "Compare", lines: []string{"A comparison"}, foot: []string{"esc", "cancel"}}
+		view := lines(plain(m))
+		inModal, closed := false, false
+		for _, line := range view {
+			if strings.HasPrefix(line, "╭─Compare") {
+				inModal = true
+				continue
+			}
+			if strings.HasPrefix(line, "╭─CTO") {
+				break
+			}
+			if inModal && strings.HasPrefix(line, "╰") {
+				if closed {
+					t.Fatalf("%dx%d: stray panel border after modal:\n%s", size[0], size[1], plain(m))
+				}
+				closed = true
+			} else if closed && strings.TrimSpace(line) != "" {
+				t.Fatalf("%dx%d: stray panel content after modal:\n%s", size[0], size[1], plain(m))
+			}
+		}
+		if !closed {
+			t.Fatalf("%dx%d: modal not found or not closed", size[0], size[1])
+		}
+	}
+}

@@ -165,10 +165,10 @@ func TestCTOPanePollAndEnter(t *testing.T) {
 	if len(src.sent) != 0 {
 		t.Fatalf("the read-only box sent a message: %v", src.sent)
 	}
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m = updated.(Model)
 	if m.cto == nil || m.focus != focusSessions {
-		t.Fatal("Esc did not return focus to sessions")
+		t.Fatal("ctrl+] did not return focus to sessions")
 	}
 }
 
@@ -217,10 +217,10 @@ func TestCTOPaneNewConversationAndMap(t *testing.T) {
 	if src.fresh != 1 {
 		t.Fatal("new conversation not requested")
 	}
-	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyEsc})
+	updated, _ = m.update(tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	m = updated.(Model)
 	if m.cto == nil || m.focus != focusSessions {
-		t.Fatal("escape did not return to sessions")
+		t.Fatal("ctrl+] did not return to sessions")
 	}
 }
 
@@ -527,11 +527,11 @@ func TestCTOBoxHintAndHelp(t *testing.T) {
 	m = model.(Model)
 	m.focus = focusCTO
 	view := ansi.Strip(strings.Join(m.ctoView(80, 8), "\n"))
-	if !strings.Contains(view, "enter: open the CTO · tab: back") {
+	if !strings.Contains(view, "enter: open the CTO · ctrl+]: back") {
 		t.Fatalf("box hint missing:\n%s", view)
 	}
 	line := ansi.Strip(m.helpLine(100))
-	for _, want := range []string{"enter", "open CTO", "tab", "back"} {
+	for _, want := range []string{"enter", "open CTO", "ctrl+]", "back"} {
 		if !strings.Contains(line, want) {
 			t.Errorf("key line missing %q: %s", want, line)
 		}
@@ -684,7 +684,7 @@ func TestCTOWrapsLongLines(t *testing.T) {
 		t.Fatalf("lines not wrapped:\n%s", joined)
 	}
 	for _, line := range view {
-		if strings.Contains(line, "…") && !strings.Contains(line, "enter: open the CTO") {
+		if strings.Contains(line, "…") && !strings.Contains(line, "c: open the CTO") {
 			t.Fatalf("line clipped: %q", line)
 		}
 		if ansi.StringWidth(line) > 30 {

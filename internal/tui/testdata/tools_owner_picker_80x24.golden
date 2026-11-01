@@ -6,7 +6,10 @@
 │   [ ] Project: a2a-ocs                                                       │
 │   [ ] Project: cogforge                                                      │
 │   [ ] Project: dotfiles                                                      │
-│   and 10 more                                                                │
+│   [ ] Project: flood-wargame                                                 │
+│   [ ] Project: homelab                                                       │
+│   [ ] Project: homelab-portal                                                │
+│   and 7 more                                                                 │
 │                                                                              │
 │ j/k move  space tick  / filter  enter apply  esc cancel                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -16,9 +19,6 @@
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k move  space tick  / filter  enter apply  esc cancel

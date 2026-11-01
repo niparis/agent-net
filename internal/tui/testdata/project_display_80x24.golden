@@ -7,18 +7,18 @@ governed by: trading-architect (owner)
 
 IN 1                                     OUT 1
 tenebrae ──▶ depends ask                 ──▶ shop depends auto
-Card 1-5/14  [ ] scroll ────────────────────────────────────────────────────────
+Card 1-8/14  [ ] scroll ────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────
 accepts          Generic endpoints and bug fixes.
 refuses          Client-specific endpoints.
 consumers        tenebrae, shop
 escalate         Breaking API changes.
+needs            MCP: tenebrae-library
+notes            Deploy through homelab.
+Rules ──────────────────────────────────────────────────────────────────────────
 RECENT  2h ago maturity by you (on Mac) · 26h ago purpose by owner
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter sessions  t tools  esc Graph  [ ] scroll  U/u undo  ? help  q quit

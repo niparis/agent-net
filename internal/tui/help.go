@@ -25,8 +25,6 @@ type hint struct {
 // seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
 	switch {
-	case m.handover != nil:
-		return []hint{{"enter/y", "send", 1}, {"esc/n", "cancel", 1}, {"up/down", "scroll", 1}, {"q", "quit", 0}}
 	case m.proposalConfirm:
 		return []hint{{"up/down", "scroll", 1}, {"enter/y", "yes", 1}, {"esc/n", "no", 1}}
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
@@ -43,18 +41,18 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
+		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"ctrl+]", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == messagesTab:
 		if m.selectedWorkerConversation() {
 			// The defect key only applies here. It takes the slot of the
 			// "enter latest" hint, so the line keeps seven hints.
-			return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"v", "body", 1}, {"f", "defect", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+			return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"v", "body", 1}, {"f", "defect", 1}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
-		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == quotasTab:
-		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == graphTab:
-		return []hint{{"1-5", "tabs", 1}, {"tab", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
+		return []hint{{"1-5", "tabs", 1}, {"c", m.ctoTitle(), 1}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == toolsTab:
 		return m.toolsHints()
 	}
@@ -74,7 +72,7 @@ func (m Model) hints() []hint {
 			return []hint{{"up/down", "select", 1}, {"a", "approve", 1}, {"r", "refuse", 1}, {"?", "help", 2}, {"q", "quit", 0}}
 		}
 	}
-	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"n", "new", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+	hs := []hint{{"up/down", "select", 1}, {"enter", "open", 1}, {"m", "msg", 1}, {"n", "new", 1}, {"c", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	if a, ok := m.selectedAgent(); ok {
 		if a.Waiting != nil {
 			hs[1].label = "answer"
@@ -110,6 +108,12 @@ func (m Model) helpLine(w int) string {
 
 	if m.filtering {
 		return clip(m.input.View()+sDim.Render("   enter keeps the filter, esc clears it"), w)
+	}
+	if m.focus == focusCTO && m.cto != nil && m.cto.settingsForm != nil {
+		if m.cto.settingsForm.err != "" {
+			return clip(sBad.Render(m.cto.settingsForm.err)+sDim.Render("  up/down field  enter save  esc cancel"), w)
+		}
+		return sDim.Render(clip("up/down field  left/right harness  tab field  enter save  esc cancel", w))
 	}
 	if m.learned {
 		return sDim.Render(clip("L or esc: back to the sessions", w))
@@ -185,7 +189,6 @@ func (m Model) helpContent(w int) []string {
 		{"enter", "enter the selected session (ctrl+] to return)"},
 		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
-		{"c", "hand over the selected row to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"n", "start a new session: project, harness, model, project folder, first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
 		{"x, h, H", "stop session; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
@@ -228,14 +231,13 @@ func (m Model) helpContent(w int) []string {
 		{"/", "combine text, project:NAME, node:NAME and machine:NAME filters"},
 		{"n", "add an MCP server or a skill from a folder"},
 		{"esc", "back, or clear the list filter"},
-		{"tab, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
+		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
 		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; f: defect found later; w: workers; e/l: events"},
-		{"c", "hand over the selected message to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"r", "refresh now"},
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},
@@ -267,6 +269,7 @@ func (m Model) helpContent(w int) []string {
 			{"n/p, v", "in compare only: select a file, view its diff"},
 			{"tab", "in add form: next field; arrows choose machine"},
 			{"esc", "back or cancel; clear the list filter"},
+			{"c, C", "focus the " + m.ctoTitle() + " box"},
 			{"q", "quit from the list"},
 			{"esc or ?", "close help"},
 		}

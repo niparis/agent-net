@@ -1,4 +1,5 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────╮
 │   summary unavailable: compare the files below                               │
 │ a  keep the copy on research (pi)                                            │
@@ -9,16 +10,15 @@
 │      used by research / claude                                               │
 │   no clear winner: read the comparison                                       │
 │   3 files differ: SKILL.md changed, notes.md changed                         │
-│   lines 1-9 of 12 · up/down scroll                                           │
+│     scripts/run.sh only on claude                                            │
+│   the one you keep goes into agent-net and to research                       │
+│   selected file: SKILL.md                                                    │
 │                                                                              │
 │ a keep pi's copy  b keep claude's copy  n/p select file  v view diff         │
 │   d exact folders  esc cancel                                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k move  enter fix  x accept  [ ] screen  ? help  q quit

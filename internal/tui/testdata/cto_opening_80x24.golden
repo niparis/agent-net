@@ -14,11 +14,11 @@
   ci-runner    pi       agent-net gpt-6      idle   -        5%  300M
   scratch      pi       -         -          shell  -       <1%   80M
 
+
+
+
 ╭─Atlas · opencode · fake/m1───────────────────────────────────────────────────╮
-│                                                                              │
-│                                                                              │
-│                                                                              │
 │ Opening the CTO…                                                             │
-│ enter: open the Atlas · tab: back · w: drive 30m                             │
+│ enter: open the Atlas · ctrl+]: back · w: drive 30m                          │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter open Atlas  tab back  m model  n new  u undo
+enter open Atlas  ctrl+] back  m model  n new  u undo

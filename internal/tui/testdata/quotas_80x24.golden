@@ -13,12 +13,12 @@
 │ opus            claude   opus-5-5:high     █100% █100% █100% █100% █100%     │
 │ renamed         pi       gpt-6.1-zed       x     x     x     x     x         │
 │   model gone - ask the CTO to fix                                            │
+│ sol             codex    gpt-6.1-sol       ·     ·     ·     ·     x         │
+│ terra           codex    gpt-6.1-terra     ·     ·     ·     ·     x         │
+│ terra pi        pi       gpt-6.1-terra     ·     ·     ·     x     x         │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

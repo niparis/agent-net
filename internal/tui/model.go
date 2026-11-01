@@ -143,7 +143,6 @@ type Model struct {
 	focus     focus
 	feedCur   int // index in the feed items when the feed has focus
 	open      *openMsg
-	handover  *handover
 	quitting  bool
 
 	// Actions (forms.go).
@@ -789,16 +788,6 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return next, tea.Batch(cmd, save)
 		}
 		return next, cmd
-	case handoverMsg:
-		if m.handover != nil && m.handover.msgID == msg.id {
-			m.handover.loading = false
-			if msg.err != nil {
-				m.handover.err = bodyError(msg.err)
-			} else {
-				m.handover.text = msg.text
-			}
-		}
-		return m, nil
 	case proposalDetailMsg:
 		if d := m.proposalDetail; d != nil && d.proposal.ID == msg.id && d.proposal.NodeID == msg.node {
 			d.loading = false
@@ -1007,9 +996,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	}
-	if m.handover != nil {
-		return m.handoverKey(k)
-	}
 	if m.resumeConfirm != nil {
 		a := *m.resumeConfirm
 		yes, _ := confirmAnswer(k)
@@ -1123,16 +1109,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
 		return m.toolsKey(k)
 	}
-	if k.String() == "C" && !m.filtering {
+	if (k.String() == "c" || k.String() == "C") && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
 		m.open = nil
 		if m.cto == nil {
 			return m.startCTO()
 		}
-		return m, nil
-	}
-	if k.String() == "tab" && m.cto != nil && !m.filtering && m.open == nil {
-		m.focus = focusCTO
 		return m, nil
 	}
 	if !m.filtering && m.open == nil {
@@ -1330,10 +1312,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "m":
 		return m.startCompose()
-	case "c":
-		if m.tab == sessionsTab || m.tab == messagesTab {
-			return m.startHandover()
-		}
 	case "s":
 		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
 			return m, cmd
@@ -1444,11 +1422,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, m.bodyCmd(row.lastMsgID)
 				}
 			}
-		}
-	case "tab":
-		if m.tab == sessionsTab && m.cto != nil {
-			m.focus = focusCTO
-			return m, nil
 		}
 	case "r":
 		if !m.fetching {

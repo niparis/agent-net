@@ -14,11 +14,11 @@
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
   scratch      pi       -         -          shell  -         ?     ?
 
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  x stop  tab CTO  ? help  q quit
+up/down select  enter open  m msg  x stop  c CTO  ? help  q quit

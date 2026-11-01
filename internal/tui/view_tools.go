@@ -773,8 +773,11 @@ func overlayModal(screen, box []string, w int) []string {
 	}
 	x := max((w-bw)/2, 0)
 	out := append([]string(nil), screen...)
-	// The plan floats on a clear band: no pieces of the screen under it show
-	// beside it.
+	// The full-width plan covers the panel beneath it. Clear the rest of that
+	// panel too, so its border or rows do not appear without their heading.
+	for i := y; i < len(out); i++ {
+		out[i] = ""
+	}
 	for i, l := range box {
 		r := y + i
 		if r >= len(out) {

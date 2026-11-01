@@ -12,10 +12,15 @@
 │   [ ] Project: infra-game                                                                                            │
 │   [ ] Project: sovl-clone                                                                                            │
 │   [ ] Project: strategies                                                                                            │
-│   and 4 more                                                                                                         │
+│   [ ] Project: tenebrae                                                                                              │
+│   [ ] Project: wbg-arch                                                                                              │
+│   [ ] Project: wbg-housing                                                                                           │
+│   [ ] Project: wbg-worldview                                                                                         │
 │                                                                                                                      │
 │ j/k move  space tick  / filter  enter apply  esc cancel                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+
 
 
 
@@ -24,11 +29,6 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 j/k move  space tick  / filter  enter apply  esc cancel

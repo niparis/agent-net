@@ -8,7 +8,6 @@ Keys ─────────────────────────
   enter                enter the selected session (ctrl+] to return)
   e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
-  c                    hand over the selected row to the CTO: a preview first, then Enter sends it, Esc cancels
   n                    start a new session: project, harness, model, project folder, first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
   x, h, H              stop session; h hides/unhides; H shows hidden sessions (dim)
@@ -36,5 +35,6 @@ Keys ─────────────────────────
  Agent card
   enter                open Sessions filtered to this agent's project
   n                    start a new session in this project (the same form, filled from here)
+  esc                  return to Graph with the same node selected
   more below
 up/down scroll  esc close help  q quit

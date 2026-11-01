@@ -1,6 +1,9 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online  14:05:00
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ more above · up/down to scroll                                               │
+│ normal · 154 tasks                                                           │
+│ deepseek    66       0.09            -    1 min                              │
+│ terra       53       0.72            -    6 min                              │
 │ luna        19       0.26            -    3 min                              │
 │ sol          9       0.26            -    2 min                              │
 │ opus         7       0.00            -    0 min                              │
@@ -17,8 +20,5 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

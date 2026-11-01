@@ -192,7 +192,7 @@ func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [3
 
 func (m Model) graphSize() (int, int) {
 	w, h := max(m.width, 40), max(m.height, 10)
-	box := min(max((h-1)/3, 6), max(h-4, 1))
+	box := m.ctoBoxHeight(graphTab)
 	return max(w-4, 1), max(h-1-box-5, 1)
 }
 
@@ -330,7 +330,7 @@ func (m Model) graphKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m Model) graphView(w, h int) []string {
 	out := []string{m.titleLine(w)}
 	if m.graphHelp {
-		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t tools  enter card  space pause  ? close  tab CTO  q quit"), sDim.Render("  n new session from selected project"))
+		return append(out, sDim.Render("  + - zoom  arrows select  hjkl/shift+arrows pan  0 fit  [ ] neighbours"), sDim.Render("  / find  o orbit  t tools  enter card  space pause  ? close  c CTO  q quit"), sDim.Render("  n new session from selected project"))
 	}
 	if m.graphState.Graph == nil {
 		return append(out, sDim.Render("  reading the graph..."))

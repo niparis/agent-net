@@ -6,6 +6,7 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │   you → worker: Polish the sessions panel and make the… 3 messages · running │
 │   tenebrae-53 ↔ strategies · Stored conversation 03: k… 4 messages · 21m ago │
 │   tenebrae-53 ↔ strategies · Stored conversation 04: k… 5 messages · 28m ago │
+│   tenebrae-53 ↔ strategies · Stored conversation 05: ke… 1 message · 35m ago │
 │ 0 system events · e to show · w hide workers                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
@@ -13,12 +14,11 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │ Show the whole stored history of this conversation.                          │
 │   14:04 strategies                                                           │
 │ The full stored conversation is in the right pane.                           │
+│ It comes from the gateway, not the feed.                                     │
+│                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit
+up/down thread  left/right msg  enter latest  v body  c CTO  ? help  q quit

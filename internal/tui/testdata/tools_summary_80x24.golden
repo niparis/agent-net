@@ -8,17 +8,17 @@
 │      used by alpha / pi                                                      │
 │ b  keep the copy on beta                                                     │
 │      origin unknown; last change unknown                                     │
-│   lines 1-8 of 11 · up/down scroll                                           │
+│      used by beta / claude                                                   │
+│   1 file differ: SKILL.md changed                                            │
+│   the one you keep goes into agent-net and to every machine                  │
 │                                                                              │
 │ a keep alpha  b keep beta  n/p select file  v view diff  d exact folders     │
 │   esc cancel                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 a keep alpha  b keep beta  n/p select file  v view diff  d exact folders

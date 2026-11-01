@@ -85,7 +85,7 @@ The rejected draft's facts on these points were checked and are correct: the har
 2. **Bare `agent-net` opens the TUI** (new). The owner learns two commands: `agent-net setup` and `agent-net`.
 3. **The CTO title is asked once, in setup on the first machine**, default `CTO`. Stored on the gateway. Changed later in the CTO `m` form or by telling the CTO.
 4. **Agents keep seeing the fixed word "CTO"**, and the owner's name leaves the binary: notes say "on your user's instruction". The chosen title is for the owner's screens only.
-5. **Progressive learning is one line** in the CTO box, where the dim hint `write to the CTO: ...` is today. One step at a time, never a popup, never blocking, `>` skips it, done steps never come back.
+5. **Progressive learning is one line** in the CTO box. One step at a time, never a popup, never blocking, Esc skips it when the box is focused, done steps never come back.
 6. **Seven steps follow the six points.** Each step teaches the why in one sentence, names a real session or project of the owner, and asks for one action. Most steps finish by watching the owner's real state, not by a click.
 7. **Setup asks three things on the first machine** (integrations, CTO title, protect the orchestrator's subscription) and one thing on later machines (nothing, unless no network answer exists). Everything else waits for the TUI.
 
@@ -309,8 +309,7 @@ There is exactly one onboarding element: **a step line in the CTO box**, in plac
 ```
 ╭─CTO─────────────────────────────────────────────────────────────────────╮
 │                                                                          │
-│ 1/7 See  All your sessions, live. Enter steps into tenebrae.   > skip      │  "1/7 See" {C}, "> skip" {F}
-│ > write to the CTO...                                                    │
+│ 1/7 See  All your sessions, live. Enter steps into tenebrae.  esc skip   │  "1/7 See" {C}, "esc skip" {F}
 ╰──────────────────────────────────────────────────────────────────────────╯
 ```
 
@@ -318,12 +317,12 @@ Rules:
 
 - **At most one step is visible**, and it is always this one line. No popup, no modal, no overlay, no second banner. The CTO conversation, when it has text, scrolls above it as today.
 - **Never blocking.** Every key works as before. The line changes nothing about focus.
-- **One key dismisses:** `>` skips the current step (new; `>` is not bound in the TUI today). A skipped step is never shown again.
+- **One key dismisses:** Esc skips the current step while the CTO box has focus. A skipped step is never shown again.
 - **Done steps never come back.** When all steps are done or skipped, the line returns to the normal CTO hint for good.
 - **The line names the owner's real things:** a session name, a project, a provider. Never a placeholder.
 - **The label matches the setup end screen** (`See`, `Talk`, `CTO`, `Graph`, `Work`, `Tools`), so the owner recognises it.
-- **Colours** use the existing TUI roles from `internal/tui/theme.go` (adaptive light and dark values): the step number and label in the accent role, the text in the normal text role, `> skip` in the faint role. A step that answers something waiting (Needs you) uses the warning role for the session name, like the Needs you section.
-- At 80 columns the line drops `> skip` first, then shortens the text with `…`. Help (`?`) lists `>  skip the onboarding step`.
+- **Colours** use the existing TUI roles from `internal/tui/theme.go` (adaptive light and dark values): the step number and label in the accent role, the text in the normal text role, `esc skip` in the faint role. A step that answers something waiting (Needs you) uses the warning role for the session name, like the Needs you section.
+- At 80 columns the line drops `esc skip` first, then shortens the text with `…`. Help (`?`) lists Esc as the tip skip key.
 
 Rejected:
 
@@ -434,7 +433,7 @@ Rejected:
 3. **Reset of onboarding:** is a CTO tool enough, or do you want a help-screen key?
 4. **Owner name in notes:** "your user" everywhere (recommended), or do you want your name kept for your own network?
 5. **Bare `agent-net`:** fine to make it open the TUI, or keep `agent-net tui` as the only way?
-6. **The `>` key:** acceptable for "skip", or prefer another key?
+6. **The skip key:** Esc skips the tip when the CTO box has focus.
 
 ## Build plan
 
@@ -445,5 +444,5 @@ Each part is one worker run, with the failing test first. Parts 1 to 3 can run i
 3. **Setup output.** Quota step in one line; colours module for setup (16 colours, `NO_COLOR`, `TERM=dumb`, not a terminal, no terminal query); the result line; "What you have now" from operator calls with the 3-second wait; "Do this first"; the open question with `exec` of the TUI; joining-machine and failure variants. Tests: golden outputs for the four mockups with a fake daemon socket, with and without colour.
 4. **Setup questions.** Protect question (replaces the hint in `protected.go`); CTO title question and `cto_title` in gateway `owner_settings` with its rules; `install.sh` stops printing `agent-net invite`. Tests: asked only on a fresh gateway with a terminal; never asked on join, rerun, upgrade or without a terminal; value rules.
 5. **CTO title in the TUI and the CTO.** Title field in the `m` form; `title` in `cto_settings`; box title, placeholder, hint and Messages sender use it. Goldens at 80 and 120 columns.
-6. **Onboarding steps.** `onboarding` table and `onboarding_get`/`onboarding_set` operator methods with the owner gate; the step engine in `internal/tui` (pure function: snapshot plus stored rows to one step line), the line in `cto_view.go`, the `>` key, done detection for every row of the steps table; empty-state lines. Tests: one table test per step for shown, passed over and done; a golden per step at 80 and 120 columns; a test that no step is ever shown twice after done or skipped.
+6. **Onboarding steps.** `onboarding` table and `onboarding_get`/`onboarding_set` operator methods with the owner gate; the step engine in `internal/tui` (pure function: snapshot plus stored rows to one step line), the line in `cto_view.go`, the Esc key, done detection for every row of the steps table; empty-state lines. Tests: one table test per step for shown, passed over and done; a golden per step at 80 and 120 columns; a test that no step is ever shown twice after done or skipped.
 7. **Add a machine from the CTO, and bare `agent-net`.** CTO tool `invite` (runs on the gateway machine's daemon, returns the install lines, shown in the chat); `agent-net` with no arguments on a terminal runs the TUI. Update README Quickstart and `docs/setup.md` to name only `agent-net setup` and `agent-net`.

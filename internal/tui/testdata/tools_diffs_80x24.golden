@@ -12,13 +12,13 @@ accepts it as it is.
 │     fix: remove imnplementing-clean-architecture                             │
 │   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours      │
 │     fix: remove the repo copy                                                │
+│   ○ 23 skills are only on research and not managed by agent-net              │
+│     fix: import them and put them on every machine                           │
+│                                                                              │
 │ 5 tools are the same everywhere you set them  ·  [ ] shows all of them       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k move  enter fix  x accept  [ ] screen  ? help  q quit

@@ -12,13 +12,13 @@
 │   estate-runbook                  skill  in the homelab repo                 │
 │   found-skill-00                  skill  found on 2 machines, not managed    │
 │   found-skill-01                  skill  found on 2 machines, not managed    │
+│   found-skill-02                  skill  found on 2 machines, not managed    │
+│   found-skill-03                  skill  found on 2 machines, not managed    │
+│   found-skill-04                  skill  found on 1 machine, not managed     │
 │ 40 tools · ! needs attention · enter opens actions                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k move  enter actions  / filter  n add  esc clear  ? help  q quit

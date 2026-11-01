@@ -14,7 +14,12 @@ Every skill and MCP server, and where it is on. a turns on, u turns off for the 
 │   found-skill-02            your machines         ○            ○        -                                            │
 │   found-skill-03            your machines         ○            ○        -                                            │
 │   found-skill-04            your machines         ·            ○        -                                            │
-│ 1-11 of 41                                                                                                           │
+│   found-skill-05            your machines         ·            ○        -                                            │
+│   found-skill-06            your machines         ·            ○        -                                            │
+│   found-skill-07            your machines         ·            ○        -                                            │
+│   found-skill-08            your machines         ·            ○        -                                            │
+│   found-skill-09            your machines         ·            ○        -                                            │
+│ 1-16 of 41                                                                                                           │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Details · clean-architecture-python──────────────────────────────────────────────────────────────────────────────────╮
 │ agent-net v1 on every project on: Nicolas-MBP, research. agent-net handles where each harness reads skills.          │
@@ -24,11 +29,6 @@ Every skill and MCP server, and where it is on. a turns on, u turns off for the 
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 j/k item  h/l machine  a/u on/off  / search  [ ] screen  ? help  q quit

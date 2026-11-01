@@ -18,17 +18,17 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │   tenebrae-53 ↔ strategies · Stored co… 5 messages · 1h38m ago ││                                                    │
 │   tenebrae-53 ↔ strategies · Stored con… 1 message · 1h45m ago ││                                                    │
 │   tenebrae-53 ↔ strategies · Stored co… 2 messages · 1h52m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 3 messages · 1h59m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored con… 4 messages · 2h6m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 5 messages · 2h13m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored con… 1 message · 2h20m ago ││                                                    │
+│   tenebrae-53 ↔ strategies · Stored co… 2 messages · 2h27m ago ││                                                    │
 │ 0 system events · e to show · w hide workers                   ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit
+up/down thread  left/right msg  enter latest  v body  c CTO  ? help  q quit

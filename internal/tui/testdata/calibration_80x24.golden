@@ -13,12 +13,12 @@
 │ sol          1       0.00            -    0 min                              │
 │ terra        1       1.00            -   10 min                              │
 │ normal · 154 tasks                                                           │
+│ deepseek    66       0.09            -    1 min                              │
+│ terra       53       0.72            -    6 min                              │
+│ luna        19       0.26            -    3 min                              │
 │ more below · up/down to scroll                                               │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

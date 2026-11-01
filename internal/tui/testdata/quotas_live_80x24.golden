@@ -15,10 +15,10 @@
 │ terra           codex    gpt-6.1-terra     ·     ·     ·     ·     x         │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

@@ -32,7 +32,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 		t.Fatalf("polled title = %q; want Atlas", m.cto.title)
 	}
 	box := ansi.Strip(strings.Join(m.ctoView(80, 6), "\n"))
-	for _, want := range []string{"Atlas · opencode", "enter: open the Atlas"} {
+	for _, want := range []string{"Atlas · opencode", "c: open the Atlas"} {
 		if !strings.Contains(box, want) {
 			t.Errorf("CTO box lacks %q:\n%s", want, box)
 		}
@@ -63,7 +63,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 	}
 
 	help := ansi.Strip(strings.Join(m.helpContent(120), "\n"))
-	for _, want := range []string{"focus the Atlas box", "enter opens the full Atlas", "tab, C"} {
+	for _, want := range []string{"focus the Atlas box", "enter opens the full Atlas", "c, C"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q:\n%s", want, help)
 		}
@@ -77,7 +77,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 		t.Errorf("CTO key line: %s", line)
 	}
 	m.focus = focusSessions
-	if line := ansi.Strip(m.helpLine(120)); !strings.Contains(line, "tab Atlas") {
+	if line := ansi.Strip(m.helpLine(120)); !strings.Contains(line, "c Atlas") {
 		t.Errorf("Sessions key line: %s", line)
 	}
 }

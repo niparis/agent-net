@@ -430,13 +430,11 @@ world may have changed.
 **Rule 2: reads.** Implemented in design part 4. CTO data views reuse ordinary
 agent dispatch with the CTO caller; views without an ordinary source are
 removed. Static charter guidance and the CTO's own timeline remain. Owner-only
-data enters the CTO only when the owner types it or hands an item over. Outcome
+data enters the CTO only when the owner types or sends it. Outcome
 notes carry no private result. The rule holds in every turn, whoever started it.
 The parity and canary tests enforce this rule.
-The CTO now uses its registered network session for these checks. The owner
-can hand one item over from the TUI with `c`: the preview shows the exact
-text, Enter sends it with `owner_send` to the CTO session, and the text is
-capped at 4,000 characters. An agent session cannot call that method.
+The CTO now uses its registered network session for these checks. An agent
+session cannot call the owner-gated `owner_send` method.
 Peer messages reach the CTO through normal delivery to its session (design part 7).
 
 ## Limits against loops

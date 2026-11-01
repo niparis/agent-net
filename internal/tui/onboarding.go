@@ -127,8 +127,9 @@ func (m Model) onboardingStep() onboardingStep {
 func (m Model) onboardingLine(w int) string {
 	step := m.onboardingStep()
 	if step.id == "" {
-		line := "enter: open the " + m.ctoTitle() + " · tab: back"
+		line := "c: open the " + m.ctoTitle()
 		if m.focus == focusCTO {
+			line = "enter: open the " + m.ctoTitle() + " · ctrl+]: back"
 			now := time.Now()
 			if m.now != nil {
 				now = m.now()

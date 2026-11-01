@@ -13,12 +13,12 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │ - Do it yourself. Do not pass the whole task to another agent. You cannot s… │
 │ …                                                                            │
 │   14:00 ended worker                                                         │
+│ ✗ started                                                                    │
+│   14:03 ended worker                                                         │
+│ ✓ done · 12m                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  v body  f defect  tab CTO  ? help  q quit
+up/down thread  left/right msg  v body  f defect  c CTO  ? help  q quit

@@ -20,15 +20,15 @@
 
 
 
+
+
+
+
+
 ╭─CTO · opencode · fake/m1─────────────────────────────────────────────────────────────────────────────────────────────╮
 │ > Harness: < opencode >                                                                                              │
 │   Title:   CTO                                                                                                       │
 │   Model:   fake/m1                                                                                                   │
-│   up/down field  left/right harness  tab field  enter save  esc cancel                                               │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
 │                                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter open CTO  tab back  m model  n new  u undo
+up/down field  left/right harness  tab field  enter save  esc cancel

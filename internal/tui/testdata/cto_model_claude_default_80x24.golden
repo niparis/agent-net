@@ -14,11 +14,11 @@
   scratch      pi       -         -          shell  -         ?     ?
 
 
+
+
+
 ╭─CTO · opencode · fake/m1─────────────────────────────────────────────────────╮
 │ > Harness: < claude >                                                        │
 │   Title:   CTO                                                               │
-│   Model:   default                                                           │
-│   Suggestions: opus, sonnet, haiku, fable, claude-sonnet-5-5                 │
-│   up/down field  left/right harness  tab field  enter save  esc cancel       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter open CTO  tab back  m model  n new  u undo
+up/down field  left/right harness  tab field  enter save  esc cancel

@@ -18,17 +18,17 @@
 │   found-skill-05                  skill  found on 1 machine, not managed                                             │
 │   found-skill-06                  skill  found on 1 machine, not managed                                             │
 │   found-skill-07                  skill  found on 1 machine, not managed                                             │
+│   found-skill-08                  skill  found on 1 machine, not managed                                             │
+│   found-skill-09                  skill  found on 1 machine, not managed                                             │
+│   found-skill-10                  skill  found on 1 machine, not managed                                             │
+│   found-skill-11                  skill  found on 1 machine, not managed                                             │
+│   found-skill-12                  skill  found on 1 machine, not managed                                             │
 │ 40 tools · ! needs attention · enter opens actions                                                                   │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 j/k move  enter actions  / filter  n add  esc clear  ? help  q quit
