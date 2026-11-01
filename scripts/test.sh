@@ -235,6 +235,7 @@ for ((job_id=0; job_id<job_count; job_id++)); do
   if ((status == 0)); then
     printf '%s: PASS (%ss)\n' "${job_labels[$job_id]}" "$duration"
   else
+    failed=1
     printf '%s: FAIL (%ss)\n' "${job_labels[$job_id]}" "$duration"
     cat "$work/output-$job_id"
   fi
