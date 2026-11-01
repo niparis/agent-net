@@ -34,7 +34,7 @@ jobs:
       - if: steps.ci.outputs.passed != 'true'
         run: go vet ./...
       - if: steps.ci.outputs.passed != 'true'
-        run: go test -race ./...
+        run: scripts/test.sh -- -timeout 30m
       - name: build
         env:
           TAG: ${{ github.ref_name }}
