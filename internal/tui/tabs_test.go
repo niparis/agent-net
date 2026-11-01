@@ -1062,3 +1062,39 @@ func TestWorkerPanelUsesTrackRecordForPicks(t *testing.T) {
 		t.Fatalf("track record not used for picks: %s", v)
 	}
 }
+
+// The Workers forecast runs the chooser for every start of every level. It is
+// rebuilt on events (new data, a change of the rows shown) and only when an
+// input changed; drawing the screen only reads it (v0.4.49 recomputed it on
+// every redraw and the TUI spent most of its time there on the Quotas tab).
+func TestWorkersForecastIsRebuiltOnlyByEventsThatChangeIt(t *testing.T) {
+	m := newModel(120, 34)
+	m.snap.Nodes[0].Harnesses = []protocol.HarnessInfo{{Name: "codex", Models: []string{"openai-codex/gpt-6.1-terra"}}}
+	m.snap.WorkerProfiles = []protocol.WorkerProfile{{Name: "terra codex", Harness: "codex", Model: "openai-codex/gpt-6.1-terra"}}
+	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 42.3}}
+	m.snap.WorkerProviders = []string{"codex"}
+	m.refreshWorkerForecast()
+	memo := m.workerForecastMemo
+	if memo == nil || memo.key == "" || len(memo.counts) == 0 {
+		t.Fatalf("forecast not built by the event: %+v", memo)
+	}
+	// Mark the kept forecast. Drawing, and a fetch with the same inputs, must
+	// keep it.
+	memo.picks[2].Model = "marker"
+	_ = m.quotaModelsView(120)
+	m.lastOK = time.Unix(2000, 0)
+	m.refreshWorkerForecast()
+	if m.workerForecastMemo.picks[2].Model != "marker" {
+		t.Fatal("the forecast was computed again although no input changed")
+	}
+	// A changed score is new data: drawing alone does not rebuild, the event does.
+	m.snap.Scores = []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 50}}
+	_ = m.quotaModelsView(120)
+	if m.workerForecastMemo.picks[2].Model != "marker" {
+		t.Fatal("drawing the screen rebuilt the forecast")
+	}
+	m.refreshWorkerForecast()
+	if m.workerForecastMemo.picks[2].Model == "marker" {
+		t.Fatal("a changed score did not rebuild the forecast")
+	}
+}
