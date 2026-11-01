@@ -62,6 +62,9 @@ func TestCTONetworkMessages(t *testing.T) {
 	if plain.From != id || plain.FromCTO || plain.FromHarness != "cto" {
 		t.Fatalf("plain: %+v", plain)
 	}
+	w.d.ctoGraph.mu.Lock()
+	w.d.ctoGraph.toggle(time.Now())
+	w.d.ctoGraph.mu.Unlock()
 	approved := send(true)
 	if approved.From != id || !approved.FromCTO {
 		t.Fatalf("approved: %+v", approved)

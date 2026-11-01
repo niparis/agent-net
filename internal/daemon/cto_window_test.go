@@ -151,9 +151,17 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 		{"edge_set", `{"from":"first","to":"second","kind":"deploys"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"ask"}`},
 		{"edge_set", `{"from":"first","to":"second","kind":"depends","rule":"never"}`},
+		{"edge_remove", `{"from":"first","to":"second","kind":"depends"}`},
+		{"graph_undo", `{"id":0}`},
 		{"node_remove", `{"name":"second"}`},
 	} {
 		t.Run("major/"+c.tool+c.args, func(t *testing.T) {
+			if c.tool == "edge_remove" {
+				cli.mustCall("edge_set", map[string]string{"from": "first", "to": "second", "kind": "depends", "rule": "auto"})
+			}
+			if c.tool == "graph_undo" {
+				cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "refuses", "value": "deployments"})
+			}
 			got, err := n.d.runCTOToolRaw(ctx, c.tool, json.RawMessage(c.args))
 			if err != nil {
 				t.Fatal(err)
@@ -184,6 +192,9 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 				t.Fatalf("history %v %v", h, err)
 			}
 			cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: h[len(h)-1].ID})
+			if c.tool == "edge_remove" {
+				cli.mustCall("edge_remove", map[string]string{"from": "first", "to": "second", "kind": "depends"})
+			}
 		})
 	}
 	cli.mustCall("charter_set", map[string]string{"node": "first", "attr": "maturity", "value": "critical - production"})
@@ -207,11 +218,32 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
 		t.Fatalf("non graph applied: %v", got)
 	}
+	n.d.ctoGraph.mu.Lock()
+	n.d.ctoGraph.until = time.Now().Add(-time.Second)
+	n.d.ctoGraph.mu.Unlock()
+	got, err = n.d.runCTOToolRaw(ctx, "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"Only after expiry"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s, ok := got.(string); !ok || !strings.HasPrefix(s, "proposal ") {
+		t.Fatalf("expired window applied: %v", got)
+	}
 }
 
 func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
+	for _, name := range strings.Fields("worker_start worker_stop tools_plan tools_apply tools_undo mcp_add mcp_remove mcp_call mcp_test mcp_enable cto_settings notification_settings session_trust session_policy message") {
+		if isCTOGraphTool(name) {
+			t.Fatalf("non graph %s is covered by window", name)
+		}
+	}
+	cases := map[string]json.RawMessage{"message": json.RawMessage(`{"action":"send","as_owner":true}`)}
 	for name, class := range ctoToolClasses {
-		if class != ctoProposal || isCTOGraphTool(name) {
+		if class == ctoProposal && !isCTOGraphTool(name) {
+			cases[name] = json.RawMessage(`{}`)
+		}
+	}
+	for name, args := range cases {
+		if isCTOGraphTool(name) {
 			continue
 		}
 		t.Run(name, func(t *testing.T) {
@@ -221,7 +253,7 @@ func TestCTOWindowNonGraphToolsStayProposals(t *testing.T) {
 				t.Fatal("window missing")
 			}
 			ran, proposed := false, false
-			_, err := routeCTOTool(context.Background(), name, json.RawMessage(`{}`), func(context.Context, string, string, json.RawMessage, string) (string, error) {
+			_, err := routeCTOTool(context.Background(), name, args, func(context.Context, string, string, json.RawMessage, string) (string, error) {
 				proposed = true
 				return "p_1", nil
 			}, func(context.Context, string, json.RawMessage) (any, error) { ran = true; return nil, nil })
