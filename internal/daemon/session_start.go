@@ -213,7 +213,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
 			r.EnterPlan.Env = map[string]string{"CODEX_HOME": home}
 		}
-		plan := d.openInHerdr("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
+		plan := d.openForCaller("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
 		r.EnterPlan = &plan
 		if notify {
 			d.notifyApprovedSessionStart(ctx, r)
@@ -313,7 +313,7 @@ func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSess
 		if res.SessionID != "" {
 			key = "remote:" + res.SessionID
 		}
-		plan = d.openInHerdr(key, res.Project, socket, pane, plan)
+		plan = d.openForCaller(key, res.Project, socket, pane, plan)
 		res.EnterPlan = &plan
 	} else if res.Status == "started" && res.SessionID != "" && d.herdrBinary("") != "" {
 		if plan, err := d.enterPlan(ctx, protocol.EnterRequest{SessionID: res.SessionID, HerdrSocket: socket, HerdrPaneID: pane}); err == nil && plan.OpenedHerdr {
@@ -468,7 +468,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 				plan.Argv = nil
 				plan.Note = "The session started but has no Claude background ID to attach."
 			}
-			opened := d.openInHerdr(r.SessionID, r.Project, socket, pane, plan)
+			opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
 			if opened.OpenedHerdr || len(opened.Argv) == 0 {
 				r.EnterPlan = &opened
 			} else {

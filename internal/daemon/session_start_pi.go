@@ -64,7 +64,7 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socke
 	}
 	timeout := d.cfg.Workers.filled().StartTimeout
 	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}
-	opened := d.openInHerdr("pi:"+r.NativeID, r.Project, socket, pane, plan)
+	opened := d.openForCaller("pi:"+r.NativeID, r.Project, socket, pane, plan)
 	if opened.OpenedHerdr {
 		r.EnterPlan = &opened
 	} else {

@@ -110,6 +110,22 @@ func herdrEnvironment(env map[string]string) (string, error) {
 	return path, nil
 }
 
+// callerInHerdr says whether the asking TUI runs inside herdr. Only then can
+// it see a herdr pane; outside herdr a pane would open where the owner cannot
+// see it, so the terminal handover plan is used instead.
+func callerInHerdr(socket, pane string) bool {
+	return filepath.IsAbs(socket) && herdrIDRe.MatchString(pane)
+}
+
+// openForCaller opens the plan in herdr when the asking TUI runs in herdr, and
+// otherwise returns the terminal handover plan unchanged.
+func (d *Daemon) openForCaller(key, name, socket, pane string, plan protocol.EnterPlan) protocol.EnterPlan {
+	if !callerInHerdr(socket, pane) {
+		return plan
+	}
+	return d.openInHerdr(key, name, socket, pane, plan)
+}
+
 // openInHerdr opens a plan in a pane or tab. It serializes the lookup and
 // creation so concurrent Enter calls cannot create duplicate clients. When the
 // server is unavailable the original plan remains the fallback.
@@ -257,39 +273,6 @@ func herdrPaneActive(bin, socket, pane string) (active, known bool) {
 
 func openedHerdrPlan(host, name, pane string) protocol.EnterPlan {
 	return protocol.EnterPlan{Host: host, Note: "opened " + cleanLine(name) + " in herdr", HerdrPane: pane, OpenedHerdr: true}
-}
-
-// Workers start without a requesting TUI. Open their view after registration
-// and before delivering a task that might finish and close the worker.
-func (d *Daemon) openWorkerInHerdr(w *worker, sessionID string) {
-	if sessionID == "" {
-		return
-	}
-	d.wmu.Lock()
-	harness, project := w.harness, w.project
-	d.wmu.Unlock()
-	if harness != "claude" && harness != "opencode" && harness != "codex" {
-		return
-	}
-	if d.workerBySession(sessionID) != w || d.gone(w) {
-		return
-	}
-	notice := protocol.UIRequest{}
-	if d.herdrBinary("") == "" {
-		notice = protocol.UIRequest{Text: "Started " + cleanLine(project) + " worker. " + herdrInstallNote, DaemonNotice: true}
-	} else {
-		ctx, cancel := context.WithTimeout(d.ctoCtx, 30*time.Second)
-		defer cancel()
-		plan, err := d.localEnter(ctx, protocol.EnterRequest{SessionID: sessionID}, false)
-		if err == nil && plan.OpenedHerdr {
-			notice = protocol.UIRequest{Text: plan.Note, HerdrOpened: true}
-		} else if err == nil && plan.Note != "" {
-			notice = protocol.UIRequest{Text: plan.Note, DaemonNotice: true}
-		}
-	}
-	if notice.Text != "" {
-		d.goBackground(func() { d.broadcastCTOUI(notice) })
-	}
 }
 
 // Only the approving TUI gets a command to run. Broadcasting it would start
