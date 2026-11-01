@@ -351,7 +351,7 @@ reads `all projects`. The two columns sit side by side and each is capped at 60
 columns, so a wide terminal does not push them to opposite edges; a narrow one
 stacks them. The body scrolls with `[` and `]` or ctrl+u/ctrl+d, and its first
 line says `Card A-B/N  [ ] scroll`. The body has one section each for `Charter`,
-`Learned changes` and `Rules`, in that order. The other set charter fields
+`Learned changes` (only when the node has some) and `Rules`, in that order. The other set charter fields
 appear under aligned labels. `Rules` lists the six effective settings, read the
 way `agent_graph` reads them: `tests_before_merge`, `merge_authority`,
 `worker_sandbox`, `judge_consumers`, `deploy_rule` and `autonomy`. Each line
