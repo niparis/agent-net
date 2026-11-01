@@ -25,6 +25,8 @@ type hint struct {
 // seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
 	switch {
+	case m.handover != nil:
+		return []hint{{"enter", "send", 1}, {"esc", "cancel", 1}, {"up/down", "scroll", 1}, {"q", "quit", 0}}
 	case m.proposalConfirm:
 		return []hint{{"up/down", "scroll", 1}, {"y", "approve all", 1}, {"n/esc", "cancel", 1}}
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
@@ -170,6 +172,7 @@ func (m Model) helpContent(w int) []string {
 		{"enter", "enter the selected session (ctrl+] to return)"},
 		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
+		{"c", "hand over the selected row to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"n", "start a new session: project, harness, model, project folder, first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
 		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x, h, H", "stop worker; h hides/unhides; H shows hidden sessions (dim)"},
@@ -218,6 +221,7 @@ func (m Model) helpContent(w int) []string {
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
 		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; w: workers; e/l: events"},
+		{"c", "hand over the selected message to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"r", "refresh now"},
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},

@@ -32,7 +32,8 @@ proposal. Reads still run immediately. Talk (`send`, `reply`, `learn`,
 `reply` and the same arguments as those tools; with `as_owner: true` it becomes
 a proposal. Empty `cto_settings` and `notification_settings` calls are reads;
 calls that set a field are proposals. Read access is still the private CTO's
-current access; limiting it to public data is the next design part.
+current access; limiting it to public data is the next design part. The owner
+can hand one item over with `c` (see below).
 
 Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
 and the sender and time of up to three messages delivered before the proposal.
@@ -230,6 +231,16 @@ starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and Esc or `tab` returns focus to the tab. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
+
+`c` on a Needs you row, a Sessions row or a message in Messages opens a
+hand-over preview. It shows the exact text that Enter sends to the CTO as you,
+with a header naming where it came from: the row summary and its private
+content, such as the question and its options, the held request body, the inbox
+question, the session's announced task and recent status, or the message body.
+The preview scrolls with up/down and pgup/pgdown. Esc cancels. The text is
+capped at 4,000 characters; a longer item ends with a line that says it was cut.
+The hand-over uses the owner-gated `cto_send` method, so an agent session cannot
+make the call.
 
 Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
 It has three screens. Digits stay the global tabs and `tab` goes to the CTO box, so `[` and `]` switch screens. Left and right arrows also switch screens except in All tools, where they select a machine or projects cell. Press `?` for Tools keys.

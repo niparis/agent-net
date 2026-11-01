@@ -386,6 +386,31 @@ func TestCTOMethodsOwnerGate(t *testing.T) {
 	}
 }
 
+// A hand-over is one cto_send call. The CTO gets the previewed text exactly,
+// and an agent session cannot make the same call.
+func TestHandOverCTOSendCarriesTheTextAndUsesTheOwnerGate(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi", exe: "/opt/pi", detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} }})
+	cli := cliClient(t, n)
+	text := "Hand-over from the owner: a held request in Needs you\n\nRequest: Deploy abc?\nBody:\nThe branch is ready."
+	cli.mustCall("cto_send", map[string]string{"text": text})
+	var result struct {
+		Messages []struct{ Text string } `json:"messages"`
+	}
+	if err := json.Unmarshal(cli.mustCall("cto_events", nil), &result); err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Messages) != 1 || result.Messages[0].Text != text {
+		t.Fatalf("CTO got %+v, want the hand-over text", result.Messages)
+	}
+
+	pi, _ := helloPi(t, n, "p1", "/w/p", false)
+	if _, err := pi.call("cto_send", map[string]string{"text": text}); err == nil || !strings.Contains(err.Error(), "only available to the owner") {
+		t.Fatalf("an agent caller was not refused: %v", err)
+	}
+}
+
 func TestCTORecoversAfterServerExit(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
 	g := startGateway(t, t.TempDir(), "")

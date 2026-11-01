@@ -6,6 +6,7 @@
   enter                enter the selected session (ctrl+] to return)
   e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
+  c                    hand over the selected row to the Atlas: a preview first, then Enter sends it, Esc cancels
   n                    start a new session: project, harness, model, project folder, first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
   s                    start a worker (a form: project, harness, model, task)
@@ -56,6 +57,7 @@
   o, d                 show offline sessions; toggle selected session details
   a                    active only: hide sessions idle for over an hour
   Messages             up/down: conversation; left/right: message; enter: latest; v: body; w: workers; e/l: events
+  c                    hand over the selected message to the Atlas: a preview first, then Enter sends it, Esc cancels
   r                    refresh now
   states               messages: pending ... delivered ✓ replied ↩ failed ✗
 
