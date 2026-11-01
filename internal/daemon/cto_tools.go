@@ -35,6 +35,11 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
+}
+
+// executeCTOTool is used only for immediate reads/talk or by the approved runner.
+func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	var args map[string]any
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &args) != nil {
 		return nil, errors.New("bad CTO tool arguments")
@@ -53,6 +58,26 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "message":
+		var q struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		if q.Action != "send" && q.Action != "reply" {
+			return nil, errors.New("message needs action send or reply")
+		}
+		return d.executeCTOTool(ctx, q.Action, raw)
+	case "ask_owner":
+		var q struct {
+			Question       string `json:"question"`
+			Recommendation string `json:"recommendation"`
+		}
+		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Question) == "" {
+			return nil, errors.New("ask_owner needs question")
+		}
+		return d.call(ctx, "inbox.add", map[string]any{"question": q.Question, "recommendation": q.Recommendation, "session_id": d.ownerSessionID()})
 	case "charter_suggestions":
 		owner := d.ownerSessionID()
 		if owner == "" {
