@@ -302,6 +302,11 @@ type Daemon struct {
 	wmu       sync.Mutex
 	workers   map[string]*worker
 	launchers map[string]launcher
+	// reportMu guards reporting: the worker IDs that one caller is reporting
+	// now. The gateway link and the worker loop may report ended workers at the
+	// same time, and each worker must be reported once.
+	reportMu  sync.Mutex
+	reporting map[string]bool
 	// rmu guards recent, the workers that ended in the last two minutes.
 	rmu    sync.Mutex
 	recent map[string]recentWorker

@@ -13,6 +13,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -24,10 +25,12 @@ import (
 )
 
 // claudeCTOState runtime fields are protected by cto.mu. The process root and
-// starting flag are atomic; the capability cache is serialized by ctoDispatchMu.
+// starting flag are atomic. capMu serializes the capability check and its
+// cache, which a start from the owner and one from a proposal note both use.
 type claudeCTOState struct {
 	root                atomic.Pointer[claudeCTORoot]
 	starting            atomic.Bool
+	capMu               sync.Mutex
 	token               string
 	ref, session, model string
 	capabilities        map[string]claudeCTOCapability
@@ -135,7 +138,7 @@ func recoverableClaudeResumeFailure(status, detail string) bool {
 }
 
 func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
-	d.claudeCTO.restarted = false
+	d.setClaudeCTORestarted(false)
 	err := d.startClaudeCTOOnce(ctx, id, model)
 	var failure *claudeCTOJobFailure
 	if id == "" || !errors.As(err, &failure) || !failure.recoverable {
@@ -144,11 +147,19 @@ func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	if err = d.startClaudeCTOOnce(ctx, "", model); err != nil {
 		return err
 	}
-	d.claudeCTO.restarted = true
+	d.setClaudeCTORestarted(true)
 	if d.log != nil {
 		d.log.Print(claudeCTORestartNotice)
 	}
 	return nil
+}
+
+// setClaudeCTORestarted takes cto.mu, which guards restarted: cto_enter reads
+// it while a start may still be running.
+func (d *Daemon) setClaudeCTORestarted(v bool) {
+	d.cto.mu.Lock()
+	d.claudeCTO.restarted = v
+	d.cto.mu.Unlock()
 }
 
 func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error {
@@ -310,11 +321,13 @@ func claudeJobEnded(state string) bool {
 var claudeVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)
 
 func (d *Daemon) checkClaudeCTOCapabilities(ctx context.Context, bin string) error {
+	c := &d.claudeCTO
+	c.capMu.Lock()
+	defer c.capMu.Unlock()
 	info, err := os.Stat(bin)
 	if err != nil {
 		return fmt.Errorf("check Claude Code: %w", err)
 	}
-	c := &d.claudeCTO
 	if cached, ok := c.capabilities[bin]; ok && cached.mtime.Equal(info.ModTime()) {
 		return cached.err
 	}

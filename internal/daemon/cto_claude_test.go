@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -519,6 +520,52 @@ func TestClaudeCTOCapabilityCache(t *testing.T) {
 	}
 }
 
+// The owner's start and the delivery of a proposal note can both start the
+// Claude CTO. They must not check Claude's capabilities at the same time: the
+// cache is one map, and every check runs two subprocesses.
+func TestClaudeCTOCapabilityCheckIsSerialized(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
+	dir := t.TempDir()
+	bin, logFile := filepath.Join(dir, "claude"), filepath.Join(dir, "calls")
+	script := "#!/bin/sh\n" +
+		"if [ \"$1\" = --help ]; then echo check >> " + logFile + "; echo '--bg --strict-mcp-config --tools'; " +
+		"elif [ \"$1\" = --version ]; then echo check >> " + logFile + "; echo 2.1.316; " +
+		"else echo start >> " + logFile + "; echo 'start failed' >&2; exit 1; fi\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	var logs bytes.Buffer
+	d := &Daemon{log: log.New(&logs, "", 0), cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	errs := make([]error, 16)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			errs[i] = d.startClaudeCTO(context.Background(), "", "opus")
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err == nil || !strings.Contains(err.Error(), "start failed") {
+			t.Fatalf("start %d: %v", i, err)
+		}
+	}
+	raw, err := os.ReadFile(logFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// One help call and one version call fill the cache for all of the starts.
+	if calls := strings.Count(string(raw), "check"); calls != 2 {
+		t.Fatalf("%d capability checks for one binary, want 2: %q", calls, raw)
+	}
+}
+
 func TestClaudeCTOTrustPromptError(t *testing.T) {
 	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	dir := t.TempDir()
@@ -557,9 +604,17 @@ func TestCTOExtraBuiltinFailsStartup(t *testing.T) {
 
 func TestClaudeCTORequiresToolsCapability(t *testing.T) {
 	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
-	t.Setenv("FAKE_CLAUDE_NO_TOOLS_FLAG", "1")
+	// A small script reports the flags, as a real `claude --help` does. The
+	// fake test binary is large, and a machine under load can fail to fork or
+	// kill such a child; that error says nothing about --tools.
+	bin := filepath.Join(t.TempDir(), "claude")
+	script := "#!/bin/sh\nif [ \"$1\" = --help ]; then echo '--bg --strict-mcp-config'; elif [ \"$1\" = --version ]; then echo 2.1.316; fi\n"
+	if err := os.WriteFile(bin, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
+	n.d.cfg.HarnessPaths["claude"] = bin
 	err := n.d.startClaudeCTO(context.Background(), "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "--tools") {
 		t.Fatalf("missing --tools must fail clearly: %v", err)
