@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -50,7 +51,15 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 	if err != nil {
 		return protocol.Calibration{}, err
 	}
-	names, models, strong, err := s.callerFacts(scores)
+	callers := []string{}
+	seen := map[string]bool{}
+	for _, sample := range samples {
+		if !seen[sample.Caller] {
+			seen[sample.Caller] = true
+			callers = append(callers, sample.Caller)
+		}
+	}
+	names, models, strong, err := s.callerFacts(scores, callers)
 	if err != nil {
 		return protocol.Calibration{}, err
 	}
@@ -69,16 +78,24 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 	return cal, nil
 }
 
-// callerFacts returns the display name, model and strength of every session
-// the calibration may name as a caller.
-func (s *Store) callerFacts(scores []protocol.ModelScore) (names, models map[string]string, strong map[string]bool, err error) {
+// callerFacts returns the display name, model and strength of the callers in
+// the window. Only those are read: the table is built on every nodes call.
+func (s *Store) callerFacts(scores []protocol.ModelScore, callers []string) (names, models map[string]string, strong map[string]bool, err error) {
+	names, models, strong = map[string]string{}, map[string]string{}, map[string]bool{}
+	if len(callers) == 0 {
+		return names, models, strong, nil
+	}
+	args := make([]any, len(callers))
+	for i, c := range callers {
+		args[i] = c
+	}
 	rows, err := s.db.Query(`SELECT s.id, COALESCE(NULLIF(p.name,''), s.name, ''), s.model
-		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id`)
+		FROM sessions s LEFT JOIN profiles p ON p.session_id = s.id
+		WHERE s.id IN (?`+strings.Repeat(",?", len(callers)-1)+`)`, args...)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	defer rows.Close()
-	names, models, strong = map[string]string{}, map[string]string{}, map[string]bool{}
 	for rows.Next() {
 		var id, name, model string
 		if err := rows.Scan(&id, &name, &model); err != nil {

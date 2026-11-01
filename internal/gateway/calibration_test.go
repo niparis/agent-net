@@ -172,3 +172,41 @@ func TestCalibrationChangesNoChooserBehavior(t *testing.T) {
 		t.Fatalf("calibration changed the pick: %s -> %s", firstPick.Model, secondPick.Model)
 	}
 }
+
+// The calibration table is built on every nodes call, which every open TUI
+// makes once a second. It must look at the callers in the window only, not at
+// every session the gateway ever saw (v0.4.49 scored all of them and kept the
+// gateway busy).
+func TestCalibrationLooksUpOnlyCallersInTheWindow(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
+		Name: "agent-net", Model: "claude-opus-5-5", Status: "idle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		if _, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "other" + string(rune('a'+i)),
+			Name: "other", Model: "claude-opus-5-5", Status: "idle"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_run", Harness: "opencode", Model: "m",
+		Outcome: protocol.OutcomeComplete, EndedAt: s.now().Unix(), Caller: caller, Difficulty: "normal"}); err != nil {
+		t.Fatal(err)
+	}
+	scores, err := s.scores()
+	if err != nil {
+		t.Fatal(err)
+	}
+	names, models, strong, err := s.callerFacts(scores, []string{caller})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 1 || len(models) != 1 || names[caller] != "agent-net" || !strong[caller] {
+		t.Fatalf("callerFacts read %d sessions (names %v, strong %v), want only the caller", len(names), names, strong)
+	}
+	if names, _, _, err := s.callerFacts(scores, nil); err != nil || len(names) != 0 {
+		t.Fatalf("no callers: got %d names, err %v", len(names), err)
+	}
+}
