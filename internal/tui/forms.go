@@ -27,7 +27,7 @@ const (
 	modeCompose               // typing a message to the selected session
 	modeForm                  // the start-a-worker form
 	modeSessionForm           // the new-session form
-	modeConfirm               // asking y/n before stopping a worker
+	modeConfirm               // asking y/n before stopping a session
 	modeQuotaConfirm
 	modeTrust         // asking y/n before trusting a session with peer requests
 	modePolicy        // the delegation policy form (policy.go)
@@ -164,19 +164,23 @@ func (m Model) sendCmd(to, name, body string) tea.Cmd {
 	}
 }
 
-// ---- stop a worker ----
+// ---- stop a session ----
 
 func (m Model) startConfirm() (Model, tea.Cmd) {
 	a, ok := m.selectedAgent()
 	switch {
 	case !ok:
-		m.fail("Nothing is selected: pick a worker first.")
-	case a.Worker == nil:
-		m.fail("That session is not a worker. x stops workers only.")
+		m.fail("Nothing is selected: pick a session first.")
+	case !a.Online && a.Worker == nil:
+		m.fail("That session is offline already.")
 	default:
 		m.mode = modeConfirm
 		m.confirmID = a.SessionID
+		m.confirmOwner = a.Worker == nil
 		m.confirmName = sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
+		if m.confirmOwner {
+			m.confirmName = sanitize(dashIfEmpty(a.Profile.Name))
+		}
 		m.notice = notice{}
 	}
 	return m, nil
@@ -187,6 +191,9 @@ func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "y", "Y":
 		m.mode = modeNormal
 		m.say("Stopping...")
+		if m.confirmOwner {
+			return m, m.stopSessionCmd(m.confirmID)
+		}
 		return m, m.stopCmd(m.confirmID, m.confirmName)
 	case "n", "N", "esc":
 		m.mode = modeNormal
@@ -756,4 +763,17 @@ func (m Model) projectRenameKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.rename, cmd = m.rename.Update(k)
 	return m, cmd
+}
+
+func (m Model) stopSessionCmd(id string) tea.Cmd {
+	src := m.src
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		note, err := src.SessionStop(ctx, id)
+		if err != nil {
+			return actionMsg{err: fmt.Errorf("Not stopped: %s", explain(err))}
+		}
+		return actionMsg{text: note}
+	}
 }

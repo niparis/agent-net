@@ -712,11 +712,21 @@ The owner-only skill comparison summary sends up to 12,000 bytes of skill text t
 
 ### Starting an owner session
 
-`session_start`, `session_resume` and `session_start_get` use the owner gate. Agent connections
+`session_start`, `session_resume`, `session_start_get` and `session_stop` use the owner gate. Agent connections
 are refused. A CLI inside an agent session, a Codex app-server process tree
 or an OpenCode serve process tree is refused too. No agent tool exposes these
 methods. An owner session has the owner's normal harness permissions, so an
 agent must never be able to start one to escape worker limits.
+
+`session_stop` accepts only a session ID on this machine. It runs `claude stop`
+only when the Claude adapter identifies a background job. For OpenCode it
+aborts the turn through the owner's authenticated loopback service and keeps
+the conversation in that service. For Pi it queries only `tmux -L agent-net`,
+matches the session process or its parent to a pane, and kills that window.
+It never signals an owner's process, kills a visible terminal, or uses the
+process's tmux socket to decide what it may stop. Interactive Claude, Codex
+and Pi sessions in the owner's terminal are refused. Worker stops keep their
+existing authority checks and stop rules. No agent tool exposes owner stops.
 
 For now, starts are limited to Claude, OpenCode and Pi in the background, and
 Codex as an enter plan, in an existing project folder known on the local

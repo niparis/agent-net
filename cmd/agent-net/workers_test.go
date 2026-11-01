@@ -41,6 +41,10 @@ func (f *fakeOp) StartWorker(_ context.Context, r protocol.WorkerStartRequest) (
 	f.start = r
 	return f.result, f.err
 }
+func (f *fakeOp) SessionStop(_ context.Context, s string) (string, error) {
+	f.stopped = s
+	return "Stopped.", f.err
+}
 func (f *fakeOp) StopWorker(_ context.Context, s string) error { f.stopped = s; return f.err }
 func (f *fakeOp) SessionStart(context.Context, protocol.SessionStartRequest) (protocol.StartedSession, error) {
 	return protocol.StartedSession{}, f.err

@@ -489,3 +489,13 @@ func (s *Client) NotificationSettings(ctx context.Context, disabled *bool) (bool
 	err = json.Unmarshal(raw, &out)
 	return out.Disabled, err
 }
+
+func (s *Client) SessionStop(ctx context.Context, session string) (string, error) {
+	raw, err := s.action(ctx, protocol.OpSessionStop, protocol.SessionResumeRequest{SessionID: session})
+	if err != nil {
+		return "", err
+	}
+	var out protocol.SessionStopResult
+	err = json.Unmarshal(raw, &out)
+	return out.Note, err
+}

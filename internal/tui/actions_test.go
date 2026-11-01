@@ -209,12 +209,13 @@ func TestSendCancelAndErrors(t *testing.T) {
 
 func TestStopAWorkerAsksFirst(t *testing.T) {
 	m, src := workerModel(80, 24)
-	// A session that is not a worker.
+	// An owner session uses its own confirmation.
 	m = selectID(m, "s_0000000000000001")
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	if m.mode != modeNormal || !m.notice.err || !strings.Contains(m.notice.text, "not a worker") {
+	if m.mode != modeConfirm || m.notice.err {
 		t.Errorf("x on a plain session: %+v", m.notice)
 	}
+	m.mode = modeNormal
 	m = selectID(m, workerID)
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 	if m.mode != modeConfirm || !strings.Contains(lines(m.View())[23], "Stop worker tenebrae (Mac)? y/n") {

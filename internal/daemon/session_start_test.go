@@ -30,7 +30,7 @@ func TestSessionStartServiceHosts(t *testing.T) {
 		d := &Daemon{}
 		d.inSession = d.insideSession
 		lc := &localConn{d: d, client: "cli", peerPID: 300}
-		for _, method := range []string{"session_start", "session_start_get", "session_resume"} {
+		for _, method := range []string{"session_start", "session_start_get", "session_resume", "session_stop"} {
 			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{"project":"shop","harness":"opencode"}`))
 			if !handled || err == nil || !strings.Contains(err.Error(), "inside an agent session") {
 				t.Errorf("%v %s: handled=%v err=%v", args, method, handled, err)
@@ -40,7 +40,7 @@ func TestSessionStartServiceHosts(t *testing.T) {
 }
 
 func TestSessionStartOwnerGate(t *testing.T) {
-	for _, method := range []string{"session_start", "session_start_get", "session_resume"} {
+	for _, method := range []string{"session_start", "session_start_get", "session_resume", "session_stop"} {
 		for _, client := range []string{"mcp", "pi", "opencode", "cli"} {
 			d := &Daemon{inSession: func(int) bool { return true }}
 			lc := &localConn{d: d, client: client}
