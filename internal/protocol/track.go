@@ -43,6 +43,9 @@ type WorkerRun struct {
 	// began, after a hand-back with complete:no and complete:yes.
 	Continue int `json:"continue,omitempty"`
 	Fix      int `json:"fix,omitempty"`
+	// AutoContinue counts the continues the daemon sent itself, which cost
+	// the caller no rework.
+	AutoContinue int `json:"auto_continue,omitempty"`
 	// Caller is the session that started the worker, and Difficulty is the
 	// level it asked for. The gateway keeps them on the run so the
 	// difficulty calibration still has them after the worker session is
@@ -63,6 +66,7 @@ type TrackRecord struct {
 	Stopped          int    `json:"stopped"`
 	Continue         int    `json:"continue,omitempty"`
 	Fix              int    `json:"fix,omitempty"`
+	AutoContinue     int    `json:"auto_continue,omitempty"`
 	MedianRunSeconds int64  `json:"median_run_seconds,omitempty"`
 	// Resumable is true when a harness can open an ended session again.
 	Resumable bool `json:"resumable"`
@@ -128,7 +132,7 @@ func (t *TrackRecord) Line() string {
 		count int
 		word  string
 	}{{t.Complete, "complete"}, {t.Partial, "partial"}, {t.Failed, "failed"}, {t.TimedOut, "timed out"}, {t.Stopped, "stopped"},
-		{t.Continue, "continue"}, {t.Fix, "fix"}} {
+		{t.Continue, "continue"}, {t.Fix, "fix"}, {t.AutoContinue, "auto-continues"}} {
 		if n.count > 0 {
 			parts = append(parts, fmt.Sprintf("%d %s", n.count, n.word))
 		}
@@ -168,7 +172,11 @@ func (t *TrackRecord) ReworkLine() string {
 	if t == nil || t.Runs == 0 {
 		return ""
 	}
-	return fmt.Sprintf("complete %d · continue %d · fix %d", t.Complete, t.Continue, t.Fix)
+	line := fmt.Sprintf("complete %d · continue %d · fix %d", t.Complete, t.Continue, t.Fix)
+	if t.AutoContinue > 0 {
+		line += fmt.Sprintf(" · %d auto-continues", t.AutoContinue)
+	}
+	return line
 }
 
 // shortDuration writes a run time as the track record shows it: "45 s",

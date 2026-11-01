@@ -61,6 +61,14 @@ A worker that goes idle without a hand-back is the same signal as
 `complete: no`: it stopped early without saying so, and the caller's next
 message counts as a continue.
 
+The daemon's own automatic continues are not rework. When a worker stops early
+(a partial hand-back or idle without a hand-back), agent-net sends it up to two
+continues itself before the caller is told. These cost the caller nothing, so
+they are counted apart (`auto_continue`) and never enter `continue`, `fix` or
+the weighted rework. They stay visible in the track record line as
+`2 auto-continues`, as a sign that a model needed a nudge and a caller did not
+have to give it.
+
 The weighted rework of a task is `fix + 0.5 × continue`. A fix counts more
 because it costs review attention: the worker delivered the wrong thing, and
 someone had to notice. A continue is cheaper: the work so far was right, and

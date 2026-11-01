@@ -106,6 +106,9 @@ CREATE TABLE IF NOT EXISTS workers (
 		{"pending_partial", `pending_partial INTEGER NOT NULL DEFAULT 0`},
 		{"difficulty_asked", `difficulty_asked TEXT NOT NULL DEFAULT ''`},
 		{"difficulty_used", `difficulty_used TEXT NOT NULL DEFAULT ''`},
+		{"auto_continue", `auto_continue INTEGER NOT NULL DEFAULT 1`},
+		{"auto_continue_count", `auto_continue_count INTEGER NOT NULL DEFAULT 0`},
+		{"auto_continue_run", `auto_continue_run INTEGER NOT NULL DEFAULT 0`},
 	} {
 		var has int
 		db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = ?`, col.name).Scan(&has)
@@ -132,6 +135,14 @@ CREATE TABLE IF NOT EXISTS workers (
 	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'sender_cto'`).Scan(&hasCTO)
 	if hasCTO == 0 {
 		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN sender_cto INTEGER NOT NULL DEFAULT 0`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	var hasAutoContinue int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'auto_continue'`).Scan(&hasAutoContinue)
+	if hasAutoContinue == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN auto_continue INTEGER NOT NULL DEFAULT 1`); err != nil {
 			db.Close()
 			return nil, err
 		}

@@ -29,18 +29,20 @@ type queuedStart struct {
 	// DifficultyAsked and DifficultyUsed are the levels of the start.
 	DifficultyAsked, DifficultyUsed string
 	FromCTO                         bool
-	QueuedAt                        time.Time
+	// AutoContinue is the start's automatic-continue setting.
+	AutoContinue bool
+	QueuedAt     time.Time
 }
 
 func (s *state) addQueued(q queuedStart) error {
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed)
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, auto_continue)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, boolInt(q.AutoContinue))
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, auto_continue FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -49,10 +51,12 @@ func (s *state) queue() ([]queuedStart, error) {
 	for rows.Next() {
 		var q queuedStart
 		var at int64
-		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed); err != nil {
+		var autoContinue int
+		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &autoContinue); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)
+		q.AutoContinue = autoContinue == 1
 		out = append(out, q)
 	}
 	return out, rows.Err()

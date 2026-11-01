@@ -395,6 +395,7 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	d.wmu.Lock()
 	sid, harness, model, project, wt, br, started, permissions := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt, w.permissions
 	cont, fix := w.continueCount, w.fixCount
+	auto := w.autoContinueCount
 	asked, used := w.difficultyAsked, w.difficultyUsed
 	d.wmu.Unlock()
 	if model == "" {
@@ -406,12 +407,15 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Permissions: permissions,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
-		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, Difficulty: difficulty}
+		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, AutoContinue: auto, Difficulty: difficulty}
 	n.DiffStat, _ = d.worktreeFacts(w)
 	d.wmu.Lock()
 	n.Saved = w.unfinished
 	leftAsIs := w.leftAsIs
 	d.wmu.Unlock()
+	if auto := protocol.WorkerAutoContinueNote(n.AutoContinue); auto != "" {
+		n.Note = strings.TrimSpace(n.Note + " " + auto)
+	}
 	if leftAsIs {
 		n.Note = strings.TrimSpace(n.Note + " A git merge was in progress; the worktree was left as is.")
 	}
@@ -544,6 +548,12 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	if strings.TrimSpace(req.Report) == "" {
 		return nil, errors.New("the report is empty: say what you did, or what blocks you")
 	}
+	// A partial hand-back is a worker that stopped early. Send it one more
+	// message ourselves, up to the limit, and do not tell the caller yet.
+	if req.Status == protocol.StatusDone && !req.IsComplete() && d.tryAutoContinue(ctx, w) {
+		d.Logf("worker.handback worker=%s session=%s status=%s complete=false auto_continue=1", w.id, sessionID, req.Status)
+		return &protocol.WorkerHandbackResult{Status: req.Status, Complete: false, AutoContinued: true}, nil
+	}
 	st := d.workerStats(w)
 	d.wmu.Lock()
 	pending, cc := len(w.turnQueue) > 0, w.codex
@@ -650,6 +660,7 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 		cp := *w.info
 		cp.Task = w.taskText
 		cp.Continue, cp.Fix = w.continueCount, w.fixCount
+		cp.AutoContinue = w.autoContinueCount
 		cp.DifficultyAsked, cp.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
 		w.info = &cp
 		// The session gets its own copy, so a later change to w.info never

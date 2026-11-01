@@ -37,7 +37,7 @@ func TestWorkerFollowUpAfterPartialHandbackCountsContinue(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
-		Task: "FAKE:handback FAKE:partial do half the task"})
+		Task: "FAKE:handback FAKE:partial do half the task", AutoContinue: autoContinueOff()})
 	w.waitNotice(t, 1)
 	eventually(t, "the partial worker ends", func() bool { return w.d.workerCount() == 0 })
 	if row := reworkRow(t, w, res.SessionID); row.Continue != 0 || row.Fix != 0 {
@@ -190,7 +190,7 @@ func TestWorkerReworkCountersSurviveDaemonRestart(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1",
-		Task: "FAKE:handback FAKE:partial do half"})
+		Task: "FAKE:handback FAKE:partial do half", AutoContinue: autoContinueOff()})
 	w.waitNotice(t, 1)
 	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 	if row := reworkRow(t, w, res.SessionID); !row.PendingHandback || !row.PendingPartial {
@@ -258,7 +258,7 @@ func TestWorkerIdleFollowUpCountsContinue(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode",
-		Task: "FAKE:edit", Isolation: protocol.IsolationWorktree})
+		Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	w.waitNotice(t, 1)
 	eventually(t, "the idle notice is recorded", func() bool {
 		wk := w.d.workerBySession(res.SessionID)

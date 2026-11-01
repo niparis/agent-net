@@ -160,6 +160,11 @@ type worker struct {
 	// the part since this run began, which the gateway counts as one run.
 	continueCount, fixCount int
 	continueRun, fixRun     int
+	// autoContinue turns the daemon's own continues on or off. autoContinueCount
+	// and autoContinueRun count those it sent; separate from the caller's.
+	autoContinue      bool
+	autoContinueCount int
+	autoContinueRun   int
 	// pendingHandback is true after a hand-back, until the worker hands back
 	// again; pendingPartial says whether that hand-back was partial.
 	pendingHandback, pendingPartial bool
@@ -259,6 +264,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	next := *w.info
 	next.ContextTokens, next.ContextLimit, next.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
 	next.Continue, next.Fix = w.continueCount, w.fixCount
+	next.AutoContinue = w.autoContinueCount
 	next.DifficultyAsked, next.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
 	w.info = &next
 	// A copy: the agent list and the session info may outlive this call, and
@@ -461,6 +467,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
 		Ref: w.ref, TaskFull: w.taskFull, Permissions: w.permissions,
 		Continue: w.continueCount, Fix: w.fixCount, ContinueRun: w.continueRun, FixRun: w.fixRun,
+		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
 		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
 		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed}
 }
@@ -570,7 +577,8 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
-		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed}
+		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed,
+		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue)}
 	worktree, branch := "", ""
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
@@ -916,6 +924,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model,
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
+			AutoContinue: r.AutoContinueCount, AutoContinueRun: r.AutoContinueRun,
 			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed})
 		cancel()
 		var re RemoteError
@@ -1014,6 +1023,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
+		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
 		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
@@ -1387,6 +1397,7 @@ func (d *Daemon) adoptWorkers() {
 			taskFull:    r.TaskFull,
 			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions), continueCount: r.Continue, fixCount: r.Fix,
 			continueRun: r.ContinueRun, fixRun: r.FixRun, pendingHandback: r.PendingHandback, pendingPartial: r.PendingPartial,
+			autoContinue: r.AutoContinue, autoContinueCount: r.AutoContinueCount, autoContinueRun: r.AutoContinueRun,
 			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {

@@ -49,7 +49,8 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 		"project": s("Default CTO project."), "harness": en("Harness; empty is auto.", "opencode", "claude", "pi", "codex"),
 		"model": s("Model; empty is auto."), "difficulty": en("Default normal.", "trivial", "simple", "normal", "hard", "very_complex"),
 		"base": s("Branch."), "continue": s("Worker ID."), "task": s("Brief and limits."), "machine": s("Machine."),
-		"isolation": en("None reads only; default worktree.", "worktree", "none"),
+		"isolation":     en("None reads only; default worktree.", "worktree", "none"),
+		"auto_continue": b("Default true: agent-net continues a worker that stops early."),
 	})
 	add("worker_stop", "Stop a worker or queued start.", map[string]ctoField{"session": s("Worker ID.")})
 
