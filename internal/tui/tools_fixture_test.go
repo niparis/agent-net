@@ -143,6 +143,10 @@ type fakeTools struct {
 	sent       []string // "to: body"
 	mcpPlans   []string
 	mcpApplied []string
+
+	details        []protocol.ToolSkillScan
+	detailManifest *protocol.SkillManifest
+	detailErr      error
 }
 
 func newToolsModel(w, h int) (Model, *fakeTools) {
@@ -214,6 +218,15 @@ func (f *fakeTools) ToolsImport(_ context.Context, imp protocol.ToolImport) erro
 	return nil
 }
 func (f *fakeTools) ToolsRescan(context.Context) error { f.rescans++; return nil }
+func (f *fakeTools) ToolsSkillDetails(_ context.Context, p protocol.ToolSkillScan) (protocol.ToolSkillDetails, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.details = append(f.details, p)
+	if f.detailErr != nil {
+		return protocol.ToolSkillDetails{}, f.detailErr
+	}
+	return protocol.ToolSkillDetails{Manifest: f.detailManifest, ScannedAt: t0}, nil
+}
 func (f *fakeTools) MCPCandidates(context.Context) ([]protocol.MCPImportCandidate, error) {
 	return nil, errors.New("no candidates in this fixture")
 }

@@ -5,19 +5,23 @@ import (
 	"encoding/json"
 	"errors"
 	"sort"
+	"time"
 
+	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 // SetInventory replaces a successful observation. A failed scan retains the
 // last successful items as stale rather than treating a failure as deletion.
+// When only some sources failed, the fresh items are kept and the previous
+// observations of the failed sources are kept as stale.
 func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-	if r.State == protocol.InventoryError {
+	if r.State != protocol.InventoryOK {
 		var old string
 		err = tx.QueryRow(`SELECT report FROM inventory_reports WHERE node_id=?`, nodeID).Scan(&old)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -28,14 +32,7 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 			if err = json.Unmarshal([]byte(old), &previous); err != nil {
 				return err
 			}
-			for i := range previous.Items {
-				previous.Items[i].State = protocol.InventoryStale
-				previous.Items[i].Reason = "latest scan failed"
-			}
-			previous.State = protocol.InventoryStale
-			previous.Reason = "latest scan failed"
-			previous.ScannedAt = r.ScannedAt
-			r = previous
+			r = inventory.MergeReports(previous, r)
 		}
 	}
 	r.Machine = nodeID
@@ -62,6 +59,58 @@ func (s *Store) SetInventory(nodeID string, r protocol.InventoryReport) error {
 		}
 	}
 	if _, err = tx.Exec(`DELETE FROM tool_identities WHERE NOT EXISTS (SELECT 1 FROM tool_locations WHERE identity_id=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM skill_versions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM tool_revisions WHERE item=tool_identities.id) AND NOT EXISTS (SELECT 1 FROM mcp_servers m WHERE tool_identities.kind='mcp' AND tool_identities.name=m.name AND tool_identities.hash='federated-'||m.added_at)`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetInventoryItemManifest fills in the file manifest of one observed skill
+// after a narrow rescan. It updates the stored report and the observation row
+// that tools_items reads, so the details survive the next page request.
+func (s *Store) SetInventoryItemManifest(nodeID, location string, manifest *protocol.SkillManifest, at time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err = tx.QueryRow(`SELECT report FROM inventory_reports WHERE node_id=?`, nodeID).Scan(&raw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("machine has no inventory")
+		}
+		return err
+	}
+	var report protocol.InventoryReport
+	if err = json.Unmarshal([]byte(raw), &report); err != nil {
+		return err
+	}
+	found := false
+	for i := range report.Items {
+		item := &report.Items[i]
+		if item.Kind != protocol.InventorySkill || item.Location != location {
+			continue
+		}
+		item.Manifest = manifest
+		if !at.IsZero() {
+			item.ScannedAt = at
+		}
+		found = true
+		b, e := json.Marshal(*item)
+		if e != nil {
+			return e
+		}
+		if _, e = tx.Exec(`UPDATE tool_locations SET observation=? WHERE node_id=? AND json_extract(observation,'$.kind')='skill' AND json_extract(observation,'$.location')=?`, string(b), nodeID, location); e != nil {
+			return e
+		}
+	}
+	if !found {
+		return errors.New("skill is no longer observed")
+	}
+	b, err := json.Marshal(report)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(`UPDATE inventory_reports SET report=? WHERE node_id=?`, string(b), nodeID); err != nil {
 		return err
 	}
 	return tx.Commit()

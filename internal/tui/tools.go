@@ -29,6 +29,7 @@ type ToolsSource interface {
 	ToolsPlan(context.Context, protocol.ToolPlanRequest) (protocol.ToolPlan, error)
 	ToolsApply(ctx context.Context, planID string) (protocol.ToolApplyResult, error)
 	ToolsImport(context.Context, protocol.ToolImport) error
+	ToolsSkillDetails(context.Context, protocol.ToolSkillScan) (protocol.ToolSkillDetails, error)
 	ToolsRescan(context.Context) error
 	MCPCandidates(context.Context) ([]protocol.MCPImportCandidate, error)
 	MCPImportPlan(ctx context.Context, candidate string) (protocol.MCPImportPlan, error)

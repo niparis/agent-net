@@ -540,6 +540,21 @@ func TestToolsComparisonGoldens(t *testing.T) {
 	}
 }
 
+func TestToolsCompareFetchGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, src := toolsAtScreen(size[0], size[1], 0)
+		withDetails := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeM, Machine: "Nicolas-MBP", Location: "/Users/n/.claude/skills/demo", Hash: "h1",
+			Manifest: &protocol.SkillManifest{Newest: t0.Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 20, Fingerprint: "a"}}}}
+		missing := toolsdiff.Copy{Name: "demo", Item: "old", NodeID: toolNodeR, Machine: "research", Location: "/home/n/.claude/skills/demo", Hash: "h2", Seen: t0.Add(-48 * time.Hour)}
+		src.detailManifest = &protocol.SkillManifest{Newest: t0.Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10, Fingerprint: "b"}, {Path: "notes.md", Size: 5, Fingerprint: "c"}}}
+		model, cmd := m.openChoose("Compare, then keep one", toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{withDetails, missing}})
+		m = model.(Model)
+		golden(t, fmt.Sprintf("tools_compare_fetching_%dx%d", size[0], size[1]), m.View())
+		m = send(m, cmd())
+		golden(t, fmt.Sprintf("tools_compare_fetched_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
 func TestLongDifferenceIsReadableAt80Columns(t *testing.T) {
 	m, _ := toolsAtScreen(80, 24, 0)
 	m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "demo", Severity: toolsdiff.SevErr, Title: "demo has 2 different copies on research, 3 files differ", Fix: "compare, then keep one"}}
@@ -615,18 +630,89 @@ func TestChooseExplainsMissingFilesWithoutRecommendation(t *testing.T) {
 }
 
 func TestChooseCopyHintsAndMissingManifest(t *testing.T) {
-	m, _ := toolsAtScreen(80, 24, 0)
+	m, _ := toolsAtScreen(120, 34, 0)
 	a := toolsdiff.Copy{Machine: "host", Harness: "pi"}
 	b := toolsdiff.Copy{Machine: "host", Harness: "claude"}
 	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
 	v := plain(model.(Model))
-	for _, want := range []string{"a keep pi's copy", "b keep claude's copy", "no file details from these machines yet"} {
+	for _, want := range []string{"a keep pi's copy", "b keep claude's copy", "no file details from host yet: its scan has no file list"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}
 	}
-	if strings.Count(v, "no file details from these machines yet") != 1 {
-		t.Fatal(v)
+	if strings.Contains(v, "these machines") {
+		t.Fatalf("old wording still there: %s", v)
+	}
+}
+
+func TestChooseFetchesMissingDetails(t *testing.T) {
+	m, src := toolsAtScreen(120, 34, 0)
+	seen := t0.Add(-48 * time.Hour)
+	withDetails := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeM, Machine: "Nicolas-MBP", Location: "/Users/n/.claude/skills/demo", Hash: "h1",
+		Manifest: &protocol.SkillManifest{Newest: t0.Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10, Fingerprint: "a"}}}}
+	missing := toolsdiff.Copy{Name: "demo", Item: "old", NodeID: toolNodeR, Machine: "research", Location: "/home/n/.claude/skills/demo", Hash: "h2", Seen: seen}
+	src.detailManifest = &protocol.SkillManifest{Newest: t0.Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 20, Fingerprint: "b"}, {Path: "notes.md", Size: 5, Fingerprint: "c"}}}
+	model, cmd := m.openChoose("Compare, then keep one", toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{withDetails, missing}})
+	m = model.(Model)
+	if !strings.Contains(plain(m), "fetching details from research...") {
+		t.Fatalf("no fetching line:\n%s", plain(m))
+	}
+	if cmd == nil {
+		t.Fatal("no fetch command")
+	}
+	m = send(m, cmd())
+	v := plain(m)
+	if strings.Contains(v, "fetching details") {
+		t.Fatalf("fetching line stayed:\n%s", v)
+	}
+	for _, want := range []string{"file modified", "2 files differ", "notes.md only on research", "SKILL.md changed", "used by research"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q:\n%s", want, v)
+		}
+	}
+	if len(src.details) != 1 || src.details[0].NodeID != toolNodeR || src.details[0].Location != missing.Location || src.details[0].Hash != "h2" {
+		t.Fatalf("request: %+v", src.details)
+	}
+}
+
+func TestChooseFetchFailureNamesTheMachineAndReason(t *testing.T) {
+	m, src := toolsAtScreen(120, 34, 0)
+	a := toolsdiff.Copy{Machine: "Nicolas-MBP", NodeID: toolNodeM, Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md"}}}}
+	b := toolsdiff.Copy{Name: "demo", Machine: "research", NodeID: toolNodeR, Location: "/home/n/.claude/skills/demo", Hash: "h2", Seen: t0.Add(-48 * time.Hour)}
+	src.detailErr = errors.New("skill changed since its scan")
+	model, cmd := m.openChoose("Compare", toolsdiff.Action{Name: "demo", Copies: []toolsdiff.Copy{a, b}})
+	m = model.(Model)
+	m = send(m, cmd())
+	v := plain(m)
+	for _, want := range []string{"research: no details (skill changed since its scan)", "version", "last seen 2 days ago"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q:\n%s", want, v)
+		}
+	}
+}
+
+func TestChooseOfflineSideSaysSo(t *testing.T) {
+	m, src := toolsAtScreen(120, 34, 0)
+	for i := range m.tl.cat.Machines {
+		if m.tl.cat.Machines[i].ID == toolNodeR {
+			m.tl.cat.Machines[i].Online = false
+		}
+	}
+	a := toolsdiff.Copy{Machine: "Nicolas-MBP", NodeID: toolNodeM, Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md"}}}}
+	b := toolsdiff.Copy{Name: "demo", Machine: "research", NodeID: toolNodeR, Location: "/home/n/.claude/skills/demo", Hash: "h2", Seen: t0.Add(-48 * time.Hour)}
+	model, cmd := m.openChoose("Compare", toolsdiff.Action{Name: "demo", Copies: []toolsdiff.Copy{a, b}})
+	m = model.(Model)
+	if cmd != nil {
+		t.Fatal("an offline machine must not be asked")
+	}
+	v := plain(m)
+	for _, want := range []string{"research is offline: no details", "version", "last seen 2 days ago"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q:\n%s", want, v)
+		}
+	}
+	if len(src.details) != 0 {
+		t.Fatalf("asked an offline machine: %+v", src.details)
 	}
 }
 

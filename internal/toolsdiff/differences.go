@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -54,6 +55,8 @@ type Copy struct {
 	Name     string                  `json:"name,omitempty"`
 	Harness  string                  `json:"harness,omitempty"`
 	Manifest *protocol.SkillManifest `json:"manifest,omitempty"`
+	// Seen is when the gateway last received an observation of this copy.
+	Seen time.Time `json:"seen,omitempty"`
 	// Label is the version of this copy: "v2", "changed" or a short hash.
 	Label string `json:"label,omitempty"`
 }
@@ -153,7 +156,7 @@ func nameList(names []string, max int) string {
 }
 
 func copyOf(g group, v protocol.ToolItem, l protocol.ToolLocation) Copy {
-	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name, Harness: l.Harness, Manifest: l.Manifest, Label: g.label(v.VersionNo, v.Hash)}
+	return Copy{Item: v.ID, NodeID: l.NodeID, Machine: l.Machine, Location: l.Location, Checkout: l.ProjectRoot, Hash: v.Hash, Name: v.Name, Harness: l.Harness, Manifest: l.Manifest, Seen: l.ScannedAt, Label: g.label(v.VersionNo, v.Hash)}
 }
 
 func skillDiffs(g group, ms []Machine) []Difference {

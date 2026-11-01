@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/inventory"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -32,6 +33,74 @@ func TestInventoryStorePreservesFailedScan(t *testing.T) {
 	}
 	if len(reports) != 1 || len(reports[0].Items) != 1 || reports[0].Items[0].State != protocol.InventoryStale {
 		t.Fatalf("reports: %+v", reports)
+	}
+}
+
+func TestInventoryKeepsFreshItemsWhenOneSourceFails(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	old := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "old", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK}
+	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{old}}); err != nil {
+		t.Fatal(err)
+	}
+	fresh := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "new", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK,
+		Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10}}}}
+	broken := protocol.InventoryItem{Kind: "skill", Name: "linked", Hash: "", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/linked", State: protocol.InventoryError, Reason: "skill root is a symlink"}
+	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryError, Items: []protocol.InventoryItem{fresh, broken}}); err != nil {
+		t.Fatal(err)
+	}
+	reports, err := s.Inventories()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 || reports[0].State != protocol.InventoryStale {
+		t.Fatalf("report: %+v", reports)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, item := range items {
+		if item.Name == "demo" && item.Hash == "new" {
+			found = true
+			if len(item.Locations) != 1 || item.Locations[0].Manifest == nil || len(item.Locations[0].Manifest.Files) != 1 {
+				t.Fatalf("fresh manifest lost: %+v", item.Locations)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("fresh item lost: %+v", items)
+	}
+}
+
+func TestInventoryItemManifestIsStored(t *testing.T) {
+	s, err := OpenStore(filepath.Join(t.TempDir(), "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	item := protocol.InventoryItem{Kind: "skill", Name: "demo", Hash: "h", Harness: "claude", Scope: "user", Location: "/home/n/.claude/skills/demo", State: protocol.InventoryOK}
+	if err = s.SetInventory("node-a", protocol.InventoryReport{State: protocol.InventoryOK, Items: []protocol.InventoryItem{item}}); err != nil {
+		t.Fatal(err)
+	}
+	manifest := &protocol.SkillManifest{Newest: time.Date(2026, 10, 29, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 12}}}
+	if err = s.SetInventoryItemManifest("node-a", item.Location, manifest, time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ToolsItems(protocol.ToolsFilter{}, func(string) bool { return true })
+	if err != nil || len(items) != 1 {
+		t.Fatalf("items: %+v %v", items, err)
+	}
+	loc := items[0].Locations[0]
+	if loc.Manifest == nil || len(loc.Manifest.Files) != 1 || loc.Manifest.Files[0].Path != "SKILL.md" {
+		t.Fatalf("manifest: %+v", loc.Manifest)
+	}
+	if !loc.ScannedAt.Equal(time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("scan time: %v", loc.ScannedAt)
 	}
 }
 
