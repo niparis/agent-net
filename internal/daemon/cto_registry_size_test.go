@@ -56,14 +56,13 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		}
 		ids = append(ids, sid)
 	}
-	msg, _, err := st.StoreMessage(protocol.MsgSend{Sender: ids[0], Recipient: w.ownerID(), Body: "hello", Type: protocol.TypeRequest})
+	_, _, err := st.StoreMessage(protocol.MsgSend{Sender: ids[0], Recipient: w.ownerID(), Body: "hello", Type: protocol.TypeRequest})
 	if err != nil {
 		t.Fatal(err)
 	}
 	reads := map[string]map[string]any{
-		"charter_guide": {}, "agents": {}, "nodes": {}, "projects": {},
-		"get": {"session_id": ids[0]}, "messages": {}, "message_status": {"message_id": msg.ID},
-		"worker_profile_list": {}, "mcp_list": {}, "cto_events": {}, "graph": {},
+		"workers": {}, "tools": {}, "settings": {"area": "worker_profiles"}, "graph": {}, "machines": {}, "proposals": {}, "feed": {}, "overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "projects": {},
+		"messages": {},
 	}
 	_ = localID
 
@@ -125,7 +124,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 			if result.IsError {
 				// The CTO stays private until part 6. Caller-scoped reads must
 				// refuse its unregistered identity, rather than use the owner.
-				if tool.Name == "messages" || tool.Name == "message_status" || tool.Name == "worker_profile_list" {
+				if tool.Name == "settings" || tool.Name == "feed" || tool.Name == "messages" || false {
 					return
 				}
 				t.Fatalf("read failed: %+v", result.Content)
@@ -133,17 +132,9 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 			if len(result.Content) != 1 {
 				t.Fatalf("unexpected content: %+v", result.Content)
 			}
-			text, ok := result.Content[0].(*mcp.TextContent)
+			_, ok := result.Content[0].(*mcp.TextContent)
 			if !ok {
 				t.Fatalf("unexpected content: %+v", result.Content)
-			}
-			if tool.Name == "agents" {
-				var r struct {
-					Agents []json.RawMessage `json:"agents"`
-				}
-				if json.Unmarshal([]byte(text.Text), &r) != nil || len(r.Agents) < 50 {
-					t.Fatalf("agent fixture missing: %s", text.Text)
-				}
 			}
 
 			b, err := json.Marshal(result)

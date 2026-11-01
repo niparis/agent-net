@@ -4,7 +4,7 @@
 
 This design builds on the CTO as the advisor for the whole network, its charter, edges and authority. Its proposed peer session and owner-approved proposals fit decision 0036. The current private CTO behavior remains as documented until this design is built.
 
-Status: accepted by the owner as option A on 2026-10-31. Parts 6 and 7 are implemented; the CTO session receives messages through the active harness. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
+Status: accepted by the owner as option A on 2026-10-31. Parts 6, 7 and 9 are implemented; the CTO session receives messages through the active harness and uses paged public reads. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
 Part 5 (hand-over) is implemented: `c` previews one item and sends it through
@@ -400,6 +400,8 @@ Status: implemented. Messages reach the selected harness, including after a swit
 - Tests: golden TUI scenes for the Sessions row, the box with proposals, the Graph node and a proposal row (`scripts/screens.sh`); Enter on the row and Enter on the box give the same plan.
 
 **Part 9. Lists and details.**
+
+Status: implemented. The graph is limited to public project data, and protected providers remain owner-gated.
 - `overview`, `sessions`, `session`, `proposals`, `feed`, `messages`, `graph`, `machines`, `projects`, `workers`, `tools`, `settings`, with one-line rows, cut text, totals and cursors.
 - Tests: every list has a working cursor and a total; a page of 20 sessions stays below 3,000 bytes; the canary test still passes.
 

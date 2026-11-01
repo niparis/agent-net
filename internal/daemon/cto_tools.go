@@ -226,8 +226,8 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 			text = "read charter history: " + a.Node
 		case "edge_history":
 			text = "read edge history: " + a.Node
-		case "agents":
-			text = "read agents"
+		case "sessions":
+			text = "read sessions"
 		case "workers":
 			text = "read workers"
 		case "needs_you":

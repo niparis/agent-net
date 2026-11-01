@@ -796,3 +796,33 @@ Claude loads the owner's own settings and MCP servers. The launch adds no
 worker settings, MCP override, brief or hand-back tools. Normal discovery
 registers the session without a worker flag. Worker limits, stop rules,
 notices and cleanup do not apply. Stopping the daemon leaves it running.
+
+
+## Automatic reply reminders
+
+The gateway can send one notification from the reserved `agent-net` identity
+when a public request remains unanswered and its recipient is idle. Both the
+request and the recipient's last reported activity must be over two minutes
+old. A missing activity time prevents a reminder. The minute sampler never
+creates a reminder for an offline session. It counts that request instead.
+It excludes owner conversations, CTO recipients, notifications, held requests, expired
+requests and requests already answered.
+
+A reminder is a notification, not a new request or an approval. It carries no
+owner authority. It names the original sender and request ID and asks the
+recipient to use `agent_reply` on that request, or say it cannot. Sender names
+are cleaned before insertion. Ordinary senders cannot use the `agent-net`
+identity. Harness delivery recognizes that identity together with its
+gateway-supplied harness and notification type, so a peer cannot forge the
+system framing with a name, body marker or harness alone.
+
+The gateway checks the original sender-to-recipient edge, with the same
+specific-edge-before-wildcard order as a request. An `ask` or `never` rule
+blocks the reminder. It checks again before queue delivery, including retries,
+and withholds a reminder if the recipient became busy or offline, the request
+closed, or the edge changed. It never injects reminders into the private CTO
+conversation. Public requests sent by the CTO may remind the peer that owes
+an answer. The only new stored fact is the request's `reminded` flag, set
+atomically with the normal notification record. A restart cannot create
+another reminder for that request. Reminder and answer counters use retained
+message history; the count of offline requests skipped is kept in memory.

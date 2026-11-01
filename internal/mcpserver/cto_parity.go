@@ -2,6 +2,11 @@ package mcpserver
 
 // These tools use the same parameter names as the owner operator methods.
 func init() {
+	defer func() {
+		for _, name := range []string{"agents", "nodes", "get", "message_status", "mcp_list", "worker_profile_list", "cto_events", "charter_guide"} {
+			delete(ctoTools, name)
+		}
+	}()
 	s := func(desc string) ctoField { return ctoField{typ: "string", desc: desc} }
 	b := func(desc string) ctoField { return ctoField{typ: "boolean", desc: desc} }
 	n := func(desc string) ctoField { return ctoField{typ: "integer", desc: desc} }
@@ -30,13 +35,13 @@ func init() {
 	add("ui_show", "Show a TUI view.", map[string]ctoField{"tab": en("Tab.", "sessions", "messages", "quotas", "graph", "tools"), "select": s("Selection."), "filter": s("Filter."), "why": s("Reason.")})
 	add("ui_notice", "Show notice.", map[string]ctoField{"text": s("Notice.")})
 	add("nodes", "List machines and harness models.", nil)
-	add("projects", "List projects.", map[string]ctoField{"name": s("All.")})
+	add("projects", "List projects.", map[string]ctoField{"name": s("Filter."), "limit": n("Limit."), "offset": n("Offset.")})
 	add("project_add", "Register or scan projects.", map[string]ctoField{"paths": arr("Paths."), "dir": s("Directory."), "scan": b("Directory."), "depth": n("3; max 8."), "dry_run": b("Preview.")})
 	add("project_remove", "Remove a project.", map[string]ctoField{"name": s("Project."), "path": s("Path.")})
 	add("reply", "Reply as CTO.", map[string]ctoField{"message_id": s("Message ID."), "body": s("Reply.")})
 	add("mcp_call", "Call an MCP tool.", map[string]ctoField{"server": s("Server name."), "tool": s("Tool."), "arguments": obj("Arguments.")})
 	add("get", "Read session profile.", map[string]ctoField{"session_id": sid})
-	add("messages", "Read messages.", map[string]ctoField{"session_id": sid, "conversation_id": s("Conversation."), "limit": n("Limit.")})
+	add("messages", "List own messages or read one.", map[string]ctoField{"message_id": s("Message ID."), "conversation_id": s("Conversation."), "limit": n("Limit."), "offset": n("Offset.")})
 	add("message_status", "Read message status.", map[string]ctoField{"message_id": s("Message ID.")})
 	add("session_trust", "Set session peer trust.", map[string]ctoField{"session_id": sid, "on": b("Enable.")})
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})

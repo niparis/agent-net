@@ -34,9 +34,9 @@ a proposal. `cto_settings` and `notification_settings` only propose changes,
 including empty calls. They never return owner settings to the CTO.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
-registered CTO session as caller rather than the owner. Static `charter_guide`
-text and the CTO's own `cto_events` timeline are the only exceptions. Message
-lists and status return only the CTO's own conversations. Owner-only data
+registered CTO session as caller rather than the owner. Static charter guidance
+and the CTO's own proposals are the exceptions. Message lists and details
+return only the CTO's own conversations. Owner-only data
 enters the conversation only when the owner shares it.
 
 Starting or entering the CTO through the owner gate registers one network
@@ -190,7 +190,7 @@ Missing capabilities or permissions stop startup before an owner prompt is sent.
 Harness versions are logged for diagnosis, without a version allowlist.
 No model call was used to verify runtime enforcement.
 
-The `charter_guide` CTO tool returns the charter writing guide on demand.
+The CTO reads the charter writing guide with `graph` and `view: "guide"`.
 The `charter_set` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
@@ -199,40 +199,31 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. Needs you shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The table pins CTO read views to ordinary agent-net tools or an explicit
-static/own-conversation source. CTO tool names are private to the CTO and
-are not in the shared MCP registry.
+The CTO starts with `overview`, which counts online sessions, machines,
+running workers and its own open proposals. List views return `items`, `total`
+and, when another page exists, `next`. Pass `next` as `offset` to read the
+next page. The default page is 20 items and the maximum is 50. Rows contain
+short fields; use a detail view when needed.
 
-| Ordinary agent tool or source | CTO read view |
+| CTO read | Source and detail |
 |---|---|
-| `agent_list` via `list` | `agents` |
-| `agent_get` via `get` | `get` |
-| `agent_nodes` via `nodes` | `nodes` |
-| `agent_project_list` via `projects` | `projects` |
-| `agent_graph` via `agent_graph` | `graph` |
-| `agent_messages` via `messages` | `messages`, scoped to the CTO caller |
-| `agent_message_status` via `message_status` | `message_status`, scoped to the CTO caller; no owner relay |
-| `agent_mcp_list` via `mcp_list` | `mcp_list` |
-| `agent_worker_profiles` via `worker_profiles` | `worker_profile_list` |
-| Static `protocol.CharterGuideText` | `charter_guide` |
-| The CTO's own timeline | `cto_events` |
+| `overview` | `agent_list`, `agent_nodes` and the CTO's own proposals |
+| `sessions`, `session` | `agent_list` and `agent_get`; `session` takes `session_id` |
+| `proposals` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
+| `feed`, `messages` | The CTO's conversations via `agent_messages`; feed has metadata only. `messages` takes `message_id` for a body via `agent_message_status`. |
+| `graph`, `projects` | `graph` is the public graph via `agent_graph`: nodes with charters and maturity, and edges with kind, mode and request rule. `node` reads one node's full charter. `view: "guide"` returns the charter guide. `projects` lists public projects via `agent_project_list`. |
+| `machines` | `agent_nodes`; `machine` selects a machine, and `harness` lists its models. |
+| `workers` | Workers from `agent_list`; `id` reads a worker profile via `agent_get`. |
+| `tools` | Shared MCP server rows from `agent_mcp_list`; `view` is `mcp`. |
+| `settings` | Public worker profiles via `agent_worker_profiles`; `area` is `worker_profiles`. |
 
-The parity test pins every read view to this source. A new read without a
-source fails the test. `agents` and `get` omit waiting-question contents on
-ordinary agent connections as well as the CTO channel. Owner CLI/TUI views
-keep them. `messages` ignores a supplied `session_id`; `message_status`
-requires the caller to be a sender or recipient.
-
-Removed CTO reads: `needs_you`, `held_list`, `inbox_list`, `outcome_inbox`,
-`session_text`, `usage`, `usage_top`, `counts`, the old `graph_get` and
-`graph_view` names (the public `graph` view replaces them),
-`charter_history`, `edge_history`, `charter_suggestions`, `tools_list`,
-`tools_differences`, `tools_history`, `mcp_import_candidates`, `integrations_get`,
-`node_settings_get`, `playbook_get`, `project_display_get`, `protected_providers_get`,
-`info`, `workers`, `feed`, `session_enter`, `cto_enter` and `cto_graph_history`.
-`protected_providers_get` has an ordinary MCP schema but its daemon method is
-owner-gated, so the CTO cannot use it. `feed` and `workers` have no ordinary
-agent MCP tool. Public model notes remain visible through `nodes`.
+The parity and canary tests cover the views. Session reads omit waiting-question
+contents. Message reads use the registered CTO caller and cannot access another
+conversation. Message lists require a gateway that supports pagination; older
+gateways return an upgrade error. `protected_providers_get` has an ordinary MCP schema but its daemon
+method is owner-gated, so the CTO cannot read that setting. Needs you, other
+sessions' text, owner inboxes, tool inventory and owner settings remain outside
+the CTO's read tools.
 
 Change tools remain proposals: graph and charter writes, worker start/stop,
 session trust/policy/names, held/inbox/outcome answers, settings and playbook
@@ -1179,7 +1170,7 @@ Each entry has the machine, the path of the main working tree, the identity deri
 
 **Project identity and display name.** The last part of the `origin` URL, without `.git`, is the project identity. For example, `https://example.com/team/agent-net.git` gives `agent-net` even when the checkout folder has another name. With no usable origin, the main tree folder name is used. Repositories with the same last remote path part share an identity, even when their owners or hosts differ.
 
-The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, and reads display names through `projects`, `agents` or `get`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
+The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, and reads display names through `projects` or `session`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
 
 On upgrade, the gateway uses stored origin URLs to move old folder-based project data to the repository identity. When charters meet, both texts are kept and `project.identity_merge` is logged. If graph controls conflict, that pair is left unchanged, `project.identity_conflict` is logged with `from` and `to`, and the gateway continues with other projects. Ambiguous folder names that point to different repository identities are left alone. This migration runs once; logged conflicts and ambiguous mappings need review.
 
@@ -1316,7 +1307,7 @@ The Graph tab keeps its graph, camera, selection and traffic in a headless state
 - **Header.** `12 online · 3 busy · 1 needs you · workers 4 running, 1 queued`: the gateway's online count from `counts`, the sessions that report `busy`, the sessions that wait for you (in the warning colour, and left out when none wait), and the workers with the queued starts from the admission queue. Offline sessions are left out: they are mostly old ghosts. An older gateway has no counts: the header then says `N sessions, M online` and the same figures after it. A warning on the title points to tab 3 when a subscription window is above 80% or exhausted. The header also shows the inbox count, the learned count, the active filters (`filter: active, /cogforge`), and the time of the last refresh.
 - **Needs you,** a section above the machines when at least one session waits for you (decision [0016](decisions/0016-needs-you.md)). Each row has the session, harness, machine, age and question or permission request. Oldest waits come first; at most five rows are shown. Select a waiting session and press Enter to enter it and answer there; `m` sends a message without entering. A waiting session also says `needs you` in STATUS. See [Needs you](#needs-you).
 - **Machines,** one line each: an online dot, name, agent-net version, CPU use as a percentage of the machine's core capacity with a bar, memory used and total with a bar, free space on the filesystem containing the daemon user's home directory, running worker count and memory, and the session or worker with the highest CPU use. Versions are dim, except that an online machine on an older version than the newest online machine is amber. Offline machines show their last known version in dim. The columns stay aligned across rows. When the terminal is narrow, the row keeps its version and omits optional fields in this order: top CPU session, workers, disk. Disk space is sampled once a minute; less than 10G free is red and less than 20G is amber. It does not list installed harnesses. When another machine has a harness that this machine lacks or has at an older version, it shows a dim note such as `no codex` or `old codex`. This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
-- **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, MODEL (shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `needs you`, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), POLICY (only when some session has a [delegation policy](#delegation-policy): `own`, `sub` or `wrk`), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. Sessions are grouped by machine and sorted into activity bands: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, or a wait started), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL, PROJECT and POLICY go first; TRUST always stays. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row.
+- **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, MODEL (shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `needs you`, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), POLICY (only when some session has a [delegation policy](#delegation-policy): `own`, `sub` or `wrk`), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. The same loop sends at most one reminder per unanswered request to an online, idle recipient, after both the request and the last reported activity are over two minutes old. A missing activity time prevents a reminder. Notifications, held or closed requests, owner conversations, CTO recipients, and edges with `ask` or `never` are excluded. Delivery rechecks these conditions. The notification comes from the reserved `agent-net` sender and asks the recipient to answer the original message with `agent_reply`, or say it cannot. A `reminded` flag on the request survives a gateway restart. The operator `query.counts` call also returns `pending_reminders` (reminders put into the delivery queue), `pending_answered_after_reminder` (requests answered within 30 minutes of their reminder), and `pending_reminders_offline` (distinct eligible requests skipped while their recipient was offline, since gateway start). The first two counts are derived from retained messages and can decrease when message history is pruned. Offline requests create no notification; they may receive their one reminder after reconnecting. Sessions are grouped by machine and sorted into activity bands: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, or a wait started), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL, PROJECT and POLICY go first; TRUST always stays. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row.
 - **Selected session.** The first line has the name, harness, status and the session's CPU, RAM and process count. Below, on the left: session and worker IDs and PID, folder, branch, model and mode (these last two moved here from the table), function (the project description from `AGENTS.md`; "none: add a `# Project: <one line>` line to AGENTS.md" when there is none), remote, worktree (when the session runs in a linked worktree), the project source (`seen in a session`, `registered`, or `seen in a session and registered`), task, expertise, a `trust` line when peer trust is on, `policy` and `main` lines when it has a delegation policy (with a note for each part its harness cannot do), and its recent messages. For a worker it starts with who started it and then `context 84k / 1M (8%)  tokens 345k`, with only the parts the harness has reported. On the right: the heaviest 5 processes by CPU and by memory (PID, CPU, RAM, command line with secrets masked), fetched with `usage_top` when the session is selected and again every 5 seconds. Press `d` to replace the session list with these details; press it again to return. The CTO box stays visible.
 - **Workers** show in the sessions table right under the session that started them, indented with `├─` (or `└─` for the last one), in order of start time, like a sub-agent. A worker's NAME is `<project> worker <n>` (decision [0024](decisions/0024-session-names.md)), and its TASK is the first line of its FIRST task, which the daemon records and the gateway passes in the agent list; a later request from its owner does not replace it. When that task is missing, TASK is the harness title, or blank. The full worker ID is on the detail pane's `id` line. A worker on another machine than its caller still sits under the caller and has `@host` after its name. A worker whose caller is not on screen (you started it, or the caller is offline or hidden by the filter) stays in its own machine group with `↳` before the name. Selection keys follow the order on screen. The detail says the worker runs in the background. The title counts them.
 - **Messages** on tab 2 groups messages into threads. A thread uses its conversation ID, or the pair of sessions when older events have no conversation ID. Each row shows the latest message's first line, the message count and the age. The right pane shows the messages in the selected thread; up and down select a thread, left and right select a message, and Enter selects the latest message in the thread. Press `v` to open that message's full body. The body is fetched once through `message_status` and cached by message ID. The owner can read any thread through the participant relay; another machine can read messages involving one of its sessions. A long preview ends with `…` after its text. If a body cannot be fetched, the thread says why.

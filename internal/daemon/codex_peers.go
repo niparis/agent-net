@@ -343,6 +343,10 @@ func (a *codexAdapter) Deliver(ctx context.Context, target protocol.SessionInfo,
 // extension and the OpenCode plugin. Codex shows it as the user's message, so
 // the footer must say plainly that it is not.
 func codexFrame(m protocol.Message) string {
+	if m.From == "agent-net" && m.FromHarness == "agent-net" && m.Type == protocol.TypeNotification {
+		return m.Body
+	}
+
 	who := m.FromName
 	if who == "" {
 		who = "unknown"

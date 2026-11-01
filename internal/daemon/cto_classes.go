@@ -21,7 +21,7 @@ const (
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:     "charter_guide agents nodes projects get messages message_status mcp_list worker_profile_list cto_events graph",
+		ctoRead:     "overview sessions session proposals feed graph machines workers tools settings projects messages",
 		ctoTalk:     "send reply learn ui_show ui_notice message",
 		ctoProposal: "project_display_set charter_set node_add node_remove edge_set edge_remove graph_undo worker_profile_add worker_profile_remove worker_providers_set protected_providers_set score_set worker_start project_add project_remove mcp_call session_trust session_policy node_rename session_rename integrations_set worker_stop held_answer inbox_answer outcome_overrule node_settings_set playbook_set mcp_add mcp_remove mcp_test mcp_enable cto_send cto_new tools_plan tools_apply tools_undo mcp_import mcp_native_remove invite onboarding_restart notification_settings cto_settings",
 	} {

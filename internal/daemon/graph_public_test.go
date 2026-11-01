@@ -166,8 +166,28 @@ func TestAgentGraphAndCTOViewHideOwnerNodeSettings(t *testing.T) {
 	}
 
 	// The CTO view is the same public read, not a copy with its own rules.
-	agentDetail := string(agent.mustCall("agent_graph", map[string]any{"node": "shop"}))
-	if agentDetail != string(raw) {
-		t.Fatalf("CTO graph differs from the agent read:\nCTO:   %s\nagent: %s", raw, agentDetail)
+	var agentDetail protocol.PublicGraphPage
+	if err := json.Unmarshal(agent.mustCall("agent_graph", map[string]any{"node": "shop"}), &agentDetail); err != nil {
+		t.Fatal(err)
+	}
+	var ctoDetail struct {
+		Node  string                     `json:"node"`
+		Items []protocol.PublicGraphNode `json:"items"`
+		Edges []protocol.PublicGraphEdge `json:"edges"`
+		Total int                        `json:"total"`
+	}
+	rawDetail, _ := json.Marshal(cto)
+	if err := json.Unmarshal(rawDetail, &ctoDetail); err != nil {
+		t.Fatal(err)
+	}
+	if ctoDetail.Node != "shop" || ctoDetail.Total != 1 || len(ctoDetail.Items) != 1 {
+		t.Fatalf("CTO graph detail shape: %s", rawDetail)
+	}
+	if ctoDetail.Items[0].Charter == nil || agentDetail.Nodes[0].Charter == nil ||
+		*ctoDetail.Items[0].Charter != *agentDetail.Nodes[0].Charter {
+		t.Fatalf("CTO charter differs from the agent read: %s vs %+v", rawDetail, agentDetail.Nodes)
+	}
+	if len(ctoDetail.Edges) != len(agentDetail.Edges) || len(ctoDetail.Edges) == 0 {
+		t.Fatalf("CTO edges differ from the agent read: %s vs %+v", rawDetail, agentDetail.Edges)
 	}
 }

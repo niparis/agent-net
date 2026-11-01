@@ -878,6 +878,21 @@ await test("agent_start and agent_stop reach the daemon and print a short result
   stop();
 });
 
+await test("system reminder has no peer reply instruction", async () => {
+  freshHub();
+  const sid = "ses_reminder";
+  const sessions = new Map([[sid, session(sid, "/work/o")]]);
+  const prompts = [];
+  const c = makeContext("/work/o", sessions, { onPrompt: (p) => prompts.push(p) });
+  const stop = await plugin.setup(c.ctx);
+  await until("reminder recipient", () => registered(sid));
+  const body = "[agent-net] reminder: alice is waiting for your answer to m_request (sent 3m0s ago). Answer with agent_reply, or say you cannot.";
+  conns.get(sid).write(JSON.stringify({method:"deliver",params:{message:{message_id:"m_note",sender_session_id:"agent-net",sender_harness:"agent-net",message_type:"notification",body}}})+"\n");
+  await until("reminder prompt", () => prompts.length === 1);
+  if (prompts[0].text !== body) throw new Error(prompts[0].text);
+  stop();
+});
+
 await test("plain CTO requests and replies carry only the peer note", async () => {
   for (const kind of ["request", "reply"]) {
     freshHub();

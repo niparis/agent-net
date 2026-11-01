@@ -1,6 +1,6 @@
 # Difficulty calibration from rework
 
-Status: proposed design, for the owner's review. Not approved, not scheduled.
+Status: approved by the owner on 2026-11-01, with the recommended answers to the open questions. Built in the parts of section 10.
 Builds on decision [0026](../decisions/0026-worker-difficulty-and-scores.md)
 (difficulty, scores, rotation) and [0036](../decisions/0036-primitives.md)
 (task as a contract between a caller and a doer).
@@ -137,6 +137,89 @@ tasks need too many fixes at a difficulty loses rotation weight there. A
 model that only needs continues keeps most of its weight on resumable
 harnesses, and loses it on harnesses that cannot resume (Pi today).
 
+## 7b. Asking the caller: a satisfaction sample
+
+Counters see how often work came back, not how good it was. So, now and then,
+agent-net asks the caller directly.
+
+- **When.** After a worker's final hand-back, for every 5th finished worker
+  of each caller. Also for the first 3 finished tasks of any model and effort
+  that has fewer than 5 ratings, so new models get rated quickly.
+- **What.** One short request from agent-net, answered with one tool call
+  (`agent_rate`): a score from 1 to 5 for the result, and one line on why.
+  Example: "Rate worker 4 (deepseek-v4.1-flash, normal, 23 min): 1 to 5 for
+  the result, and one line." No answer within a day counts as no rating, not
+  as a low one.
+- **Stored.** Per rating: the model, the effort, the harness, the difficulty
+  asked and used, the caller and its model, the score, the line, the time.
+- **Used.** Through the analysis in section 7c, not as one median per
+  combination. The chooser uses the predicted quality like the track record:
+  it changes rotation weight, within limits, and never the score minimum.
+  The benchmark score decides what a model may do; the ratings decide how
+  often it is picked among the adequate ones.
+- **The same guard as section 6.** Ratings from strong callers count fully.
+  Ratings from weak callers count half, and alone they cannot raise a model's
+  quality score. A weak reviewer is generous for the same reason it sends
+  nothing back.
+- **Overlap.** `agent_learn` stays for free-text findings that should change
+  how a model is briefed. `agent_rate` is the structured number. A low rating
+  with a reason may also become a finding, by the caller's choice.
+
+## 7c. Analysis: store each task, read the effects together
+
+Split by every combination (model, harness, effort), each cell gets two or
+three ratings, which says nothing. So agent-net stores every rating and
+every rework count raw, per task, and analyses them all together as a sum of
+effects:
+
+```
+quality ≈ average + model + harness + effort + difficulty
+```
+
+The effects are fitted over all tasks at once. Each task then informs its
+model, its harness and its effort together, instead of filling one small
+cell. This answers three questions directly:
+
+- **How does the model act?** The model effect, for example "DeepSeek -0.2,
+  sol +0.6", with the number of tasks behind it.
+- **How much does the harness matter?** The spread of the harness effects. If
+  Codex, OpenCode and Pi are all within ±0.1, the harness hardly matters. If
+  Pi is at -0.5 for every model, the problem is the harness, not the model.
+- **How much does effort matter?** Measured within one model family, because
+  "high" means different things for different vendors: "sol medium against
+  sol high: +0.1, not worth the cost".
+
+Two properties make this better than plain medians:
+
+- **It separates things that come together.** DeepSeek runs almost always on
+  OpenCode, so a plain median cannot tell a DeepSeek effect from an OpenCode
+  effect. The sum of effects can, wherever there is some overlap.
+- **It predicts a combination nobody tried yet**, from the effects it is made
+  of.
+
+Kept honest:
+
+- **Small samples are pulled toward zero** (shrinkage). A model with three
+  ratings does not jump to +1.5; its effect stays near the average until
+  enough tasks support it. One parameter sets how strong the pull is.
+- **Every effect shows its count**: "+0.6 (14 tasks)", "-0.3 (3 tasks, weak)".
+- **The same fit runs on the rework counters.** That shows, for example,
+  that early stops are partly a harness matter (Codex can resume, Pi cannot)
+  and wrong results a model matter.
+- **No interactions at first.** Some combinations are special (early stops
+  matter only on a harness that cannot resume). The sum misses them. Start
+  without, and flag a combination whose real results stay far from the
+  prediction.
+
+Size: a few dozen lines of code on the gateway, run on demand or every hour,
+over a few thousand tasks in milliseconds. Nothing is stored beyond the raw
+records. The real limit is data: at 5 to 20 rated tasks a day, model effects
+take a week or two to settle, harness and effort effects longer, and the
+screen says so instead of pretending to know.
+
+The per-caller rework medians of section 3 stay as they are: they correct a
+caller's labels, which is a different question from how good a model is.
+
 ## 8. What the owner sees
 
 The Quotas tab gets one small table, one row per caller:
@@ -151,9 +234,22 @@ Each cell shows the median weighted rework and the number of tasks behind
 it. A caller with a lasting negative bias is an over-labeler. A caller marked
 weak shows `network` in place of its own numbers.
 
+Under it, the three answers of section 7c, each effect with its count:
+
+```
+MODEL                QUALITY        REWORK        HARNESS     QUALITY
+gpt-6.1-sol          +0.6 (14)      -0.3 (14)     codex       +0.1 (31)
+deepseek-v4.1-flash  -0.2 (22)      +0.2 (22)     opencode    -0.1 (25)
+gpt-6.1-terra        +0.1 (9)       +0.6 (9)      pi          -0.4 (4, weak)
+
+EFFORT (within family)
+sol    medium -> high   +0.1 (6, weak)
+```
+
 ## 9. State
 
 - Two counters on each worker record (daemon and gateway).
+- The ratings, raw, one row per rating (gateway).
 - One offset per caller and difficulty, plus the network offsets (gateway
   owner settings, next to the rotation state).
 - The override reasons (gateway events).
@@ -171,7 +267,11 @@ content only of work that crosses a boundary, and here it only counts it.
 3. Apply the offsets in the chooser, with the explanation in the start
    result, `reason` overrides, the critical floor and target, and a model
    named by an agent as a hint.
-4. Optional, later: restarts, reverts and git fix-up lines as extra signals;
+4. The satisfaction sample (section 7b): `agent_rate` and the sampling.
+5. The analysis (section 7c): the sum-of-effects fit with shrinkage over
+   ratings and rework, the three answers in the Quotas tab, then the
+   predicted quality as rotation weight.
+6. Optional, later: restarts, reverts and git fix-up lines as extra signals;
    spot checks.
 
 Parts 1 and 2 change no behavior, so the owner can watch the numbers for a
@@ -187,3 +287,9 @@ few days before part 3 starts steering.
    which today means sol, Opus and Astra, and not terra, DeepSeek or Sonnet.
 4. **A named model from an agent becomes a hint.** This changes today's
    behavior for agents that name models. Recommendation: yes.
+5. **How often to ask.** Every 5th finished worker per caller, plus the first
+   3 tasks of a little-rated model. Recommendation: keep it, and watch
+   whether callers find it a burden.
+6. **The analysis.** A sum of effects with shrinkage, no interactions at
+   first. Recommendation: yes; it is small, and plain medians per
+   combination would stay empty for weeks.

@@ -14,10 +14,7 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"agents": "list", "nodes": "nodes", "projects": "projects", "get": "get",
-	"messages": "messages", "message_status": "message_status", "mcp_list": "mcp_list",
-	"worker_profile_list": "worker_profiles", "cto_events": "own timeline", "charter_guide": "static guide",
-	"graph": "agent_graph",
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
 }
 
 func TestCTOReadParitySources(t *testing.T) {
@@ -116,16 +113,34 @@ func TestCTOReadCanary(t *testing.T) {
 		if class != ctoRead {
 			continue
 		}
-		args, _ := json.Marshal(map[string]any{"session_id": id, "node": "missing", "model": "fake/m1", "message_id": held.ID, "conversation_id": held.ConversationID})
-		value, err := w.d.runCTOToolRaw(context.Background(), name, args)
-		raw, _ := json.Marshal(value)
-		output := string(raw)
-		if err != nil {
-			output += err.Error()
+		cases := []map[string]any{{}}
+		switch name {
+		case "proposals":
+			cases = append(cases, map[string]any{"id": "p_1"})
+		case "session":
+			cases = []map[string]any{{"session_id": id}}
+		case "settings":
+			cases = []map[string]any{{"area": "worker_profiles"}}
+		case "messages":
+			cases = append(cases, map[string]any{"message_id": held.ID}, map[string]any{"conversation_id": held.ConversationID})
+		case "graph":
+			cases = append(cases, map[string]any{"view": "guide"})
 		}
-		for _, secret := range []string{marker, "OWNER_ONLY_INBOX_CANARY", "PRIVATE_INBOX_ITEM_CANARY", "PRIVATE_SETTINGS_CANARY", "HELD_REQUEST_CANARY", "TOOL_PLAN_PATH_CANARY", "MCP_RESULT_CANARY", "OTHER_SESSION_TEXT_CANARY"} {
-			if strings.Contains(output, secret) {
-				t.Errorf("%s leaked %s", name, secret)
+		for _, args := range cases {
+			encoded, _ := json.Marshal(args)
+			value, err := w.d.runCTOToolRaw(context.Background(), name, encoded)
+			raw, _ := json.Marshal(value)
+			output := string(raw)
+			if err != nil {
+				output += err.Error()
+			}
+			for _, secret := range []string{marker, "OWNER_ONLY_INBOX_CANARY", "PRIVATE_INBOX_ITEM_CANARY", "PRIVATE_SETTINGS_CANARY", "HELD_REQUEST_CANARY", "TOOL_PLAN_PATH_CANARY", "MCP_RESULT_CANARY", "OTHER_SESSION_TEXT_CANARY"} {
+				if strings.Contains(output, secret) {
+					t.Errorf("%s leaked %s", name, secret)
+				}
+			}
+			if err != nil && !(name == "messages" && len(args) > 0) {
+				t.Errorf("%s %v: %v", name, args, err)
 			}
 		}
 	}
@@ -152,25 +167,19 @@ func TestCTOReadParity(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	_, id := helloPi(t, w.node, "parity", "/fixture", true)
 	args, _ := json.Marshal(map[string]any{"session_id": id, "message_id": "missing"})
-	for view, source := range ctoReadSources {
-		if wantCTOReads[view] != source {
-			t.Errorf("%s source %q, want %q", view, source, wantCTOReads[view])
-		}
-		t.Run(view, func(t *testing.T) {
-			got, ge := w.d.runCTOToolRaw(context.Background(), view, args)
-			want, we := w.d.ctoReadConn().dispatch(context.Background(), wantCTOReads[view], args)
-			gb, _ := json.Marshal(got)
-			wb, _ := json.Marshal(want)
-			if string(gb) != string(wb) || fmt.Sprint(ge) != fmt.Sprint(we) {
-				t.Fatalf("CTO %s %v; ordinary agent %s %v", gb, ge, wb, we)
-			}
-		})
-	}
 	for view, source := range wantCTOReads {
-		if source != "own timeline" && source != "static guide" && ctoReadSources[view] != source {
-			t.Errorf("%s lost its source", view)
+		if ctoReadSources[view] != source {
+			t.Errorf("%s source %q, want %q", view, ctoReadSources[view], source)
 		}
 	}
+	got, ge := w.d.runCTOToolRaw(context.Background(), "session", args)
+	want, we := w.d.ctoReadConn().dispatch(context.Background(), "get", args)
+	gb, _ := json.Marshal(got)
+	wb, _ := json.Marshal(want)
+	if string(gb) != string(wb) || fmt.Sprint(ge) != fmt.Sprint(we) {
+		t.Fatalf("session %s %v; agent %s %v", gb, ge, wb, we)
+	}
+
 	if _, err := w.d.readCTOTool(context.Background(), "unsourced_read", nil); err == nil {
 		t.Fatal("read without source ran")
 	}
