@@ -173,6 +173,16 @@ func TestMapCardLegendToggles(t *testing.T) {
 	if strings.Contains(cardText(m, 120, 60), "Legend") {
 		t.Fatal("the legend did not hide again")
 	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}, {190, 45}} {
+		wide := openMap(t, mapModel(size[0], size[1], richGraph()))
+		wide.mp.selected = "tenebrae"
+		wide = keys(wide, "!")
+		for _, line := range wide.mapFocusView(size[0], size[1]-1) {
+			if ansi.StringWidth(line) > size[0] {
+				t.Errorf("%v: legend line too wide: %q", size, ansi.Strip(line))
+			}
+		}
+	}
 }
 
 func TestMapCardRulesShowEffectiveValuesAndOverrides(t *testing.T) {
