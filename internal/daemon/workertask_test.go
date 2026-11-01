@@ -13,7 +13,7 @@ func TestWorkerTaskReachesTheAgentList(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
 	w.register(t, newRepo(t, "shop"))
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "deploy the routes\nthen test them"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "deploy the routes\nthen test them"})
 
 	eventually(t, "the worker's task in the agent list", func() bool {
 		for _, a := range w.agents(t, false) {

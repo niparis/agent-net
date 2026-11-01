@@ -184,7 +184,7 @@ func TestClaudeWorkerResumeWithNewSessionID(t *testing.T) {
 	c := startClaudeNode(t, g, set)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:handback first"})
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:handback first"})
 	rec := readClaude(t, repo)
 	c.waitNotice(t, 1)
 	eventually(t, "worker ended", func() bool { return c.d.workerCount() == 0 && !alive(rec.Pid) })
@@ -218,7 +218,7 @@ func TestDaemonStopWaitsForAWorkerThatHandedBack(t *testing.T) {
 	c := startClaudeNode(t, g, set)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:handback now"})
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:handback now"})
 	c.waitNotice(t, 1)
 	eventually(t, "the hand-back end has started", func() bool {
 		w := c.d.workerBySession(res.SessionID)
@@ -247,7 +247,7 @@ func TestClaudeWorkerStopFallsBackToKillingTheGroup(t *testing.T) {
 	c := startClaudeNode(t, g, set)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "x"})
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "x"})
 	rec := readClaude(t, repo)
 	c.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the session is killed", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
@@ -266,7 +266,7 @@ func TestClaudeWorkerBlockedAndWorktree(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Isolation: protocol.IsolationWorktree,
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Isolation: protocol.IsolationWorktree,
 		Task: "FAKE:edit FAKE:handback FAKE:blocked"})
 	if res.Worktree == "" {
 		t.Fatal("no worktree")
@@ -291,7 +291,7 @@ func TestClaudeWorkerStartFails(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	_, err := c.start(protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "x"})
+	_, err := c.start(protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), "Workspace not trusted") {
 		t.Fatalf("error: %v", err)
 	}
@@ -308,7 +308,7 @@ func TestClaudeWorkerSurvivesADaemonRestart(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:ignore"})
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:ignore"})
 	rec := readClaude(t, repo)
 	owner := c.ownerID()
 
@@ -344,7 +344,7 @@ func TestClaudeWorkerCrashSendsANotice(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "FAKE:ignore"})
+	c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:ignore"})
 	rec := readClaude(t, repo)
 	syscall.Kill(-rec.Pgid, syscall.SIGKILL)
 	n := c.waitNotice(t, 1)[0]
@@ -365,7 +365,7 @@ func TestClaudeWorkerWaitsForItsMCPServer(t *testing.T) {
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
 	began := time.Now()
-	c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "x"})
+	c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "x"})
 	if took := time.Since(began); took < 900*time.Millisecond {
 		t.Errorf("the start returned after %s, before the MCP server had settled", took)
 	}
@@ -493,7 +493,7 @@ func TestPiWorkerUsageReachesTheWorkersView(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startPiNode(t, g, shortSet)
 	w.register(t, newRepo(t, "shop"))
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "FAKE:ignore keep working", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Task: "FAKE:ignore keep working", Isolation: protocol.IsolationWorktree})
 	eventually(t, "the Pi worker's context and tokens", func() bool {
 		ws := w.workers(t)
 		return len(ws) == 1 && ws[0].SessionID == res.SessionID &&
@@ -544,7 +544,7 @@ func TestPiWorkerHandbackAndStartFailure(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:edit FAKE:handback"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:edit FAKE:handback"})
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: done", "(pi", "work.txt | 2 ++", "finished the task in " + res.Worktree} {
 		if !strings.Contains(n.Body, want) {
@@ -579,7 +579,7 @@ func TestPiWorkerSurvivesADaemonRestart(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Task: "x", Isolation: protocol.IsolationWorktree})
 	rec := readPi(t, res.Worktree)
 	owner := w.ownerID()
 	w.d.Stop()
@@ -607,7 +607,7 @@ func TestPiWorkerNeedsAWorktree(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), `a Pi worker needs isolation "worktree"`) {
 		t.Fatalf("error: %v", err)
 	}
@@ -743,7 +743,7 @@ func TestCodexWorkerQueuedTurnAfterHandback(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	owner := w.ownerID()
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:wait"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:wait"})
 	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "second turn FAKE:wait-second"}), &sent)
@@ -779,7 +779,7 @@ func TestCodexWorkerBlockedOnAnApproval(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:approve clean the build"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:approve clean the build"})
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: blocked", "BLOCKED:", "action: run the command: rm -rf build", "reason: outside the sandbox",
 		"approve_in: Codex thread th-", "codex resume th-", "approval_text:"} {
@@ -802,7 +802,7 @@ func TestCodexWorkerFailedTurnAndWorktree(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "FAKE:edit FAKE:fail"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "FAKE:edit FAKE:fail"})
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: failed", "The Codex turn failed: model overloaded", "work.txt | 2 ++", "worktree: " + res.Worktree} {
 		if !strings.Contains(n.Body, want) {
@@ -830,7 +830,7 @@ func TestCodexWorkerRefusesOtherAgents(t *testing.T) {
 	stranger.AutoAck = true
 
 	t.Run("ended", func(t *testing.T) {
-		res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "x"})
+		res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "x"})
 		w.waitNotice(t, 1)
 		eventually(t, "the worker ends after its hand-back", func() bool { return w.d.workerCount() == 0 })
 		_, err := stranger.call("send", map[string]any{"to": res.SessionID, "body": "hello"})
@@ -840,7 +840,7 @@ func TestCodexWorkerRefusesOtherAgents(t *testing.T) {
 	})
 
 	t.Run("running", func(t *testing.T) {
-		res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+		res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:slow"})
 		readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 		raw, err := stranger.call("send", map[string]any{"to": res.SessionID, "body": "hello"})
 		if err != nil {
@@ -871,7 +871,7 @@ func TestCodexWorkerSurvivesADaemonRestart(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:slow"})
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	owner := w.ownerID()
 
@@ -902,7 +902,7 @@ func TestCodexWorkerStartFails(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), "exited at start") {
 		t.Fatalf("error: %v", err)
 	}
@@ -933,7 +933,7 @@ func TestAdoptedCodexCompletesOriginalTurn(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:slow"})
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	w.d.Stop()
 	w.node.restart()
@@ -954,7 +954,7 @@ func TestAdoptedOpenCodeStartsTurn(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "initial"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "initial"})
 	w.replyTo(t, w.ownerID(), res.Task.ID)
 	w.d.Stop()
 	w.node.restart()
@@ -979,7 +979,7 @@ func TestAdoptedCodexTurnFinishedWhileDaemonDown(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:offline"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:offline"})
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	w.d.Stop()
 	if err := os.WriteFile(filepath.Join(repo, "fake-codex-offline-finish"), []byte("finish"), 0600); err != nil {
@@ -1000,7 +1000,7 @@ func TestClaudeWorkerWorktreeTrustRemoved(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "claude", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "say ok", Isolation: protocol.IsolationWorktree})
 	read := func() map[string]struct {
 		Accepted bool `json:"hasTrustDialogAccepted"`
 	} {
@@ -1032,7 +1032,7 @@ func TestPiWorkerFirstTaskRetriedAfterDrop(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Task: "say ok", Isolation: protocol.IsolationWorktree})
 	eventually(t, "Pi receives the first task", func() bool {
 		b, _ := os.ReadFile(filepath.Join(res.Worktree, "fake-pi-turns"))
 		return strings.TrimSpace(string(b)) == res.Task.ID

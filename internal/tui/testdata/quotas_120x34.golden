@@ -10,16 +10,16 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Workers · 5 registered · 0 running · scores: Artificial Analysis─────────────────────────────────────────────────────╮
 │ NAME               HARNESS  MODEL                     SCORE          T     S     N     H     V    USED               │
-│ opus               claude   opus-5-5:high             51.7/high    █100% █100% █100% █100% █100%  12·83%·2✗          │
+│ opus               claude   opus-5-5:high             51.7/high    x     x     x     █100% █100%  12·83%·2✗          │
 │ renamed            pi       gpt-6.1-zed               -            x     x     x     x     x      unused             │
 │   model gone - ask the CTO to fix                                                                                    │
-│ sol                codex    gpt-6.1-sol:medium        46.1/medium  ·     ·     ·     ·     x      unused             │
-│ terra              codex    gpt-6.1-terra:high        42.3/high    ·     ·     ·     ·     x      unused             │
-│ terra pi           pi       gpt-6.1-terra             38.1/medium  ·     ·     ·     x     x      unused             │
+│ sol                codex    gpt-6.1-sol:medium        46.1/medium  x     x     ·     ·     x      unused             │
+│ terra              codex    gpt-6.1-terra:high        42.3/high    x     x     ·     ·     x      unused             │
+│ terra pi           pi       gpt-6.1-terra             38.1/medium  x     ·     ·     x     x      unused             │
 │   not on research                                                                                                    │
-│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min                                               │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-opus claude: complete 10 · continue 0 · fix 0 · picked for trivial, simple, normal, hard and very complex (next start).…
+opus claude: complete 10 · continue 0 · fix 0 · picked for hard and very complex (next start). Strong at hard.
 
 
 

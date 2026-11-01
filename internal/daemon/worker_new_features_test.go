@@ -45,7 +45,7 @@ func TestWorkerBaseAndProjectRules(t *testing.T) {
 	if err := g.gw.Store().SetCharter("shop", "maturity", "mature - run the suite.", "owner"); err != nil {
 		t.Fatal(err)
 	}
-	res, err := w.startDefault(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "do work", Base: "feature"})
+	res, err := w.startDefault(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "do work", Base: "feature"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestWorkerBaseAndProjectRules(t *testing.T) {
 		t.Fatalf("the charter is not after the rules and before the task: %s", res.Task.Body)
 	}
 	for _, base := range []string{"--help", "missing", "bad name"} {
-		if _, err := w.startDefault(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Base: base}); err == nil {
+		if _, err := w.startDefault(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Base: base}); err == nil {
 			t.Errorf("base %q accepted", base)
 		}
 	}

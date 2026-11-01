@@ -105,7 +105,7 @@ func TestWorkerContinueUsesBackfilledGatewayRoot(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:ignore old continuation", Isolation: protocol.IsolationNone})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:ignore old continuation", Isolation: protocol.IsolationNone})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	if err := g.gw.Store().RecordWorkerRun(protocol.WorkerRun{NodeID: "node", SessionID: old.SessionID, TaskID: "s_original_root", Harness: "opencode", Outcome: protocol.OutcomeStopped}); err != nil {
@@ -146,7 +146,7 @@ func TestWorkerMidrunCountsQueuedRequestOnArrival(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-handback"}), &sent)
 	eventually(t, "queued request delivered", func() bool { return w.d.st.isDelivered(sent.Message.ID) })

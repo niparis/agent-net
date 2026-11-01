@@ -168,7 +168,7 @@ func TestWorkerContinuedStartRetainsCTOAttribution(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	first := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "first", Isolation: protocol.IsolationWorktree})
+	first := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "first", Isolation: protocol.IsolationWorktree})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: first.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	out, err := w.d.continueWorker(context.Background(), protocol.WorkerContinue{Session: first.SessionID, Requester: w.ownerID(), FromCTO: true})

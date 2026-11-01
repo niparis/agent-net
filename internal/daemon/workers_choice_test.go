@@ -44,7 +44,7 @@ func TestStartPicksTheMachineWithMoreRoom(t *testing.T) {
 		}
 		return n == 2
 	})
-	res := a.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := a.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.NodeID != b.d.NodeID() || !strings.Contains(res.MachineNote, "picked "+b.cfg.Hostname) || !strings.Contains(res.MachineNote, a.cfg.Hostname) {
 		t.Errorf("result: %+v", res)
 	}

@@ -188,12 +188,22 @@ Guards:
 ## 7. Choosing the model
 
 The calibration changes only the difficulty that goes into the chooser. The
-chooser itself stays as it is: score minimum, unprotected providers first,
-quota pace, and the weighted rotation, with its share heatmap in the Quotas
-tab. Picks stay probabilistic, so every adequate model keeps getting a share
-of the work, which is also what keeps the rework numbers fresh for each
-model. One change: a
-model's own track record is read by the same two counters, so a model whose
+chooser uses the score minimum and the owner's max-level rule: "no model
+should be used for more than 1 level less than its max". A profile's max is
+the highest difficulty whose minimum its score meets, including owner
+overrides. Automatic picks may use it only at that level or exactly one below.
+A score of 51 with today's minimums has max `very_complex`, so it can run
+`hard` and `very_complex`, never `normal`, `simple` or `trivial`.
+
+Excluded models have no rotation weight and show `x` in the Quotas Workers
+forecast. Among eligible profiles, unprotected providers come first, then
+quota pace and weighted rotation. If no profile qualifies, the start fails
+with the level, registered profiles and their max levels, and guidance to
+register a profile for that level or pass `model` explicitly. An explicit
+model overrides eligibility; the start note says when it does. Automatic
+notes name models excluded by the max-level rule. An empty roster fails too.
+Recent failure and success marks change weight only on the same node and
+harness. A model's own track record is read by the same two counters, so a model whose
 tasks need too many fixes at a difficulty loses rotation weight there. A
 model that only needs continues keeps most of its weight on resumable
 harnesses, and loses it on harnesses that cannot resume (Pi today).

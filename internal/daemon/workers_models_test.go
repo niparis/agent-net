@@ -58,7 +58,7 @@ func TestCodexLooseModelNameIsResolved(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "luna 6", Task: "say ok"})
-	if res.Model != "gpt-6-luna" || res.ModelNote != "luna 6 -> gpt-6-luna" {
+	if res.Model != "gpt-6-luna" || res.ModelNote != "luna 6 -> gpt-6-luna; explicit model overrides the max-or-one-level-below eligibility rule" {
 		t.Fatalf("start result: %+v", res)
 	}
 }
@@ -100,7 +100,7 @@ func TestCodexRecentSuccessBreaksTheTie(t *testing.T) {
 	})
 	_ = first
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Model: "luna 6", Task: "say ok"})
-	if res.Model != "gpt-6.1-luna" || res.ModelNote != "luna 6 -> gpt-6.1-luna" {
+	if res.Model != "gpt-6.1-luna" || res.ModelNote != "luna 6 -> gpt-6.1-luna; explicit model overrides the max-or-one-level-below eligibility rule" {
 		t.Fatalf("after a success: %+v", res)
 	}
 }
@@ -159,11 +159,11 @@ func TestFailedStartDoesNotHoldTheGap(t *testing.T) {
 	w.register(t, repo)
 
 	t.Setenv("FAKE_OC_EXIT", "1")
-	if _, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}); err == nil {
+	if _, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}); err == nil {
 		t.Fatal("the first start should fail")
 	}
 	os.Unsetenv("FAKE_OC_EXIT")
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Status != "started" || res.QueueID != "" {
 		t.Fatalf("the next start was held by the failed one: %+v", res)
 	}
@@ -177,10 +177,10 @@ func TestShortWorkerDoesNotHoldTheGap(t *testing.T) {
 	w := startWorkerNode(t, g, set, withLoad(&fakeLoad{l: roomyLoad()}))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	first := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	first := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: first.SessionID})
 	eventually(t, "the short worker ended", func() bool { return w.d.workerCount() == 0 })
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Status != "started" || res.QueueID != "" {
 		t.Fatalf("the next start was held by the short worker: %+v", res)
 	}
@@ -191,7 +191,7 @@ func TestContinueResolvesLooseCodexModel(t *testing.T) {
 	w := startCodexNodeWithModels(t, g, shortSet, []string{"gpt-6.1-terra"})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-6.1-terra", Project: "shop", Harness: "codex", Task: "say ok"})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	res, err := w.startDefault(protocol.WorkerStartRequest{Continue: old.SessionID, Harness: "codex", Model: "terra"})

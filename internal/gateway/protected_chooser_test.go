@@ -12,7 +12,7 @@ func TestProtectedChooser(t *testing.T) {
 	scores := []protocol.ModelScore{{Match: "anthropic/claude-sonnet", Score: 55}, {Match: "opencode-go/luna", Score: 45}}
 	for _, level := range []string{"normal", "hard"} {
 		c, note, err := chooseProtectedWorker(candidates, level, scores, nil, nil, nil, &protocol.WorkerRotation{}, protocol.ProtectedProviders{Providers: []string{"anthropic"}, Reason: "orchestrator"})
-		if err != nil || c.Model != "opencode-go/luna" || !strings.Contains(note, "skipped") {
+		if err != nil || c.Model != "opencode-go/luna" || (strings.Contains(note, "skipped") != (level == "hard")) {
 			t.Fatalf("%s: %+v %q %v", level, c, note, err)
 		}
 	}
@@ -116,5 +116,22 @@ func TestWorkerChoiceNotePoorRecord(t *testing.T) {
 	c := []protocol.WorkerModelCandidate{{Model: "cheap", Track: protocol.TrackRecord{Complete: 1, Partial: 4}}}
 	if got := workerChoiceNote("normal", choice, c, nil, nil); !strings.Contains(got, "cheap has a poor track record") {
 		t.Fatalf("note %q", got)
+	}
+}
+
+func TestProtectedChooserNoEligibleModelReportsWholeRoster(t *testing.T) {
+	candidates := []protocol.WorkerModelCandidate{
+		{Name: "strong protected", Harness: "claude", Model: "strong"},
+		{Name: "weak ordinary", Harness: "codex", Model: "weak"},
+	}
+	scores := []protocol.ModelScore{{Match: "strong", Score: 51}, {Match: "weak", Score: 23.3}}
+	_, _, err := chooseProtectedWorker(candidates, "normal", scores, nil, nil, nil, nil, protocol.ProtectedProviders{Providers: []string{"anthropic"}})
+	if err == nil {
+		t.Fatal("over-qualified protected fallback was picked")
+	}
+	for _, want := range []string{"normal", "strong protected", "very_complex", "weak ordinary", "simple", "register a profile", "model explicitly"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
 	}
 }

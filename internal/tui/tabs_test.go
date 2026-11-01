@@ -568,7 +568,7 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T S N H V: share of next 20",
 		"░<25% ▒<50% ▓<75% █≥75%",
-		"luna codex: complete 2 · continue 0 · fix 0 · picked for trivial, simple and normal",
+		"luna codex: complete 2 · continue 0 · fix 0 · picked for simple and normal",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {
@@ -700,7 +700,7 @@ func TestWorkerPanelHeatmapProtectedProviderStaysAtZero(t *testing.T) {
 	if !strings.Contains(claudeRow, "·") {
 		t.Errorf("protected provider has no zero cell: %s", claudeRow)
 	}
-	// Terra qualifies for trivial through hard, so Claude gets nothing there.
+	// Terra qualifies for normal and hard; Claude is excluded below hard.
 	// Very complex is above Terra, so the protected provider is the only choice.
 	if !strings.Contains(claudeRow, "100%") {
 		t.Errorf("protected fallback is not 100%% at very complex: %s", claudeRow)
@@ -733,7 +733,7 @@ func TestWorkerPanelHeatmapMarksBelowMinimum(t *testing.T) {
 }
 
 func TestWorkersPanelKeyAndLinesFitResponsiveWidths(t *testing.T) {
-	const legend = "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min"
+	const legend = "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible"
 	for _, width := range []int{80, 100, 120} {
 		m := newModel(width, 34)
 		m.tab = 2
@@ -1119,4 +1119,15 @@ func TestWorkersForecastIsRebuiltOnlyByEventsThatChangeIt(t *testing.T) {
 	if m.workerForecastMemo.picks[2].Model == "marker" {
 		t.Fatal("a changed score did not rebuild the forecast")
 	}
+}
+
+func TestWorkerPanelMaximumLevelEligibility(t *testing.T) {
+	profiles := []protocol.WorkerProfile{{Name: "terra max", Harness: "codex", Model: "openai-codex/gpt-6.1-terra", Effort: "max"}}
+	m := heatmapModel(t, profiles, []protocol.ModelScore{{Match: "gpt-6.1-terra", Effort: "max", Score: 51}}, []string{"codex"})
+	view := strings.Join(m.quotaModelsView(120), "\n")
+	row := heatmapRow(t, view, "terra max")
+	if strings.Count(row, " x ") != 3 { // trivial, simple and normal
+		t.Fatalf("expected x at trivial, simple and normal: %s", row)
+	}
+	golden(t, "worker_maximum_level", view)
 }

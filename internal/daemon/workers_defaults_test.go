@@ -19,7 +19,7 @@ func TestWorkerDefaultsToAWorktreeInARepository(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 
-	res, err := w.startDefault(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:edit FAKE:handback add work.txt"})
+	res, err := w.startDefault(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:edit FAKE:handback add work.txt"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestWorkerSandboxFollowsTheNodesMaturity(t *testing.T) {
 	if err := st.SetNodeSetting("shop", protocol.SettingWorkerSandbox, protocol.WorkersReadOnly, "owner"); err != nil {
 		t.Fatal(err)
 	}
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Permissions != protocol.WorkersReadOnly {
 		t.Fatalf("the worker got %q, want the node's override %q", res.Permissions, protocol.WorkersReadOnly)
 	}
@@ -63,7 +63,7 @@ func TestWorkerIsolationNoneWorksInTheProjectFolder(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone})
 	if res.Worktree != "" || res.Branch != "" {
 		t.Errorf("a worktree although isolation is none: %+v", res)
 	}
@@ -71,11 +71,11 @@ func TestWorkerIsolationNoneWorksInTheProjectFolder(t *testing.T) {
 		t.Errorf("the worker runs in %s, not in the project %s", rec.Cwd, repo)
 	}
 	// Pi has no permission prompts: it still needs a worktree.
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), "needs isolation") {
 		t.Errorf("pi with isolation none: %v", err)
 	}
-	_, err = w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: "docker"})
+	_, err = w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: "docker"})
 	if err == nil || !strings.Contains(err.Error(), `"none"`) {
 		t.Errorf("bad isolation: %v", err)
 	}
@@ -137,13 +137,13 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 
-	_, err := w.start(protocol.WorkerStartRequest{Harness: "opencode", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Harness: "opencode", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), "no project") {
 		t.Errorf("command line without a project: %v", err)
 	}
 	// An agent session that runs in the repository.
 	pi, piID := helloPi(t, w.node, "caller-pi", repo, true)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Harness: "opencode", Task: "x"}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Harness: "opencode", Task: "x"}))
 	if res.Project != "shop" || res.Path != repo || res.Worktree == "" || res.Status != "starting" {
 		t.Errorf("worker for the caller's project: %+v", res)
 	}
@@ -159,7 +159,7 @@ func TestWorkerProjectDefaultsToTheCallers(t *testing.T) {
 	// project, and the worker gets no worktree there.
 	dir, _ := filepath.EvalSymlinks(t.TempDir())
 	other, _ := helloPi(t, w.node, "plain-pi", dir, true)
-	res = mustWorker(t, other.mustCall("worker_start", protocol.WorkerStartRequest{Harness: "opencode", Task: "x"}))
+	res = mustWorker(t, other.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Harness: "opencode", Task: "x"}))
 	if res.Path != dir || res.Worktree != "" {
 		t.Errorf("worker in a plain folder: %+v", res)
 	}
@@ -177,7 +177,7 @@ func TestWorkerCallerProjectPicksTheMachine(t *testing.T) {
 	owner := a.ownerID()
 	call := func(from *workerNode, callerProject bool) (res protocol.WorkerStartAnswer, err error) {
 		data, err := from.d.call(context.Background(), "worker.start", protocol.WorkerStartFrame{
-			WorkerStartRequest: protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone},
+			WorkerStartRequest: protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone},
 			Owner:              owner, CallerProject: callerProject})
 		if err == nil {
 			err = json.Unmarshal(data, &res)

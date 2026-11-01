@@ -189,7 +189,7 @@ func TestWorkerWaitingNotice(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "wait"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "wait"})
 	rec := readFake(t, repo)
 	eventually(t, "worker task delivered", func() bool { return w.d.st.isDelivered(res.Task.ID) })
 	owner := w.ownerID()

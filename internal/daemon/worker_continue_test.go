@@ -22,7 +22,7 @@ func TestStoppedWorkerKeepsUnfinishedWork(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "write half.txt", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "write half.txt", Isolation: protocol.IsolationWorktree})
 	if err := os.WriteFile(filepath.Join(res.Worktree, "half.txt"), []byte("half\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func TestLostWorkerKeepsUnfinishedWork(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
 	rec := readFake(t, res.Worktree)
 	if err := os.WriteFile(filepath.Join(res.Worktree, "half.txt"), []byte("half\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestNoUnfinishedCommitWithoutChanges(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	n := w.waitNotice(t, 1)[0]
 	if strings.Contains(n.Body, "unfinished changes") {
@@ -141,7 +141,7 @@ func TestContinueNeedsTheOwner(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 
@@ -162,7 +162,7 @@ func TestWorkerRecordKeepsTheFullFirstTask(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	task := "line one\n" + strings.Repeat("y", 3000)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: task, Isolation: protocol.IsolationNone})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: task, Isolation: protocol.IsolationNone})
 	r, ok, err := w.d.st.workerBySession(res.SessionID)
 	if err != nil || !ok || r.TaskFull != task {
 		t.Fatalf("task_full: %v %v len %d", err, ok, len(r.TaskFull))
@@ -201,7 +201,7 @@ func TestContinueAfterCodexResumeKeepsOriginalTask(t *testing.T) {
 	w.register(t, repo)
 	owner := w.ownerID()
 	originalTask := "implement the original Codex task"
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationNone, Task: originalTask})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Isolation: protocol.IsolationNone, Task: originalTask})
 	firstNotice := w.waitNotice(t, 1)[0]
 	if !strings.Contains(firstNotice.Body, "status: done") {
 		t.Fatalf("first hand-back: %s", firstNotice.Body)
@@ -238,7 +238,7 @@ func TestContinueIsQueuedWhenTheMachineIsBusy(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, piID := helloPi(t, w.node, "caller", "/work/caller", true)
-	old := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "write half.txt", Isolation: protocol.IsolationWorktree})
+	old := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "write half.txt", Isolation: protocol.IsolationWorktree})
 	if old.SessionID == "" {
 		t.Fatalf("%+v", old)
 	}
@@ -319,7 +319,7 @@ func TestContinueNeedsTheMachineOnline(t *testing.T) {
 	far := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "far")
 	far.register(t, repo)
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "far", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "far", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: old.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	far.d.Stop()
@@ -341,7 +341,7 @@ func TestUnrestorableAdoptedWorkerSavesChanges(t *testing.T) {
 			}
 			repo := newRepo(t, "shop")
 			w.register(t, repo)
-			res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: harness, Task: "FAKE:slow", Isolation: protocol.IsolationWorktree})
+			res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: harness, Task: "FAKE:slow", Isolation: protocol.IsolationWorktree})
 			if harness == "codex" {
 				readCodex(t, res.Worktree, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 			} else {
@@ -379,7 +379,7 @@ func TestContinueChainKeepsEarlierCommits(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	a := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "write work", Isolation: protocol.IsolationWorktree})
+	a := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "write work", Isolation: protocol.IsolationWorktree})
 	if err := os.WriteFile(filepath.Join(a.Worktree, "chain.txt"), []byte("work\n"), 0644); err != nil {
 		t.Fatal(err)
 	}

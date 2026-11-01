@@ -16,7 +16,7 @@ func TestPhraseWorkerProtectedAndReadOnly(t *testing.T) {
 	w := startCodexNodeWithModels(t, g, shortSet, []string{"gpt-fake"})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	score := 90.0
+	score := 23.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "gpt-fake", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "codex", Model: "gpt-fake"})
 	w.cli.mustCall(protocol.OpProtectedProvidersSet, protocol.ProtectedProviders{Providers: []string{"openai"}, Reason: "reserved"})
@@ -46,7 +46,7 @@ func TestPhraseWorkerThroughGateway(t *testing.T) {
 	w := startCodexNodeWithModels(t, g, shortSet, []string{"gpt-fake"})
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	score := 90.0
+	score := 23.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "gpt-fake", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "codex", Model: "gpt-fake"})
 	_, sender := helloPi(t, w.node, "phrase-sender", repo, true)
@@ -99,7 +99,7 @@ func TestPhraseWorkerRespectsNoNetworkPolicy(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	setWorkersLevel(t, w, repo, protocol.WorkersNoNetwork)
-	score := 90.0
+	score := 23.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "gpt-fake", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "codex", Model: "gpt-fake"})
 	frame := protocol.WorkerStartFrame{Owner: w.ownerID(), RequireReadOnly: true, WorkerStartRequest: protocol.WorkerStartRequest{Project: "shop", Difficulty: "trivial", Isolation: protocol.IsolationNone, Task: "phrase these words"}}

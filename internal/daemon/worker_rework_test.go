@@ -257,7 +257,7 @@ func TestWorkerIdleFollowUpCountsContinue(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode",
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode",
 		Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	w.waitNotice(t, 1)
 	eventually(t, "the idle notice is recorded", func() bool {

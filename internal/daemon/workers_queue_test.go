@@ -209,7 +209,7 @@ func TestEndedWorkerLeavesItsCost(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, func(c *Config) { c.UsageSampler = sampler; c.LoadProbe = (&fakeLoad{l: roomyLoad()}).get })
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	rec := readFake(t, repo)
 	// The sampler follows the worker's process (watchedPIDs). Feed it three readings.
 	fr.setPID(rec.Pid)
@@ -225,10 +225,10 @@ func TestEndedWorkerLeavesItsCost(t *testing.T) {
 	w.d.wmu.Unlock()
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "the cost is stored", func() bool {
-		cs, _ := w.d.st.costs("opencode", "")
+		cs, _ := w.d.st.costs("opencode", "fake/m1")
 		return len(cs) == 1
 	})
-	cs, _ := w.d.st.costs("opencode", "")
+	cs, _ := w.d.st.costs("opencode", "fake/m1")
 	if cs[0].PeakRSS != 300 || cs[0].AvgRSS != 200 || cs[0].PeakCPU != 100 {
 		t.Errorf("stored cost: %+v", cs[0])
 	}
@@ -317,7 +317,7 @@ func TestStartIsQueuedWhenTheMachineIsBusyAndStartsInOrder(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, piID := helloPi(t, w.node, "caller", "/work/caller", true)
-	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "first task"}
+	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "first task"}
 
 	r1 := startFrom(t, pi, req)
 	req.Task = "second task"
@@ -384,7 +384,7 @@ func TestQueuedStartCanBeCancelled(t *testing.T) {
 	w.register(t, repo)
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
 	other, _ := helloPi(t, w.node, "other", "/work/other", true)
-	r := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if r.Status != "queued" {
 		t.Fatalf("%+v", r)
 	}
@@ -414,7 +414,7 @@ func TestQueuedStartCanBeCancelled(t *testing.T) {
 	}
 	// The person at the command line may cancel any queued start.
 	fl.set(cpuBusy())
-	r2 := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "y"})
+	r2 := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "y"})
 	if _, err := w.cli.call("worker_stop", protocol.WorkerStopRequest{Session: r2.QueueID}); err != nil {
 		t.Errorf("owner cancel: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestQueuedStartTimesOutWithANotice(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, piID := helloPi(t, w.node, "caller", "/work/caller", true)
-	r := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if r.Status != "queued" {
 		t.Fatalf("%+v", r)
 	}
@@ -458,7 +458,7 @@ func TestQueueSurvivesADaemonRestart(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	// The person at the command line is the owner: it survives a restart too.
-	r, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "after the restart"})
+	r, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "after the restart"})
 	if err != nil || r.Status != "queued" {
 		t.Fatalf("%+v %v", r, err)
 	}
@@ -502,7 +502,7 @@ func TestQueuedStartIsDroppedWhenItsOwnerLeaves(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
-	r := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if r.Status != "queued" {
 		t.Fatalf("%+v", r)
 	}
@@ -526,7 +526,7 @@ func TestStartWithRoomIsNotQueued(t *testing.T) {
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Status != "started" || res.SessionID == "" || res.Task == nil {
 		t.Errorf("%+v", res)
 	}
@@ -540,7 +540,7 @@ func TestAdmissionCountsWorkersStartedInTheLastFiveMinutes(t *testing.T) {
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	// 2.75 GB free: this one worker's 600 MB and the 1.6 GB reserve leave
 	// 0.55 GB, so the room would look fine if the running worker were
 	// forgotten until the average catches up.
@@ -572,7 +572,7 @@ func TestStartGapQueuesTheSecondStart(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
-	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}
+	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}
 	// A worker was let through just now.
 	w.d.qmu.Lock()
 	w.d.lastStart = time.Now()
