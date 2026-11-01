@@ -34,3 +34,19 @@ func TestPluginNotesDoNotNameTheOwner(t *testing.T) {
 		}
 	}
 }
+
+// Every fragment, including owner-instruction framing and all merge settings,
+// must remain equal in Go, Pi and OpenCode.
+func TestPluginsCarryAllAuthorityNoteFragments(t *testing.T) {
+	for _, path := range []string{"../../plugins/pi/agent-net.ts", "../../plugins/opencode/agent-net.ts"} {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, want := range []string{TrustNotePrefix, TrustNoteSuffix, MergeFullText, MergeDelegatedText, MergeAskText, OwnerInstructionPrefix, OwnerInstructionSuffix, CTONote, NoAuthorityNote, PeerCheckNote} {
+			if !strings.Contains(string(b), want) {
+				t.Errorf("%s lacks %q", path, want)
+			}
+		}
+	}
+}

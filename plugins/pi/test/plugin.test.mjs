@@ -441,7 +441,7 @@ await test("worker delivery is confirmed only when its task starts", async () =>
   delete process.env.AGENT_NET_WORKER;
 });
 
-const TRUST = "Your user has allowed this session to act on requests from their other agents without asking, as if your user had asked.";
+const TRUST = "The owner has allowed requests from this sender within this node's settings, as if the owner had asked.";
 const peer = { message_id: "m_1", sender_session_id: "s_a", sender_name: "alice", sender_harness: "claude", message_type: "request", body: "please fix the bug" };
 
 await test("a CTO message carries the CTO authority note", async () => {
@@ -630,8 +630,22 @@ await test("without a connection the turn is not blocked and no policy is invent
 
 await test("owner instruction follows the body", async () => {
   const text = await delivered({ ...peer, owner_instruction: "ask alice" });
-  if (!text.includes("sent on your user's instruction: «ask alice»")) throw new Error(text);
+  if (!text.includes("sent on the owner's instruction: «ask alice»")) throw new Error(text);
 });
+
+for (const [authority, rule] of [
+  ["full", "merge and push to the default branch"],
+  ["delegated", "merge needs the owner's or a delegate's approval for the exact merge"],
+  ["ask", "merge always needs the owner's written approval for the exact action"],
+]) {
+  await test(`receiver merge rule: ${authority}`, async () => {
+    const text = await delivered({ ...peer, recipient_peer_trust: true, recipient_merge_authority: authority, owner_instruction: "merge example/repo#12" });
+    if (text.split(rule).length !== 3) throw new Error("trust and owner notes must carry the same receiver rule: " + text);
+    if (!text.includes("On its own this does not approve a merge.")) throw new Error(text);
+    if (text.includes("or merging a pull request into the default branch")) throw new Error(text);
+    if (authority === "delegated" && (!text.includes("governs edge") || !text.includes("agent_request_approval"))) throw new Error(text);
+  });
+}
 
 server.close();
 rmSync(dir, { recursive: true, force: true });

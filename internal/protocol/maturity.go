@@ -180,15 +180,21 @@ func (d MaturityDefaults) TestText() string {
 	return "run the suite"
 }
 
+// Merge rules are shared by charter context and delivery notes. Keep the TS
+// copies equal (the protocol tests compare them).
+const MergeFullText = "merge and push to the default branch"
+const MergeDelegatedText = "merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_request_approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node"
+const MergeAskText = "merge always needs the owner's written approval for the exact action (ask with agent_request_approval, or put the action and your recommendation in a Codex worker report)"
+
 // MergeText is the merge-authority rule in plain words.
 func (d MaturityDefaults) MergeText() string {
 	switch d.MergeAuthority {
 	case MergeDelegated:
-		return "merge needs your owner's or a delegate's approval"
+		return MergeDelegatedText
 	case MergeAsk:
-		return "merge needs your owner's written approval (request the exact action with agent_request_approval, or put it and your recommendation in a Codex worker report)"
+		return MergeAskText
 	}
-	return "merge and push to the default branch"
+	return MergeFullText
 }
 
 // DeployText is the deploy rule in plain words.
@@ -217,11 +223,11 @@ func (d MaturityDefaults) ConsumerText() string {
 
 // RulesText is the short sentence a session of the node gets every turn and a
 // worker gets in its brief. It is empty when the node has no maturity and no
-// written-approval override.
+// approval override.
 func (d MaturityDefaults) RulesText() string {
 	level := d.Level
 	if level == "" {
-		if d.MergeAuthority != MergeAsk && d.DeployRule != DeployOwner {
+		if d.MergeAuthority != MergeAsk && d.MergeAuthority != MergeDelegated && d.DeployRule != DeployOwner {
 			return ""
 		}
 		level = "not set"
@@ -250,14 +256,14 @@ func MergeApprovalFor(g Graph, node string) MergeApproval {
 		}
 	}
 	if n == nil {
-		return MergeApproval{Text: "no node in the graph: ask your owner before merging"}
+		return MergeApproval{Text: "no node in the graph: ask the owner before merging"}
 	}
 	d := NodeDefaults(n.Charter.Maturity, n.Settings)
 	out := MergeApproval{Authority: d.MergeAuthority}
 	switch d.MergeAuthority {
 	case MergeDelegated:
 		out.Required = true
-		out.Approvers = []string{"your owner"}
+		out.Approvers = []string{"the owner"}
 		for _, e := range g.Edges {
 			if e.Kind == "governs" && e.To == node && (e.Mode == "owner" || e.Mode == "arbiter") {
 				out.Approvers = append(out.Approvers, e.From)
@@ -272,7 +278,7 @@ func MergeApprovalFor(g Graph, node string) MergeApproval {
 	case MergeAsk:
 		out.Required = true
 		out.Written = true
-		out.Approvers = []string{"your owner"}
+		out.Approvers = []string{"the owner"}
 		out.Text = d.MergeText()
 	default:
 		out.Text = d.MergeText()

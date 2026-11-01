@@ -371,7 +371,7 @@ func codexFrame(m protocol.Message) string {
 		// Only agent-net writes the note about authority, after the body
 		// (decision 0013): a trusted session may act on the request.
 		if !m.OwnerApproved {
-			foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+			foot += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority)
 		}
 	}
 	if m.Overruled {
@@ -389,7 +389,7 @@ func codexFrame(m protocol.Message) string {
 		foot += " " + m.RecipientRelation
 	}
 	if m.OwnerInstruction != "" {
-		foot += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction)
+		foot += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction, m.RecipientMergeAuthority)
 	}
 	if m.ApprovalNote != "" {
 		foot += "\n[agent-net] " + m.ApprovalNote
