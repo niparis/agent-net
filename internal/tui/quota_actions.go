@@ -12,11 +12,12 @@ import (
 )
 
 func (m Model) quotaConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "n", "N", "esc":
+	yes, no := confirmAnswer(k)
+	switch {
+	case no:
 		m.mode = modeNormal
 		m.say("Protection unchanged.")
-	case "y", "Y":
+	case yes:
 		m.mode = modeNormal
 		p := m.snap.ProtectedProviders
 		p.Providers = append([]string(nil), p.Providers...)

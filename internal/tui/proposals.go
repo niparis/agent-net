@@ -156,15 +156,16 @@ func (m *Model) openProposalConfirm() {
 	}
 }
 func (m Model) proposalConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "y":
+	yes, no := confirmAnswer(k)
+	switch {
+	case yes:
 		m.proposalConfirm = false
 		return m, m.proposalAnswerCmd(protocol.CTOProposal{}, "A")
-	case "n", "esc":
+	case no:
 		m.proposalConfirm = false
-	case "up", "k":
+	case k.String() == "up" || k.String() == "k":
 		m.proposalConfirmScroll = max(0, m.proposalConfirmScroll-1)
-	case "down", "j":
+	case k.String() == "down" || k.String() == "j":
 		m.proposalConfirmScroll = min(max(0, len(m.proposalConfirmItems)-1), m.proposalConfirmScroll+1)
 	}
 	return m, nil
@@ -242,7 +243,7 @@ func (m Model) proposalConfirmView(w int) []string {
 			out = append(out, clip("  "+p.ID+"  "+proposalSummary(p), w))
 		}
 	}
-	return append(out, "", "  y approve all  n cancel")
+	return append(out, "", "  "+confirmHint)
 }
 func (m Model) proposalDetailView(w int) []string {
 	d := m.proposalDetail

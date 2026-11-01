@@ -92,7 +92,7 @@ func (m Model) ctoView(w, h int) []string {
 		lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
 	}
 	if c.confirming {
-		lines = append(lines, "Start a new conversation? y/n")
+		lines = append(lines, "Start a new conversation?"+confirmSuffix)
 	}
 	rows := max(h-1, 0)
 	c.pageRows = max(rows-1, 1)

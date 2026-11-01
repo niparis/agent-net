@@ -258,6 +258,20 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if k.Type == tea.KeyEsc && !c.confirming && m.onboardingStep().id != "" {
 		return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Step: m.onboardingStep().id, State: "skipped"})
 	}
+	if c.confirming {
+		yes, _ := confirmAnswer(k)
+		c.confirming = false
+		if !yes {
+			return m, nil
+		}
+		src := m.src.(ctoSource)
+		g := c.generation
+		return m, func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+			defer cancel()
+			return ctoNewMsg{err: src.CTONew(ctx), generation: g}
+		}
+	}
 	if k.Type == tea.KeyEsc || k.String() == "tab" {
 		m.focus = focusSessions
 		if m.tab == 1 && !m.mapOn {
@@ -276,19 +290,6 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyPgDown, tea.KeyCtrlD:
 		c.scroll = max(c.scroll-max(c.pageRows, 1), 0)
 		return m, nil
-	}
-	if c.confirming {
-		c.confirming = false
-		if k.String() != "y" {
-			return m, nil
-		}
-		src := m.src.(ctoSource)
-		g := c.generation
-		return m, func() tea.Msg {
-			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
-			defer cancel()
-			return ctoNewMsg{err: src.CTONew(ctx), generation: g}
-		}
 	}
 	switch k.String() {
 	case "m":

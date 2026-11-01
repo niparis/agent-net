@@ -147,12 +147,12 @@ func (m Model) handoverBodyCmd(it *feedItem) tea.Cmd {
 func (m Model) handoverKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	h := m.handover
 	switch k.String() {
-	case "esc":
+	case "esc", "n", "N":
 		m.handover = nil
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
-	case "enter":
+	case "enter", "y", "Y":
 		if h.loading || h.err != "" {
 			return m, nil
 		}

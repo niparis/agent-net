@@ -103,6 +103,16 @@ func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if md.picker != nil && !md.loading {
 		return m.pickerKey(k)
 	}
+	// A plan asks yes or no: Enter and y run it, Esc and n close it. In a
+	// compare view n and p still step between files.
+	if key == "y" || key == "Y" {
+		if _, ok := md.actions["enter"]; ok && !md.loading {
+			key = "enter"
+		}
+	}
+	if (key == "n" || key == "N") && len(md.compareFiles) == 0 && !md.loading {
+		key = "esc"
+	}
 	switch {
 	case key == "esc" && md.back != nil:
 		m.tl.modal = md.back

@@ -28,10 +28,7 @@ func TestStopOwnerSessionConfirm(t *testing.T) {
 		// The key line changes; every other row stays put.
 		joined := strings.Join(strings.Fields(view), " ")
 		name := "tenebrae-53"
-		if size.w == 80 {
-			name = "tenebr…"
-		}
-		want := "Stop " + name + "? The conversation is kept: Enter on its offline row resumes it. y/n"
+		want := strings.Join(strings.Fields("Stop "+name+"? Conversation kept: Enter resumes it."+confirmSuffix), " ")
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing confirm %q:\n%s", want, view)
 		}
