@@ -23,10 +23,11 @@ import (
 type inputMode int
 
 const (
-	modeNormal  inputMode = iota
-	modeCompose           // typing a message to the selected session
-	modeForm              // the start-a-worker form
-	modeConfirm           // asking y/n before stopping a worker
+	modeNormal      inputMode = iota
+	modeCompose               // typing a message to the selected session
+	modeForm                  // the start-a-worker form
+	modeSessionForm           // the new-session form
+	modeConfirm               // asking y/n before stopping a worker
 	modeQuotaConfirm
 	modeTrust         // asking y/n before trusting a session with peer requests
 	modePolicy        // the delegation policy form (policy.go)

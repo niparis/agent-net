@@ -280,6 +280,24 @@ func (s *Client) StopWorker(ctx context.Context, session string) error {
 	return err
 }
 
+func (s *Client) SessionStart(ctx context.Context, req protocol.SessionStartRequest) (protocol.StartedSession, error) {
+	var out protocol.StartedSession
+	raw, err := s.action(ctx, protocol.OpSessionStart, req)
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
+func (s *Client) SessionStartGet(ctx context.Context, id string) (protocol.StartedSession, error) {
+	var out protocol.StartedSession
+	raw, err := s.action(ctx, protocol.OpSessionStartGet, protocol.SessionStartQuery{ID: id})
+	if err != nil {
+		return out, err
+	}
+	return out, json.Unmarshal(raw, &out)
+}
+
 func (s *Client) Workers(ctx context.Context, q protocol.WorkersQuery) ([]protocol.WorkerView, error) {
 	raw, err := s.action(ctx, protocol.OpWorkers, q)
 	if err != nil {

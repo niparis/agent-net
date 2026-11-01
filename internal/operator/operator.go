@@ -38,6 +38,12 @@ type Operator interface {
 	StartWorker(ctx context.Context, req protocol.WorkerStartRequest) (protocol.WorkerStartResult, error)
 	// StopWorker ends a worker.
 	StopWorker(ctx context.Context, session string) error
+	// SessionStart starts an owner session in a project on this machine. It
+	// answers at once with status starting, and SessionStartGet says when the
+	// session has registered or why it failed. Owner only.
+	SessionStart(ctx context.Context, req protocol.SessionStartRequest) (protocol.StartedSession, error)
+	// SessionStartGet reads the state of a start by its ID. Owner only.
+	SessionStartGet(ctx context.Context, id string) (protocol.StartedSession, error)
 	// Workers lists the workers on the network with their owners.
 	Workers(ctx context.Context, q protocol.WorkersQuery) ([]protocol.WorkerView, error)
 	// Usage is the CPU and memory of every machine and session. Owner only.

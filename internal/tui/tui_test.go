@@ -188,6 +188,12 @@ type fakeSource struct {
 	enterPlan protocol.EnterPlan
 	enterErr  error
 
+	// What session_start was asked, and the start or error it answers with.
+	sessionStarts []protocol.SessionStartRequest
+	sessionStart  protocol.StartedSession
+	sessionErr    error
+	sessionGetErr error
+
 	// The graph the map reads, and the error it answers with.
 	graph    protocol.GraphView
 	graphErr error
@@ -313,6 +319,23 @@ func (f *fakeSource) StartWorker(_ context.Context, r protocol.WorkerStartReques
 func (f *fakeSource) StopWorker(_ context.Context, id string) error {
 	f.stopped = id
 	return f.actErr
+}
+func (f *fakeSource) SessionStart(_ context.Context, r protocol.SessionStartRequest) (protocol.StartedSession, error) {
+	f.sessionStarts = append(f.sessionStarts, r)
+	if f.sessionErr != nil {
+		return protocol.StartedSession{}, f.sessionErr
+	}
+	return f.sessionStart, nil
+}
+func (f *fakeSource) SessionStartGet(_ context.Context, id string) (protocol.StartedSession, error) {
+	if f.sessionGetErr != nil {
+		return protocol.StartedSession{}, f.sessionGetErr
+	}
+	out := f.sessionStart
+	if out.ID == "" {
+		out.ID = id
+	}
+	return out, nil
 }
 func (f *fakeSource) Workers(context.Context, protocol.WorkersQuery) ([]protocol.WorkerView, error) {
 	return nil, nil
