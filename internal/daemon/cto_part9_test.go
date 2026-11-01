@@ -27,3 +27,16 @@ func TestCTOSessionPage(t *testing.T) {
 		t.Fatalf("page: %d bytes", len(b))
 	}
 }
+
+func TestCTOConversationRows(t *testing.T) {
+	messages := []protocol.Message{{ID: "m1", Body: "private body", From: "a", To: "b"}, {ID: "m2", Body: "another"}}
+	feed := ctoConversationRows(messages, true)
+	raw, _ := json.Marshal(feed)
+	if strings.Contains(string(raw), "private body") {
+		t.Fatalf("feed leaked body: %s", raw)
+	}
+	rows := ctoConversationRows(messages, false)
+	if len(rows) != 2 || rows[0].ID != "m1" {
+		t.Fatalf("rows: %+v", rows)
+	}
+}

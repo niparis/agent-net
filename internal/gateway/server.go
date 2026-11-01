@@ -1456,11 +1456,11 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad query.messages")
 		}
-		ms, err := st.Messages(nc.id, p)
+		ms, total, err := st.MessagesPage(nc.id, p)
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"messages": ms}, nil
+		return map[string]any{"messages": ms, "total": total}, nil
 
 	case "query.message":
 		p, err := decode[protocol.QueryMessage](raw)

@@ -36,7 +36,7 @@ func init() {
 	add("reply", "Reply as CTO.", map[string]ctoField{"message_id": s("Message ID."), "body": s("Reply.")})
 	add("mcp_call", "Call an MCP tool.", map[string]ctoField{"server": s("Server name."), "tool": s("Tool."), "arguments": obj("Arguments.")})
 	add("get", "Read session profile.", map[string]ctoField{"session_id": sid})
-	add("messages", "Read messages.", map[string]ctoField{"session_id": sid, "conversation_id": s("Conversation."), "limit": n("Limit.")})
+	add("messages", "List own messages or read one.", map[string]ctoField{"message_id": s("Message ID."), "conversation_id": s("Conversation."), "limit": n("Limit."), "offset": n("Offset.")})
 	add("message_status", "Read message status.", map[string]ctoField{"message_id": s("Message ID.")})
 	add("session_trust", "Set session peer trust.", map[string]ctoField{"session_id": sid, "on": b("Enable.")})
 	add("session_policy", "Set policy; read get first.", map[string]ctoField{"session_id": sid, "scope": en("Default session.", "session", "project"), "policy": obj("Policy."), "dry_run": b("Preview.")})

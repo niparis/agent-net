@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -12,7 +13,7 @@ import (
 // without a source fails closed. Do not use an owner/CLI connection here.
 var ctoReadSources = map[string]string{
 	"agents": "list", "nodes": "nodes", "projects": "projects", "get": "get",
-	"messages": "messages", "message_status": "message_status", "mcp_list": "mcp_list",
+	"message_status": "message_status", "mcp_list": "mcp_list",
 	"worker_profile_list": protocol.OpWorkerProfiles,
 }
 
@@ -26,6 +27,74 @@ func (d *Daemon) ctoReadConn() *localConn {
 
 func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	switch name {
+	case "proposals":
+		var q struct {
+			ID     string `json:"id"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad proposals arguments")
+		}
+		items, err := d.proposalRunner().list()
+		if err != nil {
+			return nil, err
+		}
+		type row struct {
+			ID     string `json:"id"`
+			Tool   string `json:"tool"`
+			Action string `json:"action,omitempty"`
+			Status string `json:"status"`
+			Reason string `json:"reason,omitempty"`
+		}
+		rows := make([]row, 0, len(items))
+		for _, p := range items {
+			r := row{p.ID, p.Call.Tool, p.Call.Action, p.Status, ctoCut(p.Reason, 80)}
+			if q.ID == p.ID {
+				return map[string]any{"id": p.ID, "tool": p.Call.Tool, "action": p.Call.Action, "arguments": p.Call.Args, "reason": p.Reason, "created_at": p.CreatedAt, "status": p.Status}, nil
+			}
+			rows = append(rows, r)
+		}
+		if q.ID != "" {
+			return nil, errors.New("unknown proposal")
+		}
+		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
+	case "feed", "messages":
+		var q struct {
+			MessageID      string `json:"message_id"`
+			ConversationID string `json:"conversation_id"`
+			Limit          int    `json:"limit"`
+			Offset         int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad messages arguments")
+		}
+		if q.MessageID != "" && name == "messages" {
+			b, _ := json.Marshal(map[string]string{"message_id": q.MessageID})
+			return d.ctoReadConn().dispatch(ctx, "message_status", b)
+		}
+		limit := ctoLimit(q.Limit)
+		if q.Offset < 0 {
+			q.Offset = 0
+		}
+		b, _ := json.Marshal(protocol.QueryMessages{ConversationID: q.ConversationID, Limit: limit, Offset: q.Offset})
+		value, err := d.ctoReadConn().dispatch(ctx, "messages", b)
+		if err != nil {
+			return nil, err
+		}
+		var result struct {
+			Messages []protocol.Message `json:"messages"`
+			Total    int                `json:"total"`
+		}
+		if err = ctoDecode(value, &result); err != nil {
+			return nil, err
+		}
+		page := ctoList[ctoConversationRow]{Items: ctoConversationRows(result.Messages, name == "feed"), Total: result.Total}
+		if q.Offset+len(result.Messages) < result.Total {
+			page.Next = q.Offset + len(result.Messages)
+		}
+		return page, nil
+
 	case "sessions", "overview":
 		var q struct {
 			Limit  int `json:"limit"`
@@ -167,4 +236,25 @@ func ctoDecode(value any, dst any) error {
 		raw = data
 	}
 	return json.Unmarshal(raw, dst)
+}
+
+type ctoConversationRow struct {
+	ID   string `json:"id"`
+	From string `json:"from"`
+	To   string `json:"to"`
+	Type string `json:"type"`
+	Time string `json:"time"`
+	Text string `json:"text,omitempty"`
+}
+
+func ctoConversationRows(messages []protocol.Message, feed bool) []ctoConversationRow {
+	rows := make([]ctoConversationRow, 0, len(messages))
+	for _, m := range messages {
+		row := ctoConversationRow{ID: m.ID, From: m.From, To: m.To, Type: m.Type, Time: m.CreatedAt.Format(time.RFC3339)}
+		if !feed {
+			row.Text = ctoCut(m.Body, 80)
+		}
+		rows = append(rows, row)
+	}
+	return rows
 }

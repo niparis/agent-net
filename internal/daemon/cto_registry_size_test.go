@@ -61,7 +61,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 		t.Fatal(err)
 	}
 	reads := map[string]map[string]any{
-		"overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "charter_guide": {}, "agents": {}, "nodes": {}, "projects": {},
+		"proposals": {}, "feed": {}, "overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "charter_guide": {}, "agents": {}, "nodes": {}, "projects": {},
 		"get": {"session_id": ids[0]}, "messages": {}, "message_status": {"message_id": msg.ID},
 		"worker_profile_list": {}, "mcp_list": {}, "cto_events": {},
 	}
@@ -125,7 +125,7 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 			if result.IsError {
 				// The CTO stays private until part 6. Caller-scoped reads must
 				// refuse its unregistered identity, rather than use the owner.
-				if tool.Name == "messages" || tool.Name == "message_status" || tool.Name == "worker_profile_list" {
+				if tool.Name == "feed" || tool.Name == "messages" || tool.Name == "message_status" || tool.Name == "worker_profile_list" {
 					return
 				}
 				t.Fatalf("read failed: %+v", result.Content)

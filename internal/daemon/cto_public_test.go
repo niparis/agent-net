@@ -14,9 +14,9 @@ import (
 // This independent allowlist pins every data view to its ordinary tool. Static
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
-	"overview": "list and nodes", "sessions": "list page", "session": "get detail",
+	"messages": "own messages", "proposals": "own proposals", "feed": "own messages", "overview": "list and nodes", "sessions": "list page", "session": "get detail",
 	"agents": "list", "nodes": "nodes", "projects": "projects", "get": "get",
-	"messages": "messages", "message_status": "message_status", "mcp_list": "mcp_list",
+	"message_status": "message_status", "mcp_list": "mcp_list",
 	"worker_profile_list": "worker_profiles", "cto_events": "own timeline", "charter_guide": "static guide",
 }
 
@@ -167,7 +167,7 @@ func TestCTOReadParity(t *testing.T) {
 		})
 	}
 	for view, source := range wantCTOReads {
-		if source != "own timeline" && source != "static guide" && source != "list and nodes" && source != "list page" && source != "get detail" && ctoReadSources[view] != source {
+		if source != "own proposals" && source != "own messages" && source != "own timeline" && source != "static guide" && source != "list and nodes" && source != "list page" && source != "get detail" && ctoReadSources[view] != source {
 			t.Errorf("%s lost its source", view)
 		}
 	}

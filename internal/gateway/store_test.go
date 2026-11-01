@@ -264,3 +264,23 @@ func TestEnrollCodeRules(t *testing.T) {
 		t.Fatal("unknown code accepted")
 	}
 }
+
+func TestMessagesPageTotalAndOffset(t *testing.T) {
+	s, _ := newTestStore(t)
+	a, b := twoSessions(t, s)
+	for _, key := range []string{"page1", "page2", "page3"} {
+		if _, _, err := send(s, a, b, key, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	q := protocol.QueryMessages{SessionID: a, Limit: 2}
+	first, total, err := s.MessagesPage(mustNode(t, s, a), q)
+	if err != nil || total != 3 || len(first) != 2 {
+		t.Fatalf("first: %v %d %v", first, total, err)
+	}
+	q.Offset = 2
+	second, total, err := s.MessagesPage(mustNode(t, s, a), q)
+	if err != nil || total != 3 || len(second) != 1 || second[0].ID == first[0].ID {
+		t.Fatalf("second: %v %d %v", second, total, err)
+	}
+}

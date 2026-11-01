@@ -1603,6 +1603,11 @@ func (s *Store) CanSee(nodeID string, m protocol.Message) (bool, error) {
 // Messages lists recent messages (newest first) that involve a session, or any
 // session of the node when sessionID is empty.
 func (s *Store) Messages(nodeID string, q protocol.QueryMessages) ([]protocol.Message, error) {
+	messages, _, err := s.MessagesPage(nodeID, q)
+	return messages, err
+}
+
+func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protocol.Message, int, error) {
 	if q.Limit <= 0 || q.Limit > 200 {
 		q.Limit = 50
 	}
@@ -1611,10 +1616,10 @@ func (s *Store) Messages(nodeID string, q protocol.QueryMessages) ([]protocol.Me
 	if q.SessionID != "" {
 		owner, err := s.SessionNode(q.SessionID)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		if owner != nodeID {
-			return nil, reject("unknown session %q", q.SessionID)
+			return nil, 0, reject("unknown session %q", q.SessionID)
 		}
 		where += ` AND (m.sender = ? OR m.recipient = ?)`
 		args = append(args, q.SessionID, q.SessionID)
@@ -1623,21 +1628,28 @@ func (s *Store) Messages(nodeID string, q protocol.QueryMessages) ([]protocol.Me
 		where += ` AND m.conversation_id = ?`
 		args = append(args, q.ConversationID)
 	}
-	args = append(args, q.Limit)
-	rows, err := s.db.QueryContext(context.Background(), msgSelect+` WHERE `+where+` ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`, args...)
+	var total int
+	if err := s.db.QueryRowContext(context.Background(), `SELECT count(*) FROM messages m WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if q.Offset < 0 {
+		q.Offset = 0
+	}
+	args = append(args, q.Limit, q.Offset)
+	rows, err := s.db.QueryContext(context.Background(), msgSelect+` WHERE `+where+` ORDER BY m.created_at DESC, m.rowid DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer rows.Close()
 	out := []protocol.Message{}
 	for rows.Next() {
 		m, err := scanMessage(rows)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
 		out = append(out, m)
 	}
-	return out, rows.Err()
+	return out, total, rows.Err()
 }
 
 // SetAllOffline is run at start: no daemon is connected to a new process.

@@ -44,6 +44,8 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // descriptions are written from docs/reference.md: what each tool does, the
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
+	"proposals":             {desc: "List own proposals or read one.", fields: map[string]ctoField{"id": {typ: "string"}, "limit": {typ: "integer"}, "offset": {typ: "integer"}}},
+	"feed":                  {desc: "List own conversation metadata.", fields: map[string]ctoField{"limit": {typ: "integer"}, "offset": {typ: "integer"}}},
 	"overview":              {desc: "Public network counts."},
 	"sessions":              {desc: "List sessions.", fields: map[string]ctoField{"limit": {typ: "integer"}, "offset": {typ: "integer"}, "text": {typ: "string"}, "project": {typ: "string"}, "harness": {typ: "string"}, "capability": {typ: "string"}, "online_only": {typ: "boolean"}, "include_owners": {typ: "boolean"}}},
 	"session":               {desc: "Read a session profile.", fields: map[string]ctoField{"session_id": {typ: "string"}}},
