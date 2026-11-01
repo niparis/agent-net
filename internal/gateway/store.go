@@ -446,6 +446,10 @@ SELECT 1 /* worker task rework columns */;
 -- A session whose folder is temporary belongs to no project, so temp test
 -- runs do not fill the project list. The session itself stays.
 SELECT 1 /* session no project column */;
+`, `
+-- The recorded start of the announced task (tool redesign, task 2a). It moves
+-- only when the task changes, never on last activity.
+ALTER TABLE profiles ADD COLUMN task_started INTEGER NOT NULL DEFAULT 0;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1389,15 +1393,24 @@ func (s *Store) Announce(nodeID string, p protocol.ProfileAnnounce) (protocol.Pr
 		b, _ := json.Marshal(p.Capabilities)
 		caps = string(b)
 	}
-	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise)
-		VALUES (?,'','',?,?,?,?,?)
+	now := s.now().UnixNano()
+	taskStarted := int64(0)
+	if p.Task != "" {
+		taskStarted = now
+	}
+	_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise, task_started)
+		VALUES (?,'','',?,?,?,?,?,?)
 		ON CONFLICT (session_id) DO UPDATE SET
 		project=CASE WHEN excluded.project='' THEN profiles.project ELSE excluded.project END,
 		capabilities=CASE WHEN ? THEN profiles.capabilities ELSE excluded.capabilities END,
 		task=CASE WHEN excluded.task='' THEN profiles.task ELSE excluded.task END,
 		expertise=CASE WHEN excluded.expertise='' THEN profiles.expertise ELSE excluded.expertise END,
+		task_started=CASE
+			WHEN excluded.task='' THEN profiles.task_started
+			WHEN profiles.task=excluded.task THEN profiles.task_started
+			ELSE excluded.task_started END,
 		updated_at=excluded.updated_at`,
-		p.SessionID, p.Project, caps, p.Task, s.now().UnixNano(), p.Expertise, p.Capabilities == nil)
+		p.SessionID, p.Project, caps, p.Task, now, p.Expertise, taskStarted, p.Capabilities == nil)
 	if err != nil {
 		return protocol.Profile{}, err
 	}
@@ -1415,7 +1428,8 @@ const agentSelect = `SELECT s.id, s.node_id, n.hostname, s.harness, s.cwd, s.nat
 	COALESCE(NULLIF(p.name,''), s.name), s.repo_description, COALESCE(p.project,''),
 	COALESCE(p.capabilities,'[]'), COALESCE(p.task,''),
 	s.repo_root, s.repo_project, s.repo_remote, s.repo_branch, s.repo_worktree, s.mode, s.model, s.pid, s.worker, s.repo_description,
-	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),'')
+	s.peer_trust, COALESCE(p.expertise,''), s.delegation, s.title, s.created_at, s.tools_version, s.tools_old, s.waiting, COALESCE((SELECT name FROM project_display_names WHERE project=COALESCE(NULLIF(s.repo_project,''),p.project)),''),
+	COALESCE(p.task_started,0)
 	FROM sessions s JOIN nodes n ON n.id = s.node_id LEFT JOIN profiles p ON p.session_id = s.id`
 
 func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
@@ -1429,7 +1443,8 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	err := sc.Scan(&a.SessionID, &a.NodeID, &a.Hostname, &a.Harness, &a.Cwd, &a.NativeID, &a.Status, &online, &lastSeen, &lastActive,
 		&a.Profile.Name, &a.Profile.Function, &a.Profile.Project, &caps, &a.Profile.Task,
 		&a.Repo.Root, &a.Repo.Project, &a.Repo.Remote, &a.Repo.Branch, &a.Repo.Worktree, &a.Mode, &a.Model, &a.PID, &worker, &a.Repo.Description,
-		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName)
+		&trust, &a.Profile.Expertise, &deleg, &a.Title, &created, &a.ToolsVersion, &toolsOld, &waiting, &a.ProjectDisplayName,
+		&a.TaskStarted)
 	if err != nil {
 		return a, err
 	}
@@ -1456,6 +1471,7 @@ func scanAgent(sc interface{ Scan(...any) error }) (protocol.AgentView, error) {
 	a.Online = online == 1
 	a.LastSeen = lastSeen / int64(time.Second)
 	a.LastActive = lastActive / int64(time.Second)
+	a.TaskStarted = a.TaskStarted / int64(time.Second)
 	a.FirstSeen = created / int64(time.Second)
 	if json.Unmarshal([]byte(caps), &a.Profile.Capabilities) != nil || a.Profile.Capabilities == nil {
 		a.Profile.Capabilities = []string{}
