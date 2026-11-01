@@ -7,8 +7,7 @@ This design builds on the CTO as the advisor for the whole network, its charter,
 Status: implemented minor graph authority and the owner window on 2026-11-01 ([0040](../decisions/0040-cto-minor-graph-and-owner-window.md)), amending option A accepted on 2026-10-31. Parts 1 to 11 are implemented; the CTO session receives messages through the active harness and uses paged public reads. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
-Part 5 (hand-over) is implemented: `b` previews one item and sends it through
-the owner-gated `owner_send` method.
+Part 5 (the hand-over preview) was removed; the owner can write to the CTO directly.
 
 The daemon runs validators and calls for charter changes, edge sets and machine
 renames. Validators and runners for the other change operations belong to Part
@@ -21,7 +20,7 @@ Base: [0022](../decisions/0022-component-graph-and-cto.md) (the CTO section), [0
 
 - The CTO becomes a normal agent session. It runs on the claude or opencode harness, as today. It is listed as `CTO` in `agent_list`, the Sessions tab and the Graph. Enter opens it like any session. Agents can message it, and replies reach it like any session.
 - **The daemon enforces graph authority.** Minor graph changes apply at once. Major graph changes need a proposal outside the owner window. Every worker start or stop, settings change, tools or MCP change, answer in Needs you and send as the owner becomes a **proposal** in Needs you. The owner approves it with one key. The daemon, not the model, then runs the stored call.
-- **The CTO reads only what any session can read.** Owner-only data (Needs you contents, other sessions' text, the owner's inbox, owner settings) reaches the CTO only when the owner hands an item to it from the TUI.
+- **The CTO reads only what any session can read.** Owner-only data (Needs you contents, other sessions' text, the owner's inbox, owner settings) reaches the CTO only when the owner shares it directly.
 - Both rules hold in every turn, whoever started it. So the design needs no turn provenance, which the spike showed cannot be proven with today's Claude Code and OpenCode.
 - The CTO has no built-in tools: no shell, no file reads or writes, no web, no scheduling, no subagents. Its only tools are the 26 tools of its own MCP server.
 - The CTO sends from its own session. A plain message carries a peer note. A message the owner approved carries the CTO note "from the CTO, on the owner's instructions".
@@ -173,16 +172,14 @@ So whatever an agent gets the CTO to repeat, the agent could have read itself, w
 The owner can give the CTO owner-only data on purpose:
 
 - **Typing it** in the CTO session or sending it from the Messages tab, as today.
-- **A hand-over key.** `b` on a Needs you row, a Sessions row or a message in Messages sends an owner message to the CTO session with that item: the question and its options, the held request, the inbox question, the session's announced task and recent status, or the message body. The TUI shows the exact text before it sends, and caps it at 4,000 characters. Enter sends it through the owner-gated `owner_send` method; Esc cancels.
 
-A hand-over is the owner's choice to share. The CTO brief says such content is for the owner's work and should not be repeated to other agents, but that is advice. The owner should treat what they give the CTO like what they tell a colleague who also talks to others.
+Sharing is the owner's choice. The CTO brief says such content is for the owner's work and should not be repeated to other agents, but that is advice. The owner should treat what they give the CTO like what they tell a colleague who also talks to others.
 
 ### Why this is provable
 
 - The CTO's only data source is its MCP server: no built-in tools, a strict MCP config with only `agent-net cto-mcp`, no owner plugins (section 7).
 - Every read view calls the agent tool's own function. A parity test pins each view to its source.
 - A canary test fills a fixture with owner-only data that each carries a unique marker (a Needs you question, a held request, another session's text, another conversation's body, an inbox item, integration settings, the playbook). It calls every CTO read view and every proposal outcome note, and fails if any marker appears.
-- Hand-overs are owner messages through the owner gate, so they are visible in the timeline and the feed.
 
 ## 7. Built-in tools
 
@@ -263,7 +260,7 @@ Every proposal tool takes an optional `reason`. Estimated schema size: about 16 
 
 ### Today's tools, mapped
 
-Result sizes are tokens. "est." marks estimates from the code and typical data; the five measured results come from the owner's measurement. "After" assumes the default page of 20. "Removed (owner read)" means the data reaches the CTO only by a hand-over.
+Result sizes are tokens. "est." marks estimates from the code and typical data; the five measured results come from the owner's measurement. "After" assumes the default page of 20. "Removed (owner read)" means the data reaches the CTO only when the owner shares it.
 
 | Today's tool | Schema bytes | New tool | Result before | Result after |
 |---|---|---|---|---|
@@ -326,7 +323,7 @@ Short: start with `overview`; read lists, then details by ID; never page through
 
 - **Timeline (0029).** Kept. The snapshots, switch dividers and paging stay. `session_text` on the CTO session uses the `cto_events` code. Each harness keeps its own native conversation.
 - **Settings.** `cto_settings` stays the owner setting for harness, models and compaction. `agent-net cto` and the `m` form stay. `m` also works on the CTO row in Sessions. The CTO itself can no longer read or change them.
-- **The TUI CTO box (0034).** Kept read-only. It shows the CTO session's latest lines and, when proposals are open, `2 CTO proposals in Needs you`. Enter runs `session_enter` on the CTO session, the same hand-over as today. `n`, `u` and `m` stay.
+- **The TUI CTO box (0034).** Kept read-only. It shows the CTO session's latest lines and, when proposals are open, `2 CTO proposals in Needs you`. Enter runs `session_enter` on the CTO session. `n`, `u` and `m` stay.
 - **Existing conversations.** Each harness resumes its saved native conversation. The daemon adds the stable session ID to its `cto` table. The new brief applies on resume: Claude gets it with `--system-prompt`, OpenCode with the agent config. At the first turn after the upgrade, the daemon adds one note: "You are now a network session. Agents can message you. Every change you want is a proposal the owner approves. You read only what any session can read." Owner-only data already in a resumed conversation stays there; the upgrade note offers `n` (a new conversation) to the owner in the TUI, and the release notes say so.
 - **Old CTO conversations on the network.** Messages the CTO sent as the owner session stay in history. For 30 days after the upgrade, a reply to such a conversation is routed to the CTO session by the existing root lookup. Then `deliverOwnerCTO` is removed.
 - **Mixed versions.** A CTO send needs a gateway that knows the CTO session record. The daemon checks the gateway's version, as it does today for CTO graph writes. An older receiver sees the `cto` sender label and treats the message as a peer message, as today.
@@ -336,7 +333,7 @@ Short: start with `overview`; read lists, then details by ID; never page through
 | Risk | What covers it | What is left |
 |---|---|---|
 | **Prompt injection through an agent's message.** An agent asks the CTO to change an edge, start a worker or speak as the owner. | Rule 1: the CTO can only propose. The owner sees the exact call, a fresh diff and the CTO's recent inputs, and decides. | An owner who approves without reading. The detail is short on purpose; `A` needs a confirm screen. |
-| **An agent asks the CTO to repeat owner data.** | Rule 2: the CTO's tools return no owner-only data. A canary test proves it. | What the owner typed or handed to the CTO can be repeated. The brief advises against it; the owner decides what to hand over. Conversations resumed from before the upgrade hold old owner data until `n`. |
+| **An agent asks the CTO to repeat owner data.** | Rule 2: the CTO's tools return no owner-only data. A canary test proves it. | What the owner shares with the CTO can be repeated. The brief advises against it; the owner decides what to share. Conversations resumed from before the upgrade hold old owner data until `n`. |
 | **The CTO relays an agent's request to a third agent.** | The plain send carries a peer note; the receiver judges it like any peer. | The same as any agent relaying today. |
 | **Injection through data the CTO reads.** | The CTO reads only public data, and nothing it reads runs anything. | A proposal shaped by injected text. The owner reviews it. |
 | **The CTO uses a tool outside its server.** | No built-in tools, strict MCP config, no plugins, a startup check of the effective tool set that fails closed. | The spike verified flag parsing, not enforcement in a real tool call. Part 1 adds that check when a real run is allowed. |
@@ -390,13 +387,9 @@ Status: implemented. Reads use ordinary agent dispatch with the CTO caller, plus
 - Remove the owner-only reads of section 11. Build each remaining read from the function that serves the matching agent tool, with the CTO session as caller.
 - Tests: the parity test pins each read view to its agent tool; the canary test of section 6 over every read view; a view without a source fails the parity test.
 
-**Part 5. Hand-over to the CTO.**
+**Part 5. Sharing owner data with the CTO.**
 
-Status: implemented. `c` opens a preview at 80 and 120 columns, and the
-preview is capped at 4,000 characters.
-
-- `c` on Needs you rows, Sessions rows and messages: a preview, then an owner message to the CTO.
-- Tests: golden TUI scenes for the preview; the sent message holds exactly the previewed text; it goes through the owner gate.
+The hand-over preview was removed. The owner can share data in the CTO session.
 
 **Part 6. The CTO session on the network.**
 

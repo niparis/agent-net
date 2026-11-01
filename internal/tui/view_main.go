@@ -129,8 +129,6 @@ func (m Model) View() string {
 	add := func(s string) { out = append(out, s) }
 
 	switch {
-	case m.handover != nil:
-		out = append(out, m.handoverView(w, h-1)...)
 	case m.proposalConfirm:
 		out = append(out, m.proposalConfirmView(w)...)
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:

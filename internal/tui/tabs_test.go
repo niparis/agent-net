@@ -270,9 +270,9 @@ func TestCTOBoxFocusAndEnterOpensCTO(t *testing.T) {
 	if _, ok := cmd().(enterMsg); !ok {
 		t.Fatal("enter did not return an enter plan")
 	}
-	m = keys(m, "esc")
+	m = send(m, tea.KeyMsg{Type: tea.KeyCtrlCloseBracket})
 	if m.focus != focusSessions {
-		t.Fatal("escape did not return focus")
+		t.Fatal("ctrl+] did not return focus")
 	}
 }
 

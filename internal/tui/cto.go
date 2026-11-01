@@ -293,7 +293,15 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if c.settingsForm != nil {
 		return m.ctoSettingsKey(k)
 	}
-	if k.String() == ">" && !c.confirming && m.onboardingStep().id != "" {
+	if k.Type == tea.KeyCtrlCloseBracket || k.Type == tea.KeyTab {
+		c.confirming = false
+		m.focus = focusSessions
+		if m.tab == messagesTab && !m.mapOn {
+			m.focus = focusFeed
+		}
+		return m, nil
+	}
+	if k.Type == tea.KeyEsc && !c.confirming && m.onboardingStep().id != "" {
 		return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Step: m.onboardingStep().id, State: "skipped"})
 	}
 	if c.confirming {
@@ -309,13 +317,6 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			defer cancel()
 			return ctoNewMsg{err: src.CTONew(ctx), generation: g}
 		}
-	}
-	if k.Type == tea.KeyEsc || k.String() == "tab" {
-		m.focus = focusSessions
-		if m.tab == messagesTab && !m.mapOn {
-			m.focus = focusFeed
-		}
-		return m, nil
 	}
 	switch k.Type {
 	case tea.KeyPgUp, tea.KeyCtrlU:

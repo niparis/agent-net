@@ -28,68 +28,49 @@ func TestCTOBackHintsAndKeys(t *testing.T) {
 			m := keys(newModel(size[0], size[1]), "c")
 			box := ansi.Strip(strings.Join(m.ctoView(size[0], m.ctoBoxHeight(m.tab)), "\n"))
 			bar := ansi.Strip(m.helpLine(size[0]))
-			if !strings.Contains(box, "esc: back") || strings.Contains(box, "tab: back") {
+			if !strings.Contains(box, "ctrl+]: back") || strings.Contains(box, "tab: back") {
 				t.Errorf("focused CTO hint: %s", box)
 			}
-			if !strings.Contains(bar, "esc back") || strings.Contains(bar, "tab back") {
+			if !strings.Contains(bar, "ctrl+] back") || strings.Contains(bar, "tab back") {
 				t.Errorf("focused CTO key bar: %s", bar)
 			}
-			help := ansi.Strip(strings.Join(m.helpContent(size[0]), "\n"))
-			if !strings.Contains(help, "esc returns") || strings.Contains(help, "tab returns") {
-				t.Errorf("CTO help does not describe escape correctly: %s", help)
+			help := strings.Join(strings.Fields(ansi.Strip(strings.Join(m.helpContent(size[0]), "\n"))), " ")
+			if !strings.Contains(help, "ctrl+] returns") || strings.Contains(help, "tab returns") {
+				t.Errorf("CTO help does not describe the return key correctly: %s", help)
 			}
-			for _, key := range []string{"esc", "tab"} {
-				next := keys(m, key)
+			for _, key := range []tea.KeyType{tea.KeyCtrlCloseBracket, tea.KeyTab} {
+				next := send(m, tea.KeyMsg{Type: key})
 				if next.focus != focusSessions {
-					t.Errorf("%s did not return focus to Sessions", key)
+					t.Errorf("%v did not return focus to Sessions", key)
 				}
 			}
 		})
 	}
 }
 
-func TestCTOEscLeavesFocusWithOnboardingTip(t *testing.T) {
-	for _, tc := range []struct {
-		tab  int
-		want focus
-	}{{sessionsTab, focusSessions}, {messagesTab, focusFeed}} {
-		m, src := onboardingModel()
-		m.tab, m.focus = tc.tab, focusCTO
-		if got := m.onboardingStep().id; got == "" {
-			t.Fatal("fixture has no onboarding tip")
-		}
-		next, cmd := m.key(tea.KeyMsg{Type: tea.KeyEsc})
-		m = onboardingRun(next.(Model), cmd)
-		if m.focus != tc.want {
-			t.Errorf("tab %d: escape returned focus %v, want %v", tc.tab, m.focus, tc.want)
-		}
-		if len(src.progress.Steps) != 0 {
-			t.Errorf("escape skipped a tip: %+v", src.progress.Steps)
-		}
-	}
-}
-
 func TestCTOOnboardingTipCanStillBeSkipped(t *testing.T) {
 	m, src := onboardingModel()
 	m.focus = focusCTO
-	if hint := ansi.Strip(m.onboardingLine(120)); !strings.Contains(hint, "> skip") {
+	if hint := ansi.Strip(m.onboardingLine(120)); !strings.Contains(hint, "esc skip") {
 		t.Errorf("tip does not show the skip key: %s", hint)
 	}
-	next, cmd := m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(">")})
+	next, cmd := m.key(tea.KeyMsg{Type: tea.KeyEsc})
 	m = onboardingRun(next.(Model), cmd)
 	if src.progress.Steps["see"] != "skipped" || m.focus != focusCTO {
 		t.Fatalf("skip key did not skip the tip while retaining focus: %+v", src.progress.Steps)
 	}
 }
 
-func TestCTOLowercaseShortcutFromEveryTab(t *testing.T) {
+func TestCTOShortcutFromEveryTab(t *testing.T) {
 	for _, tab := range []string{"1", "2", "3", "4", "5"} {
-		t.Run(tab, func(t *testing.T) {
-			m := keys(newModel(120, 34), tab, "c")
-			if m.focus != focusCTO || m.tab != sessionsTab || m.handover != nil {
-				t.Fatalf("c: focus=%v tab=%d handover=%v", m.focus, m.tab, m.handover != nil)
-			}
-		})
+		for _, key := range []string{"c", "C"} {
+			t.Run(tab+"/"+key, func(t *testing.T) {
+				m := keys(newModel(120, 34), tab, key)
+				if m.focus != focusCTO || m.tab != sessionsTab {
+					t.Fatalf("%s: focus=%v tab=%d", key, m.focus, m.tab)
+				}
+			})
+		}
 	}
 }
 
@@ -110,23 +91,6 @@ func TestCTOShortcutFromCardAndStartsWhenMissing(t *testing.T) {
 			t.Errorf("%s did not start the missing CTO", key)
 		}
 	}
-}
-
-func TestHandOverBriefKeyOnSessionsAndMessages(t *testing.T) {
-	t.Run("Sessions", func(t *testing.T) {
-		m := pressKey(handoverWaitingModel(100, 30), "b")
-		if m.handover == nil || !strings.Contains(m.handover.text, "a session that waits in Needs you") {
-			t.Fatalf("b did not open the selected row's hand-over: %+v", m.handover)
-		}
-	})
-	t.Run("Messages", func(t *testing.T) {
-		m := keys(newModel(100, 30), "4")
-		m.feedCur = feedIndexFor(m, "m_1")
-		m = pressKey(m, "b")
-		if m.handover == nil || m.handover.msgID != "m_1" {
-			t.Fatalf("b did not open the selected message's hand-over: %+v", m.handover)
-		}
-	})
 }
 
 func TestCTOCompactHeightAndLatestLine(t *testing.T) {

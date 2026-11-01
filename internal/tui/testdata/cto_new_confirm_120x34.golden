@@ -29,6 +29,6 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │ Start a new conversation?  enter: yes · esc: no                                                                      │
-│ enter: open the CTO · esc: back · w: drive 30m                                                                       │
+│ enter: open the CTO · ctrl+]: back · w: drive 30m                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter open CTO  esc back  m model  n new  u undo
+enter open CTO  ctrl+] back  m model  n new  u undo

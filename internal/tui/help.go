@@ -25,8 +25,6 @@ type hint struct {
 // seven of them, always with help and quit. Every other key is in helpContent.
 func (m Model) hints() []hint {
 	switch {
-	case m.handover != nil:
-		return []hint{{"enter/y", "send", 1}, {"esc/n", "cancel", 1}, {"up/down", "scroll", 1}, {"q", "quit", 0}}
 	case m.proposalConfirm:
 		return []hint{{"up/down", "scroll", 1}, {"enter/y", "yes", 1}, {"esc/n", "no", 1}}
 	case m.proposalHistory && m.proposalDetail == nil && !m.help:
@@ -43,7 +41,7 @@ func (m Model) hints() []hint {
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
-		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"esc", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
+		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"ctrl+]", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == messagesTab:
 		if m.selectedWorkerConversation() {
 			// The defect key only applies here. It takes the slot of the
@@ -191,7 +189,6 @@ func (m Model) helpContent(w int) []string {
 		{"enter", "enter the selected session (ctrl+] to return)"},
 		{"e", "enter the selected session (alias for Enter)"},
 		{"m", "send a message to the session as yourself"},
-		{"b", "hand over the selected row to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"n", "start a new session: project, harness, model, project folder, first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
 		{"x, h, H", "stop session; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
@@ -236,14 +233,13 @@ func (m Model) helpContent(w int) []string {
 		{"m", "change the machine on By project"},
 		{"/", "search or filter"},
 		{"r", "rescan"},
-		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", esc returns, > skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
+		{"c, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", ctrl+] returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
 		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; f: defect found later; w: workers; e/l: events"},
-		{"b", "hand over the selected message to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"r", "refresh now"},
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},
 		{"", ""},

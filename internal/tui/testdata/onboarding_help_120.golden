@@ -1,5 +1,6 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
   more above
+ Tools
   [ ]                  switch screens; left/right also switches, except on All tools
   j/k, h/l             select an item; h/l also move between columns on All tools
   enter                open the selected fix or plan; on All tools, details are below
@@ -8,8 +9,8 @@ Keys ─────────────────────────
   m                    change the machine on By project
   /                    search or filter
   r                    rescan
-  c, C                 focus the CTO box: enter opens the full CTO, esc returns, > skips a tip; n new, u undo, w drive
-                       30m, m title, harness and model; pgup/pgdn scroll
+  c, C                 focus the CTO box: enter opens the full CTO, ctrl+] returns, esc skips a tip; n new, u undo, w
+                       drive 30m, m title, harness and model; pgup/pgdn scroll
   N                    name the machine of the session (every machine sees it; empty resets)
   L                    what the network learned: playbook notes and their support
   /                    filter (words match name, project, branch, model, ...)
@@ -17,7 +18,6 @@ Keys ─────────────────────────
   a                    active only: hide sessions idle for over an hour
   Messages             up/down: conversation; left/right: message; enter: latest; v: body; f: defect found later; w:
                        workers; e/l: events
-  b                    hand over the selected message to the CTO: a preview first, then Enter sends it, Esc cancels
   r                    refresh now
   states               messages: pending ... delivered ✓ replied ↩ failed ✗
 

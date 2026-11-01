@@ -238,7 +238,7 @@ New session ──────────────────────�
 
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │ ...                                                                          │
-│ enter: open the CTO · esc: back                                              │
+│ enter: open the CTO · ctrl+]: back                                           │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter start  up/down field  left/right folder  esc cancel
 ```
@@ -310,7 +310,7 @@ surprise. Enter on another machine uses the existing `session_enter` plan
 2. The form closes. A row appears at once in the machine group with STATUS
    `start` and the TASK `starting claude in tenebrae`.
 3. With no first message, when the session is registered, the TUI runs its
-   `session_enter` plan, the same hand-over Enter does today. ctrl+] returns
+   `session_enter` plan, the same terminal transfer Enter does today. ctrl+] returns
    to the TUI. With a first message, the TUI stays where it is and the result
    line says `started tenebrae 2 (claude) on Mac: first message sent. Enter
    opens it.`

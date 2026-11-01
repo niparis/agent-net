@@ -300,24 +300,14 @@ In the TUI, `c` or `C` focuses the CTO box from every tab.
 Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and the hint
 `c: open the <title>`. When focused, the hint reads
-`enter: open the <title> · esc: back`. Enter opens the full CTO harness UI through
-`session_enter` on the CTO session, the same hand-over a session uses; ctrl+]
+`enter: open the <title> · ctrl+]: back`. Enter opens the full CTO harness UI through
+`session_enter` on the CTO session, the same terminal transfer a session uses; ctrl+]
 returns. The title also shows how many CTO proposals are open. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
-harness and model form, and Esc returns focus to Sessions. `>` skips the
+harness and model form, and ctrl+] returns focus to Sessions. Esc skips the
 current onboarding tip. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
 failures, plus graph diffs; a graph change refreshes the Graph.
-
-`b` on a Needs you row, a Sessions row or a message in Messages opens a
-hand-over preview. It shows the exact text that Enter sends to the CTO as you,
-with a header naming where it came from: the row summary and its private
-content, such as the question and its options, the held request body, the inbox
-question, the session's announced task and recent status, or the message body.
-The preview scrolls with up/down and pgup/pgdown. Esc cancels. The text is
-capped at 4,000 characters; a longer item ends with a line that says it was cut.
-The hand-over uses `owner_send` to the CTO session, so it goes through the same
-owner gate as any message from you.
 
 Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
 It has three screens. Digits stay the global tabs and `c` goes to the CTO box, so `[` and `]` switch screens. Left and right arrows also switch screens except in All tools, where they select a machine or projects cell. Press `?` for Tools keys.
@@ -389,7 +379,7 @@ The gateway also stores onboarding progress in `owner_settings`. The owner-only
 operator methods `onboarding_get`, `onboarding_set`, and `onboarding_restart`
 read, update, and reset it across machines. The CTO proposes a reset with
 `settings_change` area `onboarding`. The TUI shows one tip in the CTO box. `c` focuses
-the box and `>` skips the current tip. In help, `T` turns tips off or on
+the box and Esc skips the current tip. In help, `T` turns tips off or on
 and `R` restarts them from the first step. Progress is shared across machines.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
@@ -1387,7 +1377,7 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has five tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages and `5` Tools. On each tab, `c` or `C` focuses the CTO box and Esc returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · esc: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and `>` skips a tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `f` on a worker conversation to report a defect found later, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
+`agent-net tui` has five tabs: `1` Sessions, `2` Graph, `3` Quotas, `4` Messages and `5` Tools. On each tab, `c` or `C` focuses the CTO box and ctrl+] returns to Sessions. The box is read-only and shows the latest CTO output plus `c: open the <title>` (or `enter: open the <title> · ctrl+]: back` while focused), where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and Esc skips a tip. Messages lists the stored conversations, newest activity first, and pages through them as you scroll. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `f` on a worker conversation to report a defect found later, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. A Braille renderer is the fallback everywhere. On a terminal that speaks the kitty graphics protocol, the same scene is drawn to an RGBA image with anti-aliased shapes and shown through Unicode placeholder cells; labels stay ordinary terminal text, so they remain crisp and selectable. The renderer and the pixel size of a cell are chosen once at start. `AGENT_NET_GRAPH` is `auto` (the default), `pixel` or `braille`. Auto sends a tiny `a=q` image query followed by a device attributes query to bound the wait, and reads the cell size from the `TIOCGWINSZ` pixel fields or a CSI 16 t reply. It stays on Braille when the terminal does not answer the image query with OK, when the cell size in pixels is unknown, or inside a multiplexer that drops images: `$TMUX`, or herdr, which sets `HERDR_ENV=1`. `pixel` overrides the multiplexer veto, and `braille` always falls back. Each image is transmitted once with `U=1` and only again when its hash changes; the old image is deleted by id first. In pixel mode the scene also carries motion: a comet with a fading tail for each message, a ring when it arrives, the phase of a busy node's slow glow, and the eased camera. Rendering never blocks the UI: `View` and `Update` build only the cheap scene, a scene hash decides whether a frame is needed, and a `tea.Cmd` goroutine rasterizes and PNG-encodes at most one frame at a time. New frames are dropped while one is in flight, and the last finished frame stays on screen. The image is capped at 1600 by 900 pixels and the terminal scales it to the cell area. A 120x34 frame with 20 nodes costs about 90 ms to rasterize, so pixel frames are requested at 8 a second; idle ticks stay at the existing 250 ms and reuse the last frame. Braille keeps its own picture and tick, and its goldens do not change. Zooming past 1.9 times the fitted zoom shows a rounded charter card next to a node; the card box is drawn in the image and its text stays ordinary terminal cells.
 
@@ -1434,8 +1424,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | `h`, `H` | In Sessions and the Graph card, hide or unhide the selected session or project node; `H` toggles showing hidden ones. |
 | `a` | Active only: hide sessions that are idle and have had no report for more than an hour. Each machine heading says how many it hides, and the header lists the active filters. On the Graph agent card, `a` toggles the node's autonomy between `off` and `wake`. |
 | `1` to `5` | Open Sessions, Graph, Quotas, Messages or Tools. `M` and `G` also open Graph. |
-| `c`, `C` | Focus the CTO box; Esc returns to Sessions and `>` skips a tip. |
-| `b` | Preview a hand-over of the selected Sessions row or message to the CTO. |
+| `c`, `C` | Focus the CTO box; ctrl+] returns to Sessions and Esc skips a tip. |
 | `d` | Toggle selected session details in place of the session list. |
 | `?` | Show or hide the help. |
 | esc | Leave the help or a message body, or clear the filter. |
@@ -1668,7 +1657,7 @@ For a node with `ask` merge authority, request approval for the exact merge usin
 
 `agent_reply` accepts optional `outcome`: `accept`, `reject`, `redirect` or `escalate`. Reject, redirect and escalate need `reason`; redirect also needs `redirect_to` (a node name), and escalate needs `recommendation`. Each text field is limited to 2048 bytes, and the node name to the project name limit. Control characters are removed. Outcomes apply to replies to requests. The gateway records the request's source and target project names, request and reply IDs, outcome, reason, redirect, recommendation and time. Projects unknown to the sessions appear as empty names.
 
-A rejection or escalation of another agent's request appears as a separate Needs you entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Select it and press `b` to preview a hand-over to the CTO. Press `s` to let the decision stand or `o` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
+A rejection or escalation of another agent's request appears as a separate Needs you entry until the owner resolves it. The entry shows the request's first line, outcome, reason and recommendation. Press `s` to let the decision stand or `o` to overrule it. Letting it stand sends the receiving session a notice that its decision stands. Overrule sends the original request again from the owner with the agent-net note `the owner overrules: do it.` The operator method is `outcome_overrule` with `reply_id` and `action` (`let_stand` or `overrule`).
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when the worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
