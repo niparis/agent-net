@@ -52,7 +52,7 @@ func TestCleanupWorktreeMergedRunningAndUnique(t *testing.T) {
 	}
 	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_old", dir)
 	d := &Daemon{cfg: Config{StateDir: state}, workers: map[string]*worker{}}
-	candidate := cleanupWorktree{ID: "w_old", Project: project, Path: dir, Branch: "agent-net/w_old", EndedAt: time.Now().Add(-25 * time.Hour)}
+	candidate := cleanupWorktree{ID: "w_old", Project: project, Path: dir, Branch: "agent-net/w_old", EndedAt: time.Now()}
 	d.workers["w_old"] = &worker{id: "w_old"}
 	if err := d.cleanupWorktree(context.Background(), candidate, time.Now()); err != nil {
 		t.Fatal(err)
@@ -124,6 +124,12 @@ func TestCleanupWorktreeObservesLegacy(t *testing.T) {
 	entries, err := st.cleanupWorktrees(project)
 	if err != nil || len(entries) != 1 || entries[0].ID != "w_legacy" || entries[0].EndedAt.Before(now) {
 		t.Fatalf("legacy: %+v %v", entries, err)
+	}
+	if err := d.cleanupWorktree(context.Background(), entries[0], now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("merged legacy worktree remains: %v", err)
 	}
 }
 
@@ -246,7 +252,7 @@ func TestCleanupDeclaredFolderCannotRemoveWorkerWorktrees(t *testing.T) {
 	}
 }
 
-func TestCleanupWorktreeCommitPreservedByAnotherBranch(t *testing.T) {
+func TestCleanupWorktreeKeepsCommitOnlyOnAnotherBranch(t *testing.T) {
 	project := newRepo(t, "project")
 	stateDir := t.TempDir()
 	dir := filepath.Join(stateDir, "worktrees", "w_other")
@@ -265,8 +271,8 @@ func TestCleanupWorktreeCommitPreservedByAnotherBranch(t *testing.T) {
 	if err := d.cleanupWorktree(context.Background(), candidate, time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(dir); !os.IsNotExist(err) {
-		t.Fatalf("worktree remains: %v", err)
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("unmerged worktree removed: %v", err)
 	}
 	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/keep-this"); err != nil {
 		t.Fatalf("kept branch missing: %v", err)
@@ -525,15 +531,43 @@ func TestCleanupRegisteredProjectRemovesEndedWorktree(t *testing.T) {
 	if err := w.d.st.saveWorker(row); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-25 * time.Hour)
-	if _, err := w.d.st.db.Exec(`UPDATE cleanup_worktrees SET ended_at=? WHERE worker_id=?`, old.UnixNano(), row.ID); err != nil {
-		t.Fatal(err)
-	}
 	w.d.cleanupProjects(context.Background())
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatalf("ended worktree remains: %v", err)
 	}
 	if _, err := gitOut(context.Background(), project, "show-ref", "--verify", "refs/heads/agent-net/w_ended"); err == nil {
 		t.Fatal("merged branch remains")
+	}
+}
+
+func TestCleanupWorktreeUsesConfiguredDefaultBranch(t *testing.T) {
+	project := newRepo(t, "project")
+	stateDir := t.TempDir()
+	dir := filepath.Join(stateDir, "worktrees", "w_default")
+	if err := os.MkdirAll(filepath.Dir(dir), 0700); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, project, "branch", "trunk")
+	gitIn(t, project, "worktree", "add", "-q", "-b", "agent-net/w_default", dir)
+	if err := os.WriteFile(filepath.Join(dir, "change"), []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, dir, "add", "change")
+	gitIn(t, dir, "commit", "-q", "-m", "change")
+	gitIn(t, project, "merge", "-q", "--ff-only", "agent-net/w_default")
+	d := &Daemon{cfg: Config{StateDir: stateDir}, workers: map[string]*worker{}}
+	candidate := cleanupWorktree{ID: "w_default", Project: project, Path: dir, Branch: "agent-net/w_default", DefaultBranch: "trunk", EndedAt: time.Now()}
+	if err := d.cleanupWorktree(context.Background(), candidate, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); err != nil {
+		t.Fatalf("worktree not merged into default removed: %v", err)
+	}
+	gitIn(t, project, "branch", "-f", "trunk", "agent-net/w_default")
+	if err := d.cleanupWorktree(context.Background(), candidate, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("worktree merged into default remains: %v", err)
 	}
 }

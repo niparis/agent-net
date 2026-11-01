@@ -99,6 +99,7 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 			continue
 		}
 		for _, row := range rows {
+			row.DefaultBranch = p.DefaultBranch
 			if err := d.cleanupWorktree(ctx, row, now); err != nil && d.log != nil {
 				d.Logf("worker.worktree_cleanup path=%q error=%v", row.Path, err)
 			}
@@ -107,14 +108,14 @@ func (d *Daemon) cleanupProjects(ctx context.Context) {
 }
 
 type cleanupWorktree struct {
-	ID, Project, Path, Branch, Harness string
-	EndedAt                            time.Time
+	ID, Project, Path, Branch, Harness, DefaultBranch string
+	EndedAt                                           time.Time
 }
 
 // cleanupWorktree never removes a worktree with uncommitted files or a branch
-// containing commits absent from all other local and remote branches.
-func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now time.Time) error {
-	if w.EndedAt.IsZero() || now.Sub(w.EndedAt) <= 24*time.Hour {
+// containing commits absent from the project default branch.
+func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, _ time.Time) error {
+	if w.EndedAt.IsZero() {
 		return nil
 	}
 	if !strings.HasPrefix(w.ID, "w_") || filepath.Base(w.ID) != w.ID || w.Branch != protocol.WorktreeBranch(w.ID) || filepath.Clean(w.Path) != filepath.Join(d.worktreesDir(), w.ID) {
@@ -218,16 +219,27 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	if err != nil {
 		return err
 	}
-	args := []string{"rev-list", "--max-count=1", head, "--not"}
-	for _, ref := range strings.Split(refs, "\n") {
-		if ref != "" && ref != branchRef {
-			args = append(args, ref)
+	defaultBranch := w.DefaultBranch
+	if defaultBranch == "" {
+		if ref, err := gitOut(ctx, w.Project, "symbolic-ref", "-q", "refs/remotes/origin/HEAD"); err == nil && strings.HasPrefix(ref, "refs/remotes/origin/") {
+			defaultBranch = strings.TrimPrefix(ref, "refs/remotes/origin/")
+		} else {
+			for _, name := range []string{"main", "master"} {
+				if _, err := gitOut(ctx, w.Project, "show-ref", "--verify", "--quiet", "refs/heads/"+name); err == nil {
+					defaultBranch = name
+					break
+				}
+			}
 		}
 	}
-	if len(args) == 4 {
+	defaultRef := "refs/heads/" + defaultBranch
+	if defaultBranch == "" || defaultRef == branchRef {
 		return nil
 	}
-	unique, err := gitOut(ctx, w.Project, args...)
+	if _, err := gitOut(ctx, w.Project, "show-ref", "--verify", "--quiet", defaultRef); err != nil {
+		return nil
+	}
+	unique, err := gitOut(ctx, w.Project, "rev-list", "--max-count=1", head, "--not", defaultRef)
 	if err != nil {
 		return err
 	}
@@ -267,8 +279,8 @@ func (d *Daemon) cleanupWorktree(ctx context.Context, w cleanupWorktree, now tim
 	return nil
 }
 
-// observeLegacyWorktrees conservatively starts a 24-hour observation period
-// for older managed worktrees whose worker records were already discarded.
+// observeLegacyWorktrees records unused managed worktrees whose worker records
+// were already discarded so the same cleanup checks can be applied.
 func (d *Daemon) observeLegacyWorktrees(ctx context.Context, project string, now time.Time) error {
 	data, err := gitOut(ctx, project, "worktree", "list", "--porcelain", "-z")
 	if err != nil {

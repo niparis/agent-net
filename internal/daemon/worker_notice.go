@@ -296,7 +296,7 @@ func gitOperationInProgress(ctx context.Context, dir string) bool {
 	return false
 }
 
-// finishWorktree keeps ended worktrees for the 24-hour cleanup period.
+// finishWorktree keeps ended worktrees until the next cleanup check.
 func (d *Daemon) finishWorktree(w *worker) {
 	d.wmu.Lock()
 	dir, branch := w.worktree, w.branch

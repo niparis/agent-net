@@ -1029,10 +1029,6 @@ func TestClaudeWorkerWorktreeTrustRemovedAfterCleanup(t *testing.T) {
 	if !read()[res.Worktree].Accepted {
 		t.Fatal("trust removed before cleanup")
 	}
-	old := time.Now().Add(-25 * time.Hour)
-	if _, err := c.d.st.db.Exec(`UPDATE cleanup_worktrees SET ended_at=? WHERE worker_id=?`, old.UnixNano(), filepath.Base(res.Worktree)); err != nil {
-		t.Fatal(err)
-	}
 	c.d.cleanupProjects(context.Background())
 	if _, ok := read()[res.Worktree]; ok {
 		t.Fatal("trust remains after worktree cleanup")

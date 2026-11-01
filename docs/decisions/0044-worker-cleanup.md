@@ -6,7 +6,7 @@
 
 ## Decision
 
-Every 30 minutes the daemon checks registered projects. It removes an ended worker's managed worktree and branch only after 24 hours, when all branch commits are reachable from other kept branches and the worktree has no uncommitted changes or untracked files. Ignored files are removed with the worktree. It keeps running or queued workers and branches used by starts in progress. For older worktrees without an end record, it waits 24 hours after first observing them unused. It leaves branches without an end record or managed worktree alone because their origin cannot be established.
+Every 30 minutes the daemon checks registered projects. It removes an ended worker's managed worktree and branch when all branch commits are reachable from the project's default branch and the worktree has no uncommitted changes or untracked files. Ignored files are removed with the worktree. It keeps running or queued workers and branches used by starts in progress. Older worktrees without an end record are eligible as soon as they are found unused. It leaves branches without an end record or managed worktree alone because their origin cannot be established.
 
 A project opts in to folder cleanup with lines in the first 8 KiB of `.agent-net/worker.md` of the form `cleanup: path age`, for example `cleanup: build/cache 48h`. Paths may be absolute or relative to the project root and cannot contain whitespace; ages are Go durations. The project root, its parents, its Git metadata and the daemon worktree directory cannot be cleanup targets. With no declarations, no project folder is trimmed.
 
