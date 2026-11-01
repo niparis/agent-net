@@ -375,13 +375,14 @@ func tokenText(in, out, reasoning, cacheRead, cacheWrite float64) string {
 func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol.WorkerNotice {
 	d.wmu.Lock()
 	sid, harness, model, project, wt, br, started, permissions := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt, w.permissions
+	cont, fix := w.continueCount, w.fixCount
 	d.wmu.Unlock()
 	if model == "" {
 		model = st.Model
 	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Permissions: permissions,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
-		Cost: st.Cost, Worktree: wt, Branch: br}
+		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix}
 	n.DiffStat, _ = d.worktreeFacts(w)
 	d.wmu.Lock()
 	n.Saved = w.unfinished
@@ -527,6 +528,8 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	} else {
 		w.doneStatus = req.Status
 		w.donePartial = !req.IsComplete()
+		w.pendingHandback = true
+		w.pendingPartial = !req.IsComplete()
 		d.saveWorkerLocked(w)
 	}
 	d.wmu.Unlock()
@@ -546,29 +549,56 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 	return out, nil
 }
 
-// noteAsk records a request to a worker from its owner. A hand-back answers
-// the last one.
+// noteAsk records a message from a worker's owner and counts a follow-up after
+// a hand-back. A hand-back answers the last request; messages from the owner
+// after it are continues when it said complete:no, and fixes when it said
+// complete:yes. Only the owner counts: a notice, or another session, does not.
 func (d *Daemon) noteAsk(m protocol.Message) {
 	w := d.workerBySession(m.To)
-	if w == nil || m.From != w.owner || m.Type != protocol.TypeRequest {
+	if w == nil || m.From != w.owner {
+		return
+	}
+	isAsk := m.Type == protocol.TypeRequest
+	if !isAsk && m.Type != protocol.TypeReply {
 		return
 	}
 	d.wmu.Lock()
-	w.taskMsg = m.ID
-	var updated *protocol.WorkerInfo
-	// The task in a list is the title: the first line of the FIRST task. A
-	// later request from the owner must not replace it. Only an older worker
-	// with no title yet takes the line of its first message.
-	if task := protocol.WorkerTaskSummary(m.Body); task != "" && w.taskText == "" {
-		w.taskText = task
-		if w.info != nil {
-			// Replace, never change in place: a response on another goroutine
-			// may still be writing the old value.
-			cp := *w.info
-			cp.Task = task
-			w.info = &cp
-			updated = w.info
+	counted := false
+	if w.pendingHandback {
+		// Every message from the owner after a hand-back counts until the
+		// worker hands back again. A notice or another session does not.
+		if w.pendingPartial {
+			w.continueCount++
+			w.continueRun++
+		} else {
+			w.fixCount++
+			w.fixRun++
 		}
+		counted = true
+	}
+	var updated *protocol.WorkerInfo
+	if isAsk {
+		w.taskMsg = m.ID
+		// The task in a list is the title: the first line of the FIRST task. A
+		// later request from the owner must not replace it. Only an older worker
+		// with no title yet takes the line of its first message.
+		if task := protocol.WorkerTaskSummary(m.Body); task != "" && w.taskText == "" {
+			w.taskText = task
+		}
+	}
+	if counted || (w.info != nil && isAsk) {
+		if w.info == nil {
+			w.info = &protocol.WorkerInfo{ID: w.id, Owner: w.owner, Project: w.project, StartedAt: w.startedAt.Unix(),
+				Permissions: protocol.WorkerPermissionsOrDefault(w.permissions)}
+		}
+		// Replace, never change in place: a response on another goroutine may
+		// still be writing the old value.
+		cp := *w.info
+		cp.Task = w.taskText
+		cp.Continue, cp.Fix = w.continueCount, w.fixCount
+		cp.DifficultyAsked, cp.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
+		w.info = &cp
+		updated = w.info
 	}
 	d.saveWorkerLocked(w)
 	sessionID := w.sessionID

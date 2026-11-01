@@ -150,6 +150,17 @@ type worker struct {
 	taskMsg, doneStatus, taskText string
 	// donePartial is true when the last hand-back said complete:false.
 	donePartial bool
+	// continueCount and fixCount count the messages from the owner after a
+	// hand-back with complete:no and complete:yes. continueRun and fixRun are
+	// the part since this run began, which the gateway counts as one run.
+	continueCount, fixCount int
+	continueRun, fixRun     int
+	// pendingHandback is true after a hand-back, until the worker hands back
+	// again; pendingPartial says whether that hand-back was partial.
+	pendingHandback, pendingPartial bool
+	// difficultyAsked is what the caller asked for, difficultyUsed the level
+	// the chooser used. They are kept for the difficulty calibration.
+	difficultyAsked, difficultyUsed string
 	// taskFull is the full first task (at most 64 KiB), kept in the record so
 	// that a new worker can continue it.
 	taskFull string
@@ -239,6 +250,8 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	}
 	// The figures follow the info value, so every reader sees one version.
 	w.info.ContextTokens, w.info.ContextLimit, w.info.Tokens = w.contextTokens, w.contextLimit, w.totalTokens
+	w.info.Continue, w.info.Fix = w.continueCount, w.fixCount
+	w.info.DifficultyAsked, w.info.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
 	// response may still be writing (a data race the race detector sees).
@@ -433,7 +446,10 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		Owner: w.owner, NativeID: w.nativeID, SessionID: w.sessionID, PID: w.pid, PGID: w.pgid, StartToken: w.token,
 		StartedAt: w.startedAt, LastActive: w.lastActive, EndedReason: ended, MainPath: w.mainPath, Worktree: w.worktree,
 		Branch: w.branch, Base: w.base, TaskMsg: w.taskMsg, TaskText: w.taskText, DoneStatus: w.doneStatus, DonePartial: w.donePartial,
-		Ref: w.ref, TaskFull: w.taskFull, Permissions: w.permissions}
+		Ref: w.ref, TaskFull: w.taskFull, Permissions: w.permissions,
+		Continue: w.continueCount, Fix: w.fixCount, ContinueRun: w.continueRun, FixRun: w.fixRun,
+		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
+		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed}
 }
 
 // ---- starting ----
@@ -541,7 +557,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
-		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions)}
+		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed}
 	worktree, branch := "", ""
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
@@ -885,7 +901,9 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 		}
 		_, err := d.call(cctx, "worker.stopped", protocol.WorkerStopped{SessionID: r.SessionID, WorkerID: r.ID,
 			Project: r.Project, Harness: r.Harness, Reason: r.EndedReason, Model: r.Model,
-			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix()})
+			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
+			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
+			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed})
 		cancel()
 		var re RemoteError
 		switch {
@@ -982,7 +1000,8 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
-		ready: make(chan struct{})}
+		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
+		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
@@ -1247,6 +1266,7 @@ func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 	d.wmu.Lock()
 	sid, owner, harness, model, project, task := w.sessionID, w.owner, w.harness, w.model, w.project, w.taskText
 	started, contextTokens, contextLimit, totalTokens := w.startedAt, w.contextTokens, w.contextLimit, w.totalTokens
+	cont, fix, asked, used := w.continueCount, w.fixCount, w.difficultyAsked, w.difficultyUsed
 	d.wmu.Unlock()
 	if sid == "" {
 		return
@@ -1254,6 +1274,7 @@ func (d *Daemon) rememberEnded(w *worker, status, note string, at time.Time) {
 	view := protocol.WorkerView{SessionID: sid, NodeID: d.cfg.NodeID, Hostname: d.cfg.Hostname, Harness: harness,
 		Model: model, Project: project, Owner: owner, StartedAt: started.Unix(), Task: task, EndedAt: at.Unix(),
 		ContextTokens: contextTokens, ContextLimit: contextLimit, Tokens: totalTokens,
+		Continue: cont, Fix: fix, DifficultyAsked: asked, DifficultyUsed: used,
 		EndStatus: status, EndNote: note, Status: status}
 	d.rmu.Lock()
 	if d.recent == nil {
@@ -1351,7 +1372,9 @@ func (d *Daemon) adoptWorkers() {
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,
 			branch: r.Branch, base: r.Base, taskMsg: r.TaskMsg, taskText: r.TaskText, doneStatus: r.DoneStatus, donePartial: r.DonePartial, ref: r.Ref,
 			taskFull:    r.TaskFull,
-			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions)}
+			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions), continueCount: r.Continue, fixCount: r.Fix,
+			continueRun: r.ContinueRun, fixRun: r.FixRun, pendingHandback: r.PendingHandback, pendingPartial: r.PendingPartial,
+			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {
 			w.idleNoticeSince, w.idleNoticeKey, w.idleNoticeReport, w.idleNoticeSent = since, key, report, sent

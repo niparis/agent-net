@@ -162,3 +162,38 @@ func TestRecentWorkerFailuresExcludeStopsAndOldRuns(t *testing.T) {
 		t.Fatalf("got %v, %v", got, err)
 	}
 }
+
+// The track record sums the two rework counters per harness and model.
+func TestTrackRecordSumsReworkPerModel(t *testing.T) {
+	s, _ := newTestStore(t)
+	now := s.now()
+	add := func(harness, model, outcome string, cont, fix int) {
+		t.Helper()
+		if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: "n1", SessionID: "s_" + outcome + harness + model,
+			Harness: harness, Model: model, Outcome: outcome, Continue: cont, Fix: fix,
+			StartedAt: now.Add(-time.Hour).Unix(), EndedAt: now.Unix()}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("opencode", "m1", protocol.OutcomePartial, 2, 0)
+	add("opencode", "m1", protocol.OutcomeComplete, 3, 1)
+	add("codex", "m2", protocol.OutcomeComplete, 0, 2)
+
+	tr, ok, err := s.TrackRecord("n1", "opencode", "m1", 30*24*time.Hour)
+	if err != nil || !ok {
+		t.Fatalf("track record: %v %v", ok, err)
+	}
+	if tr.Continue != 5 || tr.Fix != 1 {
+		t.Errorf("rework counters: %+v", tr)
+	}
+	if line := tr.Line(); !strings.Contains(line, "5 continue") || !strings.Contains(line, "1 fix") {
+		t.Errorf("line: %q", line)
+	}
+	if got := tr.ReworkLine(); got != "complete 1 · continue 5 · fix 1" {
+		t.Errorf("rework line: %q", got)
+	}
+	other, ok, err := s.TrackRecord("n1", "codex", "m2", 30*24*time.Hour)
+	if err != nil || !ok || other.Continue != 0 || other.Fix != 2 {
+		t.Errorf("other model: %+v %v %v", other, ok, err)
+	}
+}

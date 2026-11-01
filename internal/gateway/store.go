@@ -207,7 +207,8 @@ CREATE TABLE model_successes (
 CREATE TABLE IF NOT EXISTS worker_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
   harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL,
-  started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0);
+  started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0,
+  continue_count INTEGER NOT NULL DEFAULT 0, fix_count INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS worker_runs_node ON worker_runs (node_id, harness, model, ended_at);
 CREATE INDEX IF NOT EXISTS worker_runs_at ON worker_runs (ended_at);
 CREATE TABLE IF NOT EXISTS playbook_notes (
@@ -317,6 +318,9 @@ UPDATE profiles SET name = '';
 `, `
 ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
 `, `
+-- The two rework counters of a worker run (difficulty calibration, part 1).
+SELECT 1 /* worker rework counters */;
+`, `
 -- Reserve CTO for the network session, including names saved before part 6.
 UPDATE profiles SET name = '' WHERE name = 'CTO';
 UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harness <> 'cto';
@@ -368,6 +372,26 @@ func (s *Store) migrate() error {
 		if err != nil {
 			tx.Rollback()
 			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+		// SQLite has no ADD COLUMN IF NOT EXISTS, and a test may replay a
+		// migration on a database that already has these columns.
+		if strings.Contains(migrations[i], "worker rework counters") {
+			for _, col := range []struct{ name, spec string }{
+				{"continue_count", `continue_count INTEGER NOT NULL DEFAULT 0`},
+				{"fix_count", `fix_count INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = ?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+				}
+			}
 		}
 		if strings.Contains(migrations[i], "CTO legacy route upgrade") {
 			if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('cto_legacy_route_start','',?) ON CONFLICT(key) DO NOTHING`, s.now().UnixNano()); err != nil {
@@ -904,6 +928,38 @@ func (s *Store) SessionNode(sessionID string) (string, error) {
 
 func (s *Store) SetSessionOffline(nodeID, sessionID string) error {
 	_, err := s.db.Exec(`UPDATE sessions SET online = 0, last_seen = ? WHERE id = ? AND node_id = ?`, s.now().UnixNano(), sessionID, nodeID)
+	return err
+}
+
+// SetSessionWorkerRework keeps the rework counters and the difficulties on a
+// worker's session record. The end report is the reliable last word, so the
+// gateway does not depend on the session sync that came before it. A session
+// that is not a worker is left alone.
+func (s *Store) SetSessionWorkerRework(nodeID, sessionID string, cont, fix int, asked, used string) error {
+	var raw string
+	err := s.db.QueryRow(`SELECT worker FROM sessions WHERE id = ? AND node_id = ?`, sessionID, nodeID).Scan(&raw)
+	if err == sql.ErrNoRows || raw == "" {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var w protocol.WorkerInfo
+	if json.Unmarshal([]byte(raw), &w) != nil {
+		return nil
+	}
+	w.Continue, w.Fix = cont, fix
+	if asked != "" {
+		w.DifficultyAsked = asked
+	}
+	if used != "" {
+		w.DifficultyUsed = used
+	}
+	b, err := json.Marshal(w)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE sessions SET worker = ? WHERE id = ? AND node_id = ?`, string(b), sessionID, nodeID)
 	return err
 }
 

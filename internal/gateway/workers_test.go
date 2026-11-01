@@ -178,3 +178,31 @@ func TestResumeWorkerRebindsOnlyItsOfflineSession(t *testing.T) {
 		t.Fatalf("worker did not retain ID: %s want %s: %v", got, id, err)
 	}
 }
+
+// The gateway keeps the rework counters and the difficulties on the worker
+// record, including after the end report updates it.
+func TestWorkerSessionKeepsReworkCounters(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	oid, _ := s.UpsertSession(node, owner("mac"))
+	in := protocol.SessionInfo{Harness: "opencode", NativeID: "ses_r", Name: "shop", Mode: protocol.ModeBackground,
+		Worker: &protocol.WorkerInfo{ID: "w_r", Owner: oid, Project: "shop", StartedAt: 42,
+			Continue: 2, Fix: 1, DifficultyAsked: "hard", DifficultyUsed: "normal"}}
+	wid, err := s.UpsertSession(node, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ := s.Agent(wid)
+	if a.Worker == nil || a.Worker.Continue != 2 || a.Worker.Fix != 1 ||
+		a.Worker.DifficultyAsked != "hard" || a.Worker.DifficultyUsed != "normal" {
+		t.Fatalf("worker counters: %+v", a.Worker)
+	}
+	if err := s.SetSessionWorkerRework(node, wid, 3, 1, "hard", "simple"); err != nil {
+		t.Fatal(err)
+	}
+	a, _, _ = s.Agent(wid)
+	if a.Worker == nil || a.Worker.Continue != 3 || a.Worker.Fix != 1 ||
+		a.Worker.DifficultyAsked != "hard" || a.Worker.DifficultyUsed != "simple" {
+		t.Fatalf("updated counters: %+v", a.Worker)
+	}
+}

@@ -353,6 +353,12 @@ type WorkerView struct {
 	ContextTokens int64 `json:"context_tokens,omitempty"`
 	ContextLimit  int64 `json:"context_limit,omitempty"`
 	Tokens        int64 `json:"tokens,omitempty"`
+	// Continue and Fix are the worker's rework counters, and the difficulty
+	// asked and used are the levels recorded at its start, as in WorkerInfo.
+	Continue        int    `json:"continue,omitempty"`
+	Fix             int    `json:"fix,omitempty"`
+	DifficultyAsked string `json:"difficulty_asked,omitempty"`
+	DifficultyUsed  string `json:"difficulty_used,omitempty"`
 	// EndedAt, EndStatus and EndNote are set for a worker that ended in the
 	// last two minutes, when the query asked for recent workers.
 	EndedAt   int64  `json:"ended_at,omitempty"`
@@ -416,7 +422,8 @@ func WorkersOf(agents []AgentView) []WorkerView {
 		out = append(out, WorkerView{SessionID: a.SessionID, NodeID: a.NodeID, Hostname: a.Hostname,
 			Harness: a.Harness, Model: a.Model, Project: a.Worker.Project, Path: a.Cwd, Online: a.Online, Status: a.Status,
 			Owner: a.Worker.Owner, OwnerName: names[a.Worker.Owner], StartedAt: a.Worker.StartedAt,
-			Task: a.Worker.Task, ContextTokens: a.Worker.ContextTokens, ContextLimit: a.Worker.ContextLimit, Tokens: a.Worker.Tokens})
+			Task: a.Worker.Task, ContextTokens: a.Worker.ContextTokens, ContextLimit: a.Worker.ContextLimit, Tokens: a.Worker.Tokens,
+			Continue: a.Worker.Continue, Fix: a.Worker.Fix, DifficultyAsked: a.Worker.DifficultyAsked, DifficultyUsed: a.Worker.DifficultyUsed})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		return out[i].StartedAt > out[j].StartedAt

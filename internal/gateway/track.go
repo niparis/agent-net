@@ -29,8 +29,14 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if r.RunSeconds < 0 {
 		r.RunSeconds = 0
 	}
-	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds)
-		VALUES (?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds); err != nil {
+	if r.Continue < 0 {
+		r.Continue = 0
+	}
+	if r.Fix < 0 {
+		r.Fix = 0
+	}
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count)
+		VALUES (?,?,?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix); err != nil {
 		return err
 	}
 	// A clearly bad track record promotes a note on its own (decision 0022).
@@ -50,7 +56,7 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 		window = protocol.TrackRecordDays * 24 * time.Hour
 	}
 	cut := s.now().Add(-window).Unix()
-	query := `SELECT harness, model, outcome, run_seconds FROM worker_runs WHERE ended_at >= ?`
+	query := `SELECT harness, model, outcome, run_seconds, continue_count, fix_count FROM worker_runs WHERE ended_at >= ?`
 	args := []any{cut}
 	if nodeID != "" {
 		query += ` AND node_id = ?`
@@ -69,7 +75,8 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 	for rows.Next() {
 		var harness, model, outcome string
 		var run int64
-		if err := rows.Scan(&harness, &model, &outcome, &run); err != nil {
+		var cont, fix int
+		if err := rows.Scan(&harness, &model, &outcome, &run, &cont, &fix); err != nil {
 			return nil, err
 		}
 		k := key{harness, model}
@@ -80,6 +87,8 @@ func (s *Store) TrackRecords(nodeID string, window time.Duration) ([]protocol.Tr
 			order = append(order, k)
 		}
 		tr.Runs++
+		tr.Continue += cont
+		tr.Fix += fix
 		switch outcome {
 		case protocol.OutcomeComplete:
 			tr.Complete++
@@ -136,10 +145,10 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 	tr := &protocol.TrackRecord{Harness: "all", Model: subject, Resumable: true}
 	switch kind {
 	case protocol.SubjectModel:
-		query = `SELECT harness, outcome, run_seconds FROM worker_runs WHERE model = ? AND ended_at >= ?`
+		query = `SELECT harness, outcome, run_seconds, continue_count, fix_count FROM worker_runs WHERE model = ? AND ended_at >= ?`
 		args = []any{subject, cut}
 	case protocol.SubjectHarness:
-		query = `SELECT model, outcome, run_seconds FROM worker_runs WHERE harness = ? AND ended_at >= ?`
+		query = `SELECT model, outcome, run_seconds, continue_count, fix_count FROM worker_runs WHERE harness = ? AND ended_at >= ?`
 		args = []any{subject, cut}
 		tr = &protocol.TrackRecord{Harness: subject, Model: "all", Resumable: protocol.HarnessCanResume(subject)}
 	case protocol.SubjectModelHarness:
@@ -147,7 +156,7 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 		if !ok {
 			return nil, false, nil
 		}
-		query = `SELECT '', outcome, run_seconds FROM worker_runs WHERE model = ? AND harness = ? AND ended_at >= ?`
+		query = `SELECT '', outcome, run_seconds, continue_count, fix_count FROM worker_runs WHERE model = ? AND harness = ? AND ended_at >= ?`
 		args = []any{model, harness, cut}
 		tr = &protocol.TrackRecord{Harness: harness, Model: model, Resumable: protocol.HarnessCanResume(harness)}
 	default:
@@ -162,10 +171,13 @@ func (s *Store) TrackSubject(kind, subject string, window time.Duration) (*proto
 	for rows.Next() {
 		var other, outcome string
 		var run int64
-		if err := rows.Scan(&other, &outcome, &run); err != nil {
+		var cont, fix int
+		if err := rows.Scan(&other, &outcome, &run, &cont, &fix); err != nil {
 			return nil, false, err
 		}
 		tr.Runs++
+		tr.Continue += cont
+		tr.Fix += fix
 		switch outcome {
 		case protocol.OutcomeComplete:
 			tr.Complete++

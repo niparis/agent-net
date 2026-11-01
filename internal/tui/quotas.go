@@ -209,9 +209,12 @@ func (m Model) quotaModels() []quotaModel {
 		for _, n := range m.snap.Nodes {
 			for _, track := range n.Tracks {
 				if track.Harness == p.Harness && trackedModels[track.Model] {
+					row.track.Runs += track.Runs
 					row.track.Complete += track.Complete
 					row.track.Partial += track.Partial
 					row.track.Failed += track.Failed
+					row.track.Continue += track.Continue
+					row.track.Fix += track.Fix
 					row.used += track.Runs
 					row.done += track.Complete
 					row.failedRuns += track.Failed + track.TimedOut
@@ -528,7 +531,11 @@ func (m Model) quotaModelsView(w int) []string {
 				recent = append(recent, shares[i])
 			}
 		}
-		detail := fmt.Sprintf("%s: picked for %s (next start).", label, naturalList(selected))
+		detail := label + ": "
+		if line := r.track.ReworkLine(); line != "" {
+			detail += line + " · "
+		}
+		detail += fmt.Sprintf("picked for %s (next start).", naturalList(selected))
 		if len(recent) > 0 {
 			detail += " " + strings.Join(recent, " · ") + "."
 		}
