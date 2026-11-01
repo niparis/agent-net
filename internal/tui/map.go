@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -94,6 +95,8 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "a":
+		return m.toggleAutonomy()
 	case "D":
 		return m.startProjectRename()
 	case "n":
@@ -132,6 +135,54 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// autonomySource is optional for compatibility with older sources.
+type autonomySource interface {
+	SetNodeAutonomy(context.Context, string, string) error
+}
+
+// toggleAutonomy flips the selected project between off and wake. It is an
+// owner action; the source uses the owner-only node settings method.
+func (m Model) toggleAutonomy() (Model, tea.Cmd) {
+	node, ok := m.mapNode(m.mp.selected)
+	if !ok || node.Kind != "component" {
+		m.fail("Pick a project to change autonomy.")
+		return m, nil
+	}
+	src, ok := m.src.(autonomySource)
+	if !ok {
+		m.fail("Autonomy is unavailable: the daemon is older than this screen.")
+		return m, nil
+	}
+	next := protocol.AutonomyWake
+	if protocol.NodeAutonomy(node.Settings) == protocol.AutonomyWake {
+		next = protocol.AutonomyOff
+	}
+	name := node.Name
+	// Show the new rule at once; the next graph refresh confirms it.
+	nodes := append([]protocol.Node(nil), m.mp.nodes...)
+	for i := range nodes {
+		if nodes[i].Name != name {
+			continue
+		}
+		settings := map[string]string{}
+		for k, v := range nodes[i].Settings {
+			settings[k] = v
+		}
+		settings[protocol.SettingAutonomy] = next
+		nodes[i].Settings = settings
+	}
+	m.mp.nodes = nodes
+	m.say(fmt.Sprintf("Saving autonomy %s for %s...", next, name))
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
+		defer cancel()
+		if err := src.SetNodeAutonomy(ctx, name, next); err != nil {
+			return actionMsg{err: fmt.Errorf("Autonomy not changed: %s", explain(err))}
+		}
+		return actionMsg{text: fmt.Sprintf("Autonomy %s for %s.", next, name)}
+	}
 }
 
 // mapProjectNodes returns the visible nodes matching the network search.

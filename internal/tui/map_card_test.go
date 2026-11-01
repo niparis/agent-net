@@ -27,6 +27,7 @@ func richGraph() protocol.GraphView {
 				Needs:           "MCP: tenebrae-library; a GPU box for embeddings.",
 				Notes:           "Deploys go through homelab. Keep the library read only on laptops.",
 			}
+			g.Nodes[i].Settings = map[string]string{protocol.SettingAutonomy: protocol.AutonomyWake}
 		}
 	}
 	g.Edges = append(g.Edges,

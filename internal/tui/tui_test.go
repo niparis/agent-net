@@ -198,6 +198,24 @@ type fakeSource struct {
 	// The graph the map reads, and the error it answers with.
 	graph    protocol.GraphView
 	graphErr error
+
+	// The autonomy setting changes the Graph card asked for.
+	autonomyCalls []autonomyCall
+}
+
+type autonomyCall struct{ node, value string }
+
+func (f *fakeSource) SetNodeAutonomy(_ context.Context, node, value string) error {
+	f.autonomyCalls = append(f.autonomyCalls, autonomyCall{node: node, value: value})
+	for i := range f.graph.Nodes {
+		if f.graph.Nodes[i].Name == node {
+			if f.graph.Nodes[i].Settings == nil {
+				f.graph.Nodes[i].Settings = map[string]string{}
+			}
+			f.graph.Nodes[i].Settings[protocol.SettingAutonomy] = value
+		}
+	}
+	return nil
 }
 
 func (f *fakeSource) GraphView(_ context.Context, _ protocol.QueryGraph) (protocol.GraphView, error) {

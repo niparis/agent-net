@@ -1,6 +1,6 @@
 # Security
 
-Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior and do not imply that the decision's autonomy model is already built.
+Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior, including the autonomy setting and its guard rails.
 
 The network-wide CTO harness, model preference and auto-compaction rules are
 owner settings. The daemon's `cto_settings` method uses the owner gate and
@@ -839,15 +839,33 @@ a session at most once per idle period, and at most 6 times a day.
 A check is a notification, not a request or an approval, and carries no owner
 authority. It asks the session to answer with `agent_announce`: done, more with
 one line, or blocked on X. The gateway reads only the next announce. It does
-not start or resume a session, and it routes nothing to the CTO. `more` and
-`blocked` leave one open row per session in the owner's Needs you queue. The
-row text is cleaned and the `[agent-net` marker is neutralized.
+not start or resume a session, and it routes nothing to the CTO. `blocked`
+leaves one open row per session in the owner's Needs you queue, whatever the
+autonomy. The row text is cleaned and the `[agent-net` marker is neutralized.
+
+A node's `autonomy` setting is `off` by default or `wake`. With `wake`, a
+`more` answer from an online session gets one short continue notification from
+the reserved `agent-net` identity and no Needs you row. An offline session is
+not woken: this slice never starts or resumes a session, and creating a new
+agent or a clone stays with the owner or a CTO proposal. `blocked on X` still
+leaves a row. Only the owner changes autonomy, through `node_settings_set`
+(owner gate) or its CTO proposal; a session cannot set its own.
+
+Wake-ups have their own cap of 6 per agent per day, separate from the check
+cap. Two wakes in a row with no new message and no change in open work stop the
+waking and leave one row, `<name> was woken twice with no progress`; a later
+change allows waking again. The gateway stores the daily count, the
+no-progress streak and the progress markers, never task content. The wake
+notification is stored through the normal message queue, so its delivery and
+retries use the same checks as any other notification. The operator counts
+call includes `wake_ups_today`.
 
 The gateway stores the activity time it has checked, the small stopping
-counters for "more", the daily cap and counts of answer kinds. It does not
-store the announced task or the answer line as check state. The Needs you row
-does hold the line the agent supplied, like any other inbox item. Ordinary
-senders cannot use the `agent-net` identity, so a peer cannot forge a check.
-A check reaches the session's own model, which may use a paid or protected
-provider, so the cap and the stopping rule keep it rare.
+counters for "more", the daily check and wake caps and counts of answer kinds.
+It does not store the announced task or the answer line as check state. The
+Needs you row does hold the line the agent supplied, like any other inbox item.
+Ordinary senders cannot use the `agent-net` identity, so a peer cannot forge a
+check or a wake. A check or wake reaches the session's own model, which may use
+a paid or protected provider, so the caps and the stopping rules keep both
+rare.
 

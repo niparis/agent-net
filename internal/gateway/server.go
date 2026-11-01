@@ -1294,6 +1294,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
+		// An announce can answer an idle check with "more", which stores one
+		// autonomy wake. Queue it on this node now.
+		g.dispatchPending(ctx, nc.id, false)
 		return map[string]any{"profile": prof}, nil
 
 	case "inbox.create":
@@ -1513,13 +1516,12 @@ func (g *Gateway) dispatch(ctx context.Context, m protocol.Message) {
 }
 
 func (g *Gateway) sendDeliver(ctx context.Context, nodeID string, m protocol.Message) {
-	if m.From == "agent-net" {
+	if m.From == "agent-net" && !isWakeMessage(m) {
 		ok, err := g.store.reminderEligible(m.ParentID)
 		if err != nil || !ok {
 			return
 		}
 	}
-
 	g.mu.Lock()
 	nc := g.conns[nodeID]
 	g.mu.Unlock()

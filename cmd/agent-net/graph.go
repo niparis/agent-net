@@ -202,6 +202,7 @@ func printNodeSettings(out io.Writer, res protocol.NodeSettingsResult) {
 		{protocol.SettingWorkerSandbox, res.Effective.WorkerSandbox},
 		{protocol.SettingJudgeConsumers, res.Effective.JudgeConsumers},
 		{protocol.SettingDeployRule, res.Effective.DeployRule},
+		{protocol.SettingAutonomy, res.Autonomy},
 	} {
 		fmt.Fprintf(out, "  effective %s: %s\n", a.name, a.value)
 	}

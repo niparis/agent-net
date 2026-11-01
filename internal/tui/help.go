@@ -203,6 +203,7 @@ func (m Model) helpContent(w int) []string {
 		{"n", "start a new session in this project (the same form, filled from here)"},
 		{"esc", "return to Graph with the same node selected"},
 		{"D", "name project (empty clears)"},
+		{"a", "toggle autonomy off or wake"},
 		{"h, H", "hide or unhide the selected project; show hidden projects"},
 		{"U, u", "select the next learned change; undo the selected one"},
 		{"[ ], ctrl+u/d", "scroll the charter; pgup/pgdn also work"},

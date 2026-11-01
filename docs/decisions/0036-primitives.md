@@ -56,7 +56,9 @@ Authority gates actions such as a merge or push. Autonomy gates decisions about 
 
 Edge, autonomy and authority together answer who may create work for whom and what needs approval. Autonomy must allow waking before an automatic wake-up can happen. A daily cap limits automatic wake-ups per agent. Two wake-ups in a row with no new message, task or commit stop automatic wake-ups and tell the owner.
 
-An open conflict remains: the session-start design lets only the owner or the CTO start sessions, while autonomy means agent-net wakes agents itself. The owner must decide the boundary. Recommendation: allow agent-net to wake an existing agent by resuming its session when autonomy is `wake`; creating a new agent or a clone stays owner-only, with the CTO able to propose it for approval. See [the session-start design](../design/start-sessions.md#open-questions-for-the-owner).
+An open conflict remained: the session-start design lets only the owner or the CTO start sessions, while autonomy means agent-net wakes agents itself. The owner decided on 2026-11-01: agent-net may wake an existing agent by resuming it when autonomy is `wake`; creating a new agent or a clone stays with the owner, with the CTO able to propose it for approval. Waking does not start a new session in slice 4. See [the session-start design](../design/start-sessions.md#open-questions-for-the-owner).
+
+Slice 4 builds autonomy as one node setting with two values, `off` (the default) and `wake`. Every agent can read it in the public graph and in its agent profile because it is a rule, but only the owner changes it: on the Graph agent card with `a`, or through an owner-approved CTO proposal. All node settings, including this one, are major in the CTO minor/major rule. The gateway stores only the daily wake count, the no-progress streak and the progress markers; it never stores task content.
 
 ## Idle checks
 
@@ -79,13 +81,13 @@ Build each slice so it can be measured and removed:
 1. Show read-only "waiting on B" and "owes reply" in STATUS from conversations.
 2. Send B one reminder when B goes idle with an unanswered request.
 3. Add the idle check.
-4. Add autonomy with two values, off and wake, and a small daily cap.
+4. Add autonomy with two values, off and wake, and a small daily cap. (Built as a node setting; see the owner answer above.)
 
 If slice 1 shows that agents rarely stall, stop there.
 
 ## Minimal state
 
-There is no task table. Tasks are conversations, workers and Needs you items. Pending is derived, and autonomy is one charter field. The only new stored fact is whether the agent has been checked since its last activity.
+There is no task table. Tasks are conversations, workers and Needs you items. Pending is derived, and autonomy is one node setting beside the charter. The only new stored facts are whether the agent has been checked since its last activity, and the small wake counters the guard rails need.
 
 ## Exposure
 

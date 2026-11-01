@@ -587,7 +587,7 @@ in the TUI beats a sentence plus an approval.
 
 ## Open questions for the owner
 
-**Autonomy and session starts:** This design permits only the owner to start or resume an owner session, with the CTO proposing a start for owner approval. Decision 0036 lets agent-net wake an agent when autonomy is `wake`. Should that include starting or resuming a session? Recommendation: allow agent-net to wake an existing agent by resuming its session under `wake`; creating a new agent or a clone stays owner-only, with the CTO able to propose it for approval. This is an open question, not a change to this design.
+**Autonomy and session starts:** This design permits only the owner to start or resume an owner session, with the CTO proposing a start for owner approval. Decision 0036 lets agent-net wake an agent when autonomy is `wake`. The owner decided on 2026-11-01: agent-net may wake an existing agent under `wake`; creating a new agent or a clone stays owner-only, with the CTO able to propose it for approval. Slice 4 wakes an online session with a message and never starts or resumes a session itself.
 
 1. **Should idle background sessions stop by themselves?** For example after
    24 hours with no turn, with the conversation kept. Recommendation: no, not

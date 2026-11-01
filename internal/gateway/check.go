@@ -12,14 +12,17 @@ import (
 )
 
 // The idle check (decision 0036). agent-net asks an idle agent with open work
-// whether it is done, at most once per idle period. Slice 3 has no autonomy:
-// "more" becomes a Needs you row and "blocked" names the blocker there.
+// whether it is done, at most once per idle period. Slice 4 adds autonomy: a
+// node whose setting is wake gets a continue message instead of a Needs you
+// row, within its own daily cap and no-progress guard.
 const (
 	idleCheckAfter    = 20 * time.Minute
 	idleCheckGrace    = 2 * time.Second
 	idleCheckDailyCap = 6
 	idleCheckBody     = "[agent-net] check: is your task done? Answer with agent_announce: done, more (one line), or blocked on X."
 	idleCheckDay      = "2006-01-02"
+	wakeDailyCap      = 6
+	wakeReplyPrefix   = "[agent-net] continue: you said you have work left ("
 )
 
 type checkState struct {
@@ -30,14 +33,24 @@ type checkState struct {
 	msgs    int
 	day     string
 	count   int
+	// The wake guard rails: today's count, the no-progress streak and the
+	// progress markers of the last wake.
+	wakeDay    string
+	wakeCount  int
+	wakeStreak int
+	wakeOpen   int
+	wakeMsgs   int
 }
 
 func (s *Store) readCheckState(id string) (checkState, error) {
 	var st checkState
 	var waiting int
-	err := s.db.QueryRow(`SELECT check_active,check_waiting,check_more,check_open,check_msgs,check_day,check_day_count
-		FROM session_checks WHERE session_id=?`, id).
-		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count)
+	err := s.db.QueryRow(`SELECT c.check_active,c.check_waiting,c.check_more,c.check_open,c.check_msgs,c.check_day,c.check_day_count,
+		COALESCE(w.wake_day,''),COALESCE(w.wake_day_count,0),COALESCE(w.wake_streak,0),
+		COALESCE(w.wake_open,0),COALESCE(w.wake_msgs,0)
+		FROM session_checks c LEFT JOIN session_wakes w ON w.session_id=c.session_id WHERE c.session_id=?`, id).
+		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count,
+			&st.wakeDay, &st.wakeCount, &st.wakeStreak, &st.wakeOpen, &st.wakeMsgs)
 	if errors.Is(err, sql.ErrNoRows) {
 		return checkState{}, nil
 	}
@@ -64,6 +77,44 @@ func (s *Store) checkMessageCount(id string) (int, error) {
 	var n int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE (sender=? OR recipient=?) AND sender<>'agent-net'`, id, id).Scan(&n)
 	return n, err
+}
+
+// agentNode is the graph node a session speaks for. It is the project the
+// machine worked out from its folder, then any project the agent announced.
+func agentNode(a protocol.AgentView) string {
+	if a.Repo.Project != "" {
+		return a.Repo.Project
+	}
+	return a.Profile.Project
+}
+
+// agentAutonomy reads the node's effective autonomy rule. A missing or invalid
+// stored value is off.
+func (s *Store) agentAutonomy(a protocol.AgentView) (string, error) {
+	node := agentNode(a)
+	if node == "" {
+		return protocol.AutonomyOff, nil
+	}
+	var value string
+	err := s.db.QueryRow(`SELECT value FROM graph_node_settings WHERE node=? AND setting=?`,
+		node, protocol.SettingAutonomy).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return protocol.AutonomyOff, nil
+	}
+	if err != nil {
+		return protocol.AutonomyOff, err
+	}
+	return protocol.NodeAutonomy(map[string]string{protocol.SettingAutonomy: value}), nil
+}
+
+func wakeBody(line string) string {
+	return wakeReplyPrefix + protocol.NeutralizeMarkers(line) + "). Carry on, then answer the next check."
+}
+
+// isWakeMessage tells whether the reserved sender's message is an autonomy
+// wake, which is delivered through the normal queue but is not a reminder.
+func isWakeMessage(m protocol.Message) bool {
+	return m.From == "agent-net" && strings.HasPrefix(m.IdempotencyKey, "wake:")
 }
 
 func (s *Store) ctoSessionID() string {
@@ -230,10 +281,14 @@ func (s *Store) answerCheck(sessionID, task string) error {
 	err := s.db.QueryRow(`SELECT COALESCE(c.check_active,0),COALESCE(c.check_waiting,0),
 		COALESCE(c.check_more,0),COALESCE(c.check_open,0),COALESCE(c.check_msgs,0),
 		COALESCE(c.check_day,''),COALESCE(c.check_day_count,0),
+		COALESCE(w.wake_day,''),COALESCE(w.wake_day_count,0),COALESCE(w.wake_streak,0),
+		COALESCE(w.wake_open,0),COALESCE(w.wake_msgs,0),
 		COALESCE(NULLIF(p.name,''),s.name,''),s.node_id
 		FROM sessions s LEFT JOIN profiles p ON p.session_id=s.id
-		LEFT JOIN session_checks c ON c.session_id=s.id WHERE s.id=?`, sessionID).
-		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count, &name, &node)
+		LEFT JOIN session_checks c ON c.session_id=s.id
+		LEFT JOIN session_wakes w ON w.session_id=s.id WHERE s.id=?`, sessionID).
+		Scan(&st.active, &waiting, &st.more, &st.open, &st.msgs, &st.day, &st.count,
+			&st.wakeDay, &st.wakeCount, &st.wakeStreak, &st.wakeOpen, &st.wakeMsgs, &name, &node)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil
 	}
@@ -300,19 +355,102 @@ func (s *Store) answerCheck(sessionID, task string) error {
 		if st.more > 0 && (open != st.open || msgs != st.msgs) {
 			streak = 1
 		}
-		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs)
+		autonomy := protocol.AutonomyOff
+		online := false
+		if ok {
+			autonomy, err = s.agentAutonomy(a)
+			if err != nil {
+				return err
+			}
+			online = a.Online
+		}
+		today := now.UTC().Format(idleCheckDay)
+		wakeDay, wakeCount, wakeStreak := st.wakeDay, st.wakeCount, st.wakeStreak
+		if wakeDay != today {
+			wakeCount = 0
+		}
+		wake, stopRow, fallbackRow := false, false, false
+		if autonomy == protocol.AutonomyWake && online {
+			// Progress since the last wake resets the no-progress streak.
+			if wakeStreak > 0 && (open != st.wakeOpen || msgs != st.wakeMsgs) {
+				wakeStreak = 0
+			}
+			switch {
+			case wakeStreak >= 2:
+				// Two wakes with no progress stopped the waking. The one row
+				// was left when the second wake went out.
+			case wakeCount >= wakeDailyCap:
+				fallbackRow = true
+			default:
+				wake = true
+				wakeStreak++
+				wakeCount++
+				wakeDay = today
+				stopRow = wakeStreak >= 2
+			}
+		} else if autonomy != protocol.AutonomyWake {
+			fallbackRow = true
+		}
+		var m protocol.Message
+		if wake {
+			m = protocol.Message{ID: protocol.NewID("m"), ConversationID: protocol.NewID("c"),
+				From: "agent-net", FromName: "agent-net", FromHarness: "agent-net", To: sessionID,
+				Type: protocol.TypeNotification, Body: wakeBody(line),
+				IdempotencyKey: fmt.Sprintf("wake:%s:%s:%d", sessionID, today, wakeCount),
+				CreatedAt:      now.UTC(), ExpiresAt: now.Add(protocol.DefaultTTL).UTC(), State: protocol.StateStored}
+		}
+		tx, err := s.db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		if wake {
+			if _, err = tx.Exec(`INSERT INTO messages(id,conversation_id,parent_id,sender,recipient,type,body,hop,idem_key,created_at,expires_at,state)
+				VALUES(?,?,?,?,?,?,?,0,?,?,?,?)`, m.ID, m.ConversationID, m.ParentID, m.From, m.To, m.Type, m.Body,
+				m.IdempotencyKey, m.CreatedAt.UnixNano(), m.ExpiresAt.UnixNano(), m.State); err != nil {
+				return err
+			}
+			s.event(tx, "msg.stored", "", m.From, m.ID, "type=notification by=agent-net wake")
+		}
+		wakeOpen, wakeMsgs := st.wakeOpen, st.wakeMsgs
+		if wake {
+			wakeOpen, wakeMsgs = open, msgs
+		}
+		if _, err = tx.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting,check_more,check_open,check_msgs)
 			VALUES(?,?,0,?,?,?)
 			ON CONFLICT(session_id) DO UPDATE SET check_active=excluded.check_active,check_waiting=0,
 			check_more=excluded.check_more,check_open=excluded.check_open,check_msgs=excluded.check_msgs`,
 			sessionID, active, streak, open, msgs); err != nil {
 			return err
 		}
-		text := name + " stopped with work left"
-		if line != "" {
-			text += ": " + line
+		if wake || st.wakeDay != "" {
+			if _, err = tx.Exec(`INSERT INTO session_wakes(session_id,wake_day,wake_day_count,wake_streak,wake_open,wake_msgs)
+				VALUES(?,?,?,?,?,?)
+				ON CONFLICT(session_id) DO UPDATE SET wake_day=excluded.wake_day,wake_day_count=excluded.wake_day_count,
+				wake_streak=excluded.wake_streak,wake_open=excluded.wake_open,wake_msgs=excluded.wake_msgs`,
+				sessionID, wakeDay, wakeCount, wakeStreak, wakeOpen, wakeMsgs); err != nil {
+				return err
+			}
 		}
-		if err = s.checkInboxItem(sessionID, node, text); err != nil {
+		if err = tx.Commit(); err != nil {
 			return err
+		}
+		if wake {
+			s.logMessage(m)
+		}
+		if stopRow {
+			if err = s.checkInboxItem(sessionID, node, name+" was woken twice with no progress"); err != nil {
+				return err
+			}
+		}
+		if fallbackRow {
+			text := name + " stopped with work left"
+			if line != "" {
+				text += ": " + line
+			}
+			if err = s.checkInboxItem(sessionID, node, text); err != nil {
+				return err
+			}
 		}
 	case "blocked":
 		if _, err = s.db.Exec(`INSERT INTO session_checks(session_id,check_active,check_waiting)
@@ -383,5 +521,10 @@ func (s *Store) checkCounts(c *protocol.SessionCounts) error {
 			c.CheckAnswersBlocked = n
 		}
 	}
-	return rows.Err()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+	return s.db.QueryRow(`SELECT COALESCE(SUM(wake_day_count),0) FROM session_wakes WHERE wake_day=?`,
+		s.now().UTC().Format(idleCheckDay)).Scan(&c.WakeUpsToday)
 }

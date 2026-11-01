@@ -304,7 +304,9 @@ type SessionCounts struct {
 	CheckAnswersDone    int `json:"check_answers_done"`
 	CheckAnswersMore    int `json:"check_answers_more"`
 	CheckAnswersBlocked int `json:"check_answers_blocked"`
-	Online              int `json:"online"`
+	// WakeUpsToday counts autonomy wake-ups sent today, across agents.
+	WakeUpsToday int `json:"wake_ups_today"`
+	Online       int `json:"online"`
 	// Offline24h is the sessions that are offline and were seen in the last
 	// 24 hours.
 	Offline24h int `json:"offline_24h"`

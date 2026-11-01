@@ -83,6 +83,7 @@ func (m Model) mapDetailLines(node protocol.Node, ok bool, width, rows int) []st
 	for _, a := range []struct{ name, value string }{
 		{"purpose", node.Charter.Purpose},
 		{"maturity", node.Charter.Maturity},
+		{"autonomy", protocol.NodeAutonomy(node.Settings)},
 		{"accepts", node.Charter.Accepts},
 		{"refuses", node.Charter.Refuses},
 		{"consumers", node.Charter.Consumers},

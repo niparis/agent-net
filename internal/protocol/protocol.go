@@ -233,6 +233,9 @@ type AgentCharter struct {
 	Accepts         string `json:"accepts,omitempty"`
 	Refuses         string `json:"refuses,omitempty"`
 	FeatureRequests string `json:"feature_requests,omitempty"`
+	// Autonomy is the node's effective rule, off or wake. Every agent can
+	// read it because it decides whether agent-net wakes the node's agent.
+	Autonomy string `json:"autonomy"`
 }
 
 type PendingRequest struct {

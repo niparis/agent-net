@@ -33,6 +33,7 @@ type PublicGraphNode struct {
 	Name     string   `json:"name"`
 	Kind     string   `json:"kind,omitempty"`
 	Maturity string   `json:"maturity,omitempty"`
+	Autonomy string   `json:"autonomy"`
 	Line     string   `json:"line,omitempty"`
 	Charter  *Charter `json:"charter,omitempty"`
 }
@@ -122,12 +123,13 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 }
 
 func publicNode(n Node) PublicGraphNode {
-	out := PublicGraphNode{Name: n.Name, Kind: n.Kind, Maturity: n.Charter.Maturity, Line: publicNodeLine(n)}
+	out := PublicGraphNode{Name: n.Name, Kind: n.Kind, Maturity: n.Charter.Maturity,
+		Autonomy: NodeAutonomy(n.Settings), Line: publicNodeLine(n)}
 	return out
 }
 
-// publicNodeLine is the compact list row: name, kind, maturity, purpose, and
-// the first part of accepts and refuses.
+// publicNodeLine is the compact list row: name, kind, maturity, autonomy,
+// purpose, and the first part of accepts and refuses.
 func publicNodeLine(n Node) string {
 	parts := []string{n.Name}
 	if n.Kind != "" {
@@ -136,6 +138,7 @@ func publicNodeLine(n Node) string {
 	if n.Charter.Maturity != "" {
 		parts = append(parts, "["+n.Charter.Maturity+"]")
 	}
+	parts = append(parts, "autonomy: "+NodeAutonomy(n.Settings))
 	if n.Charter.Purpose != "" {
 		parts = append(parts, flattenCharter(n.Charter.Purpose))
 	}

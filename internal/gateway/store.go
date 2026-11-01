@@ -339,6 +339,16 @@ CREATE TABLE IF NOT EXISTS session_checks (
  check_day_count INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS check_answer_counts (
  day TEXT NOT NULL, kind TEXT NOT NULL, count INTEGER NOT NULL, PRIMARY KEY(day, kind));
+`, `
+-- The autonomy guard rails. Only the daily count, the no-progress streak and
+-- the progress markers of the last wake are kept. Task content is never stored.
+CREATE TABLE IF NOT EXISTS session_wakes (
+ session_id TEXT PRIMARY KEY,
+ wake_day TEXT NOT NULL DEFAULT '',
+ wake_day_count INTEGER NOT NULL DEFAULT 0,
+ wake_streak INTEGER NOT NULL DEFAULT 0,
+ wake_open INTEGER NOT NULL DEFAULT 0,
+ wake_msgs INTEGER NOT NULL DEFAULT 0);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -1589,7 +1599,7 @@ func (s *Store) Pending(nodeID string, includeDispatched bool) ([]protocol.Messa
 	rows.Close()
 	filtered := out[:0]
 	for _, m := range out {
-		if m.From == "agent-net" {
+		if m.From == "agent-net" && !isWakeMessage(m) {
 			eligible, err := s.reminderEligible(m.ParentID)
 			if err != nil {
 				return nil, err

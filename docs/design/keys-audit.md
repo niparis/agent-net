@@ -208,6 +208,7 @@ Tools plan modal and picker:
 | `[`/`]`, `ctrl+u`/`ctrl+d` | Scroll the charter. |
 | `U`/`u` | Select the next learned change / undo it. |
 | `D` | Rename the project (empty clears). |
+| `a` | Toggle autonomy between `off` and `wake`. |
 | `h`/`H` | Hide or unhide the selected project / include hidden nodes. |
 | `c` | Focus the CTO box. |
 | `r` | Refresh. |
@@ -266,7 +267,7 @@ only supplies ctrl+] to come back.
 | `H` | Sessions and Card: show hidden items. | Consistent, but only for two of the four `h` meanings. |
 | `x` | Sessions: stop a worker. Tools Differences: accept a difference as it is. Tools picker: tick an item. | Stop, accept and tick share one letter. |
 | `[` `]` | Tools: switch screens. Graph: previous or next neighbour. Card: scroll the charter. | Screen switch, graph navigation and text scroll. |
-| `a` | Sessions: active only, accept a learned suggestion, accept a held request. Tools All: turn on. Inbox: approve. | Same letter for "show active", "accept" and "turn on". |
+| `a` | Sessions: active only, accept a learned suggestion, accept a held request. Graph card: toggle autonomy. Tools All: turn on. Inbox: approve. | Same letter for "show active", "accept", "toggle a rule" and "turn on". |
 | `r` | Sessions: refresh, reject a learned suggestion, refuse a held request. Quotas, Graph card, Tools: refresh or rescan. Inbox: refuse. | Refresh and refuse are opposite actions. |
 | `s` | Sessions and Messages: start a worker. Outcome row: let stand. Quotas: show not set up. | Start, let stand and show. |
 | `o` | Sessions: show offline, or overrule an outcome. Graph: orbit. | Filter, decision and layout. |

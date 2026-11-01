@@ -27,3 +27,12 @@ func (s *Client) GraphTalk(ctx context.Context) (protocol.GraphTalkResult, error
 	}
 	return out, json.Unmarshal(raw, &out)
 }
+
+// SetNodeAutonomy changes whether agent-net may wake the node's agent when it
+// still has work. It is an owner-only node setting.
+func (s *Client) SetNodeAutonomy(ctx context.Context, node, value string) error {
+	_, err := s.action(ctx, protocol.OpNodeSettingsSet, protocol.NodeSettingsSetRequest{
+		Node: node, Setting: protocol.SettingAutonomy, Value: value,
+	})
+	return err
+}

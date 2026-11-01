@@ -47,6 +47,16 @@ const (
 	SettingWorkerSandbox    = "worker_sandbox"
 	SettingJudgeConsumers   = "judge_consumers"
 	SettingDeployRule       = "deploy_rule"
+	// SettingAutonomy is whether agent-net may wake an idle agent that still
+	// has work (decision 0036). Unlike the maturity overrides it is a public
+	// rule, so every agent can read it. The default is off.
+	SettingAutonomy = "autonomy"
+)
+
+// Autonomy values. They are rules, not display text.
+const (
+	AutonomyOff  = "off"
+	AutonomyWake = "wake"
 )
 
 // MaturityDefaults is the set of controls a maturity level selects.
@@ -67,6 +77,9 @@ type NodeSettingsResult struct {
 	Overrides map[string]string `json:"overrides"`
 	Defaults  MaturityDefaults  `json:"defaults"`
 	Effective MaturityDefaults  `json:"effective"`
+	// Autonomy is the effective autonomy rule, off when it is unset. It sits
+	// beside the maturity defaults because it is not one of them.
+	Autonomy string `json:"autonomy"`
 }
 
 // NodeSettingsGetRequest is the request of node_settings_get.
@@ -135,7 +148,19 @@ func (d MaturityDefaults) Apply(settings map[string]string) MaturityDefaults {
 
 // NodeSettingNames lists the settings an owner may override.
 func NodeSettingNames() []string {
-	return []string{SettingTestsBeforeMerge, SettingMergeAuthority, SettingWorkerSandbox, SettingJudgeConsumers, SettingDeployRule}
+	return []string{SettingTestsBeforeMerge, SettingMergeAuthority, SettingWorkerSandbox, SettingJudgeConsumers, SettingDeployRule, SettingAutonomy}
+}
+
+// NodeAutonomy returns the node's effective autonomy rule. The default is off,
+// and an invalid or unknown stored value can only narrow it to off.
+func NodeAutonomy(settings map[string]string) string {
+	if ValidateNodeSetting(SettingAutonomy, settings[SettingAutonomy]) != nil {
+		return AutonomyOff
+	}
+	if settings[SettingAutonomy] == AutonomyWake {
+		return AutonomyWake
+	}
+	return AutonomyOff
 }
 
 // ValidateNodeSetting checks a setting name and value. An empty value is valid:
@@ -153,6 +178,8 @@ func ValidateNodeSetting(setting, value string) error {
 		allowed = []string{JudgeFree, JudgeCharter, JudgeStrict, JudgeEscalate}
 	case SettingDeployRule:
 		allowed = []string{DeployBrief, DeployAsk, DeployOwner}
+	case SettingAutonomy:
+		allowed = []string{AutonomyOff, AutonomyWake}
 	default:
 		return fmt.Errorf("unknown node setting")
 	}

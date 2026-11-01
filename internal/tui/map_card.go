@@ -295,6 +295,7 @@ func (m Model) mapFocusView(w, h int) []string {
 	if level := maturityLevel(node.Charter.Maturity); level != "-" {
 		title += "  " + mapLevelStyle(level).Render(level)
 	}
+	title += "  " + sDim.Render("autonomy: "+protocol.NodeAutonomy(node.Settings))
 	if node.Kind == "architect" {
 		title += "  " + lipgloss.NewStyle().Foreground(roleCTO).Render("architect")
 	}

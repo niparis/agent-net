@@ -52,7 +52,7 @@ func init() {
 	add("held_answer", "Answer held request.", map[string]ctoField{"message_id": s("Message ID."), "action": en("a once, A and auto, r once, R and never.", "a", "A", "r", "R")})
 	add("inbox_answer", "Answer inbox item.", map[string]ctoField{"id": s("Inbox ID."), "answer": s("Answer.")})
 	add("outcome_overrule", "Resolve an outcome.", map[string]ctoField{"reply_id": s("Reply ID."), "action": en("Action.", "let_stand", "overrule")})
-	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", "tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule"), "value": s("Empty clears.")})
+	add("node_settings_set", "Set an override.", map[string]ctoField{"node": s("Node."), "setting": en("Setting.", "tests_before_merge", "merge_authority", "worker_sandbox", "judge_consumers", "deploy_rule", "autonomy"), "value": s("Empty clears.")})
 	add("playbook_set", "Set playbook.", map[string]ctoField{"model": model, "harness": harness, "note": s("Empty clears."), "pin": b("Pin.")})
 	add("learn", "Record a finding.", map[string]ctoField{"subject_kind": en("Kind.", "model", "harness", "model_harness", "project", "mcp", "machine"), "subject": s("Subject."), "finding": s("Finding."), "evidence": arr("Evidence.")})
 	add("mcp_list", "List MCP servers.", nil)
