@@ -225,7 +225,7 @@ func TestCTOMCPNativeRemoveOwnerGate(t *testing.T) {
 		t.Fatal("a refused request edited the file")
 	}
 	// The CTO proposes removal; the file stays intact until owner approval.
-	v, err := f.n.d.runCTOToolRaw(context.Background(), "mcp_native_remove", importJSON(t, protocol.MCPNativeRemoveRequest{PlanID: plan.ID}))
+	v, err := f.n.d.runCTOToolRaw(context.Background(), "tools_change", importActionJSON(t, "native_remove", protocol.MCPNativeRemoveRequest{PlanID: plan.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}

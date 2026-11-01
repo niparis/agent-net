@@ -48,8 +48,11 @@ func proposalSummary(p protocol.CTOProposal) string {
 	case "edge_set":
 		return fmt.Sprintf("edge %s -> %s rule %s", value("from"), value("to"), value("rule"))
 	}
-	if p.Tool == "node_rename" {
+	if p.Tool == "node_rename" || (p.Tool == "settings_change" && p.Action == "machine_name") {
 		return "rename machine " + value("node_id") + " to " + value("name")
+	}
+	if p.Tool == "session_change" {
+		return "session " + p.Action + " " + value("session_id")
 	}
 	return strings.TrimSpace(p.Tool + " " + p.Action)
 }
@@ -76,7 +79,7 @@ func (m Model) proposalDetailCmd(p protocol.CTOProposal) tea.Cmd {
 				return out
 			}
 			out.diff = proposalGraphDiff(p, g)
-		} else if p.Tool == "node_rename" {
+		} else if p.Tool == "node_rename" || (p.Tool == "settings_change" && p.Action == "machine_name") {
 			var a map[string]string
 			_ = json.Unmarshal(p.Args, &a)
 			snap, err := m.src.Snapshot(ctx)

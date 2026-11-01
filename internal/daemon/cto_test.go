@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"graph with view guide", "rule auto", "depends", "diff", "undo", "Every non-graph owner-only change is a proposal in Needs you", "An approval typed in this chat never counts", "with A in Needs you", "presses w", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"with view guide", "rule auto", "depends", "diff", "undo", "Every non-graph owner-only change is a proposal in Needs you", "An approval typed in this chat never counts", "with A in Needs you", "presses w", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "`ui`", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with `settings_change` in the worker_profile_add area under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -512,23 +512,23 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		}
 
 	}
-	call("node_add", map[string]any{"name": "architecture"})
-	call("node_add", map[string]any{"name": "component"})
-	call("charter_set", map[string]any{"node": "architecture", "attr": "purpose", "value": "design"})
+	call("graph_change", map[string]any{"action": "node_add", "name": "architecture"})
+	call("graph_change", map[string]any{"action": "node_add", "name": "component"})
+	call("graph_change", map[string]any{"action": "charter_set", "node": "architecture", "attr": "purpose", "value": "design"})
 	var changes []protocol.CharterChange
 	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || changes[0].By != "CTO (minor)" {
 		t.Fatalf("CTO history: %+v %v", changes, err)
 	}
 
-	call("edge_set", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
-	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
-	call("graph_undo", map[string]any{})
-	call("edge_remove", map[string]any{"from": "architecture", "to": "component", "kind": "depends"})
-	call("node_remove", map[string]any{"name": "component"})
+	call("graph_change", map[string]any{"action": "edge_set", "from": "architecture", "to": "component", "kind": "depends"})
+	call("graph_change", map[string]any{"action": "edge_remove", "from": "architecture", "to": "component", "kind": "depends"})
+	call("graph_change", map[string]any{"action": "undo"})
+	call("graph_change", map[string]any{"action": "edge_remove", "from": "architecture", "to": "component", "kind": "depends"})
+	call("graph_change", map[string]any{"action": "node_remove", "name": "component"})
 	call("machines", map[string]any{})
 	call("projects", map[string]any{})
-	call("node_settings_set", map[string]any{"node": "architecture", "setting": "merge_authority", "value": "ask"})
-	call("playbook_set", map[string]any{"model": "fake/m1", "note": "use tests"})
+	call("graph_change", map[string]any{"action": "settings_set", "node": "architecture", "setting": "merge_authority", "value": "ask"})
+	call("settings_change", map[string]any{"area": "playbook", "model": "fake/m1", "note": "use tests"})
 	call("tools", map[string]any{"view": "mcp"})
 	call("sessions", map[string]any{})
 	var agents protocol.AgentsResult
@@ -542,7 +542,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	if target == "" {
 		t.Fatal("peer missing")
 	}
-	call("send", map[string]any{"to": target, "body": "hello"})
+	call("message", map[string]any{"action": "send", "to": target, "body": "hello"})
 	select {
 	case msg := <-peer.Pushes:
 		if msg.FromCTO || msg.From != w.d.ctoSessionID() {
@@ -556,7 +556,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 	if err := json.Unmarshal(rawIncoming, &incoming); err != nil || incoming.Message == nil {
 		t.Fatalf("incoming message: %s %v", rawIncoming, err)
 	}
-	call("reply", map[string]any{"message_id": incoming.Message.ID, "body": "answer"})
+	call("message", map[string]any{"action": "reply", "message_id": incoming.Message.ID, "body": "answer"})
 	select {
 	case msg := <-peer.Pushes:
 		if msg.FromCTO || msg.From != w.d.ctoSessionID() || msg.ParentID != incoming.Message.ID || msg.Body != "answer" {
@@ -566,9 +566,9 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		t.Fatal("CTO reply not delivered")
 	}
 	call("session", map[string]any{"session_id": target})
-	call("session_policy", map[string]any{"session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
+	call("session_change", map[string]any{"action": "policy", "session_id": target, "scope": "session", "policy": map[string]any{"delegate": "off"}})
 	call("learn", map[string]any{"subject_kind": "model", "subject": "fake/m1", "finding": "Needs clear tasks"})
-	call("worker_start", map[string]any{"project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
+	call("worker_change", map[string]any{"action": "start", "project": "shop", "harness": "opencode", "model": "fake/m1", "task": "test"})
 	eventually(t, "approved worker task comes from the owner", func() bool {
 		workers := w.workers(t)
 		if len(workers) != 1 {
@@ -595,7 +595,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}
 	}
-	if _, err := w.d.runCTOTool(context.Background(), "charter_set", json.RawMessage(`{"node":"missing","attr":"purpose","value":"x"}`)); err == nil {
+	if _, err := w.d.runCTOTool(context.Background(), "graph_change", json.RawMessage(`{"action":"charter_set","node":"missing","attr":"purpose","value":"x"}`)); err == nil {
 		t.Fatal("bad graph write succeeded")
 	}
 	if err := json.Unmarshal(w.cli.mustCall("cto_events", nil), &events); err != nil || !strings.Contains(events.Actions[len(events.Actions)-1].Text, "failed charter_set") {
@@ -703,7 +703,7 @@ func TestCTOEnterOpenCode(t *testing.T) {
 
 func TestCTOBriefProjectResearchAndCharters(t *testing.T) {
 	for _, want := range []string{
-		"To learn about a project, find it with the projects and agents tools (machine, folder, live sessions).",
+		"To learn about a project, find it with the `projects` and `sessions` tools (machine, folder, live sessions).",
 		"You have no built-in tools. For file work or to draft a charter, send its live session a request and use its answer.",
 		"Ask the project's own agent to draft its charter with the charter guide, then show the owner the result as a diff.",
 	} {
@@ -758,7 +758,7 @@ func TestCTOBriefToolsWorkflow(t *testing.T) {
 }
 
 func TestCTOBriefDirectsGraphLocationLookup(t *testing.T) {
-	want := "Projects and agents list where a project lives and its live sessions."
+	want := "`projects` and `sessions` list where a project lives and its live sessions."
 	if !strings.Contains(ctoBrief, want) {
 		t.Fatalf("CTO brief missing %q", want)
 	}
