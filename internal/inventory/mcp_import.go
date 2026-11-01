@@ -426,3 +426,23 @@ func LoadNativeMCP(o Options, harness, scope, root, location, name string) (prot
 	info, server := ClassifyMCP(name, desc)
 	return info, server, fingerprint(name, desc), nil
 }
+
+// LoadNativeDescriptor reads one observed native entry again and answers with
+// its declaration, for writing the same server into another harness. It never
+// writes and never returns a file path.
+func LoadNativeDescriptor(o Options, harness, scope, root, location, name string) (map[string]any, protocol.MCPImportInfo, error) {
+	src, ok := o.nativeSource(harness, scope, root, location)
+	if !ok {
+		return nil, protocol.MCPImportInfo{}, errors.New("not a known native MCP source")
+	}
+	servers, reason := readServers(src.base, src.path, src.key, src.toml, root)
+	if reason != "" {
+		return nil, protocol.MCPImportInfo{}, errors.New(reason)
+	}
+	desc, ok := servers[name].(map[string]any)
+	if !ok {
+		return nil, protocol.MCPImportInfo{}, os.ErrNotExist
+	}
+	info, _ := ClassifyMCP(name, desc)
+	return desc, info, nil
+}

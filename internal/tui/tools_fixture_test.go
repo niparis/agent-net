@@ -144,6 +144,11 @@ type fakeTools struct {
 	mcpPlans   []string
 	mcpApplied []string
 
+	coveragePlans   []protocol.MCPCoverageRequest
+	coverageTargets []protocol.MCPCoverageTarget
+	coverageApplied []string
+	coverageUndone  []string
+
 	details        []protocol.ToolSkillScan
 	detailManifest *protocol.SkillManifest
 	detailErr      error
@@ -237,6 +242,48 @@ func (f *fakeTools) MCPImportPlan(_ context.Context, c string) (protocol.MCPImpo
 func (f *fakeTools) MCPImportApply(_ context.Context, id string) (protocol.MCPImportResult, error) {
 	f.mcpApplied = append(f.mcpApplied, id)
 	return protocol.MCPImportResult{State: protocol.MCPImportOK}, nil
+}
+
+func (f *fakeTools) MCPCoveragePlan(_ context.Context, r protocol.MCPCoverageRequest) (protocol.MCPCoveragePlan, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.coveragePlans = append(f.coveragePlans, r)
+	plan := protocol.MCPCoveragePlan{ID: fmt.Sprintf("cplan_%d", len(f.coveragePlans)), NodeID: r.NodeID, Machine: "research",
+		Project: r.Project, Server: r.Server, State: "pending"}
+	for _, h := range r.Harnesses {
+		path := "/src/" + r.Project + "/mcp-" + h + ".json"
+		switch h {
+		case "claude":
+			path = "/src/" + r.Project + "/.mcp.json"
+		case "pi":
+			path = "/src/" + r.Project + "/.pi/mcp.json"
+		case "opencode":
+			path = "/src/" + r.Project + "/opencode.json"
+		}
+		plan.Targets = append(plan.Targets, protocol.MCPCoverageTarget{Harness: h, Path: path, Action: "create", State: "pending",
+			Preview: []string{path, "  create " + r.Server + ": command " + r.Server}})
+	}
+	f.coverageTargets = plan.Targets
+	return plan, nil
+}
+
+func (f *fakeTools) MCPCoverageApply(_ context.Context, id string) (protocol.MCPCoverageResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.coverageApplied = append(f.coverageApplied, id)
+	res := protocol.MCPCoverageResult{PlanID: id, State: "applied"}
+	for _, t := range f.coverageTargets {
+		t.State = "applied"
+		res.Targets = append(res.Targets, t)
+	}
+	return res, nil
+}
+
+func (f *fakeTools) MCPCoverageUndo(_ context.Context, id string) (protocol.MCPCoverageResult, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.coverageUndone = append(f.coverageUndone, id)
+	return protocol.MCPCoverageResult{PlanID: id, State: "applied"}, nil
 }
 func (f *fakeTools) MCPNativeRemovePlan(context.Context, string) (protocol.MCPNativeRemovePlan, error) {
 	return protocol.MCPNativeRemovePlan{ID: "rplan"}, nil

@@ -263,6 +263,7 @@ func Scan(o Options) protocol.InventoryReport {
 				info, _ := ClassifyMCP(name, desc)
 				totalFields += len(info.Reason) + len(info.Transport) + 64
 				report.Items[before].Import = &info
+				report.Items[before].Definition = mcpDefinition(desc)
 			}
 		}
 	}
@@ -681,5 +682,5 @@ func FederationItem(s protocol.MCPServer, now time.Time) protocol.InventoryItem 
 		env[e] = nil
 	}
 	desc := map[string]any{"command": s.Command, "args": args, "env": env, "url": s.URL, "transport": s.Transport}
-	return protocol.InventoryItem{Harness: "agent-net", Kind: protocol.InventoryMCP, Scope: protocol.InventoryUser, Location: s.Name, Name: s.Name, Source: protocol.InventoryFederation, Hash: fingerprint(s.Name, desc), ScannedAt: now, State: protocol.InventoryOK}
+	return protocol.InventoryItem{Harness: "agent-net", Kind: protocol.InventoryMCP, Scope: protocol.InventoryUser, Location: s.Name, Name: s.Name, Source: protocol.InventoryFederation, Hash: fingerprint(s.Name, desc), Definition: mcpDefinition(desc), ScannedAt: now, State: protocol.InventoryOK}
 }

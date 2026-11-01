@@ -36,6 +36,9 @@ type ToolsSource interface {
 	MCPImportApply(ctx context.Context, planID string) (protocol.MCPImportResult, error)
 	MCPNativeRemovePlan(ctx context.Context, candidate string) (protocol.MCPNativeRemovePlan, error)
 	MCPNativeRemoveApply(ctx context.Context, planID string) (protocol.MCPNativeRemoveResult, error)
+	MCPCoveragePlan(ctx context.Context, req protocol.MCPCoverageRequest) (protocol.MCPCoveragePlan, error)
+	MCPCoverageApply(ctx context.Context, planID string) (protocol.MCPCoverageResult, error)
+	MCPCoverageUndo(ctx context.Context, planID string) (protocol.MCPCoverageResult, error)
 }
 
 const (

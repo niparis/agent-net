@@ -174,6 +174,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `node_settings_get`, `node_settings_set`, `playbook_get`, `playbook_set` | Same names |
 | `agent_learn` | `learn` |
 | `mcp_import_candidates`, `mcp_import`, `mcp_native_remove` | Same names; see [importing native MCP servers](#importing-native-mcp-servers) and [removing a native MCP entry](#removing-a-native-mcp-entry) |
+| `mcp_coverage_plan`, `mcp_coverage_apply`, `mcp_coverage_undo` | Same names; see [project MCP coverage](#project-mcp-coverage) |
 | `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
 | `cto_settings` | `cto_settings` |
 | `agent-net invite` | `invite` (gateway machine only; returns the install line) |
@@ -212,14 +213,16 @@ failures, plus graph diffs; a graph change refreshes an open map.
 
 Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
 It has three screens. Digits stay the global tabs and `tab` goes to the CTO box, so `[` and `]` switch screens. Left and right arrows also switch screens except in All tools, where they select a machine or projects cell. Press `?` for Tools keys.
-The tab never shows harness columns: a tool is on or off for a machine, or on for chosen projects.
+The machine grid never shows harness columns: a tool is on or off for a machine, or on for chosen projects.
 A harness limit shows as a `◐` cell and a note in the details pane.
+Project MCP coverage rows are the exception: they name the harnesses because the
+gap is between them inside one project.
 
-- **Differences** (opens first). Similar differences are grouped. Press `enter` on a group to expand it, then press `enter` on an individual difference to open its suggested fix. The screen shows: two machines on different versions, two different copies on one machine, a project's own copy hiding a managed one, the same content under two names, skills only on some machines and not managed, native MCP servers set up by hand, failed targets, and pending targets (info only). `enter` opens the plan of the fix. `x` accepts a difference as it is: the gateway stores the mark (`tools_accept`, table `tool_accepted`), so it stays after a restart. `.` shows accepted ones.
+- **Differences** (opens first). Similar differences are grouped. Press `enter` on a group to expand it, then press `enter` on an individual difference to open its suggested fix. The screen shows: two machines on different versions, two different copies on one machine, a project's own copy hiding a managed one, the same content under two names, skills only on some machines and not managed, native MCP servers set up by hand, a project MCP server missing from an installed harness (`homelab-mcp · homelab · claude ✓ pi ✗ opencode ✗`), a same-name project server declared differently by two harnesses (`pi !`; nothing is overwritten), failed targets, and pending targets (info only). `enter` opens the plan of the fix. `x` accepts a difference as it is: the gateway stores the mark (`tools_accept`, table `tool_accepted`), so it stays after a restart. `.` shows accepted ones.
 - **All tools.** NAME, FROM (agent-net store with a version number such as v3, your machines, repo, gateway), one column per machine, PROJECTS and NOTE, with a details pane. `h`/`l` pick a machine cell or PROJECTS, `a` turns on and `u` turns off, `/` searches. `a` or `u` on a machine cell plans the change for that machine only (a global assignment limited to it), and the plan says "only on NAME: other machines are not changed". With a single machine there is no limit to set. A machine the desired state does not name is never reported as drift and never shows a pending cell. On PROJECTS, a picker with a filter (it works for 50 or more projects) ticks the projects. A skill that is only found on machines is imported into the store when you apply. A skill inside a project folder is `⌂ repo` only when the repository tracks files under it. One that is not tracked is `local` (shown as `local PROJECT`, with a `PROJECT (local)` project cell): a copy on one machine. A local copy is managed like a copy found on a machine: `a` imports it and turns it on, `u` turns it off, and there is no branch plan.
 - **By project.** Pick a project (`j`/`k`, `/` filters) and a machine (`m`): what a session gets, in layers: from the repo, on for this project, on this machine for every project, MCP servers. Hidden ones are struck through with the reason. The last line is the charter's `needs` text and whether a tool covers it; it assigns nothing.
 
-Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import` and `mcp_native_remove`. The CTO read tool `tools_differences` returns the same differences in pages (default 20, maximum 60). Pass `next` as `offset` to read the next page.
+Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. A project MCP coverage row plans every file it would write, in the harness's own format: `.mcp.json` for Claude, `.pi/mcp.json` for Pi, `opencode.json` for OpenCode, and `.codex/config.toml` only when the project already has that file. Environment variables stay references such as `${TOKEN}`; a value is never copied. The plan is read again from the machine that holds the project before you see it. Apply checks each file again, saves the whole file under `mcp-backups` first and writes only if it still has the planned hash. `u` on the result restores the files. A same-name declaration with a different definition is never replaced: it stays a conflict row. Codex without a project config shows `codex: global only`. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo`. The CTO read tool `tools_differences` returns the same differences in pages (default 20, maximum 60). Pass `next` as `offset` to read the next page.
 
 Press `4` or `M` to open the Map tab. The focus view shows the selected
 project as a card: name, maturity, the start of the purpose, and its live sessions
@@ -394,7 +397,8 @@ The daemon and the agents talk over Unix sockets, not network ports.
 | Git exclude lines | `<checkout>/.git/info/exclude` (the path from `git rev-parse --git-path info/exclude`, shared by linked worktrees) | One line per project skill copy, added only by the daemon. Each line is reference-counted in the manifest. Uninstall removes the owned lines and leaves the rest of the file. `.gitignore` and the Git index are never changed. |
 | Temporary files | `~/.local/state/agent-net/daemon/.skill-manifest-*`, `.project-verify-*`, `.project-ignore-*`; `.claude.json.lock` (a folder, next to `~/.claude.json`) and `<config>.agent-net-*` (next to a native MCP file) | Short-lived. The daemon deletes them when the step ends. A crash can leave one: uninstall removes the ones in the state folder. `.claude.json.lock` is Claude Code's own lock folder, taken for the length of one edit. |
 | Skill backups | `~/.local/state/agent-net/daemon/skill-backups/<item hash>/<time>-<id>/` | Exact copy of a skill directory before the daemon removed it. Local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days (pruned after each removal and at daemon start). Uninstall removes them. |
-| MCP config backups | `~/.local/state/agent-net/daemon/mcp-backups/<item hash>/<time>-<id>/` | The whole native MCP config file (`preimage`) as it was before the daemon removed an entry, and `meta.json` (file path, hashes, entry name). A backup can hold secrets: local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. Uninstall removes them. |
+| MCP config backups | `~/.local/state/agent-net/daemon/mcp-backups/<item hash>/<time>-<id>/` | The whole native MCP config file (`preimage`) as it was before the daemon removed an entry or added one for a project coverage row, and `meta.json` (file path, hashes, entry name). A backup can hold secrets: local only, never uploaded or shown. Folders 0700, files 0600. At most 20 per item and none older than 30 days. Uninstall removes them. |
+| MCP coverage undo record | `~/.local/state/agent-net/daemon/mcp-coverage-undo-<plan id>.json` | The files one applied coverage plan wrote, their before and after hashes, the backup IDs, and whether the file was created. Mode 0600. Removed when the owner undoes the plan. It never holds a declaration or an environment value. Uninstall removes it with the state folder. |
 | Skill journal | `~/.local/state/agent-net/daemon/skill-journal/*.json` | One small record per skill operation that is running. Written before the first change and deleted when the operation ends. Mode 0600, folder 0700. A record left after a crash is read at the next daemon start. Uninstall removes the folder. |
 | Reply sockets | `<socket directory>/r/<session id>.sock` | One per sending session, used to catch Claude Code's native replies. |
 | Gateway data | `~/.local/state/agent-net/gateway/` | `ca.pem`, `ca.key`, `server-key.pem`, `gateway.db` (SQLite, with `-wal` and `-shm` files; it also holds the tools inventory, assignments, plans, audit and MCP registry), `admin.json` (mode 0600: the local admin URL and token) and `skills.git` (mode 0700: the private bare Git repository of imported skills, which can hold secrets from skill files). Uninstall never deletes any of it, not even with `--purge`. **Back this folder up** with `agent-net gateway backup --out DIR` (see [managed skill versions](#managed-skill-versions)); a backup holds the CA key, so keep it private. Without it every machine has to join again. See [security.md](security.md#what-the-gateway-keeps). |
@@ -672,7 +676,10 @@ unreadable or linked-out skill no longer hides new file manifests. A scan that
 produces no successful observation at all leaves the previous observations
 marked stale. The inventory is read-only and does not execute skills or servers.
 MCP fingerprints omit
-sensitive descriptor values. Extension-provided MCP servers, package-managed skills, OpenCode custom config
+sensitive descriptor values. Project MCP entries also carry an opaque
+`definition` digest so the same name can be compared across harnesses. It is
+`opaque` when a value cannot be compared safely, and a same-name entry then
+shows a conflict instead of a silent match. Extension-provided MCP servers, package-managed skills, OpenCode custom config
 locations, Pi standalone Markdown skills and session-specific trust overrides need
 manual inspection. A row summarizes observations, not proof that a running session has loaded it.
 
@@ -738,6 +745,35 @@ the call fails with `host NAME offline` and the tools stay listed, marked
 `unavailable: host NAME offline` in their description. The assignment is not
 changed. `agent_mcp_list` and `mcp list` are the registry view of the owner and
 of agents: they show every server and its `scope`.
+
+### Project MCP coverage
+
+A project MCP server lives in the project files, not in the registry. The
+inventory reads the project sources: `.mcp.json` (Claude), `.pi/mcp.json` (Pi,
+trusted projects only), `opencode.json` or `opencode.jsonc` (OpenCode), and
+`.codex/config.toml` (Codex, trusted projects only). For each server the daemon
+records which installed harnesses have it in that project, on that machine. A
+server present for some harnesses and missing for others is a difference.
+
+The owner-gated methods are `mcp_coverage_plan`, `mcp_coverage_apply` and
+`mcp_coverage_undo`. `mcp_coverage_plan` takes `project`, `server`, optional
+`checkout`, `source_harness`, `source_path` and `node_id`, and `harnesses` (the
+missing ones). It answers a plan with one target per file, the planned file
+path, the source and the action (`create` or `update`). It re-reads the source
+declaration and every destination; a source path in the request must match a
+source the fresh scan found.
+`mcp_coverage_apply` takes `plan_id`, checks every file still has the planned
+hash, saves each file first, then writes. `mcp_coverage_undo` takes the same
+`plan_id` and restores the files. Both answer `state` (`applied`, `conflict` or
+`failed`) and the targets.
+
+The written entry uses the harness's own shape. Claude and Pi use
+`mcpServers`; OpenCode uses `mcp` with `type: local` and `command` as a list;
+Codex uses `[mcp_servers.<name>]` in TOML. Only the new entry is inserted: the
+rest of the file keeps its bytes. Environment values must be references such as
+`${TOKEN}`; a literal value is refused. A same-name entry is never replaced.
+Pi and Codex project files are read only in a trusted project, and the plan says
+so.
 
 ### Importing native MCP servers
 

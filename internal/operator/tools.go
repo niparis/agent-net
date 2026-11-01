@@ -119,6 +119,22 @@ func (s *Client) MCPNativeRemovePlan(ctx context.Context, candidate string) (pro
 	return decodeCall[protocol.MCPNativeRemovePlan](s.action(ctx, "mcp_native_remove", protocol.MCPNativeRemoveRequest{Candidate: candidate}))
 }
 
+// MCPCoveragePlan plans adding one project server to the harnesses that do not
+// have it. It changes nothing and names every file it would write.
+func (s *Client) MCPCoveragePlan(ctx context.Context, req protocol.MCPCoverageRequest) (protocol.MCPCoveragePlan, error) {
+	return decodeCall[protocol.MCPCoveragePlan](s.action(ctx, "mcp_coverage_plan", req))
+}
+
+// MCPCoverageApply writes a plan the owner saw.
+func (s *Client) MCPCoverageApply(ctx context.Context, planID string) (protocol.MCPCoverageResult, error) {
+	return decodeCall[protocol.MCPCoverageResult](s.action(ctx, "mcp_coverage_apply", protocol.MCPCoverageApplyRequest{PlanID: planID}))
+}
+
+// MCPCoverageUndo restores the files an applied coverage plan changed.
+func (s *Client) MCPCoverageUndo(ctx context.Context, planID string) (protocol.MCPCoverageResult, error) {
+	return decodeCall[protocol.MCPCoverageResult](s.action(ctx, "mcp_coverage_undo", protocol.MCPCoverageUndoRequest{PlanID: planID}))
+}
+
 // MCPNativeRemoveApply applies a removal plan.
 func (s *Client) MCPNativeRemoveApply(ctx context.Context, planID string) (protocol.MCPNativeRemoveResult, error) {
 	return decodeCall[protocol.MCPNativeRemoveResult](s.action(ctx, "mcp_native_remove", protocol.MCPNativeRemoveRequest{PlanID: planID}))
