@@ -37,6 +37,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | `enter` | Enter the selected session, including a Needs you row. |
 | `e` | Enter the selected session (alias of Enter). |
 | `m` | Compose a message to the selected session. |
+| `n` | Start a new session in the selected session's project. On the Graph card, open the same form filled from the node. |
 | `c` | Hand over the selected row to the CTO: a preview first, then Enter sends it. |
 | `s` | Start a worker form. On an outcome row, "let stand". |
 | `o` | Toggle offline sessions. On an outcome row, "overrule". |
@@ -204,6 +205,7 @@ Tools plan modal and picker:
 | Key | Action |
 |---|---|
 | `enter` | Open Sessions filtered to the agent's project. |
+| `n` | Start a new session filled from this project. |
 | `esc` | Return to Graph with the same node selected. |
 | `[`/`]`, `ctrl+u`/`ctrl+d` | Scroll the charter. |
 | `U`/`u` | Select the next learned change / undo it. |
@@ -231,6 +233,7 @@ Tools plan modal and picker:
 |---|---|
 | Compose message | Text input, `enter` sends, `esc` cancels. |
 | Start worker | `tab` completes or moves to the next field, `shift+tab`/`up` previous, `down` next, `enter` next field or starts on the task field, `esc` cancels, text input. |
+| New session | `tab` or `down` next field, `shift+tab`/`up` previous, `left`/`right` change Folder between `project folder` and `new worktree`, `enter` next field or starts on First message, `esc` cancels, text input. The Branch field is shown only for a new worktree. |
 | Stop worker | `y`/`Y` stops, `n`/`N`/`esc` cancels. |
 | Protect quota | `y` confirms, `n`/`esc` cancels. |
 | Peer trust | `y` turns on, `n`/`N`/`esc` cancels. |

@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+╭─Machines─────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                      │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode            │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
+╰──────────────────────────────────────────────────────────────────────────────╯
+New session ────────────────────────────────────────────────────────────────────
+  Project        strategies           on Mac, /Users/n/code/strategies
+  Harness        claude
+  Model          default
+  Folder         ◂ project folder ▸   no other session here
+> First message
+                 empty: start it and enter it
+                 text: start it in the background and send this
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+enter start  up/down field  left/right folder  esc cancel

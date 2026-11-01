@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,11 +27,12 @@ const (
 	sHarness
 	sModel
 	sFolder
+	sBranch
 	sFirstMessage
 	sFields
 )
 
-var sessionFieldLabels = [sFields]string{"Project", "Harness", "Model", "Folder", "First message"}
+var sessionFieldLabels = [sFields]string{"Project", "Harness", "Model", "Folder", "Branch", "First message"}
 
 // sessionValueCol is the column where a value starts: two markers and the
 // label column. The lines under First message line up with it.
@@ -39,6 +41,17 @@ const sessionValueCol = 17
 type sessionForm struct {
 	in  [sFields]textinput.Model
 	cur sessionFormField
+	// folder is protocol.FolderProject or protocol.FolderWorktree. Branch is
+	// shown and sent only for a worktree.
+	folder string
+	// busy is the one-line reason the folder is not offered first, empty when
+	// no live session works in the project folder.
+	busy string
+	// base is the branch the new worktree starts from, for the branch note.
+	base string
+	// branchAuto is true while the branch field still holds the automatic
+	// name, so a project change may replace it.
+	branchAuto bool
 	// What the form was filled from.
 	nodeID   string // the machine of the selected row or node
 	hostname string
@@ -58,13 +71,24 @@ func newSessionForm() sessionForm {
 		t.Cursor.SetMode(cursor.CursorHide)
 		f.in[i] = t
 	}
-	f.in[sFolder].SetValue("project folder")
+	f.folder = protocol.FolderProject
 	f.in[sFirstMessage].Focus()
 	f.cur = sFirstMessage
 	return f
 }
 
 func (f sessionForm) value(i sessionFormField) string { return strings.TrimSpace(f.in[i].Value()) }
+
+// worktree tells whether the form starts in a new git worktree.
+func (f sessionForm) worktree() bool { return f.folder == protocol.FolderWorktree }
+
+// folderLabel is the switch value shown on the Folder line.
+func (f sessionForm) folderLabel() string {
+	if f.worktree() {
+		return "new worktree"
+	}
+	return "project folder"
+}
 
 func (f *sessionForm) focus(to sessionFormField) tea.Cmd {
 	f.in[f.cur].Blur()
@@ -73,21 +97,34 @@ func (f *sessionForm) focus(to sessionFormField) tea.Cmd {
 	return f.in[f.cur].Focus()
 }
 
-// nextSessionField is the next field that can take the focus. Folder is fixed
-// text in this version, so it is shown but not visited.
-func nextSessionField(cur sessionFormField) sessionFormField {
+// nextSessionField is the next field that can take the focus. Branch is
+// skipped unless the form starts in a worktree.
+func (f sessionForm) nextSessionField(cur sessionFormField) sessionFormField {
 	switch cur {
 	case sProject:
 		return sHarness
 	case sHarness:
 		return sModel
+	case sModel:
+		return sFolder
+	case sFolder:
+		if f.worktree() {
+			return sBranch
+		}
 	}
 	return sFirstMessage
 }
 
-func prevSessionField(cur sessionFormField) sessionFormField {
+func (f sessionForm) prevSessionField(cur sessionFormField) sessionFormField {
 	switch cur {
 	case sFirstMessage:
+		if f.worktree() {
+			return sBranch
+		}
+		return sFolder
+	case sBranch:
+		return sFolder
+	case sFolder:
 		return sModel
 	case sModel:
 		return sHarness
@@ -179,6 +216,7 @@ func (m Model) startSessionForm() (Model, tea.Cmd) {
 		harness = "claude"
 	}
 	m.sform.in[sHarness].SetValue(harness)
+	m.resetSessionFolder()
 	m.mode = modeSessionForm
 	m.notice = notice{}
 	return m, textinput.Blink
@@ -223,9 +261,160 @@ func (m Model) startSessionFormFromNode() (Model, tea.Cmd) {
 	m.sform.in[sProject].SetValue(m.sessionProjectValue(node.Name, nodeID, host))
 	m.sform.initialProject = m.sform.value(sProject)
 	m.sform.in[sHarness].SetValue(m.sessionHarnessFor(node.Name, nodeID))
+	m.resetSessionFolder()
 	m.mode = modeSessionForm
 	m.notice = notice{}
 	return m, textinput.Blink
+}
+
+// sessionProjectFolder is the main working tree of the form's project on its
+// machine, or "" when the project is not known yet.
+func (m Model) sessionProjectFolder(project, nodeID string) string {
+	for _, p := range m.projectRows() {
+		if strings.EqualFold(p.Name, project) && (nodeID == "" || p.NodeID == nodeID) {
+			return p.Path
+		}
+	}
+	return ""
+}
+
+// sessionProjectBase is the branch the project folder has now, for the "from
+// <branch> (HEAD)" note. It is not the branch of a session in a linked
+// worktree: the new worktree starts from the project's main tree.
+func (m Model) sessionProjectBase(project, nodeID, folder string) string {
+	for _, p := range m.projectRows() {
+		if strings.EqualFold(p.Name, project) && (nodeID == "" || p.NodeID == nodeID) && p.DefaultBranch != "" {
+			return p.DefaultBranch
+		}
+	}
+	for _, a := range m.snap.Agents {
+		if !strings.EqualFold(firstNonEmpty(a.Repo.Project, a.Profile.Project), project) {
+			continue
+		}
+		if nodeID != "" && a.NodeID != nodeID {
+			continue
+		}
+		if folder != "" && firstNonEmpty(a.Repo.Worktree, a.Cwd) != folder {
+			continue
+		}
+		if a.Repo.Branch != "" {
+			return a.Repo.Branch
+		}
+	}
+	return ""
+}
+
+// sessionFolderBusy tells whether a live session is working in the project
+// folder. The reason is the project name: "agent-net is busy in the project
+// folder" (docs/design/start-sessions.md).
+func (m Model) sessionFolderBusy(project, nodeID, folder string) bool {
+	if folder == "" {
+		return false
+	}
+	for _, a := range m.snap.Agents {
+		if !a.Online || a.Status != "busy" {
+			continue
+		}
+		if !strings.EqualFold(firstNonEmpty(a.Repo.Project, a.Profile.Project), project) {
+			continue
+		}
+		if nodeID != "" && a.NodeID != nodeID {
+			continue
+		}
+		if firstNonEmpty(a.Repo.Worktree, a.Cwd) == folder {
+			return true
+		}
+	}
+	return false
+}
+
+// ownerWorktreeBranch is the lowest free agent-net/<project>-<n>. Numbers
+// already used by the project's sessions and its known worktrees are taken.
+func (m Model) ownerWorktreeBranch(project, nodeID string) string {
+	prefix := protocol.OwnerWorktreeBranchPrefix(project)
+	taken := map[int]bool{}
+	take := func(branch string) {
+		if !strings.HasPrefix(branch, prefix) {
+			return
+		}
+		if n, err := strconv.Atoi(strings.TrimPrefix(branch, prefix)); err == nil && n > 0 {
+			taken[n] = true
+		}
+	}
+	projectPart := protocol.OwnerWorktreeProject(project) + "-"
+	for _, a := range m.snap.Agents {
+		if !strings.EqualFold(firstNonEmpty(a.Repo.Project, a.Profile.Project), project) {
+			continue
+		}
+		if nodeID != "" && a.NodeID != nodeID {
+			continue
+		}
+		take(a.Repo.Branch)
+	}
+	for _, p := range m.projectRows() {
+		if !strings.EqualFold(p.Name, project) || (nodeID != "" && p.NodeID != nodeID) {
+			continue
+		}
+		for _, wt := range p.Worktrees {
+			base := strings.TrimRight(wt, "/")
+			if i := strings.LastIndex(base, "/"); i >= 0 {
+				base = base[i+1:]
+			}
+			if strings.HasPrefix(base, projectPart) {
+				if n, err := strconv.Atoi(strings.TrimPrefix(base, projectPart)); err == nil && n > 0 {
+					taken[n] = true
+				}
+			}
+		}
+	}
+	n := 1
+	for taken[n] {
+		n++
+	}
+	return protocol.OwnerWorktreeBranch(project, n)
+}
+
+// resetSessionFolder applies the folder default of the form's project: the
+// project folder, or a new worktree when a live session is busy there.
+func (m *Model) resetSessionFolder() {
+	f := &m.sform
+	project, _ := splitProjectMachine(f.value(sProject))
+	nodeID := f.nodeID
+	if node := m.sessionFormNode(*f); node != nil {
+		nodeID = node.NodeID
+	}
+	folder := m.sessionProjectFolder(project, nodeID)
+	f.base = m.sessionProjectBase(project, nodeID, folder)
+	f.busy = ""
+	f.folder = protocol.FolderProject
+	if m.sessionFolderBusy(project, nodeID, folder) {
+		f.busy = project + " is busy in the project folder"
+		f.folder = protocol.FolderWorktree
+	}
+	f.branchAuto = true
+	f.in[sBranch].SetValue(m.ownerWorktreeBranch(project, nodeID))
+}
+
+// setSessionFolder switches between the project folder and a new worktree,
+// keeping the automatic branch name up to date.
+func (m *Model) setSessionFolder(folder string) {
+	f := &m.sform
+	if folder != protocol.FolderWorktree {
+		folder = protocol.FolderProject
+	}
+	if f.folder == folder {
+		return
+	}
+	f.folder = folder
+	if folder == protocol.FolderWorktree && (f.branchAuto || f.value(sBranch) == "") {
+		project, _ := splitProjectMachine(f.value(sProject))
+		nodeID := f.nodeID
+		if node := m.sessionFormNode(*f); node != nil {
+			nodeID = node.NodeID
+		}
+		f.in[sBranch].SetValue(m.ownerWorktreeBranch(project, nodeID))
+		f.branchAuto = true
+	}
 }
 
 // splitProjectMachine splits "name@machine". A path may contain an @ of its
@@ -305,28 +494,51 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyTab:
 		if f.cur < sFirstMessage {
-			return m, f.focus(nextSessionField(f.cur))
+			return m, f.focus(f.nextSessionField(f.cur))
 		}
 		return m, nil
 	case tea.KeyShiftTab, tea.KeyUp:
 		if f.cur > sProject {
-			return m, f.focus(prevSessionField(f.cur))
+			return m, f.focus(f.prevSessionField(f.cur))
 		}
 		return m, nil
 	case tea.KeyDown:
 		if f.cur < sFirstMessage {
-			return m, f.focus(nextSessionField(f.cur))
+			return m, f.focus(f.nextSessionField(f.cur))
+		}
+		return m, nil
+	case tea.KeyLeft, tea.KeyRight:
+		// The folder switch owns the arrows everywhere in this form, as the
+		// key line says. Text fields still take home, end and editing keys.
+		if f.worktree() {
+			m.setSessionFolder(protocol.FolderProject)
+			if m.sform.cur == sBranch {
+				return m, m.sform.focus(sFolder)
+			}
+		} else {
+			m.setSessionFolder(protocol.FolderWorktree)
 		}
 		return m, nil
 	case tea.KeyEnter:
 		if f.cur < sFirstMessage {
-			return m, f.focus(nextSessionField(f.cur))
+			return m, f.focus(f.nextSessionField(f.cur))
 		}
 		return m.submitSessionForm()
 	}
 	f.err = ""
+	if f.cur == sBranch {
+		f.branchAuto = false
+	}
 	var cmd tea.Cmd
 	f.in[f.cur], cmd = f.in[f.cur].Update(k)
+	if f.cur == sProject && f.worktree() && f.branchAuto {
+		project, _ := splitProjectMachine(f.value(sProject))
+		nodeID := f.nodeID
+		if node := m.sessionFormNode(*f); node != nil {
+			nodeID = node.NodeID
+		}
+		f.in[sBranch].SetValue(m.ownerWorktreeBranch(project, nodeID))
+	}
 	return m, cmd
 }
 
@@ -348,8 +560,25 @@ func (m Model) submitSessionForm() (tea.Model, tea.Cmd) {
 	if harness == "" {
 		harness = "claude"
 	}
+	folder := f.folder
+	if folder != protocol.FolderWorktree {
+		folder = protocol.FolderProject
+	}
+	branch := ""
+	if folder == protocol.FolderWorktree {
+		branch = f.value(sBranch)
+		if branch == "" {
+			project, _ := splitProjectMachine(f.value(sProject))
+			nodeID := f.nodeID
+			if node := m.sessionFormNode(*f); node != nil {
+				nodeID = node.NodeID
+			}
+			branch = m.ownerWorktreeBranch(project, nodeID)
+			f.in[sBranch].SetValue(branch)
+		}
+	}
 	req := protocol.SessionStartRequest{Project: m.sessionFormProject(*f), Harness: harness,
-		Model: f.value(sModel), FirstMessage: f.value(sFirstMessage)}
+		Model: f.value(sModel), FirstMessage: f.value(sFirstMessage), Folder: folder, Branch: branch}
 	host := m.localHost()
 	if node := m.sessionFormNode(*f); node != nil {
 		if node.NodeID != m.snap.NodeID {
@@ -482,7 +711,18 @@ func (m Model) sessionFieldNote(i sessionFormField) string {
 			return ""
 		}
 	case sFolder:
-		return "no worktree yet"
+		if f.busy != "" {
+			return f.busy
+		}
+		return "no other session here"
+	case sBranch:
+		if !f.worktree() {
+			return ""
+		}
+		if f.base == "" {
+			return "from HEAD"
+		}
+		return "from " + f.base + " (HEAD)"
 	}
 	return ""
 }
@@ -493,24 +733,57 @@ func (m Model) sessionFormView(w, rows int) []string {
 	f := m.sform
 	out := []string{section("New session", w)}
 	const lw = 15
+	// The notes line up in one column, after the longest visible value. This
+	// keeps the folder reason and the branch note readable at 80 columns, and
+	// at the wider column of the design mockup when there is room.
+	noteCol := sessionValueCol + 19
+	if w >= 100 {
+		noteCol = 49
+	}
 	for i := sessionFormField(0); i < sFields; i++ {
+		if i == sBranch && !f.worktree() {
+			continue
+		}
+		var val string
+		switch {
+		case i == sFolder:
+			val = "◂ " + f.folderLabel() + " ▸"
+		case i == sModel && f.value(sModel) == "":
+			val = "default"
+		default:
+			val = f.in[i].Value()
+		}
+		if end := sessionValueCol + ansi.StringWidth(val) + 3; end > noteCol {
+			noteCol = end
+		}
+	}
+	for i := sessionFormField(0); i < sFields; i++ {
+		if i == sBranch && !f.worktree() {
+			continue
+		}
 		marker := "  "
 		if i == f.cur {
 			marker = "> "
 		}
 		var val string
 		switch {
+		case i == sFolder:
+			val = sBold.Render("◂ " + f.folderLabel() + " ▸")
 		case i == sModel && f.value(sModel) == "":
 			val = sDim.Render("default")
-		case i == f.cur && i != sFolder:
+		case i == f.cur:
 			val = f.in[i].View()
 		default:
 			val = sanitize(f.in[i].Value())
 		}
 		line := marker + sBold.Render(cell(sessionFieldLabels[i], lw)) + val
 		if note := m.sessionFieldNote(i); note != "" {
-			if room := w - ansi.StringWidth(line) - 3; room > 6 {
-				line += "   " + sDim.Render(clip(note, room))
+			pad := noteCol - ansi.StringWidth(line)
+			if pad < 3 {
+				pad = 3
+			}
+			if room := w - ansi.StringWidth(line) - pad; room > 6 {
+				line += strings.Repeat(" ", pad) + sDim.Render(clip(note, room))
 			}
 		}
 		out = append(out, clip(line, w))

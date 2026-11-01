@@ -5,10 +5,10 @@
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 New session ────────────────────────────────────────────────────────────────────
-  Project        shop   on Mac, /Users/n/code/shop
+  Project        shop                 on Mac, /Users/n/code/shop
   Harness        pi
   Model          default
-  Folder         project folder   no worktree yet
+  Folder         ◂ project folder ▸   no other session here
 > First message
                  empty: start it and enter it
                  text: start it in the background and send this
@@ -21,4 +21,4 @@ New session ──────────────────────�
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter start  up/down field  esc cancel
+enter start  up/down field  left/right folder  esc cancel

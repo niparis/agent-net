@@ -1,5 +1,10 @@
 package protocol
 
+import (
+	"strconv"
+	"strings"
+)
+
 const (
 	OpSessionStop     = "session_stop"
 	OpSessionResume   = "session_resume"
@@ -22,11 +27,61 @@ const (
 	FrameSessionOwnerGet    = "session.owner_get"
 )
 
+// The Folder choices of the New session form. Empty means FolderProject, so
+// a request from an older TUI still starts in the project folder. FolderWorktree
+// makes a new git worktree next to the project and starts the session there.
+const (
+	FolderProject  = "project"
+	FolderWorktree = "worktree"
+)
+
+// OwnerWorktreeProject is the project part of an owner session's worktree
+// branch. A branch name cannot hold spaces or every character git refuses, so
+// those become a single hyphen.
+func OwnerWorktreeProject(project string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.TrimSpace(project) {
+		ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
+		if ok {
+			b.WriteRune(r)
+			dash = false
+			continue
+		}
+		if !dash {
+			b.WriteByte('-')
+			dash = true
+		}
+	}
+	name := b.String()
+	for strings.Contains(name, "..") {
+		name = strings.ReplaceAll(name, "..", ".")
+	}
+	name = strings.Trim(name, "-.")
+	if name == "" {
+		name = "session"
+	}
+	return name
+}
+
+// OwnerWorktreeBranchPrefix is the start of the automatic branch names of a
+// project's owner worktrees: agent-net/<project>-.
+func OwnerWorktreeBranchPrefix(project string) string {
+	return "agent-net/" + OwnerWorktreeProject(project) + "-"
+}
+
+// OwnerWorktreeBranch is agent-net/<project>-<n>, the branch of an owner
+// session's worktree.
+func OwnerWorktreeBranch(project string, n int) string {
+	return OwnerWorktreeBranchPrefix(project) + strconv.Itoa(n)
+}
+
 // SessionStartRequest starts an owner session in a known project.
 // Empty Harness means Claude; empty Model keeps the harness default. NodeID
 // picks the machine when the project is on another one; empty means the local
 // machine. Folder is the folder choice of the form and is carried to the
-// machine that runs the start (folder creation comes in a later part).
+// machine that runs the start. Branch names the new worktree's branch; empty
+// asks the machine for the lowest free agent-net/<project>-<n>.
 type SessionStartRequest struct {
 	Project      string `json:"project"`
 	Harness      string `json:"harness,omitempty"`
@@ -34,6 +89,7 @@ type SessionStartRequest struct {
 	FirstMessage string `json:"first_message,omitempty"`
 	NodeID       string `json:"node_id,omitempty"`
 	Folder       string `json:"folder,omitempty"`
+	Branch       string `json:"branch,omitempty"`
 }
 
 // SessionStartRelay is "session.start" from the owner's machine. The gateway
