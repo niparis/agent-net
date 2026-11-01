@@ -435,6 +435,7 @@ func TestCTOEnterClaude(t *testing.T) {
 }
 
 func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", t.TempDir())
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "claude")
 	write := func(script string) {
@@ -445,12 +446,12 @@ func TestClaudeCTOCompatibilityAndStartupError(t *testing.T) {
 	}
 	write(`if [ "$1" = --help ]; then echo '--strict-mcp-config'; elif [ "$1" = --version ]; then echo '2.1.289 (Claude Code)'; fi`)
 	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
-	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
+	err := d.startClaudeCTO(context.Background(), "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "required capability --tools is missing") {
 		t.Fatalf("old Claude: %v", err)
 	}
 	write(`if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" = --version ]; then echo '2.1.316'; else echo 'unknown option --bg' >&2; echo 'token=topsecretvalue' >&2; echo 'third line' >&2; exit 1; fi`)
-	err = d.startClaudeCTOLocked(context.Background(), "", "opus")
+	err = d.startClaudeCTO(context.Background(), "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "unknown option --bg") || !strings.Contains(err.Error(), "[REDACTED]") || strings.Contains(err.Error(), "topsecretvalue") || strings.Contains(err.Error(), "third line") {
 		t.Fatalf("startup error: %v", err)
 	}
@@ -511,7 +512,7 @@ if [ "$1" = --help ]; then echo '--bg --strict-mcp-config --tools'; elif [ "$1" 
 		t.Fatal(err)
 	}
 	d := &Daemon{cfg: Config{StateDir: dir, HarnessPaths: map[string]string{"claude": bin}}}
-	err := d.startClaudeCTOLocked(context.Background(), "", "opus")
+	err := d.startClaudeCTO(context.Background(), "", "opus")
 	want := "Claude Code does not trust " + filepath.Join(dir, "cto", "claude")
 	if err == nil || !strings.Contains(err.Error(), want) {
 		t.Fatalf("got %v, want %s", err, want)
@@ -538,7 +539,7 @@ func TestClaudeCTORequiresToolsCapability(t *testing.T) {
 	t.Setenv("FAKE_CLAUDE_NO_TOOLS_FLAG", "1")
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
-	err := n.d.startClaudeCTOLocked(context.Background(), "", "opus")
+	err := n.d.startClaudeCTO(context.Background(), "", "opus")
 	if err == nil || !strings.Contains(err.Error(), "--tools") {
 		t.Fatalf("missing --tools must fail clearly: %v", err)
 	}

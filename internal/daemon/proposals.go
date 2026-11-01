@@ -17,8 +17,10 @@ import (
 
 // Propose validates and stores a call for the owner's decision.
 func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.RawMessage, reason string) (string, error) {
-	d.ctoDispatchMu.Lock()
-	defer d.ctoDispatchMu.Unlock()
+	if err := d.ctoDispatchMu.lock(ctx); err != nil {
+		return "", err
+	}
+	defer d.ctoDispatchMu.unlock()
 	return d.proposalRunner().propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
 }
 
