@@ -134,6 +134,39 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	overview, err := w.d.runCTOToolRaw(ctx, "overview", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary := overview.(map[string]any)
+	online, machinesOnline := 0, 0
+	for _, a := range agents.Agents {
+		if a.Online {
+			online++
+		}
+	}
+	for _, n := range nodes.Nodes {
+		if n.Online {
+			machinesOnline++
+		}
+	}
+	if summary["sessions_online"] != online || summary["machines_online"] != machinesOnline || summary["workers_running"] != len(protocol.WorkersOf(agents.Agents)) || summary["proposals_open"] != len(proposals) {
+		t.Fatalf("overview differs from public sources: %v", summary)
+	}
+	detailArgs, _ := json.Marshal(map[string]string{"message_id": messages.Messages[0].ID})
+	detailMessage, err := w.d.runCTOToolRaw(ctx, "messages", detailArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	direct, err := caller.dispatch(ctx, "message_status", detailArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gotJSON, _ := json.Marshal(detailMessage)
+	directJSON, _ := json.Marshal(direct)
+	if string(gotJSON) != string(directJSON) {
+		t.Fatalf("message differs from agent source: %s / %s", gotJSON, directJSON)
+	}
 	totals := map[string]int{"sessions": len(agents.Agents), "proposals": len(proposals), "feed": messages.Total, "messages": messages.Total, "graph": len(projects.Projects), "machines": len(nodes.Nodes), "projects": len(projects.Projects), "workers": len(protocol.WorkersOf(agents.Agents)), "tools": len(mcp.Servers), "settings": len(profiles)}
 	detail, err := w.d.runCTOToolRaw(ctx, "proposals", json.RawMessage(`{"id":"p_1"}`))
 	if err != nil {
