@@ -51,3 +51,14 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -race -timeout 30m $(go list ./... | grep -v /internal/daemon)
+
+  test-plugins:
+    name: pi and opencode plugins
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 22.12.0
+      - run: sh plugins/pi/test.sh
+      - run: sh plugins/opencode/test.sh

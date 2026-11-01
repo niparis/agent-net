@@ -2,13 +2,29 @@
 
 ## Make a release
 
-1. Make sure `main` is green and has what you want to ship.
-2. Tag a version and push the tag:
+CI is the release gate. Do not run the long local race suite to release; use `scripts/test.sh` while developing.
+
+1. Push the commit you want to ship to a branch, so CI runs on it:
 
    ```
-   git tag v0.2.0
+   git push origin HEAD:refs/heads/release-v0.2.0
+   ```
+
+2. Wait until the `ci` workflow passes on that exact commit (formatting, `go vet`, all Go tests including the daemon shards, the Pi and OpenCode plugin tests, and the installer syntax).
+3. Move `main` to that commit. It must be a fast-forward:
+
+   ```
+   git push origin <sha>:refs/heads/main
+   ```
+
+4. Tag that commit and push the tag, as two separate commands:
+
+   ```
+   git tag -a v0.2.0 -m v0.2.0 <sha>
    git push origin v0.2.0
    ```
+
+5. Delete the release branch.
 
 Use a tag that starts with `v`. The release workflow (`.github/workflows/release.yml`) runs on every `v*` tag. It:
 
