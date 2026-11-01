@@ -1001,7 +1001,10 @@ func TestClaudeWorkerWorktreeTrustRemovedAfterCleanup(t *testing.T) {
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	c.register(t, repo)
-	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	// The worker must still run when the test stops it. A task the fake does
+	// not answer keeps it alive: otherwise it can hand back, and end, before
+	// worker_stop arrives, and no "stopped" event is written.
+	res := c.mustStart(t, protocol.WorkerStartRequest{Model: "sonnet", Project: "shop", Harness: "claude", Task: "FAKE:ignore say ok", Isolation: protocol.IsolationWorktree})
 	read := func() map[string]struct {
 		Accepted bool `json:"hasTrustDialogAccepted"`
 	} {

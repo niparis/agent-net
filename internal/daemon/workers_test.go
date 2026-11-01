@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -1213,6 +1214,40 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 		}
 		return false
 	})
+}
+
+// The gateway link and the worker loop both report the workers that ended
+// while the daemon was down. They can run at the same time, and a lost worker
+// must be told to the gateway once.
+func TestLostWorkerIsReportedOnceByConcurrentReporters(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	// A session the lost worker had, and a row for the worker that died while
+	// the daemon was not running. Its process is gone: PID 1 is not it.
+	_, sid := helloPi(t, w.node, "pi-lost", "/work/lost", true)
+	row := workerRow{ID: "w_lost", Harness: "pi", Project: "shop", Path: "/x", Owner: w.ownerID(),
+		NativeID: "pi-lost", SessionID: sid, PID: 1, PGID: 1, StartToken: "not-this-run",
+		StartedAt: time.Now(), LastActive: time.Now(), EndedReason: protocol.StopLost}
+	if err := w.d.st.saveWorker(row); err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			w.d.reportWorkerEnds(context.Background())
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	if evs, _ := g.gw.Store().Events("worker.stopped"); len(evs) != 1 || !strings.Contains(evs[0], "reason=lost") {
+		t.Fatalf("worker.stopped events: %v", evs)
+	}
 }
 
 // A process ID that was reused is not a worker: the start time differs.

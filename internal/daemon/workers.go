@@ -929,7 +929,6 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	lostNoticed := map[string]bool{}
 	for _, r := range rows {
 		if r.EndedReason == "" || r.Reported {
 			continue
@@ -938,8 +937,12 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			d.st.deleteWorker(r.ID) // it never became a session: the gateway has nothing to update
 			continue
 		}
-		if r.EndedReason == protocol.StopLost && !lostNoticed[r.ID] {
-			lostNoticed[r.ID] = true
+		// The gateway link and the worker loop both reach here after a restart.
+		// Claim the row, so only one of them tells the owner and the gateway.
+		if !d.claimWorkerReport(r.ID) {
+			continue
+		}
+		if r.EndedReason == protocol.StopLost {
 			d.lostNotice(ctx, r)
 		}
 		cctx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -959,11 +962,38 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 		switch {
 		case err == nil, errors.As(err, &re):
 			// Told, or refused for good (an older gateway, an unknown session).
+			// The claim stays, so a caller that read the row before this report
+			// cannot repeat it.
 			d.st.markWorkerReported(r.ID, r.EndedReason)
 		default:
+			d.releaseWorkerReport(r.ID)
 			return // not connected: try again at the next connect
 		}
 	}
+}
+
+// claimWorkerReport takes the right to report one ended worker. It returns
+// false when another caller is reporting or has reported that worker. The
+// claim is kept after a report that was sent, because a caller may have read
+// the row before it was marked. A report that failed releases the claim, so
+// the next connect tries again.
+func (d *Daemon) claimWorkerReport(id string) bool {
+	d.reportMu.Lock()
+	defer d.reportMu.Unlock()
+	if d.reporting[id] {
+		return false
+	}
+	if d.reporting == nil {
+		d.reporting = make(map[string]bool)
+	}
+	d.reporting[id] = true
+	return true
+}
+
+func (d *Daemon) releaseWorkerReport(id string) {
+	d.reportMu.Lock()
+	delete(d.reporting, id)
+	d.reportMu.Unlock()
 }
 
 // stopWorkerSession handles "worker.kill" from the gateway. A queued start
@@ -1116,6 +1146,7 @@ func cannotResumeReason(harness string) string {
 // drops its copy of the worker at the next worker.cleanup.
 func (d *Daemon) dropWorkerRow(r workerRow) {
 	d.st.deleteWorker(r.ID)
+	d.releaseWorkerReport(r.ID) // its row is gone; nothing is left to report
 	os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
 }
 
