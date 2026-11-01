@@ -6,9 +6,11 @@ import (
 )
 
 // The public graph read (owner decision, 2026-11-01). Every agent may read the
-// charters and edges of every node. The owner-only parts of a Node stay out:
-// its settings, the learned-change history with its evidence, hidden items, and
-// anything with machine paths or sessions. The charter itself is public by
+// charters, rules and edges of every node, read-only. The rules are the node's
+// effective settings (decision 0022) and its delegation policies (decision
+// 0014). Only changes are owner-gated. What stays hidden is not a rule: a
+// secret or token, a machine path, the learned-change history with its evidence
+// and the owner's hidden-items preferences. The charter itself is public by
 // design; the charter guide forbids secrets, addresses, tokens and paths in it.
 
 // Page bounds keep one answer small. The list is one line per node.
@@ -27,14 +29,24 @@ type PublicGraphQuery struct {
 	Limit  int    `json:"limit,omitempty"`
 }
 
+// PublicRule is one node rule an agent follows: the setting name and its
+// effective value. It is read-only; only the owner changes a setting.
+type PublicRule struct {
+	Name  string `json:"name"`
+	Value string `json:"value"`
+}
+
 // PublicGraphNode is one node in the public read. A list line carries Name,
-// Kind, Maturity and Line. A detail carries the full Charter as well.
+// Kind, Maturity, Line and Rules. A detail carries the full Charter and the
+// node's delegation policies as well.
 type PublicGraphNode struct {
-	Name     string   `json:"name"`
-	Kind     string   `json:"kind,omitempty"`
-	Maturity string   `json:"maturity,omitempty"`
-	Line     string   `json:"line,omitempty"`
-	Charter  *Charter `json:"charter,omitempty"`
+	Name       string           `json:"name"`
+	Kind       string           `json:"kind,omitempty"`
+	Maturity   string           `json:"maturity,omitempty"`
+	Line       string           `json:"line,omitempty"`
+	Rules      []PublicRule     `json:"rules,omitempty"`
+	Delegation []NodeDelegation `json:"delegation,omitempty"`
+	Charter    *Charter         `json:"charter,omitempty"`
 }
 
 // PublicGraphEdge is the public part of an edge: who, what kind, the mode of a
@@ -122,7 +134,50 @@ func PublicGraph(g Graph, q PublicGraphQuery) PublicGraphPage {
 }
 
 func publicNode(n Node) PublicGraphNode {
-	out := PublicGraphNode{Name: n.Name, Kind: n.Kind, Maturity: n.Charter.Maturity, Line: publicNodeLine(n)}
+	return PublicGraphNode{
+		Name:       n.Name,
+		Kind:       n.Kind,
+		Maturity:   n.Charter.Maturity,
+		Line:       publicNodeLine(n),
+		Rules:      publicRules(n),
+		Delegation: publicDelegation(n.Delegation),
+	}
+}
+
+// publicRules returns the node's effective rules as name/value pairs. Only the
+// five known setting names are read, and only through NodeDefaults, which
+// ignores an unknown name or an invalid value. A secret or path stored under
+// any other setting name therefore never reaches an agent.
+func publicRules(n Node) []PublicRule {
+	return RulesFor(n.Charter.Maturity, n.Settings)
+}
+
+// RulesFor returns a node's effective rules as public name/value pairs. It is
+// also what agent_get puts on a session's node.
+func RulesFor(maturity string, settings map[string]string) []PublicRule {
+	d := NodeDefaults(maturity, settings)
+	return []PublicRule{
+		{Name: SettingTestsBeforeMerge, Value: d.TestsBeforeMerge},
+		{Name: SettingMergeAuthority, Value: d.MergeAuthority},
+		{Name: SettingWorkerSandbox, Value: d.WorkerSandbox},
+		{Name: SettingJudgeConsumers, Value: d.JudgeConsumers},
+		{Name: SettingDeployRule, Value: d.DeployRule},
+	}
+}
+
+// publicDelegation copies only valid, non-empty delegation policies. A policy
+// with an invalid value (old or hand-written data) is dropped, like an invalid
+// node setting.
+func publicDelegation(in []NodeDelegation) []NodeDelegation {
+	out := make([]NodeDelegation, 0, len(in))
+	for _, d := range in {
+		clean, err := d.DelegationPolicy.Clean()
+		if err != nil || clean.Empty() {
+			continue
+		}
+		out = append(out, NodeDelegation{Machine: d.Machine, DelegationPolicy: clean})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Machine < out[j].Machine })
 	return out
 }
 

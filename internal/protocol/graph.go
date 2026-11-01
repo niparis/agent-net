@@ -34,6 +34,14 @@ type GraphSession struct {
 	Status  string `json:"status"`
 }
 
+// NodeDelegation is the delegation policy the owner set for a node's project
+// on one machine (decision 0014). A policy is a rule agents follow, so it is
+// public read-only, like the node settings.
+type NodeDelegation struct {
+	Machine string `json:"machine"`
+	DelegationPolicy
+}
+
 // Node is a component or an architect. Components can be implicit projects.
 type Node struct {
 	Name      string  `json:"name"`
@@ -42,10 +50,14 @@ type Node struct {
 	Charter   Charter `json:"charter"`
 	// Settings are the node's overrides of its maturity defaults (decision
 	// 0022). They sit beside the charter and only the owner changes them.
-	Settings     map[string]string `json:"settings,omitempty"`
-	Locations    []GraphLocation   `json:"locations,omitempty"`
-	Sessions     []GraphSession    `json:"sessions,omitempty"`
-	SessionCount int               `json:"session_count,omitempty"`
+	Settings map[string]string `json:"settings,omitempty"`
+	// Delegation holds the delegation policies the owner set for this node's
+	// project on each machine that has one (decision 0014). Only the owner
+	// changes them; they are public read-only.
+	Delegation   []NodeDelegation `json:"delegation,omitempty"`
+	Locations    []GraphLocation  `json:"locations,omitempty"`
+	Sessions     []GraphSession   `json:"sessions,omitempty"`
+	SessionCount int              `json:"session_count,omitempty"`
 }
 
 // CharterChange is an immutable charter history entry.

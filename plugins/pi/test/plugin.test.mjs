@@ -381,7 +381,11 @@ await test("agent_graph reads every charter and edge from the public graph", asy
   const p = makePi();
   extension(p.api);
   replies.agent_graph = {
-    nodes: [{ name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things" }],
+    nodes: [{
+      name: "shop", kind: "component", maturity: "mature", line: "shop (component) [mature] Sells things",
+      rules: [{ name: "deploy_rule", value: "owner" }, { name: "worker_sandbox", value: "no-network" }],
+      delegation: [{ machine: "n_1", delegate: "workers", coder_model: "fake/m1", workers: "read-only" }],
+    }],
     edges: [{ from: "shop", to: "billing", kind: "depends", rule: "ask" }],
     total: 1,
     edge_total: 1,
@@ -390,12 +394,30 @@ await test("agent_graph reads every charter and edge from the public graph", asy
   await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
   await until("hello", () => hellos.length === n + 1);
   const text = (await p.tools.get("agent_graph").execute("id", { node: "shop" })).content[0].text;
-  for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1"]) {
+  for (const want of ["shop", "Sells things", "shop -> billing depends", "rule=ask", "Nodes 1 of 1",
+    "deploy_rule=owner", "worker_sandbox=no-network", "delegation: machine=n_1", "workers=read-only"]) {
     if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
   }
   const sent = requests.filter((r) => r.method === "agent_graph").pop();
   if (!sent || sent.params.node !== "shop") throw new Error("agent_graph request: " + JSON.stringify(sent));
   delete replies.agent_graph;
+  await p.fire("session_shutdown", {});
+});
+
+await test("agent_get shows the session's node rules and delegation policy", async () => {
+  const p = makePi();
+  extension(p.api);
+  replies.get = { agent: { session_id: "s_1", harness: "pi", profile: { name: "x" },
+    charter: { purpose: "Sells things", rules: [{ name: "deploy_rule", value: "owner" }] },
+    delegation: { scope: "project", delegate: "workers", coder_model: "fake/m1", workers: "read-only" } } };
+  const start = hellos.length;
+  await p.fire("session_start", { type: "session_start", reason: "startup" }, sessionCtx());
+  await until("hello", () => hellos.length === start + 1);
+  const text = (await p.tools.get("agent_get").execute("id", { session_id: "s_1" })).content[0].text;
+  for (const want of ["Rules: deploy_rule=owner", "Delegation: scope=project delegate=workers", "workers=read-only"]) {
+    if (!text.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + JSON.stringify(text));
+  }
+  delete replies.get;
   await p.fire("session_shutdown", {});
 });
 

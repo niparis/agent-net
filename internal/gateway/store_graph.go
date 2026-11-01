@@ -627,8 +627,10 @@ func (s *Store) Graph() (protocol.Graph, error) {
 		return g, err
 	}
 	byName := map[string]*protocol.Node{}
+	byLower := map[string]*protocol.Node{}
 	for i := range g.Nodes {
 		byName[g.Nodes[i].Name] = &g.Nodes[i]
+		byLower[strings.ToLower(g.Nodes[i].Name)] = &g.Nodes[i]
 	}
 	for rows.Next() {
 		var name, attr, value string
@@ -682,6 +684,31 @@ func (s *Store) Graph() (protocol.Graph, error) {
 				n.Settings = map[string]string{}
 			}
 			n.Settings[setting] = value
+		}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return g, err
+	}
+	// The owner's delegation policies are rules agents follow, so the public
+	// read shows them read-only. They are stored per machine and project.
+	rows, err = s.db.Query(`SELECT node_id,project,policy FROM project_policies ORDER BY project,node_id`)
+	if err != nil {
+		return g, err
+	}
+	for rows.Next() {
+		var machine, project, raw string
+		if err = rows.Scan(&machine, &project, &raw); err != nil {
+			rows.Close()
+			return g, err
+		}
+		var policy protocol.DelegationPolicy
+		if json.Unmarshal([]byte(raw), &policy) != nil {
+			continue
+		}
+		if n := byLower[strings.ToLower(project)]; n != nil {
+			n.Delegation = append(n.Delegation, protocol.NodeDelegation{Machine: machine, DelegationPolicy: policy})
 		}
 	}
 	err = rows.Err()
