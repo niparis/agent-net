@@ -122,7 +122,7 @@ func (d *Daemon) checkIdleNotice(ctx context.Context, w *worker, now time.Time, 
 		if !valid {
 			return
 		}
-		_, err := d.sendNoticeToKey(ctx, w, n, report, "", "", noticeKey)
+		_, err := d.sendNoticeToKey(ctx, w, n, report, "", "", noticeKey, false)
 		d.wmu.Lock()
 		if w.idleNoticeGeneration == generation && !w.stopping {
 			w.idleNoticePending = false

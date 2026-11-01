@@ -94,6 +94,10 @@ func TestWorkerToolsForwardToDaemon(t *testing.T) {
 				return p["subject_kind"] == "model_harness" && p["subject"] == "terra@pi" &&
 					p["finding"] == "Hands back partial work." && len(p["evidence"].([]any)) == 2
 			}},
+		{"agent_rate", "agent_rate", map[string]any{"worker": "s_w1", "score": 4, "note": "the diff was right"},
+			func(p map[string]any) bool {
+				return p["worker"] == "s_w1" && p["score"] == float64(4) && p["note"] == "the diff was right"
+			}},
 		{"agent_handback", "worker_handback", map[string]any{"report": "done", "status": "blocked", "complete": false},
 			func(p map[string]any) bool {
 				return p["report"] == "done" && p["status"] == "blocked" && p["complete"] == false

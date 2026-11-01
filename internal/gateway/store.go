@@ -328,6 +328,33 @@ SELECT 1 /* worker rework counters */;
 -- calibration, part 2). Kept on the run because a worker session is cleaned
 -- a few hours after it starts.
 SELECT 1 /* worker calibration columns */;
+`, `
+-- The satisfaction sample (difficulty calibration, part 4): one row per
+-- rating, and one row per finished worker the gateway offered to the caller.
+CREATE TABLE IF NOT EXISTS worker_ratings (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL DEFAULT 0,
+  session_id TEXT NOT NULL UNIQUE,
+  caller TEXT NOT NULL DEFAULT '',
+  rater_model TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  difficulty TEXT NOT NULL DEFAULT '',
+  score INTEGER NOT NULL CHECK(score BETWEEN 1 AND 5),
+  note TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_ratings_model ON worker_ratings (model, effort, at);
+CREATE TABLE IF NOT EXISTS worker_rate_offers (
+  session_id TEXT PRIMARY KEY,
+  caller TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  difficulty TEXT NOT NULL DEFAULT '',
+  asked INTEGER NOT NULL DEFAULT 0,
+  at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_rate_offers_caller ON worker_rate_offers (caller, at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

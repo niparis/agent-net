@@ -569,6 +569,12 @@ type WorkerNotice struct {
 	// caller sent after a hand-back with complete:no and complete:yes.
 	Continue int
 	Fix      int
+	// Difficulty is the level the caller asked for, or the one the chooser
+	// used. It is empty from an older machine.
+	Difficulty string
+	// RateAsk adds the one-line satisfaction ask to the notice (difficulty
+	// calibration, part 4).
+	RateAsk bool
 }
 
 // ReportMarker separates the facts from the worker's report in a notice.
@@ -613,6 +619,9 @@ func FormatWorkerNotice(n WorkerNotice, report string) string {
 		} else {
 			b.WriteString("changes (git diff --stat):\n" + n.DiffStat + "\n")
 		}
+	}
+	if n.RateAsk {
+		b.WriteString(FormatRateAsk(n.Session, n.Model, n.Difficulty, n.RunTime) + "\n")
 	}
 	if strings.TrimSpace(report) != "" {
 		b.WriteString("\n" + ReportMarker + "\n" + strings.TrimSpace(report) + "\n")

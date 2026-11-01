@@ -94,6 +94,10 @@ const (
 	// Findings are proposals: the gateway promotes a pattern to a playbook
 	// note. Open to agent sessions, not to the command line.
 	OpLearn = "agent_learn" // takes LearnRequest, answers LearnResult
+
+	// OpRate records one caller's rating of a finished worker (difficulty
+	// calibration, part 4). Open to agent sessions, not to the command line.
+	OpRate = "agent_rate" // takes RateRequest, answers RateResult
 )
 
 // Graph operator methods are available only to the owner.
@@ -121,7 +125,7 @@ var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpLearn, OpRate}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
 // remain hidden across machines; node names identify graph items on Graph.

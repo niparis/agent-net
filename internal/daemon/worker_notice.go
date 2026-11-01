@@ -383,13 +383,18 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 	d.wmu.Lock()
 	sid, harness, model, project, wt, br, started, permissions := w.sessionID, w.harness, w.model, w.project, w.worktree, w.branch, w.startedAt, w.permissions
 	cont, fix := w.continueCount, w.fixCount
+	asked, used := w.difficultyAsked, w.difficultyUsed
 	d.wmu.Unlock()
 	if model == "" {
 		model = st.Model
 	}
+	difficulty := first(asked, used)
+	if difficulty == "" {
+		difficulty = "normal"
+	}
 	n := protocol.WorkerNotice{Status: status, Note: note, Session: sid, Harness: harness, Model: model, Project: project, Permissions: permissions,
 		Host: d.hostName(), RunTime: time.Since(started), Tokens: st.Tokens, Context: protocol.ContextText(st.ContextTokens, st.ContextLimit),
-		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix}
+		Cost: st.Cost, Worktree: wt, Branch: br, Continue: cont, Fix: fix, Difficulty: difficulty}
 	n.DiffStat, _ = d.worktreeFacts(w)
 	d.wmu.Lock()
 	n.Saved = w.unfinished
@@ -399,6 +404,29 @@ func (d *Daemon) notice(w *worker, status, note string, st workerStats) protocol
 		n.Note = strings.TrimSpace(n.Note + " A git merge was in progress; the worktree was left as is.")
 	}
 	return n
+}
+
+// rateOffer asks the gateway whether the caller should be asked to rate this
+// worker. It is best effort: an old gateway, or one that is not reachable,
+// leaves the notice as it is.
+func (d *Daemon) rateOffer(ctx context.Context, w *worker) bool {
+	d.wmu.Lock()
+	sid := w.sessionID
+	d.wmu.Unlock()
+	if sid == "" {
+		return false
+	}
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	raw, err := d.call(cctx, "rate.offer", protocol.RateOfferFrame{SessionID: sid})
+	if err != nil {
+		return false
+	}
+	var out protocol.RateOfferResult
+	if json.Unmarshal(raw, &out) != nil {
+		return false
+	}
+	return out.Ask
 }
 
 // sendNotice sends the notice, with the report below it if there is one, to
@@ -412,10 +440,13 @@ func (d *Daemon) sendNotice(ctx context.Context, w *worker, n protocol.WorkerNot
 // another message than the owner's last request. Empty to and replyTo mean the
 // owner and its last request.
 func (d *Daemon) sendNoticeTo(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo string) (json.RawMessage, error) {
-	return d.sendNoticeToKey(ctx, w, n, report, to, replyTo, "")
+	return d.sendNoticeToKey(ctx, w, n, report, to, replyTo, "", true)
 }
 
-func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo, noticeKey string) (json.RawMessage, error) {
+func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.WorkerNotice, report, to, replyTo, noticeKey string, final bool) (json.RawMessage, error) {
+	if final && d.rateOffer(ctx, w) {
+		n.RateAsk = true
+	}
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
