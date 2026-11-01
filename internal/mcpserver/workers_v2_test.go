@@ -163,3 +163,16 @@ func findCatalogTool(name string) *toolcatalog.Tool {
 	}
 	return nil
 }
+
+// A question returns no inbox item from the daemon. The tool must still answer
+// with a valid result, or agents ask again.
+func TestOwnerAskQuestionWithoutItemIsValid(t *testing.T) {
+	t.Setenv("AGENT_NET_WORKER", "")
+	cs := connect(t, func(ctx context.Context, method string, params any) (json.RawMessage, error) {
+		return json.RawMessage(`{}`), nil
+	})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "agent_owner_ask", Arguments: map[string]any{"kind": "question", "text": "merge?", "recommendation": "yes"}})
+	if err != nil || res.IsError {
+		t.Fatalf("owner_ask question: %v %+v", err, res)
+	}
+}

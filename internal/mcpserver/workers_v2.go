@@ -157,10 +157,21 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if m["kind"] == nil {
 			m["kind"] = kind
 		}
-		if m["item_id"] == nil {
-			m["item_id"] = m["id"]
+		// A question only marks the session as waiting; it has no inbox item.
+		// Never return null: the result must match the catalog schema, and an
+		// error here would make agents ask again.
+		item, _ := m["item_id"].(string)
+		if item == "" {
+			item, _ = m["id"].(string)
 		}
-		return map[string]any{"item_id": m["item_id"], "kind": m["kind"], "state": m["state"]}, nil
+		state, _ := m["state"].(string)
+		if state == "" {
+			state, _ = m["status"].(string)
+		}
+		if state == "" {
+			state = "waiting"
+		}
+		return map[string]any{"item_id": item, "kind": m["kind"], "state": state}, nil
 	case "agent_learn":
 		m, err := learnCall(ctx, run, protocol.LearnRequest{SubjectKind: str("subject_kind"), Subject: str("subject"), Finding: str("finding"), Evidence: stringSlice(a["evidence"])})
 		if err != nil {
