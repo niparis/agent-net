@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 	"github.com/niparis/agent-net/internal/redact"
 )
@@ -507,7 +508,8 @@ func cleanFailure(s string) string {
 }
 
 // harnessBinary returns the path of an installed harness, from the inventory
-// or from the test overrides.
+// or from the test overrides. When detection has not finished, or a run missed
+// the harness, it looks the harness up the same way detection does.
 func (d *Daemon) harnessBinary(name string) (string, error) {
 	if p := d.cfg.HarnessPaths[name]; p != "" {
 		return p, nil
@@ -517,6 +519,13 @@ func (d *Daemon) harnessBinary(name string) (string, error) {
 		if h.Name == name && h.Path != "" {
 			return h.Path, nil
 		}
+	}
+	search := harnesses.Options{}
+	if d.cfg.HarnessSearch != nil {
+		search = *d.cfg.HarnessSearch
+	}
+	if p := harnesses.Locate(context.Background(), name, search); p != "" {
+		return p, nil
 	}
 	return "", fmt.Errorf("%s is not installed on this machine", name)
 }

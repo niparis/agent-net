@@ -38,6 +38,7 @@ type ctoState struct {
 	configuredModel            string
 	polling                    bool
 	confirming                 bool
+	opening                    bool
 	title, model, harness, err string
 	enterNotice                string
 	opencodeModel              string
@@ -118,6 +119,23 @@ func (m Model) ctoSessionID() string {
 		}
 	}
 	return protocol.CTONodeName
+}
+
+// openCTO shows that the CTO is opening before the daemon answers, and ignores
+// another Enter while that first open is still in flight. The Sessions row and
+// the CTO box both use it, so both behave the same.
+func (m Model) openCTO(id string) (Model, tea.Cmd) {
+	if m.cto != nil {
+		if m.cto.opening {
+			return m, nil
+		}
+		c := *m.cto
+		c.opening = true
+		c.enterNotice = "Opening the CTO…"
+		c.scroll = 0
+		m.cto = &c
+	}
+	return m, m.ctoEnterCmd(id)
 }
 
 // ctoEnterCmd asks session_enter for the CTO session. The Sessions row and the
@@ -362,7 +380,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	if k.Type == tea.KeyEnter {
-		return m, m.ctoEnterCmd(m.ctoSessionID())
+		return m.openCTO(m.ctoSessionID())
 	}
 	return m, nil
 }

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/gateway"
+	"github.com/niparis/agent-net/internal/harnesses"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -263,6 +264,9 @@ func startNode(t *testing.T, g *testGateway, o nodeOpts) *node {
 		cfg.Adapters = []Adapter{o.adapter}
 	}
 	cfg.DetectHarnesses, cfg.HarnessInterval = o.detect, o.interval
+	// A test must never find a harness of the machine it runs on. A test that
+	// wants the direct lookup sets HarnessSearch itself.
+	cfg.HarnessSearch = &harnesses.Options{PATH: t.TempDir(), Dirs: []string{}, LoginShellPATH: func(context.Context) string { return "" }}
 	if o.cfg != nil {
 		o.cfg(&cfg)
 	}
