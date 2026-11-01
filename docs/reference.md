@@ -228,7 +228,9 @@ until unhidden. The owner-only methods are `hidden_get` and `hidden_set`.
 The gateway also stores onboarding progress in `owner_settings`. The owner-only
 operator methods `onboarding_get`, `onboarding_set`, and `onboarding_restart`
 read, update, and reset it across machines. The CTO can reset it with the
-`onboarding_restart` tool.
+`onboarding_restart` tool. The TUI shows one tip in the CTO box. Tab focuses
+the box and Escape skips the current tip. In help, `T` turns tips off or on
+and `R` restarts them from the first step. Progress is shared across machines.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 

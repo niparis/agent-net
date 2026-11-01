@@ -76,7 +76,7 @@ func (m Model) ctoView(w, h int) []string {
 	for _, v := range lines {
 		out = append(out, clip(v, w))
 	}
-	out = append(out, clip(sDim.Render("enter: open the CTO · tab: back"), w))
+	out = append(out, m.onboardingLine(w))
 	return panelWithBorder(title, out, w+4, roleCTO, borderColor)
 }
 
