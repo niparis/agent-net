@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -739,5 +740,19 @@ func TestCTOScrollLoadsOlderTimelinePage(t *testing.T) {
 	joined := strings.Join(m.cto.messages, "|")
 	if !strings.Contains(joined, "you: older") || !strings.Contains(joined, "you: newer") || m.cto.olderCursor != 0 {
 		t.Fatalf("older page was not added: messages=%q cursor=%d", joined, m.cto.olderCursor)
+	}
+}
+
+func TestCTOEnterShowsStartupResultsInBox(t *testing.T) {
+	m := newModel(120, 24)
+	m.cto = &ctoState{}
+	m, _ = m.onEnter(enterMsg{name: "CTO", cto: true, err: errors.New("startup failed: permission denied")})
+	if view := strings.Join(m.ctoView(120, 8), "\n"); !strings.Contains(view, "startup failed: permission denied") {
+		t.Fatalf("missing startup error in CTO box: %s", view)
+	}
+	notice := "The CTO's Claude conversation was closed by Claude Code; started a new one."
+	m, _ = m.onEnterDone(enterDoneMsg{name: "CTO", ctoNotice: notice})
+	if view := strings.Join(m.ctoView(120, 8), "\n"); !strings.Contains(view, notice) {
+		t.Fatalf("missing recovery notice in CTO box: %s", view)
 	}
 }

@@ -171,6 +171,8 @@ func fakeClaudeCLI() {
 		detail := "source session not found"
 		if mode == "crash" {
 			detail = "worker crashed"
+		} else if mode == "other" {
+			detail = "permission denied"
 		}
 		body, _ := json.Marshal(map[string]string{"status": "failed", "error": detail})
 		os.WriteFile(filepath.Join(job, "state.json"), body, 0600)

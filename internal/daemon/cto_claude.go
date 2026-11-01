@@ -115,7 +115,10 @@ func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 // capability checks and waiting for its session file run without it.
 const claudeCTORestartNotice = "The CTO's Claude conversation was closed by Claude Code; started a new one."
 
-type claudeCTOJobFailure struct{ detail string }
+type claudeCTOJobFailure struct {
+	detail      string
+	recoverable bool
+}
 
 func (e *claudeCTOJobFailure) Error() string { return "CTO Claude job failed: " + e.detail }
 
@@ -123,7 +126,7 @@ func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	d.claudeCTO.restarted = false
 	err := d.startClaudeCTOOnce(ctx, id, model)
 	var failure *claudeCTOJobFailure
-	if id == "" || !errors.As(err, &failure) {
+	if id == "" || !errors.As(err, &failure) || !failure.recoverable {
 		return err
 	}
 	if err = d.startClaudeCTOOnce(ctx, "", model); err != nil {
@@ -171,7 +174,10 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	}
 	// A daemon restart loses the in-memory job ref, but the private background
 	// session may still be alive. Bind it before launching another copy.
-	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && adopt(sf) {
+	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && func() bool {
+		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
+		return status == "running"
+	}() && adopt(sf) {
 		return nil
 	}
 	bin, err := d.harnessBinary("claude")
@@ -225,7 +231,8 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 		status, detail := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
 		if status == "failed" || status == "crashed" || status == "killed" {
 			(claudeLauncher{}).stopID(d, ref)
-			return &claudeCTOJobFailure{detail: detail}
+			lower := strings.ToLower(detail)
+			return &claudeCTOJobFailure{detail: detail, recoverable: status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))}
 		}
 		if ok && status == "running" && adopt(sf) {
 			return nil

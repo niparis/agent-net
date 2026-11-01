@@ -185,3 +185,23 @@ func TestCTOClaudeFailedResumeFallback(t *testing.T) {
 		})
 	}
 }
+
+func TestCTOClaudeOtherStartupFailureKeepsSession(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	t.Setenv("FAKE_CLAUDE_RESUME_FAILURE", "other")
+	g := startGateway(t, t.TempDir(), "")
+	n := startClaudeNode(t, g, shortSet)
+	harness := "claude"
+	n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	if _, err := n.d.st.db.Exec(`UPDATE cto SET claude_session_id='prior-session' WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	_, err := n.d.ctoEnter(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("error: %v", err)
+	}
+	id, err := n.d.claudeCTOSession()
+	if err != nil || id != "prior-session" {
+		t.Fatalf("stored id %q: %v", id, err)
+	}
+}

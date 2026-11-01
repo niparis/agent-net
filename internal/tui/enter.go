@@ -120,14 +120,25 @@ func (m Model) enterCmd(id, name string) tea.Cmd {
 func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	switch {
 	case r.err != nil:
+		if r.cto && m.cto != nil {
+			m.cto.enterNotice = "Cannot enter " + r.name + ": " + explain(r.err)
+			m.cto.scroll = 0
+		}
 		m.fail("Cannot enter " + r.name + ": " + explain(r.err))
 		return m, nil
 	case len(r.plan.Argv) == 0 && r.cto:
+		if m.cto != nil {
+			m.cto.enterNotice = firstNonEmpty(r.plan.Note, "Cannot enter the CTO from here.")
+			m.cto.scroll = 0
+		}
 		m.fail(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter the CTO from here.")))
 		return m, nil
 	case len(r.plan.Argv) == 0:
 		m.say(sanitize(firstNonEmpty(r.plan.Note, "Cannot enter "+r.name+" from here.")))
 		return m, nil
+	}
+	if r.cto && m.cto != nil {
+		m.cto.enterNotice = ""
 	}
 	cmd := enterCommand(r.plan)
 	m.enterNote = r.plan.Note
@@ -153,6 +164,10 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 	switch {
 	case r.err == nil && r.ctoNotice != "":
+		if m.cto != nil {
+			m.cto.enterNotice = r.ctoNotice
+			m.cto.scroll = 0
+		}
 		m.say(sanitize(r.ctoNotice))
 	case r.err == nil:
 		m.say("Back from " + r.name + ".")
