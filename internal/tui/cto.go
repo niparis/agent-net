@@ -39,6 +39,7 @@ type ctoState struct {
 	polling                    bool
 	confirming                 bool
 	title, model, harness, err string
+	enterNotice                string
 	opencodeModel              string
 	claudeModel                string
 	messages                   []string

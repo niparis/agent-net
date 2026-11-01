@@ -160,3 +160,7 @@ daemon service environment. Restart the daemon to use the updated PATH.
 If a provider rejects its login, or the Quotas tab says it needs you once, run `agent-net setup --quota` on the machine that reads that provider's quota. Setup shows which providers have a local credential source and which need attention. A found source can still be rejected by the provider. Check that you can sign in through that provider's own app or CLI if it remains rejected.
 
 On macOS, setup offers a Keychain prompt. If you agree, answer the dialog and choose Always Allow if you want future reads without another dialog. The check does not refresh credentials. The Subscriptions panel shows which quota-axi copy made the reading; the daemon keeps using its recorded copy until it stops working. Run setup again after correcting the login. The next quota reading can take up to five minutes.
+
+## The CTO Claude conversation was closed
+
+If the CTO box says "The CTO's Claude conversation was closed by Claude Code; started a new one.", Claude Code closed the background conversation and could not resume it. agent-net started a fresh Claude conversation. The CTO timeline and proposals stored in agent-net remain available. The new Claude conversation does not contain the old Claude transcript. Other startup failures appear in the CTO box with their reason.

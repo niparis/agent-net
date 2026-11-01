@@ -207,6 +207,9 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 		if _, e = d.st.db.Exec(`UPDATE cto_actions SET session_id=? WHERE (session_id='' OR session_id=?) AND harness='claude'`, id, oldID); e != nil {
 			return plan, e
 		}
+		if d.claudeCTO.restarted {
+			plan.Note = claudeCTORestartNotice
+		}
 		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
 		plan.Env = map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}
 	} else {
