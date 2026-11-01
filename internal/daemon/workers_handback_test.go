@@ -225,10 +225,12 @@ func TestWorkerModelFailureSendsANotice(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	set := shortSet
 	set.Idle = time.Hour // the failure must not wait for the idle limit
-	w := startWorkerNode(t, g, set, nil)
+	// The models are subscription-backed (openai maps to the Codex quota), so
+	// the loose retry below may resolve to them.
+	w := startWorkerNodeWithDetect(t, g, set, inventoryWithModels("opencode", []string{"openai/m1", "openai/m2"}), nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:modelfail do it"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "openai/m1", Task: "FAKE:modelfail do it"})
 	w.workerStopped(t, g, protocol.StopModelFails)
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: failed", "note: the model call failed: AI.Error: Upstream request failed: Insufficient account funds.",
@@ -251,13 +253,13 @@ func TestWorkerModelFailureSendsANotice(t *testing.T) {
 	}
 	// The gateway now ranks the model last for the same node and harness.
 	failed, err := g.gw.Store().FailedModels(w.d.NodeID(), "opencode")
-	if err != nil || failed["fake/m1"].IsZero() {
+	if err != nil || failed["openai/m1"].IsZero() {
 		t.Errorf("the gateway did not record the failed model: %v, %v", failed, err)
 	}
-	// A retry of the same loose request ("m" matches fake/m1 and fake/m2) now
-	// picks the other model, and the note says why.
+	// A retry of the same loose request ("m" matches openai/m1 and openai/m2)
+	// now picks the other model, and the note says why.
 	res2 := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "m", Task: "FAKE:ignore retry"})
-	if res2.Model != "fake/m2" || !strings.Contains(res2.ModelNote, "m -> fake/m2") || !strings.Contains(res2.ModelNote, "fake/m1 failed a worker at") {
+	if res2.Model != "openai/m2" || !strings.Contains(res2.ModelNote, "m -> openai/m2") || !strings.Contains(res2.ModelNote, "openai/m1 failed a worker at") {
 		t.Errorf("retry: model %q, note %q", res2.Model, res2.ModelNote)
 	}
 }
