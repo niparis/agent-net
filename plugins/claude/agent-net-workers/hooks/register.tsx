@@ -9,7 +9,6 @@ const notifiedAtom = atom({ plugin: 'agent-net-workers', key: 'notified' } as co
 const POLL_MS = 3000
 const RUN_TIMEOUT_MS = 2000
 const NOTIFIED_MAX = 200
-const ENDED_MARK: Record<string, string> = { done: '✓', failed: '✗', blocked: '✗', 'timed out': '✗', stopped: '✗' }
 
 // RawWorker is the JSON `agent-net workers` writes, before it becomes a value
 // the band and the status line read.
@@ -56,10 +55,6 @@ function isVisible(w: AgentNetWorker): boolean {
   return w.online || w.endStatus !== ''
 }
 
-function shortId(id: string): string {
-  return id.slice(-4)
-}
-
 // modelName drops the provider prefix: "anthropic/claude-sonnet-5" reads
 // "claude-sonnet-5".
 function modelName(model: string): string {
@@ -76,16 +71,6 @@ function shortDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h${minutes % 60}m`
 }
 
-// compactTokens writes a count the way the daemon's CompactTokens does: 840,
-// 2k, 84k, 345k, 1M, 1.5M.
-function compactTokens(n: number): string {
-  if (!(n > 0)) return ''
-  if (n < 1000) return `${Math.round(n)}`
-  if (n < 1_000_000) return `${Math.round(n / 1000)}k`
-  const millions = Math.round(n / 100_000) / 10
-  return `${millions}M`.replace('.0M', 'M')
-}
-
 // contextOf writes the context window line of a worker, and the color of the
 // percentage: warning at 70 percent and over, error at 90 percent and over.
 // It is undefined when the harness has not reported either figure.
@@ -93,15 +78,62 @@ function contextOf(w: AgentNetWorker): { text: string; color?: 'warning' | 'erro
   if (!(w.contextTokens > 0) || !(w.contextLimit > 0)) return undefined
   const percent = Math.round((w.contextTokens / w.contextLimit) * 100)
   const color = percent >= 90 ? 'error' : percent >= 70 ? 'warning' : undefined
-  return { text: `${compactTokens(w.contextTokens)}/${compactTokens(w.contextLimit)} ${percent}%`, color }
+  return { text: `ctx ${percent}%`, color }
 }
 
 function clip(text: string, columns: number): string {
   if (columns <= 0) return ''
   const chars = Array.from(text)
   if (chars.length <= columns) return text
-  if (columns <= 3) return chars.slice(0, columns).join('')
-  return chars.slice(0, columns - 3).join('') + '...'
+  return chars.slice(0, columns - 1).join('') + '…'
+}
+
+// Match the TUI's shortWorkerModel: drop provider and claude- prefixes,
+// then the effort suffix or a whole trailing segment before clipping a word.
+function shortWorkerModel(model: string, columns: number): string {
+  const name = modelName(model).replace(/^claude-/, '')
+  if (Array.from(name).length <= columns) return name
+  const colon = name.lastIndexOf(':')
+  if (colon > 0 && colon <= columns) return name.slice(0, colon)
+  for (let i = name.length - 1; i > 0; i--) {
+    if ('-._:/'.includes(name[i]!) && i + 1 <= columns) return name.slice(0, i) + '…'
+  }
+  return clip(name, columns)
+}
+
+// Compute columns once for the visible pane. Empty cells keep their space,
+// while columns with no values take none. Status replaces the old circle:
+// busy is implicit, other states have a colored label.
+export function formatWorkerRows(workers: AgentNetWorker[], now: number, columns: number) {
+  const rows = workers.map(w => {
+    const ended = w.endStatus !== ''
+    const state = ended ? w.endStatus : w.status === 'busy' ? '' : w.status
+    const ctx = contextOf(w)
+    return {
+      fields: [w.harness, shortWorkerModel(w.model, 24), state,
+        shortDuration(((ended ? w.endedAt : now) - w.startedAt) * 1000), ctx?.text ?? ''],
+      task: (ended ? w.endNote || w.task : w.task).split('\n')[0] ?? '',
+      statusColor: state ? (ended ? (state === 'done' ? 'success' : 'error') : 'warning') : undefined,
+      contextColor: ctx?.color,
+    } as const
+  })
+  const widths = [0, 1, 2, 3, 4].map(i => Math.max(0, ...rows.map(r => Array.from(r.fields[i]!).length)))
+  const prefixWidth = () => widths.reduce((n, w) => n + (w > 0 ? w + 2 : 0), 0)
+  // Leave task room in a narrow pane; the model is the first field to shrink.
+  const taskRoom = Math.min(16, Math.floor(columns / 3))
+  for (const i of [1, 0, 2, 4, 3]) {
+    widths[i] = Math.max(0, widths[i]! - Math.max(0, prefixWidth() + taskRoom - columns))
+  }
+  return rows.map(r => ({
+    ...r,
+    fields: r.fields.map((value, i) => {
+      const width = widths[i]!
+      if (width === 0) return ''
+      const text = i === 1 ? shortWorkerModel(value, width) : clip(value, width)
+      return text + ' '.repeat(width - Array.from(text).length + 2)
+    }),
+    task: clip(r.task, Math.max(0, columns - prefixWidth())),
+  }))
 }
 
 // noticeDuration writes a run time with both parts, as a finished notice does:
@@ -226,33 +258,17 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column">
         <Text dimColor wrap="truncate-end">{rule}</Text>
-        {workers.map(w => {
-          const isEnded = w.endStatus !== ''
-          const mark = isEnded ? (ENDED_MARK[w.endStatus] ?? '✗') : '○'
-          const color = isEnded ? (w.endStatus === 'done' ? 'success' : 'error') : undefined
-          const state = isEnded ? w.endStatus : (w.status || 'running')
-          const elapsed = (isEnded ? w.endedAt : now) - w.startedAt
-          const head = [shortId(w.sessionId), w.harness + (w.model ? ' · ' + modelName(w.model) : ''),
-            state, shortDuration(elapsed * 1000)].filter(Boolean).join(' ')
-          const ctx = contextOf(w)
-          const ctxText = ctx ? `ctx ${ctx.text}` : ''
-          const text = (isEnded ? (w.endNote || w.task) : w.task).split('\n')[0]
-          // Keep each worker on one row: leave room for the mark, the spaces and
-          // anything the surface draws at the right edge.
-          const rest = clip(text, Math.max(0, columns - 8 - head.length - (ctx ? ctxText.length + 1 : 0)))
-          return (
-            <Box key={w.sessionId}>
-              <Text wrap="truncate-end">
-                <Text color={color}>{mark} </Text>
-                <Text dimColor>{head}</Text>
-                {ctx ? <Text> </Text> : null}
-                {ctx ? <Text color={ctx.color}>{ctxText}</Text> : null}
-                <Text> </Text>
-                <Text>{rest}</Text>
-              </Text>
-            </Box>
-          )
-        })}
+        {formatWorkerRows(workers, now, columns).map((row, i) => (
+          <Box key={workers[i]!.sessionId}>
+            <Text wrap="truncate-end">
+              <Text dimColor>{row.fields[0]}{row.fields[1]}</Text>
+              <Text color={row.statusColor}>{row.fields[2]}</Text>
+              <Text dimColor>{row.fields[3]}</Text>
+              <Text color={row.contextColor}>{row.fields[4]}</Text>
+              <Text>{row.task}</Text>
+            </Text>
+          </Box>
+        ))}
       </Box>
     )
   })
