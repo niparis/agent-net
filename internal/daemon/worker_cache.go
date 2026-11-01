@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -123,13 +124,10 @@ func trimGoTemp(path string, before time.Time, inUse func(string) (bool, error))
 		if !info.ModTime().Before(before) {
 			continue
 		}
-		used, err := inUse(filepath.Join(path, entry.Name()))
-		if err != nil {
-			return freed, err
-		}
-		if used {
-			continue
-		}
+
+		// A build can update a nested file without changing the top-level
+		// directory mtime. Check every descendant before removing the entry.
+		recent := errors.New("entry is still active")
 		var size int64
 		err = fs.WalkDir(root.FS(), entry.Name(), func(name string, e fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -139,20 +137,54 @@ func trimGoTemp(path string, before time.Time, inUse func(string) (bool, error))
 			if err != nil {
 				return err
 			}
+			if !i.ModTime().Before(before) {
+				return recent
+			}
 			if e.Type().IsRegular() {
 				if diskHardlinked(i) {
 					return fmt.Errorf("temporary entry contains a hard link: %s", name)
 				}
 				size += i.Size()
 			}
+			return nil
+		})
+		if errors.Is(err, recent) {
+			continue
+		}
+		if err != nil {
+			return freed, err
+		}
+		// A positive result protects the entry. Permission errors and other
+		// inconclusive process checks do not prevent age-based cleanup.
+		if used, _ := inUse(filepath.Join(path, entry.Name())); used {
+			continue
+		}
+		err = fs.WalkDir(root.FS(), entry.Name(), func(name string, e fs.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			i, err := e.Info()
+			if err != nil {
+				return err
+			}
+			// Recheck the age before changing permissions or deleting the entry.
+			if !i.ModTime().Before(before) {
+				return recent
+			}
 			if e.IsDir() {
 				return root.Chmod(name, i.Mode().Perm()|0700)
 			}
 			if e.Type().IsRegular() {
+				if diskHardlinked(i) {
+					return fmt.Errorf("temporary entry contains a hard link: %s", name)
+				}
 				return root.Chmod(name, i.Mode().Perm()|0200)
 			}
 			return nil
 		})
+		if errors.Is(err, recent) {
+			continue
+		}
 		if err != nil {
 			return freed, err
 		}

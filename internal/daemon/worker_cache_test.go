@@ -3,6 +3,7 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,9 @@ func TestTrimTempSkipsOpenEntries(t *testing.T) {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(p, "file"), []byte("1234"), 0400); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(filepath.Join(p, "file"), past, past); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Chtimes(p, past, past); err != nil {
@@ -291,5 +295,53 @@ func TestCacheSettingsDisabledSurviveJSONRoundTrip(t *testing.T) {
 	cache, tmp, err := decoded.WorkerCachePaths()
 	if err != nil || len(cache) != 0 || len(tmp) != 0 {
 		t.Fatalf("disabled paths lost after JSON: %v %v %v", cache, tmp, err)
+	}
+}
+
+func TestTrimTempInconclusiveProcessCheck(t *testing.T) {
+	root := t.TempDir()
+	entry := filepath.Join(root, "old")
+	if err := os.Mkdir(entry, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(entry, "file")
+	if err := os.WriteFile(file, []byte("old"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-3 * time.Hour)
+	for _, p := range []string{file, entry} {
+		if err := os.Chtimes(p, old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
+	freed, err := trimGoTemp(root, time.Now().Add(-2*time.Hour), func(string) (bool, error) { return false, errors.New("inconclusive") })
+	if err != nil || freed != 3 {
+		t.Fatalf("trim: freed=%d err=%v", freed, err)
+	}
+	if _, err := os.Stat(entry); !os.IsNotExist(err) {
+		t.Fatalf("old entry remains: %v", err)
+	}
+}
+
+func TestTrimTempKeepsRecentDescendant(t *testing.T) {
+	root := t.TempDir()
+	entry := filepath.Join(root, "old")
+	if err := os.Mkdir(entry, 0700); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(entry, "active")
+	if err := os.WriteFile(file, []byte("fresh"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-3 * time.Hour)
+	if err := os.Chtimes(entry, old, old); err != nil {
+		t.Fatal(err)
+	}
+	freed, err := trimGoTemp(root, time.Now().Add(-2*time.Hour), func(string) (bool, error) { return false, nil })
+	if err != nil || freed != 0 {
+		t.Fatalf("trim: freed=%d err=%v", freed, err)
+	}
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("recent file removed: %v", err)
 	}
 }
