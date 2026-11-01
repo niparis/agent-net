@@ -381,6 +381,9 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 func NewCTO(call Caller, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net-cto", Version: version}, nil)
 	for name, spec := range ctoTools {
+		if ctoV2Tools[name] {
+			continue
+		}
 		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -401,6 +404,7 @@ func NewCTO(call Caller, version string) *mcp.Server {
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 		})
 	}
+	addCTOV2Tools(s, call)
 	return s
 }
 

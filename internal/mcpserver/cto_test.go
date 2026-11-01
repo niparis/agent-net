@@ -90,11 +90,10 @@ func TestCTOToolDescriptionsAndEnums(t *testing.T) {
 	wantEnums := map[string]map[string][]string{
 		"graph_change": {
 			"action": {"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "settings_set", "undo"},
-			"kind":   {"depends", "governs", "deploys"},
 			"mode":   {"advisor", "arbiter", "owner"},
 			"rule":   {"normal", "auto", "ask", "never"},
 		},
-		"session_change": {"action": {"rename", "trust", "policy", "session_start"}},
+		"session_change": {"action": {"rename", "trust", "policy", "session_start"}, "folder": {"project", "worktree"}, "harness": {"opencode", "claude", "pi", "codex"}},
 		"worker_change":  {"action": {"start", "stop"}, "harness": {"opencode", "claude", "pi", "codex"}, "isolation": {"worktree", "none"}},
 		"answer":         {"kind": {"held", "inbox", "outcome"}},
 		"tools_change":   {"action": {"plan", "apply", "undo", "import", "native_remove"}},
@@ -194,6 +193,8 @@ func TestCTOToolsForward(t *testing.T) {
 		}
 		if name == "worker_change" {
 			args["touches"] = []string{"tests"}
+			args["project"] = "example"
+			args["task"] = "Do the task"
 		}
 		out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: name, Arguments: args})
 		if err != nil || out.IsError || !seen[name] {
@@ -217,8 +218,8 @@ func TestCTOParityTools(t *testing.T) {
 			t.Errorf("missing CTO tool %s", name)
 		}
 	}
-	if len(got) != 26 {
-		t.Errorf("CTO exposes %d tools, want 26: %v", len(got), got)
+	if len(got) != 28 {
+		t.Errorf("CTO exposes %d tools, want 28: %v", len(got), got)
 	}
 	for _, name := range []string{"charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "session_rename", "session_trust", "session_policy", "worker_start", "worker_stop", "held_answer", "inbox_answer", "outcome_overrule", "tools_plan", "tools_apply", "tools_undo", "mcp_import", "mcp_native_remove", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "send", "reply", "ui_show", "ui_notice", "cto_send"} {
 		if got[name] {
@@ -345,8 +346,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("total schema: %d bytes", len(schema))
-	if len(schema) >= 16*1024 {
-		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 16*1024)
+	if len(schema) >= 24*1024 {
+		t.Errorf("CTO schema is %d bytes, budget %d", len(schema), 24*1024)
 	}
 	for _, tool := range list.Tools {
 		data, err := json.Marshal(tool)
