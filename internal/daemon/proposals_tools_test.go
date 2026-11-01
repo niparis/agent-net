@@ -1,0 +1,238 @@
+package daemon
+
+import (
+	"context"
+	"encoding/json"
+	"github.com/niparis/agent-net/internal/mcpserver"
+	"github.com/niparis/agent-net/internal/protocol"
+	"strings"
+	"testing"
+	"time"
+)
+
+var ctoProposalFixtures = map[string]string{
+	"charter_set": `{"node":"component","attr":"purpose","value":"review"}`,
+	"node_add":    `{"name":"architect"}`, "node_remove": `{"name":"architect"}`,
+	"edge_set":    `{"from":"first","to":"second","kind":"depends","rule":"auto"}`,
+	"edge_remove": `{"from":"first","to":"second","kind":"depends"}`, "graph_undo": `{"id":1}`,
+	"node_settings_set": `{"node":"component","setting":"merge_authority","value":"ask"}`,
+	"node_rename":       `{"node_id":"n_test","name":"test"}`, "session_rename": `{"session_id":"s_test","name":"planner"}`,
+	"session_trust": `{"session_id":"s_test","on":true}`, "session_policy": `{"session_id":"s_test","policy":{"delegate":"off"}}`,
+	"worker_start": `{"project":"project","task":"test","harness":"claude"}`, "worker_stop": `{"session":"s_test"}`,
+	"held_answer": `{"message_id":"m_test","action":"a"}`, "inbox_answer": `{"id":"i_test","answer":"yes"}`,
+	"outcome_overrule": `{"reply_id":"m_test","action":"let_stand"}`,
+	"tools_plan":       `{"item":"item","target":{"scope":"global"}}`, "tools_apply": `{"plan_id":"plan"}`, "tools_undo": `{"item":"item"}`,
+	"mcp_import": `{"candidate":"candidate"}`, "mcp_native_remove": `{"candidate":"candidate"}`,
+	"mcp_add":    `{"server":{"name":"test","transport":"stdio","command":"/bin/true"}}`,
+	"mcp_remove": `{"name":"test"}`, "mcp_test": `{"name":"test"}`, "mcp_enable": `{"name":"test","enabled":true}`,
+	"mcp_call":         `{"server":"test","tool":"send","arguments":{"body":"stored"}}`,
+	"integrations_set": `{"peer_messages":false}`, "notification_settings": `{"disabled":true}`,
+	"cto_settings": `{"title":"CTO"}`, "cto_send": `{"text":"question"}`, "cto_new": `{}`,
+	"protected_providers_set": `{"protected_providers":["provider"]}`, "worker_providers_set": `{"providers":["provider"]}`,
+	"score_set":          `{"model":"model","score":50}`,
+	"worker_profile_add": `{"name":"profile","harness":"claude","model":"model"}`, "worker_profile_remove": `{"name":"profile"}`,
+	"playbook_set": `{"model":"model","note":"tests"}`,
+	"project_add":  `{"paths":["/tmp/project"]}`, "project_remove": `{"name":"project"}`, "project_display_set": `{"project":"project","name":"Project"}`,
+	"invite": `{}`, "onboarding_restart": `{}`,
+	"message": `{"action":"send","as_owner":true,"to":"s_test","body":"stored"}`,
+}
+
+func TestProposalEveryChangeRunsStoredCallOnce(t *testing.T) {
+	for name, class := range ctoToolClasses {
+		if class != ctoProposal && name != "message" {
+			continue
+		}
+		t.Run(name, func(t *testing.T) {
+			args, ok := ctoProposalFixtures[name]
+			if !ok {
+				t.Fatal("missing proposal fixture")
+			}
+			st, err := openState(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer st.close()
+			calls, validations := 0, 0
+			p := proposalRunner{state: st, now: time.Now, validate: func(_ context.Context, call proposalCall) error {
+				validations++
+				normalized, err := concreteProposal(call)
+				if err != nil {
+					return err
+				}
+				return mcpserver.CTOArguments(normalized.Tool, normalized.Args)
+			}, run: func(ctx context.Context, call proposalCall, actor string) (json.RawMessage, error) {
+				return runStoredCTOProposal(ctx, call, actor, func(ctx context.Context, tool string, stored json.RawMessage) (any, error) {
+					calls++
+					if tool != name || proposalActor(ctx) != actor || !strings.HasPrefix(actor, "owner (CTO proposal p_") {
+						t.Fatalf("tool=%s actor=%s", tool, actor)
+					}
+					var want, got any
+					_ = json.Unmarshal([]byte(args), &want)
+					_ = json.Unmarshal(stored, &got)
+					a, _ := json.Marshal(want)
+					b, _ := json.Marshal(got)
+					if string(a) != string(b) {
+						t.Fatalf("changed call: %s != %s", a, b)
+					}
+					return map[string]string{"private": "result"}, nil
+				})
+			}}
+			ctx := context.Background()
+			result, err := routeCTOTool(ctx, name, json.RawMessage(args), func(ctx context.Context, tool, action string, args json.RawMessage, reason string) (string, error) {
+				return p.propose(ctx, proposalCall{Tool: tool, Action: action, Args: args}, reason)
+			}, func(context.Context, string, json.RawMessage) (any, error) { calls++; return nil, nil })
+			if err != nil {
+				t.Fatal(err)
+			}
+			items, err := p.list()
+			if err != nil || len(items) != 1 || calls != 0 || validations != 1 || result != ProposalToolResult(items[0].ID) {
+				t.Fatalf("items=%v calls=%d validations=%d result=%v err=%v", items, calls, validations, result, err)
+			}
+			if err := p.decide(ctx, items[0].ID, true); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.decide(ctx, items[0].ID, true); err == nil {
+				t.Fatal("approved twice")
+			}
+			if calls != 1 || validations != 2 {
+				t.Fatalf("calls=%d validations=%d", calls, validations)
+			}
+		})
+	}
+}
+
+func TestCTOChangeProposalsValidateAndApply(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	ctx := context.Background()
+	for _, call := range []struct{ name, args string }{
+		{"node_add", `{"name":"proposal-node"}`},
+		{"node_settings_set", `{"node":"proposal-node","setting":"merge_authority","value":"ask"}`},
+		{"node_settings_set", `{"node":"proposal-node","setting":"merge_authority","value":""}`},
+		{"node_remove", `{"name":"proposal-node"}`},
+		{"notification_settings", `{"disabled":true}`},
+		{"onboarding_restart", `{}`},
+	} {
+		value, err := n.d.runCTOToolRaw(ctx, call.name, json.RawMessage(call.args))
+		if err != nil {
+			t.Fatalf("%s: %v", call.name, err)
+		}
+		if !strings.HasPrefix(value.(string), "proposal p_") {
+			t.Fatalf("%s ran directly: %v", call.name, value)
+		}
+		items, err := n.d.proposalRunner().list()
+		if err != nil {
+			t.Fatal(err)
+		}
+		item := items[len(items)-1]
+		if item.Call.Tool != call.name || item.Status != "open" {
+			t.Fatalf("bad proposal: %+v", item)
+		}
+		if err := n.d.proposalRunner().decide(ctx, item.ID, true); err != nil {
+			t.Fatalf("approve %s: %v", call.name, err)
+		}
+	}
+	for _, call := range []struct{ name, args string }{
+		{"session_rename", `{"session_id":"missing","name":"name"}`},
+		{"node_settings_set", `{"node":"missing","setting":"merge_authority","value":"ask"}`},
+		{"worker_stop", `{"session":"missing"}`},
+		{"mcp_call", `{"server":"missing","tool":"send"}`},
+		{"mcp_add", `{"server":{"name":"bad","transport":"stdio"},"on":"missing"}`},
+	} {
+		if _, err := n.d.runCTOToolRaw(ctx, call.name, json.RawMessage(call.args)); err == nil {
+			t.Errorf("accepted invalid %s", call.name)
+		}
+	}
+}
+
+func approveCTOToolResult(t *testing.T, d *Daemon, value any) json.RawMessage {
+	t.Helper()
+	text, ok := value.(string)
+	if !ok || !strings.HasPrefix(text, "proposal p_") {
+		t.Fatalf("expected proposal, got %#v", value)
+	}
+	id := strings.Fields(text)[1]
+	if err := d.proposalRunner().decide(context.Background(), id, true); err != nil {
+		t.Fatal(err)
+	}
+	items, err := d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range items {
+		if item.ID == id {
+			return item.Result
+		}
+	}
+	t.Fatalf("missing %s", id)
+	return nil
+}
+
+func TestCTOConcreteValidatorCoverage(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{})
+	for name, args := range ctoProposalFixtures {
+		t.Run(name, func(t *testing.T) {
+			if name == "project_add" {
+				b, _ := json.Marshal(map[string]any{"paths": []string{newRepo(t, "project")}})
+				args = string(b)
+			}
+			var fields map[string]any
+			_ = json.Unmarshal([]byte(args), &fields)
+			action, _ := fields["action"].(string)
+			err := n.d.validateProposal(context.Background(), proposalCall{Tool: name, Action: action, Args: json.RawMessage(args)})
+			// Missing fixture targets may be refused, but every tool must have a real
+			// validator rather than falling through to an unsupported-tool error.
+			if err != nil && (strings.Contains(err.Error(), "unsupported proposal tool") || strings.Contains(err.Error(), "unknown CTO tool")) {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestCTOProposalQueuedStopDoesNotCancelUntilApproval(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	fl := &fakeLoad{l: cpuBusy()}
+	w := startWorkerNode(t, g, queueSet, withLoad(fl))
+	w.register(t, newRepo(t, "shop"))
+	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
+	queued := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "test"})
+	if queued.Status != "queued" {
+		t.Fatalf("not queued: %+v", queued)
+	}
+	args, _ := json.Marshal(map[string]string{"session": queued.QueueID})
+	value, err := w.d.runCTOToolRaw(context.Background(), "worker_stop", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count, _ := w.d.st.queueLen(); count != 1 {
+		t.Fatal("validation cancelled queued start")
+	}
+	approveCTOToolResult(t, w.d, value)
+	if count, _ := w.d.st.queueLen(); count != 0 {
+		t.Fatal("approved stop did not cancel queued start")
+	}
+	if _, err := w.d.runCTOToolRaw(context.Background(), "worker_stop", args); err == nil {
+		t.Fatal("proposed stop of missing queue ID")
+	}
+}
+
+func TestCTOProposalTrustHistoryActor(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
+	_, sid := helloPi(t, n, "trust", "/work/project", true)
+	args, _ := json.Marshal(map[string]any{"session_id": sid, "on": true})
+	value, err := n.d.runCTOToolRaw(context.Background(), "session_trust", args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	approveCTOToolResult(t, n.d, value)
+	items, err := n.d.proposalRunner().list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	changes, err := g.gw.Store().EdgeHistory("project", 10)
+	if err != nil || len(changes) != 1 || changes[0].By != "owner (CTO proposal "+items[0].ID+")" {
+		t.Fatalf("history: %v %v", changes, err)
+	}
+}

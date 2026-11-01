@@ -80,7 +80,7 @@ func (s *Store) ListInbox() ([]protocol.InboxItem, error) {
 }
 
 // AnswerInbox records an answer and queues its delivery in one transaction.
-func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
+func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.InboxItem, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return protocol.InboxItem{}, err
@@ -133,6 +133,9 @@ func (s *Store) AnswerInbox(id, answer string) (protocol.InboxItem, error) {
 		if _, err = tx.Exec(`UPDATE graph_outcomes SET resolution='answered' WHERE reply_id=? AND resolution=''`, item.MessageID); err != nil {
 			return item, err
 		}
+	}
+	if len(validate) > 0 && validate[0] {
+		return item, nil
 	}
 	if err = tx.Commit(); err != nil {
 		return item, err

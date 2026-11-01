@@ -843,7 +843,11 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 // SetPeerTrust turns peer trust on or off for a session (decision 0012). The
 // owner pseudo-session cannot be trusted: it is a person, not an agent. It
 // returns false when the session does not exist.
-func (s *Store) SetPeerTrust(sessionID string, on bool) (bool, error) {
+func (s *Store) SetPeerTrust(sessionID string, on bool, validate ...bool) (bool, error) {
+	return s.setPeerTrust(sessionID, on, "owner", validate...)
+}
+
+func (s *Store) setPeerTrust(sessionID string, on bool, actor string, validate ...bool) (bool, error) {
 	a, ok, err := s.Agent(sessionID)
 	if err != nil || !ok || a.Harness == protocol.OwnerHarness {
 		return false, err
@@ -854,9 +858,12 @@ func (s *Store) SetPeerTrust(sessionID string, on bool) (bool, error) {
 		if on {
 			rule = "auto"
 		}
-		if err := s.SetEdge(protocol.Edge{From: "*", To: project, Kind: "depends", Rule: rule}, "owner"); err != nil {
+		if err := s.SetEdge(protocol.Edge{From: "*", To: project, Kind: "depends", Rule: rule}, actor, validate...); err != nil {
 			return false, err
 		}
+	}
+	if len(validate) > 0 && validate[0] {
+		return true, nil
 	}
 	_, err = s.db.Exec(`UPDATE sessions SET peer_trust=? WHERE id=?`, boolInt(on), sessionID)
 	return err == nil, err

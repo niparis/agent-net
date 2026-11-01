@@ -21,7 +21,7 @@ func (e ErrSessionName) Error() string { return e.Reason }
 // here survives every later report, because reports only write the automatic
 // name. It may not be the name of another live session: agent_send matches
 // names exactly, so a duplicate would be ambiguous.
-func (s *Store) RenameSession(sessionID, name string) (protocol.SessionRenameResult, error) {
+func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protocol.SessionRenameResult, error) {
 	var res protocol.SessionRenameResult
 	var auto, project, cwd, workerJSON string
 	err := s.db.QueryRow(`SELECT name, repo_project, cwd, worker FROM sessions WHERE id = ?`, sessionID).
@@ -56,6 +56,9 @@ func (s *Store) RenameSession(sessionID, name string) (protocol.SessionRenameRes
 		if !errors.Is(err, sql.ErrNoRows) {
 			return res, err
 		}
+		if len(validate) > 0 && validate[0] {
+			return res, nil
+		}
 		_, err = s.db.Exec(`INSERT INTO profiles (session_id, name, function, project, capabilities, task, updated_at, expertise)
 			VALUES (?,?,'','','[]','',?,'')
 			ON CONFLICT (session_id) DO UPDATE SET name = excluded.name`,
@@ -76,6 +79,9 @@ func (s *Store) RenameSession(sessionID, name string) (protocol.SessionRenameRes
 			Repo: protocol.RepoInfo{Project: project}, Worker: worker})
 		if err != nil {
 			return res, err
+		}
+		if len(validate) > 0 && validate[0] {
+			return res, nil
 		}
 		tx, err := s.db.Begin()
 		if err != nil {

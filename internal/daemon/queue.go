@@ -203,7 +203,7 @@ func (d *Daemon) sendQueuedTask(ctx context.Context, p protocol.WorkerQueuedStar
 
 // cancelQueued removes a queued start. Only its owner or the person at a
 // command line may.
-func (d *Daemon) cancelQueued(id, requester string, asOwner bool) error {
+func (d *Daemon) cancelQueued(id, requester string, asOwner bool, validate ...bool) error {
 	entries, err := d.st.queue()
 	if err != nil {
 		return err
@@ -214,6 +214,9 @@ func (d *Daemon) cancelQueued(id, requester string, asOwner bool) error {
 		}
 		if !asOwner && requester != e.Owner {
 			return errors.New("only the session that queued the start, or the person at the command line, can cancel it")
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil
 		}
 		if !d.st.removeQueued(id) {
 			break

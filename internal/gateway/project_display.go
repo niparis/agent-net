@@ -19,7 +19,7 @@ func (s *Store) ProjectDisplayName(project string) (protocol.ProjectDisplayResul
 }
 
 // SetProjectDisplayName saves an owner-chosen label; an empty label clears it.
-func (s *Store) SetProjectDisplayName(project, name string) (protocol.ProjectDisplayResult, error) {
+func (s *Store) SetProjectDisplayName(project, name string, validate ...bool) (protocol.ProjectDisplayResult, error) {
 	out := protocol.ProjectDisplayResult{Project: project}
 	if !validGraphName(project) {
 		return out, reject("invalid project identity")
@@ -39,6 +39,9 @@ func (s *Store) SetProjectDisplayName(project, name string) (protocol.ProjectDis
 	}
 	if !exists {
 		return out, reject("unknown project %q", project)
+	}
+	if len(validate) > 0 && validate[0] {
+		return out, nil
 	}
 	var err error
 	if name == "" {

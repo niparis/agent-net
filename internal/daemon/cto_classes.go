@@ -22,7 +22,7 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
 		ctoRead:     "charter_guide charter_suggestions graph_get charter_history edge_history agents workers needs_you feed worker_profile_list protected_providers_get info nodes projects get messages message_status session_text usage usage_top counts graph_view session_enter project_display_get integrations_get held_list inbox_list outcome_inbox node_settings_get playbook_get mcp_list cto_enter cto_events cto_graph_history tools_list tools_history mcp_import_candidates tools_differences",
-		ctoTalk:     "send reply learn ui_show ui_notice ask_owner message",
+		ctoTalk:     "send reply learn ui_show ui_notice message",
 		ctoProposal: "project_display_set charter_set node_add node_remove edge_set edge_remove graph_undo worker_profile_add worker_profile_remove worker_providers_set protected_providers_set score_set worker_start project_add project_remove mcp_call session_trust session_policy node_rename session_rename integrations_set worker_stop held_answer inbox_answer outcome_overrule node_settings_set playbook_set mcp_add mcp_remove mcp_test mcp_enable cto_send cto_new tools_plan tools_apply tools_undo mcp_import mcp_native_remove invite onboarding_restart notification_settings cto_settings",
 	} {
 		for _, name := range strings.Fields(names) {
@@ -32,10 +32,11 @@ var ctoToolClasses = func() map[string]ctoToolClass {
 	return out
 }()
 
-var ctoActions = map[string][]string{
-	"message":          {"send", "reply"},
-	"held_answer":      {"a", "A", "r", "R"},
-	"outcome_overrule": {"let_stand", "overrule"},
+var ctoActions = map[string]map[string][]string{
+	"message":          {"action": {"send", "reply"}},
+	"held_answer":      {"action": {"a", "A", "r", "R"}},
+	"outcome_overrule": {"action": {"let_stand", "overrule"}},
+	"tools_plan":       {"operation": {"repo_remove"}},
 }
 
 func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
@@ -47,9 +48,10 @@ func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
 	if len(raw) > 0 && json.Unmarshal(raw, &fields) != nil {
 		return "", errors.New("bad CTO tool arguments")
 	}
-	if actions, ok := ctoActions[name]; ok {
-		var action string
-		if value, exists := fields["action"]; exists {
+
+	for field, actions := range ctoActions[name] {
+		if value, exists := fields[field]; exists {
+			var action string
 			if json.Unmarshal(value, &action) != nil {
 				return "", errors.New("bad CTO action")
 			}
@@ -58,10 +60,11 @@ func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
 				found = found || a == action
 			}
 			if !found {
-				return "", fmt.Errorf("unknown %s action %q", name, action)
+				return "", fmt.Errorf("unknown %s %s %q", name, field, action)
 			}
 		}
 	}
+
 	if name == "cto_settings" || name == "notification_settings" {
 		// These legacy tools combine a read and a write. Only an empty call reads.
 		delete(fields, "reason")
@@ -100,7 +103,9 @@ func routeCTOTool(ctx context.Context, name string, raw json.RawMessage, propose
 		if err := json.Unmarshal(value, &reason); err != nil {
 			return nil, errors.New("reason must be a string")
 		}
-		delete(fields, "reason")
+		if name != "protected_providers_set" {
+			delete(fields, "reason")
+		}
 	}
 	args, err := json.Marshal(fields)
 	if err != nil {

@@ -69,7 +69,7 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		if (p.Candidate == "") == (p.PlanID == "") {
@@ -86,7 +86,7 @@ func (g *Gateway) handleMCP(ctx context.Context, nc *nodeConn, typ string, raw [
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		n := 0
@@ -221,7 +221,7 @@ func (g *Gateway) mcpList() ([]protocol.MCPServer, error) {
 	return srvs, nil
 }
 
-func (g *Gateway) mcpAdd(ctx context.Context, nc *nodeConn, p protocol.MCPAdd) (any, error) {
+func (g *Gateway) mcpAdd(ctx context.Context, nc *nodeConn, p protocol.MCPAdd, validate ...bool) (any, error) {
 	srv := p.Server
 	if err := srv.Validate(); err != nil {
 		return nil, reject("%v", err)
@@ -247,6 +247,9 @@ func (g *Gateway) mcpAdd(ctx context.Context, nc *nodeConn, p protocol.MCPAdd) (
 	srv.AddedByNode, srv.AddedBySession, srv.AddedByHarness = nc.id, p.AddedBySession, p.AddedByHarness
 	srv.Tools, srv.Health, srv.HealthDetail = nil, "", ""
 
+	if len(validate) > 0 && validate[0] {
+		return nil, nil
+	}
 	tools, err := probe(ctx, hc, srv)
 	if err != nil {
 		g.store.Event("mcp.refused", nc.id, p.AddedBySession, "", srv.Name+": "+err.Error())
@@ -305,7 +308,7 @@ func (g *Gateway) mcpTest(ctx context.Context, name string) (any, error) {
 	return map[string]any{"ok": true, "tools": tools}, nil
 }
 
-func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall) (any, error) {
+func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall, validate ...bool) (any, error) {
 	srv, ok, err := g.store.MCPServer(p.Server)
 	if err != nil {
 		return nil, err
@@ -344,6 +347,9 @@ func (g *Gateway) mcpCall(ctx context.Context, nc *nodeConn, p protocol.MCPCall)
 	hc := g.conn(srv.NodeID)
 	if hc == nil {
 		return nil, reject("host %s offline: MCP server %q runs there and is unavailable until it returns", srv.Hostname, p.Server)
+	}
+	if len(validate) > 0 && validate[0] {
+		return nil, nil
 	}
 	inv := protocol.MCPInvoke{Server: p.Server, Tool: p.Tool, Arguments: p.Arguments,
 		TimeoutSec: int(srv.Timeout() / time.Second)}

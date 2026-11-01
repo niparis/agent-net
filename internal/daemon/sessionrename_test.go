@@ -37,12 +37,12 @@ func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 		t.Fatalf("a report replaced the name: %s", list)
 	}
 
-	// The CTO uses the same operator method through its private channel.
+	// The CTO proposes the rename; only approval runs the operator method.
 	out, err := n.d.runCTOTool(context.Background(), "session_rename", json.RawMessage(`{"session_id":"`+sid+`","name":"cto-name"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctoRaw, _ := json.Marshal(out)
+	ctoRaw := approveCTOToolResult(t, n.d, out)
 	if !strings.Contains(string(ctoRaw), "cto-name") {
 		t.Fatalf("CTO rename: %s", ctoRaw)
 	}
@@ -51,7 +51,7 @@ func TestSessionRenameIsOwnerOnlyAndTheCTOUsesIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctoRaw, _ = json.Marshal(out)
+	ctoRaw = approveCTOToolResult(t, n.d, out)
 	if !strings.Contains(string(ctoRaw), `"name":"shop"`) {
 		t.Fatalf("CTO clear: %s", ctoRaw)
 	}

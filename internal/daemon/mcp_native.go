@@ -131,7 +131,7 @@ func (d *Daemon) nativeEdit(p protocol.MCPNativeEditRequest) protocol.MCPNativeE
 			return res
 		}
 		return d.applyNative(p, f)
-	case protocol.MCPNativeUndo:
+	case protocol.MCPNativeUndo, protocol.MCPNativeUndoValidate:
 		return d.undoNative(p)
 	}
 	return protocol.MCPNativeEditResult{Conflict: "unknown operation"}
@@ -319,6 +319,9 @@ func (d *Daemon) undoNative(p protocol.MCPNativeEditRequest) protocol.MCPNativeE
 	}
 	if sumHex(f.data) != meta.PostHash {
 		return protocol.MCPNativeEditResult{Conflict: "changed since apply", FileHash: sumHex(f.data)}
+	}
+	if p.Op == protocol.MCPNativeUndoValidate {
+		return protocol.MCPNativeEditResult{}
 	}
 	var res protocol.MCPNativeEditResult
 	why = withConfigLock(f.path, func() string {

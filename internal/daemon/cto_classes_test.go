@@ -30,6 +30,33 @@ func TestCTOClassTableComplete(t *testing.T) {
 		if _, err := ctoClass(tool.Name, json.RawMessage(`{}`)); err != nil {
 			t.Errorf("%s: %v", tool.Name, err)
 		}
+		schemaRaw, _ := json.Marshal(tool.InputSchema)
+		var schema struct {
+			Properties map[string]struct {
+				Enum []string `json:"enum"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(schemaRaw, &schema); err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"action", "operation"} {
+			actions := schema.Properties[field].Enum
+			if len(actions) != len(ctoActions[tool.Name][field]) {
+				t.Errorf("%s %s: schema actions %v, classes %v", tool.Name, field, actions, ctoActions[tool.Name][field])
+			}
+			for _, action := range actions {
+				args, _ := json.Marshal(map[string]string{field: action})
+				if _, err := ctoClass(tool.Name, args); err != nil {
+					t.Error(err)
+				}
+			}
+		}
+		if ctoToolClasses[tool.Name] == ctoProposal || tool.Name == "message" {
+			if _, ok := schema.Properties["reason"]; !ok {
+				t.Errorf("%s needs optional reason", tool.Name)
+			}
+		}
+
 	}
 	for name := range ctoOwnerMethods {
 		if _, err := ctoClass(name, json.RawMessage(`{}`)); err != nil {
@@ -69,7 +96,7 @@ func TestCTOProposalRouting(t *testing.T) {
 			}
 		})
 	}
-	for _, name := range []string{"send", "reply", "learn", "ui_show", "ui_notice", "ask_owner"} {
+	for _, name := range []string{"send", "reply", "learn", "ui_show", "ui_notice"} {
 		ran := 0
 		_, err := routeCTOTool(context.Background(), name, json.RawMessage(`{}`), func(context.Context, string, string, json.RawMessage, string) (string, error) {
 			t.Fatal("talk proposed")
@@ -85,6 +112,23 @@ func TestCTOUnknownActionFailsClosed(t *testing.T) {
 	for _, name := range []string{"message", "held_answer", "outcome_overrule"} {
 		if _, err := ctoClass(name, json.RawMessage(`{"action":"unknown"}`)); err == nil {
 			t.Errorf("%s accepted unknown action", name)
+		}
+	}
+}
+
+func TestCTOMessageOwnerRouting(t *testing.T) {
+	for _, asOwner := range []bool{false, true} {
+		proposed, ran := 0, 0
+		args, _ := json.Marshal(map[string]any{"action": "send", "to": "s_target", "body": "exact body", "as_owner": asOwner})
+		_, err := routeCTOTool(context.Background(), "message", args, func(_ context.Context, tool, action string, stored json.RawMessage, reason string) (string, error) {
+			proposed++
+			if tool != "message" || action != "send" {
+				t.Fatalf("%s %s", tool, action)
+			}
+			return "p_1", nil
+		}, func(context.Context, string, json.RawMessage) (any, error) { ran++; return nil, nil })
+		if err != nil || asOwner && (proposed != 1 || ran != 0) || !asOwner && (proposed != 0 || ran != 1) {
+			t.Fatalf("owner=%t proposals=%d backend=%d err=%v", asOwner, proposed, ran, err)
 		}
 	}
 }

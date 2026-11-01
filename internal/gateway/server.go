@@ -448,7 +448,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
+		if h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -532,6 +532,8 @@ func decode[T any](raw []byte) (T, error) {
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	st := g.store
 	switch typ {
+	case "cto.proposal.validate":
+		return g.validateCTOProposal(ctx, nc, raw)
 	case "hello":
 		p, err := decode[protocol.Hello](raw)
 		if err != nil {
@@ -617,7 +619,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.planTool(ctx, p.ToolPlanRequest, p.Actor)
@@ -643,7 +645,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		return g.applyTool(ctx, p.ID, p.Actor)
@@ -653,7 +655,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			Actor string `json:"actor"`
 			Owner string `json:"owner"`
 		}](raw)
-		if err != nil || (p.Actor != "owner" && p.Actor != "cto") || !g.validToolOwner(nc, p.Owner) {
+		if err != nil || !validChangeActor(p.Actor) || !g.validToolOwner(nc, p.Owner) {
 			return nil, reject("owner authority required")
 		}
 		if p.Item == "" {
@@ -918,7 +920,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil || p.SessionID == "" {
 			return nil, reject("bad session.trust")
 		}
-		ok, err := st.SetPeerTrust(p.SessionID, p.On)
+		ok, err := st.setPeerTrust(p.SessionID, p.On, graphActor(raw))
 		if err != nil {
 			return nil, err
 		}
@@ -963,7 +965,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad held.answer")
 		}
-		m, err := st.AnswerHeld(p.MessageID, p.Action)
+		m, err := st.answerHeld(p.MessageID, p.Action, graphActor(raw))
 		if err != nil {
 			return nil, err
 		}
@@ -1178,6 +1180,9 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			}
 		}
 		res := protocol.SessionPolicyResult{SessionID: p.SessionID, Effective: view}
+		if validatingProposal(ctx) {
+			return nil, nil
+		}
 		if !p.DryRun {
 			ok, err := st.SetDelegation(p.SessionID, p.Scope, clean)
 			if err != nil {

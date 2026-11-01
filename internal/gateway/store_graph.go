@@ -51,7 +51,7 @@ func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64
 }
 
 // AddArchitect creates a named architect without a project of the same name.
-func (s *Store) AddArchitect(name, actor string) error {
+func (s *Store) AddArchitect(name, actor string, validate ...bool) error {
 	if !validGraphName(name) {
 		return reject("invalid node name")
 	}
@@ -72,11 +72,14 @@ func (s *Store) AddArchitect(name, actor string) error {
 	if err = graphRecord(tx, "node", name, "", "", "architect", actor, now); err != nil {
 		return err
 	}
+	if len(validate) > 0 && validate[0] {
+		return nil
+	}
 	return tx.Commit()
 }
 
 // RemoveArchitect removes an architect with no edges, recording cleared attributes.
-func (s *Store) RemoveArchitect(name, actor string) error {
+func (s *Store) RemoveArchitect(name, actor string, validate ...bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -156,6 +159,9 @@ func (s *Store) RemoveArchitect(name, actor string) error {
 	if err = graphRecord(tx, "node", name, "", "architect", "", actor, s.now().UnixNano()); err != nil {
 		return err
 	}
+	if len(validate) > 0 && validate[0] {
+		return nil
+	}
 	return tx.Commit()
 }
 
@@ -206,7 +212,7 @@ func setCharterTx(tx *sql.Tx, node, attr, value, actor string, now int64) error 
 // SetNodeSetting sets or clears one node override of the maturity defaults
 // (decision 0022). The value is checked against its setting. An empty value
 // clears the override.
-func (s *Store) SetNodeSetting(node, setting, value, actor string) error {
+func (s *Store) SetNodeSetting(node, setting, value, actor string, validate ...bool) error {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if err := protocol.ValidateNodeSetting(setting, value); err != nil {
 		return reject("%v", err)
@@ -238,6 +244,9 @@ func (s *Store) SetNodeSetting(node, setting, value, actor string) error {
 	}
 	if err = graphRecord(tx, "setting", node, setting, old, value, actor, now); err != nil {
 		return err
+	}
+	if len(validate) > 0 && validate[0] {
+		return nil
 	}
 	return tx.Commit()
 }
@@ -340,7 +349,7 @@ func (s *Store) EdgeHistory(node string, limit int) ([]protocol.EdgeChange, erro
 
 // GraphUndo checks and reverses a history row in one transaction. The reversal
 // is itself recorded, so it can be undone. A stale row cannot overwrite changes.
-func (s *Store) GraphUndo(id int64, actor string) error {
+func (s *Store) GraphUndo(id int64, actor string, validate ...bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -469,11 +478,14 @@ func (s *Store) GraphUndo(id int64, actor string) error {
 	if _, err = tx.Exec(`UPDATE learned_suggestions SET status='undone',decided_at=? WHERE status='applied' AND id IN (SELECT suggestion_id FROM learned_suggestion_details WHERE history_id=?)`, now, id); err != nil {
 		return err
 	}
+	if len(validate) > 0 && validate[0] {
+		return nil
+	}
 	return tx.Commit()
 }
 
 // SetEdge validates and stores a directed graph edge.
-func (s *Store) SetEdge(e protocol.Edge, actor string) error {
+func (s *Store) SetEdge(e protocol.Edge, actor string, validate ...bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -481,6 +493,9 @@ func (s *Store) SetEdge(e protocol.Edge, actor string) error {
 	defer tx.Rollback()
 	if err = setEdgeTx(tx, e, actor, s.now().UnixNano()); err != nil {
 		return err
+	}
+	if len(validate) > 0 && validate[0] {
+		return nil
 	}
 	return tx.Commit()
 }
@@ -547,7 +562,7 @@ func setEdgeTx(tx *sql.Tx, e protocol.Edge, actor string, now int64) error {
 }
 
 // RemoveEdge deletes an edge and records its previous value.
-func (s *Store) RemoveEdge(e protocol.Edge, actor string) error {
+func (s *Store) RemoveEdge(e protocol.Edge, actor string, validate ...bool) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -563,6 +578,9 @@ func (s *Store) RemoveEdge(e protocol.Edge, actor string) error {
 	}
 	if err = graphRecord(tx, "edge", e.From, e.Kind, string(b), "", actor, s.now().UnixNano()); err != nil {
 		return err
+	}
+	if len(validate) > 0 && validate[0] {
+		return nil
 	}
 	return tx.Commit()
 }
@@ -685,7 +703,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 
 // CTOGraphHistory returns all attributed CTO changes after a history ID.
 func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) {
-	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE actor='cto' AND id>? ORDER BY id`, after)
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE (actor='cto' OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
 	if err != nil {
 		return nil, err
 	}
@@ -703,7 +721,7 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 
 func (s *Store) CTOLastGraphID() (int64, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto'`).Scan(&id)
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor GLOB 'owner (CTO proposal p_[0-9]*)'`).Scan(&id)
 	return id, err
 }
 

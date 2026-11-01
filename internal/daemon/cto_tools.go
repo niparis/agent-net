@@ -49,7 +49,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 	}
 	// These operations reuse the same owner implementations after ctoTool has
 	// checked the calling process tree. This connection is never exposed.
-	lc := &localConn{d: d, client: "cli", cto: true}
+	lc := &localConn{d: d, client: "cli", cto: proposalActor(ctx) == ""}
 	if ctoOwnerMethods[name] {
 		res, _, err := lc.dispatchOwner(ctx, name, raw)
 		return res, err
@@ -69,15 +69,6 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, errors.New("message needs action send or reply")
 		}
 		return d.executeCTOTool(ctx, q.Action, raw)
-	case "ask_owner":
-		var q struct {
-			Question       string `json:"question"`
-			Recommendation string `json:"recommendation"`
-		}
-		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Question) == "" {
-			return nil, errors.New("ask_owner needs question")
-		}
-		return d.call(ctx, "inbox.add", map[string]any{"question": q.Question, "recommendation": q.Recommendation, "session_id": d.ownerSessionID()})
 	case "charter_suggestions":
 		owner := d.ownerSessionID()
 		if owner == "" {
@@ -235,6 +226,9 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			delete(args, "id")
 		}
 		args["by"] = "cto"
+		if actor := proposalActor(ctx); actor != "" {
+			args["by"] = actor
+		}
 		if name != "graph_get" && name != "charter_history" && name != "edge_history" {
 			return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
 		}
@@ -487,6 +481,9 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		case "invite":
 			text = "printed an invite line"
 		}
+	}
+	if proposed, ok := result.(string); ok && strings.HasPrefix(proposed, "proposal p_") {
+		text = name + ": " + proposed
 	}
 	logErr := d.recordCTOAction(text)
 	if err != nil {

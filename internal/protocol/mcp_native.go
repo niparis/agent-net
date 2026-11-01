@@ -6,9 +6,10 @@ package protocol
 
 // Operations of node.mcp_native_edit.
 const (
-	MCPNativePlan  = "plan"
-	MCPNativeApply = "apply"
-	MCPNativeUndo  = "undo"
+	MCPNativePlan         = "plan"
+	MCPNativeApply        = "apply"
+	MCPNativeUndo         = "undo"
+	MCPNativeUndoValidate = "undo_validate"
 )
 
 // MCPNativeEditRequest asks the host to look at, edit or restore one native

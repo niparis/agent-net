@@ -155,7 +155,7 @@ func (s *Store) RemoveWorkerProfile(name string) error {
 
 // workerProfileAction verifies the requesting session and resolves new models
 // against the advertised lists before changing the network roster.
-func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerProfileFrame) (any, error) {
+func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerProfileFrame, validate ...bool) (any, error) {
 	agent, ok, err := g.store.Agent(p.Requester)
 	if err != nil {
 		return nil, err
@@ -177,6 +177,9 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 	case "worker.profile.remove":
 		if strings.TrimSpace(p.Name) == "" {
 			return nil, reject("worker profile name is required")
+		}
+		if len(validate) > 0 && validate[0] {
+			return nil, nil
 		}
 		if err := g.store.RemoveWorkerProfile(p.Name); err != nil {
 			return nil, err
@@ -273,6 +276,9 @@ func (g *Gateway) workerProfileAction(nodeID, action string, p protocol.WorkerPr
 			return nil, reject("bad profile name")
 		}
 		profile := protocol.WorkerProfile{Name: name, Harness: harness, Model: resolved, Effort: effort, AddedBy: p.Requester, AddedAt: g.store.now().Unix()}
+		if len(validate) > 0 && validate[0] {
+			return nil, nil
+		}
 		if err := g.store.AddWorkerProfile(profile); err != nil {
 			return nil, err
 		}

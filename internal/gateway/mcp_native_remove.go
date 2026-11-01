@@ -113,7 +113,7 @@ func (g *Gateway) nativeRemoveChecks(ctx context.Context, e nativeMCP, failed ma
 }
 
 func (g *Gateway) planMCPNativeRemove(ctx context.Context, key, actor string) (out protocol.MCPNativeRemovePlan, err error) {
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return out, errors.New("owner authority required")
 	}
 	failed, err := g.refreshToolObservations(ctx)
@@ -150,6 +150,9 @@ func (g *Gateway) planMCPNativeRemove(ctx context.Context, key, actor string) (o
 	raw, err := json.Marshal(out)
 	if err != nil {
 		return out, err
+	}
+	if validatingProposal(ctx) {
+		return out, nil
 	}
 	if _, err = g.store.db.Exec(`INSERT INTO mcp_native_plans(id,snapshot,plan) VALUES(?,?,?)`, out.ID, snap, string(raw)); err != nil {
 		return out, err
@@ -188,7 +191,7 @@ func (g *Gateway) saveNativePlan(p protocol.MCPNativeRemovePlan) error {
 
 func (g *Gateway) applyMCPNativeRemove(ctx context.Context, id, actor, owner string) (protocol.MCPNativeRemoveResult, error) {
 	var out protocol.MCPNativeRemoveResult
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return out, errors.New("owner authority required")
 	}
 	g.importMu.Lock()
@@ -200,7 +203,9 @@ func (g *Gateway) applyMCPNativeRemove(ctx context.Context, id, actor, owner str
 	c := p.Candidate
 	item := nativeID(c.Name, p.NativeHash)
 	refuse := func(why string) (protocol.MCPNativeRemoveResult, error) {
-		_ = g.store.auditNative(item, id, "mcp_native_remove", actor, c, "refused", why, "refused")
+		if !validatingProposal(ctx) {
+			_ = g.store.auditNative(item, id, "mcp_native_remove", actor, c, "refused", why, "refused")
+		}
 		return protocol.MCPNativeRemoveResult{}, reject("%s", why)
 	}
 	if p.State != "pending" {
@@ -230,6 +235,19 @@ func (g *Gateway) applyMCPNativeRemove(ctx context.Context, id, actor, owner str
 	}
 	if len(conflicts) > 0 {
 		return refuse("plan out of date: " + strings.Join(conflicts, "; "))
+	}
+	if validatingProposal(ctx) {
+		edit, err := g.nativeEdit(ctx, c, protocol.MCPNativeEditRequest{Op: protocol.MCPNativePlan, Harness: c.Harness, Scope: c.Scope, Project: c.Project, Location: c.Location, Name: c.Name})
+		if err != nil {
+			return out, err
+		}
+		if edit.Conflict != "" {
+			return out, reject("%s", edit.Conflict)
+		}
+		if edit.FileHash != p.FileHash {
+			return out, reject("changed since plan")
+		}
+		return out, nil
 	}
 	// The federated server must work right now, not only when it was imported.
 	res, err := g.mcpTest(ctx, server)
@@ -275,7 +293,7 @@ func (g *Gateway) applyMCPNativeRemove(ctx context.Context, id, actor, owner str
 
 func (g *Gateway) undoMCPNativeRemove(ctx context.Context, id, actor string) (protocol.MCPNativeRemoveResult, error) {
 	var out protocol.MCPNativeRemoveResult
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return out, errors.New("owner authority required")
 	}
 	g.importMu.Lock()
@@ -287,10 +305,22 @@ func (g *Gateway) undoMCPNativeRemove(ctx context.Context, id, actor string) (pr
 	c := p.Candidate
 	item := nativeID(c.Name, p.NativeHash)
 	if p.State != "applied" {
-		_ = g.store.auditNative(item, id, "mcp_native_undo", actor, c, "refused", "nothing to undo", "refused")
+		if !validatingProposal(ctx) {
+			_ = g.store.auditNative(item, id, "mcp_native_undo", actor, c, "refused", "nothing to undo", "refused")
+		}
 		return out, reject("only an applied removal can be undone")
 	}
 	out = protocol.MCPNativeRemoveResult{PlanID: id, Server: p.Server}
+	if validatingProposal(ctx) {
+		edit, err := g.nativeEdit(ctx, c, protocol.MCPNativeEditRequest{Op: protocol.MCPNativeUndoValidate, Name: c.Name, PostHash: p.PostHash, BackupID: p.BackupID})
+		if err != nil {
+			return out, err
+		}
+		if edit.Conflict != "" {
+			return out, reject("%s", edit.Conflict)
+		}
+		return out, nil
+	}
 	edit, err := g.nativeEdit(ctx, c, protocol.MCPNativeEditRequest{Op: protocol.MCPNativeUndo, Name: c.Name, PostHash: p.PostHash, BackupID: p.BackupID})
 	if err != nil || edit.Conflict != "" {
 		why := edit.Conflict

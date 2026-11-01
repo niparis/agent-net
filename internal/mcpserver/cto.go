@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -22,8 +24,9 @@ type ctoField struct {
 
 // ctoToolDef is one CTO tool: its description and its input fields.
 type ctoToolDef struct {
-	desc   string
-	fields map[string]ctoField
+	compact bool // Legacy parity tools omit redundant short scalar labels.
+	desc    string
+	fields  map[string]ctoField
 }
 
 var ctoCharterAttrs = func() []string {
@@ -132,6 +135,8 @@ var ctoTools = map[string]ctoToolDef{
 			"before": {typ: "integer", desc: "Cursor."},
 		},
 	},
+	"message": {desc: "Send or reply; as_owner proposes.", fields: map[string]ctoField{"action": {typ: "string", enum: []string{"send", "reply"}}, "to": {typ: "string"}, "message_id": {typ: "string"}, "body": {typ: "string"}, "as_owner": {typ: "boolean"}}},
+
 	"send": {
 		desc: "Send a CTO request.",
 		fields: map[string]ctoField{
@@ -180,34 +185,103 @@ var ctoTools = map[string]ctoToolDef{
 	},
 }
 
+// Schema metadata only. The daemon owns the authoritative class table.
+var ctoProposalReasons = func() map[string]bool {
+	out := map[string]bool{}
+	for _, name := range strings.Fields("message project_display_set charter_set node_add node_remove edge_set edge_remove graph_undo worker_profile_add worker_profile_remove worker_providers_set protected_providers_set score_set worker_start project_add project_remove mcp_call session_trust session_policy node_rename session_rename integrations_set worker_stop held_answer inbox_answer outcome_overrule node_settings_set playbook_set mcp_add mcp_remove mcp_test mcp_enable cto_send cto_new tools_plan tools_apply tools_undo mcp_import mcp_native_remove invite onboarding_restart notification_settings cto_settings") {
+		out[name] = true
+	}
+	return out
+}()
+
+// CTOArguments validates the same schema advertised by the CTO MCP server.
+func CTOArguments(name string, raw json.RawMessage) error {
+	spec, ok := ctoTools[name]
+	if !ok {
+		return fmt.Errorf("unknown CTO tool %q", name)
+	}
+	schemaRaw, err := json.Marshal(ctoSchema(name, spec))
+	if err != nil {
+		return err
+	}
+	var schema jsonschema.Schema
+	if err := json.Unmarshal(schemaRaw, &schema); err != nil {
+		return err
+	}
+	resolved, err := schema.Resolve(nil)
+	if err != nil {
+		return err
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return err
+	}
+	return resolved.Validate(value)
+}
+
+// Nested field names and enums carry their meaning; keep descriptions on the
+// top-level fields and tools while avoiding repeated labels in nested objects.
+func compactCTONested(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for k, item := range v {
+			if k != "description" {
+				out[k] = compactCTONested(item)
+			}
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for i, item := range v {
+			out[i] = compactCTONested(item)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+func ctoSchema(name string, spec ctoToolDef) map[string]any {
+	props := map[string]any{}
+	if ctoProposalReasons[name] {
+		props["reason"] = map[string]any{"type": "string", "description": "Why"}
+	}
+	for k, f := range spec.fields {
+		description := strings.TrimSuffix(f.desc, ".")
+		if description == "" {
+			description = k
+		}
+
+		prop := map[string]any{"type": f.typ}
+		if description != "" && !(spec.compact && len(description) <= 8) {
+			prop["description"] = description
+		}
+		if f.properties != nil {
+			prop["properties"] = compactCTONested(f.properties)
+			prop["additionalProperties"] = false
+		}
+		if f.typ == "array" {
+			if f.items != nil {
+				prop["items"] = compactCTONested(f.items)
+			} else {
+				prop["items"] = map[string]any{"type": "string"}
+			}
+		}
+		if len(f.enum) > 0 {
+			prop["enum"] = f.enum
+		}
+		props[k] = prop
+	}
+	return map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+}
+
 // NewCTO is deliberately separate from the network MCP registry. ctoTools is
 // the single place to add a CTO tool and its argument schema.
 func NewCTO(call Caller, version string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "agent-net-cto", Version: version}, nil)
 	for name, spec := range ctoTools {
-		props := map[string]any{}
-		for k, f := range spec.fields {
-			description := f.desc
-
-			prop := map[string]any{"type": f.typ, "description": description}
-			if f.properties != nil {
-				prop["properties"] = f.properties
-				prop["additionalProperties"] = false
-			}
-			if f.typ == "array" {
-				if f.items != nil {
-					prop["items"] = f.items
-				} else {
-					prop["items"] = map[string]any{"type": "string"}
-				}
-			}
-			if len(f.enum) > 0 {
-				prop["enum"] = f.enum
-			}
-			props[k] = prop
-		}
-		toolDescription := spec.desc
-		tool := &mcp.Tool{Name: name, Description: toolDescription, InputSchema: map[string]any{"type": "object", "properties": props, "additionalProperties": false}}
+		tool := &mcp.Tool{Name: name, Description: strings.TrimSuffix(spec.desc, "."), InputSchema: ctoSchema(name, spec)}
 		method := name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			if method == "charter_guide" {
@@ -218,6 +292,10 @@ func NewCTO(call Caller, version string) *mcp.Server {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
 			text := string(raw)
+			var message string
+			if json.Unmarshal(raw, &message) == nil {
+				text = message
+			}
 			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil
 		})
 	}

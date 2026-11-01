@@ -245,7 +245,7 @@ func (g *Gateway) workerCandidates(callerNode string, p protocol.WorkerStartFram
 	return cands, nil
 }
 
-func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame) (protocol.WorkerStartAnswer, error) {
+func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
 	p.Project, p.Harness = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness)
 	p.Model, p.Machine = protocol.CleanModel(p.Model), strings.TrimSpace(p.Machine)
@@ -283,7 +283,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	}
 
 	if p.Continue != "" {
-		return g.workerContinue(ctx, nc, p)
+		return g.workerContinue(ctx, nc, p, validate...)
 	}
 
 	// Which machine and folder.
@@ -526,7 +526,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				return none, err
 			}
 			choice, protectionNote, err := chooseProtectedWorker(candidates, difficulty, scores, minimums, quotas, running, &rotation, protected)
-			if err == nil {
+			if err == nil && !(len(validate) > 0 && validate[0]) {
 				err = g.store.saveWorkerRotation(rotation)
 			}
 			g.rotationMu.Unlock()
@@ -614,6 +614,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, reject("read-only phrasing would widen this project's no-network policy")
 		}
 		perms = protocol.WorkersReadOnly
+	}
+	if len(validate) > 0 && validate[0] {
+		return none, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -742,7 +745,7 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 // workerContinue starts a new worker from an ended one. The gateway knows the
 // node of each worker session, so it asks the machine that ran the old worker.
 // The machine holds the old task and branch and checks the owner again.
-func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame) (protocol.WorkerStartAnswer, error) {
+func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.WorkerStartFrame, validate ...bool) (protocol.WorkerStartAnswer, error) {
 	var none protocol.WorkerStartAnswer
 	if p.Machine != "" || p.Base != "" || p.Isolation != "" {
 		return none, reject("a continued worker keeps the machine, the branch and the isolation of the old one")
@@ -814,6 +817,9 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			}
 			break
 		}
+	}
+	if len(validate) > 0 && validate[0] {
+		return none, nil
 	}
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
@@ -954,7 +960,7 @@ func (g *Gateway) relayQueuedTask(ctx context.Context, nc *nodeConn, p protocol.
 	return nil
 }
 
-func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame) (map[string]any, error) {
+func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.WorkerStopFrame, validate ...bool) (map[string]any, error) {
 	req, ok, err := g.store.Agent(p.Requester)
 	if err != nil {
 		return nil, err
@@ -963,7 +969,7 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 		return nil, reject("requester session %q does not belong to this node", p.Requester)
 	}
 	if protocol.IsQueueID(p.Session) {
-		return g.cancelQueuedStart(ctx, req, p)
+		return g.cancelQueuedStart(ctx, req, p, validate...)
 	}
 	w, ok, err := g.store.Agent(p.Session)
 	if err != nil {
@@ -985,6 +991,9 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 	if target == nil {
 		return nil, reject("machine %s is offline", w.Hostname)
 	}
+	if len(validate) > 0 && validate[0] {
+		return nil, nil
+	}
 	cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	if _, err := target.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)}); err != nil {
@@ -1001,7 +1010,7 @@ func (g *Gateway) workerStop(ctx context.Context, nc *nodeConn, p protocol.Worke
 // cancelQueuedStart asks the machines that accept workers to cancel a queued
 // start. The gateway does not know which one holds it: the one that does
 // answers, and it checks that the requester is the owner of the start.
-func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView, p protocol.WorkerStopFrame) (map[string]any, error) {
+func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView, p protocol.WorkerStopFrame, validate ...bool) (map[string]any, error) {
 	g.mu.Lock()
 	var targets []*nodeConn
 	for _, c := range g.conns {
@@ -1012,8 +1021,15 @@ func (g *Gateway) cancelQueuedStart(ctx context.Context, req protocol.AgentView,
 	defer cancel()
 	var refusal error
 	for _, t := range targets {
-		_, err := t.call(cctx, "worker.kill", protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)})
+		typ := "worker.kill"
+		if len(validate) > 0 && validate[0] {
+			typ = "worker.validate_stop"
+		}
+		_, err := t.call(cctx, typ, protocol.WorkerKill{Session: p.Session, Requester: p.Requester, AsOwner: protocol.IsOwner(req.Harness)})
 		if err == nil {
+			if len(validate) > 0 && validate[0] {
+				return nil, nil
+			}
 			g.store.Event("worker.queue_cancelled", t.id, p.Requester, "", "queue="+p.Session)
 			g.logLine("worker.queue_cancelled", "node", t.id, "queue", p.Session, "by", p.Requester)
 			return map[string]any{"stopped": true}, nil
