@@ -1,6 +1,7 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -995,7 +996,7 @@ func TestAdoptedCodexTurnFinishedWhileDaemonDown(t *testing.T) {
 	eventually(t, "adopted Codex process ends", func() bool { return !alive(rec.Pid) })
 }
 
-func TestClaudeWorkerWorktreeTrustRemoved(t *testing.T) {
+func TestClaudeWorkerWorktreeTrustRemovedAfterCleanup(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	c := startClaudeNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
@@ -1023,7 +1024,19 @@ func TestClaudeWorkerWorktreeTrustRemoved(t *testing.T) {
 		t.Fatalf("worktree not trusted: %s", res.Worktree)
 	}
 	c.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
-	eventually(t, "trust removed", func() bool { _, ok := read()[res.Worktree]; return !ok })
+	c.workerStopped(t, g, protocol.StopRequested)
+	eventually(t, "worker fully stopped", func() bool { return c.d.workerCount() == 0 })
+	if !read()[res.Worktree].Accepted {
+		t.Fatal("trust removed before cleanup")
+	}
+	old := time.Now().Add(-25 * time.Hour)
+	if _, err := c.d.st.db.Exec(`UPDATE cleanup_worktrees SET ended_at=? WHERE worker_id=?`, old.UnixNano(), filepath.Base(res.Worktree)); err != nil {
+		t.Fatal(err)
+	}
+	c.d.cleanupProjects(context.Background())
+	if _, ok := read()[res.Worktree]; ok {
+		t.Fatal("trust remains after worktree cleanup")
+	}
 }
 
 func TestPiWorkerFirstTaskRetriedAfterDrop(t *testing.T) {

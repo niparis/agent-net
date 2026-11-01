@@ -1393,18 +1393,6 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"item": item}, err
 
-	case "worker.disk_notice":
-		var p struct {
-			Text string `json:"text"`
-		}
-		if json.Unmarshal(raw, &p) != nil || strings.TrimSpace(p.Text) == "" || len(p.Text) > protocol.MaxBodyBytes {
-			return nil, reject("bad disk notice")
-		}
-		if err := st.CreateDiskNotice(nc.id, p.Text); err != nil {
-			return nil, err
-		}
-		return map[string]any{"ok": true}, nil
-
 	case "inbox.list":
 		items, err := st.ListInbox()
 		return map[string]any{"items": items}, err

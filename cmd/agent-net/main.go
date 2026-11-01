@@ -343,10 +343,6 @@ func cmdDaemon(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	caches, temps, err := nc.WorkerCachePaths()
-	if err != nil {
-		return err
-	}
 	host := daemon.Hostname(nc.Hostname)
 	logger := log.New(os.Stderr, "daemon: ", log.LstdFlags)
 	inventoryHome, err := os.UserHomeDir()
@@ -354,8 +350,8 @@ func cmdDaemon(ctx context.Context, args []string) error {
 		return err
 	}
 	d, err := daemon.New(daemon.Config{
-		InventoryHome: inventoryHome, WorkerCacheDirs: caches, WorkerTempDirs: temps,
-		GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
+		InventoryHome: inventoryHome,
+		GatewayURL:    nc.GatewayURL, NodeID: nc.NodeID, Token: nc.Token, CAPEM: ca, Hostname: host,
 		GatewayData: defaultGatewayData(),
 		Adapters:    []daemon.Adapter{claude.New(claude.Config{})}, Logger: logger, Version: version,
 		CodexHome:         agentfiles.CodexHome(),

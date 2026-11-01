@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payloa
 CREATE TABLE IF NOT EXISTS worker_idle_notice (worker_id TEXT PRIMARY KEY, since INTEGER NOT NULL, notice_key TEXT NOT NULL, report TEXT NOT NULL DEFAULT '', sent INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
+CREATE TABLE IF NOT EXISTS cleanup_worktrees (
+ worker_id TEXT PRIMARY KEY, project TEXT NOT NULL, path TEXT NOT NULL,
+ branch TEXT NOT NULL, ended_at INTEGER NOT NULL, harness TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS workers (
 	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,
 	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, native_id TEXT NOT NULL DEFAULT '',
@@ -74,6 +77,17 @@ CREATE TABLE IF NOT EXISTS workers (
 	if err != nil {
 		db.Close()
 		return nil, err
+	}
+	var hasCleanupHarness int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cleanup_worktrees') WHERE name='harness'`).Scan(&hasCleanupHarness); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if hasCleanupHarness == 0 {
+		if _, err := db.Exec(`ALTER TABLE cleanup_worktrees ADD COLUMN harness TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
 	}
 	// harness_ref is what a harness needs to find its worker again: the
 	// background session ID of a Claude worker, the address of a Codex one.

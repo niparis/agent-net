@@ -87,11 +87,7 @@ func (m Model) needsRows() []protocol.AgentView {
 			a.SessionID = item.SessionID
 			a.Profile.Name = item.SessionID
 			a.Harness = "agent"
-			if strings.HasPrefix(item.SessionID, "disk:") {
-				a.Profile.Name = item.Node
-				a.Harness = "disk"
-				a.Online = true
-			}
+
 		}
 		a.Waiting = &protocol.Waiting{Kind: protocol.WaitingPermission, Text: item.Text, Since: item.CreatedAt.Unix()}
 		out = append(out, a)

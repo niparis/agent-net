@@ -16,7 +16,6 @@ import (
 
 	"github.com/niparis/agent-net/internal/loginpath"
 
-	"github.com/niparis/agent-net/internal/claudetrust"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -297,38 +296,19 @@ func gitOperationInProgress(ctx context.Context, dir string) bool {
 	return false
 }
 
-// finishWorktree keeps the worktree if the worker changed anything and removes
-// it (and its branch) if not.
+// finishWorktree keeps ended worktrees for the 24-hour cleanup period.
 func (d *Daemon) finishWorktree(w *worker) {
 	d.wmu.Lock()
-	dir, main, branch := w.worktree, w.mainPath, w.branch
+	dir, branch := w.worktree, w.branch
 	d.wmu.Unlock()
 	if dir == "" {
 		return
 	}
-	// An owner session's worktree belongs to the owner, not to a worker. This
-	// guard is the last line of defence; owner worktrees also live next to the
-	// project, outside the folder this cleanup scans.
 	if d.isOwnerWorktree(dir) {
 		d.Logf("worker.worktree kept owner path=%s", dir)
 		return
 	}
-	if _, changed := d.worktreeFacts(w); changed {
-		d.Logf("worker.worktree kept worker=%s path=%s branch=%s", w.id, dir, branch)
-		return
-	}
-	ctx := context.Background()
-	if _, err := gitOut(ctx, main, "worktree", "remove", "--force", dir); err != nil {
-		d.Logf("worker %s: %v", w.id, err)
-		return
-	}
-	if w.harness == "claude" {
-		if err := claudetrust.Remove(dir); err != nil {
-			d.Logf("worker %s: remove Claude trust: %v", w.id, err)
-		}
-	}
-	gitOut(ctx, main, "branch", "-D", branch)
-	d.Logf("worker.worktree removed worker=%s path=%s (no changes)", w.id, dir)
+	d.Logf("worker.worktree kept worker=%s path=%s branch=%s", w.id, dir, branch)
 }
 
 // ---- stats from the harness ----

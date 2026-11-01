@@ -64,16 +64,10 @@ type Config struct {
 	CAPEM             []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
-	GatewayData string
-	Hostname    string
-	StateDir    string
-	// DiskFree overrides the disk free-space probe.
-	DiskFree        func(string) (uint64, error)
-	WorkerCacheDirs []string
-	WorkerTempDirs  []string
+	GatewayData     string
+	Hostname        string
+	StateDir        string
 	CacheEntryInUse func(string) (bool, error)
-	DiskRoot        func(string) string
-	DiskNotice      func(context.Context, string) error
 	SocketPath      string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
@@ -226,7 +220,6 @@ type Daemon struct {
 	ctoEntering      *ctoEnterCall
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
-	cacheWake        chan struct{}
 	cfg              Config
 	log              *log.Logger
 	st               *state
@@ -297,7 +290,8 @@ type Daemon struct {
 	qmu sync.Mutex
 	// lastStart is when a worker start that ran was last let through. A start
 	// that fails, or a worker that ends within 30 seconds, clears it.
-	lastStart time.Time
+	lastStart     time.Time
+	startingBases map[string]int // guarded by qmu
 	// qGone is when the owner of a queued start was first seen offline.
 	qGone map[string]time.Time
 	// wmu guards the workers started by this daemon (workers.go).
@@ -384,7 +378,7 @@ func New(cfg Config) (*Daemon, error) {
 		st.close()
 		return nil, err
 	}
-	d := &Daemon{cacheWake: make(chan struct{}, 1), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
+	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
@@ -454,7 +448,7 @@ func (d *Daemon) Start(ctx context.Context) error {
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
 	d.wg.Add(1)
-	go func() { defer d.wg.Done(); d.workerCacheLoop(ctx) }()
+	go func() { defer d.wg.Done(); d.cleanupLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
 	d.wg.Add(1)

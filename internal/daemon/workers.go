@@ -31,8 +31,6 @@ type WorkerSettings struct {
 	// Max is the hard cap of workers on this machine, a safety net behind the
 	// load check (decision 0018). Default 12.
 	Max int
-	// MinFreeGB is the worker disk admission floor in GiB.
-	MinFreeGB uint64
 	// CPUTarget is the 5-minute whole-machine CPU busy percent above which no
 	// worker starts. Default 75.
 	CPUTarget float64
@@ -573,6 +571,12 @@ func (d *Daemon) runWorkerStart(ctx context.Context, l protocol.WorkerLaunch) (p
 }
 
 func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLaunch, set WorkerSettings, async bool) (out protocol.WorkerLaunched, err error) {
+	transferredBase := false
+	defer func() {
+		if !transferredBase {
+			d.releaseWorkerBase(l.Base)
+		}
+	}()
 	refuse := func(format string, a ...any) (protocol.WorkerLaunched, error) {
 		err := fmt.Errorf(format, a...)
 		d.Logf("worker.refused project=%s harness=%s owner=%s reason=%q", l.Project, l.Harness, l.Owner, err.Error())
@@ -621,8 +625,10 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		sid := w.sessionID
 		d.wmu.Unlock()
 		d.wg.Add(1)
+		transferredBase = true
 		go func() {
 			defer d.wg.Done()
+			defer d.releaseWorkerBase(l.Base)
 			defer close(w.startDone)
 			backgroundSet := set
 			backgroundSet.StartTimeout = set.BackgroundStartTimeout

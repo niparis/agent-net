@@ -112,15 +112,6 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 	if _, err = tx.Exec(`UPDATE inbox_items SET status=?,answer=?,answered_at=? WHERE id=?`, item.Status, item.Answer, item.AnsweredAt.UnixNano(), id); err != nil {
 		return item, err
 	}
-	if item.Kind == "check" && strings.HasPrefix(item.SessionID, "disk:") {
-		if len(validate) > 0 && validate[0] {
-			return item, nil
-		}
-		if err := tx.Commit(); err != nil {
-			return item, err
-		}
-		return item, nil
-	}
 	var sender string
 	err = tx.QueryRow(`SELECT o.id FROM sessions o JOIN sessions r ON r.node_id=o.node_id WHERE r.id=? AND o.harness=? LIMIT 1`, item.SessionID, protocol.OwnerHarness).Scan(&sender)
 	if err == sql.ErrNoRows {
@@ -150,25 +141,4 @@ func (s *Store) AnswerInbox(id, answer string, validate ...bool) (protocol.Inbox
 		return item, err
 	}
 	return item, nil
-}
-
-// CreateDiskNotice limits machine disk alerts to one per hour, including
-// across reconnects and gateway restarts.
-func (s *Store) CreateDiskNotice(nodeID, text string) error {
-	s.diskNoticeMu.Lock()
-	defer s.diskNoticeMu.Unlock()
-	session := "disk:" + nodeID
-	var n int
-	if err := s.db.QueryRow(`SELECT count(*) FROM inbox_items WHERE session_id=? AND kind='check' AND created_at>?`, session, s.now().Add(-time.Hour).UnixNano()).Scan(&n); err != nil {
-		return err
-	}
-	if n > 0 {
-		return nil
-	}
-	var host string
-	if err := s.db.QueryRow(`SELECT hostname FROM nodes WHERE id=?`, nodeID).Scan(&host); err != nil {
-		return err
-	}
-	_, err := s.CreateInboxItem(protocol.InboxItem{Kind: "check", SessionID: session, Node: host, Text: text})
-	return err
 }

@@ -1,14 +1,12 @@
 package daemon
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -58,49 +56,7 @@ func openCacheRoot(path string) (*os.Root, error) {
 	return root, nil
 }
 
-// trimGoCache deletes old regular files inside the cache. Root confines all
-// operations even if a cache entry is replaced by a symlink while walking.
-func trimGoCache(path string, before time.Time) (int64, error) {
-	root, err := openCacheRoot(path)
-	if err != nil {
-		return 0, err
-	}
-	defer root.Close()
-	var freed int64
-	err = fs.WalkDir(root.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				return err
-			}
-			return root.Chmod(name, info.Mode().Perm()|0700)
-		}
-		if !entry.Type().IsRegular() {
-			return nil
-		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if !info.ModTime().Before(before) || diskHardlinked(info) {
-			return nil
-		}
-		if err := root.Chmod(name, info.Mode().Perm()|0200); err != nil {
-			return err
-		}
-		if err := root.Remove(name); err != nil {
-			return err
-		}
-		freed += info.Size()
-		return nil
-	})
-	return freed, err
-}
-
-func trimGoTemp(path string, before time.Time, inUse func(string) (bool, error)) (int64, error) {
+func trimFolder(path string, before time.Time, inUse func(string) (bool, error)) (int64, error) {
 	root, err := openCacheRoot(path)
 	if err != nil {
 		return 0, err
@@ -194,79 +150,4 @@ func trimGoTemp(path string, before time.Time, inUse func(string) (bool, error))
 		freed += size
 	}
 	return freed, nil
-}
-
-// trimWorkerCaches touches only configured directories.
-func (d *Daemon) trimWorkerCaches(now time.Time) {
-	before := now.Add(-2 * time.Hour)
-	inUse := d.cfg.CacheEntryInUse
-	if inUse == nil {
-		inUse = processHasOpenPath
-	}
-	for _, path := range d.cfg.WorkerCacheDirs {
-		n, err := trimGoCache(path, before)
-		if d.log != nil {
-			d.Logf("worker.cache_trim path=%q freed=%d error=%v", path, n, err)
-		}
-	}
-	for _, path := range d.cfg.WorkerTempDirs {
-		n, err := trimGoTemp(path, before, inUse)
-		if d.log != nil {
-			d.Logf("worker.temp_trim path=%q freed=%d error=%v", path, n, err)
-		}
-	}
-}
-
-func (d *Daemon) workerCacheLoop(ctx context.Context) {
-	periodic := time.NewTicker(30 * time.Minute)
-	defer periodic.Stop()
-	pressure := time.NewTicker(15 * time.Second)
-	defer pressure.Stop()
-	d.workerCacheLoopTicks(ctx, periodic.C, pressure.C)
-}
-
-func (d *Daemon) workerCacheLoopTicks(ctx context.Context, periodic, pressure <-chan time.Time) {
-	low := false
-	var lastNotice, lastAttempt time.Time
-	noticeResult := make(chan error, 1)
-	pending := false
-	var notice sync.WaitGroup
-	defer notice.Wait()
-	check := func() {
-		p, hit := d.lowDisk()
-		if !hit {
-			low = false
-			return
-		}
-		if !low {
-			low = true
-			d.trimWorkerCaches(time.Now())
-		}
-		if !pending && time.Since(lastNotice) >= time.Hour && time.Since(lastAttempt) >= 5*time.Minute {
-			lastAttempt = time.Now()
-			pending = true
-			notice.Add(1)
-			go func() { defer notice.Done(); noticeResult <- d.sendDiskNotice(ctx, p) }()
-		}
-	}
-	check()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-periodic:
-			d.trimWorkerCaches(time.Now())
-		case <-pressure:
-			check()
-		case <-d.cacheWake:
-			check()
-		case err := <-noticeResult:
-			pending = false
-			if err == nil {
-				lastNotice = time.Now()
-			} else if d.log != nil {
-				d.Logf("worker.disk_notice error=%v", err)
-			}
-		}
-	}
 }

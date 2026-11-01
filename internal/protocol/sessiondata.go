@@ -85,7 +85,6 @@ type UsageReport struct {
 // "ok".
 const (
 	RoomOK        = "ok"
-	RoomDisk      = "disk"
 	RoomCPU       = "cpu"
 	RoomMem       = "mem"
 	RoomCap       = "cap"       // the hard cap of workers is reached

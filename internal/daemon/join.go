@@ -57,14 +57,11 @@ func (nc NodeConfig) EnterSSHEnabled() bool { return nc.EnterSSH == nil || *nc.E
 // such as "60m" or "4h".
 type NodeWorkers struct {
 	// Max is the hard cap of workers on the machine (default 12).
-	Max        int      `json:"max,omitempty"`
-	MinFreeGB  uint64   `json:"min_free_gb,omitempty"`
-	CacheDirs  []string `json:"cache_dirs"`
-	TempDirs   []string `json:"temp_dirs"`
-	Idle       string   `json:"idle,omitempty"`
-	IdleNotice string   `json:"idle_notice,omitempty"`
-	MaxAge     string   `json:"max_age,omitempty"`
-	OwnerGrace string   `json:"owner_grace,omitempty"`
+	Max        int    `json:"max,omitempty"`
+	Idle       string `json:"idle,omitempty"`
+	IdleNotice string `json:"idle_notice,omitempty"`
+	MaxAge     string `json:"max_age,omitempty"`
+	OwnerGrace string `json:"owner_grace,omitempty"`
 	// CPUTarget is the 5-minute CPU busy percent above which no worker starts
 	// (default 75). MemReserve is the memory that stays free, such as "2GB"
 	// (default: the larger of 1.5GB and 10 percent of RAM). QueueTimeout is how
@@ -76,37 +73,6 @@ type NodeWorkers struct {
 	QueueTimeout           string  `json:"queue_timeout,omitempty"`
 	BackgroundStartTimeout string  `json:"background_start_timeout,omitempty"`
 	StartGap               string  `json:"start_gap,omitempty"`
-}
-
-// WorkerCachePaths returns explicitly configured worker cache roots. A nil
-// list selects the Linux defaults; an empty list disables that kind of trim.
-func (nc NodeConfig) WorkerCachePaths() ([]string, []string, error) {
-	var caches, temps []string
-	if nc.Workers != nil {
-		caches, temps = nc.Workers.CacheDirs, nc.Workers.TempDirs
-	}
-	if runtime.GOOS == "linux" {
-		if caches == nil {
-			caches = []string{"/tmp/agent-net-gocache"}
-		}
-		if temps == nil {
-			temps = []string{"/tmp/agent-net-gotmp"}
-		}
-	}
-	paths := append(append([]string{}, caches...), temps...)
-	for i, p := range paths {
-		if !filepath.IsAbs(p) || filepath.Clean(p) == string(filepath.Separator) {
-			return nil, nil, fmt.Errorf("node.json: worker cache path must be an absolute directory other than root: %q", p)
-		}
-		p = filepath.Clean(p)
-		for _, q := range paths[:i] {
-			q = filepath.Clean(q)
-			if p == q || strings.HasPrefix(p, q+string(filepath.Separator)) || strings.HasPrefix(q, p+string(filepath.Separator)) {
-				return nil, nil, fmt.Errorf("node.json: overlapping worker cache paths %q and %q", p, q)
-			}
-		}
-	}
-	return caches, temps, nil
 }
 
 // parseSize reads a size such as "2GB", "1536MB" or "1.5GiB" into bytes.
@@ -136,7 +102,6 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 		return s, nil
 	}
 	s.Max = nc.Workers.Max
-	s.MinFreeGB = nc.Workers.MinFreeGB
 	if nc.Workers.CPUTarget != 0 {
 		if nc.Workers.CPUTarget < 0 || nc.Workers.CPUTarget > 100 {
 			return s, errors.New("node.json: workers.cpu_target must be a percent between 1 and 100")
