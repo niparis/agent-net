@@ -6,9 +6,9 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 New session ────────────────────────────────────────────────────────────────────
   Project        agent-net@build-vm   on build-vm, /srv/agent-net
-  Harness        pi   build-vm has: pi
+  Harness        pi                   build-vm has: pi
   Model          default
-  Folder         project folder   no worktree yet
+  Folder         ◂ project folder ▸   no other session here
 > First message
                  empty: start it and enter it (through ssh to build-vm)
                  text: start it in the background and send this
@@ -21,4 +21,4 @@ New session ──────────────────────�
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter start  up/down field  esc cancel
+enter start  up/down field  left/right folder  esc cancel

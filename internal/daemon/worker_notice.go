@@ -306,6 +306,13 @@ func (d *Daemon) finishWorktree(w *worker) {
 	if dir == "" {
 		return
 	}
+	// An owner session's worktree belongs to the owner, not to a worker. This
+	// guard is the last line of defence; owner worktrees also live next to the
+	// project, outside the folder this cleanup scans.
+	if d.isOwnerWorktree(dir) {
+		d.Logf("worker.worktree kept owner path=%s", dir)
+		return
+	}
 	if _, changed := d.worktreeFacts(w); changed {
 		d.Logf("worker.worktree kept worker=%s path=%s branch=%s", w.id, dir, branch)
 		return
