@@ -2,6 +2,21 @@
 
 ## CTO settings and conversation
 
+The daemon has an owner-gated proposal store for future CTO change tools.
+It currently accepts charter changes, edge sets and machine renames; the existing CTO
+tools still run as before. `proposal_list` lists proposals across online
+machines, or on one machine when passed `node_id`. `proposal_answer` takes
+`node_id`, `proposal_id` and an action: `a` approves, `x` declines, and `A`
+approves open proposals across online machines in order, stopping on an error. The
+daemon validates a call again before running it. Outcomes are queued for the
+CTO's next idle moment without the call's result data.
+
+Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
+and the sender and time of up to three messages delivered before the proposal.
+Press `a` to approve, `x` to decline, or `A` to review and approve all. The
+decision screen shows the full result; after approve-all, select an outcome and
+press Enter to inspect it. A changed proposal list requires a new confirmation.
+
 Replies to conversations started by the CTO reach its active conversation and
 remain visible in the owner's Messages tab. This includes replies sent through
 Claude Code's reply socket. Replies to the owner's own messages stay in the

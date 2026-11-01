@@ -559,6 +559,16 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.ProjectDisplayName(p.Project)
 
+	case "node.rename.validate":
+		p, err := decode[protocol.NodeRename](raw)
+		if err != nil || p.NodeID == "" {
+			return nil, reject("bad node.rename")
+		}
+		_, _, err = st.checkNodeDisplayName(p.NodeID, p.Name)
+		if err != nil {
+			return nil, reject("%s", err.Error())
+		}
+		return map[string]bool{"ok": true}, nil
 	case "node.rename":
 		p, err := decode[protocol.NodeRename](raw)
 		if err != nil || p.NodeID == "" {
@@ -572,7 +582,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, err
 		}
-		g.logLine("node.renamed", "by", nc.id, "node", p.NodeID, "name", res.DisplayName)
+		g.logLine("node.renamed", "by", nc.id, "actor", graphActor(raw), "node", p.NodeID, "name", res.DisplayName)
 		if c := g.conn(p.NodeID); c != nil {
 			if frame, err := protocol.EncodeRequest("node.name", protocol.NewID("d"), protocol.NodeName{Hostname: res.Hostname}); err == nil {
 				c.write(ctx, frame)
@@ -988,6 +998,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, err
 		}
 		return protocol.PlaybookGetResult{Note: note}, nil
+	case "charter.validate":
+		p, err := decode[protocol.CharterSetRequest](raw)
+		if err != nil {
+			return nil, reject("bad charter.set")
+		}
+		tx, err := st.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		if err := setCharterTx(tx, p.Node, p.Attr, p.Value, "owner", st.now().UnixNano()); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 	case "charter.set":
 		p, err := decode[protocol.CharterSetRequest](raw)
 		if err != nil {
@@ -1023,6 +1047,20 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			err = st.RemoveArchitect(p.Name, graphActor(raw))
 		}
 		return map[string]bool{"ok": true}, err
+	case "edge.validate":
+		p, err := decode[protocol.Edge](raw)
+		if err != nil {
+			return nil, reject("bad edge request")
+		}
+		tx, err := st.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback()
+		if err := setEdgeTx(tx, p, "owner", st.now().UnixNano()); err != nil {
+			return nil, err
+		}
+		return map[string]bool{"ok": true}, nil
 	case "edge.set", "edge.remove":
 		p, err := decode[protocol.Edge](raw)
 		if err != nil {
@@ -1486,6 +1524,12 @@ func graphActor(raw json.RawMessage) string {
 	}
 	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
 		return "cto"
+	}
+	if strings.HasPrefix(p.By, "owner (CTO proposal p_") && strings.HasSuffix(p.By, ")") {
+		n := strings.TrimSuffix(strings.TrimPrefix(p.By, "owner (CTO proposal p_"), ")")
+		if n != "" && strings.Trim(n, "0123456789") == "" {
+			return p.By
+		}
 	}
 	return "owner"
 }

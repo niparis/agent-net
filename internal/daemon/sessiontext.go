@@ -33,6 +33,7 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
+	protocol.OpProposalList: true, protocol.OpProposalAnswer: true,
 	"notification_settings": true,
 	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true, "learned_list": true, "learned_answer": true, "learned_view": true, "usage": true, "usage_top": true, "session_text": true, "counts": true, "session_enter": true,
@@ -202,6 +203,27 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.RawMessage) (res any, ok bool, err error) {
 	d := lc.d
 	switch method {
+	case protocol.OpProposalList, protocol.OpProposalAnswer:
+		var q protocol.CTOProposalAnswer
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, true, errors.New("bad proposal request")
+		}
+		if method == protocol.OpProposalList && q.NodeID == "" {
+			value, err := d.networkProposals(ctx)
+			return value, true, err
+		}
+		if method == protocol.OpProposalAnswer && q.Action == "A" {
+			return nil, true, d.approveNetworkProposals(ctx, q.Confirm)
+		}
+		if q.NodeID == "" || q.NodeID == d.cfg.NodeID {
+			return d.proposalOperator(ctx, method, q)
+		}
+		frame := "query.proposal_list"
+		if method == protocol.OpProposalAnswer {
+			frame = "query.proposal_answer"
+		}
+		data, err := d.call(ctx, frame, q)
+		return data, true, err
 	case "notification_settings":
 		var p struct {
 			Disabled *bool `json:"disabled"`
@@ -565,7 +587,7 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {
 			return nil, true, errors.New("cto_send needs text")
 		}
-		res, err = d.ctoSend(ctx, q.Text)
+		res, err = d.ctoSendTracked(ctx, q.Text, "owner")
 	case protocol.OpCTONew:
 		res, err = d.ctoNew(ctx)
 	case protocol.OpCTOEvents:
@@ -852,6 +874,17 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 	var data any
 	var err error
 	switch typ {
+	case "node.proposal_list", "node.proposal_answer":
+		var q protocol.CTOProposalAnswer
+		if json.Unmarshal(raw, &q) != nil || q.NodeID != d.cfg.NodeID {
+			err = errors.New("bad proposal request")
+			break
+		}
+		method := protocol.OpProposalList
+		if typ == "node.proposal_answer" {
+			method = protocol.OpProposalAnswer
+		}
+		data, _, err = d.proposalOperator(ctx, method, q)
 	case "node.message_body":
 		var q protocol.QueryMessage
 		if json.Unmarshal(raw, &q) != nil || q.MessageID == "" {

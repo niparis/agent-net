@@ -291,6 +291,20 @@ The TUI's "Needs you" section shows what a session waits for: a permission, a qu
 
 ## Limits against loops
 
+CTO proposals are stored in the hosting daemon's private state database.
+The owner gate protects proposal listing and decisions, including relayed
+requests. An enrolled daemon is trusted to enforce that gate before relaying,
+as it is for other owner operations. A proposed call is checked before it is
+stored and again before it runs. The current proposal runner supports charter
+changes, edge sets and machine renames; existing CTO change tools have not been converted
+to proposals. Identical open calls are refused, open proposals expire after 24
+hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
+only the status or a bounded error, never a successful call's result.
+The daemon retains only sender names and times for the last three messages it
+delivered to the CTO, and snapshots that metadata with each proposal. It does
+not copy their bodies. An approve-all confirmation names the calls being
+approved; the daemon rejects the request if the open list has changed.
+
 The gateway enforces these on every send:
 
 | Limit | Value |

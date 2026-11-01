@@ -29,20 +29,9 @@ func (e ErrNodeName) Error() string { return e.Reason }
 // another node, in any letter case. The reported host name stays stored.
 func (s *Store) SetNodeDisplayName(nodeID, name string) (protocol.NodeRenameResult, error) {
 	var res protocol.NodeRenameResult
-	clean, err := protocol.CleanNodeName(name)
+	clean, reported, err := s.checkNodeDisplayName(nodeID, name)
 	if err != nil {
-		return res, ErrNodeName{err.Error()}
-	}
-	var reported string
-	if err := s.db.QueryRow(`SELECT reported_hostname FROM nodes WHERE id = ?`, nodeID).Scan(&reported); err != nil {
-		return res, ErrNodeName{"unknown machine " + nodeID}
-	}
-	if clean != "" {
-		var other string
-		err := s.db.QueryRow(`SELECT id FROM nodes WHERE id != ? AND lower(hostname) = lower(?) LIMIT 1`, nodeID, clean).Scan(&other)
-		if err == nil {
-			return res, ErrNodeName{"another machine is already called " + clean}
-		}
+		return res, err
 	}
 	shown := clean
 	if shown == "" {
@@ -54,6 +43,25 @@ func (s *Store) SetNodeDisplayName(nodeID, name string) (protocol.NodeRenameResu
 	s.Event("node.renamed", nodeID, "", "", shown)
 	s.logf("node.renamed", "node", nodeID, "name", clean, "reported", reported)
 	return protocol.NodeRenameResult{NodeID: nodeID, Hostname: shown, DisplayName: clean, Reported: reported}, nil
+}
+
+func (s *Store) checkNodeDisplayName(nodeID, name string) (string, string, error) {
+	clean, err := protocol.CleanNodeName(name)
+	if err != nil {
+		return "", "", ErrNodeName{err.Error()}
+	}
+	var reported string
+	if err := s.db.QueryRow(`SELECT reported_hostname FROM nodes WHERE id = ?`, nodeID).Scan(&reported); err != nil {
+		return "", "", ErrNodeName{"unknown machine " + nodeID}
+	}
+	if clean != "" {
+		var other string
+		err := s.db.QueryRow(`SELECT id FROM nodes WHERE id != ? AND lower(hostname) = lower(?) LIMIT 1`, nodeID, clean).Scan(&other)
+		if err == nil {
+			return "", "", ErrNodeName{"another machine is already called " + clean}
+		}
+	}
+	return clean, reported, nil
 }
 
 // SetNodeLaunch records whether a node accepts workers. Nil is "not reported"

@@ -27,6 +27,12 @@ var sNeeds = lipgloss.NewStyle().Foreground(roleWarning)
 // follows the same filter and offline switch as the table.
 func (m Model) needsRows() []protocol.AgentView {
 	var out []protocol.AgentView
+	for _, p := range m.proposals {
+		if p.Status != "open" {
+			continue
+		}
+		out = append(out, protocol.AgentView{SessionID: proposalKey(p), NodeID: p.NodeID, Online: true, Harness: "proposal", Profile: protocol.Profile{Name: proposalSummary(p)}, Waiting: &protocol.Waiting{Kind: "proposal", Text: proposalSummary(p), Since: p.CreatedAt.Unix()}})
+	}
 	for _, v := range m.snap.Learned {
 		if v.Status != "pending" || v.Severity != "major" {
 			continue
@@ -236,6 +242,10 @@ func (m Model) needsLines(w int) []string {
 			room := max(w-ansi.StringWidth(prefix)-ansi.StringWidth(actions), 0)
 			text := clip(sanitize(a.Waiting.Text), room)
 			out = append(out, clip(prefix+text+actions, w))
+			continue
+		}
+		if a.Waiting.Kind == "proposal" {
+			out = append(out, clip(sNeeds.Render("▍")+marker+"CTO proposes: "+sanitize(a.Waiting.Text), w))
 			continue
 		}
 		prefix := sNeeds.Render("▍") + marker + cell(m.needsName(a), nameW) + " " + cell(sanitize(a.Harness), harnessW)
