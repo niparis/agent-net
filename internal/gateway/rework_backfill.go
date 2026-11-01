@@ -27,6 +27,7 @@ func (s *Store) backfillRework() error {
 	}
 	type session struct {
 		first                         int64
+		runs                          []int64
 		caller                        string
 		seen, handback, partial, idle bool
 		cont, fix                     int
@@ -49,6 +50,7 @@ func (s *Store) backfillRework() error {
 			sess = &session{first: id}
 			sessions[sid] = sess
 		}
+		sess.runs = append(sess.runs, id)
 		if sess.caller == "" {
 			sess.caller = caller
 		}
@@ -93,9 +95,9 @@ func (s *Store) backfillRework() error {
 				rows.Close()
 				return err
 			}
-			if sess := sessions[to]; sess != nil && typ == protocol.TypeRequest {
-				if from == sess.caller {
-					sess.seen = true
+			if sess := sessions[to]; sess != nil && from == sess.caller {
+				sess.seen = true
+				if typ == protocol.TypeRequest {
 					cont, fix := protocol.ReworkCounts(sess.handback, sess.partial, sess.idle)
 					sess.cont += cont
 					sess.fix += fix
@@ -114,17 +116,27 @@ func (s *Store) backfillRework() error {
 		}
 		rows.Close()
 	}
-	for sid, sess := range sessions {
+	update, err := tx.Prepare(`UPDATE worker_runs SET continue_count=?,fix_count=?,counters_known=1,
+		caller=CASE WHEN id=? THEN ? ELSE caller END WHERE id=?`)
+	if err != nil {
+		return err
+	}
+	defer update.Close()
+	for _, sess := range sessions {
 		if !sess.seen {
 			continue
 		}
-		// Replace all rows, including any newer live row, to avoid counting its
-		// messages twice. Calibration sums the rows of the worker session.
-		if _, err := tx.Exec(`UPDATE worker_runs SET continue_count=0,fix_count=0,counters_known=1 WHERE session_id=?`, sid); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`UPDATE worker_runs SET continue_count=?,fix_count=?,caller=? WHERE id=?`, sess.cont, sess.fix, sess.caller, sess.first); err != nil {
-			return err
+		// Replace all rows, including any newer live row, to avoid counting
+		// messages twice. Address rows by primary key so many sessions do
+		// not require a full worker_runs scan for every update.
+		for _, id := range sess.runs {
+			cont, fix := 0, 0
+			if id == sess.first {
+				cont, fix = sess.cont, sess.fix
+			}
+			if _, err := update.Exec(cont, fix, sess.first, sess.caller, id); err != nil {
+				return err
+			}
 		}
 	}
 	if _, err := tx.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES ('rework_backfill_done','1',?)`, s.now().UnixNano()); err != nil {

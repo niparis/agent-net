@@ -209,3 +209,48 @@ func TestReworkBackfillPreservesKnownSessionsAndStoredCaller(t *testing.T) {
 		t.Fatalf("known session: known=%d fix=%d err=%v", known, fix, err)
 	}
 }
+
+func TestReworkBackfillStoredCallerMessageMakesCountersKnown(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyReworkRun(t, s, "worker", "caller")
+	reworkMessage(t, s, "caller", "worker", protocol.TypeReply, "task clarification", 1)
+	if err := s.backfillRework(); err != nil {
+		t.Fatal(err)
+	}
+	var known, cont, fix int
+	if err := s.db.QueryRow(`SELECT counters_known,continue_count,fix_count FROM worker_runs`).Scan(&known, &cont, &fix); err != nil || known != 1 || cont != 0 || fix != 0 {
+		t.Fatalf("known=%d continue=%d fix=%d err=%v", known, cont, fix, err)
+	}
+}
+
+func TestReworkBackfillReplacesMixedLiveCounters(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyReworkRun(t, s, "worker", "caller")
+	legacyReworkRun(t, s, "worker", "")
+	if _, err := s.db.Exec(`UPDATE worker_runs SET counters_known=1,fix_count=1 WHERE id=(SELECT MAX(id) FROM worker_runs)`); err != nil {
+		t.Fatal(err)
+	}
+	reworkMessage(t, s, "caller", "worker", protocol.TypeRequest, "task", 1)
+	reworkMessage(t, s, "worker", "caller", protocol.TypeReply, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "idle without hand-back", Session: "worker"}, ""), 2)
+	reworkMessage(t, s, "caller", "worker", protocol.TypeRequest, "carry on", 3)
+	reworkMessage(t, s, "worker", "caller", protocol.TypeNotification, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "done", Session: "worker"}, ""), 4)
+	reworkMessage(t, s, "worker", "caller", protocol.TypeNotification, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "started", Session: "worker"}, ""), 5)
+	reworkMessage(t, s, "caller", "worker", protocol.TypeRequest, "fix the failing test", 6)
+	// Tied timestamps use insertion order, not random message IDs.
+	if _, err := s.db.Exec(`UPDATE messages SET created_at=1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.backfillRework(); err != nil {
+		t.Fatal(err)
+	}
+	var known, cont, fix int
+	if err := s.db.QueryRow(`SELECT SUM(counters_known),SUM(continue_count),SUM(fix_count) FROM worker_runs`).Scan(&known, &cont, &fix); err != nil || known != 2 || cont != 1 || fix != 1 {
+		t.Fatalf("known=%d continue=%d fix=%d err=%v", known, cont, fix, err)
+	}
+}
