@@ -329,21 +329,21 @@ func (r *runner) mapPoint(summary setupSummary) setupPoint {
 	} else {
 		// Without the graph there is no honest count: the folder list holds
 		// every checkout ever seen, worktrees and temporary folders included.
-		return setupPoint{label: "4 Graph", first: "Your projects appear on the Graph as agents work in them."}
+		return setupPoint{label: "2 Graph", first: "Your projects appear on the Graph as agents work in them."}
 	}
 	if len(projects) == 0 {
-		return setupPoint{label: "4 Graph", first: "No projects yet. Each project you work in becomes one."}
+		return setupPoint{label: "2 Graph", first: "No projects yet. Each project you work in becomes one."}
 	}
 	missing := len(projects) - len(chartered)
 	switch {
 	case missing == 0:
-		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d %s seen. All have charters.", len(projects), plural(len(projects), "project", "projects"))}
+		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d %s seen. All have charters.", len(projects), plural(len(projects), "project", "projects"))}
 	case missing == len(projects):
-		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d projects seen. None has a charter yet: the CTO drafts", len(projects)), details: []string{"them with you."}}
+		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d projects seen. None has a charter yet: the CTO drafts", len(projects)), details: []string{"them with you."}}
 	case missing == 1:
-		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d projects seen. One has no charter yet: the CTO drafts", len(projects)), details: []string{"it with you."}}
+		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d projects seen. One has no charter yet: the CTO drafts", len(projects)), details: []string{"it with you."}}
 	default:
-		return setupPoint{label: "4 Graph", first: fmt.Sprintf("%d projects seen. %d have no charter yet: the CTO drafts", len(projects), missing), details: []string{"them with you."}}
+		return setupPoint{label: "2 Graph", first: fmt.Sprintf("%d projects seen. %d have no charter yet: the CTO drafts", len(projects), missing), details: []string{"them with you."}}
 	}
 }
 

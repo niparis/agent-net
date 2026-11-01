@@ -12,8 +12,6 @@ import (
 	"github.com/niparis/agent-net/internal/tui/graphview"
 )
 
-const graphTab = 3
-
 type graphTickMsg struct{ generation int }
 
 func graphTick(generation int) tea.Cmd {

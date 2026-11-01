@@ -803,7 +803,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.orderFrozenUntil = m.now().Add(3 * time.Second)
 		next, cmd := m.key(msg)
-		if changed, ok := next.(Model); ok && changed.tab == 1 && m.tab != 1 && changed.onboardingHasPeerThread() {
+		if changed, ok := next.(Model); ok && changed.tab == messagesTab && m.tab != messagesTab && changed.onboardingHasPeerThread() {
 			var save tea.Cmd
 			changed, save = changed.onboardingComplete("talk")
 			next, cmd = changed, tea.Batch(cmd, save)
@@ -1040,11 +1040,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if !m.filtering && m.open == nil {
 		switch k.String() {
-		case "4", "M", "G":
+		case "2", "M", "G":
 			return m.startGraph()
 		case "5":
 			return m.startTools()
-		case "1", "2", "3":
+		case "1", "3", "4":
 			m.mapOn = false
 		}
 	}
@@ -1095,7 +1095,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.tab = i
 			m.uiFilter = ""
 			m.focus = focusSessions
-			if i == 1 {
+			if i == messagesTab {
 				m.focus = focusFeed
 				m.feedCur = m.feedLastVisible()
 				if rows := m.messageConversations(); len(rows) > 0 {
@@ -1111,7 +1111,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tab == toolsTab {
 		return m.toolsKey(k)
 	}
-	if m.tab == 2 {
+	if m.tab == quotasTab {
 		switch k.String() {
 		case "p":
 			rows := m.selectableQuotaRows()
@@ -1215,7 +1215,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "m":
 		return m.startCompose()
 	case "c":
-		if m.tab == 0 || m.tab == 1 {
+		if m.tab == sessionsTab || m.tab == messagesTab {
 			return m.startHandover()
 		}
 	case "s":
@@ -1224,17 +1224,17 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m.startForm()
 	case "n":
-		if m.tab == 0 {
+		if m.tab == sessionsTab {
 			return m.startSessionForm()
 		}
 	case "e":
-		if m.tab == 1 {
+		if m.tab == messagesTab {
 			m.messageShowEvents = !m.messageShowEvents
 			return m, nil
 		}
 		return m.startEnter()
 	case "w":
-		if m.tab == 1 {
+		if m.tab == messagesTab {
 			m.hideWorkerThreads = !m.hideWorkerThreads
 			rows := m.messageConversations()
 			selected := false
@@ -1253,11 +1253,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "x":
 		return m.startConfirm()
 	case "h":
-		if m.tab == 0 && m.focus == focusSessions {
+		if m.tab == sessionsTab && m.focus == focusSessions {
 			return m.toggleHiddenSession()
 		}
 	case "H":
-		if m.tab == 0 && m.focus == focusSessions {
+		if m.tab == sessionsTab && m.focus == focusSessions {
 			m.showHiddenSessions = !m.showHiddenSessions
 			m.ensureSelection()
 			m.fixScroll()
@@ -1313,7 +1313,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case "tab":
-		if m.tab == 0 && m.cto != nil {
+		if m.tab == sessionsTab && m.cto != nil {
 			m.focus = focusCTO
 			return m, nil
 		}
@@ -1323,7 +1323,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.fetchCmd()
 		}
 	case "left", "right":
-		if m.tab == 1 && m.focus == focusFeed {
+		if m.tab == messagesTab && m.focus == focusFeed {
 			rows := m.messageConversations()
 			if len(rows) > 0 {
 				r := rows[m.conversationIndex(rows)]
@@ -1368,7 +1368,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-		if m.tab == 0 {
+		if m.tab == sessionsTab {
 			// Enter enters the session, the same action as e. The owner
 			// answers a waiting session inside the session itself.
 			return m.startEnter()
@@ -1380,7 +1380,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 // move changes the selection by delta, in the list that has the focus.
 func (m *Model) move(delta int) {
 	if m.focus == focusFeed {
-		if m.tab == 1 {
+		if m.tab == messagesTab {
 			rows := m.messageConversations()
 			if len(rows) > 0 {
 				pos := m.conversationIndex(rows)
@@ -1802,12 +1802,12 @@ func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	switch q.Tab {
 	case "sessions":
-		m.tab = 0
+		m.tab = sessionsTab
 	case "messages":
-		m.tab = 1
+		m.tab = messagesTab
 		m.focus = focusFeed
 	case "quotas":
-		m.tab = 2
+		m.tab = quotasTab
 	case "tools":
 		m.tab = toolsTab
 		if !m.tl.loading {

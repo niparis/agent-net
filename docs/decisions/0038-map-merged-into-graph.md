@@ -10,6 +10,7 @@ and search. Remove Map as a tab and use its focus card as Graph's detail view.
 Enter opens the selected agent; Esc returns to the same selected node. The
 card keeps charter scrolling, learned-change undo and filtered Sessions.
 
-The tabs are Sessions, Messages, Quotas, Graph and Tools (1 through 5).
+The tabs are Sessions, Graph, Quotas, Messages and Tools (1 through 5).
+Graph moved to 2 and Messages to 4 because messages are not very important.
 Both M and G open Graph. This follows [0036 - Primitives](0036-primitives.md):
 the agent is the graph node; its project and live sessions are context.

@@ -259,7 +259,7 @@ func (m *Model) wantSnippets() tea.Cmd {
 	}
 	for i := len(m.feed.items) - 1; i >= 0; i-- {
 		it := m.feed.items[i]
-		ownerRelay := m.tab == 1 && m.snap.OwnerSession != ""
+		ownerRelay := m.tab == messagesTab && m.snap.OwnerSession != ""
 		if !it.isMessage() || it.Snip != snipNone || (!m.localEnd(it) && !ownerRelay) {
 			continue
 		}
@@ -336,7 +336,7 @@ func (m Model) feedConvID(it *feedItem) string {
 // quiet; worker lines, including a refused worker, show by default, and the l
 // key shows every lifecycle line or hides all of them.
 func (m Model) feedShows(it *feedItem) bool {
-	if m.tab == 1 && m.uiFilter != "" {
+	if m.tab == messagesTab && m.uiFilter != "" {
 		text := strings.ToLower(strings.Join([]string{it.Kind, it.From, it.To, it.Detail, it.Snippet, it.Host, m.feedName(it.From), m.feedName(it.To)}, " "))
 		if !strings.Contains(text, strings.ToLower(m.uiFilter)) {
 			return false

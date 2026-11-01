@@ -15,7 +15,7 @@ import (
 
 func TestMessageConversationsGroupAndSort(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
@@ -49,7 +49,7 @@ func TestMessageThreadShowsLongBriefAndShortReply(t *testing.T) {
 	})
 	// The owner can read a thread between two remote sessions through the
 	// message_status relay, even though neither end runs on this machine.
-	m.tab = 1
+	m.tab = messagesTab
 	m.snap.OwnerSession = ownerID
 	src.snap.OwnerSession = ownerID
 	m = drainSnippets(t, m)
@@ -85,7 +85,7 @@ func TestConversationExplainsMessageBodyFetchError(t *testing.T) {
 
 func TestConversationShowsLoadingBodyUntilFetched(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.snap.OwnerSession = ownerID
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "loading", Time: t0}, From: "remote-a", To: "remote-b", Type: "request"}})
@@ -99,7 +99,7 @@ func TestConversationShowsLoadingBodyUntilFetched(t *testing.T) {
 func TestMessagePartiesNeverShowRawSessionIDs(t *testing.T) {
 	const owner = "s_owner_fixture"
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.snap.OwnerSession = owner
 	const nameless = "s_nameless_fixture"
 	m.snap.Agents = append(m.snap.Agents, agent(nameless, "n_mac", "Mac", "pi", "", nil))
@@ -116,7 +116,7 @@ func TestMessagePartiesNeverShowRawSessionIDs(t *testing.T) {
 
 func TestMessageConversationNavigation(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	for i, id := range []string{"first", "second"} {
@@ -132,7 +132,7 @@ func TestMessageConversationNavigation(t *testing.T) {
 func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) {
 	const a, b = "s_0000000000000001", "s_0000000000000002"
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{
@@ -162,7 +162,7 @@ func TestMessageThreadFallsBackToSessionPairAndShowsLatestSummary(t *testing.T) 
 func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 	const owner, other, w1, w2 = "s_owner", "s_other", "s_worker1", "s_worker2"
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.snap = Snapshot{NodeID: "n", Agents: []protocol.AgentView{
 		agent(owner, "n", "Mac", "claude", "a2a-ocs", nil),
@@ -211,7 +211,7 @@ func TestWorkerMessagesCollapseByWorkerAndCanBeHidden(t *testing.T) {
 func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 	const owner, a, b, worker = "s_owner", "s_agent", "s_other", "s_worker"
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.now = func() time.Time { return t0 }
 	m.snap = Snapshot{NodeID: "n", Agents: []protocol.AgentView{
@@ -254,7 +254,7 @@ func TestMessageOrderingInstructionMarkAndColorLegend(t *testing.T) {
 
 func TestMessageChatShowsBodyAndCollapsesWorkerNotice(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0.Add(-time.Minute)}, ConversationID: "a", From: "s_0000000000000001", To: "s_0000000000000002", Type: "request"}, {Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0}, ConversationID: "a", From: "s_0000000000000002", To: "s_0000000000000001", Type: "reply"}})
@@ -274,7 +274,7 @@ func TestMessageChatShowsBodyAndCollapsesWorkerNotice(t *testing.T) {
 
 func TestMessageSystemEventsToggle(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "node.connected", Hostname: "build", Time: t0}}})
@@ -296,7 +296,7 @@ func TestMessageSystemEventsToggle(t *testing.T) {
 
 func TestConversationWorkerNameAndActivity(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.feed = newFeed()
 	id := m.snap.Agents[0].SessionID
 	m.snap.Agents[0].Worker = &protocol.WorkerInfo{ID: "w_8"}
@@ -314,7 +314,7 @@ func TestConversationWorkerNameAndActivity(t *testing.T) {
 
 func TestMessageSelectBodyWithinConversation(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "one", Time: t0}, ConversationID: "a"}, {Event: protocol.Event{ID: 2, Kind: "msg.stored", MessageID: "two", Time: t0}, ConversationID: "a"}})
@@ -357,7 +357,7 @@ func TestConversationScreens(t *testing.T) {
 		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
 		m = refresh(m, src)
 		m = drainSnippets(t, m)
-		m = keys(m, "2")
+		m = keys(m, "4")
 		for _, row := range m.messageConversations() {
 			if row.worker {
 				m.feedCur = row.items[0]
@@ -377,7 +377,7 @@ func TestConversationScreens(t *testing.T) {
 
 func TestConversationFeedIncludesSessionDisconnect(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "session.disconnected", SessionID: "s_0000000000000001", Time: t0}}})
@@ -390,7 +390,7 @@ func TestConversationFeedIncludesSessionDisconnect(t *testing.T) {
 
 func TestMessageChatScrollsToSelectedMessage(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.focus = focusFeed
 	m.feed = newFeed()
 	for i := 0; i < 8; i++ {
@@ -407,7 +407,7 @@ func TestMessageChatScrollsToSelectedMessage(t *testing.T) {
 
 func TestConversationAgeUsesLastMessageTime(t *testing.T) {
 	m := newModel(120, 34)
-	m.tab = 1
+	m.tab = messagesTab
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "msg.stored", MessageID: "m", Time: t0.Add(-5 * time.Minute)}, ConversationID: "c"}, {Event: protocol.Event{ID: 2, Kind: "msg.delivered", MessageID: "m", Time: t0.Add(-time.Minute)}, ConversationID: "c"}})
 	v := ansi.Strip(m.messageConversationLine(m.messageConversations()[0], 80, false))

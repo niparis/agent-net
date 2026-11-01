@@ -83,7 +83,7 @@ func TestLearnedMapMarksViewedOnLeavingProject(t *testing.T) {
 	m := New(src)
 	m.width, m.height = 120, 40
 	m.mapOn = true
-	m.tab = 3
+	m.tab = graphTab
 	m.mp.loaded = true
 	m.mp.nodes = fakeGraph().Nodes
 	m.mp.selected = "cogforge"
@@ -113,7 +113,7 @@ func TestLearnedMapMarksViewedWhenChangingTabs(t *testing.T) {
 	m := New(src)
 	m.width, m.height = 120, 40
 	m.mapOn = true
-	m.tab = 3
+	m.tab = graphTab
 	m.mp.loaded = true
 	m.mp.nodes = fakeGraph().Nodes
 	m.mp.selected = "cogforge"

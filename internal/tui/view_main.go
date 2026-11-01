@@ -140,7 +140,7 @@ func (m Model) View() string {
 		}
 	default:
 		box := min(max((h-1)/3, 6), max(h-4, 1))
-		if m.tab == 2 && h <= 24 && box > 6 {
+		if m.tab == quotasTab && h <= 24 && box > 6 {
 			box = 6
 		}
 		contentHeight := h - 1 - box
@@ -156,9 +156,9 @@ func (m Model) View() string {
 			out = append(out, m.graphView(w, contentHeight)...)
 		case m.tab == toolsTab:
 			out = append(out, m.toolsView(w, contentHeight)...)
-		case m.tab == 1:
+		case m.tab == messagesTab:
 			out = append(out, m.messagesView(w, contentHeight)...)
-		case m.tab == 2:
+		case m.tab == quotasTab:
 			out = append(out, m.quotasView(w, contentHeight)...)
 		default:
 			out = append(out, m.mainView(w, contentHeight)...)
@@ -264,7 +264,15 @@ func (m Model) mainView(w, h int) []string {
 	return out
 }
 
-var tabNames = []string{"Sessions", "Messages", "Quotas", "Graph", "Tools"}
+const (
+	sessionsTab = 0
+	graphTab    = 1
+	quotasTab   = 2
+	messagesTab = 3
+	toolsTab    = 4
+)
+
+var tabNames = []string{"Sessions", "Graph", "Quotas", "Messages", "Tools"}
 var sActiveTab = lipgloss.NewStyle().Bold(true).Foreground(roleBase).Background(roleAccent)
 
 func (m Model) titleLine(w int) string {
@@ -282,7 +290,7 @@ func (m Model) titleLine(w int) string {
 		}
 	}
 	left := strings.Join(tabs, "  ")
-	if m.tab == 0 {
+	if m.tab == sessionsTab {
 		if warning, exhausted := m.quotaWarning(); warning != "" {
 			style := lipgloss.NewStyle().Foreground(roleWarning)
 			if exhausted {

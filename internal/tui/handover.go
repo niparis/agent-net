@@ -62,10 +62,10 @@ func handoverHeader(origin string) string {
 
 // startHandover opens the preview for the selected row or message.
 func (m Model) startHandover() (tea.Model, tea.Cmd) {
-	if m.tab == 1 || (m.tab == 0 && m.focus == focusFeed) {
+	if m.tab == messagesTab || (m.tab == sessionsTab && m.focus == focusFeed) {
 		return m.startMessageHandover()
 	}
-	if m.tab != 0 {
+	if m.tab != sessionsTab {
 		m.fail("Hand-over works on Sessions and Messages rows.")
 		return m, nil
 	}

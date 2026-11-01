@@ -21,7 +21,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 
 | Key | Action |
 |---|---|
-| `1`-`5` | Open Sessions, Messages, Quotas, Graph or Tools. Not while filtering or in a text field. |
+| `1`-`5` | Open Sessions, Graph, Quotas, Messages or Tools. Not while filtering or in a text field. |
 | `C` | Focus the CTO box. |
 | `tab` | Focus the CTO box. While the box has focus, return to the tab. |
 | `ctrl+c` | Quit at once. |
@@ -75,7 +75,7 @@ session. The extra actions apply only when such a row is selected.
 | `r` | Reject a learned suggestion. |
 | `s`, `o` | Let stand or overrule an outcome row. |
 
-### Messages (tab 2)
+### Messages (tab 4)
 
 | Key | Action |
 |---|---|
@@ -180,7 +180,7 @@ Tools plan modal and picker:
 | `/` | Filter the picker. |
 | `enter` when done | Close the finished plan. |
 
-### Graph (tab 4)
+### Graph (tab 2)
 
 | Key | Action |
 |---|---|

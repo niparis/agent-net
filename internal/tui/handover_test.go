@@ -110,7 +110,7 @@ func TestHandOverPreviewShowsAMessageBody(t *testing.T) {
 	m.loc, m.now = time.UTC, func() time.Time { return t0 }
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = settle(refresh(m, src))
-	m = keys(m, "2")
+	m = keys(m, "4")
 	m.feedCur = feedIndexFor(m, "m_1")
 	m = pressKey(m, "c")
 	if m.handover == nil {

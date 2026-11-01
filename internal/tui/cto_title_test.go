@@ -38,7 +38,7 @@ func TestCTOTitleOnOwnerScreens(t *testing.T) {
 		}
 	}
 
-	m.tab, m.focus, m.mapOn = 1, focusFeed, false
+	m.tab, m.focus, m.mapOn = messagesTab, focusFeed, false
 	m.feed = newFeed()
 	m.feed.apply([]protocol.FeedEvent{{
 		Event:          protocol.Event{ID: 1, Time: t0.Add(-time.Minute), Kind: "msg.stored", MessageID: "m_cto"},
@@ -139,7 +139,7 @@ func TestCTOTitleGoldens(t *testing.T) {
 		help := strings.Join(m.helpContent(size[0]), "\n")
 		golden(t, fmt.Sprintf("cto_title_help_%dx", size[0]), help)
 
-		m.tab, m.focus, m.mapOn = 1, focusFeed, false
+		m.tab, m.focus, m.mapOn = messagesTab, focusFeed, false
 		m.feed = newFeed()
 		m.feed.apply([]protocol.FeedEvent{{
 			Event:          protocol.Event{ID: 1, Time: t0.Add(-time.Minute), Kind: "msg.stored", MessageID: "m_cto"},
