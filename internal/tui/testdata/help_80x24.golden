@@ -1,6 +1,8 @@
 Keys ───────────────────────────────────────────────────────────────────────────
 
  Sessions
+  proposal             enter details; a approve; x decline; A approve all after
+                       confirmation
   1-6                  switch between Sessions, Messages, Quotas, Map, Tools and
                        Graph
   up/down, j/k         select a session
@@ -18,7 +20,5 @@ Keys ─────────────────────────
 
  Quotas
   up/down, j/k         select a subscription
-  p                    protect or unprotect the selected subscription
-  s                    show or hide subscriptions that are not set up
   more below
 up/down scroll  esc close help  q quit

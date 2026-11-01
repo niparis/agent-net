@@ -54,6 +54,7 @@ var claudeBgID = regexp.MustCompile(`claude stop ([0-9A-Za-z-]+)`)
 
 // claudeSessionFile is the part of a session file that matters here.
 type claudeSessionFile struct {
+	Status    string `json:"status"`
 	PID       int    `json:"pid"`
 	SessionID string `json:"sessionId"`
 	JobID     string `json:"jobId"`

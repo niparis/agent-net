@@ -70,6 +70,7 @@ type toolsState struct {
 	scroll        int
 	showAccepted  bool
 	expandedDiffs map[string]bool
+	summaries     map[string]string
 
 	search    string // filter of the All tools screen
 	projSel   string // the project of the By project screen

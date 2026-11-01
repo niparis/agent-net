@@ -259,7 +259,7 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		// The authority note comes from agent-net, after the body, never from
 		// the body (decision 0012): a trusted recipient may act on the request.
 		if !m.OwnerApproved {
-			details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker)
+			details += " " + protocol.AuthorityNote(m.RecipientTrust, m.FromWorker, m.RecipientMergeAuthority)
 		}
 	}
 	if m.Overruled {
@@ -277,7 +277,7 @@ func BuildFrame(m protocol.Message, replySock string) ([]byte, error) {
 		details += " " + m.RecipientRelation
 	}
 	if m.OwnerInstruction != "" {
-		details += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction)
+		details += "\n" + protocol.OwnerInstructionNote(m.OwnerInstruction, m.RecipientMergeAuthority)
 	}
 	if m.ApprovalNote != "" {
 		details += "\n[agent-net] " + m.ApprovalNote

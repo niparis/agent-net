@@ -2,8 +2,8 @@
  Differences   All tools   By project   [ ] switch screen · ← → also   / search
 Things that do not match across your machines. enter fixes the selected one, x accepts it as it is.
 ╭─What differs · 1 to look at──────────────────────────────────────────────────────────────────────────────────────────╮
-│ ▸ ! demo: Claude's copy (~/.claude/skills) is newer than Pi's (~/.pi/agent/skills), 3 files differ                   │
-│     fix: keep the newer one in both places                                                                           │
+│ ▸ ! demo has 2 different copies on research, 3 files differ                                                          │
+│     fix: compare, then keep one                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │

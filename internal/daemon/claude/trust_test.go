@@ -114,7 +114,7 @@ func TestApprovalNoteIsSeparateFromBody(t *testing.T) {
 
 func TestClaudeOwnerInstruction(t *testing.T) {
 	m := protocol.Message{Type: protocol.TypeRequest, Body: "work", OwnerInstruction: "ask bob"}
-	if got := frameContent(t, m); !strings.Contains(got, "sent on your user's instruction: «ask bob»") {
+	if got := frameContent(t, m); !strings.Contains(got, "sent on the owner's instruction: «ask bob»") {
 		t.Fatal(got)
 	}
 }

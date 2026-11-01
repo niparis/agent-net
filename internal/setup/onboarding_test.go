@@ -300,8 +300,11 @@ func TestSetupOpenQuestionSkipsTTYWhenNonInteractive(t *testing.T) {
 	if opened {
 		t.Fatal("non-interactive setup checked for a controlling terminal")
 	}
-	if !strings.Contains(out.String(), "Open agent-net: run agent-net tui") {
+	if !strings.Contains(out.String(), "Open agent-net: run agent-net") {
 		t.Fatalf("non-interactive instruction: %q", out.String())
+	}
+	if strings.Contains(out.String(), "agent-net tui") {
+		t.Fatalf("non-interactive instruction still names a subcommand: %q", out.String())
 	}
 }
 

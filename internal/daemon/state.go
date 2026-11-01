@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/niparis/agent-net/internal/dbfile"
@@ -14,7 +15,10 @@ import (
 
 // state is the daemon's small local database: delivered message IDs (to
 // remove duplicates) and the outbox of sends made while the gateway was away.
-type state struct{ db *sql.DB }
+type state struct {
+	db                 *sql.DB
+	proposalDeliveryMu sync.Mutex
+}
 
 func openState(dir string) (*state, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -37,6 +41,10 @@ CREATE TABLE IF NOT EXISTS owner_preferences (key TEXT PRIMARY KEY, value INTEGE
 CREATE TABLE IF NOT EXISTS cto (id INTEGER PRIMARY KEY CHECK(id=1), session_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_actions (id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL, text TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS cto_history (id INTEGER PRIMARY KEY AUTOINCREMENT, harness TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL, at INTEGER NOT NULL, payload TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cto_proposals (id INTEGER PRIMARY KEY AUTOINCREMENT, tool TEXT NOT NULL, action TEXT NOT NULL, args TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, status TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', result TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS cto_deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, sender TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS cto_proposal_messages (proposal_id INTEGER NOT NULL, sender TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS cto_proposals_open_call ON cto_proposals(tool,action,args) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS cto_history_harness ON cto_history(harness,kind,id);
 CREATE TABLE IF NOT EXISTS delivered (message_id TEXT PRIMARY KEY, at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS outbox (seq INTEGER PRIMARY KEY AUTOINCREMENT, payload TEXT NOT NULL);
@@ -53,6 +61,13 @@ CREATE TABLE IF NOT EXISTS workers (
 	task_text TEXT NOT NULL DEFAULT '')`)
 	if err == nil {
 		_, err = db.Exec(queueSchema)
+	}
+	if err == nil {
+		var has int
+		err = db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('cto_proposals') WHERE name = 'note_delivered'`).Scan(&has)
+		if err == nil && has == 0 {
+			_, err = db.Exec(`ALTER TABLE cto_proposals ADD COLUMN note_delivered INTEGER NOT NULL DEFAULT 0`)
+		}
 	}
 	if err != nil {
 		db.Close()
@@ -162,7 +177,7 @@ CREATE TABLE IF NOT EXISTS workers (
 		db.Close()
 		return nil, err
 	}
-	return &state{db}, nil
+	return &state{db: db}, nil
 }
 
 func (s *state) close() error { return s.db.Close() }

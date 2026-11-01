@@ -1,6 +1,7 @@
 Keys ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
  Sessions
+  proposal             enter details; a approve; x decline; A approve all after confirmation
   1-6                  switch between Sessions, Messages, Quotas, Map, Tools and Graph
   up/down, j/k         select a session
   pgup/pgdn, g/G       page, first, last
@@ -35,6 +36,5 @@ Keys ─────────────────────────
 
  Tools
   [ ]                  switch screens; left/right also switches, except on All tools
-  j/k, h/l             select an item; h/l also move between columns on All tools
   more below
 up/down scroll  esc close help  q quit

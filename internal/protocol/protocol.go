@@ -78,6 +78,9 @@ type Message struct {
 	// recipient session (decision 0012). A sender cannot set it: it is not a
 	// field of MsgSend, and the gateway overwrites it on every delivery.
 	RecipientTrust bool `json:"recipient_peer_trust,omitempty"`
+	// RecipientMergeAuthority is the receiver's effective node setting, computed
+	// by the gateway on delivery. A sender cannot supply it in MsgSend.
+	RecipientMergeAuthority string `json:"recipient_merge_authority,omitempty"`
 	// RecipientRelation is filled by the gateway when it hands a request to
 	// the recipient's daemon: the graph relation from the sender's node to the
 	// recipient's node (decision 0022). It is agent-net's own text, after the

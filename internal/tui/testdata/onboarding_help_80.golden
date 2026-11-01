@@ -1,0 +1,24 @@
+Keys ───────────────────────────────────────────────────────────────────────────
+  more above
+  r                    refresh now
+  states               messages: pending ... delivered ✓ replied ↩ failed ✗
+
+ Everywhere
+  n                    desktop notifications: on (toggle)
+  T                    turn onboarding tips off or on
+  R                    restart onboarding from the first step
+  ?                    this help
+  q, ctrl+c            quit
+
+ Reading the screen
+  CPU                  machine: all cores. session: one core. (x%): 5 min avg
+  red numbers          a heavy tree: over 20 processes, 200% CPU or 4G
+  shared               one process many sessions share; its figures are on the
+                       machine line
+  dim row              offline, or idle for more than an hour
+  ?                    a figure that is missing or older than 45 seconds
+  └                    a reply, under the message it answers
+  "..."                the first line of the body, when this machine is in the
+                       conversation
+
+up/down scroll  esc close help  q quit

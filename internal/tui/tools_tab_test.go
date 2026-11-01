@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -81,7 +82,7 @@ func TestToolsTabOpensWithKey5AndDifferencesFirst(t *testing.T) {
 		t.Fatalf("tab %d screen %d loaded %v", m.tab, m.tl.screen, m.tl.loaded)
 	}
 	v := plain(m)
-	for _, want := range []string{"1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools", "What differs", "code-review differs", "design-taste-frontend: Claude's copy", "fix: "} {
+	for _, want := range []string{"1 Sessions  2 Messages  3 Quotas  4 Map  5 Tools", "What differs", "code-review differs", "design-taste-frontend has 2 different copies", "fix: "} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q in\n%s", want, v)
 		}
@@ -131,11 +132,11 @@ func TestToolsDifferencesAreOrderedAndAcceptedLeaveTheList(t *testing.T) {
 	if len(m.shownDiffs()) != len(ds)-1 {
 		t.Fatalf("accepted difference must leave the list")
 	}
-	if strings.Contains(plain(m), "design-taste-frontend: Claude's copy") {
+	if strings.Contains(plain(m), "design-taste-frontend has 2 different copies") {
 		t.Errorf("accepted line still shown:\n%s", plain(m))
 	}
 	m = pressKey(m, ".")
-	if v := plain(m); !strings.Contains(v, "(accepted)") || !strings.Contains(v, "design-taste-frontend: Claude's copy") {
+	if v := plain(m); !strings.Contains(v, "(accepted)") || !strings.Contains(v, "design-taste-frontend has 2 different copies") {
 		t.Errorf(". must show accepted ones:\n%s", v)
 	}
 	// x again takes the mark off
@@ -516,7 +517,7 @@ func TestToolsComparisonPlanShowsFiles(t *testing.T) {
 	newer := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "added", Fingerprint: "y"}, {Path: "SKILL.md", Fingerprint: "new"}}}}
 	model, _ := m.openChoose("Keep the newer one in both places", toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, old}})
 	m = model.(Model)
-	m = pressKey(m, "enter")
+	m = pressKey(m, "a")
 	v := plain(m)
 	for _, want := range []string{"demo on research only", "added: added", "removed: gone", "changed: SKILL.md"} {
 		if !strings.Contains(v, want) {
@@ -530,11 +531,11 @@ func TestToolsComparisonGoldens(t *testing.T) {
 		m, _ := toolsAtScreen(size[0], size[1], 0)
 		newer := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.claude/skills/demo", Hash: "new", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "added.txt", Fingerprint: "add"}}}}
 		older := toolsdiff.Copy{Name: "demo", Item: "old", NodeID: toolNodeR, Machine: "research", Location: "/home/test/.pi/agent/skills/demo", Hash: "old", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}, {Path: "removed.txt", Fingerprint: "gone"}}}}
-		m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "two-copies:demo:research", Kind: toolsdiff.KindTwoCopies, Severity: toolsdiff.SevErr, Name: "demo", Title: "demo: Claude's copy (~/.claude/skills) is newer than Pi's (~/.pi/agent/skills), 3 files differ", Fix: "keep the newer one in both places", Action: toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, older}}}}
+		m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "two-copies:demo:research", Kind: toolsdiff.KindTwoCopies, Severity: toolsdiff.SevErr, Name: "demo", Title: "demo has 2 different copies on research, 3 files differ", Fix: "compare, then keep one", Action: toolsdiff.Action{Kind: toolsdiff.ActChoose, Name: "demo", Copies: []toolsdiff.Copy{newer, older}}}}
 		m.tl.row = 0
 		golden(t, fmt.Sprintf("tools_compare_%dx%d", size[0], size[1]), m.View())
 		m = pressKey(m, "enter")
-		m = pressKey(m, "enter")
+		m = pressKey(m, "a")
 		golden(t, fmt.Sprintf("tools_compare_plan_%dx%d", size[0], size[1]), m.View())
 	}
 }
@@ -556,8 +557,8 @@ func TestToolsCompareFetchGoldens(t *testing.T) {
 
 func TestLongDifferenceIsReadableAt80Columns(t *testing.T) {
 	m, _ := toolsAtScreen(80, 24, 0)
-	m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "demo", Severity: toolsdiff.SevErr, Title: "demo: Claude's copy (~/.claude/skills) is newer than Pi's (~/.pi/agent/skills), 3 files differ", Fix: "keep the newer one in both places"}}
-	if v := plain(m); !strings.Contains(v, "3 files differ") || !strings.Contains(v, "keep the newer one") {
+	m.tl.cat.Diffs = []toolsdiff.Difference{{Key: "demo", Severity: toolsdiff.SevErr, Title: "demo has 2 different copies on research, 3 files differ", Fix: "compare, then keep one"}}
+	if v := plain(m); !strings.Contains(v, "3 files differ") || !strings.Contains(v, "compare, then keep one") {
 		t.Fatalf("difference clipped:\n%s", v)
 	}
 }
@@ -595,14 +596,22 @@ func TestToolsPlanCanScrollLongComparison(t *testing.T) {
 	}
 }
 
+func TestChooseDoesNotRecommendByFileDate(t *testing.T) {
+	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Newest: time.Now().Add(-time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "a"}}}}
+	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: time.Now(), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "b"}}}}
+	got := strings.Join(chooseComparison(a, b), "\n")
+	if strings.Contains(got, "suggest: keep") || !strings.Contains(got, "no clear winner") {
+		t.Fatalf("file dates alone cannot establish a winner: %s", got)
+	}
+}
+
 func TestChooseShowsManifestDecision(t *testing.T) {
 	m, _ := toolsAtScreen(80, 24, 0)
-	now := m.now()
-	old := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Newest: now.Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10, Fingerprint: "old"}}}}
-	newer := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: now.Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 20, Fingerprint: "new"}, {Path: "scripts/run.sh", Size: 5, Fingerprint: "x"}}}}
-	model, _ := m.openChoose("Compare, then keep one", toolsdiff.Action{Copies: []toolsdiff.Copy{old, newer}})
+	old := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Newest: m.now().Add(-72 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}}}}
+	newer := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: m.now(), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}}}}
+	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{old, newer}})
 	v := plain(model.(Model))
-	for _, want := range []string{"3 days ago", now.Add(-72 * time.Hour).Format("2 Jan"), "newer", "2 files", "25 B", "SKILL.md changed", "scripts/run.sh only on beta", "suggest: keep beta's copy"} {
+	for _, want := range []string{"file modified", "origin unknown", "used by alpha", "no clear winner"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}
@@ -613,7 +622,7 @@ func TestChooseExplainsMissingFilesWithoutRecommendation(t *testing.T) {
 	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "a"}}}}
 	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "b"}}}}
 	got := strings.Join(chooseComparison(a, b), "\n")
-	for _, want := range []string{"alpha lacks 1 file", "beta lacks 1 file"} {
+	for _, want := range []string{"a only on alpha", "b only on beta", "no clear winner"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q: %s", want, got)
 		}
@@ -621,12 +630,12 @@ func TestChooseExplainsMissingFilesWithoutRecommendation(t *testing.T) {
 }
 
 func TestChooseCopyHintsAndMissingManifest(t *testing.T) {
-	m, _ := toolsAtScreen(80, 24, 0)
+	m, _ := toolsAtScreen(120, 34, 0)
 	a := toolsdiff.Copy{Machine: "host", Harness: "pi"}
 	b := toolsdiff.Copy{Machine: "host", Harness: "claude"}
 	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
 	v := plain(model.(Model))
-	for _, want := range []string{"a keep pi's copy", "b keep claude's copy", "no file details from host yet: neither copy has sent a file list"} {
+	for _, want := range []string{"a keep pi's copy", "b keep claude's copy", "no file details from host yet: its scan has no file list"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q: %s", want, v)
 		}
@@ -637,7 +646,7 @@ func TestChooseCopyHintsAndMissingManifest(t *testing.T) {
 }
 
 func TestChooseFetchesMissingDetails(t *testing.T) {
-	m, src := toolsAtScreen(80, 24, 0)
+	m, src := toolsAtScreen(120, 34, 0)
 	seen := t0.Add(-48 * time.Hour)
 	withDetails := toolsdiff.Copy{Name: "demo", Item: "new", NodeID: toolNodeM, Machine: "Nicolas-MBP", Location: "/Users/n/.claude/skills/demo", Hash: "h1",
 		Manifest: &protocol.SkillManifest{Newest: t0.Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Size: 10, Fingerprint: "a"}}}}
@@ -656,7 +665,7 @@ func TestChooseFetchesMissingDetails(t *testing.T) {
 	if strings.Contains(v, "fetching details") {
 		t.Fatalf("fetching line stayed:\n%s", v)
 	}
-	for _, want := range []string{"2 files", "25 B", "notes.md only on research", "SKILL.md changed"} {
+	for _, want := range []string{"file modified", "2 files differ", "notes.md only on research", "SKILL.md changed", "used by research"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("missing %q:\n%s", want, v)
 		}
@@ -667,7 +676,7 @@ func TestChooseFetchesMissingDetails(t *testing.T) {
 }
 
 func TestChooseFetchFailureNamesTheMachineAndReason(t *testing.T) {
-	m, src := toolsAtScreen(80, 24, 0)
+	m, src := toolsAtScreen(120, 34, 0)
 	a := toolsdiff.Copy{Machine: "Nicolas-MBP", NodeID: toolNodeM, Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md"}}}}
 	b := toolsdiff.Copy{Name: "demo", Machine: "research", NodeID: toolNodeR, Location: "/home/n/.claude/skills/demo", Hash: "h2", Seen: t0.Add(-48 * time.Hour)}
 	src.detailErr = errors.New("skill changed since its scan")
@@ -683,7 +692,7 @@ func TestChooseFetchFailureNamesTheMachineAndReason(t *testing.T) {
 }
 
 func TestChooseOfflineSideSaysSo(t *testing.T) {
-	m, src := toolsAtScreen(80, 24, 0)
+	m, src := toolsAtScreen(120, 34, 0)
 	for i := range m.tl.cat.Machines {
 		if m.tl.cat.Machines[i].ID == toolNodeR {
 			m.tl.cat.Machines[i].Online = false
@@ -739,7 +748,7 @@ func TestChooseWrapsWordsAt80Columns(t *testing.T) {
 	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Newest: m.now().Add(-24 * time.Hour), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "scripts/run.sh", Fingerprint: "new"}}}}
 	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
 	v := plain(model.(Model))
-	for _, word := range []string{"SKILL.md", "scripts/run.sh", "suggest:", "newer", "file"} {
+	for _, word := range []string{"alpha", "beta", "no clear winner", "file"} {
 		if !strings.Contains(v, word) {
 			t.Errorf("word %q split or missing: %s", word, v)
 		}
@@ -782,18 +791,18 @@ func TestToolsPlanWrapsItemsAndHintsAt80Columns(t *testing.T) {
 	m, _ := toolsAtScreen(80, 24, 0)
 	m = pressKey(m, "enter")
 	v := plain(m)
-	for _, item := range []string{"28 Oct", "25 Oct", "scripts/run.sh only on claude", "v view diff", "esc cancel", "selected file: SKILL.md", "goes into agent-net"} {
+	for _, item := range []string{"28 Oct", "25 Oct", "v view diff", "esc cancel", "no clear winner"} {
 		if !strings.Contains(v, item) {
 			t.Errorf("item split or missing %q:\n%s", item, v)
 		}
 	}
-	panel := strings.SplitN(strings.SplitN(v, "╭─Keep the newer one in both places", 2)[1], "╰", 2)[0]
+	panel := strings.SplitN(strings.SplitN(v, "╭─Compare, then keep one", 2)[1], "╰", 2)[0]
 	for _, line := range strings.Split(panel, "\n") {
 		if !strings.HasPrefix(line, "│ ") {
 			continue
 		}
 		text := strings.TrimRight(strings.TrimPrefix(line, "│ "), " │")
-		if text == "" || strings.HasPrefix(text, "a  ") || strings.HasPrefix(text, "b  ") || strings.HasPrefix(text, "enter ") {
+		if text == "" || strings.HasPrefix(text, "a  ") || strings.HasPrefix(text, "b  ") || strings.HasPrefix(text, "enter ") || strings.HasPrefix(text, "a keep ") {
 			continue
 		}
 		if !strings.HasPrefix(text, "  ") {
@@ -812,7 +821,11 @@ func TestLongDifferenceKeepsLocationPhraseTogether(t *testing.T) {
 	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{}}}
 	b := toolsdiff.Copy{Machine: "beta-machine-with-a-long-name", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: strings.Repeat("a", 50), Fingerprint: "new"}}}}
 	model, _ := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
-	v := plain(model.(Model))
+	m = model.(Model)
+	for i := 0; i < 8; i++ {
+		m = pressKey(m, "down")
+	}
+	v := plain(m)
 	if !strings.Contains(v, "only on beta-machine-with-a-long-name") {
 		t.Fatalf("location phrase split:\n%s", v)
 	}
@@ -823,5 +836,97 @@ func TestModalWrapUsesHangingIndent(t *testing.T) {
 		if !strings.HasPrefix(ansi.Strip(line), "  ") {
 			t.Fatalf("missing hanging indent: %q", line)
 		}
+	}
+}
+
+func TestCompareDecisionEvidenceAndKeys(t *testing.T) {
+	m, _ := toolsAtScreen(80, 24, 0)
+	a := toolsdiff.Copy{Machine: "alpha", Harness: "pi", Label: "v2", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "same"}, {Path: "extra", Fingerprint: "x"}}}}
+	b := toolsdiff.Copy{Machine: "beta", Harness: "claude", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "same"}}}}
+	model, _ := m.openChoose("Keep the newer one in both places", toolsdiff.Action{Name: "demo", Copies: []toolsdiff.Copy{a, b}})
+	m = model.(Model)
+	v := plain(m)
+	for _, want := range []string{"Compare, then keep one", "pi", "claude", "agent-net store", "unknown", "summary", "keep alpha", "every file"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("missing %q: %s", want, v)
+		}
+	}
+	if strings.Contains(strings.ToLower(v), "keep newer") || strings.Contains(strings.ToLower(v), "keep the newer") {
+		t.Fatal(v)
+	}
+	m = pressKey(m, "enter")
+	if !strings.Contains(plain(m), "Compare, then keep one") {
+		t.Fatal("enter changed screen")
+	}
+}
+
+type summaryTools struct {
+	*fakeTools
+	calls int
+	fail  bool
+}
+
+func (s *summaryTools) ToolsSummary(_ context.Context, req protocol.SkillSummaryRequest) (string, error) {
+	s.calls++
+	if s.fail {
+		return "", errors.New("worker failed")
+	}
+	if req.A != "old text\n" || req.B != "new text\n" {
+		return "", errors.New("wrong text")
+	}
+	return "a runs tests first; b uses the old install command", nil
+}
+func TestCompareSummaryAndCache(t *testing.T) {
+	m, base := toolsAtScreen(120, 34, 0)
+	src := &summaryTools{fakeTools: base}
+	m.src = src
+	a := toolsdiff.Copy{Name: "demo", Item: "old", Hash: "a", Machine: "alpha"}
+	b := toolsdiff.Copy{Name: "demo", Item: "new", Hash: "b", Machine: "beta"}
+	act := toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}}
+	model, cmd := m.openChoose("Compare", act)
+	m = model.(Model)
+	if !strings.Contains(plain(m), "summarising the difference") {
+		t.Fatal(plain(m))
+	}
+	m = send(m, cmd())
+	if !strings.Contains(plain(m), "summary by model") || !strings.Contains(plain(m), "runs tests first") {
+		t.Fatal(plain(m))
+	}
+	model, cmd = m.openChoose("Compare", act)
+	m = model.(Model)
+	if cmd != nil || src.calls != 1 || !strings.Contains(plain(m), "runs tests first") {
+		t.Fatalf("cache calls %d: %s", src.calls, plain(m))
+	}
+}
+func TestCompareSummaryFailureFallsBack(t *testing.T) {
+	m, base := toolsAtScreen(120, 34, 0)
+	m.src = &summaryTools{fakeTools: base, fail: true}
+	a := toolsdiff.Copy{Name: "demo", Item: "old", Hash: "a", Machine: "alpha"}
+	b := toolsdiff.Copy{Name: "demo", Item: "new", Hash: "b", Machine: "beta"}
+	model, cmd := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
+	m = model.(Model)
+	m = send(m, cmd())
+	if !strings.Contains(plain(m), "summary unavailable") {
+		t.Fatal(plain(m))
+	}
+}
+
+func TestCompareRecommendationRequiresMatchingFingerprints(t *testing.T) {
+	a := toolsdiff.Copy{Machine: "alpha", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md"}, {Path: "extra", Fingerprint: "x"}}}}
+	b := toolsdiff.Copy{Machine: "beta", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md"}}}}
+	if got := strings.Join(chooseComparison(a, b), " "); !strings.Contains(got, "no clear winner") {
+		t.Fatal(got)
+	}
+}
+
+func TestCompareSummaryGoldens(t *testing.T) {
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m, base := toolsAtScreen(size[0], size[1], 0)
+		m.src = &summaryTools{fakeTools: base}
+		a := toolsdiff.Copy{Name: "demo", Item: "old", Hash: "a", Machine: "alpha", Harness: "pi", Label: "v2", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}}}}
+		b := toolsdiff.Copy{Name: "demo", Item: "new", Hash: "b", Machine: "beta", Harness: "claude", Manifest: &protocol.SkillManifest{Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}}}}
+		model, cmd := m.openChoose("Compare", toolsdiff.Action{Copies: []toolsdiff.Copy{a, b}})
+		m = send(model.(Model), cmd())
+		golden(t, fmt.Sprintf("tools_summary_%dx%d", size[0], size[1]), m.View())
 	}
 }

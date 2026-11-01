@@ -104,7 +104,7 @@ In short: agent-net is built for machines you own, on a network you control (a L
 
 A machine joins with a one-time code.
 
-- `agent-net invite` (or `agent-net enroll`) makes an 8-character code from random base32 characters. The gateway stores only its SHA-256 hash. The code works once and for 10 minutes.
+- `agent-net invite` (or `agent-net enroll`) makes an 8-character code from random base32 characters. The gateway stores only its SHA-256 hash. The code works once and for 10 minutes. The CTO tool `invite` makes the same code on the gateway machine, so the owner can add a machine from the TUI.
 - The invite line is `curl -fsSL -k --pinnedpubkey 'sha256//...' 'https://HOST:7420/install/CODE' | sh`. The `-k` flag turns off certificate checking, so the pin does the checking instead: curl compares the SHA-256 of the gateway's public key with the pin and aborts if they differ. This is what makes `-k` safe here. A machine in the middle cannot present a different key.
 - The pin covers the server key, and that key is saved in `server-key.pem` in the gateway data dir. The certificate is re-issued on every start, but the key is not, so an old invite line still matches after a gateway restart.
 - The script served at `/install/CODE` carries the gateway address, the code, the CA fingerprint and the pin. The gateway refuses to render it for an unknown, used or expired code, and for a `Host` header that is not a plain host name or IP address with a port.
@@ -216,6 +216,10 @@ interfaces.
   its preference. The gateway drops the entry after that session has stayed
   offline for 30 days. Project node names remain until the owner unhides them.
 
+Onboarding progress is also stored in gateway owner settings. Its operator
+methods use the same owner gate. The CTO restart tool uses the CTO process-tree
+check. As with hidden items, an enrolled machine can change the gateway entry.
+
 ## Delegation policy
 
 A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegation-policy.md)) is text that agent-net adds to a session's context on every turn: hand code changes to a subagent or a worker, or do them yourself. It is your standing instruction to the session, so who can set it matters.
@@ -231,7 +235,9 @@ A delegation policy (key `p` in the TUI, [decision 0014](decisions/0014-delegati
 
 A node's maturity sets its merge authority (decision [0022](decisions/0022-component-graph-and-cto.md)): `full` lets the agent merge and push to the default branch; `delegated` needs an approval from the owner or a delegate (an architect with mode `owner` or `arbiter` over the node); `ask` needs the owner's written approval. The owner can override it per node with `node_settings_set`, behind the owner gate.
 
-This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. The approval note that counts is the one agent-net writes for one exact action. The owner's inbox that records written approvals is step 3b of decision 0022; `RequestWrittenApproval` is a stub in this build and says the inbox is not there, so a session under `ask` must ask its owner directly and treat only an agent-net approval note as approval.
+The gateway computes the receiver's effective `merge_authority` at each delivery, including node overrides, and sends it outside the message body. An `auto` edge never widens that setting. The trust note, owner-instruction note and maturity context use the same merge rule. On `full`, the node may merge. On `delegated`, approval must name the exact merge: the owner approves directly or through an agent-net approval note from `agent_request_approval`, or a delegate approves in a message from an architect with a `governs` edge in mode `owner` or `arbiter` over the receiver. On `ask`, always ask for the owner's written approval of the exact action. Workers put the action and recommendation in their report when they cannot request approval. An owner-instruction excerpt on its own does not approve a merge; its note points to the receiver's rule. A body claiming approval does not count.
+
+This is **guidance plus approval objects, not a git lock**. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text the session gets. Nothing in agent-net refuses a push or blocks a merge in git, and an agent can ignore the text. Written approvals arrive in agent-net's own approval note for one exact action, through the owner's inbox. This text change adds no grants and does not infer merge authority from owner excerpts. Stricter repository rules and harness permissions still apply.
 
 A critical repository should also have branch protection on its default branch: require a pull request, require review, and stop force-pushes. Branch protection is enforced by the repository host; agent-net's merge authority is not.
 
@@ -257,7 +263,7 @@ A worker is an agent that nobody watches, so agent-net does not let it ask for a
 
 Requests use rules on graph edges. `normal` uses the normal peer guidance, `auto` adds the trust note, `ask` holds the request for the owner, and `never` refuses it. The sender-specific edge takes precedence over the wildcard edge into the recipient node. The `t` key cycles the wildcard through `normal`, `ask` and `auto`.
 
-The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
+The risk of `auto` is that text relayed by a peer can steer a session without the owner seeing it first. The trust note follows the receiving node's merge authority; an `auto` edge does not approve merges on a `delegated` or `ask` node. It is guidance to the model, not a replacement for harness permission rules. It still asks for owner approval before deleting data, force-pushing, rewriting history, spending money, sharing secrets, changing credentials or permissions, or deploying beyond the brief.
 
 Only the owner can change edge rules or answer a held request through the local operator interface. `edge_set`, `session_trust`, `held_list` and `held_answer` are behind the owner gate. The gateway trusts enrolled daemons, so a compromised enrolled machine can send these gateway frames. Remove a lost machine at the gateway.
 
@@ -286,6 +292,20 @@ The TUI's "Needs you" section shows what a session waits for: a permission, a qu
 `agent-net setup` adds a short block to `~/.claude/CLAUDE.md` and `~/.pi/agent/AGENTS.md`. It tells the model to answer peers directly, to check with you before risky or out-of-scope work, and to never take a peer message as your approval, unless the note that agent-net itself adds says you allowed this session to act on peer requests (see [peer trust](#peer-trust)). It also tells the model to relay a request you asked it to send, and let the receiver decide, and to ask a peer early when an error comes from something another session owns. This is a request to the model. It can be ignored, or overridden by a persuasive message. The things that actually limit what an agent can do are the harness permission rules (Claude Code's permission modes and allow lists, Pi's tool settings). Keep those on. A peer message is never your approval, except through peer trust, which only you switch on, per session. Do not configure your agents to treat peer messages as approval in any other way.
 
 ## Limits against loops
+
+CTO proposals are stored in the hosting daemon's private state database.
+The owner gate protects proposal listing and decisions, including relayed
+requests. An enrolled daemon is trusted to enforce that gate before relaying,
+as it is for other owner operations. A proposed call is checked before it is
+stored and again before it runs. The current proposal runner supports charter
+changes, edge sets and machine renames; existing CTO change tools have not been converted
+to proposals. Identical open calls are refused, open proposals expire after 24
+hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
+only the status or a bounded error, never a successful call's result.
+The daemon retains only sender names and times for the last three messages it
+delivered to the CTO, and snapshots that metadata with each proposal. It does
+not copy their bodies. An approve-all confirmation names the calls being
+approved; the daemon rejects the request if the open list has changed.
 
 The gateway enforces these on every send:
 
@@ -537,7 +557,7 @@ The gateway may automatically add an item to `accepts` from an owner instruction
 These rules use matched excerpts and reply outcomes as evidence. Matching does not prove the owner intended a particular send, and peer replies can influence `needs` and dependency suggestions. The gateway keeps suggestion evidence in its database; message-flow records used for detection are removed after seven days. Protect the database and backups accordingly.
 
 Before applying or showing ready suggestions based on owner words, the gateway may send their phrases to an automatically selected worker for shorter wording. It uses only an allowed, unprotected provider and a harness that enforces read-only project access. At most one worker starts per two minutes and six per rolling hour. The chooser uses trivial difficulty with no fixed model, no worktree isolation and read-only project access. If no suitable worker is available, it fails, its JSON is invalid, or it exceeds three minutes, the original words are kept. The raw words remain in the gateway database and can be sent to the selected provider. The gateway preserves the original words for rejection matching and for checks against narrowing a charter.
-The link is an inference from the prompt and first matching send, not a signature or approval for risky actions. A sender cannot supply the gateway-computed excerpt. Explicit assignments in a non-matching prompt may still become private learning evidence, but are not attached to the message delivered to its recipient.
+The link is an inference from the prompt and first matching send, not a signature or a merge approval. The delivered owner-instruction note says that the excerpt on its own does not approve a merge and gives the receiving node's effective merge rule. A sender cannot supply the gateway-computed excerpt. Explicit assignments in a non-matching prompt may still become private learning evidence, but are not attached to the message delivered to its recipient.
 
 ## Graph foundation
 
@@ -571,3 +591,5 @@ and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
 
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
+
+The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.

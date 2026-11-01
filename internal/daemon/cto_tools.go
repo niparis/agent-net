@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/niparis/agent-net/internal/gateway"
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -389,6 +390,24 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			return nil, errNotConnected
 		}
 		return d.workerStartCall(ctx, sid, p, false, "", true)
+	case "invite":
+		if d.cfg.GatewayData == "" {
+			return nil, errors.New("invite runs on the gateway machine")
+		}
+		lines, err := gateway.Invite(gateway.InviteOptions{Port: "7420", Data: d.cfg.GatewayData})
+		if err != nil {
+			return nil, fmt.Errorf("invite runs on the gateway machine: %w", err)
+		}
+		var b strings.Builder
+		for _, l := range lines {
+			if l[0] != "" {
+				fmt.Fprintf(&b, "%s: ", l[0])
+			}
+			b.WriteString(l[1])
+			b.WriteByte('\n')
+		}
+		b.WriteString("Valid for 10 minutes, works for one machine. Paste it in a shell on the machine to add.")
+		return b.String(), nil
 	}
 	return nil, errors.New("unknown CTO tool")
 }
@@ -440,6 +459,8 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 				verb = r.Status
 			}
 			text = fmt.Sprintf("worker %s: %s", verb, a.Project)
+		case "invite":
+			text = "printed an invite line"
 		}
 	}
 	logErr := d.recordCTOAction(text)
@@ -483,7 +504,7 @@ func (d *Daemon) recordCTOAction(text string) error {
 
 // These allowlists are reachable only from ctoTool's process-tree check.
 var ctoOwnerMethods = map[string]bool{
-	"notification_settings": true,
+	"notification_settings": true, "onboarding_restart": true,
 	"mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true,
 	"inbox_list": true, "inbox_answer": true, "outcome_inbox": true, "outcome_overrule": true,
 	"usage": true, "usage_top": true, "counts": true, "graph_view": true, "session_text": true, "session_enter": true,

@@ -205,7 +205,7 @@ func TestCTOParityTools(t *testing.T) {
 	for _, tool := range list.Tools {
 		got[tool.Name] = true
 	}
-	for _, name := range []string{"info", "nodes", "projects", "project_add", "project_remove", "get", "messages", "message_status", "session_text", "usage", "usage_top", "counts", "graph_view", "session_enter", "session_trust", "session_policy", "node_rename", "integrations_get", "integrations_set", "worker_stop", "held_list", "held_answer", "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule", "node_settings_get", "node_settings_set", "playbook_get", "playbook_set", "learn", "mcp_list", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings", "cto_enter", "cto_send", "cto_new", "cto_events", "cto_graph_history"} {
+	for _, name := range []string{"info", "nodes", "projects", "project_add", "project_remove", "get", "messages", "message_status", "session_text", "usage", "usage_top", "counts", "graph_view", "session_enter", "session_trust", "session_policy", "node_rename", "integrations_get", "integrations_set", "worker_stop", "held_list", "held_answer", "inbox_list", "inbox_answer", "outcome_inbox", "outcome_overrule", "node_settings_get", "node_settings_set", "playbook_get", "playbook_set", "learn", "mcp_list", "mcp_add", "mcp_remove", "mcp_test", "mcp_enable", "cto_settings", "cto_enter", "cto_send", "cto_new", "cto_events", "cto_graph_history", "invite"} {
 		if !got[name] {
 			t.Errorf("missing CTO tool %s", name)
 		}
@@ -362,8 +362,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	for _, item := range sizes[:10] {
 		t.Logf("%s: %d bytes", item.name, item.bytes)
 	}
-	if len(schema) > 23973 {
-		t.Errorf("CTO schema is %d bytes, budget 23973", len(schema))
+	if len(schema) > 24150 {
+		t.Errorf("CTO schema is %d bytes, budget 24150", len(schema))
 	}
 }
 

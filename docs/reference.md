@@ -2,6 +2,21 @@
 
 ## CTO settings and conversation
 
+The daemon has an owner-gated proposal store for future CTO change tools.
+It currently accepts charter changes, edge sets and machine renames; the existing CTO
+tools still run as before. `proposal_list` lists proposals across online
+machines, or on one machine when passed `node_id`. `proposal_answer` takes
+`node_id`, `proposal_id` and an action: `a` approves, `x` declines, and `A`
+approves open proposals across online machines in order, stopping on an error. The
+daemon validates a call again before running it. Outcomes are queued for the
+CTO's next idle moment without the call's result data.
+
+Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
+and the sender and time of up to three messages delivered before the proposal.
+Press `a` to approve, `x` to decline, or `A` to review and approve all. The
+decision screen shows the full result; after approve-all, select an outcome and
+press Enter to inspect it. A changed proposal list requires a new confirmation.
+
 Replies to conversations started by the CTO reach its active conversation and
 remain visible in the owner's Messages tab. This includes replies sent through
 Claude Code's reply socket. Replies to the owner's own messages stay in the
@@ -148,6 +163,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `mcp_import_candidates`, `mcp_import`, `mcp_native_remove` | Same names; see [importing native MCP servers](#importing-native-mcp-servers) and [removing a native MCP entry](#removing-a-native-mcp-entry) |
 | `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
 | `cto_settings` | `cto_settings` |
+| `agent-net invite` | `invite` (gateway machine only; returns the install line) |
 | `notification_settings` | `notification_settings` (this machine only) |
 | `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
 | `agent_announce`, `agent_ask_owner`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session or worker self-service only. The CTO is neither a network session nor a worker; it talks to the owner in this chat. |
@@ -224,6 +240,13 @@ node by name, and `H` toggles hidden nodes into the view as dim rows tagged
 `[hidden]`. Session IDs stay hidden if a session comes back online. An ended
 session's preference is dropped after 30 days; project preferences remain
 until unhidden. The owner-only methods are `hidden_get` and `hidden_set`.
+
+The gateway also stores onboarding progress in `owner_settings`. The owner-only
+operator methods `onboarding_get`, `onboarding_set`, and `onboarding_restart`
+read, update, and reset it across machines. The CTO can reset it with the
+`onboarding_restart` tool. The TUI shows one tip in the CTO box. Tab focuses
+the box and Escape skips the current tip. In help, `T` turns tips off or on
+and `R` restarts them from the first step. Progress is shared across machines.
 
 Ports, files, environment variables, flags, and what setup changes on a machine. Paths are for the default user setup. `~` is your home directory.
 
@@ -610,7 +633,7 @@ after reconnecting, after its binary version changes and every five minutes.
 
 An in-home skill folder reached through a skill-entry symlink is recorded at its real path, with the link path in `aliases`. Links outside the home are not followed. A separate content fingerprint ignores executable bits, `.DS_Store`, `Thumbs.db`, and editor swap and backup files when comparing copies. The strict hash used for imports and integrity checks still includes these files and executable bits. Older observations without a content fingerprint are compared using their strict hash.
 
-For each skill, inventory also records a file manifest: relative paths, sizes, per-file fingerprints and the newest modification time. It never contains file contents. Common noise files are excluded. The manifest is limited to 200 files and 64 KiB; total manifests in one report are limited to 1 MiB, alongside the other report limits. A manifest above its per-copy limit is marked too large to compare and has no partial file list. Missing or oversized manifests cannot produce an exact comparison. When two copies have complete manifests and different newest modification times, Differences suggests the newer copy and shows file additions, removals and changes in the plan. Times describe file metadata and do not prove which version the owner intended. The plan compares observed copies; a destination that has changed or conflicts can still refuse application.
+For each skill, inventory also records a file manifest: relative paths, sizes, per-file fingerprints and the newest modification time. It never contains file contents. Common noise files are excluded. The manifest is limited to 200 files and 64 KiB; total manifests in one report are limited to 1 MiB, alongside the other report limits. A manifest above its per-copy limit is marked too large to compare and has no partial file list. Missing or oversized manifests cannot produce an exact comparison. The comparison shows file additions, removals and changes. File dates do not decide which copy to keep. When all shared files match and one copy contains additional files, it recommends that copy; otherwise it says there is no clear winner. The comparison shows the known users, store match and file modification time, and marks unknown origins and editors. It asks a read-only automatically chosen worker for a summary of the two SKILL.md files, caches successful summaries for the content pair, and shows a fallback when a summary is unavailable. Press `a` or `b` to choose a copy; `enter` does not choose one. Times describe file metadata and do not prove which version the owner intended. The plan compares observed copies; a destination that has changed or conflicts can still refuse application.
 
 A project skill item has `tracked: true` when `git ls-files` lists files under it in the project checkout. The daemon runs one `git ls-files` per project root in each scan (limited to the four project skill folders, no network) and uses the answer for every skill in that root. A folder that is not a Git repository, or a failed `ls-files`, leaves `tracked` off. A scan from a daemon that is older than this field has no `tracked`, so its project skills show as `local` until it is upgraded.
 
@@ -1257,9 +1280,9 @@ When the plan has nothing to run, the answer has only a note, and the TUI shows 
 
 Decision: [0013](decisions/0013-peer-trust-and-hints.md). Security: [security.md](security.md#peer-trust).
 
-**Owner instruction markers.** For a Claude Code owner prompt, the gateway considers the first subsequent send within 10 minutes. If the prompt names the recipient session or project, ignoring case and matching whole names, the message carries up to 200 characters of the prompt. A non-matching first send consumes the prompt. The Messages tab shows `you→` and the excerpt. Claude Code, Codex, Pi and OpenCode append a note after the message body with the excerpt and say it is not approval for risky actions.
+**Owner instruction markers.** For a Claude Code owner prompt, the gateway considers the first subsequent send within 10 minutes. If the prompt names the recipient session or project, ignoring case and matching whole names, the message carries up to 200 characters of the prompt. A non-matching first send consumes the prompt. The Messages tab shows `you→` and the excerpt. Claude Code, Codex, Pi and OpenCode append a note after the message body with the excerpt. It says the excerpt on its own does not approve a merge and gives the receiving node's merge rule.
 
-**Request rules.** The gateway chooses an edge rule from the sender's project node to the recipient's project node. A specific sender edge wins over the wildcard edge from `*`. With no edge the rule is `normal`: deliver the request under the usual peer guidance. `auto` delivers it with the peer trust note. `ask` holds it for your decision. `never` refuses it with `refused by your user's rule`. The TUI `t` key cycles the wildcard rule through `normal`, `ask` and `auto`; the TRUST column also counts sender-specific edges. `session_trust` remains an owner-only compatibility method that sets the wildcard rule to `auto` or `normal`. At upgrade, trusted sessions with a project get a wildcard `auto` edge, without overwriting an existing edge.
+**Request rules.** The gateway chooses an edge rule from the sender's project node to the recipient's project node. A specific sender edge wins over the wildcard edge from `*`. With no edge the rule is `normal`: deliver the request under the usual peer guidance. `auto` delivers it with the peer trust note, using the receiving node's effective merge authority. The note never widens that setting. `ask` holds it for your decision. `never` refuses it with `refused by your user's rule`. The TUI `t` key cycles the wildcard rule through `normal`, `ask` and `auto`; the TRUST column also counts sender-specific edges. `session_trust` remains an owner-only compatibility method that sets the wildcard rule to `auto` or `normal`. At upgrade, trusted sessions with a project get a wildcard `auto` edge, without overwriting an existing edge.
 
 A held request appears in Needs you with its sender, recipient and first line. Select it and press `a` to approve once, `A` to approve and set its sender edge to `auto`, `r` to decline once, or `R` to decline and set that edge to `never`. The owner-only operator methods `held_list` and `held_answer` expose the same actions. Approval delivers the request with an agent-net approval note. A decline sends the sender `your user declined this request`. A held request expires at its normal message expiry and the sender receives a notice.
 
@@ -1348,11 +1371,11 @@ The gateway keeps a graph of components and architects: a node per project (and 
 | Requests from consumers (`judge_consumers`) | `free` | `charter` | `strict` | `escalate` |
 | Deploy rule (`deploy_rule`) | `brief` | `brief` | `ask` | `owner` |
 
-An empty or missing maturity uses the `growing` controls, but no maturity rules are written into the node's text. The text the session and its workers get is plain words, for example `maturity mature: run the suite and add tests for new behavior; merge needs your owner's or a delegate's approval; ask before deploying`, followed by the consumer rule. A node with no maturity gets no rules text.
+An empty or missing maturity uses the `growing` controls. Approval overrides still appear in the node's rules text. The text the session and its workers get is plain words, for example `maturity mature: run the suite and add tests for new behavior; merge needs the owner's or a delegate's approval for the exact merge: the owner approves directly or through an agent-net approval note from agent_request_approval; a delegate approves in a message from an architect with a governs edge in mode owner or arbiter over this node; ask before deploying`, followed by the consumer rule. A node with no maturity gets rules text when a merge or deploy approval override requires it.
 
 The worker sandbox level from decision 0020 follows the node: the owner's project policy wins when it sets a level, else the node's `worker_sandbox` default applies. A node with no maturity and no override keeps `sandboxed`.
 
-**Merge authority.** `full` lets the agent merge and push to the default branch. `delegated` needs an approval from the owner or a delegate: an architect with mode `owner` or `arbiter` over the node. `ask` needs the owner's written approval. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text. The owner's inbox that records written approvals is step 3b and is not in this build: `RequestWrittenApproval` is a stub that says so. Only an approval note that agent-net itself writes counts, and it covers one action.
+**Merge authority.** `full` lets the agent merge and push to the default branch. `delegated` needs an approval from the owner or a delegate: an architect with mode `owner` or `arbiter` over the node. `ask` needs the owner's written approval. `MergeApprovalFor` returns the authority, whether approval is required, whether it must be written, the delegates and the text. For the exact merge, the owner approves directly or through an agent-net approval note from `agent_request_approval`; a delegate approves in a message from an architect with a `governs` edge in mode `owner` or `arbiter` over the node. On `ask`, always request the owner's written approval. An owner-instruction excerpt on its own does not approve a merge. The trust and owner-instruction notes use `recipient_merge_authority`, computed by the gateway for the receiving node at delivery. A sender cannot supply that field. The guidance block defers merges to this rule. Uninstall removes the guidance block as a whole.
 
 **Deploys.** On a `deploys` edge the deployer applies the target's deploy rule, not its own. The deployer's per-turn context names each target and its rule, for example `You deploy shop; its maturity critical: ...; ask the owner before deploying`.
 
