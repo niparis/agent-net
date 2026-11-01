@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"math"
 	"testing"
 )
 
@@ -89,17 +90,17 @@ func TestCalibrationWeights(t *testing.T) {
 	if got := ReworkWeight(1, 0); got != 1 {
 		t.Errorf("fix weight = %v", got)
 	}
-	if got := ReworkWeight(0, 1); got != 0.5 {
+	if got := ReworkWeight(0, 1); got != 0.33 {
 		t.Errorf("continue weight = %v", got)
 	}
-	if got := ReworkWeight(1, 1); got != 1.5 {
+	if got := ReworkWeight(1, 1); got != 1.33 {
 		t.Errorf("fix plus continue = %v", got)
 	}
 	got := MedianRework([]CalibrationSample{
 		{Fix: 1}, {Continue: 1}, {Fix: 0}, {Fix: 1},
 	})
-	if got != 0.75 {
-		t.Errorf("median = %v, want 0.75", got)
+	if math.Abs(got-0.665) > 1e-9 {
+		t.Errorf("median = %v, want 0.665", got)
 	}
 }
 

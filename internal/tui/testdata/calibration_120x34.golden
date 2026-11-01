@@ -11,15 +11,15 @@
 │ homelab-agent *        normal              0     5 keep                                                              │
 │ * weak caller: follows the network and cannot lower a tier                                                           │
 │ network: normal 1 · 9 tasks · keep · hard 0.5 · 12 tasks · keep                                                      │
-│ ratings: deepseek-v4.1-flash 3 · gpt-6.1-sol 14                                                                      │
-│ last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue                                                    │
+│ ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14                                                            │
+│ defects reported later: 2                                                                                            │
+│ last 7 finished tasks, at least 5 · rework = fix + 0.33 * continue + defects                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Quality analysis · read only─────────────────────────────────────────────────────────────────────────────────────────╮
 │ tentative: overlap and more ratings needed                                                                           │
 │ Model matters · quality / rework (tasks)                                                                             │
 │ gpt-6.1-sol  +0.60 (14) / -0.30 (20)                                                                                 │
 │ Harness matters · quality / rework (tasks)                                                                           │
-│ codex  +0.10 (14) / +0.00 (20)                                                                                       │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

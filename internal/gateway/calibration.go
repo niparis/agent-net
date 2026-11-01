@@ -70,6 +70,21 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 	}
 	rows.Close()
 
+	// A defect reported later adds its severity points of rework to that
+	// worker's task. The sums are per session, so the per-session loop below
+	// adds them once.
+	defects, err := s.DefectCountsBySession(cut)
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
+	defectRework, err := s.DefectReworkBySession(cut)
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
+	totalDefects := 0
+	for _, n := range defects {
+		totalDefects += n
+	}
 	samples := []protocol.CalibrationSample{}
 	for _, sessionID := range order {
 		sess := sessions[sessionID]
@@ -82,7 +97,7 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 			difficulty = "normal"
 		}
 		samples = append(samples, protocol.CalibrationSample{Caller: sess.caller, Difficulty: difficulty,
-			Continue: sess.cont, Fix: sess.fix, EndedAt: sess.endedAt})
+			Continue: sess.cont, Fix: sess.fix + defectRework[sessionID], EndedAt: sess.endedAt})
 	}
 
 	scores, err := s.scores()
@@ -107,6 +122,7 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 		return protocol.Calibration{}, err
 	}
 	cal.Ratings = ratings
+	cal.Defects = totalDefects
 	cal.Quality = s.QualityAnalysis()
 	for i := range cal.Callers {
 		cal.Callers[i].Name = names[cal.Callers[i].Caller]

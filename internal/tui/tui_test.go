@@ -143,6 +143,12 @@ type trustCall struct {
 
 type renameCall struct{ id, name string }
 
+type defectCall struct {
+	worker   string
+	note     string
+	severity int
+}
+
 type fakeSource struct {
 	snap     Snapshot
 	snapErr  error
@@ -156,6 +162,7 @@ type fakeSource struct {
 	sentTo, sentBody string
 	started          *protocol.WorkerStartRequest
 	stopped          string
+	defects          []defectCall
 	actErr           error
 	trusts           []trustCall
 	trustErr         error
@@ -366,6 +373,13 @@ func (f *fakeSource) StartWorker(_ context.Context, r protocol.WorkerStartReques
 func (f *fakeSource) StopWorker(_ context.Context, id string) error {
 	f.stopped = id
 	return f.actErr
+}
+func (f *fakeSource) ReportDefect(_ context.Context, worker, note string, severity int) (protocol.RateResult, error) {
+	f.defects = append(f.defects, defectCall{worker: worker, note: note, severity: severity})
+	if f.actErr != nil {
+		return protocol.RateResult{}, f.actErr
+	}
+	return protocol.RateResult{Accepted: true, Worker: worker, Kind: protocol.RateKindDefectLater, Severity: severity}, nil
 }
 func (f *fakeSource) SessionStart(_ context.Context, r protocol.SessionStartRequest) (protocol.StartedSession, error) {
 	f.sessionStarts = append(f.sessionStarts, r)

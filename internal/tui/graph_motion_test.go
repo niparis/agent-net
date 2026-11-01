@@ -56,8 +56,14 @@ func TestGraphFrameIntervalFollowsMotion(t *testing.T) {
 	}
 	m := graphModel(120, 34)
 	m.graphPixel.graphics = true
-	m.graphState.Smooth = true
+	// Without the motion switch the pixel graph stays still and never asks
+	// for animation frames.
 	m.graphState, _ = graphview.Update(m.graphState, graphview.Tick{Now: t0})
+	if got := m.graphFrameInterval(); got != graphIdleInterval {
+		t.Fatalf("still graph interval %v, want %v", got, graphIdleInterval)
+	}
+	m.graphPixel.motion = true
+	m.graphState.Smooth = true
 	if got := m.graphFrameInterval(); got != graphFrameInterval {
 		t.Fatalf("traffic interval %v, want %v", got, graphFrameInterval)
 	}

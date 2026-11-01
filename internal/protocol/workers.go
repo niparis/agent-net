@@ -216,8 +216,9 @@ type WorkerInfo struct {
 	AutoContinue int `json:"auto_continue,omitempty"`
 	// DifficultyAsked is the difficulty the caller asked for (empty when it
 	// named none); DifficultyUsed is the level the chooser used.
-	DifficultyAsked string `json:"difficulty_asked,omitempty"`
-	DifficultyUsed  string `json:"difficulty_used,omitempty"`
+	DifficultyAsked string   `json:"difficulty_asked,omitempty"`
+	DifficultyUsed  string   `json:"difficulty_used,omitempty"`
+	Touches         []string `json:"touches,omitempty"`
 }
 
 // Frames for workers. The caller's daemon sends "worker.start" and
@@ -308,8 +309,9 @@ type (
 		RecordTask string `json:"record_task,omitempty"`
 		// DifficultyAsked and DifficultyUsed are kept on the worker record for
 		// the difficulty calibration (empty from an older gateway).
-		DifficultyAsked string `json:"difficulty_asked,omitempty"`
-		DifficultyUsed  string `json:"difficulty_used,omitempty"`
+		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
+		DifficultyUsed  string   `json:"difficulty_used,omitempty"`
+		Touches         []string `json:"touches,omitempty"`
 		// AutoContinue turns the daemon's own continues for a worker that
 		// stopped early on or off (default on).
 		AutoContinue *bool `json:"auto_continue,omitempty"`
@@ -404,8 +406,9 @@ type (
 		AutoContinueRun int `json:"auto_continue_run,omitempty"`
 		// DifficultyAsked and DifficultyUsed are the difficulty the caller
 		// asked for and the level the chooser used.
-		DifficultyAsked string `json:"difficulty_asked,omitempty"`
-		DifficultyUsed  string `json:"difficulty_used,omitempty"`
+		DifficultyAsked string   `json:"difficulty_asked,omitempty"`
+		DifficultyUsed  string   `json:"difficulty_used,omitempty"`
+		Touches         []string `json:"touches,omitempty"`
 	}
 )
 

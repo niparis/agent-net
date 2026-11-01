@@ -170,6 +170,32 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		return out, true, nil
 
+	case protocol.OpWorkerDefect:
+		// The owner's own path for a defect found later. It never carries a
+		// score: the caller's agent_rate remains the agent-side rating and
+		// defect tool.
+		if client != "cli" {
+			return nil, true, errors.New("only the owner can report a defect found later")
+		}
+		var p protocol.DefectRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad worker_defect params")
+		}
+		sid, _, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, "rate.add", protocol.RateFrame{RateRequest: protocol.RateRequest{
+			Worker: p.Worker, Kind: protocol.RateKindDefectLater, Severity: p.Severity, Note: p.Note}, Rater: sid}); err != nil {
+			return nil, true, tooOldGateway(err)
+		}
+		var out protocol.RateResult
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, true, err
+		}
+		return out, true, nil
+
 	case protocol.OpWorkerStart:
 		var p protocol.WorkerStartRequest
 		if json.Unmarshal(raw, &p) != nil {

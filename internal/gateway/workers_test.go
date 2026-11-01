@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestWorkerSessionAndMessages(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, _, _ := s.Agent(wid)
-	if a.Worker == nil || *a.Worker != *in.Worker {
+	if a.Worker == nil || !reflect.DeepEqual(a.Worker, in.Worker) {
 		t.Fatalf("worker view: %+v", a.Worker)
 	}
 	m, _, err := s.StoreMessage(protocol.MsgSend{Sender: wid, Recipient: oid, Body: "report", Type: protocol.TypeNotification})

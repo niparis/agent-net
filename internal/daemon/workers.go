@@ -171,6 +171,7 @@ type worker struct {
 	// difficultyAsked is what the caller asked for, difficultyUsed the level
 	// the chooser used. They are kept for the difficulty calibration.
 	difficultyAsked, difficultyUsed string
+	touches                         string
 	// taskFull is the full first task (at most 64 KiB), kept in the record so
 	// that a new worker can continue it.
 	taskFull string
@@ -266,6 +267,7 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 	next.Continue, next.Fix = w.continueCount, w.fixCount
 	next.AutoContinue = w.autoContinueCount
 	next.DifficultyAsked, next.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
+	next.Touches = splitTouches(w.touches)
 	w.info = &next
 	// A copy: the agent list and the session info may outlive this call, and
 	// noteAsk replaces the task under wmu. No one changes a value that a
@@ -469,7 +471,7 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		Continue: w.continueCount, Fix: w.fixCount, ContinueRun: w.continueRun, FixRun: w.fixRun,
 		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
 		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
-		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed}
+		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed, Touches: w.touches}
 }
 
 // ---- starting ----
@@ -577,7 +579,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
-		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed,
+		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
 		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue)}
 	worktree, branch := "", ""
 	if l.Isolation == protocol.IsolationWorktree {
@@ -925,7 +927,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
 			AutoContinue: r.AutoContinueCount, AutoContinueRun: r.AutoContinueRun,
-			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed})
+			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches)})
 		cancel()
 		var re RemoteError
 		switch {
@@ -1024,7 +1026,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
-		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, ready: make(chan struct{})}
+		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
 	d.workers[w.id] = w
 	row.EndedReason, row.Reported, row.Resumable = "", false, false
@@ -1398,7 +1400,7 @@ func (d *Daemon) adoptWorkers() {
 			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions), continueCount: r.Continue, fixCount: r.Fix,
 			continueRun: r.ContinueRun, fixRun: r.FixRun, pendingHandback: r.PendingHandback, pendingPartial: r.PendingPartial,
 			autoContinue: r.AutoContinue, autoContinueCount: r.AutoContinueCount, autoContinueRun: r.AutoContinueRun,
-			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}
+			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, touches: r.Touches}
 		w.logPath = filepath.Join(w.dir, "worker.log")
 		if since, key, report, sent, err := d.st.loadWorkerIdleNotice(w.id); err == nil {
 			w.idleNoticeSince, w.idleNoticeKey, w.idleNoticeReport, w.idleNoticeSent = since, key, report, sent
@@ -1444,4 +1446,11 @@ func (d *Daemon) workerCount() int {
 	d.wmu.Lock()
 	defer d.wmu.Unlock()
 	return len(d.workers)
+}
+
+func splitTouches(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
 }

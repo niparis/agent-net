@@ -27,17 +27,44 @@ const (
 	RateFirstTasks = 3
 	// RateNoteMax is the bytes kept from the caller's one-line note.
 	RateNoteMax = 200
+	// RateKindRating is agent_rate's default: a satisfaction score.
+	RateKindRating = "rating"
+	// RateKindDefectLater is a defect found after the hand-back (or after
+	// merge). Each report adds RateSeverityMin to RateSeverityMax points of
+	// rework to the task.
+	RateKindDefectLater = "defect_found_later"
+	// RateSeverityMin and RateSeverityMax are the severity scale of a late
+	// defect report.
+	RateSeverityMin = 1
+	RateSeverityMax = 4
 )
 
-// RateRequest is agent_rate: one caller's rating of one finished worker.
+// RateRequest is agent_rate: one caller's rating of one finished worker, or
+// one defect found later on that worker's task.
 type RateRequest struct {
 	// Worker is the session ID of the finished worker, as the end notice names
 	// it.
 	Worker string `json:"worker"`
-	// Score is 1 to 5 for the result.
-	Score int `json:"score"`
-	// Note is one optional line on why.
+	// Kind is RateKindRating (the default, also when empty) or
+	// RateKindDefectLater.
+	Kind string `json:"kind,omitempty"`
+	// Score is 1 to 5 for the result. A defect report has no score.
+	Score int `json:"score,omitempty"`
+	// Severity is 1 to 4 on a defect report, and required there. It adds that
+	// many points of rework to the worker's task.
+	Severity int `json:"severity,omitempty"`
+	// Note is one optional line on why. A defect report uses it as the
+	// one-line description of the defect.
 	Note string `json:"note,omitempty"`
+}
+
+// DefectRequest is the owner's OpWorkerDefect: one defect found later on a
+// worker's task. The owner path never takes a score; the caller's agent_rate
+// path takes the same shape with kind defect_found_later.
+type DefectRequest struct {
+	Worker   string `json:"worker"`
+	Severity int    `json:"severity"`
+	Note     string `json:"note,omitempty"`
 }
 
 // RateFrame is "rate.add", daemon to gateway: the rating and the session that
@@ -53,7 +80,9 @@ type RateResult struct {
 	Accepted   bool   `json:"accepted"`
 	Reason     string `json:"reason,omitempty"`
 	Worker     string `json:"worker,omitempty"`
+	Kind       string `json:"kind,omitempty"`
 	Score      int    `json:"score,omitempty"`
+	Severity   int    `json:"severity,omitempty"`
 	Model      string `json:"model,omitempty"`
 	Harness    string `json:"harness,omitempty"`
 	Effort     string `json:"effort,omitempty"`
@@ -63,6 +92,12 @@ type RateResult struct {
 
 // ValidRateScore tells whether a score is on the 1 to 5 scale.
 func ValidRateScore(score int) bool { return score >= RateScaleMin && score <= RateScaleMax }
+
+// ValidRateSeverity tells whether a late defect severity is on the 1 to 4
+// scale.
+func ValidRateSeverity(severity int) bool {
+	return severity >= RateSeverityMin && severity <= RateSeverityMax
+}
 
 // CleanRateNote makes a rating note one short, printable line: control
 // characters become spaces, whitespace collapses, and the text is cut to
@@ -121,8 +156,10 @@ type RateOfferResult struct {
 	Difficulty string `json:"difficulty,omitempty"`
 }
 
-// CalibrationRating is one model's rating count in the read-only table.
+// CalibrationRating is one model's rating count in the read-only table, with
+// how many defects were reported later on its tasks.
 type CalibrationRating struct {
-	Model string `json:"model"`
-	Count int    `json:"count"`
+	Model   string `json:"model"`
+	Count   int    `json:"count"`
+	Defects int    `json:"defects,omitempty"`
 }

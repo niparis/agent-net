@@ -27,9 +27,10 @@ func calibrationSnapshot() protocol.Calibration {
 		},
 		Quality: protocol.QualityAnalysis{Status: "tentative: overlap and more ratings needed", Ratings: 14, Average: 3.5, Effects: []protocol.QualityEffect{{Kind: "model", Name: "gpt-6.1-sol", Quality: .6, Rework: -.3, Ratings: 14, Runs: 20}, {Kind: "harness", Name: "codex", Quality: .1, Ratings: 14, Runs: 20}, {Kind: "effort", Name: "gpt-6.1-sol high", Quality: .1, Ratings: 3, Runs: 5}}, Profiles: []protocol.ProfileQuality{{Name: "sol high", Quality: 4.2, Ratings: 3, Runs: 5}}},
 		Ratings: []protocol.CalibrationRating{
-			{Model: "deepseek-v4.1-flash", Count: 3},
+			{Model: "deepseek-v4.1-flash", Count: 3, Defects: 1},
 			{Model: "gpt-6.1-sol", Count: 14},
 		},
+		Defects: 2,
 	}
 }
 
@@ -44,7 +45,8 @@ func TestQuotaCalibrationTable(t *testing.T) {
 		"agent-net", "homelab-agent *", "normal", "hard", "simple",
 		"lower", "keep", "not enough tasks",
 		"network: normal 1 · 9 tasks · keep",
-		"ratings: deepseek-v4.1-flash 3 · gpt-6.1-sol 14",
+		"ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14",
+		"defects reported later: 2",
 		"weak caller: follows the network and cannot lower a tier",
 	} {
 		if !strings.Contains(view, want) {

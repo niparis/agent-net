@@ -69,10 +69,11 @@ the weighted rework. They stay visible in the track record line as
 `2 auto-continues`, as a sign that a model needed a nudge and a caller did not
 have to give it.
 
-The weighted rework of a task is `fix + 0.5 × continue`. A fix counts more
-because it costs review attention: the worker delivered the wrong thing, and
-someone had to notice. A continue is cheaper: the work so far was right, and
-a resumable harness picks it up.
+The weighted rework of a task is `fix + 0.33 × continue`, plus the severity
+points of late defect reports. A fix counts more because it costs review
+attention: the worker delivered the wrong thing, and someone had to notice. A
+continue is cheaper: the work so far was right, and a resumable harness picks
+it up. The owner set the continue weight to 0.33 on 2026-11-01; a fix stays 1.
 
 This split matters for real models. Today terra on Codex stops early (many
 continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
@@ -89,6 +90,16 @@ own. A run stopped by the owner or the caller is left out of the samples: a
 stop says nothing about the model, and it must not count as a clean task. So
 are runs recorded before the counters shipped, because their 0 means unknown,
 not "no rework".
+
+**A defect found later.** The counters only see a follow-up the caller sends.
+A defect found hours later, after the hand-back or after merge, would be lost.
+So the caller can report it with `agent_rate` and `kind:
+"defect_found_later"`: one line on what is wrong, a required severity from 1
+to 4, no score, at any time within the gateway's worker run retention, also
+after a rating and more than once. Each report is one defect and adds its
+severity in points of rework to that worker's task. The owner can file one
+from the Messages tab, with `f` on a worker conversation, where the prompt
+asks for the note and then the severity.
 
 Not counted in the first version: restarts on a new worker, reverts after
 landing, fix-up lines found in git. They are better signals but need more
@@ -319,8 +330,8 @@ few days before part 3 starts steering.
 
 ## Open questions for the owner
 
-1. **The weights.** A fix counts 1 and a continue 0.5. Recommendation: start
-   there, and adjust from part 2's table.
+1. **The weights.** Decided by the owner on 2026-11-01: a fix counts 1, a
+   continue 0.33, and a late defect adds its severity from 1 to 4. The scale: 1 cosmetic or test-only, caught before release; 2 a visible annoyance or a latent performance problem that had not hit the owner yet; 3 a broken feature or a real performance regression in a release; 4 an outage, data loss or a security problem.
 2. **The window.** The last 7 tasks, with at least 5. Recommendation: keep
    it; at today's pace that is about a day of work per caller.
 3. **The strong-caller threshold.** Recommendation: a score of 45 or more,
@@ -333,3 +344,5 @@ few days before part 3 starts steering.
 6. **The analysis.** A sum of effects with shrinkage, no interactions at
    first. Recommendation: yes; it is small, and plain medians per
    combination would stay empty for weeks.
+
+Worker starts can also report `touches`. When it includes `db` (schema, migrations or stored data) or `hot-path` (code run on every request, refresh, redraw or message), automatic choice uses the next difficulty level, capped at `very_complex`. The requested difficulty remains the calibration input; the worker and run also store the effective level and touched areas. Empty touches or other areas leave choice unchanged.

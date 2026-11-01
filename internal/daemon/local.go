@@ -696,6 +696,7 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 	if client == "cli" && !readOnly[method] && !strings.HasPrefix(method, "mcp_") &&
 		method != "project_add" && method != "project_remove" &&
 		method != protocol.OpSend && method != protocol.OpWorkerStart && method != protocol.OpWorkerStop &&
+		method != protocol.OpWorkerDefect &&
 		method != protocol.OpWorkerProfiles && method != protocol.OpWorkerProfileAdd && method != protocol.OpWorkerProfileRemove {
 		return nil, fmt.Errorf("method %q is not available to cli clients", method)
 	}

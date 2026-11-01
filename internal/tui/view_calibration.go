@@ -70,7 +70,11 @@ func (m Model) calibrationView(w int) []string {
 	if len(cal.Ratings) > 0 {
 		var parts []string
 		for _, r := range cal.Ratings {
-			parts = append(parts, fmt.Sprintf("%s %d", r.Model, r.Count))
+			part := fmt.Sprintf("%s %d", r.Model, r.Count)
+			if r.Defects > 0 {
+				part += fmt.Sprintf(" (%d later)", r.Defects)
+			}
+			parts = append(parts, part)
 		}
 		for _, line := range wrap("ratings: "+strings.Join(parts, " · "), w-4) {
 			body = append(body, sDim.Render(line))
@@ -78,7 +82,8 @@ func (m Model) calibrationView(w int) []string {
 	} else {
 		body = append(body, sDim.Render(clip("ratings: none yet", w-4)))
 	}
-	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue", w-4)))
+	body = append(body, sDim.Render(clip(fmt.Sprintf("defects reported later: %d", cal.Defects), w-4)))
+	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.33 * continue + defects", w-4)))
 	return append(panel("Difficulty calibration · read only", body, w, roleAccent), qualityView(cal.Quality, w)...)
 }
 

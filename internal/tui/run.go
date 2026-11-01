@@ -20,6 +20,7 @@ func Run(ctx context.Context, src Source) error {
 	_ = lipgloss.HasDarkBackground()
 	m := New(src)
 	m.graphPixel.set(graphview.Detect(os.Getenv, graphview.QueryTerminal))
+	m.graphPixel.motion = os.Getenv("AGENT_NET_GRAPH_MOTION") == "1"
 	m.tmuxSocket = tmuxSocketOf(os.Getenv("TMUX"))
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))

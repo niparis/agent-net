@@ -45,6 +45,11 @@ func (m Model) hints() []hint {
 	case m.focus == focusCTO:
 		return []hint{{"enter", "open " + m.ctoTitle(), 1}, {"tab", "back", 1}, {"m", "model", 2}, {"n", "new", 2}, {"u", "undo", 2}}
 	case m.tab == messagesTab:
+		if m.selectedWorkerConversation() {
+			// The defect key only applies here. It takes the slot of the
+			// "enter latest" hint, so the line keeps seven hints.
+			return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"v", "body", 1}, {"f", "defect", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
+		}
 		return []hint{{"up/down", "thread", 1}, {"left/right", "msg", 1}, {"enter", "latest", 1}, {"v", "body", 1}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
 	case m.tab == quotasTab:
 		return []hint{{"up/down", "select", 1}, {"p", "protect", 1}, {"s", "show unset", 2}, {"r", "refresh", 2}, {"tab", m.ctoTitle(), 2}, {"?", "help", 2}, {"q", "quit", 0}}
@@ -120,10 +125,17 @@ func (m Model) helpLine(w int) string {
 		}
 		return confirmLine("Protect "+sanitize(m.quotaConfirm)+"?", w)
 	case modeConfirm:
+		if m.confirmDefect {
+			return clip(sBold.Render(confirmName(fmt.Sprintf("Report a severity %d defect found later on ", m.defectLevel), m.defectName, "?", w)), w)
+		}
 		if m.confirmOwner {
 			return clip(sBold.Render(confirmName("Stop ", m.confirmName, "? Conversation kept: Enter resumes it.", w)), w)
 		}
 		return clip(sBold.Render(confirmName("Stop worker ", m.confirmName, "?", w)), w)
+	case modeDefectNote:
+		return clip(m.defect.View()+sDim.Render("   enter asks for severity, esc cancels"), w)
+	case modeDefectSeverity:
+		return clip(m.defectSeverity.View()+sDim.Render("   enter asks to confirm, esc cancels"), w)
 	case modeProjectRename:
 		return clip(m.rename.View()+sDim.Render("   enter saves, empty clears, esc cancels"), w)
 	case modeRename:
@@ -222,7 +234,7 @@ func (m Model) helpContent(w int) []string {
 		{"/", "filter (words match name, project, branch, model, ...)"},
 		{"o, d", "show offline sessions; toggle selected session details"},
 		{"a", "active only: hide sessions idle for over an hour"},
-		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; w: workers; e/l: events"},
+		{"Messages", "up/down: conversation; left/right: message; enter: latest; v: body; f: defect found later; w: workers; e/l: events"},
 		{"c", "hand over the selected message to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"r", "refresh now"},
 		{"states", "messages: pending ... delivered ✓ replied ↩ failed ✗"},

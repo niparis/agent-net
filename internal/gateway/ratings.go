@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -145,10 +146,24 @@ func (s *Store) workerRatingFacts(sessionID string) (ratingFacts, bool, error) {
 	return f, true, nil
 }
 
-// AddRating stores one caller's rating of a finished worker. It is accepted
-// once per worker, and only from the session that started it. The note is cut
-// to one line and secrets are masked.
+// AddRating stores one caller's rating of a finished worker, or one defect
+// reported after its hand-back. A rating is accepted once per worker; every
+// defect report is accepted and counts again. Both come only from the session
+// that started the worker, or from the owner. The note is cut to one line and
+// secrets are masked.
 func (s *Store) AddRating(f protocol.RateFrame) (protocol.RateResult, error) {
+	switch strings.TrimSpace(f.Kind) {
+	case "", protocol.RateKindRating:
+		return s.addRating(f)
+	case protocol.RateKindDefectLater:
+		return s.addDefect(f)
+	default:
+		return protocol.RateResult{}, reject("unknown rating kind %q", f.Kind)
+	}
+}
+
+// addRating stores the satisfaction score.
+func (s *Store) addRating(f protocol.RateFrame) (protocol.RateResult, error) {
 	worker := strings.TrimSpace(f.Worker)
 	rater := strings.TrimSpace(f.Rater)
 	if worker == "" || rater == "" {
@@ -191,25 +206,156 @@ func (s *Store) AddRating(f protocol.RateFrame) (protocol.RateResult, error) {
 	if err := s.refreshQuality(); err != nil {
 		return protocol.RateResult{}, err
 	}
-	return protocol.RateResult{Accepted: true, Worker: worker, Score: f.Score, Model: facts.model,
-		Harness: facts.harness, Effort: facts.effort, Difficulty: facts.difficulty, At: at}, nil
+	return protocol.RateResult{Accepted: true, Worker: worker, Kind: protocol.RateKindRating, Score: f.Score,
+		Model: facts.model, Harness: facts.harness, Effort: facts.effort, Difficulty: facts.difficulty, At: at}, nil
 }
 
-// RatingCounts is how many ratings each model has, for the read-only Quotas
-// table.
+// addDefect stores one defect found after the worker's hand-back. There is no
+// once-per-worker rule: each report is one defect. It needs a stored finished
+// run to attach to, so a worker that has not handed back yet is refused.
+func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
+	worker := strings.TrimSpace(f.Worker)
+	rater := strings.TrimSpace(f.Rater)
+	out := protocol.RateResult{Worker: worker, Kind: protocol.RateKindDefectLater, Severity: f.Severity}
+	if worker == "" || rater == "" {
+		return out, reject("a defect report needs a worker session and the session that gives it")
+	}
+	if !protocol.ValidRateSeverity(f.Severity) {
+		return out, reject("severity must be 1 to 4, not %d", f.Severity)
+	}
+	facts, ok, err := s.workerRatingFacts(worker)
+	if err != nil {
+		return out, err
+	}
+	if !ok || facts.runID == 0 {
+		out.Reason = "the worker has not finished: no hand-back to report a defect on"
+		return out, nil
+	}
+	if facts.caller != rater {
+		owner, err := s.sessionOwner(rater)
+		if err != nil {
+			return out, err
+		}
+		if !owner {
+			out.Reason = "that worker was not started by this session, and the reporter is not the owner"
+			return out, nil
+		}
+	}
+	note := redact.Secrets(protocol.CleanRateNote(f.Note))
+	var raterModel string
+	s.db.QueryRow(`SELECT model FROM sessions WHERE id = ?`, rater).Scan(&raterModel)
+	at := s.now().Unix()
+	if _, err := s.db.Exec(`INSERT INTO worker_defects
+		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, severity, note, at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
+		facts.model, facts.effort, facts.difficulty, f.Severity, note, at); err != nil {
+		return out, err
+	}
+	if err := s.refreshQuality(); err != nil {
+		return out, err
+	}
+	out.Accepted, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
+		true, facts.model, facts.harness, facts.effort, facts.difficulty, at
+	return out, nil
+}
+
+// sessionOwner tells whether a session is a machine's owner pseudo-session.
+func (s *Store) sessionOwner(sessionID string) (bool, error) {
+	var harness string
+	err := s.db.QueryRow(`SELECT harness FROM sessions WHERE id = ?`, sessionID).Scan(&harness)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return protocol.IsOwner(harness), nil
+}
+
+// RatingCounts is how many ratings and late defect reports each model has, for
+// the read-only Quotas table. A model with defects and no rating still shows.
 func (s *Store) RatingCounts() ([]protocol.CalibrationRating, error) {
-	rows, err := s.db.Query(`SELECT model, COUNT(*) FROM worker_ratings WHERE model <> '' GROUP BY model ORDER BY model`)
+	type counts struct{ ratings, defects int }
+	byModel := map[string]*counts{}
+	collect := func(query string, set func(*counts, int)) error {
+		rows, err := s.db.Query(query)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var model string
+			var n int
+			if err := rows.Scan(&model, &n); err != nil {
+				return err
+			}
+			c := byModel[model]
+			if c == nil {
+				c = &counts{}
+				byModel[model] = c
+			}
+			set(c, n)
+		}
+		return rows.Err()
+	}
+	if err := collect(`SELECT model, COUNT(*) FROM worker_ratings WHERE model <> '' GROUP BY model`,
+		func(c *counts, n int) { c.ratings = n }); err != nil {
+		return nil, err
+	}
+	if err := collect(`SELECT model, COUNT(*) FROM worker_defects WHERE model <> '' GROUP BY model`,
+		func(c *counts, n int) { c.defects = n }); err != nil {
+		return nil, err
+	}
+	models := make([]string, 0, len(byModel))
+	for model := range byModel {
+		models = append(models, model)
+	}
+	sort.Strings(models)
+	out := make([]protocol.CalibrationRating, 0, len(models))
+	for _, model := range models {
+		c := byModel[model]
+		out = append(out, protocol.CalibrationRating{Model: model, Count: c.ratings, Defects: c.defects})
+	}
+	return out, nil
+}
+
+// DefectCountsBySession counts the late defects of each worker session, for
+// the Quotas count. It is one helper so the per-session sum can add them
+// wherever the samples are built.
+func (s *Store) DefectCountsBySession(cut int64) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT session_id, COUNT(*) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	out := []protocol.CalibrationRating{}
+	out := map[string]int{}
 	for rows.Next() {
-		var r protocol.CalibrationRating
-		if err := rows.Scan(&r.Model, &r.Count); err != nil {
+		var session string
+		var n int
+		if err := rows.Scan(&session, &n); err != nil {
 			return nil, err
 		}
-		out = append(out, r)
+		out[session] = n
+	}
+	return out, rows.Err()
+}
+
+// DefectReworkBySession sums the severity points of each worker session's late
+// defects. The calibration adds this to the task's fix count.
+func (s *Store) DefectReworkBySession(cut int64) (map[string]int, error) {
+	rows, err := s.db.Query(`SELECT session_id, SUM(severity) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var session string
+		var n int
+		if err := rows.Scan(&session, &n); err != nil {
+			return nil, err
+		}
+		out[session] = n
 	}
 	return out, rows.Err()
 }

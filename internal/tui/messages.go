@@ -184,6 +184,17 @@ func (m Model) workerPair(it *feedItem, workers map[string]string) (workerSessio
 	return "", "", false
 }
 
+// selectedWorkerConversation tells whether the selection is a worker
+// conversation, where the defect-found-later key applies.
+func (m Model) selectedWorkerConversation() bool {
+	rows := m.messageConversations()
+	if len(rows) == 0 {
+		return false
+	}
+	row := rows[m.selectedConversationIndex(rows)]
+	return row.worker && row.workerSession != ""
+}
+
 func (m Model) conversationIndex(rows []messageConversation) int {
 	for n, r := range rows {
 		for _, i := range r.items {

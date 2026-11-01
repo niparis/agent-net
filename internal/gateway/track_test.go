@@ -197,3 +197,18 @@ func TestTrackRecordSumsReworkPerModel(t *testing.T) {
 		t.Errorf("other model: %+v %v %v", other, ok, err)
 	}
 }
+
+func TestWorkerRunStoresTouches(t *testing.T) {
+	s, _ := newTestStore(t)
+	err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: "node", Harness: "codex", Outcome: protocol.OutcomeComplete, Touches: []string{"db", "tests"}, DifficultyUsed: "hard"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var touches, used string
+	if err := s.db.QueryRow(`SELECT touches, difficulty_used FROM worker_runs`).Scan(&touches, &used); err != nil {
+		t.Fatal(err)
+	}
+	if touches != "db,tests" || used != "hard" {
+		t.Fatalf("got %q %q", touches, used)
+	}
+}

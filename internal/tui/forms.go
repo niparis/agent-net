@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,10 +21,12 @@ import (
 type inputMode int
 
 const (
-	modeNormal      inputMode = iota
-	modeCompose               // typing a message to the selected session
-	modeSessionForm           // the new-session form
-	modeConfirm               // asking before stopping a session
+	modeNormal         inputMode = iota
+	modeCompose                  // typing a message to the selected session
+	modeSessionForm              // the new-session form
+	modeConfirm                  // asking before stopping a session
+	modeDefectNote               // typing the one-line defect found later
+	modeDefectSeverity           // choosing the defect severity, 1 to 4
 	modeQuotaConfirm
 	modeTrust         // asking before trusting a session with peer requests
 	modePolicy        // the delegation policy form (policy.go)
@@ -190,6 +193,13 @@ func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case yes:
 		m.mode = modeNormal
+		if m.confirmDefect {
+			worker, name := m.defectWorker, m.defectName
+			note, severity := strings.TrimSpace(m.defect.Value()), m.defectLevel
+			m.confirmDefect = false
+			m.say("Reporting the defect...")
+			return m, m.defectCmd(worker, name, note, severity)
+		}
 		m.say("Stopping...")
 		if m.confirmOwner {
 			return m, m.stopSessionCmd(m.confirmID)
@@ -197,9 +207,121 @@ func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.stopCmd(m.confirmID, m.confirmName)
 	case no:
 		m.mode = modeNormal
-		m.say("Not stopped.")
+		if m.confirmDefect {
+			m.confirmDefect = false
+			m.say("Defect not reported.")
+		} else {
+			m.say("Not stopped.")
+		}
 	}
 	return m, nil
+}
+
+// ---- defect found later ----
+
+// startDefect opens the one-line note for a defect found later on the selected
+// worker conversation. The owner files it through the owner path; the worker's
+// caller can do the same with agent_rate kind defect_found_later.
+func (m Model) startDefect() (Model, tea.Cmd) {
+	if m.tab != messagesTab {
+		return m, nil
+	}
+	rows := m.messageConversations()
+	if len(rows) == 0 {
+		m.fail("Pick a worker conversation first.")
+		return m, nil
+	}
+	row := rows[m.selectedConversationIndex(rows)]
+	if !row.worker || row.workerSession == "" {
+		m.fail("Defects are reported on a worker conversation.")
+		return m, nil
+	}
+	m.mode = modeDefectNote
+	m.defect = textinput.New()
+	name := sanitize(strings.TrimSpace(m.conversationName(row.workerSession)))
+	if name == "" || name == "unknown session" {
+		name = shortID(row.workerSession)
+	}
+	m.defect.Prompt = "defect later for " + name + "> "
+	m.defect.CharLimit = protocol.RateNoteMax
+	m.defect.Cursor.SetMode(cursor.CursorHide)
+	m.defectWorker, m.defectName = row.workerSession, name
+	m.notice = notice{}
+	return m, m.defect.Focus()
+}
+
+func (m Model) defectKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.Type {
+	case tea.KeyEsc:
+		m.mode = modeNormal
+		m.say("Defect not reported.")
+		return m, nil
+	case tea.KeyEnter:
+		note := strings.TrimSpace(m.defect.Value())
+		if note == "" {
+			m.fail("Write one line about the defect.")
+			return m, nil
+		}
+		m.mode = modeDefectSeverity
+		m.defectSeverity = textinput.New()
+		m.defectSeverity.Prompt = "severity for " + m.defectName + " (1 cosmetic · 2 annoyance · 3 broken in a release · 4 outage)> "
+		m.defectSeverity.CharLimit = 1
+		m.defectSeverity.Cursor.SetMode(cursor.CursorHide)
+		m.notice = notice{}
+		return m, m.defectSeverity.Focus()
+	}
+	var cmd tea.Cmd
+	m.defect, cmd = m.defect.Update(k)
+	return m, cmd
+}
+
+func (m Model) defectSeverityKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch k.Type {
+	case tea.KeyEsc:
+		m.mode = modeNormal
+		m.say("Defect not reported.")
+		return m, nil
+	case tea.KeyEnter:
+		severity, err := strconv.Atoi(strings.TrimSpace(m.defectSeverity.Value()))
+		if err != nil || !protocol.ValidRateSeverity(severity) {
+			m.fail("Severity must be 1 to 4.")
+			return m, nil
+		}
+		m.defectLevel = severity
+		m.mode = modeConfirm
+		m.confirmDefect = true
+		m.notice = notice{}
+		return m, nil
+	}
+	var cmd tea.Cmd
+	m.defectSeverity, cmd = m.defectSeverity.Update(k)
+	return m, cmd
+}
+
+func (m Model) defectCmd(worker, name, note string, severity int) tea.Cmd {
+	src := m.src
+	return func() tea.Msg {
+		reporter, ok := src.(interface {
+			ReportDefect(context.Context, string, string, int) (protocol.RateResult, error)
+		})
+		if !ok {
+			return actionMsg{err: fmt.Errorf("Defect reports need a newer daemon and gateway.")}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := reporter.ReportDefect(ctx, worker, note, severity)
+		if err != nil {
+			return actionMsg{err: fmt.Errorf("Defect not reported: %s", explain(err))}
+		}
+		if !res.Accepted {
+			reason := strings.TrimSpace(res.Reason)
+			if reason == "" {
+				reason = "the gateway refused it"
+			}
+			return actionMsg{err: fmt.Errorf("Defect not reported: %s", explain(fmt.Errorf("%s", reason)))}
+		}
+		return actionMsg{text: "Defect found later recorded for " + name + "."}
+	}
 }
 
 func (m Model) stopCmd(id, name string) tea.Cmd {

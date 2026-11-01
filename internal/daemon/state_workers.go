@@ -55,15 +55,16 @@ type workerRow struct {
 	// DifficultyAsked and DifficultyUsed are the level the caller asked for
 	// and the level the chooser used.
 	DifficultyAsked, DifficultyUsed string
+	Touches                         string
 }
 
 func (s *state) saveWorker(w workerRow) error {
 	_, err := s.db.Exec(`INSERT INTO workers (id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
-		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used,
+		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
 		auto_continue, auto_continue_count, auto_continue_run)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET native_id=excluded.native_id, session_id=excluded.session_id,
 		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
 		last_active=excluded.last_active, ended_reason=excluded.ended_reason, resumable=excluded.resumable,
@@ -73,7 +74,7 @@ func (s *state) saveWorker(w workerRow) error {
 		continue_count=excluded.continue_count, fix_count=excluded.fix_count,
 		continue_run=excluded.continue_run, fix_run=excluded.fix_run,
 		pending_handback=excluded.pending_handback, pending_partial=excluded.pending_partial,
-		difficulty_asked=excluded.difficulty_asked, difficulty_used=excluded.difficulty_used,
+		difficulty_asked=excluded.difficulty_asked, difficulty_used=excluded.difficulty_used, touches=excluded.touches,
 		auto_continue=excluded.auto_continue, auto_continue_count=excluded.auto_continue_count,
 		auto_continue_run=excluded.auto_continue_run`,
 		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.NativeID, w.SessionID, w.PID, w.PGID,
@@ -81,7 +82,7 @@ func (s *state) saveWorker(w workerRow) error {
 		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.DoneStatus,
 		boolInt(w.DonePartial), w.Ref, w.TaskFull, w.Permissions,
 		w.Continue, w.Fix, w.ContinueRun, w.FixRun, boolInt(w.PendingHandback), boolInt(w.PendingPartial),
-		w.DifficultyAsked, w.DifficultyUsed,
+		w.DifficultyAsked, w.DifficultyUsed, w.Touches,
 		boolInt(w.AutoContinue), w.AutoContinueCount, w.AutoContinueRun)
 	return err
 }
@@ -97,7 +98,7 @@ func (s *state) workers() ([]workerRow, error) {
 	rows, err := s.db.Query(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
-		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used,
+		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
 		auto_continue, auto_continue_count, auto_continue_run
 		FROM workers ORDER BY started_at`)
 	if err != nil {
@@ -112,7 +113,7 @@ func (s *state) workers() ([]workerRow, error) {
 		if err := rows.Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
 			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
-			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed,
+			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed, &w.Touches,
 			&autoContinue, &w.AutoContinueCount, &w.AutoContinueRun); err != nil {
 			return nil, err
 		}
@@ -133,13 +134,13 @@ func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 	err := s.db.QueryRow(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
-		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used,
+		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
 		auto_continue, auto_continue_count, auto_continue_run
 		FROM workers WHERE session_id = ?`, sessionID).
 		Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
 			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
-			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed,
+			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed, &w.Touches,
 			&autoContinue, &w.AutoContinueCount, &w.AutoContinueRun)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

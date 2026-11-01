@@ -112,8 +112,8 @@ func TestQualityReworkProfilesAndWeakGuard(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := s.QualityAnalysis()
-	if got.ReworkAverage != 3 || len(got.Profiles) != 1 || got.Profiles[0].Ratings != 1 || got.Profiles[0].Runs != 1 {
-		t.Fatalf("analysis: %+v", got)
+	if want := protocol.ReworkWeight(2, 2); got.ReworkAverage != want || len(got.Profiles) != 1 || got.Profiles[0].Ratings != 1 || got.Profiles[0].Runs != 1 {
+		t.Fatalf("analysis: %+v (want rework average %v)", got, want)
 	}
 	f := qualityFit{Average: 3, Effects: map[string]float64{"model\x00m": 1}}
 	if v := qualityPrediction(f, nil, "m", "opencode", "high", "normal"); v != 3 {
