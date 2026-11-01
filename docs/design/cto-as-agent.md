@@ -4,7 +4,7 @@
 
 This design builds on the CTO as the advisor for the whole network, its charter, edges and authority. Its proposed peer session and owner-approved proposals fit decision 0036. The current private CTO behavior remains as documented until this design is built.
 
-Status: implemented minor graph authority and the owner window on 2026-11-01 ([0040](../decisions/0040-cto-minor-graph-and-owner-window.md)), amending option A accepted on 2026-10-31. Parts 6, 7 and 9 are implemented; the CTO session receives messages through the active harness and uses paged public reads. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
+Status: implemented minor graph authority and the owner window on 2026-11-01 ([0040](../decisions/0040-cto-minor-graph-and-owner-window.md)), amending option A accepted on 2026-10-31. Parts 1 to 11 are implemented; the CTO session receives messages through the active harness and uses paged public reads. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
 Part 5 (hand-over) is implemented: `c` previews one item and sends it through
@@ -441,7 +441,13 @@ and audit records.
 - `message`, `ask_owner`, `learn`, `ui`, `graph_change`, `session_change`, `worker_change`, `answer`, `tools_change`, `mcp_change`, `mcp_call`, `settings_change`, `project_change`, `cto_new`; remove the old names.
 - Tests: every old change is reachable through an action (parity test); an unknown action is refused; the whole schema list stays below 16 KB; the brief names only tools that exist.
 
-**Part 11. Docs.** Mark 0022's CTO isolation as superseded by 0035, update `docs/reference.md` (CTO section and parity table), `docs/security.md` (rules 1 and 2, the classes, the residual risks above) and the guidance text that tells sessions how to treat the two CTO notes.
+**Part 11. Docs.**
+
+Status: implemented. 0022 records that 0035 supersedes its CTO isolation.
+`docs/reference.md` and `docs/security.md` describe the current tools, classes,
+graph rules and owner window, and the guidance text covers both CTO notes.
+
+- Mark 0022's CTO isolation as superseded by 0035, update `docs/reference.md` (CTO section and parity table), `docs/security.md` (rules 1 and 2, the classes, the residual risks above) and the guidance text that tells sessions how to treat the two CTO notes.
 
 ## 13. Open questions for the owner
 
