@@ -12,7 +12,7 @@ import (
 // Each view is derived from ordinary dispatch with the CTO session, or from
 // the CTO's own proposal store and static guidance.
 var ctoReadSources = map[string]string{
-	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
+	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
 }
 
 func (d *Daemon) ctoReadConn() *localConn {
@@ -208,7 +208,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		}
 		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
 
-	case "proposals":
+	case "proposals", "cto_proposals_find":
 		var q struct {
 			ID     string `json:"id"`
 			Limit  int    `json:"limit"`
