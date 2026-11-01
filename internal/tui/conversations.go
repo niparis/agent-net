@@ -98,7 +98,13 @@ func (m *Model) rebuildConversations() {
 			if r.typ == "" {
 				r.typ = row.typ
 			}
-			r.count = max(r.count, row.count)
+			if row.worker {
+				// The gateway counts a worker's content messages across all of
+				// its conversations; the live feed sees only recent events.
+				r.count = row.count
+			} else {
+				r.count = max(r.count, row.count)
+			}
 			r.stored, r.convID = true, row.convID
 			if r.from == "" {
 				r.from, r.to = row.from, row.to
@@ -111,6 +117,9 @@ func (m *Model) rebuildConversations() {
 			}
 			if r.workerSession == "" && row.worker {
 				r.worker, r.workerSession, r.workerOwner = true, row.workerSession, row.workerOwner
+			}
+			if row.task != "" {
+				r.task = row.task
 			}
 			continue
 		}
@@ -136,7 +145,7 @@ func (m *Model) rebuildConversations() {
 	if needle := strings.ToLower(firstNonEmpty(m.uiFilter, m.filter)); needle != "" {
 		kept := rows[:0]
 		for _, r := range rows {
-			text := strings.ToLower(strings.Join([]string{r.from, r.to, r.fromName, r.toName, r.lastLine,
+			text := strings.ToLower(strings.Join([]string{r.from, r.to, r.fromName, r.toName, r.lastLine, r.task,
 				m.conversationName(r.from), m.conversationName(r.to)}, " "))
 			if strings.Contains(text, needle) {
 				kept = append(kept, r)
@@ -170,7 +179,14 @@ func (m Model) storedConversation(v protocol.ConversationView) messageConversati
 		id: v.ID, convID: v.ID, from: v.From, to: v.To, fromName: v.FromName, toName: v.ToName,
 		count: v.Count, lastLine: sanitize(v.LastLine), state: v.State, typ: v.Type, at: v.At,
 		lastMsgID: v.LastMessageID, cto: v.FromCTO, ownerInstruction: v.OwnerInstruction,
-		stored: true,
+		stored: true, task: sanitize(v.Task),
+	}
+	if v.WorkerSession != "" {
+		c.worker, c.workerSession, c.workerOwner = true, v.WorkerSession, v.WorkerOwner
+		if c.workerOwner == "" {
+			c.workerOwner = v.From
+		}
+		return c
 	}
 	m.markWorker(&c)
 	return c
@@ -190,14 +206,15 @@ func (m Model) markWorker(c *messageConversation) {
 
 // partyName prefers the session name the screen already knows and falls back
 // to the name the gateway stored, so an old conversation still has a label.
+// A session whose record is gone is an ended session, never an unknown one.
 func (m Model) partyName(id, fallback string) string {
-	if name := m.conversationName(id); name != "unknown session" {
+	if name := m.conversationName(id); name != "ended session" {
 		return name
 	}
 	if fallback != "" {
 		return sanitize(fallback)
 	}
-	return "unknown session"
+	return "ended session"
 }
 
 // conversationCmd asks for one page. first replaces the first page and keeps
@@ -352,7 +369,7 @@ func (m Model) conversationLines(c messageConversation, w int) []string {
 				continue
 			}
 			seen[msg.ID] = true
-			out = append(out, m.messageLines(msg.From, msg.FromCTO, msg.OwnerInstruction,
+			out = append(out, m.messageLines(msg.From, c.workerSession, msg.FromCTO, msg.OwnerInstruction,
 				m.clock(msg.CreatedAt), msg.Body, msg.ID == selectedID, w)...)
 		}
 	}
@@ -368,7 +385,7 @@ func (m Model) conversationLines(c messageConversation, w int) []string {
 		if body == "" {
 			body = m.missingMessageBody(it)
 		}
-		out = append(out, m.messageLines(it.From, it.FromCTO, it.OwnerInstruction,
+		out = append(out, m.messageLines(it.From, c.workerSession, it.FromCTO, it.OwnerInstruction,
 			m.clock(it.At), body, i == m.feedCur, w)...)
 	}
 	if len(out) == 0 {
@@ -383,8 +400,11 @@ func (m Model) conversationLines(c messageConversation, w int) []string {
 }
 
 // messageLines draws one message: its header and up to three body lines.
-func (m Model) messageLines(senderID string, fromCTO bool, ownerInstruction, clock, body string, selected bool, w int) []string {
+func (m Model) messageLines(senderID, workerSession string, fromCTO bool, ownerInstruction, clock, body string, selected bool, w int) []string {
 	sender := m.conversationName(senderID)
+	if sender == "ended session" && workerSession != "" && senderID == workerSession {
+		sender = "ended worker"
+	}
 	if fromCTO {
 		sender = m.ctoTitle()
 	}
@@ -405,9 +425,12 @@ func (m Model) messageLines(senderID string, fromCTO bool, ownerInstruction, clo
 		}
 	}
 	if text, ok := workerNoticeLine(body); ok {
-		if strings.Contains(text, "✓ done") {
+		switch {
+		case workerNoticeLifecycle(body):
+			out = append(out, sDim.Render(clip(text, w)))
+		case strings.Contains(text, "✓ done"):
 			out = append(out, sBusy.Render(clip(text, w)))
-		} else {
+		default:
 			out = append(out, sBad.Render(clip(text, w)))
 		}
 		return out

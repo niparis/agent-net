@@ -185,6 +185,76 @@ func TestWorkerConversationRowShowsTheTaskLine(t *testing.T) {
 	}
 }
 
+func TestEndedWorkerRowUsesTheTaskAndCallerFromTheGateway(t *testing.T) {
+	const caller, ended = "s_0000000000000001", "s_ended_worker_fixture"
+	src := &fakeSource{snap: fakeSnapshot()}
+	src.convFirst = protocol.ConversationPage{Conversations: []protocol.ConversationView{{
+		ID: "worker:" + ended, From: caller, To: ended, FromName: "tenebrae-53",
+		WorkerSession: ended, WorkerOwner: caller, Task: "Polish the sessions panel",
+		Count: 2, LastLine: "[agent-net worker notice]", Type: protocol.TypeReply,
+		State: protocol.StateStored, LastMessageID: "m_done", At: t0.Add(-time.Minute),
+	}}, Total: 1}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.tab, m.focus = messagesTab, focusFeed
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = refreshAndRun(t, m, src)
+
+	rows := m.messageConversations()
+	if len(rows) != 1 || !rows[0].worker || rows[0].workerSession != ended {
+		t.Fatalf("ended worker row not found: %+v", rows)
+	}
+	line := ansi.Strip(m.messageConversationLine(rows[0], 110, false))
+	if !strings.Contains(line, "tenebrae-53 → worker: Polish the sessions panel") {
+		t.Fatalf("ended worker row = %q", line)
+	}
+	if strings.Contains(line, "unknown session") || strings.Contains(line, ended) {
+		t.Fatalf("ended worker row leaks a missing session: %q", line)
+	}
+}
+
+func TestConversationEndedWorkerScreens(t *testing.T) {
+	const caller, first, second = "s_0000000000000001", "s_ended_worker_one", "s_ended_worker_two"
+	src := &fakeSource{snap: fakeSnapshot(), events: nil}
+	src.convFirst = protocol.ConversationPage{Total: 3, Conversations: []protocol.ConversationView{
+		{
+			ID: "worker:" + first, From: caller, To: first, FromName: "tenebrae-53",
+			WorkerSession: first, WorkerOwner: caller, Task: "Polish the sessions panel and make the long list readable",
+			Count: 2, LastLine: "[agent-net worker notice]", Type: protocol.TypeReply,
+			State: protocol.StateStored, LastMessageID: "m_done_one", At: t0.Add(-2 * time.Minute),
+		},
+		{
+			ID: "worker:" + second, From: caller, To: second, FromName: "tenebrae-53",
+			WorkerSession: second, WorkerOwner: caller, Task: "Review the deploy",
+			Count: 1, LastLine: "The deploy is ready.", Type: protocol.TypeRequest,
+			State: protocol.StateReplied, LastMessageID: "m_done_two", At: t0.Add(-20 * time.Minute),
+		},
+		{
+			ID: "c_plain", From: "s_0000000000000002", To: "s_0000000000000003", FromName: "strategies", ToName: "web",
+			Count: 1, LastLine: "A conversation whose sides are still here.", Type: protocol.TypeRequest,
+			State: protocol.StateReplied, LastMessageID: "m_plain", At: t0.Add(-30 * time.Minute),
+		},
+	}}
+	src.convMsgs = map[string][]protocol.Message{
+		"worker:" + first: {
+			{ID: "m_done_one", ConversationID: "c_done_one", From: first, To: caller, Type: protocol.TypeReply,
+				Body: "[agent-net worker notice]\nstatus: done\nrun time: 12m\n", CreatedAt: t0.Add(-2 * time.Minute)},
+			{ID: "m_started_one", ConversationID: "c_started_one", From: first, To: caller, Type: protocol.TypeNotification,
+				Body: protocol.WorkerStartedText(first, "opencode", "m1", "shop", "mac", time.Minute), CreatedAt: t0.Add(-5 * time.Minute)},
+			{ID: "m_task_one", ConversationID: "c_task_one", From: caller, To: first, Type: protocol.TypeRequest,
+				Body: protocol.WorkerTaskBody("Polish the sessions panel and make the long list readable", "", ""), CreatedAt: t0.Add(-10 * time.Minute)},
+		},
+	}
+	for _, size := range [][2]int{{80, 24}, {120, 34}} {
+		m := New(src)
+		m.loc, m.now = time.UTC, func() time.Time { return t0 }
+		m.tab, m.focus = messagesTab, focusFeed
+		m = send(m, tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m = refreshAndRun(t, m, src)
+		golden(t, fmt.Sprintf("messages_ended_workers_%dx%d", size[0], size[1]), m.View())
+	}
+}
+
 func TestOpeningAStoredConversationShowsItsGatewayMessages(t *testing.T) {
 	src := &fakeSource{snap: fakeSnapshot(), events: nil}
 	const a, b = "s_0000000000000001", "s_0000000000000002"
