@@ -89,6 +89,7 @@ type Model struct {
 	problem          Problem
 	problemT         string // text of the last error
 	graphState       graphview.State
+	graphPixel       *graphPixelState
 	graphHelp        bool
 	graphGeneration  int
 	graphTalkLoading bool
@@ -179,7 +180,8 @@ func New(src Source) Model {
 	ti.CharLimit = 80
 	ti.Cursor.SetMode(cursor.CursorHide)
 	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
-		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{}}
+		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
+		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
 	m.ctoGeneration = 1
 	m.cto = &ctoState{generation: 1}
 	if _, ok := src.(ctoSource); ok {
