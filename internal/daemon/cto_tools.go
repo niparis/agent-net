@@ -35,6 +35,11 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
+}
+
+// executeCTOTool is used only for immediate reads/talk or by the approved runner.
+func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	var args map[string]any
 	if len(raw) > 0 && string(raw) != "null" && json.Unmarshal(raw, &args) != nil {
 		return nil, errors.New("bad CTO tool arguments")
@@ -44,7 +49,7 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 	}
 	// These operations reuse the same owner implementations after ctoTool has
 	// checked the calling process tree. This connection is never exposed.
-	lc := &localConn{d: d, client: "cli", cto: true}
+	lc := &localConn{d: d, client: "cli", cto: proposalActor(ctx) == ""}
 	if ctoOwnerMethods[name] {
 		res, _, err := lc.dispatchOwner(ctx, name, raw)
 		return res, err
@@ -53,6 +58,17 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 		return lc.dispatch(ctx, name, raw)
 	}
 	switch name {
+	case "message":
+		var q struct {
+			Action string `json:"action"`
+		}
+		if err := json.Unmarshal(raw, &q); err != nil {
+			return nil, err
+		}
+		if q.Action != "send" && q.Action != "reply" {
+			return nil, errors.New("message needs action send or reply")
+		}
+		return d.executeCTOTool(ctx, q.Action, raw)
 	case "charter_suggestions":
 		owner := d.ownerSessionID()
 		if owner == "" {
@@ -210,6 +226,9 @@ func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMes
 			delete(args, "id")
 		}
 		args["by"] = "cto"
+		if actor := proposalActor(ctx); actor != "" {
+			args["by"] = actor
+		}
 		if name != "graph_get" && name != "charter_history" && name != "edge_history" {
 			return d.ctoAttributedCall(ctx, strings.ReplaceAll(name, "_", "."), args)
 		}
@@ -462,6 +481,9 @@ func (d *Daemon) runCTOTool(ctx context.Context, name string, raw json.RawMessag
 		case "invite":
 			text = "printed an invite line"
 		}
+	}
+	if proposed, ok := result.(string); ok && strings.HasPrefix(proposed, "proposal p_") {
+		text = name + ": " + proposed
 	}
 	logErr := d.recordCTOAction(text)
 	if err != nil {

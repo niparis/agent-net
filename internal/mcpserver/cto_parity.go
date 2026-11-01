@@ -9,17 +9,17 @@ func init() {
 	arr := func(desc string) ctoField { return ctoField{typ: "array", desc: desc} }
 	en := func(desc string, values ...string) ctoField { return ctoField{typ: "string", desc: desc, enum: values} }
 	add := func(name, desc string, fields map[string]ctoField) {
-		ctoTools[name] = ctoToolDef{desc: desc, fields: fields}
+		ctoTools[name] = ctoToolDef{desc: desc, fields: fields, compact: true}
 	}
 	sid := s("Session ID.")
 	model := s("Empty uses default.")
 	harness := en("Omit for default.", "opencode", "claude", "pi", "codex")
 	add("tools_list", "List tools.", map[string]ctoField{"kind": s("Kind."), "harness": s("Harness."), "project": s("Project."), "state": s("State."), "offset": n("Offset.")})
 	add("mcp_import_candidates", "List candidates.", map[string]ctoField{"machine": s("Machine."), "harness": s("Harness."), "project": s("Project."), "class": en("Verdict.", "importable", "unsupported"), "offset": n("Offset.")})
-	add("mcp_import", "Plan import on explicit instruction.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
-	add("mcp_native_remove", "Plan removal on explicit instruction.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
+	add("mcp_import", "Propose import.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
+	add("mcp_native_remove", "Propose native removal.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
 	add("tools_differences", "Read tool differences.", map[string]ctoField{"offset": n("Offset."), "limit": n("Default 20; max 60.")})
-	add("tools_plan", "Plan assignments; repo removal on a local branch.", map[string]ctoField{
+	add("tools_plan", "Propose assignments; repo removal on a local branch.", map[string]ctoField{
 		"item": s("Item ID."), "target": obj("Assignment."),
 		"operation": en("Operation.", "repo_remove"),
 		"project":   s("Project."),
@@ -28,7 +28,7 @@ func init() {
 			"checkout": map[string]any{"type": "string", "description": "Path."},
 		}}},
 	})
-	add("tools_apply", "Apply on explicit instruction.", map[string]ctoField{"plan_id": s("Plan ID.")})
+	add("tools_apply", "Propose apply.", map[string]ctoField{"plan_id": s("Plan ID.")})
 	add("tools_undo", "Undo assignment.", map[string]ctoField{"item": s("Item ID.")})
 	add("tools_history", "Read history.", map[string]ctoField{"item": s("Item ID.")})
 	add("ui_show", "Show a TUI view.", map[string]ctoField{"tab": en("Tab.", "sessions", "messages", "quotas", "map", "tools"), "select": s("Selection."), "filter": s("Filter."), "why": s("Reason.")})

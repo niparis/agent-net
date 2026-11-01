@@ -51,7 +51,7 @@ func (s *Store) OutcomeInbox() ([]protocol.OutcomeInboxEntry, error) {
 
 // ResolveOutcome records the owner's decision and atomically creates the
 // marked request when it is overruled.
-func (s *Store) ResolveOutcome(replyID, owner, action string) (protocol.Message, error) {
+func (s *Store) ResolveOutcome(replyID, owner, action string, validate ...bool) (protocol.Message, error) {
 	var result protocol.Message
 	if action != "let_stand" && action != "overrule" {
 		return result, reject("invalid resolution")
@@ -93,6 +93,9 @@ func (s *Store) ResolveOutcome(replyID, owner, action string) (protocol.Message,
 	}
 	if _, err = tx.Exec(`UPDATE inbox_items SET status='answered',answer=?,answered_at=? WHERE message_id=? AND kind IN ('rejection','escalation') AND status='open'`, action, now.UnixNano(), replyID); err != nil {
 		return result, err
+	}
+	if len(validate) > 0 && validate[0] {
+		return result, nil
 	}
 	if err = tx.Commit(); err != nil {
 		return result, err

@@ -117,7 +117,7 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 				defer d.wg.Done()
 				d.onOperatorFrame(ctx, l, h.Type, h.ID, raw)
 			}()
-		case "worker.launch", "worker.kill", "worker.resume", "worker.task", "worker.continue", "cto.worker_capabilities":
+		case "worker.launch", "worker.kill", "worker.validate_stop", "worker.resume", "worker.task", "worker.continue", "cto.worker_capabilities":
 			d.wg.Add(1)
 			go func() {
 				defer d.wg.Done()
@@ -158,6 +158,19 @@ func (l *link) readLoop(ctx context.Context, d *Daemon) {
 
 // call sends a request over the current link.
 func (d *Daemon) call(ctx context.Context, typ string, params any) (json.RawMessage, error) {
+	if actor := proposalActor(ctx); actor != "" && (typ == "session.trust" || typ == "held.answer" || typ == "node.rename") {
+		raw, err := json.Marshal(params)
+		if err != nil {
+			return nil, err
+		}
+		var fields map[string]any
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return nil, err
+		}
+		fields["by"] = actor
+		params = fields
+	}
+
 	d.mu.Lock()
 	l := d.lk
 	d.mu.Unlock()

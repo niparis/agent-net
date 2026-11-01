@@ -26,7 +26,11 @@ func (s *Store) HeldRequests() ([]protocol.Message, error) {
 }
 
 // AnswerHeld applies one owner's decision once, atomically with a rule change.
-func (s *Store) AnswerHeld(id, action string) (protocol.Message, error) {
+func (s *Store) AnswerHeld(id, action string, validate ...bool) (protocol.Message, error) {
+	return s.answerHeld(id, action, "owner", validate...)
+}
+
+func (s *Store) answerHeld(id, action, actor string, validate ...bool) (protocol.Message, error) {
 	var empty protocol.Message
 	if action != "a" && action != "A" && action != "r" && action != "R" {
 		return empty, reject("invalid held action")
@@ -77,7 +81,7 @@ func (s *Store) AnswerHeld(id, action string) (protocol.Message, error) {
 		if _, err = tx.Exec(`INSERT INTO graph_edges VALUES(?,?,?,?,?) ON CONFLICT(source,target,kind) DO UPDATE SET rule=excluded.rule`, e.From, e.To, e.Kind, e.Mode, e.Rule); err != nil {
 			return empty, err
 		}
-		if err = graphRecord(tx, "edge", from, e.Kind, previous, string(b), "owner", s.now().UnixNano()); err != nil {
+		if err = graphRecord(tx, "edge", from, e.Kind, previous, string(b), actor, s.now().UnixNano()); err != nil {
 			return empty, err
 		}
 	}
@@ -102,6 +106,9 @@ func (s *Store) AnswerHeld(id, action string) (protocol.Message, error) {
 		if err = s.heldReply(tx, m, "your user declined this request", "decline"); err != nil {
 			return empty, err
 		}
+	}
+	if len(validate) > 0 && validate[0] {
+		return empty, nil
 	}
 	if err = tx.Commit(); err != nil {
 		return empty, err

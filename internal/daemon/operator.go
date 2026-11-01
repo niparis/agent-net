@@ -236,27 +236,36 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 
 // workerStartCall asks the gateway to start a worker, then sends the task as
 // a message from the caller.
-func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string, fromCTO ...bool) (*protocol.WorkerStartResult, error) {
-	cto := len(fromCTO) > 0 && fromCTO[0]
+func checkedWorkerStart(p protocol.WorkerStartRequest) (protocol.WorkerStartRequest, error) {
 	p.Project, p.Harness, p.Task = strings.TrimSpace(p.Project), strings.TrimSpace(p.Harness), strings.TrimSpace(p.Task)
 	p.Continue = strings.TrimSpace(p.Continue)
 	if p.Continue != "" {
 		if p.Machine != "" || p.Base != "" || p.Isolation != "" {
-			return nil, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
+			return p, errors.New("a continued worker keeps the machine, the branch and the isolation of the old one: leave machine, base and isolation empty")
 		}
 	} else if p.Project == "" || p.Task == "" {
-		return nil, errors.New("worker_start needs project, harness and task")
+		return p, errors.New("worker_start needs project, harness and task")
 	}
 	if !protocol.ValidIsolation(p.Isolation) {
-		return nil, fmt.Errorf("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
+		return p, fmt.Errorf("isolation can be %q, %q or empty, not %q", protocol.IsolationWorktree, protocol.IsolationNone, p.Isolation)
 	}
 	if len(protocol.WorkerTaskBody(p.Task, "/x", "b")) > protocol.MaxBodyBytes {
-		return nil, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
+		return p, fmt.Errorf("the task is too long: the message limit is %d bytes", protocol.MaxBodyBytes)
+	}
+
+	return p, nil
+}
+
+func (d *Daemon) workerStartCall(ctx context.Context, caller string, p protocol.WorkerStartRequest, callerProject bool, callerPath string, fromCTO ...bool) (*protocol.WorkerStartResult, error) {
+	cto := len(fromCTO) > 0 && fromCTO[0]
+	var err error
+	p, err = checkedWorkerStart(p)
+	if err != nil {
+		return nil, err
 	}
 	cctx := withCallWait(ctx, d.cfg.Workers.filled().StartTimeout+40e9)
 	frame := protocol.WorkerStartFrame{WorkerStartRequest: p, Owner: caller, CallerProject: callerProject, CallerPath: callerPath, FromCTO: cto}
 	var data json.RawMessage
-	var err error
 	if cto {
 		data, err = d.ctoAttributedCall(cctx, "worker.start", frame)
 	} else {
@@ -365,6 +374,11 @@ func (d *Daemon) onWorkerFrame(ctx context.Context, l *link, h protocol.Header, 
 		var p protocol.WorkerLaunch
 		if err = json.Unmarshal(raw, &p); err == nil {
 			data, err = d.startWorker(ctx, p)
+		}
+	case "worker.validate_stop":
+		var p protocol.WorkerKill
+		if err = json.Unmarshal(raw, &p); err == nil {
+			err = d.cancelQueued(p.Session, p.Requester, p.AsOwner, true)
 		}
 	case "worker.kill":
 		var p protocol.WorkerKill

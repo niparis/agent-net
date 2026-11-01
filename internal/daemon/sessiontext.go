@@ -280,7 +280,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Owner string `json:"owner"`
 		}{p, d.ownerSessionID()})
 	case "mcp_import":
-		actor := "owner"
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+		}
 		if lc.cto {
 			actor = "cto"
 		}
@@ -294,7 +297,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Owner string `json:"owner"`
 		}{p, actor, d.ownerSessionID()})
 	case "mcp_native_remove":
-		actor := "owner"
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+		}
 		if lc.cto {
 			actor = "cto"
 		}
@@ -339,7 +345,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 	case "gateway_backup":
 		res, err = d.call(withCallWait(ctx, 10*time.Minute), "gateway.backup", json.RawMessage(raw))
 	case "tools_plan":
-		actor := "owner"
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+		}
 		if lc.cto {
 			actor = "cto"
 		}
@@ -353,7 +362,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Owner string `json:"owner"`
 		}{p, actor, d.ownerSessionID()})
 	case "tools_apply":
-		actor := "owner"
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+		}
 		if lc.cto {
 			actor = "cto"
 		}
@@ -367,7 +379,10 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			Owner string `json:"owner"`
 		}{p, actor, d.ownerSessionID()})
 	case "tools_undo":
-		actor := "owner"
+		actor := proposalActor(ctx)
+		if actor == "" {
+			actor = "owner"
+		}
 		if lc.cto {
 			actor = "cto"
 		}
@@ -536,6 +551,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 			p = map[string]any{}
 		}
 		delete(p, "by")
+		if actor := proposalActor(ctx); actor != "" {
+			p["by"] = actor
+		}
 		var params any = p
 		var q protocol.GraphUndoRequest
 		if method == protocol.OpGraphUndo {
@@ -543,6 +561,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 				return nil, true, errors.New("bad graph_undo params")
 			}
 			params = protocol.GraphUndoFrame{HistoryID: q.ID}
+			if actor := proposalActor(ctx); actor != "" {
+				params = map[string]any{"history_id": q.ID, "by": actor}
+			}
 		}
 		var data json.RawMessage
 		if data, err = d.call(ctx, frame, params); err == nil {

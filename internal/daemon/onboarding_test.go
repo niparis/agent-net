@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func TestOnboardingSharedAndOwnerOnly(t *testing.T) {
+func TestCTOOnboardingSharedAndOwnerOnly(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n1 := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi", interval: time.Hour}, nil)
 	agent, _ := helloPi(t, n1, "onboarding-agent", "/w/onboarding", true)
@@ -26,9 +26,15 @@ func TestOnboardingSharedAndOwnerOnly(t *testing.T) {
 			t.Fatalf("%s gate: %v", method, err)
 		}
 	}
-	if _, err := n1.d.runCTOToolRaw(context.Background(), "onboarding_restart", json.RawMessage(`{}`)); err != nil {
+	value, err := n1.d.runCTOToolRaw(context.Background(), "onboarding_restart", json.RawMessage(`{}`))
+	if err != nil {
 		t.Fatal(err)
 	}
+	got.Steps = nil
+	if err := json.Unmarshal(owner.mustCall("onboarding_get", nil), &got); err != nil || got.Steps["see"] != "done" {
+		t.Fatalf("proposal reset progress before approval: %+v %v", got, err)
+	}
+	approveCTOToolResult(t, n1.d, value)
 	got.Steps = nil
 	if err := json.Unmarshal(owner.mustCall("onboarding_get", nil), &got); err != nil || len(got.Steps) != 0 {
 		t.Fatalf("restart: %+v %v", got, err)

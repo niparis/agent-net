@@ -149,17 +149,18 @@ func TestCTOToolPlanAuditAndNeeds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ = json.Marshal(value)
+	b = approveCTOToolResult(t, n.d, value)
 	var p protocol.ToolPlan
-	if json.Unmarshal(b, &p) != nil || p.Actor != "cto" {
+	if json.Unmarshal(b, &p) != nil || !strings.HasPrefix(p.Actor, "owner (CTO proposal p_") {
 		t.Fatalf("CTO actor: %s", b)
 	}
 	apply, _ := json.Marshal(protocol.ToolPlanID{ID: p.ID})
-	if _, err = n.d.runCTOToolRaw(context.Background(), "tools_apply", apply); err != nil {
+	if value, err = n.d.runCTOToolRaw(context.Background(), "tools_apply", apply); err != nil {
 		t.Fatal(err)
 	}
+	approveCTOToolResult(t, n.d, value)
 	history, err := g.gw.Store().ToolHistory(item.ID)
-	if err != nil || len(history) != 2 || history[1].Actor != "cto" {
+	if err != nil || len(history) != 2 || !strings.HasPrefix(history[1].Actor, "owner (CTO proposal p_") {
 		t.Fatalf("CTO audit: %+v %v", history, err)
 	}
 }

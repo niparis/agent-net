@@ -109,7 +109,7 @@ func (s *Store) AddProjects(nodeID string, in protocol.ProjectAdd) (protocol.Pro
 // path or, if no path is given, by name (case-insensitive). A name that fits
 // several projects on the node is refused. A project that only has sessions
 // (never registered) cannot be removed.
-func (s *Store) RemoveProject(nodeID, name, path, byNode string) (protocol.ProjectEntry, error) {
+func (s *Store) RemoveProject(nodeID, name, path, byNode string, validate ...bool) (protocol.ProjectEntry, error) {
 	var out protocol.ProjectEntry
 	var q string
 	var arg string
@@ -151,6 +151,9 @@ func (s *Store) RemoveProject(nodeID, name, path, byNode string) (protocol.Proje
 		return out, reject("%d registered projects on %s are named %q; give the path: %s", len(found), host, arg, strings.Join(paths, ", "))
 	}
 	out = found[0]
+	if len(validate) > 0 && validate[0] {
+		return out, nil
+	}
 	if _, err := s.db.Exec(`DELETE FROM projects WHERE node_id = ? AND path = ?`, nodeID, out.Path); err != nil {
 		return out, err
 	}

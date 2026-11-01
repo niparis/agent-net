@@ -236,7 +236,7 @@ func (g *Gateway) toolTargets(ctx context.Context, item string, a protocol.ToolA
 }
 func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, actor string) (out protocol.ToolPlan, err error) {
 	defer func() {
-		if err != nil && (actor == "owner" || actor == "cto") {
+		if err != nil && !validatingProposal(ctx) && validChangeActor(actor) {
 			if e := g.store.recordRefusedToolPlan(p.Item, actor); e != nil {
 				err = e
 			}
@@ -274,7 +274,7 @@ func (g *Gateway) planTool(ctx context.Context, p protocol.ToolPlanRequest, acto
 	if err != nil {
 		return out, err
 	}
-	return g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets)
+	return g.store.saveToolPlan(p.Item, a, targets, actor, snap, p.Operation, p.RepoTargets, validatingProposal(ctx))
 }
 
 func (g *Gateway) repoRemovalTargets(ctx context.Context, p protocol.ToolPlanRequest) ([]protocol.ToolPlanTarget, error) {
@@ -370,7 +370,7 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	var r protocol.ToolRevision
 	checked := false
 	defer func() {
-		if err != nil && !checked && (actor == "owner" || actor == "cto") {
+		if err != nil && !validatingProposal(ctx) && !checked && validChangeActor(actor) {
 			if e := g.store.recordRefusedToolApply(id, actor); e != nil {
 				err = e
 			}
@@ -416,6 +416,10 @@ func (g *Gateway) applyTool(ctx context.Context, id, actor string) (out protocol
 	}
 	if !reflect.DeepEqual(targets, p.Targets) {
 		return out, errors.New("plan out of date")
+	}
+	if validatingProposal(ctx) {
+		_, err := g.store.applyToolPlan(id, actor, true)
+		return out, err
 	}
 	checked = true
 	r, err = g.store.ApplyToolPlan(id, actor)
@@ -467,9 +471,12 @@ func (g *Gateway) notifyToolNodes(ctx context.Context, targets []protocol.ToolPl
 
 // undoTool reverses the item's newest revision as a new audited revision.
 func (g *Gateway) undoTool(ctx context.Context, item, actor string) (protocol.ToolApplyResult, error) {
-	r, p, err := g.store.UndoTool(item, actor)
+	r, p, err := g.store.UndoTool(item, actor, validatingProposal(ctx))
 	if err != nil {
 		return protocol.ToolApplyResult{}, err
+	}
+	if validatingProposal(ctx) {
+		return protocol.ToolApplyResult{}, nil
 	}
 	g.notifyToolNodes(ctx, p.Targets)
 	g.mcpScopeChanged(ctx, item)
@@ -539,6 +546,9 @@ func (s *Store) toolPlanNodes() ([]protocol.NodeView, error) {
 }
 
 func (g *Gateway) refreshToolObservations(ctx context.Context) (map[string]bool, error) {
+	if validatingProposal(ctx) {
+		return map[string]bool{}, nil
+	}
 	nodes, err := g.store.toolPlanNodes()
 	if err != nil {
 		return nil, err

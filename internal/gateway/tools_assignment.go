@@ -56,7 +56,7 @@ func assignToolTx(tx *sql.Tx, item string, a protocol.ToolAssignment, actor, sou
 	if err != nil {
 		return r, err
 	}
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return r, errors.New("owner authority required")
 	}
 	if source == "" || len(source) > 128 {
@@ -199,9 +199,9 @@ func (s *Store) ToolSnapshot() (string, error) {
 func (s *Store) SaveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor string) (protocol.ToolPlan, error) {
 	return s.saveToolPlan(item, a, targets, actor, "", "", nil)
 }
-func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected, operation string, repoTargets []protocol.ToolRepoTarget) (protocol.ToolPlan, error) {
+func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []protocol.ToolPlanTarget, actor, expected, operation string, repoTargets []protocol.ToolRepoTarget, validate ...bool) (protocol.ToolPlan, error) {
 	var p protocol.ToolPlan
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return p, errors.New("owner authority required")
 	}
 	a, err := normalizeAssignment(a)
@@ -268,11 +268,14 @@ func (s *Store) saveToolPlan(item string, a protocol.ToolAssignment, targets []p
 	if err = auditToolTx(tx, p.Item, p.ID, "plan", actor, p.BaseRevision, p.Targets, "proposed", p.At, &p.Assignment); err != nil {
 		return p, err
 	}
+	if len(validate) > 0 && validate[0] {
+		return p, nil
+	}
 	return p, tx.Commit()
 }
-func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
+func (s *Store) applyToolPlan(id, actor string, validate ...bool) (protocol.ToolRevision, error) {
 	var r protocol.ToolRevision
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return r, errors.New("owner authority required")
 	}
 	tx, err := s.db.Begin()
@@ -368,6 +371,9 @@ func (s *Store) applyToolPlan(id, actor string) (protocol.ToolRevision, error) {
 	if err = auditToolTx(tx, p.Item, id, "apply", actor, r.Revision, p.Targets, "pending", r.At, &p.Assignment); err != nil {
 		return r, err
 	}
+	if len(validate) > 0 && validate[0] {
+		return r, nil
+	}
 	return r, tx.Commit()
 }
 
@@ -422,7 +428,7 @@ func (s *Store) ToolHistory(item string) ([]protocol.ToolAuditEvent, error) {
 }
 
 func (s *Store) recordRefusedToolApply(id, actor string) error {
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return errors.New("owner authority required")
 	}
 	_, err := s.db.Exec(`INSERT INTO tool_audit(item,plan_id,action,actor,revision,targets,result,at,assignment) SELECT item,id,'apply',?,COALESCE(json_extract(plan,'$.base_revision'),0),json_extract(plan,'$.targets'),'refused',?,COALESCE(json_extract(plan,'$.assignment'),'') FROM tool_plans WHERE id=?`, actor, s.now().UnixNano(), id)
@@ -463,10 +469,10 @@ func undoAction(action string) string {
 // previous assignment and a plan whose targets reverse every target that was
 // applied. Targets that were never applied have nothing to reverse. Machines
 // that are offline keep their target pending until they reconnect.
-func (s *Store) UndoTool(item, actor string) (protocol.ToolRevision, protocol.ToolPlan, error) {
+func (s *Store) UndoTool(item, actor string, validate ...bool) (protocol.ToolRevision, protocol.ToolPlan, error) {
 	var r protocol.ToolRevision
 	var p protocol.ToolPlan
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return r, p, errors.New("owner authority required")
 	}
 	tx, err := s.db.Begin()
@@ -541,6 +547,9 @@ func (s *Store) UndoTool(item, actor string) (protocol.ToolRevision, protocol.To
 	}
 	if err = auditToolTx(tx, item, p.ID, "undo", actor, r.Revision, targets, "pending", now, &previous); err != nil {
 		return r, p, err
+	}
+	if len(validate) > 0 && validate[0] {
+		return r, p, nil
 	}
 	return r, p, tx.Commit()
 }

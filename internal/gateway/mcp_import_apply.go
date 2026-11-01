@@ -122,7 +122,7 @@ func (g *Gateway) importBuild(ctx context.Context, e nativeMCP, failed map[strin
 }
 
 func (g *Gateway) planMCPImport(ctx context.Context, key, actor string) (out protocol.MCPImportPlan, err error) {
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return out, errors.New("owner authority required")
 	}
 	failed, err := g.refreshToolObservations(ctx)
@@ -154,6 +154,9 @@ func (g *Gateway) planMCPImport(ctx context.Context, key, actor string) (out pro
 	raw, err := json.Marshal(out)
 	if err != nil {
 		return out, err
+	}
+	if validatingProposal(ctx) {
+		return out, nil
 	}
 	if _, err = g.store.db.Exec(`INSERT INTO mcp_import_plans(id,snapshot,plan) VALUES(?,?,?)`, out.ID, snap, string(raw)); err != nil {
 		return out, err
@@ -222,7 +225,7 @@ func (s *Store) finishMCPImport(p protocol.MCPImportPlan, reported []string, act
 
 func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string) (protocol.MCPImportResult, error) {
 	var out protocol.MCPImportResult
-	if actor != "owner" && actor != "cto" {
+	if !validChangeActor(actor) {
 		return out, errors.New("owner authority required")
 	}
 	g.importMu.Lock()
@@ -240,7 +243,9 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 		return out, reject("invalid plan")
 	}
 	refuse := func(why string) (protocol.MCPImportResult, error) {
-		_ = g.store.auditImport(nativeID(p.Candidate.Name, p.NativeHash), id, "mcp_import", actor, 0, importTarget(p.Candidate, "refused", why), "refused")
+		if !validatingProposal(ctx) {
+			_ = g.store.auditImport(nativeID(p.Candidate.Name, p.NativeHash), id, "mcp_import", actor, 0, importTarget(p.Candidate, "refused", why), "refused")
+		}
 		return protocol.MCPImportResult{}, reject("%s", why)
 	}
 	if applied != 0 {
@@ -267,6 +272,9 @@ func (g *Gateway) applyMCPImport(ctx context.Context, id, actor, session string)
 	server, assign, conflicts, err := g.importBuild(ctx, e, failed)
 	if err != nil || len(conflicts) > 0 || !reflect.DeepEqual(server, p.Server) || !reflect.DeepEqual(assign, p.Assignment) || e.hash != p.NativeHash {
 		return refuse("plan out of date")
+	}
+	if validatingProposal(ctx) {
+		return out, nil
 	}
 	// A plan applies once, whatever happens next.
 	if _, err = g.store.db.Exec(`UPDATE mcp_import_plans SET applied=1 WHERE id=?`, id); err != nil {

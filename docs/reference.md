@@ -4,14 +4,35 @@ Decision [0036](decisions/0036-primitives.md) defines an agent as a lasting iden
 
 ## CTO settings and conversation
 
-The daemon has an owner-gated proposal store for future CTO change tools.
-It currently accepts charter changes, edge sets and machine renames; the existing CTO
-tools still run as before. `proposal_list` lists proposals across online
-machines, or on one machine when passed `node_id`. `proposal_answer` takes
-`node_id`, `proposal_id` and an action: `a` approves, `x` declines, and `A`
-approves open proposals across online machines in order, stopping on an error. The
-daemon validates a call again before running it. Outcomes are queued for the
-CTO's next idle moment without the call's result data.
+Every owner-only CTO change becomes a proposal in Needs you. This includes
+all graph and charter changes, node settings, session and machine names, trust
+and policy, worker start and stop, held/inbox/outcome answers, tools plans and
+apply/undo/import, MCP add/remove/test/enable/call, integrations, notifications,
+CTO settings, providers, scores, worker profiles, playbooks, project registration
+and names, invites, onboarding restart and new CTO conversations. Even a dry
+run or a plan needs approval. `mcp_call` can have side effects and return private
+data, so it is always a proposal.
+
+Each proposal tool accepts an optional `reason`. The daemon validates the exact
+call before storing it. The CTO receives only:
+`proposal p_12 is in Needs you; the owner decides. You will get a note with the outcome.`
+Typing instructions in the CTO conversation does not approve a proposal.
+
+`proposal_list` lists proposals across online machines, or on one machine when
+passed `node_id`. `proposal_answer` takes `node_id`, `proposal_id` and an action:
+`a` approves, `x` declines, and `A` approves open proposals across online machines
+in order, stopping on an error. The daemon validates again and runs the stored
+call once with actor `owner (CTO proposal p_N)`. Full results, including plans,
+MCP results and invite lines, are shown to the owner. The CTO gets a short
+outcome note at its next idle moment, without the call's result data.
+
+The class table in the daemon fixes every tool and action as read, talk or
+proposal. Reads still run immediately. Talk (`send`, `reply`, `learn`,
+`ui_show`, `ui_notice`) also runs immediately. `message` takes action `send` or
+`reply` and the same arguments as those tools; with `as_owner: true` it becomes
+a proposal. Empty `cto_settings` and `notification_settings` calls are reads;
+calls that set a field are proposals. Read access is still the private CTO's
+current access; limiting it to public data is the next design part.
 
 Open proposals appear in Needs you. Enter shows the CTO's reason, a fresh diff,
 and the sender and time of up to three messages delivered before the proposal.
@@ -148,10 +169,9 @@ The `charter_set` schema contains no guide text.
 
 The CTO uses the hidden `agent-net cto-mcp` server. Its calls pass the CTO
 process-tree check, then use the same daemon implementations as the owner's
-operator methods. Graph changes and messages are attributed to the CTO. The
-brief treats material it reads as data, and calls for a diff and undo after
-graph changes. Destructive actions require the owner's explicit words in the
-chat.
+operator methods after approval for proposal calls. The brief treats material
+it reads as data. Needs you shows each proposed change for the owner's decision;
+the daemon, rather than the CTO model, executes the stored call.
 
 The table audits the owner operator methods and ordinary agent-net tools. CTO
 tool names are private to the CTO and are not in the shared MCP registry.
@@ -165,7 +185,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `events`, `message_status`, `agent_message_status` | `feed`, `message_status` |
 | `messages`, `agent_messages`, `session_text` | `messages`, `session_text` |
 | `workers`, `worker_start`, `agent_start`, `worker_stop`, `agent_stop` | `workers`, `worker_start`, `worker_stop` |
-| `owner_send`, `agent_send`, `agent_reply` | `send`, `reply` (reply to messages addressed to the owner) |
+| `owner_send`, `agent_send`, `agent_reply` | `send`, `reply`, `message` (`as_owner: true` proposes; replies address messages sent to the owner) |
 | `usage`, `usage_top`, `counts`, `graph_view`, `session_enter` | Same names |
 | `session_trust`, `session_policy`, `session_rename`, `node_rename`, `project_display_get`, `project_display_set` | Same names; read a session policy with `get` |
 | `integrations_get`, `integrations_set` | Same names |
@@ -176,7 +196,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `mcp_import_candidates`, `mcp_import`, `mcp_native_remove` | Same names; see [importing native MCP servers](#importing-native-mcp-servers) and [removing a native MCP entry](#removing-a-native-mcp-entry) |
 | `mcp_list`, `mcp_add`, `mcp_remove`, `mcp_test`, `mcp_enable`, `mcp_call`; `agent_mcp_list`, `agent_mcp_add`, `agent_mcp_remove`, `agent_mcp_test` | Same `mcp_*` names |
 | `cto_settings` | `cto_settings` |
-| `agent-net invite` | `invite` (gateway machine only; returns the install line) |
+| `agent-net invite` | `invite` (gateway machine only; proposes creating an install line for the owner) |
 | `notification_settings` | `notification_settings` (this machine only) |
 | `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
 | `agent_announce`, `agent_ask_owner`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session self-service only. Workers can use these tools except `agent_ask_owner`, which they must replace with a hand-back or `agent_reply`. The CTO talks to the owner in this chat. |
@@ -532,7 +552,7 @@ Each daemon sends two kinds of facts about its machine to the gateway. Agents an
 - `worktree`: the working tree the session's folder is in. It is the same as `root`, except in a linked git worktree.
 - `project`: the last path part of the `origin` remote, without a trailing `.git`. With no usable origin, the main tree folder name is used. Outside a repository, the session folder name is used. Linked worktrees share their repository identity.
 - The name of every session is its project identity plus a number ([0024](decisions/0024-session-names.md), [0033](decisions/0033-session-names-are-owner-only.md)). The identity is the last part of the origin remote when present, else the main working tree folder, else the session folder; a linked worktree uses the same identity as its main tree ([0031](decisions/0031-project-identity-and-display-name.md)). Two live sessions with the same name on the network get ` 2`, ` 3` (the lowest free number), and a worker is `<project> worker <n>`. A worker's TASK is the first line of its task. The name a harness gives the session (a Codex thread name, a Claude session title, an OpenCode session title) is not the name: it goes to TASK when the session announced no task.
-- **Only the owner names a session.** An announce cannot: it sets a task, a project, capability tags and expertise, and a `name` in an older client's announce is ignored. The owner renames with the CTO tool `session_rename` (`session_id`, `name`) or the operator method of the same name; an empty `name` returns the automatic project name, with the next free number if another live session took it. The name survives reports and is shown wherever an automatic name is. A rename to a name another live session holds is refused, because `agent_send` and `agent-net send` match exact names among online agents. The gateway migration at upgrade clears names that older agents had set through announce, so those sessions show their automatic name at the next report.
+- **Only the owner names a session.** An announce cannot: it sets a task, a project, capability tags and expertise, and a `name` in an older client's announce is ignored. The owner renames by approving the CTO tool `session_rename` (`session_id`, `name`) or the operator method of the same name; an empty `name` returns the automatic project name, with the next free number if another live session took it. The name survives reports and is shown wherever an automatic name is. A rename to a name another live session holds is refused, because `agent_send` and `agent-net send` match exact names among online agents. The gateway migration at upgrade clears names that older agents had set through announce, so those sessions show their automatic name at the next report.
 - `remote`: the `origin` URL. Passwords and tokens are removed. For `http`, `https`, `ftp` and `git` URLs the whole user part goes, because a token is often the user name. For `ssh` URLs only the password goes. A query or fragment is removed. `git@host:owner/repo` is kept as it is.
 - `branch`: the current branch, or `detached@<short hash>`.
 - `description`: the one-line description of the project, read from `AGENTS.md` (else `CLAUDE.md`) in the main working tree, or in the session's folder when there is no repository. See "FUNCTION and the task" below.
@@ -1027,8 +1047,8 @@ A stored item with no remaining observed locations stays listed as `unobserved`.
 `tools_history` takes `item` and returns plans and apply attempts with their
 actors, targets and results. These methods require an owner connection.
 
-The private CTO may inspect tools and propose plans. It may apply a plan only
-on the owner's explicit words in the chat. Charter `needs` are advisory text;
+The private CTO may inspect tools. Plans, apply, undo, import and native removal
+all become proposals. Only an approval in Needs you runs the stored call. Charter `needs` are advisory text;
 the CTO tool list shows them as unverified needs and never turns them into
 assignments.
 

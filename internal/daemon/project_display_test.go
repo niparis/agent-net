@@ -9,7 +9,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
-func TestProjectDisplayOwnerGateAndListings(t *testing.T) {
+func TestCTOProjectDisplayOwnerGateAndListings(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNodeCfg(t, g, nodeOpts{cmdline: "/usr/bin/pi"}, nil)
 	agent, _ := helloPi(t, n, "display-agent", "/w/peer", true)
@@ -48,7 +48,11 @@ func TestProjectDisplayOwnerGateAndListings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, _ := json.Marshal(out)
+	before := cli.mustCall("project_display_get", map[string]string{"project": "agent-net"})
+	if !strings.Contains(string(before), "Agent Network") {
+		t.Fatalf("proposal changed display name before approval: %s", before)
+	}
+	raw := approveCTOToolResult(t, n.d, out)
 	if !strings.Contains(string(raw), "CTO Name") {
 		t.Fatalf("CTO response: %s", raw)
 	}

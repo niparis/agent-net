@@ -260,8 +260,8 @@ func TestCTOToolManagementDescriptions(t *testing.T) {
 			t.Fatalf("missing description: %s", name)
 		}
 	}
-	if !strings.Contains(found["tools_apply"].Description, "explicit") || !strings.Contains(found["mcp_import"].Description, "explicit") || !strings.Contains(found["mcp_native_remove"].Description, "explicit") {
-		t.Fatal("apply description lacks owner instruction requirement")
+	if !strings.Contains(found["tools_apply"].Description, "Propose") || !strings.Contains(found["mcp_import"].Description, "Propose") || !strings.Contains(found["mcp_native_remove"].Description, "Propose") {
+		t.Fatal("apply description must say it proposes the change")
 	}
 	planProps, _ := ctoToolSchema(t, found["tools_plan"])
 	if !strings.Contains(found["tools_plan"].Description, "local branch") || !strings.Contains(strings.Join(enumStrings(planProps["operation"]["enum"]), ","), "repo_remove") {

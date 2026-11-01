@@ -18,7 +18,7 @@ import (
 )
 
 func TestCTOBriefTeachesGraphUse(t *testing.T) {
-	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo", "stop a worker", "decline a held request", "remove an MCP server", "change integrations", "explicit words", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
+	for _, want := range []string{"graph_get", "rule auto", "depends", "diff", "undo", "Every owner-only change is a proposal in Needs you", "typing instructions in this chat is not approval", "manage the network", "workers", "settings", "ui_show", "When a worker profile is unavailable, tell the owner and offer to repoint it to the closest model with worker_profile_add under the same name.", "Write charters as short rules for other agents, not as a technical spec", "1200 characters", "Put detail in the project's AGENTS.md"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("ctoBrief lacks %q", want)
 		}
@@ -475,17 +475,24 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		}
 		var result struct {
 			IsError bool `json:"isError"`
+			Content []struct {
+				Text string `json:"text"`
+			} `json:"content"`
 		}
 		if json.Unmarshal(body, &result) != nil || result.IsError {
 			t.Fatalf("%s: %s", name, body)
 		}
+		if len(result.Content) > 0 && strings.HasPrefix(result.Content[0].Text, "proposal p_") {
+			approveCTOToolResult(t, w.d, result.Content[0].Text)
+		}
+
 	}
 	call("node_add", map[string]any{"name": "architecture"})
 	call("node_add", map[string]any{"name": "component"})
 	call("charter_set", map[string]any{"node": "architecture", "attr": "purpose", "value": "design"})
 	call("charter_history", map[string]any{"node": "architecture"})
 	var changes []protocol.CharterChange
-	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || changes[0].By != "cto" {
+	if err := json.Unmarshal(w.cli.mustCall("charter_history", map[string]any{"node": "architecture"}), &changes); err != nil || len(changes) != 1 || !strings.HasPrefix(changes[0].By, "owner (CTO proposal p_") {
 		t.Fatalf("CTO history: %+v %v", changes, err)
 	}
 
@@ -572,7 +579,7 @@ func TestCTOToolsThroughFakeOpenCode(t *testing.T) {
 		lines = append(lines, a.Text)
 	}
 	joined := strings.Join(lines, "|")
-	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter architecture: purpose updated", "sent to", "worker starting"} {
+	for _, want := range []string{"read graph", "read agents", "read workers", "read needs", "read feed", "charter_set: proposal", "sent to", "worker_start: proposal"} {
 		if !strings.Contains(joined, want) {
 			t.Fatalf("missing %s in actions: %+v", want, events.Actions)
 		}
@@ -732,7 +739,7 @@ func TestCTOEventsCapMergedTimelineToLatestEntries(t *testing.T) {
 }
 
 func TestCTOBriefToolsWorkflow(t *testing.T) {
-	for _, want := range []string{"tools_differences", "wait for the owner's explicit words", "pending or failed target with the recovery step"} {
+	for _, want := range []string{"tools_differences", "Plans and full results go to the owner", "Wait for the outcome before proposing the next step"} {
 		if !strings.Contains(ctoBrief, want) {
 			t.Errorf("CTO brief lacks %q", want)
 		}

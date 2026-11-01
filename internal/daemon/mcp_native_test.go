@@ -359,3 +359,28 @@ func TestNativeEditDoesNotTouchTheFileWithoutABackup(t *testing.T) {
 		t.Fatal("the file was edited without a backup")
 	}
 }
+
+func TestCTOProposalNativeUndoValidationDoesNotRestoreFile(t *testing.T) {
+	n := newNativeDaemon(t, map[string]string{".claude.json": nativeClaudeFile})
+	plan := n.d.nativeEdit(n.claudeUser())
+	req := n.claudeUser()
+	req.Op = protocol.MCPNativeApply
+	req.FileHash = plan.FileHash
+	applied := n.d.nativeEdit(req)
+	undo := protocol.MCPNativeEditRequest{Op: protocol.MCPNativeUndoValidate, Name: "demo", PostHash: applied.PostHash, BackupID: applied.BackupID}
+	res := n.d.nativeEdit(undo)
+	if res.Conflict != "" {
+		t.Fatal(res.Conflict)
+	}
+	file := filepath.Join(n.home, ".claude.json")
+	if got := readNativeText(t, file); got != nativeClaudeWant {
+		t.Fatalf("validation wrote file: %s", got)
+	}
+	undo.Op = protocol.MCPNativeUndo
+	if res := n.d.nativeEdit(undo); res.Conflict != "" {
+		t.Fatal(res.Conflict)
+	}
+	if got := readNativeText(t, file); got != nativeClaudeFile {
+		t.Fatalf("undo did not restore: %s", got)
+	}
+}
