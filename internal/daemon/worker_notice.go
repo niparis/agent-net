@@ -466,7 +466,19 @@ func (d *Daemon) sendNoticeToKey(ctx context.Context, w *worker, n protocol.Work
 	if len(report) > 48*1024 {
 		report = strings.ToValidUTF8(report[:48*1024], "") + "\n[report cut at 48 KB]"
 	}
-	return d.sendWorkerNoticeBody(ctx, w, protocol.FormatWorkerNotice(n, report), to, replyTo, noticeKey)
+	raw, err := d.sendWorkerNoticeBody(ctx, w, protocol.FormatWorkerNotice(n, report), to, replyTo, noticeKey)
+	if err == nil {
+		switch n.Status {
+		case protocol.StatusDone, protocol.StatusFailed, protocol.StatusTimedOut, "partial", "idle without hand-back":
+			d.wmu.Lock()
+			if to == "" || to == w.owner {
+				w.noticeSinceRequest = true
+				d.saveWorkerLocked(w)
+			}
+			d.wmu.Unlock()
+		}
+	}
+	return raw, err
 }
 
 // sendWorkerNoticeBody sends a worker notice through the same reply and outbox
@@ -679,6 +691,26 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 			go d.pushSession(ls)
 		}
 	}
+}
+
+// noteMidrun counts on arrival, before an OpenCode prompt can wait in its
+// turn queue. noteAsk still counts the existing rework when it is delivered.
+func (d *Daemon) noteMidrun(w *worker, m protocol.Message) bool {
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	if d.workers[w.id] != w || w.stopping {
+		return false
+	}
+	if m.Type == protocol.TypeRequest && m.From == w.owner {
+		if w.midrunSeen && !w.noticeSinceRequest {
+			w.midrunCount++
+			w.midrunRun++
+		}
+		w.midrunSeen = true
+		w.noticeSinceRequest = false
+		d.saveWorkerLocked(w)
+	}
+	return true
 }
 
 // setSessionWorker gives the worker's local session a new worker value and
