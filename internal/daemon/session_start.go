@@ -20,8 +20,8 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if p.Harness == "" {
 		p.Harness = "claude"
 	}
-	if p.Harness != "claude" && p.Harness != "opencode" && p.Harness != "codex" {
-		return protocol.StartedSession{}, errors.New("session_start currently supports only local Claude, OpenCode and Codex sessions")
+	if p.Harness != "claude" && p.Harness != "opencode" && p.Harness != "codex" && p.Harness != "pi" {
+		return protocol.StartedSession{}, errors.New("session_start currently supports only local Claude, OpenCode, Codex and Pi sessions")
 	}
 	if len(p.FirstMessage) > protocol.MaxBodyBytes {
 		return protocol.StartedSession{}, errors.New("first_message is too long")
@@ -78,6 +78,9 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	if p.Harness == "opencode" {
 		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage)
 	}
+	if p.Harness == "pi" {
+		return d.launchOwnerPi(r, p.FirstMessage, "")
+	}
 	args := []string{"--bg", "--name", r.Project}
 	if p.Model != "" {
 		args = append(args, "--model", p.Model)
@@ -100,8 +103,8 @@ func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequ
 		return protocol.StartedSession{}, err
 	}
 	a := result.Agent
-	if a.NodeID != d.cfg.NodeID || a.Harness != "claude" || a.NativeID == "" {
-		return protocol.StartedSession{}, errors.New("resume works for Claude on this machine for now")
+	if a.NodeID != d.cfg.NodeID || a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi") {
+		return protocol.StartedSession{}, errors.New("resume works for Claude and Pi on this machine for now")
 	}
 	if a.Online {
 		return protocol.StartedSession{}, errors.New("session is already online")
@@ -110,11 +113,14 @@ func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequ
 	if err != nil || !info.IsDir() {
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
+	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: a.Harness, Project: a.Profile.Name, Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+	if a.Harness == "pi" {
+		return d.launchOwnerPi(r, "", a.NativeID)
+	}
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: "claude", Project: a.Profile.Name, Path: a.Cwd, StartedAt: time.Now().Unix()}
 	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID), nil
 }
 

@@ -6,13 +6,13 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Project        shop   on Mac, /Users/n/code/shop
-  Harness        pi
+  Harness        aider
   Model          default
   Folder         project folder   no worktree yet
 > First message
                  empty: start it and enter it
                  text: start it in the background and send this
-  ! only Claude, OpenCode and Codex on this machine for now.
+  ! only Claude, OpenCode, Codex and Pi on this machine for now.
 
 
 

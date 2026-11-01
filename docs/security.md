@@ -679,12 +679,13 @@ or an OpenCode serve process tree is refused too. No agent tool exposes these
 methods. An owner session has the owner's normal harness permissions, so an
 agent must never be able to start one to escape worker limits.
 
-For now, starts are limited to Claude and OpenCode in an existing project folder
-known on the local machine. The daemon resolves the project from the gateway registry;
-it accepts no executable, command, settings, environment or arbitrary folder
-parameter. It creates no folder, worktree or trust entry. Folder creation and
-its home-folder and symlink checks belong to a later part of the design.
-For Claude, the model and optional first message are separate command arguments,
+For now, starts are limited to Claude, OpenCode and Pi in the background, and
+Codex as an enter plan, in an existing project folder known on the local
+machine. The daemon resolves the project from the gateway registry; it accepts
+no executable, command, settings, environment or arbitrary folder parameter.
+It creates no folder, worktree or trust entry. Folder creation and its
+home-folder and symlink checks belong to a later part of the design. For
+Claude, the model and optional first message are separate command arguments,
 with `--` before the message. There is no shell interpolation.
 
 OpenCode starts use the owner's existing service, never a private worker server.
@@ -697,11 +698,38 @@ errors are not copied into start errors, because they may contain credentials.
 The folder, model and first message are HTTP headers or JSON, with no shell.
 If the service is down, the start is refused; the daemon never starts it.
 
-Resume accepts only a stored offline local Claude session ID. The daemon uses
-the stored native ID and folder, checks that the folder still exists, and
-passes the native ID as a separate argument to Claude. The gateway's session
-views include native IDs so the local daemon can resolve an offline row after a
-restart. Enrolled machines and their agent connections can read those IDs.
+Pi has no background mode with a screen, so the daemon hosts it in its own tmux
+server, with the folder and the chosen session ID as separate arguments:
+
+```
+tmux -L agent-net new-session -d -c <folder> -- pi --session-id <uuid> --name <project> [--model M]
+```
+
+The daemon picks the UUID before Pi starts, so the extension binds the session
+to it. If tmux is missing, the start is refused with
+`pi needs tmux on <machine> to run in the background`. The first message is
+not a command argument: after the session registers, the daemon sends it as an
+ordinary message from the owner session through the Pi extension, the same path
+as a worker's first task. Pi's own tool permissions apply to what the agent
+does next.
+
+The private server uses the socket `$TMUX_TMPDIR/tmux-<uid>/agent-net`
+(default `/tmp/tmux-<uid>/agent-net`). tmux creates the folder with mode 0700
+and the socket with mode 0660, so only your user (and root) can reach it. Any
+process running as your user on that machine can attach to the server and
+watch or type in a Pi session; this is the same boundary as the rest of your
+account, not an extra one. The socket is local and is not exposed on the
+network. Pi owner sessions are not sandboxed. The tmux server forks away from
+the daemon, and the service unit has `KillMode=process` (the launchd job has
+`AbandonProcessGroup`), so a daemon restart leaves it and its sessions running.
+
+Resume accepts only a stored offline local Claude or Pi session ID. The daemon
+uses the stored native ID and folder, checks that the folder still exists, and
+passes the native ID as a separate argument. Pi resumes with
+`pi --session <id>` in a new window of the same tmux server, or a new session
+there when no window is left. The gateway's session views include native IDs so
+the local daemon can resolve an offline row after a restart. Enrolled machines
+and their agent connections can read those IDs.
 
 Claude loads the owner's own settings and MCP servers. The launch adds no
 worker settings, MCP override, brief or hand-back tools. Normal discovery

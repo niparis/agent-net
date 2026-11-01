@@ -242,13 +242,13 @@ func splitProjectMachine(value string) (project, machine string) {
 }
 
 // sessionFormRefusal says why this version cannot start the form's session.
-// Local Claude, OpenCode and Codex starts are built.
+// Local Claude, OpenCode, Codex and Pi starts are built.
 func (m Model) sessionFormRefusal(f sessionForm) string {
-	const only = "only Claude, OpenCode and Codex on this machine for now"
+	const only = "only Claude, OpenCode, Codex and Pi on this machine for now"
 	if f.nodeID != "" && f.nodeID != m.snap.NodeID {
 		return only
 	}
-	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" {
+	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" && h != "pi" {
 		return only
 	}
 	project, machine := splitProjectMachine(f.value(sProject))

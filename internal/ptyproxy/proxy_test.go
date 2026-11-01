@@ -307,3 +307,63 @@ func TestProxyEscapeTiming(t *testing.T) {
 		})
 	}
 }
+
+// A tmux attach client is left with ctrl+] the same way as any other client.
+// The private server keeps its session, so returning to the TUI does not end
+// what the owner was watching.
+func TestTmuxAttachCtrlPlusReturnsAndKeepsSession(t *testing.T) {
+	tmux, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skip("tmux is not installed")
+	}
+	dir, err := os.MkdirTemp("", "antmux")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	name := "agent-net-proxy-" + fmt.Sprint(os.Getpid())
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_TMPDIR=") {
+			continue // never reach the tmux server of the person running the tests
+		}
+		env = append(env, kv)
+	}
+	env = append(env, "TMUX_TMPDIR="+dir, "TERM=xterm-256color")
+	command := func(args ...string) *exec.Cmd {
+		c := exec.Command(tmux, args...)
+		c.Env = env
+		return c
+	}
+	if out, err := command("-L", name, "new-session", "-d", "-c", dir, "--", "sleep", "30").CombinedOutput(); err != nil {
+		t.Fatalf("tmux new-session: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { _ = command("-L", name, "kill-server").Run() })
+	input, keys := io.Pipe()
+	defer input.Close()
+	defer keys.Close()
+	output, screen := io.Pipe()
+	defer output.Close()
+	defer screen.Close()
+	go func() { _, _ = io.Copy(io.Discard, output) }()
+	p := New(command("-L", name, "attach-session", "-t", "0"))
+	p.SetStdin(input)
+	p.SetStdout(screen)
+	done := make(chan error, 1)
+	go func() { done <- p.Run() }()
+	time.Sleep(200 * time.Millisecond)
+	if _, err := keys.Write([]byte{0x1d}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("proxy did not return from the tmux attach")
+	}
+	if out, err := command("-L", name, "has-session").CombinedOutput(); err != nil {
+		t.Fatalf("the attach client ended the tmux session: %v\n%s", err, out)
+	}
+}
