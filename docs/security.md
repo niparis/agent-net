@@ -71,8 +71,8 @@ rules stop startup. Fake harnesses test these checks. Real model tool execution
 and subagent inheritance have not been verified.
 
 The private MCP server classifies calls as public read, talk or proposal.
-Every owner-only change is a proposal: the owner decides in Needs you and the
-daemon executes the stored call. Typing instructions in the CTO chat grants no
+Non-graph owner-only changes and major graph changes outside the owner window
+are proposals: the owner decides in Needs you and the daemon executes the stored call. Typing instructions in the CTO chat grants no
 approval. Full results stay with the owner; outcome notes contain no result
 payload, including MCP responses and tool plan paths.
 
@@ -334,10 +334,35 @@ The TUI's "Needs you" section excludes worker sessions. The daemon refuses a wor
 
 ## CTO tool classes and the two rules
 
-**Rule 1: changes.** The CTO never runs an owner-only change. Each change tool
-stores a proposal. Only the owner gate can approve it. This applies in every
-turn, including when the owner typed the request. A reason is model output for
-the owner to consider, not evidence of permission.
+**Rule 1: changes.** Minor graph changes apply immediately. The gateway reuses
+its learned-change classifier for wording, accepts, needs, consumers and normal
+depends edges. New architect nodes are minor. Restrictive or narrowing wording,
+refuses, escalate, maturity, deploy rules, request rules (`auto`, `ask`, `never`),
+governs and deploys edges, node removal, all node settings and every change on
+or touching a critical node are major. Clearing a charter field or removing an accepts, needs or consumers item is
+major. Undo is classified by its reverse change.
+The gateway repeats the minor check in the mutation transaction before commit;
+a concurrent maturity or edge-rule change cannot bypass the check.
+
+Major graph changes need a proposal unless the owner opened the 30-minute
+"I'm driving" window with `w` on the focused CTO box. The owner gate and the
+TUI subscription check both apply to reading or toggling this window. The CTO
+process, agent callers and CLI connections outside the TUI are refused. The
+host daemon stores only an in-memory deadline, never a model-supplied token or
+persisted grant. The CTO cannot read, forge, open or extend it. It expires at
+30 minutes, can be closed early with `w`, and closes on daemon restart.
+Immediate calls use `CTO (minor)` or `CTO (owner window)`, write an owner notice
+and normal undo history, and create no blocking row. The gateway advertises
+support before a daemon sends these actors, on the same link as the mutation.
+
+The window covers graph operations only. Trust, policy, workers, tools, MCP,
+settings and sends as owner still require proposals in every turn. Request
+rules and trust stay gated outside the window because they decide who can
+make an agent act without asking. While the window is open, peer messages can
+influence major graph changes too. The visible countdown, short lifetime and
+undo history make that temporary delegation reviewable. No chat approval counts;
+the owner uses `A` in Needs you or `w` in the CTO box. A reason is model output,
+not evidence of permission. The operating-system user remains the trust boundary.
 
 The daemon keeps one fixed class table for every CTO tool and action. Unknown
 tools and actions fail closed; a completeness test checks the MCP registry.
@@ -346,9 +371,11 @@ tools and actions fail closed; a completeness test checks the MCP registry.
 |---|---|
 | Read | Uses the ordinary agent dispatcher with the CTO caller; static guide and own timeline only otherwise |
 | Talk | Sends, replies, learning and UI views/notices run immediately |
+| Graph | Applies minor changes or graph changes during the owner window; otherwise proposes |
 | Proposal | Validates and stores; only the owner-approved runner executes |
 
-Proposal calls cover graph/charter/node settings, names, trust, policy, workers,
+Proposal calls cover major graph/charter/node settings outside the owner window,
+and always names, trust, policy, workers,
 held and inbox answers and outcomes, tools plans/apply/undo/import, MCP changes
 and calls, integrations, notifications, CTO settings, providers, scores,
 profiles, playbooks, projects, invites, onboarding restart, `cto_send`,
@@ -382,8 +409,9 @@ CTO proposals are stored in the hosting daemon's private state database.
 The owner gate protects proposal listing and decisions, including relayed
 requests. An enrolled daemon is trusted to enforce that gate before relaying,
 as it is for other owner operations. A proposed call is checked before it is
-stored and again before it runs. Every owner-only CTO change now uses this
-path, including plans, previews, MCP tests and arbitrary MCP calls. Only the
+stored and again before it runs. All non-graph owner-only CTO changes use this
+path, including plans, previews, MCP tests and arbitrary MCP calls. Major graph
+changes also use it outside the owner window. Only the
 daemon's runner executes an approved call, with actor
 `owner (CTO proposal p_N)`. The model cannot approve its own proposals. Identical open calls are refused, open proposals expire after 24
 hours, and at most 20 may be open on the hosting daemon. Outcome notes contain
