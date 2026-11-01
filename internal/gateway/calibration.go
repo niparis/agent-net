@@ -64,6 +64,11 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 		return protocol.Calibration{}, err
 	}
 	cal := protocol.BuildCalibration(samples, strong)
+	ratings, err := s.RatingCounts()
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
+	cal.Ratings = ratings
 	for i := range cal.Callers {
 		cal.Callers[i].Name = names[cal.Callers[i].Caller]
 		cal.Callers[i].Model = models[cal.Callers[i].Caller]

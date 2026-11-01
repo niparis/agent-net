@@ -76,6 +76,9 @@ type CalibrationCaller struct {
 type Calibration struct {
 	Callers []CalibrationCaller `json:"callers,omitempty"`
 	Network []CalibrationLevel  `json:"network,omitempty"`
+	// Ratings is how many satisfaction ratings each model has (part 4). It is
+	// read only, like the rest of the table.
+	Ratings []CalibrationRating `json:"ratings,omitempty"`
 }
 
 // ReworkWeight is one task's weighted rework: fix + 0.5 * continue.

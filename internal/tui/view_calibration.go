@@ -67,6 +67,17 @@ func (m Model) calibrationView(w int) []string {
 	} else {
 		body = append(body, sDim.Render(clip("network: no strong caller data yet", w-4)))
 	}
+	if len(cal.Ratings) > 0 {
+		var parts []string
+		for _, r := range cal.Ratings {
+			parts = append(parts, fmt.Sprintf("%s %d", r.Model, r.Count))
+		}
+		for _, line := range wrap("ratings: "+strings.Join(parts, " · "), w-4) {
+			body = append(body, sDim.Render(line))
+		}
+	} else {
+		body = append(body, sDim.Render(clip("ratings: none yet", w-4)))
+	}
 	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue", w-4)))
 	return panel("Difficulty calibration · read only", body, w, roleAccent)
 }

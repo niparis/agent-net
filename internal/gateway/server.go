@@ -981,6 +981,34 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return st.AddFinding(protocol.Finding{SubjectKind: p.SubjectKind, Subject: p.Subject,
 			Finding: p.Finding, Evidence: p.Evidence, Reporter: p.Reporter, NodeID: nc.id})
 
+	case "rate.offer":
+		p, err := decode[protocol.RateOfferFrame](raw)
+		if err != nil || p.SessionID == "" {
+			return nil, reject("bad rate.offer")
+		}
+		owner, err := st.SessionNode(p.SessionID)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.SessionID)
+		}
+		return st.OfferRate(p.SessionID)
+
+	case "rate.add":
+		p, err := decode[protocol.RateFrame](raw)
+		if err != nil || p.Rater == "" {
+			return nil, reject("bad rate.add")
+		}
+		owner, err := st.SessionNode(p.Rater)
+		if err != nil {
+			return nil, err
+		}
+		if owner != nc.id {
+			return nil, reject("session %q does not belong to this node", p.Rater)
+		}
+		return st.AddRating(p)
+
 	case "cto.graph_latest":
 		id, err := st.CTOLastGraphID()
 		return map[string]int64{"id": id}, err

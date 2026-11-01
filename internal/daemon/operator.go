@@ -147,6 +147,29 @@ func (lc *localConn) dispatchActions(ctx context.Context, client, method string,
 		}
 		return out, true, nil
 
+	case protocol.OpRate:
+		// A rating comes from an agent session, never the command line.
+		var p protocol.RateRequest
+		if json.Unmarshal(raw, &p) != nil {
+			return nil, true, errors.New("bad agent_rate params")
+		}
+		if client == "cli" {
+			return nil, true, errors.New("agent_rate is for agent sessions, not the command line")
+		}
+		sid, _, err := lc.callerSession(client, method)
+		if err != nil {
+			return nil, true, err
+		}
+		var data json.RawMessage
+		if data, err = d.call(ctx, "rate.add", protocol.RateFrame{RateRequest: p, Rater: sid}); err != nil {
+			return nil, true, tooOldGateway(err)
+		}
+		var out protocol.RateResult
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, true, err
+		}
+		return out, true, nil
+
 	case protocol.OpWorkerStart:
 		var p protocol.WorkerStartRequest
 		if json.Unmarshal(raw, &p) != nil {
