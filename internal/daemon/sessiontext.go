@@ -639,6 +639,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if json.Unmarshal(raw, &q) != nil || strings.TrimSpace(q.Text) == "" {
 			return nil, true, errors.New("cto_send needs text")
 		}
+		if err := d.registerCTOSession(ctx); err != nil {
+			return nil, true, err
+		}
 		res, err = d.ctoSendTracked(ctx, q.Text, "owner")
 	case protocol.OpCTONew:
 		res, err = d.ctoNew(ctx)

@@ -173,11 +173,18 @@ func TestCTOHarnessConversations(t *testing.T) {
 	if err := json.Unmarshal(cli.mustCall("cto_send", map[string]string{"text": "open one"}), &first); err != nil {
 		t.Fatal(err)
 	}
+	networkID := n.d.ctoSessionID()
+	if networkID == "" {
+		t.Fatal("CTO has no network identity")
+	}
 	model, harness = "opus", "claude"
 	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Model: &model, Harness: &harness})
 	var second map[string]string
 	if err := json.Unmarshal(cli.mustCall("cto_send", map[string]string{"text": "claude one"}), &second); err != nil {
 		t.Fatal(err)
+	}
+	if n.d.ctoSessionID() != networkID {
+		t.Fatal("harness switch changed CTO network identity")
 	}
 	if first["session_id"] == "" || second["session_id"] == "" || first["session_id"] == second["session_id"] {
 		t.Fatalf("sessions: %v %v", first, second)
@@ -210,6 +217,10 @@ func TestCTOHarnessConversations(t *testing.T) {
 	if again["session_id"] != second["session_id"] {
 		t.Fatalf("Claude conversation lost on restart: %v", again)
 	}
+	if n.d.ctoSessionID() != networkID {
+		t.Fatal("restart changed CTO network identity")
+	}
+
 	cli.mustCall("cto_new", nil)
 	json.Unmarshal(cli.mustCall("cto_send", map[string]string{"text": "claude fresh"}), &again)
 	if again["session_id"] == second["session_id"] {

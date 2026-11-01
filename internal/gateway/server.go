@@ -535,6 +535,15 @@ func decode[T any](raw []byte) (T, error) {
 func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []byte) (any, error) {
 	st := g.store
 	switch typ {
+	case "cto.session.register":
+		p, err := decode[struct {
+			Owner string `json:"owner"`
+		}](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		id, err := st.RegisterCTOSession(nc.id)
+		return map[string]string{"session_id": id}, err
 	case "cto.proposal.validate":
 		return g.validateCTOProposal(ctx, nc, raw)
 	case "hello":
@@ -982,7 +991,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		return map[string]any{"message": m}, nil
 
 	case "cto.capabilities":
-		return map[string]bool{"attribution": true}, nil
+		return map[string]bool{"attribution": true, "network_session": true}, nil
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {

@@ -32,7 +32,13 @@ func (s *Store) RenameSession(sessionID, name string, validate ...bool) (protoco
 	if err != nil {
 		return res, err
 	}
+	if auto == "CTO" {
+		return res, ErrSessionName{"the CTO session has the reserved name CTO"}
+	}
 	name = strings.TrimSpace(name)
+	if strings.EqualFold(name, "CTO") {
+		return res, ErrSessionName{"CTO is a reserved session name"}
+	}
 	if name != "" {
 		if len([]rune(name)) > protocol.MaxModelLen {
 			return res, ErrSessionName{fmt.Sprintf("a session name is at most %d characters", protocol.MaxModelLen)}

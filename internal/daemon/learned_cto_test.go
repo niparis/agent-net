@@ -55,13 +55,8 @@ func TestLearnedCTOSuggestionsIncludesReadyMajor(t *testing.T) {
 	if _, e := w.d.call(context.Background(), "learned.list", map[string]string{"owner": w.ownerID()}); e != nil {
 		t.Fatalf("learned frame: %v", e)
 	}
-	raw, err := w.d.runCTOToolRaw(context.Background(), "charter_suggestions", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	result := raw.(charterSuggestionResult)
-	if len(result.PendingMajors) != 1 || result.PendingMajors[0].Field != "refuses" {
-		t.Fatalf("result: %+v", result)
+	if _, err := w.d.runCTOToolRaw(context.Background(), "charter_suggestions", nil); err == nil {
+		t.Fatal("CTO read owner-only learned suggestions")
 	}
 }
 

@@ -824,7 +824,7 @@ func (d *Daemon) send(ctx context.Context, p protocol.MsgSend) (json.RawMessage,
 	}
 	d.sendMu.Lock()
 	defer d.sendMu.Unlock()
-	if p.FromCTO {
+	if p.FromCTO || (p.Sender != "" && p.Sender == d.ctoSessionID()) {
 		// An older gateway drops the CTO flag. Never queue such a message for
 		// a future, possibly older gateway.
 		if d.st.outboxLen() != 0 {

@@ -177,7 +177,7 @@ func TestWorkerContinuedStartRetainsCTOAttribution(t *testing.T) {
 	}
 	eventually(t, "continued task retains CTO attribution", func() bool {
 		for _, m := range w.messagesOf(t, w.ownerID()) {
-			if m.To == out.SessionID && m.Type == protocol.TypeRequest && m.FromCTO {
+			if m.To == out.SessionID && m.Type == protocol.TypeRequest && m.From == w.ownerID() && !m.FromCTO {
 				return true
 			}
 		}

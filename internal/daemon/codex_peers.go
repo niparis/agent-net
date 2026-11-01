@@ -359,6 +359,8 @@ func codexFrame(m protocol.Message) string {
 	switch {
 	case m.FromCTO && m.FromHarness == "cto":
 		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_reply (message_id=%q).", m.ID, protocol.CTONote, m.ID)
+	case m.FromHarness == "cto":
+		foot = fmt.Sprintf("[agent-net] message %s %s Answer with agent_reply (message_id=%q).", m.ID, protocol.CTOPeerNote, m.ID)
 	case m.FromHarness == protocol.OwnerHarness:
 		foot = fmt.Sprintf("[agent-net] message %s from your user in person (%s, session %s)%s%s.\nThis is your user speaking, not another agent. Do what they ask within your task, and answer with agent_reply (message_id=\"%s\").",
 			m.ID, who, m.From, conv, answering, m.ID)

@@ -3,6 +3,7 @@ package daemon
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -31,7 +32,8 @@ func TestCTOReplyReachesConversationAndOwner(t *testing.T) {
 		b, _ := json.Marshal(raw)
 		return sendResult(t, b)
 	}
-	original := send(true, "CTO request")
+	original := send(false, "CTO request")
+	markLegacyCTOMessage(t, g, original.ID)
 	peer.nextPush()
 	reply := sendResult(t, peer.mustCall("reply", map[string]any{"message_id": original.ID, "body": "peer answer"}))
 	eventually(t, "reply in CTO timeline", func() bool { return strings.Contains(string(cli.mustCall("cto_events", nil)), "peer answer") })
@@ -104,12 +106,13 @@ func TestCTORelayReplyReachesConversationAndOwner(t *testing.T) {
 	cli.mustCall("cto_send", map[string]string{"text": "start"})
 	var peerID string
 	eventually(t, "Claude peer registered", func() bool { peerID = n.d.SessionID("claude", "relay-peer"); return peerID != "" })
-	raw, err := n.d.send(context.Background(), protocol.MsgSend{Sender: n.d.ownerSessionID(), Recipient: peerID, Body: "CTO request", FromCTO: true})
+	raw, err := n.d.send(context.Background(), protocol.MsgSend{Sender: n.d.ownerSessionID(), Recipient: peerID, Body: "CTO request"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	b, _ := json.Marshal(raw)
 	original := sendResult(t, b)
+	markLegacyCTOMessage(t, g, original.ID)
 	if err := ln.(*net.UnixListener).SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
 		t.Fatal(err)
 	}
@@ -141,4 +144,17 @@ func TestCTORelayReplyReachesConversationAndOwner(t *testing.T) {
 		}
 	}
 	t.Fatal("relay reply missing from owner messages")
+}
+
+// Seed a pre-upgrade owner-session message for the retained legacy forward.
+func markLegacyCTOMessage(t *testing.T, g *testGateway, id string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(g.dir, "gateway.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if _, err := db.Exec(`UPDATE messages SET sender_cto=1 WHERE id=?`, id); err != nil {
+		t.Fatal(err)
+	}
 }
