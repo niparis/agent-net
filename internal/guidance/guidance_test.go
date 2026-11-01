@@ -32,9 +32,9 @@ func TestAnnounceRuleIsMandatory(t *testing.T) {
 	for _, v := range []string{Claude, Other} {
 		b := Block(v)
 		for _, want := range []string{
-			"Announce your task. This is required.",
-			"At the start of every session, before other work, call `agent_announce` with your current task in one short line.",
-			"Call it again whenever your task changes.",
+			"Announce your task label. This is required.",
+			"At the start of every session, before other work, call `agent_announce` with your current announced task in one short line.",
+			"Call it again whenever your announced task changes.",
 			"AGENTS.md automatically",
 			"When you stop to wait for my decision or answer, call `agent_ask_owner` with the question in one line",
 		} {

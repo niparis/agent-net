@@ -150,7 +150,7 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 	defer cs.Close()
 
 	ins := cs.InitializeResult().Instructions
-	for _, want := range []string{"agent_announce", "start of every session", "before other work", "whenever your task changes", "AGENTS.md"} {
+	for _, want := range []string{"agent_announce", "start of every session", "before other work", "whenever your announced task changes", "AGENTS.md"} {
 		if !strings.Contains(ins, want) {
 			t.Errorf("server instructions miss %q: %s", want, ins)
 		}
@@ -163,7 +163,7 @@ func TestAnnounceRuleInInstructionsAndToolDescription(t *testing.T) {
 		if tl.Name != "agent_announce" {
 			continue
 		}
-		for _, want := range []string{"REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"} {
+		for _, want := range []string{"REQUIRED", "start of every session", "whenever your announced task changes", "AGENTS.md"} {
 			if !strings.Contains(tl.Description, want) {
 				t.Errorf("agent_announce description misses %q: %s", want, tl.Description)
 			}

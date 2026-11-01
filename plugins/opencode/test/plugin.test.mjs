@@ -1004,7 +1004,7 @@ await test("the announce rule goes into the system prompt of each request, once"
   const input = { system: [{ type: "text", text: "You are OpenCode." }] };
   ctxHook[1](input);
   const joined = input.system.map((p) => p.text).join("\n");
-  for (const want of ["start of every session", "before other work", "agent_announce", "whenever your task changes", "AGENTS.md"]) {
+  for (const want of ["start of every session", "before other work", "agent_announce", "whenever your announced task changes", "AGENTS.md"]) {
     if (!joined.includes(want)) throw new Error("missing " + JSON.stringify(want) + " in " + joined);
   }
   if (input.system.length !== 2 || input.system[0].text !== "You are OpenCode.") throw new Error("system parts: " + JSON.stringify(input.system));
@@ -1033,10 +1033,10 @@ await test("agent_announce asks for a task, and tool results end with the remind
   // Only the owner renames a session (decision 0032).
   if ("name" in announce.input.properties) throw new Error("agent_announce still takes a name");
   if (/rename/i.test(announce.description)) throw new Error("agent_announce still mentions renaming: " + announce.description);
-  for (const want of ["REQUIRED", "start of every session", "whenever your task changes", "AGENTS.md"]) {
+  for (const want of ["REQUIRED", "start of every session", "whenever your announced task changes", "AGENTS.md"]) {
     if (!announce.description.includes(want)) throw new Error("description misses " + JSON.stringify(want));
   }
-  const reminder = "Reminder: call agent_announce with your current task.";
+  const reminder = "Reminder: call agent_announce with your current announced task.";
   const run = async (name, sid, input = {}) => (await tools.find((t) => t.name === name).execute(input, { sessionID: sid })).content;
   const first = await run("agent_nodes", "ses_a");
   if (first.split("\n").pop() !== reminder) throw new Error("before announce: " + JSON.stringify(first));

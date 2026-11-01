@@ -1,5 +1,9 @@
 # TUI key audit
 
+## Fit with the primitives (decision 0036)
+
+This key audit uses sessions, workers, charters and the CTO. It records the existing and proposed interface, not a change to those primitives. No conflict with decision 0036 is known.
+
 **Status:** Proposal. No key outside the CTO box has been changed.
 **Date:** 2026-10-31.
 **Scope:** every key handler and hint line under `internal/tui`: the six tabs,
@@ -230,7 +234,7 @@ Tools plan modal and picker:
 | Form | Keys |
 |---|---|
 | Compose message | Text input, `enter` sends, `esc` cancels. |
-| Start worker | `tab` completes or moves to the next field, `shift+tab`/`up` previous, `down` next, `enter` next field or starts on the task, `esc` cancels, text input. |
+| Start worker | `tab` completes or moves to the next field, `shift+tab`/`up` previous, `down` next, `enter` next field or starts on the task field, `esc` cancels, text input. |
 | Stop worker | `y`/`Y` stops, `n`/`N`/`esc` cancels. |
 | Protect quota | `y` confirms, `n`/`esc` cancels. |
 | Peer trust | `y` turns on, `n`/`N`/`esc` cancels. |

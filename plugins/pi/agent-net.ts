@@ -14,8 +14,8 @@ const UNREACHABLE =
 
 // The announce rule. Keep it in step with AnnounceRule in internal/mcpserver.
 const ANNOUNCE_RULE =
-  "At the start of every session, before other work, call agent_announce with your current task in one short line. " +
-  "Call it again whenever your task changes. " +
+  "At the start of every session, before other work, call agent_announce with your current announced task in one short line. " +
+  "Call it again whenever your announced task changes. " +
   "When you end a turn waiting for your user's decision or input, call agent_ask_owner with the question in one line. " +
   "Your project description is taken from the project's AGENTS.md automatically.";
 // When to contact another session. Keep in step with AskPeerRule and RelayRule in internal/mcpserver.
@@ -33,7 +33,7 @@ const HINT_WAIT_MS = 400;
 const POLICY_WAIT_MS = 1_500;
 // Output that may be a failed network or service call. The daemon decides; this only keeps most output from being sent.
 const FAILURE_PREFILTER = /\b[45]\d\d\b|refused|reset|time[ds]? ?out|unreachable|ECONN|ETIMEDOUT|ENOTFOUND|resolve host|bad gateway|unavailable|curl: \(/i;
-const ANNOUNCE_REMINDER = "Reminder: call agent_announce with your current task.";
+const ANNOUNCE_REMINDER = "Reminder: call agent_announce with your current announced task.";
 
 function socketPath(): string {
   if (process.env.AGENT_NET_SOCKET) return process.env.AGENT_NET_SOCKET;
@@ -881,10 +881,10 @@ export default function (pi: ExtensionAPI) {
     "agent_announce",
     "Announce your task",
     `Tell the network what you are working on now, so other agents can find you with agent_list. REQUIRED: ${ANNOUNCE_RULE} ` +
-      "The task shows in agent_list and agent_get. Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
+      "The announced task shows in agent_list and agent_get. Also fill expertise once: what you can answer about (services, repos, machines, logs you can see), so others ask you instead of guessing. " +
       "Function is ignored.",
     Type.Object({
-      task: Type.String({ description: "Your current task, in one short line" }),
+      task: Type.String({ description: "Your current announced task, in one short line" }),
       function: Type.Optional(Type.String({ description: "Ignored: the function is read from the project's AGENTS.md" })),
       project: Type.Optional(Type.String({ description: "Project this agent works on" })),
       capabilities: Type.Optional(Type.Array(Type.String(), { description: "List of capabilities" })),

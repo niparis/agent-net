@@ -1,5 +1,7 @@
 # Security
 
+Decision [0036](decisions/0036-primitives.md) distinguishes authority over actions from autonomy over decisions about work. An agent is a chartered identity; a session is its running process. The checks below describe current behavior and do not imply that the decision's autonomy model is already built.
+
 The network-wide CTO harness, model preference and auto-compaction rules are
 owner settings. The daemon's `cto_settings` method uses the owner gate and
 refuses agent sessions. Values are bounded: a threshold from 10 to 100 percent,
@@ -126,7 +128,7 @@ A machine joins with a one-time code.
 
 - At enrollment the gateway gives the machine a node ID and a token (32 random bytes, hex). It stores only the SHA-256 hash of the token.
 - The token is saved in `~/.config/agent-net/node.json` with mode 0600. The daemon sends it as a bearer token when it opens its WebSocket. One node has one live connection, and a new one replaces the old.
-- The gateway only accepts a message from a session that belongs to the node on the connection. A node can directly read messages sent from or to its own sessions. The owner can also request another message through the relay described below. It can list every agent on the network and read the event feed (metadata, no bodies; see [the event feed](#what-every-node-can-read-the-event-feed)).
+- The gateway only accepts a message from a session that belongs to the node on the connection. A node can directly read messages sent from or to its own sessions. The owner can also request another message through the relay described below. It can list every session on the network and read the event feed (metadata, no bodies; see [the event feed](#what-every-node-can-read-the-event-feed)).
 - There is no token rotation and no revocation command yet. To remove a machine, delete its row from the `nodes` table in `gateway.db`, or stop trusting the network and start a new gateway data dir.
 
 ## Which local process is calling
