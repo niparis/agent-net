@@ -454,6 +454,9 @@ Unix socket paths are limited to about 104 to 108 bytes. Keep `AGENT_NET_SOCKET`
 | `AGENT_NET_NO_AUTO_UPGRADE` | daemon, `agent-net mcp` | `1` means: do not upgrade by itself. For the daemon: no automatic catch-up. For `agent-net mcp`: do not switch to a newer binary. |
 | `AGENT_NET_MCP_HANDOVER` | `agent-net mcp` | Set by `agent-net mcp` on itself when it switches to a newer binary. It holds the path of a private temp file (`agent-net-mcp-handover-*` in `$TMPDIR`) with the start-up messages and unread input. The new process reads it, deletes the file and unsets the variable. Do not set it. |
 | `CLAUDE_CODE_SESSION_ID` | `agent-net mcp` | Set by Claude Code for the MCP servers it starts. Not set by you. |
+| `CLAUDE_CODE_DISABLE_MOUSE` | daemon | `1` in the environment of every Claude Code background session agent-net starts (the CTO and Claude workers) and in the plan for `claude attach`. Claude Code then writes no mouse tracking modes, so the terminal handles the mouse and a plain drag selects text. |
+
+The daemon sets `CLAUDE_CODE_DISABLE_MOUSE=1` on both ends of a Claude Code background session: at start, through the `env` of its `--settings`, and again on the `claude attach` command. A running CTO keeps its old environment until it restarts. It restarts when its settings change or after a daemon restart, so change a CTO setting once after an upgrade to pick up the new environment.
 
 ## Flags
 
@@ -1279,6 +1282,8 @@ The TUI asks for each readable message body once and keeps it by message ID. Own
 - On macOS the daemon reads process environments and command lines with `sysctl kern.procargs2` when permitted. It can still find a Herdr server from its command line when macOS does not expose `HERDR_*` variables for a process such as `/bin/zsh`.
 
 When the plan has nothing to run, the answer has only a note, and the TUI shows it in the result line.
+
+**Mouse in a Claude Code background session.** agent-net starts the session and its `claude attach` client with `CLAUDE_CODE_DISABLE_MOUSE=1`, so Claude Code turns mouse tracking off and a plain drag selects text. The terminal copies the selection. The wheel no longer reaches Claude Code. In Ghostty the alternate screen turns wheel steps into up and down arrow keys, which move through the prompt history instead of scrolling, so scroll the transcript with PageUp and PageDown. A Claude Code session agent-net did not start keeps its own environment; hold Shift while dragging there to select text.
 
 **A session on another machine.** The question goes through the gateway to that machine. By default the TUI runs the command there through `ssh -t -o ConnectTimeout=5 -- <target> <command>`. To change the target, or to turn ssh off, set in `node.json` on the machine where you use the TUI, and restart the daemon:
 

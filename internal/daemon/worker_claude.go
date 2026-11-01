@@ -101,8 +101,9 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	settings, _ := json.Marshal(map[string]any{
 		"crossSessionInbound": "accept",
 		"env": map[string]string{
-			"AGENT_NET_SOCKET": d.cfg.SocketPath,
-			"AGENT_NET_WORKER": w.id,
+			"AGENT_NET_SOCKET":          d.cfg.SocketPath,
+			"AGENT_NET_WORKER":          w.id,
+			"CLAUDE_CODE_DISABLE_MOUSE": "1",
 		},
 	})
 	// No flag that turns permission checks off (decision 0002, W6). The first
@@ -132,6 +133,7 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 	}()
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = w.path
+	cmd.Env = workerEnv(os.Environ(), map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"})
 	out, err := cmd.CombinedOutput()
 	logf, lerr := os.OpenFile(filepath.Join(dir, "worker.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if lerr == nil {
