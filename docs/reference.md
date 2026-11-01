@@ -1633,7 +1633,7 @@ A rejection or escalation of another agent's request appears as a separate Needs
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when the worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
-`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing.
+`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing. The daemon waits for the background job to run before saving its session ID. If Claude Code has closed the conversation and a resume fails, or the resumed job crashes at startup, the daemon starts a fresh Claude conversation once. The CTO timeline and proposals remain in agent-net. The CTO box reports the restart or any startup error.
 
 The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell

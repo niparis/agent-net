@@ -112,6 +112,9 @@ func (m Model) ctoView(w, h int) []string {
 	for _, v := range c.messages {
 		lines = append(lines, c.renderMessage(v, w)...)
 	}
+	if c.enterNotice != "" {
+		lines = append(lines, clip(sanitize(c.enterNotice), w))
+	}
 	if c.err != "" {
 		lines = append(lines, wrapCTOLine("error: "+c.err, w)...)
 	}
