@@ -37,7 +37,8 @@
   a                    toggle autonomy off or wake
   h, H                 hide or unhide the selected project; show hidden projects
   U, u                 select the next learned change; undo the selected one
-  [ ], ctrl+u/d        scroll the charter; pgup/pgdn also work
+  !                    legend: what the edge kinds, request rules and charter fields mean
+  [ ], ctrl+u/d        scroll the card: legend, charter, rules and learned changes; pgup/pgdn also work
   c                    focus the Atlas box
   r                    refresh
 

@@ -36,6 +36,7 @@ type mapState struct {
 	findQuery        string
 	charterFor       string
 	charterScroll    int
+	legend           bool
 	learnedFor       string
 	learnedIndex     int
 }
@@ -116,6 +117,10 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case "?":
 		m.help = true
+	case "!":
+		m.mp.legend = !m.mp.legend
+		// Show the top of the body again, where the legend starts when it is on.
+		m.mp.charterFor, m.mp.charterScroll = m.mp.selected, 0
 	case "c":
 		if m.cto != nil {
 			m.focus = focusCTO

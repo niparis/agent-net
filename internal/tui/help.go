@@ -39,7 +39,7 @@ func (m Model) hints() []hint {
 	case m.help:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close help", 1}, {"q", "quit", 1}}
 	case m.mapOn && m.focus != focusCTO:
-		return []hint{{"enter", "sessions", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"n", "new", 2}, {"U/u", "learned/undo", 2}, {"?", "help", 0}, {"q", "quit", 0}}
+		return []hint{{"enter", "sessions", 1}, {"esc", "Graph", 0}, {"[ ]", "scroll", 1}, {"n", "new", 2}, {"U/u", "undo", 1}, {"!", "legend", 1}, {"?", "help", 0}, {"q", "quit", 0}}
 	case m.open != nil:
 		return []hint{{"up/down", "scroll", 1}, {"esc", "close", 1}, {"q", "quit", 1}}
 	case m.focus == focusCTO:
@@ -205,7 +205,8 @@ func (m Model) helpContent(w int) []string {
 		{"a", "toggle autonomy off or wake"},
 		{"h, H", "hide or unhide the selected project; show hidden projects"},
 		{"U, u", "select the next learned change; undo the selected one"},
-		{"[ ], ctrl+u/d", "scroll the charter; pgup/pgdn also work"},
+		{"!", "legend: what the edge kinds, request rules and charter fields mean"},
+		{"[ ], ctrl+u/d", "scroll the card: legend, charter, rules and learned changes; pgup/pgdn also work"},
 		{"c", "focus the " + m.ctoTitle() + " box"},
 		{"r", "refresh"},
 		{"", ""},

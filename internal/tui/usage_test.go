@@ -150,7 +150,7 @@ func TestHeaderQuotaWarning(t *testing.T) {
 func TestGoldenHelp(t *testing.T) {
 	m := keys(newModel(100, 40), "?")
 	help := ansi.Strip(strings.Join(m.helpContent(100), "\n"))
-	for _, want := range []string{"open the selected agent card", "scroll the charter", "undo the selected one"} {
+	for _, want := range []string{"open the selected agent card", "scroll the card", "undo the selected one", "legend"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("the help lacks %q:\n%s", want, help)
 		}

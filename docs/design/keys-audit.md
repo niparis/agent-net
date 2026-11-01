@@ -208,8 +208,9 @@ Tools plan modal and picker:
 | `enter` | Open Sessions filtered to the agent's project. |
 | `n` | Start a new session filled from this project. |
 | `esc` | Return to Graph with the same node selected. |
-| `[`/`]`, `ctrl+u`/`ctrl+d` | Scroll the charter. |
+| `[`/`]`, `ctrl+u`/`ctrl+d` | Scroll the card body: legend, charter, learned changes and rules. |
 | `U`/`u` | Select the next learned change / undo it. |
+| `!` | Show or hide the legend (hidden by default). |
 | `D` | Rename the project (empty clears). |
 | `a` | Toggle autonomy between `off` and `wake`. |
 | `h`/`H` | Hide or unhide the selected project / include hidden nodes. |
@@ -217,6 +218,11 @@ Tools plan modal and picker:
 | `r` | Refresh. |
 | `?` | Help. |
 | `q` | Quit. |
+
+`!` was free on the card and everywhere else: no other screen handles it, and
+it does not collide with a digit, `tab`, `C` or a text field. It starts hidden
+so the card keeps its rows; the key line says `! legend`. The legend is part of
+the scrolling card body, so it never needs a second screen.
 
 ### Help overlay
 
@@ -272,7 +278,7 @@ only supplies ctrl+] to come back.
 | `h` | Sessions: hide a session. Card: hide a project. Tools All: move left a column. Graph: pan left. | Four meanings, two of them a column move. |
 | `H` | Sessions and Card: show hidden items. | Consistent, but only for two of the four `h` meanings. |
 | `x` | Sessions: stop a worker. Tools Differences: accept a difference as it is. Tools picker: tick an item. | Stop, accept and tick share one letter. |
-| `[` `]` | Tools: switch screens. Graph: previous or next neighbour. Card: scroll the charter. | Screen switch, graph navigation and text scroll. |
+| `[` `]` | Tools: switch screens. Graph: previous or next neighbour. Card: scroll the card body. | Screen switch, graph navigation and text scroll. |
 | `a` | Sessions: active only, accept a learned suggestion, accept a held request. Graph card: toggle autonomy. Tools All: turn on. Inbox: approve. | Same letter for "show active", "accept", "toggle a rule" and "turn on". |
 | `r` | Sessions: refresh, reject a learned suggestion, refuse a held request. Quotas, Graph card, Tools: refresh or rescan. Inbox: refuse. | Refresh and refuse are opposite actions. |
 | `s` | Sessions and Messages: start a worker. Outcome row: let stand. Quotas: show not set up. | Start, let stand and show. |

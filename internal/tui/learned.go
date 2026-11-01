@@ -3,8 +3,11 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
@@ -54,12 +57,40 @@ func (m Model) mapLearnedLines(node string, width int) []string {
 		}
 		out = append(out, clip(marker+sanitize(v.Field)+": "+sanitize(value)+"  "+m.mapAgo(v.DecidedAt), width))
 		if len(v.Evidence) > 0 {
-			for _, line := range wrap("why: "+sanitize(v.Evidence[0].Excerpt), max(width-4, 8)) {
-				out = append(out, "    "+line)
-			}
+			out = append(out, mapWhyLines(sanitize(v.Evidence[0].Excerpt), width)...)
 		}
 	}
-	return append(out, sDim.Render("  U next change  u undo"))
+	return out
+}
+
+// mapWhyLines wraps the evidence of a learned change over at most two lines,
+// cut at a word with an ellipsis, so it never runs off the card.
+func mapWhyLines(why string, w int) []string {
+	const indent = "    "
+	const label = "why: "
+	why = strings.TrimSpace(why)
+	if why == "" {
+		return nil
+	}
+	room := max(w-ansi.StringWidth(indent+label), 8)
+	lines := wrap(why, room)
+	if len(lines) > 2 {
+		lines = lines[:2]
+		words := strings.Fields(lines[1])
+		for len(words) > 1 && ansi.StringWidth(strings.Join(words, " "))+2 > room {
+			words = words[:len(words)-1]
+		}
+		last := strings.Join(words, " ")
+		if ansi.StringWidth(last)+2 > room {
+			last = ansi.Truncate(last, max(room-2, 1), "")
+		}
+		lines[1] = last + " …"
+	}
+	out := []string{indent + sDim.Render(label) + lines[0]}
+	for _, l := range lines[1:] {
+		out = append(out, strings.Repeat(" ", ansi.StringWidth(indent+label))+l)
+	}
+	return out
 }
 func (m Model) mapUndoLearned() tea.Cmd {
 	c, ok := m.src.(inboxCaller)

@@ -8,11 +8,11 @@ governed by: wbg-architect (advisor)
 IN 2                                     OUT 2
 all projects ──▶ depends                 ──▶ cogforge depends ask
 homelab ──▶ deploys auto                 ──▶ homelab depends ask
-Charter 1-4/11  [ ] scroll ─────────────────────────────────────────────────────
+Card 1-4/19  [ ] scroll ────────────────────────────────────────────────────────
+Charter ────────────────────────────────────────────────────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that
                  keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client
-                 reports.
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
@@ -21,4 +21,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter sessions  esc Graph  [ ] scroll  n new  U/u learned/undo  ? help  q quit
+enter sessions  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit
