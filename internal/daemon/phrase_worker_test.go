@@ -69,7 +69,7 @@ func TestPhraseWorkerThroughGateway(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The test uses the gateway's test hook instead of waiting two minutes.
-	db, err := sql.Open("sqlite", filepath.Join(g.dir, "gateway.db"))
+	db, err := sql.Open("sqlite", "file:"+filepath.Join(g.dir, "gateway.db")+"?_pragma=busy_timeout(5000)")
 	if err != nil {
 		t.Fatal(err)
 	}
