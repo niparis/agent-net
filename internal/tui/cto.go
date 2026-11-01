@@ -135,7 +135,7 @@ func (m Model) ctoPollCmd() tea.Cmd {
 			return ctoPollMsg{err: err, generation: generation}
 		}
 		events := ctoEventsFromPage(page)
-		history, err := src.CTOGraphHistory(ctx, 0)
+		history, err := src.CTOGraphHistory(ctx, m.cto.lastGraphID)
 		model := settings.Model
 		if model == "" {
 			model = "default"
@@ -312,7 +312,7 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 			defer cancel()
-			history, err := src.CTOGraphHistory(ctx, 0)
+			history, err := src.CTOGraphHistory(ctx, m.cto.lastGraphID)
 			if err != nil {
 				return ctoUndoMsg{err: err, generation: g}
 			}
