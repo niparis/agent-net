@@ -1,4 +1,4 @@
-# 0037 - Map merged into Graph
+# 0038 - Map merged into Graph
 
 **Date:** 2026-11-01
 **Status:** Accepted

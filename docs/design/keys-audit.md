@@ -4,7 +4,7 @@
 
 This key audit uses sessions, workers, charters and the CTO. It records the existing and proposed interface, not a change to those primitives. No conflict with decision 0036 is known.
 
-**Status:** Proposal, except the CTO keys and Graph/card merge in [0037](../decisions/0037-map-merged-into-graph.md). The tables below include that merge.
+**Status:** Proposal, except the CTO keys and Graph/card merge in [0038](../decisions/0038-map-merged-into-graph.md). The tables below include that merge.
 **Date:** 2026-10-31.
 **Scope:** every key handler and hint line under `internal/tui`: the five tabs,
 the Needs you rows, Messages, the inbox, Quotas, Graph, Tools, help,
@@ -353,12 +353,12 @@ Rules:
 | 15 | CTO box: keep `n` for a new conversation because it is inside a modal with `y`/`n`; no change. | None | The confirmation convention already covers it. |
 | 16 | Esc first clears a non-empty filter or search, and a second Esc goes back. Today one Esc does both on most screens. | Small | No lost text by accident. |
 | 17 | Quotas: give Enter a meaning, "open the provider details", or state that the tab has no Enter action in its key line. | Small | Every other tab has Enter. |
-| 18 | Card: Esc returns to the selected Graph node (implemented in decision 0037). | Medium | Esc must go back one level, not jump to Sessions. |
+| 18 | Card: Esc returns to the selected Graph node (implemented in decision 0038). | Medium | Esc must go back one level, not jump to Sessions. |
 | 19 | Make `?` open the same help overlay on Graph, with a Graph section, instead of the separate `graphHelp` panel. | Medium | One key, one help. |
 | 20 | Unify the confirmation keys on `y`/`n` and show them in every modal footer. They already agree except for `Y`/`N` aliases, which can stay. | Small | One confirmation convention. |
 
 Items 8, 9, 10, 11 and 12 change everyday keys. They should be done together,
-one commit, after the owner approves the map. The implemented changes are the Graph/card merge in decision 0037 and
+one commit, after the owner approves the map. The implemented changes are the Graph/card merge in decision 0038 and
 the CTO box in decision
 [0034](../decisions/0034-cto-box-is-read-only.md): Enter opens the CTO and `o`
 no longer does anything there.

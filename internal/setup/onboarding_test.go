@@ -310,7 +310,7 @@ func TestSetupOpenQuestionSkipsTTYWhenNonInteractive(t *testing.T) {
 
 // The projects call lists a folder per machine, so it also carries worker
 // worktrees, Claude Code worktrees and temporary test folders. The Map line
-// must count project identities, as the Map tab does, not folders.
+// must count project identities, as the Graph tab does, not folders.
 func TestMapPointCountsProjectIdentitiesNotFolders(t *testing.T) {
 	summary := setupSummary{
 		projectsKnown: true,
