@@ -88,11 +88,17 @@ func TestLearnedMapMarksViewedOnLeavingProject(t *testing.T) {
 	m.mp.nodes = fakeGraph().Nodes
 	m.mp.selected = "cogforge"
 	m.snap.Learned = []protocol.LearnedSuggestion{{ID: 11, Node: "cogforge", Field: "needs", Phrase: "ops backups", Status: "applied", By: "learned", HistoryID: 42, Unseen: true}}
-	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("j")})
+	_, cmd := m.update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("missing viewed command")
 	}
-	cmd()
+	if batch, ok := cmd().(tea.BatchMsg); ok {
+		for _, c := range batch {
+			if c != nil {
+				c()
+			}
+		}
+	}
 	if src.method != "learned_view" {
 		t.Fatalf("called %q", src.method)
 	}

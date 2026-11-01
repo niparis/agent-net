@@ -154,8 +154,8 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 		}
 		q.Tab, q.Select, q.Filter, q.Why, q.Text = cleanLine(q.Tab), cleanLine(q.Select), cleanLine(q.Filter), cleanLine(q.Why), cleanLine(q.Text)
 		if name == "ui_show" {
-			if q.Tab != "sessions" && q.Tab != "messages" && q.Tab != "quotas" && q.Tab != "map" && q.Tab != "tools" {
-				return nil, errors.New("ui_show tab must be sessions, messages, quotas, map or tools")
+			if q.Tab != "sessions" && q.Tab != "messages" && q.Tab != "quotas" && q.Tab != "graph" && q.Tab != "map" && q.Tab != "tools" {
+				return nil, errors.New("ui_show tab must be sessions, messages, quotas, graph or tools")
 			}
 			q.Text = ""
 			if q.Why == "" {

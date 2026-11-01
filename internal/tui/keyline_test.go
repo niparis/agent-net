@@ -13,7 +13,7 @@ import (
 func TestKeyLineHasAtMostSevenHintsOnEveryTab(t *testing.T) {
 	for _, tc := range []struct{ name, key string }{
 		{"Sessions", "1"}, {"Messages", "2"}, {"Quotas", "3"},
-		{"Map", "4"}, {"Tools", "5"}, {"Graph", "6"},
+		{"Graph", "4"}, {"Tools", "5"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		line := ansi.Strip(m.helpLine(120))
@@ -38,9 +38,8 @@ func TestKeyLineContentPerTab(t *testing.T) {
 		{"Sessions", "1", "up/down select  enter open  m msg  / filter  tab CTO  ? help  q quit"},
 		{"Messages", "2", "up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit"},
 		{"Quotas", "3", "up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit"},
-		{"Map", "4", "up/down move  left/right follow  enter open  / find  z overview  ? help  q quit"},
 		{"Tools", "5", "j/k move  enter fix  x accept  [ ] screen  ? help  q quit"},
-		{"Graph", "6", "1-6 tabs  tab CTO  ? help  q quit"},
+		{"Graph", "4", "1-5 tabs  tab CTO  ? help  q quit"},
 	} {
 		m := keys(newModel(120, 34), tc.key)
 		if got := ansi.Strip(m.helpLine(120)); got != tc.want {
@@ -56,10 +55,10 @@ func TestKeysRemovedFromKeyLineStayInHelp(t *testing.T) {
 		name, key string
 		removed   []string
 	}{
-		{"Sessions", "1", []string{"1-6", "s", "x", "h", "H", "t", "p", "N", "L", "o", "a", "d", "r"}},
+		{"Sessions", "1", []string{"1-5", "s", "x", "h", "H", "t", "p", "N", "L", "o", "a", "d", "r"}},
 		{"Messages", "2", []string{"w", "e", "l"}},
-		{"Quotas", "3", []string{"1-6"}},
-		{"Map", "4", []string{"D", "[ ]", "U", "u", "h", "H", "c"}},
+		{"Quotas", "3", []string{"1-5"}},
+		{"Graph", "4", []string{"D", "[ ]", "U", "u", "h", "H", "c"}},
 		{"Tools", "5", []string{".", "r", "tab"}},
 	} {
 		m := keys(newModel(120, 34), tc.key)

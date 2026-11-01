@@ -74,8 +74,8 @@ func (FeedEvents) graphAction()      {}
 
 // Effect describes work for the host UI to perform.
 type Effect struct {
-	OpenMap string
-	Open    bool
+	OpenCard string
+	Open     bool
 }
 
 // Update returns a new state without changing the input state or its graph.
@@ -191,7 +191,7 @@ func Update(s State, action Action) (State, Effect) {
 		}
 	case OpenSelected:
 		if s.Graph != nil {
-			effect.OpenMap = s.Graph.Selected()
+			effect.OpenCard = s.Graph.Selected()
 			effect.Open = true
 		}
 	case Tick:

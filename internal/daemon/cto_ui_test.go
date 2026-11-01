@@ -39,13 +39,13 @@ func TestCTOUIBroadcast(t *testing.T) {
 		}
 		channels = append(channels, ch)
 	}
-	if _, err := call("ui_show", `{"tab":"map","select":"shop","filter":"api","why":"inspect"}`); err != nil {
+	if _, err := call("ui_show", `{"tab":"graph","select":"shop","filter":"api","why":"inspect"}`); err != nil {
 		t.Fatal(err)
 	}
 	for _, ch := range channels {
 		select {
 		case q := <-ch:
-			if q.Tab != "map" || q.Select != "shop" || q.Filter != "api" || q.Why != "inspect" {
+			if q.Tab != "graph" || q.Select != "shop" || q.Filter != "api" || q.Why != "inspect" {
 				t.Fatalf("bad push: %+v", q)
 			}
 		case <-time.After(time.Second):

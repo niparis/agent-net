@@ -4,10 +4,10 @@
 
 This key audit uses sessions, workers, charters and the CTO. It records the existing and proposed interface, not a change to those primitives. No conflict with decision 0036 is known.
 
-**Status:** Proposal. No key outside the CTO box has been changed.
+**Status:** Proposal, except the CTO keys and Graph/card merge in [0037](../decisions/0037-map-merged-into-graph.md). The tables below include that merge.
 **Date:** 2026-10-31.
-**Scope:** every key handler and hint line under `internal/tui`: the six tabs,
-the Needs you rows, Messages, the inbox, Quotas, Map, Tools, Graph, help,
+**Scope:** every key handler and hint line under `internal/tui`: the five tabs,
+the Needs you rows, Messages, the inbox, Quotas, Graph, Tools, help,
 the forms and the CTO box.
 
 The rule the owner asked for is simple: Enter means "go into it". This audit
@@ -21,7 +21,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 
 | Key | Action |
 |---|---|
-| `1`-`6` | Open Sessions, Messages, Quotas, Map, Tools or Graph. Not while filtering or in a text field. |
+| `1`-`5` | Open Sessions, Messages, Quotas, Graph or Tools. Not while filtering or in a text field. |
 | `C` | Focus the CTO box. |
 | `tab` | Focus the CTO box. While the box has focus, return to the tab. |
 | `ctrl+c` | Quit at once. |
@@ -33,7 +33,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 |---|---|
 | `up`/`down`, `j`/`k` | Move the selection. |
 | `pgup`/`pgdown` | Page the list. |
-| `home`/`g`, `end`/`G` | First or last row. |
+| `home`/`g`, `end` | First or last row. |
 | `enter` | Enter the selected session, including a Needs you row. |
 | `e` | Enter the selected session (alias of Enter). |
 | `m` | Compose a message to the selected session. |
@@ -49,7 +49,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | `I` | Integrations form. |
 | `N` | Rename the selected session's machine. |
 | `L` | Learned notes overlay. |
-| `M` | Open Map. |
+| `M`, `G` | Open Graph. |
 | `d` | Toggle the detail pane. |
 | `l` | Cycle the event filter. |
 | `/` | Filter by name, project, branch, model, and so on. |
@@ -84,7 +84,7 @@ session. The extra actions apply only when such a row is selected.
 | `w` | Show or hide worker threads. |
 | `e` | Show or hide system events. |
 | `l` | Cycle the event filter. |
-| `pgup`/`pgdown`, `home`/`g`, `end`/`G` | Move or page the conversation list. |
+| `pgup`/`pgdown`, `home`/`g`, `end` | Move or page the conversation list. |
 | `m`, `s`, `x`, `t`, `p`, `I`, `N`, `L`, `M`, `d`, `/`, `o`, `a`, `r`, `?`, `tab`, `q` | Same as Sessions, except that `e` is events, not enter. |
 
 ### Message body overlay
@@ -120,29 +120,6 @@ session. The extra actions apply only when such a row is selected.
 
 Other global keys, including `enter`, are not handled on this tab.
 
-### Map (tab 4)
-
-| Key | Action |
-|---|---|
-| `up`/`down`, `j`/`k` | Select a project. |
-| `left`/`right` | Follow an edge in or out. |
-| `enter` | Open Sessions filtered to the project. In overview, focus the selected project. |
-| `/` | Find a project. Text input, `enter` focuses the first match, `esc` cancels. |
-| `c` | Focus the CTO box. |
-| `D` | Rename the project (empty clears). |
-| `h` | Hide or unhide the selected project. |
-| `H` | Show hidden projects. |
-| `z` | Toggle the overview. |
-| `u` | Undo the selected learned change. |
-| `U` | Select the next learned change. |
-| `[`/`]`, `ctrl+u`/`ctrl+d` | Scroll the charter. |
-| `pgup`/`pgdown` | Move a page. |
-| `home`/`g`, `end`/`G` | First or last project. |
-| `r` | Refresh. |
-| `M`, `esc` | Leave Map for Sessions. |
-| `?` | Help. |
-| `q` | Quit. |
-
 ### Tools (tab 5)
 
 Global keys on the tab:
@@ -160,7 +137,7 @@ Global keys on the tab:
 | `?` | Tools keys. |
 | `q` | Quit. |
 | `tab`, `C` | Focus the CTO box. |
-| `M` | Open Map. |
+| `M`, `G` | Open Graph. |
 
 Differences screen:
 
@@ -200,7 +177,7 @@ Tools plan modal and picker:
 | `/` | Filter the picker. |
 | `enter` when done | Close the finished plan. |
 
-### Graph (tab 6)
+### Graph (tab 4)
 
 | Key | Action |
 |---|---|
@@ -213,10 +190,26 @@ Tools plan modal and picker:
 | `t` | Show or hide traffic. |
 | `o` | Arrange nodes in rings (orbit). |
 | `space` | Pause or resume traffic. |
-| `enter` | Open the selected project in Map. |
+| `/` | Find a node; Enter selects the first match, Esc cancels. |
+| `enter` | Open the selected agent card. |
 | `?` | Graph help. `?` or `esc` closes it. |
 | `q` | Quit. |
 | `tab`, `C` | Focus the CTO box. |
+
+### Graph agent card
+
+| Key | Action |
+|---|---|
+| `enter` | Open Sessions filtered to the agent's project. |
+| `esc` | Return to Graph with the same node selected. |
+| `[`/`]`, `ctrl+u`/`ctrl+d` | Scroll the charter. |
+| `U`/`u` | Select the next learned change / undo it. |
+| `D` | Rename the project (empty clears). |
+| `h`/`H` | Hide or unhide the selected project / include hidden nodes. |
+| `c` | Focus the CTO box. |
+| `r` | Refresh. |
+| `?` | Help. |
+| `q` | Quit. |
 
 ### Help overlay
 
@@ -264,18 +257,18 @@ only supplies ctrl+] to come back.
 
 | Key | Screen and meaning | Conflict |
 |---|---|---|
-| `enter` | Sessions: enter session. Messages: select latest. Map: filter sessions or focus overview. Tools: expand, open fix, apply plan, or "details below". Graph: open in Map. Quotas: nothing. Forms: send, save or next field. CTO: open full CTO. | The same key is "go into it", "send", "apply" and "do nothing". The intent is close, but the Tools All case says "details below" where every other list opens something. |
-| `esc` | Everywhere: back or cancel. Map: leave Map. Help and body: close. Filter or search: clear text. Tools: clear search. CTO: return to the tab. | Usually back, but on Map it leaves the tab instead of going back one level. |
-| `h` | Sessions: hide a session. Map: hide a project. Tools All: move left a column. Graph: pan left. | Four meanings, two of them a column move. |
-| `H` | Sessions and Map: show hidden items. | Consistent, but only for two of the four `h` meanings. |
+| `enter` | Sessions: enter session. Messages: select latest. Card: open filtered sessions. Tools: expand, open fix, apply plan, or "details below". Graph: open its card. Quotas: nothing. Forms: send, save or next field. CTO: open full CTO. | The same key is "go into it", "send", "apply" and "do nothing". The intent is close, but the Tools All case says "details below" where every other list opens something. |
+| `esc` | Everywhere: back or cancel. Card: return to Graph. Help and body: close. Filter or search: clear text. Tools: clear search. CTO: return to the tab. | Usually back, but the card returns to its Graph node. |
+| `h` | Sessions: hide a session. Card: hide a project. Tools All: move left a column. Graph: pan left. | Four meanings, two of them a column move. |
+| `H` | Sessions and Card: show hidden items. | Consistent, but only for two of the four `h` meanings. |
 | `x` | Sessions: stop a worker. Tools Differences: accept a difference as it is. Tools picker: tick an item. | Stop, accept and tick share one letter. |
-| `[` `]` | Tools: switch screens. Graph: previous or next neighbour. Map: scroll the charter. | Screen switch, graph navigation and text scroll. |
+| `[` `]` | Tools: switch screens. Graph: previous or next neighbour. Card: scroll the charter. | Screen switch, graph navigation and text scroll. |
 | `a` | Sessions: active only, accept a learned suggestion, accept a held request. Tools All: turn on. Inbox: approve. | Same letter for "show active", "accept" and "turn on". |
-| `r` | Sessions: refresh, reject a learned suggestion, refuse a held request. Quotas, Map, Tools: refresh or rescan. Inbox: refuse. | Refresh and refuse are opposite actions. |
+| `r` | Sessions: refresh, reject a learned suggestion, refuse a held request. Quotas, Graph card, Tools: refresh or rescan. Inbox: refuse. | Refresh and refuse are opposite actions. |
 | `s` | Sessions and Messages: start a worker. Outcome row: let stand. Quotas: show not set up. | Start, let stand and show. |
 | `o` | Sessions: show offline, or overrule an outcome. Graph: orbit. | Filter, decision and layout. |
-| `u` | CTO: undo a graph change. Map: undo a learned change. Tools All: turn off. Tools By project: explains where turn off lives. | Undo and turn off are close, but the By project case is a dead end. |
-| `U` | Map: next learned change. | Only one meaning, but easy to confuse with `u`. |
+| `u` | CTO: undo a graph change. Card: undo a learned change. Tools All: turn off. Tools By project: explains where turn off lives. | Undo and turn off are close, but the By project case is a dead end. |
+| `U` | Card: next learned change. | Only one meaning, but easy to confuse with `u`. |
 | `e` | Sessions: enter the session. Messages: show events. | Enter and filter. |
 | `m` | Sessions and Messages: compose. Tools: next machine. CTO: model form. Body overlay: close. | Compose, machine and close. |
 | `p` | Sessions: policy. Quotas: protect. | Two settings actions. |
@@ -283,7 +276,7 @@ only supplies ctrl+] to come back.
 | `d` | Sessions: detail. Tools plan: exact folders. | Both are details, so this one is acceptable. |
 | `l` | Messages and Sessions feed: event filter. Tools All: move right a column. Graph: pan right. | Filter and movement. |
 | `j`/`k` | Lists: move selection. Graph: pan. Modals: scroll. Picker: select. | Movement in all cases, but the axis and unit differ. |
-| `g`/`G` | Sessions, Map, Help: first or last. | Consistent where it exists. |
+| `g`/`end` | Sessions: first or last. Help also accepts `G` for last. | `G` opens Graph outside Help. |
 | `space` | Graph: pause traffic. Policy and Integrations: toggle or cycle. Picker: tick. | Toggle and pause are close. |
 | `y`/`n` | Confirmations: yes or no. Help: `n` toggles notifications. CTO: `n` starts a new conversation. | Confirmation letters leak into screens where they mean something else. |
 | `q` | Everywhere: quit, except in text fields. | Fine, but `esc` is the safer back key and must never quit. |
@@ -293,18 +286,18 @@ only supplies ctrl+] to come back.
 | Action | Keys today | Where |
 |---|---|---|
 | Enter or open | `enter`, `e` | Sessions; Enter is also used for forms and plan verbs. |
-| Back or close | `esc`, `tab`, `backspace`, `M`, `L`, `enter`, `m` | Tab, CTO box, body overlay, Map, learned overlay, help. |
+| Back or close | `esc`, `tab`, `backspace`, `M`, `L`, `enter`, `m` | Tab, CTO box, body overlay, card, learned overlay, help. |
 | Move selection | arrows, `j`/`k`, `h`/`l`, `tab`, `shift+tab` | Lists, Tools columns, forms. |
-| Search or filter | `/`, then `esc` to clear | Sessions, Messages, Map, Tools, picker. |
+| Search or filter | `/`, then `esc` to clear | Sessions, Messages, Graph, Tools, picker. |
 | Show keys | `?` | Most screens; Graph has a separate help panel reached by `?`. |
 | Quit | `q`, `ctrl+c` | Everywhere. |
-| Switch screens or tabs | digits, `[`/`]`, `left`/`right`, `M` | Title, Tools, Map, Graph. |
+| Switch screens or tabs | digits, `[`/`]`, `left`/`right`, `M` | Title, Tools, Graph, card. |
 | Previous or next | `[`/`]`, `left`/`right`, `up`/`down`, `j`/`k`, `tab` | Tools screens, Graph neighbours, list rows, form fields. |
 | Accept or refuse | `a`/`r`, `y`/`n`, `a`/`u`, `space`/`x` | Inbox, learned, held requests, confirms, Tools, picker. |
-| Show or hide | `h`/`H`, `w`, `e`, `t`, `o`, `a`, `z` | Sessions, Messages, Map, Graph. |
+| Show or hide | `h`/`H`, `w`, `e`, `t`, `o`, `a`, `z` | Sessions, Messages, Graph. |
 | Start a worker | `s` | Sessions and Messages only. |
-| Refresh | `r` | Sessions, Quotas, Map, Tools. |
-| Scroll text | `pgup`/`pgdown`, `ctrl+u`/`ctrl+d`, `j`/`k`, arrows | CTO, help, body, Map charter, plans. |
+| Refresh | `r` | Sessions, Quotas, Graph card, Tools. |
+| Scroll text | `pgup`/`pgdown`, `ctrl+u`/`ctrl+d`, `j`/`k`, arrows | CTO, help, body, card charter, plans. |
 
 ## 4. Proposed key map
 
@@ -348,9 +341,9 @@ Rules:
 | 3 | Tools: remove `h`/`l` column aliases; use left and right arrows for columns and `[`/`]` for screens. | Medium | Same arrows-move rule; ends the `h` conflict. |
 | 4 | Tools: remove left/right screen switching; keep `[`/`]`. | Small | Left and right then always move. |
 | 5 | Graph: move previous and next neighbour from `[`/`]` to `,`/`.`. | Small | `[`/`]` then always switch screens. |
-| 6 | Map: keep charter scroll on `ctrl+u`/`ctrl+d`; drop `[`/`]` for charter. | Small | Same `[`/`]` rule. |
+| 6 | Card: keep charter scroll on `ctrl+u`/`ctrl+d`; drop `[`/`]` for charter. | Small | Same `[`/`]` rule. |
 | 7 | Tools: accept a difference with `a`, not `x`. Keep `.` for accepted. | Small | `a` is accept everywhere; `x` is stop or close. |
-| 8 | Refresh moves from `r` to `R` on Sessions, Messages, Quotas, Map and Tools. `r` becomes refuse or reject. | Large | `r` currently means refresh and refuse on the same Sessions screen. This is the biggest change and needs the owner's approval. |
+| 8 | Refresh moves from `r` to `R` on Sessions, Messages, Quotas, Graph card and Tools. `r` becomes refuse or reject. | Large | `r` currently means refresh and refuse on the same Sessions screen. This is the biggest change and needs the owner's approval. |
 | 9 | Sessions: move active-only from `a` to `A`. `a` stays accept or approve. | Small | `a` then means accept everywhere. `A` is free on Sessions. |
 | 10 | Sessions: move "let stand" from `s` to `S`; Quotas: move show not set up from `s` to `V`. `s` stays start only. | Small | One word, one letter. |
 | 11 | Sessions: move "overrule" from `o` to `O`; keep `o` for offline. Graph orbit keeps `o`, which is a layout action on a graph, not a list action. | Small | Ends the two meanings of `o` on Sessions. |
@@ -360,12 +353,12 @@ Rules:
 | 15 | CTO box: keep `n` for a new conversation because it is inside a modal with `y`/`n`; no change. | None | The confirmation convention already covers it. |
 | 16 | Esc first clears a non-empty filter or search, and a second Esc goes back. Today one Esc does both on most screens. | Small | No lost text by accident. |
 | 17 | Quotas: give Enter a meaning, "open the provider details", or state that the tab has no Enter action in its key line. | Small | Every other tab has Enter. |
-| 18 | Map: Esc goes back to the project list from the overview first, then leaves Map; `M` alone leaves Map. | Medium | Esc must go back one level, not jump to Sessions. |
+| 18 | Card: Esc returns to the selected Graph node (implemented in decision 0037). | Medium | Esc must go back one level, not jump to Sessions. |
 | 19 | Make `?` open the same help overlay on Graph, with a Graph section, instead of the separate `graphHelp` panel. | Medium | One key, one help. |
 | 20 | Unify the confirmation keys on `y`/`n` and show them in every modal footer. They already agree except for `Y`/`N` aliases, which can stay. | Small | One confirmation convention. |
 
 Items 8, 9, 10, 11 and 12 change everyday keys. They should be done together,
-one commit, after the owner approves the map. Until then the only changed key
-is the CTO box in decision
+one commit, after the owner approves the map. The implemented changes are the Graph/card merge in decision 0037 and
+the CTO box in decision
 [0034](../decisions/0034-cto-box-is-read-only.md): Enter opens the CTO and `o`
 no longer does anything there.

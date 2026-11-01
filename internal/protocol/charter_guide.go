@@ -20,7 +20,7 @@ type CharterAttributeGuide struct {
 }
 
 var charterGuide = []CharterAttributeGuide{
-	{Name: "purpose", Meaning: "What the project is.", Reader: "The owner on the Map card and agents deciding whether the project fits a request.", Size: "one sentence, up to 160 characters", Good: "Generic document and evidence API for any client.", Bad: "A long inventory of endpoints, deployment hosts and access rules."},
+	{Name: "purpose", Meaning: "What the project is.", Reader: "The owner on the Graph card and agents deciding whether the project fits a request.", Size: "one sentence, up to 160 characters", Good: "Generic document and evidence API for any client.", Bad: "A long inventory of endpoints, deployment hosts and access rules."},
 	{Name: "maturity", Meaning: "The project's level, followed by a few words about why.", Reader: "Agents choosing how much care, testing and review to use.", Size: "one line", Good: "growing - core API is stable; integrations are still changing.", Bad: "Critical because production uses 192.168.1.4 and token abcdef0123456789."},
 	{Name: "accepts", Meaning: "What work this project's agent takes on when other agents ask.", Reader: "Other agents deciding whether and how to request work.", Size: "at most 6 items, short phrases separated by semicolons or newlines", Good: "Bug fixes in retrieval; new generic endpoints; questions about the API", Bad: "Bearer-authenticated requests from 192.168.50.65 on /v1/search"},
 	{Name: "refuses", Meaning: "What work the agent declines and where to redirect it.", Reader: "Other agents deciding what to request and where to send it.", Size: "at most 6 items, short phrases separated by semicolons or newlines", Good: "Client-specific endpoints; deploy changes (ask homelab)", Bad: "Reject 192.168.1.9; token=ghp_abcdefghijklmnopqrstuvwxyz123456"},
@@ -100,7 +100,7 @@ func CharterWarnings(c Charter) []string {
 		warnings = append(warnings, "the whole charter exceeds 1200 characters: the project's agent reads it every turn")
 	}
 	if utf8.RuneCountInString(c.Purpose) > 160 {
-		warnings = append(warnings, "purpose exceeds 160 characters: the owner reads it on the Map card")
+		warnings = append(warnings, "purpose exceeds 160 characters: the owner reads it on the Graph card")
 	}
 	for _, field := range []struct{ name, value string }{{"accepts", c.Accepts}, {"refuses", c.Refuses}, {"escalate", c.Escalate}} {
 		items := strings.FieldsFunc(field.value, func(r rune) bool { return r == ';' || r == '\n' })

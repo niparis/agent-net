@@ -42,7 +42,7 @@ func TestUpdateActions(t *testing.T) {
 		t.Fatal("orbit")
 	}
 	next, effect := Update(s, OpenSelected{})
-	if effect.OpenMap != original {
+	if effect.OpenCard != original {
 		t.Fatal("open effect")
 	}
 	next, _ = Update(s, Tick{Now: now.Add(time.Second)})

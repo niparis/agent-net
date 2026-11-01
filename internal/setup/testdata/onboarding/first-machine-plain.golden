@@ -7,7 +7,7 @@ What you have now
 2 Talk  Your agents can now ask each other. New sessions get the
         tools; open ones get them after a restart.
 3 CTO   Your CTO runs the network for you. Ask it in plain words.
-4 Map   8 projects seen. None has a charter yet: the CTO drafts
+4 Graph 8 projects seen. None has a charter yet: the CTO drafts
         them with you.
 5 Work  Workers use claude, codex. Your claude plan is protected.
 6 Tools Skills and MCP servers are checked on every machine.

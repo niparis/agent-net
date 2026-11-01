@@ -69,7 +69,7 @@ func TestCharterBudgetWarnings(t *testing.T) {
 		want    string
 	}{
 		{"total", Charter{Needs: strings.Repeat("é", 1201)}, "the whole charter exceeds 1200 characters: the project's agent reads it every turn"},
-		{"purpose", Charter{Purpose: strings.Repeat("a", 161)}, "purpose exceeds 160 characters: the owner reads it on the Map card"},
+		{"purpose", Charter{Purpose: strings.Repeat("a", 161)}, "purpose exceeds 160 characters: the owner reads it on the Graph card"},
 		{"items", Charter{Escalate: "a;b;c;d;e;f\ng"}, "escalate has more than 6 items: use short categories so the agent can scan them"},
 		{"first", Charter{Accepts: strings.Repeat("a", 41) + "; b"}, "neighbors see only the first 40 characters of accepts: put the main item first"},
 	}

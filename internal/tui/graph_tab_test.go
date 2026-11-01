@@ -36,7 +36,7 @@ func graphFixture() protocol.GraphView {
 func graphModel(w, h int) Model {
 	m := mapModel(w, h, graphFixture())
 	m.applyMap(mapMsg{view: graphFixture(), at: t0})
-	m.tab = 5
+	m.tab = graphTab
 	m.graphState, _ = graphview.Update(m.graphState, graphview.TalkLoaded{Counts: []protocol.GraphTalkCount{{From: "project-01", To: "project-02", Count: 7, HasEdge: true, Voice: true}, {From: "project-07", To: "project-11", Count: 23}}})
 	gw, gh := m.graphSize()
 	m.graphState.Camera = m.graphState.Graph.Fit(gw, gh)
@@ -78,10 +78,10 @@ func TestGraphTabKeys(t *testing.T) {
 		t.Fatal("enter did not open selected map node")
 	}
 	n := mapModel(80, 24, graphFixture())
-	next, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("6")})
+	next, cmd := n.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("4")})
 	n = next.(Model)
-	if n.tab != 5 || cmd == nil {
-		t.Fatal("6 did not open graph")
+	if n.tab != graphTab || cmd == nil {
+		t.Fatal("4 did not open graph")
 	}
 }
 func TestGraphGoldens(t *testing.T) {
@@ -169,7 +169,7 @@ func absGraph(n int) int {
 func TestGraphEnterOpensEmptyMap(t *testing.T) {
 	m := mapModel(80, 24, protocol.GraphView{})
 	m.applyMap(mapMsg{view: protocol.GraphView{}, at: t0})
-	m.tab = 5
+	m.tab = graphTab
 	m = keys(m, "enter")
 	if !m.mapOn {
 		t.Fatal("enter should open the map even without a selected node")
@@ -217,9 +217,9 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 		width           int
 		present, absent []string
 	}{
-		{80, []string{"arrows select", "+ - zoom", "0 fit", "o orbit", "t talk", "enter Map", "? help"}, []string{"space pause"}},
-		{60, []string{"arrows select", "0 fit", "o orbit", "t talk", "? help"}, []string{"enter Map"}},
-		{40, []string{"arrows select", "? help"}, []string{"t talk", "0 fit", "o orbit", "enter Map"}},
+		{80, []string{"arrows select", "+ - zoom", "0 fit", "o orbit", "t talk", "enter card", "? help"}, []string{"space pause"}},
+		{60, []string{"arrows select", "0 fit", "o orbit", "t talk", "? help"}, []string{"enter card"}},
+		{40, []string{"arrows select", "? help"}, []string{"t talk", "0 fit", "o orbit", "enter card"}},
 	} {
 		line := graphHintLine(tc.width, false)
 		if ansi.StringWidth(line) > tc.width || strings.Contains(line, "…") || !strings.HasSuffix(line, "? help") {

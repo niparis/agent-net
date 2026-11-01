@@ -95,7 +95,7 @@ next step boundary. The conversation's messages report the context before a
 compaction. The first reply after it reports the context after. The CTO chat
 shows one line, for example `compacted: 182k -> 14k tokens`; it is stored with
 the other CTO action lines. Action lines are short. Graph change details remain
-in Map history. The daemon keeps one displayed timeline across harnesses and
+in graph history. The daemon keeps one displayed timeline across harnesses and
 restarts. A switch adds a dim divider with the harness, model and local time.
 
 The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
@@ -217,7 +217,7 @@ sandbox defaults. The tool schemas describe the other fields and fixed values.
 
 
 `ui_show` switches every open local TUI to `sessions`, `messages`, `quotas`,
-`map` or `tools`, with an optional session ID, exact session name or project node,
+`graph` or `tools`, with an optional session ID, exact session name or project node,
 filter text and a short reason. `ui_notice` shows a short note. Both show a
 `CTO:` line and return `no TUI open` when no subscribed local TUI is connected.
 
@@ -229,7 +229,7 @@ The box is read-only: it shows the latest CTO output lines and one hint line,
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and Esc or `tab` returns focus to the tab. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
-failures, plus graph diffs; a graph change refreshes an open map.
+failures, plus graph diffs; a graph change refreshes the Graph.
 
 Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
 It has three screens. Digits stay the global tabs and `tab` goes to the CTO box, so `[` and `]` switch screens. Left and right arrows also switch screens except in All tools, where they select a machine or projects cell. Press `?` for Tools keys.
@@ -244,36 +244,31 @@ gap is between them inside one project.
 
 Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. A project MCP coverage row plans every file it would write, in the harness's own format: `.mcp.json` for Claude, `.pi/mcp.json` for Pi, `opencode.json` for OpenCode, and `.codex/config.toml` only when the project already has that file. Environment variables stay references such as `${TOKEN}`; a value is never copied. The plan is read again from the machine that holds the project before you see it. Apply checks each file again, saves the whole file under `mcp-backups` first and writes only if it still has the planned hash. `u` on the result restores the files. A same-name declaration with a different definition is never replaced: it stays a conflict row. Codex without a project config shows `codex: global only`. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo`. The CTO read tool `tools_differences` returns the same differences in pages (default 20, maximum 60). Pass `next` as `offset` to read the next page.
 
-Press `4` or `M` to open the Map tab. The focus view shows the selected
-project as a card: name, maturity, the start of the purpose, and its live sessions
-as dots. Below it, a `governed by` line names its architects (only when it has
-some), then IN and OUT columns list the edges with colored arrows. The rule is
-shown only when it is not `normal`, and the `*` wildcard reads `all projects`.
-The charter follows with every field that is set, wrapped under aligned labels;
-use `[` and `]` to scroll it when it does not fit. The last row, RECENT, lists
-the newest graph changes of the project. A project with unviewed automatic changes shows `● N learned` in the list and card. The card lists each learned change, its value, time and evidence excerpt. `U` selects the next learned change; `u` undoes the selected change through `graph_undo` (which refuses stale changes). Leaving the project marks its current changes viewed. In the left list, a dot marks a
-project with a live session. Left and
-right follow dependencies; up and down move through all projects in the left list.
-Press `/` to find a project, Enter to focus the first match, or Esc to cancel.
-The initial focus uses the most recent connected charter change, then the most
-connected node, then the first project. Your selection stays when you return.
-Press `z` for the
-overview. It wraps project boxes across rows and lists isolated projects below.
-Use the arrows to select a box, Page Up and Page Down to scroll the projects
-and visible edges, and Enter to
-focus the selected project. Edges are shown only when both endpoints are
-visible; a count shows the edges off screen. In focus view, Enter opens
-Sessions filtered to the selected project, and `c` focuses the CTO box.
-Tab moves between the map and CTO box.
+Press `4`, `M` or `G` to open the Graph tab, the network screen. Each node
+is an agent with a lasting identity and charter. Arrows, `[` and `]`, or a
+click select a node. Press `/` to find a node by identity or display name;
+Enter selects the first match and Esc cancels.
+
+Enter on a node opens its card: name, maturity, purpose and live sessions as
+dots. A `governed by` line names its architects when it has some. IN and OUT
+columns list edges with colored arrows and rules other than `normal`; `*`
+reads `all projects`. Every set charter field appears under aligned labels.
+Use `[` and `]` or ctrl+u/ctrl+d to scroll the charter. RECENT on the last row
+lists the newest changes. The card shows unviewed automatic changes as
+`● N learned`, with values, times and evidence excerpts. `U` selects the next
+learned change; `u` undoes it through `graph_undo`, which refuses stale changes.
+Leaving the card marks its current changes viewed. Esc returns to the Graph
+with the same node selected. Enter on the card's sessions line opens Sessions
+filtered to the agent's project. `c` focuses the CTO box; Tab moves between
+the Graph and that box.
 
 Hidden item preferences are shared by every machine's TUI through the
 gateway's `owner_settings` entry `hidden_items`. On Sessions, `h` hides or
 unhides the selected session, and `H` toggles hidden sessions into the list as
 dim rows tagged `hidden`. The title shows `hidden N` while preferences exist.
 Sessions already use `x` to stop a selected worker, so `h` and `H` are the
-hide and show keys on both Sessions and Map. On Map, `h` hides or unhides the selected project
-node by name, and `H` toggles hidden nodes into the view as dim rows tagged
-`[hidden]`. Session IDs stay hidden if a session comes back online. An ended
+hide and show keys on Sessions and the Graph card. On the card, `h` hides or unhides the selected project
+node by name, and `H` includes hidden nodes when finding an agent to inspect or unhide. Session IDs stay hidden if a session comes back online. An ended
 session's preference is dropped after 30 days; project preferences remain
 until unhidden. The owner-only methods are `hidden_get` and `hidden_set`.
 
@@ -331,7 +326,7 @@ The owner can use `agent-net charter show <node>`, `charter set <node> <attr> <t
 
 Agent list and get include the public charter fields purpose, maturity, accepts, refuses and feature_requests. List values are limited to 300 characters each. When purpose is empty, the project's AGENTS.md description is used, marked with `purpose_fallback`.
 
-- `graph_get {}` returns `nodes` and `edges`, hiding unregistered empty implicit projects without a live or recently seen session for seven days. Each project node includes registered and observed `locations` (machine and path), up to five live `sessions` (id, name, machine and status), and `session_count`. `graph_get {"all":true}` includes those projects. The map uses the same default filter.
+- `graph_get {}` returns `nodes` and `edges`, hiding unregistered empty implicit projects without a live or recently seen session for seven days. Each project node includes registered and observed `locations` (machine and path), up to five live `sessions` (id, name, machine and status), and `session_count`. `graph_get {"all":true}` includes those projects. The Graph uses the same default filter.
 - `charter_set {node, attr, value}` sets an attribute; an empty value clears it. `charter_history {node, limit}` returns newest changes first.
 - `node_add {name}` and `node_remove {name}` add or remove an architect. Removal requires no edges, and clears the node's settings with it.
 - `edge_set {from, to, kind, mode, rule}` and `edge_remove {from, to, kind}` change an edge. `edge_history {node, limit}` returns changes involving that node, or all edges if node is empty.
@@ -621,7 +616,7 @@ Each daemon samples its machine every 5 seconds, keeps 5 minutes, and reports a 
 - **Linux:** `/proc/<pid>/stat` (user, system and waited-for children time) and `/proc/stat`. CPU is the difference between two readings. The sampler costs about 5 ms per reading with 450 processes, about 0.1% of one core.
 - **macOS:** `ps -A -o pid=,ppid=,rss=,time=,comm=` for processes, `sysctl` for cores, memory size and load, `vm_stat` for memory in use (app + wired + compressed, like Activity Monitor). Load and memory are read every 4th sample. CPU time from `ps` has a resolution of 10 ms and misses processes that start and end between two readings, so tree CPU can read low for a tree that spawns many short jobs. Machine CPU is the sum of live processes' CPU time over the cores, with the same limit. This was written and tested against fixtures of the `ps`, `sysctl` and `vm_stat` output; it has not been run on a Mac.
 - **Top lists:** only on request, not in the report. Each process has its PID, short name, and the first 80 characters of its command line with tokens, `--password=`/`--token` values and `KEY=value` secrets masked.
-- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `graph_view {project}` (the component graph for the TUI map: nodes with charters, edges and the newest charter changes), `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket, herdr_socket}` (answers `{argv, dir, env, host, note, fallback, herdr_pane}`; the asking daemon adds `herdr_client` when this machine has a herdr binary, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.graph`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
+- **Daemon methods** (owner only, from `hello` with `client: cli`): `usage` (this machine live, and all machines from the gateway), `usage_top {session_id}`, `graph_view {project}` (the component graph for the TUI Graph: nodes with charters, edges and the newest charter changes), `session_text {session_id, limit, before, after, sidechain}`, `session_enter {session_id, tmux_socket, herdr_socket}` (answers `{argv, dir, env, host, note, fallback, herdr_pane}`; the asking daemon adds `herdr_client` when this machine has a herdr binary, see [Enter a session](#enter-a-session)), `counts`. Gateway frames: `node.usage`, `query.usage`, `query.counts`, `query.graph`, `query.usage_top`, `query.session_text`, `query.session_enter` (and `node.usage_top`, `node.session_text`, `node.session_enter` to the machine that holds the session).
 - **Counts:** `counts` returns `online`, `offline_24h` and `offline_total`. The gateway keeps offline sessions for 30 days, so the total is mostly old restarts. The TUI header shows the online count and the numbers the owner can act on (busy, needs you, the worker queue), and leaves the offline counts out.
 
 ## Subscription quotas
@@ -1141,7 +1136,7 @@ Each entry has the machine, the path of the main working tree, the identity deri
 
 **Project identity and display name.** The last part of the `origin` URL, without `.git`, is the project identity. For example, `https://example.com/team/agent-net.git` gives `agent-net` even when the checkout folder has another name. With no usable origin, the main tree folder name is used. Repositories with the same last remote path part share an identity, even when their owners or hosts differ.
 
-The gateway stores an optional display name for each identity. In Map, select a project and press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, or `project_display_get` with `project`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
+The gateway stores an optional display name for each identity. In Graph, select a node, press Enter to open its card, then press `D`. Enter saves, an empty value clears the name, and Esc cancels. `?` lists the key. The CTO can use `project_display_set` with `project` and `name`, or `project_display_get` with `project`. The owner operator methods have the same names. A project list entry carries `name` (identity) and `display_name`; `agent_list` and `agent_get` carry the identity in `repo.project` and the optional `project_display_name`. Actions continue to use the identity.
 
 On upgrade, the gateway uses stored origin URLs to move old folder-based project data to the repository identity. When charters meet, both texts are kept and `project.identity_merge` is logged. If graph controls conflict, that pair is left unchanged, `project.identity_conflict` is logged with `from` and `to`, and the gateway continues with other projects. Ambiguous folder names that point to different repository identities are left alone. This migration runs once; logged conflicts and ambiguous mappings need review.
 
@@ -1265,14 +1260,14 @@ The owner can write a **playbook note** about a model (and optionally one harnes
 
 ## The TUI screen
 
-`agent-net tui` has six tabs: `1` Sessions, `2` Messages, `3` Quotas, `4` Map, `5` Tools and `6` Graph. On each tab, `tab` moves focus between the tab and the CTO box. The box is read-only and shows the latest CTO output plus `enter: open the <title> · tab: back`, where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and esc returns to the list. Messages groups the feed into conversations. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
+`agent-net tui` has five tabs: `1` Sessions, `2` Messages, `3` Quotas, `4` Graph and `5` Tools. On each tab, `tab` moves focus between the tab and the CTO box. The box is read-only and shows the latest CTO output plus `enter: open the <title> · tab: back`, where `<title>` is the owner's CTO title; replies use Markdown, and pgup/pgdn or ctrl+u/ctrl+d scroll the conversation. Enter opens the full CTO harness UI (ctrl+] returns), `n` starts a new conversation after confirmation, `u` undoes the last graph change, `m` edits the title, harness and model, and esc returns to the list. Messages groups the feed into conversations. Use up/down to select a thread, left/right to select a message, Enter to select the thread's latest message in the right pane, `v` for its full body, `w` to show or hide worker threads, `e` to show system events, and `l` to cycle the event filter. Use `/` to filter the list.
 
 The Graph tab keeps its graph, camera, selection and traffic in a headless state. Actions update that state and return effects for the tab to perform. A scene describes what to show independently of the terminal, and a renderer draws it. The current renderer uses Braille; a kitty pixel renderer can consume the same scene later.
 
 `agent-net tui` needs a terminal. It talks to the local daemon through the operator interface, as an owner's CLI (`hello` with `client: cli`). Besides the reads and the actions below it uses the owner-only methods `usage`, `counts`, `usage_top`, `session_enter` and `worker_rotation_get` (see [CPU and memory](#cpu-and-memory) and [security.md](security.md#session-text-and-resource-figures)). It shows, from top to bottom:
 
-- **Tabs.** Press `1` for Sessions, `2` for Messages, `3` for Quotas, `4` for Map, `5` for Tools or `6` for Graph. The Quotas tab merges readings by provider and plan across machines and shows each window, pace, reset time, reading age and running workers. Providers not set up are folded together; press `s` to show or hide them. Its Workers panel lists registered profiles and a heatmap of each profile's share of the next 20 starts at each difficulty (T, S, N, H, V), plus the next pick and worker run outcomes. The heatmap marks a model below the difficulty minimum with `x` and a zero share with `·`. The letters T, S, N, H and V mean trivial, simple, normal, hard and very complex. Enable the Quota integration and agent-net installs quota-axi, or uses the copy you installed (see [subscription quotas](#subscription-quotas)).
-- **Graph** on tab 6 shows projects, architects, their relationships and recent message traffic. Press `+` or `-` to zoom, arrows to select a node in that direction, `h`, `j`, `k`, `l` or shift+arrows to pan, and `0` to fit. Use `[` and `]` to cycle clockwise through linked neighbours, or click a node or its label to select it. A filled marker means the node has a charter; a hollow marker means it does not. Node size shows its seven-day message count in five levels relative to the nodes on screen; zero messages always uses the smallest level. `o` arranges nodes in rings around the selection, `t` shows or hides recent talk, enter opens it in Map, space pauses traffic and `?` shows the keys. Pink dotted lines show projects that exchanged messages in the last seven days; brighter pink means no rule is set. More dots indicate more messages. Counts refresh every minute and update from the live feed. Tab focuses the CTO box. The graph uses Braille characters now; pixel graphics are planned for terminals that support them.
+- **Tabs.** Press `1` for Sessions, `2` for Messages, `3` for Quotas, `4` for Graph or `5` for Tools. The Quotas tab merges readings by provider and plan across machines and shows each window, pace, reset time, reading age and running workers. Providers not set up are folded together; press `s` to show or hide them. Its Workers panel lists registered profiles and a heatmap of each profile's share of the next 20 starts at each difficulty (T, S, N, H, V), plus the next pick and worker run outcomes. The heatmap marks a model below the difficulty minimum with `x` and a zero share with `·`. The letters T, S, N, H and V mean trivial, simple, normal, hard and very complex. Enable the Quota integration and agent-net installs quota-axi, or uses the copy you installed (see [subscription quotas](#subscription-quotas)).
+- **Graph** on tab 4 shows agents, their relationships and recent message traffic. Press `+` or `-` to zoom, arrows to select a node in that direction, `h`, `j`, `k`, `l` or shift+arrows to pan, and `0` to fit. Use `[` and `]` to cycle clockwise through linked neighbours, or click a node or its label to select it. A filled marker means the node has a charter; a hollow marker means it does not. Node size shows its seven-day message count in five levels relative to the nodes on screen; zero messages always uses the smallest level. `o` arranges nodes in rings around the selection, `t` shows or hides recent talk, `/` finds a node, Enter opens its card, space pauses traffic and `?` shows the keys. Pink dotted lines show projects that exchanged messages in the last seven days; brighter pink means no rule is set. More dots indicate more messages. Counts refresh every minute and update from the live feed. Tab focuses the CTO box. The graph uses Braille characters now; pixel graphics are planned for terminals that support them.
 - **Header.** `12 online · 3 busy · 1 needs you · workers 4 running, 1 queued`: the gateway's online count from `counts`, the sessions that report `busy`, the sessions that wait for you (in the warning colour, and left out when none wait), and the workers with the queued starts from the admission queue. Offline sessions are left out: they are mostly old ghosts. An older gateway has no counts: the header then says `N sessions, M online` and the same figures after it. A warning on the title points to tab 3 when a subscription window is above 80% or exhausted. The header also shows the inbox count, the learned count, the active filters (`filter: active, /cogforge`), and the time of the last refresh.
 - **Needs you,** a section above the machines when at least one session waits for you (decision [0016](decisions/0016-needs-you.md)). Each row has the session, harness, machine, age and question or permission request. Oldest waits come first; at most five rows are shown. Select a waiting session and press Enter to enter it and answer there; `m` sends a message without entering. A waiting session also says `needs you` in STATUS. See [Needs you](#needs-you).
 - **Machines,** one line each: an online dot, name, agent-net version, CPU use as a percentage of the machine's core capacity with a bar, memory used and total with a bar, free space on the filesystem containing the daemon user's home directory, running worker count and memory, and the session or worker with the highest CPU use. Versions are dim, except that an online machine on an older version than the newest online machine is amber. Offline machines show their last known version in dim. The columns stay aligned across rows. When the terminal is narrow, the row keeps its version and omits optional fields in this order: top CPU session, workers, disk. Disk space is sampled once a minute; less than 10G free is red and less than 20G is amber. It does not list installed harnesses. When another machine has a harness that this machine lacks or has at an older version, it shows a dim note such as `no codex` or `old codex`. This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
@@ -1289,16 +1284,16 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 
 | Key | What it does |
 |---|---|
-| up, down, `k`, `j`, `g`, `G`, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
+| up, down, `k`, `j`, `g`, home, end, page up, page down | Move the selection (or the message cursor, when the messages have the focus). |
 | enter, `e` | Enter the selected session: the TUI hands the terminal to it and comes back when you leave. In Messages, Enter selects the latest message of the selected thread in the right pane. See [Enter a session](#enter-a-session). |
 | `v` | In Messages, open the full body of the selected message. |
 | `w` | In Messages, hide or show the collapsed worker threads. |
 | `l` | Cycle the session and worker lines in the feed: worker lines (the default), all of them, none. |
 | `/` | Filter the sessions: type words, all must appear in some field of a session (name, harness, machine, project, branch, model, mode, status, function, task, folder, ID). Enter keeps the filter, Esc clears it. |
 | `o` | Show or hide offline and dormant sessions. |
-| `h`, `H` | In Sessions and Map, hide or unhide the selected session or project node; `H` toggles showing hidden ones as dim rows. |
+| `h`, `H` | In Sessions and the Graph card, hide or unhide the selected session or project node; `H` toggles showing hidden ones. |
 | `a` | Active only: hide sessions that are idle and have had no report for more than an hour. Each machine heading says how many it hides, and the header lists the active filters. |
-| `1` to `6` | Open Sessions, Messages, Quotas, Map, Tools or Graph. |
+| `1` to `5` | Open Sessions, Messages, Quotas, Graph or Tools. `M` and `G` also open Graph. |
 | tab, `C` | Focus the CTO box; tab or Esc returns focus to the sessions. |
 | `d` | Toggle selected session details in place of the session list. |
 | `?` | Show or hide the help. |
@@ -1419,7 +1414,7 @@ Decisions: [0022](decisions/0022-component-graph-and-cto.md) and [0030](decision
 
 Today the gateway stores a graph of components and architects: a node keyed by project (and a node for an architect that owns no code), a charter for each node, and directed edges (`depends`: consumer to provider; `governs`: architect to component, with mode `advisor`, `arbiter` or `owner`; `deploys`: deployer to each app it deploys). The project-keyed node represents the agent; the project is its home. A session speaks for that node as the PROJECT column resolves it. The graph is visible to every enrolled machine.
 
-**Writing a charter.** The project's own agent reads its charter on every turn, so budget about 1200 characters (roughly 300 tokens) for the whole charter. Neighbors read only the first 40 characters of `accepts` and `refuses`, so put the most important item first, in a few words. The owner reads `purpose` on the Map card: use one sentence up to 160 characters, or 2-3 lines at 80 columns. For `accepts`, `refuses` and `escalate`, use at most 6 categories, each a short phrase separated by semicolons or newlines. Use names and pointers for `feature_requests`, `consumers` and `needs`; use `notes` only for rules nothing else covers. Never put secrets, IP addresses, tokens or paths in a charter. `charter_set` and `agent-net charter set` return advisory warnings about the budget and sensitive details; those warnings do not stop a write. The existing 2 KiB value limit still applies. Put detail in the project's `AGENTS.md`. The shared source for the guidance is `internal/protocol/charter_guide.go`.
+**Writing a charter.** The project's own agent reads its charter on every turn, so budget about 1200 characters (roughly 300 tokens) for the whole charter. Neighbors read only the first 40 characters of `accepts` and `refuses`, so put the most important item first, in a few words. The owner reads `purpose` on the Graph card: use one sentence up to 160 characters, or 2-3 lines at 80 columns. For `accepts`, `refuses` and `escalate`, use at most 6 categories, each a short phrase separated by semicolons or newlines. Use names and pointers for `feature_requests`, `consumers` and `needs`; use `notes` only for rules nothing else covers. Never put secrets, IP addresses, tokens or paths in a charter. `charter_set` and `agent-net charter set` return advisory warnings about the budget and sensitive details; those warnings do not stop a write. The existing 2 KiB value limit still applies. Put detail in the project's `AGENTS.md`. The shared source for the guidance is `internal/protocol/charter_guide.go`.
 
 | Attribute | Answers | Size | Good example | Bad example |
 |---|---|---|---|---|
@@ -1468,7 +1463,7 @@ Signal records are kept for 90 days, independently of the message retention sett
 
 **Reactive charter learning.** The gateway runs rules on owner instructions, reply outcomes and deliveries between projects. An owner assignment proposes the work for the destination's `accepts` and `<destination> for <work>` for the sender's `needs`. Two matching redirects to the same destination in seven days propose that `needs` item and a `depends` edge. Three matching refusals in seven days propose a `refuses` item. Five messages between projects in seven days, when they have no edge, propose a `depends` edge. The rules do not understand every wording. Evidence includes message or signal IDs and excerpts. Related pending proposals merge, and a node must be quiet for two minutes before its proposals are ready.
 
-Minor additions apply automatically: an owner-derived `accepts` item, an item in `needs` or `consumers`, or a `depends` edge. A restrictive or narrowing phrase, removal, `refuses`, `escalate`, maturity, deploy or request rules, a `governs` or `deploys` edge, or any change on a critical node needs the owner. An edge touching a critical node needs the owner too. At most three changes per node apply automatically in a rolling 24 hours; further proposals become major. A rejected phrase is not offered again for that node and field. Automatic changes use the graph's normal history with actor `learned` and can be undone with `graph_undo` or the Map's `U` and `u` keys.
+Minor additions apply automatically: an owner-derived `accepts` item, an item in `needs` or `consumers`, or a `depends` edge. A restrictive or narrowing phrase, removal, `refuses`, `escalate`, maturity, deploy or request rules, a `governs` or `deploys` edge, or any change on a critical node needs the owner. An edge touching a critical node needs the owner too. At most three changes per node apply automatically in a rolling 24 hours; further proposals become major. A rejected phrase is not offered again for that node and field. Automatic changes use the graph's normal history with actor `learned` and can be undone with `graph_undo` or the Graph card's `U` and `u` keys.
 
 Ready major proposals appear in Needs you, with the evidence and `a` to accept or `r` to reject. These actions use the owner gate. The CTO's `charter_suggestions` tool also lists pending major proposals along with its rule-based suggestions; its output is bounded and may omit entries.
 

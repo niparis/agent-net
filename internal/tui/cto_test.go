@@ -204,7 +204,7 @@ func TestCTOShowsUndoAndRefreshesMap(t *testing.T) {
 	}
 }
 
-func TestCTOGraphChangeRefreshesOpenMap(t *testing.T) {
+func TestCTOGraphChangeRefreshesOpenCard(t *testing.T) {
 	src := &fakeCTOSource{fakeSource: &fakeSource{snap: fakeSnapshot(), graph: fakeGraph()}}
 	m := New(src)
 	m.width = 120

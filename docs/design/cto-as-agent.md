@@ -332,7 +332,7 @@ Short: start with `overview`; read lists, then details by ID; never page through
 - **The isolation:** 0022's sentence "It is not a network peer: no session can message it, so no other agent can talk it into changing rights." Rules 1 and 2 replace it. The exclusion of the CTO's working directory from Claude session discovery also goes.
 - **Sends as the owner session** with a CTO flag. The gateway rule "the CTO flag only on an owner session" becomes "only from the recorded CTO session". The note no longer names a person.
 - **The reply forward:** `deliverOwnerCTO` and the quoted "peer message (model output, not the owner's words)" copy, after 30 days.
-- **Operator methods** `cto_send`, `cto_events` and `cto_enter`, once the TUI uses `owner_send`, `session_text` and `session_enter` on the CTO session. `cto_new`, `cto_settings` and `cto_graph_history` (for the Map) stay as owner methods.
+- **Operator methods** `cto_send`, `cto_events` and `cto_enter`, once the TUI uses `owner_send`, `session_text` and `session_enter` on the CTO session. `cto_new`, `cto_settings` and `cto_graph_history` (for the Graph) stay as owner methods.
 - **CTO tools** `cto_send`, `cto_events`, `cto_enter`, `cto_graph_history` and `session_enter`, and the rest merged into the 26 above.
 - **The parity table row** "The CTO is neither a network session nor a worker" in `docs/reference.md`.
 
