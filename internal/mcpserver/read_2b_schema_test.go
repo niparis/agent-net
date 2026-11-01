@@ -21,12 +21,12 @@ func TestReadToolsUseTheCatalogAndValidateTheirOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	byName := map[string]json.RawMessage{}
-	outputByName := map[string]json.RawMessage{}
 	for _, tool := range list.Tools {
 		raw, _ := json.Marshal(tool.InputSchema)
 		byName[tool.Name] = raw
-		out, _ := json.Marshal(tool.OutputSchema)
-		outputByName[tool.Name] = out
+		if tool.OutputSchema != nil {
+			t.Errorf("%s lists an output schema; catalog tools do not", tool.Name)
+		}
 	}
 	calls := map[string]map[string]any{
 		"agent_messages_find":        {},
@@ -49,14 +49,6 @@ func TestReadToolsUseTheCatalogAndValidateTheirOutput(t *testing.T) {
 		gotRaw, _ := json.Marshal(got)
 		if string(wantRaw) != string(gotRaw) {
 			t.Errorf("%s input schema differs from the catalog\ncatalog: %s\nlisted:  %s", name, wantRaw, gotRaw)
-		}
-		var wantOut, gotOut any
-		json.Unmarshal(spec.OutputSchema, &wantOut)
-		json.Unmarshal(outputByName[name], &gotOut)
-		wantOutRaw, _ := json.Marshal(wantOut)
-		gotOutRaw, _ := json.Marshal(gotOut)
-		if string(wantOutRaw) != string(gotOutRaw) {
-			t.Errorf("%s output schema differs from the catalog\ncatalog: %s\nlisted:  %s", name, wantOutRaw, gotOutRaw)
 		}
 		for _, tool := range list.Tools {
 			if tool.Name == name && tool.Description != spec.Description {

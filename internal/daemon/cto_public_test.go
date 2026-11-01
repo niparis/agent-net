@@ -15,6 +15,12 @@ import (
 // guide text and the CTO's own timeline are the only non-agent sources.
 var wantCTOReads = map[string]string{
 	"overview": "list,nodes,own proposals", "sessions": "list", "session": "get", "proposals": "own proposals", "cto_proposals_find": "own proposals", "feed": "messages", "messages": "messages,message_status", "graph": "agent_graph", "machines": "nodes", "projects": "projects", "workers": "list,get", "tools": "mcp_list", "settings": "worker_profiles",
+	"agent_sessions_find": "sessions_find", "agent_session_get": "session_get",
+	"agent_machines_find": "machines_find", "agent_machine_get": "machine_get",
+	"agent_projects_find": "projects_find", "agent_workers_find": "list,get",
+	"agent_messages_find": "messages", "agent_message_get": "messages,message_status",
+	"agent_graph_read": "agent_graph", "agent_mcp_servers_find": "mcp_list",
+	"agent_worker_profiles_find": "worker_profiles",
 }
 
 func TestCTOReadParitySources(t *testing.T) {
@@ -119,6 +125,12 @@ func TestCTOReadCanary(t *testing.T) {
 			cases = append(cases, map[string]any{"id": "p_1"})
 		case "session":
 			cases = []map[string]any{{"session_id": id}}
+		case "agent_session_get":
+			cases = []map[string]any{{"session": id}}
+		case "agent_machine_get":
+			cases = []map[string]any{{"machine": w.cfg.Hostname}}
+		case "agent_message_get":
+			cases = []map[string]any{{"message": held.ID}}
 		case "settings":
 			cases = []map[string]any{{"area": "worker_profiles"}}
 		case "messages":
@@ -139,7 +151,7 @@ func TestCTOReadCanary(t *testing.T) {
 					t.Errorf("%s leaked %s", name, secret)
 				}
 			}
-			if err != nil && !(name == "messages" && len(args) > 0) {
+			if err != nil && !(name == "messages" && len(args) > 0) && name != "agent_message_get" {
 				t.Errorf("%s %v: %v", name, args, err)
 			}
 		}

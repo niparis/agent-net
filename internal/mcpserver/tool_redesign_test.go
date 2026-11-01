@@ -16,7 +16,7 @@ func TestHandoverRefreshesCatalogTools(t *testing.T) {
 		role      toolcatalog.Role
 		newServer func() *mcp.Server
 	}{
-		{"agent", toolcatalog.RoleAgent, func() *mcp.Server { return New(okCaller, "") }},
+		{"agent", toolcatalog.RoleAgent, func() *mcp.Server { t.Setenv("AGENT_NET_WORKER", ""); return New(okCaller, "") }},
 		{"CTO", toolcatalog.RoleCTO, func() *mcp.Server {
 			return NewCTO(okCaller, "")
 		}},
@@ -44,9 +44,6 @@ func TestHandoverRefreshesCatalogTools(t *testing.T) {
 				have[tool.Name] = true
 			}
 			for _, entry := range toolcatalog.ForRole(tc.role) {
-				if tc.role == toolcatalog.RoleCTO && !ctoV2Tools[entry.Name] {
-					continue
-				}
 				if !have[entry.Name] {
 					t.Errorf("tools/list after handover misses catalog tool %q", entry.Name)
 				}
@@ -61,7 +58,7 @@ func TestToolListJSONSizes(t *testing.T) {
 		role   toolcatalog.Role
 		client *mcp.ClientSession
 	}{
-		{"agent", toolcatalog.RoleAgent, connect(t, okCaller)},
+		{"agent", toolcatalog.RoleAgent, connectAgent(t)},
 		{"worker", toolcatalog.RoleWorker, connectWorker(t)},
 		{"CTO", toolcatalog.RoleCTO, ctoTestSession(t)},
 	}
@@ -88,7 +85,7 @@ func TestToolListJSONSizes(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("%s tools/list JSON: current=%d bytes catalog-only=%d bytes", tc.name, len(allJSON), len(catalogJSON))
+		t.Logf("%s tools/list JSON: tools=%d current=%d bytes catalog-only=%d bytes", tc.name, len(list.Tools), len(allJSON), len(catalogJSON))
 		_ = tc.client.Close()
 	}
 }

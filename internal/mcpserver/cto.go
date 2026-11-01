@@ -14,6 +14,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/niparis/agent-net/internal/client"
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
 // ctoField is one input field of a CTO tool. A fixed set of values carries an
@@ -406,6 +407,8 @@ func NewCTO(call Caller, version string) *mcp.Server {
 		})
 	}
 	addCTOV2Tools(s, call)
+	addCTOSharedTools(s, call)
+	filterCatalogTools(s, toolcatalog.RoleCTO)
 	return s
 }
 

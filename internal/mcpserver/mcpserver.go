@@ -273,6 +273,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 	addRateTool(s, run)
 	addReadSessionTools(s, run)
 	addRedesignedTools(s, run)
+	filterCatalogTools(s, callerRole())
 	return s
 }
 

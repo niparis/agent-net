@@ -102,7 +102,9 @@ func TestReadToolsRegisteredFromCatalog(t *testing.T) {
 			t.Errorf("%s name or description differs from the catalog", name)
 		}
 		sameJSON(t, name+" input schema", got.InputSchema, entry.InputSchema)
-		sameJSON(t, name+" output schema", got.OutputSchema, entry.OutputSchema)
+		if got.OutputSchema != nil {
+			t.Errorf("%s lists an output schema", name)
+		}
 		if entry.AlwaysLoad {
 			if meta, _ := got.Meta["anthropic/alwaysLoad"].(bool); !meta {
 				t.Errorf("%s is missing anthropic/alwaysLoad", name)

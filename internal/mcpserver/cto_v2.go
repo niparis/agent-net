@@ -231,10 +231,9 @@ func addCTOV2Tools(s *mcp.Server, call Caller) {
 		if !ctoV2Tools[entry.Name] {
 			continue
 		}
-		var input, output any
+		var input any
 		_ = json.Unmarshal(entry.InputSchema, &input)
-		_ = json.Unmarshal(entry.OutputSchema, &output)
-		tool := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: input, OutputSchema: output}
+		tool := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: input}
 		name := entry.Name
 		s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			args := req.Params.Arguments
@@ -288,7 +287,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller) {
 			if json.Unmarshal(raw, &value) != nil {
 				value = string(raw)
 			}
-			if name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "cto_new" {
+			if name == "answer" || name == "tools_change" || name == "mcp_change" || name == "settings_change" || name == "project_change" || name == "mcp_call" || name == "cto_new" || name == "graph_change" || name == "session_change" || name == "worker_change" {
 				value = normalizeCTOProposalResult(value)
 			}
 			if name == "cto_ui_show" {
@@ -301,8 +300,7 @@ func addCTOV2Tools(s *mcp.Server, call Caller) {
 			if name == "cto_proposals_find" {
 				value = normalizeProposalOutput(value)
 			}
-			encoded, _ := json.Marshal(value)
-			return &mcp.CallToolResult{StructuredContent: value, Content: []mcp.Content{&mcp.TextContent{Text: string(encoded)}}}, nil
+			return catalogResult(name, value)
 		})
 	}
 }

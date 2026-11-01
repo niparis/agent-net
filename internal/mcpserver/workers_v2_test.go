@@ -29,7 +29,6 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 		{"agent_worker_start", "worker_start", map[string]any{"task": "do it", "touches": []string{"ui"}}},
 		{"agent_worker_stop", "worker_stop", map[string]any{"worker": "s_w"}},
 		{"agent_worker_rate", "agent_rate", map[string]any{"worker": "s_w", "kind": "rating", "score": 4}},
-		{"agent_handback", "worker_handback", map[string]any{"report": "done", "status": "done", "complete": true}},
 		{"agent_announce", "announce", map[string]any{"task": "working", "expertise": "Go"}},
 		{"agent_learn", "agent_learn", map[string]any{"subject_kind": "model", "subject": "terra", "finding": "works"}},
 		{"agent_project_add", "project_add", map[string]any{"paths": []string{"/tmp/demo"}}},
@@ -98,13 +97,8 @@ func TestRedesignedWorkerAndOwnerTools(t *testing.T) {
 					t.Errorf("%s input differs from catalog", tc.name)
 				}
 				out, _ := json.Marshal(tool.OutputSchema)
-				if len(entry.OutputSchema) > 0 {
-					var o, w any
-					_ = json.Unmarshal(out, &o)
-					_ = json.Unmarshal(entry.OutputSchema, &w)
-					if !reflect.DeepEqual(o, w) {
-						t.Errorf("%s output schema differs", tc.name)
-					}
+				if tool.OutputSchema != nil {
+					t.Errorf("%s lists an output schema: %s", tc.name, out)
 				}
 				break
 			}

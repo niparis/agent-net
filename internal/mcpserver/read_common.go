@@ -41,7 +41,8 @@ func roSpec(name string) toolcatalog.Tool {
 }
 
 // roAdd registers one read tool with the catalog's name, description, input
-// schema, output schema and hints.
+// schema and hints. The catalog output schema is not advertised; each result is
+// validated against it before it is returned.
 func roAdd[In, Out any](s *mcp.Server, name string, h mcp.ToolHandlerFor[In, Out]) {
 	spec := roSpec(name)
 	annotations := &mcp.ToolAnnotations{
@@ -52,13 +53,53 @@ func roAdd[In, Out any](s *mcp.Server, name string, h mcp.ToolHandlerFor[In, Out
 	if spec.Hints.OpenWorld {
 		annotations.OpenWorldHint = roBool(true)
 	}
-	mcp.AddTool(s, &mcp.Tool{
-		Name:         spec.Name,
-		Description:  spec.Description,
-		InputSchema:  spec.InputSchema,
-		OutputSchema: spec.OutputSchema,
-		Annotations:  annotations,
-	}, h)
+	tool := &mcp.Tool{
+		Name:        spec.Name,
+		Description: spec.Description,
+		InputSchema: spec.InputSchema,
+		Annotations: annotations,
+	}
+	s.AddTool(tool, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		input, err := catalogInput(name, req)
+		if err != nil {
+			return toolError(err)
+		}
+		var in In
+		if err := json.Unmarshal(input, &in); err != nil {
+			return toolError(err)
+		}
+		_, out, err := h(ctx, req, in)
+		if err != nil {
+			return toolError(err)
+		}
+		return catalogResult(name, out)
+	})
+}
+
+// catalogInput validates the raw arguments against the catalog input schema,
+// applies its defaults and returns the normalized JSON.
+func catalogInput(name string, req *mcp.CallToolRequest) (json.RawMessage, error) {
+	var value any = map[string]any{}
+	raw := json.RawMessage(nil)
+	if req != nil && req.Params != nil {
+		raw = req.Params.Arguments
+	}
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return nil, fmt.Errorf("%s arguments are not a JSON object: %v", name, err)
+		}
+	}
+	resolved, err := resolveCatalogSchema(catalogTool(name).InputSchema)
+	if err != nil {
+		return nil, err
+	}
+	if err := resolved.ApplyDefaults(&value); err != nil {
+		return nil, err
+	}
+	if err := resolved.Validate(&value); err != nil {
+		return nil, fmt.Errorf("%v. Example: %s", err, catalogExample(name))
+	}
+	return json.Marshal(value)
 }
 
 func roBool(v bool) *bool { return &v }

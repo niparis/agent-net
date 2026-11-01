@@ -17,7 +17,7 @@ import (
 func addRedesignedTools(s *mcp.Server, run func(context.Context, string, any) (any, error)) {
 	for _, name := range []string{"agent_worker_start", "agent_worker_stop", "agent_worker_rate", "agent_handback", "agent_announce", "agent_owner_ask", "agent_learn", "agent_project_add", "agent_mcp_test"} {
 		entry := redesignedCatalogTool(name)
-		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema), OutputSchema: json.RawMessage(entry.OutputSchema)}
+		t := &mcp.Tool{Name: entry.Name, Description: entry.Description, InputSchema: json.RawMessage(entry.InputSchema)}
 		s.AddTool(t, func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			var args map[string]any
 			if err := json.Unmarshal(req.Params.Arguments, &args); err != nil {
@@ -27,8 +27,7 @@ func addRedesignedTools(s *mcp.Server, run func(context.Context, string, any) (a
 			if err != nil {
 				return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 			}
-			b, _ := json.Marshal(out)
-			return &mcp.CallToolResult{StructuredContent: out, Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil
+			return catalogResult(name, out)
 		})
 	}
 	if os.Getenv("AGENT_NET_WORKER") != "" {
@@ -142,10 +141,11 @@ func redesignedCall(ctx context.Context, name string, a map[string]any, run func
 		if err != nil {
 			return nil, err
 		}
-		if _, ok := m["profile"]; !ok {
-			m["profile"] = map[string]any{"name": "", "project": "", "task": "", "expertise": "", "capabilities": []string{}}
+		profile, ok := m["profile"]
+		if !ok || profile == nil {
+			profile = map[string]any{"name": "", "project": "", "task": "", "expertise": "", "capabilities": []string{}}
 		}
-		return m, nil
+		return map[string]any{"profile": profile}, nil
 	case "agent_owner_ask":
 		var method string
 		var in any

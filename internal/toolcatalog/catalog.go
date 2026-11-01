@@ -55,3 +55,19 @@ func ForRole(role Role) []Tool {
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
+
+// Allows reports whether name is a catalog tool the role may use.
+func Allows(role Role, name string) bool {
+	for _, tool := range Tools {
+		if tool.Name != name {
+			continue
+		}
+		for _, r := range tool.Roles {
+			if r == role {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}

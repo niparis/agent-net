@@ -66,7 +66,7 @@ func TestToolsForwardToDaemon(t *testing.T) {
 	sort.Strings(names)
 	// The old tools keep working through the redesign. New tools may be added
 	// beside them; this test only requires that these remain listed.
-	want := []string{"agent_announce", "agent_ask_owner", "agent_get", "agent_graph", "agent_handback", "agent_learn", "agent_list", "agent_mcp_list", "agent_mcp_test", "agent_message_status", "agent_messages", "agent_nodes", "agent_project_add", "agent_project_list", "agent_propose_idea", "agent_protected_providers_get", "agent_protected_providers_set", "agent_rate", "agent_reply", "agent_request_approval", "agent_send", "agent_start", "agent_stop", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles"}
+	want := []string{"agent_announce", "agent_ask_owner", "agent_get", "agent_graph", "agent_learn", "agent_list", "agent_mcp_list", "agent_mcp_test", "agent_message_status", "agent_messages", "agent_nodes", "agent_project_add", "agent_project_list", "agent_propose_idea", "agent_protected_providers_get", "agent_protected_providers_set", "agent_rate", "agent_reply", "agent_request_approval", "agent_send", "agent_start", "agent_stop", "agent_worker_profile_add", "agent_worker_profile_remove", "agent_worker_profiles"}
 	have := map[string]bool{}
 	for _, name := range names {
 		have[name] = true

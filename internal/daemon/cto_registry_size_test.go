@@ -60,15 +60,32 @@ func TestCTORegisteredReadSizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := w.d.registerCTOSession(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ctoID := w.d.ctoSessionID()
+	if ctoID == "" || ctoID == w.ownerID() {
+		t.Fatalf("CTO session id %q", ctoID)
+	}
+	ctoMessage, _, err := st.StoreMessage(protocol.MsgSend{Sender: ids[0], Recipient: ctoID, Body: "hello CTO", Type: protocol.TypeRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
 	reads := map[string]map[string]any{
 		"workers": {}, "tools": {}, "settings": {"area": "worker_profiles"}, "graph": {}, "machines": {}, "proposals": {}, "feed": {}, "overview": {}, "sessions": {}, "session": {"session_id": ids[0]}, "projects": {},
 		"messages": {}, "cto_proposals_find": {},
+		"agent_sessions_find": {}, "agent_session_get": {"session": ids[0]},
+		"agent_machines_find": {}, "agent_machine_get": {"machine": "box-00"},
+		"agent_projects_find": {}, "agent_workers_find": {},
+		"agent_messages_find": {}, "agent_message_get": {"message": ctoMessage.ID},
+		"agent_graph_read": {}, "agent_mcp_servers_find": {},
+		"agent_worker_profiles_find": {},
 	}
 	_ = localID
 
 	// mcp_call and mcp_test can execute arbitrary external operations. Mutation
 	// tools are classified explicitly and are never invoked here.
-	mutations := strings.Fields("message ask_owner learn ui cto_ui_show graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new")
+	mutations := strings.Fields("message ask_owner learn ui cto_ui_show graph_change session_change worker_change answer tools_change mcp_change mcp_call settings_change project_change cto_new agent_message_send agent_message_reply agent_owner_ask agent_learn")
 	actions := map[string]bool{}
 	for _, name := range mutations {
 		actions[name] = true
