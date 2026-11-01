@@ -65,7 +65,7 @@ Press `a` to approve, `x` to decline, or `A` to review and approve all. The
 decision screen shows the full result; after approve-all, select an outcome and
 press Enter to inspect it. A changed proposal list requires a new confirmation.
 
-For 30 days after the gateway first registers the CTO session, replies to
+For 30 days after the gateway upgrade, replies to
 older conversations started by the CTO as the owner are routed to the CTO
 session, including replies through Claude Code's reply socket. Replies to
 personal owner messages stay with the owner. Peer bodies are quoted as data.

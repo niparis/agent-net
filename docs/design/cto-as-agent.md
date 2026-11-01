@@ -385,7 +385,7 @@ carry the CTO note. Reply delivery is implemented in part 7.
 
 **Part 7. Replies reach the CTO.**
 
-Status: implemented. Messages reach the selected harness, including after a switch. Legacy owner-session CTO conversations route to the CTO session for 30 days after registration.
+Status: implemented. Messages reach the selected harness, including after a switch. Legacy owner-session CTO conversations route to the CTO session for 30 days after the gateway upgrade.
 - Delivery to the CTO session for both harnesses, routing after a harness switch, the 30-day route for old conversations, then remove the forward.
 - Tests: a reply to a CTO send reaches the active harness; after a switch it reaches the other harness; a reply to a pre-upgrade conversation is routed; the CTO session is never offered ordinary agent-net tools.
 

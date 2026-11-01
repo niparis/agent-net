@@ -162,7 +162,10 @@ func TestCTOLegacyReplyRoutesToRegisteredSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.db.Exec(`UPDATE messages SET sender_cto=1 WHERE id=?`, root.ID); err != nil {
+	if _, err = s.db.Exec(`UPDATE owner_settings SET updated_at=? WHERE key='cto_legacy_route_start'`, s.now().UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.db.Exec(`UPDATE messages SET sender_cto=1,created_at=? WHERE id=?`, s.now().Add(-time.Second).UnixNano(), root.ID); err != nil {
 		t.Fatal(err)
 	}
 	cto, err := s.RegisterCTOSession(node)
@@ -189,5 +192,13 @@ func TestCTOLegacyReplyRoutesToRegisteredSession(t *testing.T) {
 	expired, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: owner, ParentID: root.ID, Body: "late reply"})
 	if err != nil || expired.To != owner {
 		t.Fatalf("expired route: %+v %v", expired, err)
+	}
+}
+
+func TestCTOLegacyWindowStartsOnGatewayUpgrade(t *testing.T) {
+	s, _ := newTestStore(t)
+	var started int64
+	if err := s.db.QueryRow(`SELECT updated_at FROM owner_settings WHERE key='cto_legacy_route_start'`).Scan(&started); err != nil || started == 0 {
+		t.Fatalf("upgrade timestamp: %d %v", started, err)
 	}
 }

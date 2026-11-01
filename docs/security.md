@@ -39,8 +39,7 @@ daemon excludes this working directory from ordinary Claude discovery so it
 cannot get ordinary agent tools or a second network identity. The owner-gated
 CTO start registers a separate stable session at the gateway. New CTO sends
 use that session. Incoming messages go to the active harness and are labeled
-as peer input with the body quoted as data. For 30 days after the first CTO
-session registration, the gateway routes replies to older owner-session CTO
+as peer input with the body quoted as data. For 30 days after the gateway upgrade, the gateway routes replies to older owner-session CTO
 conversations to the CTO session. It checks the stored root marker and creation
 time; personal owner conversations remain with the owner.
 

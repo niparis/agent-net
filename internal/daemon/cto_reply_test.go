@@ -116,7 +116,7 @@ func markLegacyCTOMessage(t *testing.T, g *testGateway, id string) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	if _, err := db.Exec(`UPDATE messages SET sender_cto=1 WHERE id=?`, id); err != nil {
+	if _, err := db.Exec(`UPDATE messages SET sender_cto=1, created_at=(SELECT updated_at-1 FROM owner_settings WHERE key='cto_legacy_route_start') WHERE id=?`, id); err != nil {
 		t.Fatal(err)
 	}
 }
