@@ -52,7 +52,9 @@ func ownerOpenCodeService() (openCodeService, error) {
 	return service, nil
 }
 
-func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify bool) (protocol.StartedSession, error) {
+// relayed says the owner approved the start from another machine; see
+// launchOwnerClaude.
+func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify, relayed bool) (protocol.StartedSession, error) {
 	down := fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
 	service, err := ownerOpenCodeService()
 	if err != nil {
@@ -136,10 +138,13 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 				plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname,
 					Note: "Press ctrl+] to come back here; the session keeps running."}
 				opened := d.openForCaller(r.SessionID, r.Project, socket, pane, plan)
-				if opened.OpenedHerdr || len(opened.Argv) == 0 {
+				if opened.OpenedHerdr || len(opened.Argv) == 0 || relayed {
 					r.EnterPlan = &opened
 				} else {
-					r.EnterNote = "Enter opens it. " + herdrInstallNote
+					r.EnterNote = "Enter opens it."
+					if d.herdrBinary("") == "" {
+						r.EnterNote += " " + herdrInstallNote
+					}
 				}
 			}
 			r.Status = "started"
