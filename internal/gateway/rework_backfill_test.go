@@ -166,3 +166,46 @@ func TestReworkBackfillTenThousandMessages(t *testing.T) {
 		t.Fatalf("known=%d fix=%d err=%v", known, fix, err)
 	}
 }
+
+// Retention may have removed the original task while leaving the notice and
+// follow-up. Establish the caller before replaying those remaining messages.
+func TestReworkBackfillInfersCallerBeforeReplay(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyReworkRun(t, s, "worker", "")
+	reworkMessage(t, s, "worker", "caller", protocol.TypeReply, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "done", Session: "worker"}, ""), 1)
+	reworkMessage(t, s, "caller", "worker", protocol.TypeRequest, "fix the failing test", 2)
+	if err := s.backfillRework(); err != nil {
+		t.Fatal(err)
+	}
+	var fix int
+	if err := s.db.QueryRow(`SELECT fix_count FROM worker_runs`).Scan(&fix); err != nil || fix != 1 {
+		t.Fatalf("fix=%d err=%v", fix, err)
+	}
+}
+
+func TestReworkBackfillPreservesKnownSessionsAndStoredCaller(t *testing.T) {
+	s, _ := newTestStore(t)
+	if _, err := s.db.Exec(`DELETE FROM owner_settings WHERE key='rework_backfill_done'`); err != nil {
+		t.Fatal(err)
+	}
+	legacyReworkRun(t, s, "worker", "caller")
+	legacyReworkRun(t, s, "known", "caller")
+	if _, err := s.db.Exec(`UPDATE worker_runs SET fix_count=7,counters_known=1 WHERE session_id='known'`); err != nil {
+		t.Fatal(err)
+	}
+	reworkMessage(t, s, "stranger", "worker", protocol.TypeRequest, "task", 1)
+	reworkMessage(t, s, "worker", "caller", protocol.TypeReply, protocol.FormatWorkerNotice(protocol.WorkerNotice{Status: "done", Session: "worker"}, ""), 2)
+	if err := s.backfillRework(); err != nil {
+		t.Fatal(err)
+	}
+	var known, fix int
+	if err := s.db.QueryRow(`SELECT counters_known FROM worker_runs WHERE session_id='worker'`).Scan(&known); err != nil || known != 0 {
+		t.Fatalf("no caller request: known=%d err=%v", known, err)
+	}
+	if err := s.db.QueryRow(`SELECT counters_known,fix_count FROM worker_runs WHERE session_id='known'`).Scan(&known, &fix); err != nil || known != 1 || fix != 7 {
+		t.Fatalf("known session: known=%d fix=%d err=%v", known, fix, err)
+	}
+}

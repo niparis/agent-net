@@ -59,7 +59,28 @@ func (s *Store) backfillRework() error {
 	}
 	rows.Close()
 	if len(sessions) > 0 {
-		// One ordered pass avoids rescanning the messages table for every worker.
+		// Infer missing callers before replay: the original task may have
+		// expired, leaving a hand-back before the first retained request.
+		rows, err = tx.Query(`SELECT recipient,sender FROM messages WHERE type=? ORDER BY created_at,rowid`, protocol.TypeRequest)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var to, from string
+			if err := rows.Scan(&to, &from); err != nil {
+				rows.Close()
+				return err
+			}
+			if sess := sessions[to]; sess != nil && sess.caller == "" {
+				sess.caller = from
+			}
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		// One ordered body pass avoids rescanning messages for every worker.
 		// rowid preserves insertion order when timestamps are equal.
 		rows, err = tx.Query(`SELECT sender,recipient,type,body,created_at FROM messages ORDER BY created_at,rowid`)
 		if err != nil {
@@ -73,9 +94,6 @@ func (s *Store) backfillRework() error {
 				return err
 			}
 			if sess := sessions[to]; sess != nil && typ == protocol.TypeRequest {
-				if sess.caller == "" {
-					sess.caller = from
-				}
 				if from == sess.caller {
 					sess.seen = true
 					cont, fix := protocol.ReworkCounts(sess.handback, sess.partial, sess.idle)
