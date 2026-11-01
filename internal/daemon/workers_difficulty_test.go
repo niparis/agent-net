@@ -285,6 +285,15 @@ func TestWorkerTouchesDifficulty(t *testing.T) {
 			if err != nil || res.Model != tc.wantModel || (tc.note != "" && !strings.Contains(res.ModelNote, tc.note)) || (tc.note == "" && strings.Contains(res.ModelNote, "touches")) {
 				t.Fatalf("choice: %+v, %v", res, err)
 			}
+			row := reworkRow(t, w, res.SessionID)
+			used := "normal"
+			if tc.name == "db" {
+				used = "hard"
+			}
+			if row.DifficultyAsked != "normal" || row.DifficultyUsed != used || row.Touches != strings.Join(tc.touches, ",") {
+				t.Fatalf("worker record: %+v", row)
+			}
+
 		})
 	}
 }
