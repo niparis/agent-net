@@ -77,6 +77,35 @@ const (
 	QualityAnalysisMinRatings = 20
 )
 
+// Orchestrator minutes one task's rework costs. The owner set these costs on
+// 2026-11-01: a continue costs 2 minutes, a fix 10 minutes, and a late defect
+// costs 10, 30, 60 or 180 minutes by severity 1 to 4.
+const (
+	QualityContinueMinutes        = 2
+	QualityFixMinutes             = 10
+	QualityDefectMinutesSeverity1 = 10
+	QualityDefectMinutesSeverity2 = 30
+	QualityDefectMinutesSeverity3 = 60
+	QualityDefectMinutesSeverity4 = 180
+)
+
+// DefectMinutes maps a late-defect severity to its orchestrator minutes.
+// Unknown severities add nothing; the gateway validates them on the way in.
+func DefectMinutes(severity int) float64 {
+	switch severity {
+	case 1:
+		return QualityDefectMinutesSeverity1
+	case 2:
+		return QualityDefectMinutesSeverity2
+	case 3:
+		return QualityDefectMinutesSeverity3
+	case 4:
+		return QualityDefectMinutesSeverity4
+	default:
+		return 0
+	}
+}
+
 const OpQualityGet = "quality_get"
 const OpQualitySet = "quality_set"
 

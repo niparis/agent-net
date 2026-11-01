@@ -22,43 +22,43 @@ func qualityLevelSnapshot() protocol.QualityAnalysis {
 		},
 		Levels: []protocol.QualityLevel{
 			{Difficulty: "simple", Tasks: 8, Families: []protocol.QualityFamily{
-				{Family: "luna", Tasks: 5, Fixes: 1, Continues: 0, FollowUps: .20, LateDefects: 1, LateDefectSeverity: 1, Headache: .40},
-				{Family: "deepseek", Tasks: 1, Fixes: 0, Continues: 1, FollowUps: .33, Headache: .33},
+				{Family: "luna", Tasks: 5, Fixes: 1, Continues: 0, FollowUps: .20, Headache: 2},
+				{Family: "deepseek", Tasks: 1, Fixes: 0, Continues: 1, FollowUps: .33, Headache: 2},
 				{Family: "sol", Tasks: 1, Fixes: 0, Continues: 0, FollowUps: 0, Headache: 0},
-				{Family: "terra", Tasks: 1, Fixes: 1, Continues: 0, FollowUps: 1.00, Headache: 1.00},
+				{Family: "terra", Tasks: 1, Fixes: 1, Continues: 0, FollowUps: 1.00, Headache: 10},
 			}},
 			{Difficulty: "normal", Tasks: 154, Families: []protocol.QualityFamily{
-				{Family: "deepseek", Tasks: 66, Fixes: 6, Continues: 0, FollowUps: .09, Headache: .09},
-				{Family: "terra", Tasks: 53, Fixes: 28, Continues: 30, FollowUps: .72, LateDefects: 2, LateDefectSeverity: 3, Headache: .83},
-				{Family: "luna", Tasks: 19, Fixes: 5, Continues: 0, FollowUps: .26, LateDefects: 1, LateDefectSeverity: 2, Headache: .37},
-				{Family: "sol", Tasks: 9, Fixes: 2, Continues: 1, FollowUps: .26, Headache: .26},
+				{Family: "deepseek", Tasks: 66, Fixes: 6, Continues: 0, FollowUps: .09, Headache: 60.0 / 66.0},
+				{Family: "terra", Tasks: 53, Fixes: 28, Continues: 30, FollowUps: .72, Headache: 340.0 / 53.0},
+				{Family: "luna", Tasks: 19, Fixes: 5, Continues: 0, FollowUps: .26, Headache: 50.0 / 19.0},
+				{Family: "sol", Tasks: 9, Fixes: 2, Continues: 1, FollowUps: .26, Headache: 22.0 / 9.0},
 				{Family: "opus", Tasks: 7, Fixes: 0, Continues: 0, FollowUps: 0, Headache: 0},
 			}},
 			{Difficulty: "hard", Tasks: 33, Families: []protocol.QualityFamily{
-				{Family: "terra", Tasks: 25, Fixes: 12, Continues: 10, FollowUps: .61, LateDefects: 3, LateDefectSeverity: 2.7, Headache: .94},
-				{Family: "sol", Tasks: 8, Fixes: 3, Continues: 1, FollowUps: .42, Headache: .42},
+				{Family: "terra", Tasks: 25, Fixes: 12, Continues: 10, FollowUps: .61, LateDefects: 1, LateDefectSeverity: 4, Headache: 320.0 / 25.0},
+				{Family: "sol", Tasks: 8, Fixes: 3, Continues: 1, FollowUps: .42, Headache: 4},
 			}},
 			{Difficulty: "unknown", Tasks: 23, Families: []protocol.QualityFamily{
-				{Family: "deepseek", Tasks: 12, Fixes: 2, Continues: 0, FollowUps: .17, LateDefects: 1, LateDefectSeverity: 4, Headache: .50},
-				{Family: "sol", Tasks: 8, Fixes: 1, Continues: 0, FollowUps: .13, Headache: .13},
-				{Family: "terra", Tasks: 3, Fixes: 3, Continues: 0, FollowUps: 1.00, Headache: 1.00},
+				{Family: "deepseek", Tasks: 12, Fixes: 2, Continues: 0, FollowUps: .17, Headache: 20.0 / 12.0},
+				{Family: "sol", Tasks: 8, Fixes: 1, Continues: 0, FollowUps: .13, Headache: 10.0 / 8.0},
+				{Family: "terra", Tasks: 3, Fixes: 3, Continues: 0, FollowUps: 1.00, Headache: 10},
 			}},
 		},
 		Agents: []protocol.QualityAgent{
 			{Caller: "s_alpha", Name: "agent-net", Levels: []protocol.QualityLevel{
 				{Difficulty: "normal", Tasks: 20, Families: []protocol.QualityFamily{
-					{Family: "terra", Tasks: 20, Fixes: 10, Continues: 10, FollowUps: .67, LateDefects: 1, LateDefectSeverity: 3, Headache: .82},
+					{Family: "terra", Tasks: 20, Fixes: 10, Continues: 10, FollowUps: .665, Headache: 6},
 				}},
 				{Difficulty: "hard", Tasks: 8, Families: []protocol.QualityFamily{
-					{Family: "sol", Tasks: 8, Fixes: 3, Continues: 1, FollowUps: .42, Headache: .42},
+					{Family: "sol", Tasks: 8, Fixes: 3, Continues: 1, FollowUps: .416, Headache: 4},
 				}},
 			}},
 			{Caller: "s_beta", Name: "homelab-agent", Levels: []protocol.QualityLevel{
 				{Difficulty: "simple", Tasks: 5, Families: []protocol.QualityFamily{
-					{Family: "luna", Tasks: 5, Fixes: 1, Continues: 0, FollowUps: .20, LateDefects: 1, LateDefectSeverity: 1, Headache: .40},
+					{Family: "luna", Tasks: 5, Fixes: 1, Continues: 0, FollowUps: .20, Headache: 2},
 				}},
 				{Difficulty: "unknown", Tasks: 12, Families: []protocol.QualityFamily{
-					{Family: "deepseek", Tasks: 12, Fixes: 2, Continues: 0, FollowUps: .17, LateDefects: 1, LateDefectSeverity: 4, Headache: .50},
+					{Family: "deepseek", Tasks: 12, Fixes: 2, Continues: 0, FollowUps: .1667, Headache: 20.0 / 12.0},
 				}},
 			}},
 		},
@@ -108,7 +108,8 @@ func TestQuotaCalibrationTable(t *testing.T) {
 		"agent ◂ all agents ▸",
 		"FAMILY", "FOLLOW-UPS", "LATE DEFECTS", "HEADACHE",
 		"simple · 8 tasks", "normal · 154 tasks", "hard · 33 tasks", "unknown · 23 tasks",
-		"terra", "deepseek", "opus", "2 · avg 3.0",
+		"terra", "deepseek", "opus", "1 · avg 4.0",
+		"headache = orchestrator minutes: continue 2, fix 10, late defect",
 		"ratings: 40 so far; what matters most: model / effort / harness",
 	} {
 		if !strings.Contains(view, want) {
@@ -179,6 +180,7 @@ func qualityRows(view string) (header string, rows []string) {
 		case strings.Contains(line, " · ") && strings.Contains(line, " tasks"):
 			// Level header.
 		case strings.Contains(line, "agent ◂"), strings.Contains(line, "ratings:"):
+		case strings.Contains(line, "headache ="), strings.Contains(line, "by severity"):
 		case strings.HasPrefix(line, "╭"), strings.HasPrefix(line, "╰"):
 		default:
 			if strings.TrimSpace(strings.Trim(line, "│ ")) != "" {
@@ -194,20 +196,20 @@ func TestQualityFamilyColumnsAlign(t *testing.T) {
 		family, tasks, follow, late, headache string
 	}
 	want := []row{
-		{"luna", "5", "0.20", "1 · avg 1.0", "0.40"},
-		{"deepseek", "1", "0.33", "-", "0.33"},
-		{"sol", "1", "0.00", "-", "0.00"},
-		{"terra", "1", "1.00", "-", "1.00"},
-		{"deepseek", "66", "0.09", "-", "0.09"},
-		{"terra", "53", "0.72", "2 · avg 3.0", "0.83"},
-		{"luna", "19", "0.26", "1 · avg 2.0", "0.37"},
-		{"sol", "9", "0.26", "-", "0.26"},
-		{"opus", "7", "0.00", "-", "0.00"},
-		{"terra", "25", "0.61", "3 · avg 2.7", "0.94"},
-		{"sol", "8", "0.42", "-", "0.42"},
-		{"deepseek", "12", "0.17", "1 · avg 4.0", "0.50"},
-		{"sol", "8", "0.13", "-", "0.13"},
-		{"terra", "3", "1.00", "-", "1.00"},
+		{"luna", "5", "0.20", "-", "2 min"},
+		{"deepseek", "1", "0.33", "-", "2 min"},
+		{"sol", "1", "0.00", "-", "0 min"},
+		{"terra", "1", "1.00", "-", "10 min"},
+		{"deepseek", "66", "0.09", "-", "1 min"},
+		{"terra", "53", "0.72", "-", "6 min"},
+		{"luna", "19", "0.26", "-", "3 min"},
+		{"sol", "9", "0.26", "-", "2 min"},
+		{"opus", "7", "0.00", "-", "0 min"},
+		{"terra", "25", "0.61", "1 · avg 4.0", "13 min"},
+		{"sol", "8", "0.42", "-", "4 min"},
+		{"deepseek", "12", "0.17", "-", "2 min"},
+		{"sol", "8", "0.13", "-", "1 min"},
+		{"terra", "3", "1.00", "-", "10 min"},
 	}
 	cols := []struct {
 		name string
@@ -224,6 +226,12 @@ func TestQualityFamilyColumnsAlign(t *testing.T) {
 		header, rows := qualityRows(view)
 		if header == "" {
 			t.Fatalf("%d columns: no header:\n%s", w, view)
+		}
+		if at := strings.Index(header, "TASKS"); at < 0 || at > 20 {
+			t.Errorf("%d columns: numbers are not next to the family name: %q", w, header)
+		}
+		if w == 120 && !strings.Contains(view, "headache = orchestrator minutes: continue 2, fix 10, late defect 10/30/60/180 by severity") {
+			t.Errorf("missing headache footnote at 120 columns:\n%s", view)
 		}
 		if len(rows) != len(want) {
 			t.Fatalf("%d columns: %d rows, want %d:\n%s", w, len(rows), len(want), view)

@@ -1,9 +1,10 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────────────────────────────────────────────╮
 │ agent ◂ agent-net ▸                                                                                                  │
-│ FAMILY                                                                        TASKS FOLLOW-UPS LATE DEFECTS HEADACHE │
+│ FAMILY TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                                                                        │
 │ normal · 20 tasks                                                                                                    │
-│ terra                                                                            20       0.67  1 · avg 3.0     0.82 │
+│ terra     20       0.67            -    6 min                                                                        │
 │ hard · 8 tasks                                                                                                       │
-│ sol                                                                               8       0.42            -     0.42 │
+│ sol        8       0.42            -    4 min                                                                        │
 │ ratings: 40 so far; what matters most: model / effort / harness                                                      │
+│ headache = orchestrator minutes: continue 2, fix 10, late defect 10/30/60/180 by severity                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

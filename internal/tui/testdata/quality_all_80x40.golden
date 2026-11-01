@@ -1,23 +1,25 @@
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                         │
-│ FAMILY                                TASKS FOLLOW-UPS LATE DEFECTS HEADACHE │
+│ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                              │
 │ simple · 8 tasks                                                             │
-│ luna                                      5       0.20  1 · avg 1.0     0.40 │
-│ deepseek                                  1       0.33            -     0.33 │
-│ sol                                       1       0.00            -     0.00 │
-│ terra                                     1       1.00            -     1.00 │
+│ luna         5       0.20            -    2 min                              │
+│ deepseek     1       0.33            -    2 min                              │
+│ sol          1       0.00            -    0 min                              │
+│ terra        1       1.00            -   10 min                              │
 │ normal · 154 tasks                                                           │
-│ deepseek                                 66       0.09            -     0.09 │
-│ terra                                    53       0.72  2 · avg 3.0     0.83 │
-│ luna                                     19       0.26  1 · avg 2.0     0.37 │
-│ sol                                       9       0.26            -     0.26 │
-│ opus                                      7       0.00            -     0.00 │
+│ deepseek    66       0.09            -    1 min                              │
+│ terra       53       0.72            -    6 min                              │
+│ luna        19       0.26            -    3 min                              │
+│ sol          9       0.26            -    2 min                              │
+│ opus         7       0.00            -    0 min                              │
 │ hard · 33 tasks                                                              │
-│ terra                                    25       0.61  3 · avg 2.7     0.94 │
-│ sol                                       8       0.42            -     0.42 │
+│ terra       25       0.61  1 · avg 4.0   13 min                              │
+│ sol          8       0.42            -    4 min                              │
 │ unknown · 23 tasks                                                           │
-│ deepseek                                 12       0.17  1 · avg 4.0     0.50 │
-│ sol                                       8       0.13            -     0.13 │
-│ terra                                     3       1.00            -     1.00 │
+│ deepseek    12       0.17            -    2 min                              │
+│ sol          8       0.13            -    1 min                              │
+│ terra        3       1.00            -   10 min                              │
 │ ratings: 40 so far; what matters most: model / effort / harness              │
+│ headache = orchestrator minutes: continue 2, fix 10, late defect             │
+│ 10/30/60/180 by severity                                                     │
 ╰──────────────────────────────────────────────────────────────────────────────╯

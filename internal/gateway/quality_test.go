@@ -258,12 +258,8 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 		t.Fatal(err)
 	}
 	add("u1", alpha, "gpt-6.1-luna", "normal", 2, 0, protocol.OutcomeComplete)
-	// Later defects belong to the worker's task, not to a new task.
-	if _, err := s.db.Exec(`CREATE TABLE IF NOT EXISTS worker_defects (run_id INTEGER, session_id TEXT, caller TEXT,
-		rater_model TEXT, harness TEXT, model TEXT, effort TEXT, difficulty TEXT,
-		severity INTEGER NOT NULL DEFAULT 1, note TEXT, at INTEGER)`); err != nil {
-		t.Fatal(err)
-	}
+	// Later defects belong to the worker's task, not to a new task. The real
+	// worker_defects table comes from the rating work in the base migration.
 	for _, d := range []struct {
 		session  string
 		severity int
@@ -301,7 +297,7 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 	if terra.LateDefects != 1 || terra.LateDefectSeverity != 3 {
 		t.Fatalf("terra defects: %+v", terra)
 	}
-	if want := terra.FollowUps + 3.0/2.0; terra.Headache != want {
+	if want := (float64(protocol.QualityContinueMinutes) + 2*float64(protocol.QualityFixMinutes) + float64(protocol.QualityDefectMinutesSeverity3)) / 2; terra.Headache != want {
 		t.Fatalf("terra headache: %+v, want %.4f", terra, want)
 	}
 	deepseek := qualityFamily(t, normal.Families, "deepseek")
@@ -325,7 +321,7 @@ func TestQualityLevelsAggregatePerSessionCallerAndDefect(t *testing.T) {
 	}
 	unknown := qualityLevel(t, q.Levels, "unknown")
 	if f := qualityFamily(t, unknown.Families, "deepseek"); f.Tasks != 1 || f.LateDefects != 2 ||
-		f.LateDefectSeverity != 3 || f.Headache != 8 {
+		f.LateDefectSeverity != 3 || f.Headache != 230 {
 		t.Fatalf("unknown deepseek: %+v", f)
 	}
 	if len(q.Agents) != 2 || q.Agents[0].Name != "agent-net" || q.Agents[1].Name != "homelab-agent" {

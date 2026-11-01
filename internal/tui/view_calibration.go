@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -108,17 +109,10 @@ func qualityView(q protocol.QualityAnalysis, w, agent int, detail bool) []string
 	if q.Status == "" {
 		return nil
 	}
-	const tasksW, fixesW, continuesW, followW, lateW, headacheW = 5, 5, 9, 10, 12, 8
-	gaps := 4
-	fixed := tasksW + followW + lateW + headacheW + gaps
-	if detail {
-		gaps = 6
-		fixed = tasksW + fixesW + continuesW + followW + lateW + headacheW + gaps
-	}
-	inner := max(w-4, 8)
-	familyW := max(inner-fixed, 8)
-	body := []string{qualitySelector(q, agent, w), sBold.Render(clip(qualityColumnHeader(familyW, detail), inner))}
-	for _, level := range qualityLevels(q, agent) {
+	levels := qualityLevels(q, agent)
+	familyW := qualityFamilyWidth(levels)
+	body := []string{qualitySelector(q, agent, w), sBold.Render(clip(qualityColumnHeader(familyW, detail), w-4))}
+	for _, level := range levels {
 		label := fmt.Sprintf("%s · %d tasks", level.Difficulty, level.Tasks)
 		if level.Difficulty == "unknown" {
 			body = append(body, sDim.Render(clip(label, w-4)))
@@ -130,10 +124,13 @@ func qualityView(q protocol.QualityAnalysis, w, agent int, detail bool) []string
 			if qualityFamilyDim(level.Difficulty, f.Tasks) {
 				line = sDim.Render(line)
 			}
-			body = append(body, clip(line, inner))
+			body = append(body, clip(line, w-4))
 		}
 	}
 	body = append(body, sDim.Render(clip(qualityRatingsLine(q), w-4)))
+	for _, line := range wrap(qualityHeadacheFootnote(), w-4) {
+		body = append(body, sDim.Render(line))
+	}
 	return panel("Quality analysis · read only", body, w, roleAccent)
 }
 
@@ -159,6 +156,20 @@ func qualityLevels(q protocol.QualityAnalysis, agent int) []protocol.QualityLeve
 	return q.Levels
 }
 
+func qualityFamilyWidth(levels []protocol.QualityLevel) int {
+	w := len("FAMILY")
+	for _, level := range levels {
+		for _, f := range level.Families {
+			if n := utf8.RuneCountInString(f.Family); n > w {
+				w = n
+			}
+		}
+	}
+	// The known families are eight characters at most. A long unknown model
+	// name is cut with an ellipsis instead of pushing the numbers right.
+	return min(max(w, len("FAMILY")), 9)
+}
+
 func qualityColumnHeader(familyW int, detail bool) string {
 	parts := []string{cell("FAMILY", familyW), cellR("TASKS", 5)}
 	if detail {
@@ -176,7 +187,7 @@ func qualityFamilyLine(f protocol.QualityFamily, familyW int, detail bool) strin
 	parts = append(parts,
 		cellR(fmt.Sprintf("%.2f", f.FollowUps), 10),
 		cellR(qualityLateDefects(f), 12),
-		cellR(fmt.Sprintf("%.2f", f.Headache), 8))
+		cellR(fmt.Sprintf("%.0f min", f.Headache), 8))
 	return strings.Join(parts, " ")
 }
 
@@ -185,6 +196,14 @@ func qualityLateDefects(f protocol.QualityFamily) string {
 		return "-"
 	}
 	return fmt.Sprintf("%d · avg %.1f", f.LateDefects, f.LateDefectSeverity)
+}
+
+// qualityHeadacheFootnote names the orchestrator costs behind HEADACHE.
+func qualityHeadacheFootnote() string {
+	return fmt.Sprintf("headache = orchestrator minutes: continue %d, fix %d, late defect %d/%d/%d/%d by severity",
+		protocol.QualityContinueMinutes, protocol.QualityFixMinutes,
+		protocol.QualityDefectMinutesSeverity1, protocol.QualityDefectMinutesSeverity2,
+		protocol.QualityDefectMinutesSeverity3, protocol.QualityDefectMinutesSeverity4)
 }
 
 // qualityFamilyDim marks a level with no requested difficulty and a family

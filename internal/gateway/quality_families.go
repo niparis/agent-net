@@ -16,12 +16,14 @@ type familyTask struct {
 	fix, cont                          int
 	lateDefects                        int
 	lateSeverity                       float64
+	defectMinutes                      float64
 }
 
 type familyCount struct {
 	tasks, fixes, continues int
 	lateDefects             int
 	lateSeverity            float64
+	defectMinutes           float64
 }
 
 // qualityModelFamily folds a model name into the family the owner reads:
@@ -68,6 +70,7 @@ func addFamilyTask(counts map[string]*familyCount, family string, task familyTas
 	c.continues += task.cont
 	c.lateDefects += task.lateDefects
 	c.lateSeverity += task.lateSeverity
+	c.defectMinutes += task.defectMinutes
 }
 
 func familyRows(counts map[string]*familyCount) []protocol.QualityFamily {
@@ -81,7 +84,8 @@ func familyRows(counts map[string]*familyCount) []protocol.QualityFamily {
 		if c.lateDefects > 0 {
 			row.LateDefectSeverity = c.lateSeverity / float64(c.lateDefects)
 		}
-		row.Headache = row.FollowUps + c.lateSeverity/float64(c.tasks)
+		row.Headache = (protocol.QualityContinueMinutes*float64(c.continues) +
+			protocol.QualityFixMinutes*float64(c.fixes) + c.defectMinutes) / float64(c.tasks)
 		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -120,40 +124,31 @@ func levelRows(levels map[string]map[string]*familyCount) []protocol.QualityLeve
 type defectSummary struct {
 	count    int
 	severity float64
+	minutes  float64
 }
 
-// qualityDefects reads late defect reports by worker session. The table is
-// part of the rating work that lands with this panel; an older gateway that
-// has no table simply has no defects. Before the severity column existed a
-// report cost one point, so that is the fallback.
+// qualityDefects reads late defect reports by worker session. The worker_defects
+// table and its severity column ship with the rating work, so a report always
+// has a severity. The severity decides how many orchestrator minutes the task
+// pays, not just the displayed average.
 func (s *Store) qualityDefects(cut int64) (map[string]defectSummary, error) {
 	out := map[string]defectSummary{}
-	var table int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'worker_defects'`).Scan(&table); err != nil {
-		return nil, err
-	}
-	if table == 0 {
-		return out, nil
-	}
-	var severity int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_defects') WHERE name = 'severity'`).Scan(&severity); err != nil {
-		return nil, err
-	}
-	expr := "1"
-	if severity > 0 {
-		expr = "severity"
-	}
-	rows, err := s.db.Query(`SELECT session_id, COUNT(*), SUM(`+expr+`) FROM worker_defects WHERE at >= ? GROUP BY session_id`, cut)
+	rows, err := s.db.Query(`SELECT session_id, severity, COUNT(*) FROM worker_defects
+		WHERE at >= ? GROUP BY session_id, severity`, cut)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var session string
-		var d defectSummary
-		if err := rows.Scan(&session, &d.count, &d.severity); err != nil {
+		var severity, n int
+		if err := rows.Scan(&session, &severity, &n); err != nil {
 			return nil, err
 		}
+		d := out[session]
+		d.count += n
+		d.severity += float64(severity * n)
+		d.minutes += protocol.DefectMinutes(severity) * float64(n)
 		out[session] = d
 	}
 	return out, rows.Err()
@@ -225,6 +220,7 @@ func (s *Store) qualityFamilyTasks() ([]familyTask, []string, error) {
 		if d, ok := defects[sessionID]; ok {
 			sess.task.lateDefects = d.count
 			sess.task.lateSeverity = d.severity
+			sess.task.defectMinutes = d.minutes
 		}
 		tasks = append(tasks, sess.task)
 	}
