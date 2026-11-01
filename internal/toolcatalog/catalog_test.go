@@ -1,0 +1,258 @@
+package toolcatalog
+
+import (
+	"encoding/json"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
+
+func effectiveInput(tool Tool, role Role) json.RawMessage {
+	if role == RoleCTO && len(tool.CTOInputSchema) > 0 {
+		return tool.CTOInputSchema
+	}
+	return tool.InputSchema
+}
+
+func decodeObject(t *testing.T, name string, raw json.RawMessage) map[string]any {
+	t.Helper()
+	if !json.Valid(raw) {
+		t.Fatalf("%s: schema is not valid JSON: %s", name, raw)
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatalf("%s: schema root is not an object: %v", name, err)
+	}
+	return obj
+}
+
+func checkInputRoot(t *testing.T, name string, raw json.RawMessage) {
+	t.Helper()
+	obj := decodeObject(t, name, raw)
+	if got := obj["type"]; got != "object" {
+		t.Errorf("%s: input schema root type is %v, want object", name, got)
+	}
+	props, ok := obj["properties"].(map[string]any)
+	if !ok || len(props) == 0 {
+		t.Errorf("%s: input schema root has no properties", name)
+	}
+	if got, ok := obj["additionalProperties"]; !ok || got != false {
+		t.Errorf("%s: input schema additionalProperties is %v, want false", name, got)
+	}
+	for _, keyword := range []string{"oneOf", "anyOf", "allOf"} {
+		if _, ok := obj[keyword]; ok {
+			t.Errorf("%s: input schema root has top-level %s, which Claude Code skips", name, keyword)
+		}
+	}
+}
+
+func TestInputSchemaShape(t *testing.T) {
+	if len(Tools) != 34 {
+		t.Errorf("catalog has %d tools, want 34", len(Tools))
+	}
+	for _, tool := range Tools {
+		checkInputRoot(t, tool.Name, tool.InputSchema)
+		if len(tool.CTOInputSchema) > 0 {
+			checkInputRoot(t, tool.Name+" (CTO input)", tool.CTOInputSchema)
+		}
+	}
+}
+
+func checkRefs(t *testing.T, name string, root map[string]any) {
+	t.Helper()
+	defs, _ := root["$defs"].(map[string]any)
+	var walk func(prefix string, value any)
+	walk = func(prefix string, value any) {
+		switch v := value.(type) {
+		case map[string]any:
+			for key, child := range v {
+				if key == "$ref" {
+					ref, ok := child.(string)
+					if !ok || !strings.HasPrefix(ref, "#/$defs/") {
+						t.Errorf("%s: %s$ref %v is not a local $defs reference", name, prefix, child)
+						continue
+					}
+					target := strings.TrimPrefix(ref, "#/$defs/")
+					if _, ok := defs[target]; !ok {
+						t.Errorf("%s: %s$ref %q does not resolve in its own $defs", name, prefix, ref)
+					}
+					continue
+				}
+				walk(prefix+key+".", child)
+			}
+		case []any:
+			for i, child := range v {
+				walk(prefix+string(rune('0'+i))+"[]", child)
+			}
+		}
+	}
+	walk("", root)
+}
+
+func TestSchemasValidJSONAndRefs(t *testing.T) {
+	for _, tool := range Tools {
+		for suffix, raw := range map[string]json.RawMessage{
+			"input":  tool.InputSchema,
+			"output": tool.OutputSchema,
+		} {
+			name := tool.Name + " " + suffix
+			root := decodeObject(t, name, raw)
+			checkRefs(t, name, root)
+		}
+		if len(tool.CTOInputSchema) > 0 {
+			name := tool.Name + " cto_input"
+			root := decodeObject(t, name, tool.CTOInputSchema)
+			checkRefs(t, name, root)
+		}
+	}
+}
+
+var toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+func TestNamesUniqueAndValid(t *testing.T) {
+	seen := map[string]bool{}
+	for _, tool := range Tools {
+		if !toolNamePattern.MatchString(tool.Name) {
+			t.Errorf("tool name %q does not match %s", tool.Name, toolNamePattern)
+		}
+		if seen[tool.Name] {
+			t.Errorf("tool name %q appears more than once", tool.Name)
+		}
+		seen[tool.Name] = true
+		if len(tool.Roles) == 0 {
+			t.Errorf("tool %q has no roles", tool.Name)
+		}
+		for _, role := range tool.Roles {
+			switch role {
+			case RoleAgent, RoleWorker, RoleCTO:
+			default:
+				t.Errorf("tool %q has unknown role %q", tool.Name, role)
+			}
+		}
+	}
+}
+
+func TestDescriptions(t *testing.T) {
+	for _, tool := range Tools {
+		if tool.Description == "" {
+			t.Errorf("tool %q has no description", tool.Name)
+		}
+		if n := utf8.RuneCountInString(tool.Description); n > 300 {
+			t.Errorf("tool %q description is %d characters, want at most 300", tool.Name, n)
+		}
+		if strings.ContainsRune(tool.Description, '\u2014') {
+			t.Errorf("tool %q description contains an em dash", tool.Name)
+		}
+	}
+}
+
+func names(tools []Tool) []string {
+	out := make([]string, len(tools))
+	for i, tool := range tools {
+		out[i] = tool.Name
+	}
+	return out
+}
+
+func contains(tools []Tool, name string) bool {
+	for _, tool := range tools {
+		if tool.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+var ctoOnlyTools = []string{
+	"cto_ui_show", "cto_proposals_find", "graph_change", "session_change",
+	"worker_change", "answer", "tools_change", "mcp_change",
+	"settings_change", "project_change", "mcp_call", "cto_new",
+}
+
+func TestForRole(t *testing.T) {
+	worker := ForRole(RoleWorker)
+	agent := ForRole(RoleAgent)
+	cto := ForRole(RoleCTO)
+
+	for _, name := range []string{"graph_change", "mcp_change", "agent_worker_start", "agent_project_add"} {
+		if contains(worker, name) {
+			t.Errorf("worker sees %q", name)
+		}
+	}
+	for _, name := range ctoOnlyTools {
+		if contains(agent, name) {
+			t.Errorf("agent sees CTO-only tool %q", name)
+		}
+	}
+	if !contains(cto, "cto_new") {
+		t.Error("CTO does not see cto_new")
+	}
+	if !contains(cto, "agent_sessions_find") {
+		t.Error("CTO does not see shared tool agent_sessions_find")
+	}
+
+	for _, role := range []Role{RoleAgent, RoleWorker, RoleCTO} {
+		given := ForRole(role)
+		if !sort.SliceIsSorted(given, func(i, j int) bool { return given[i].Name < given[j].Name }) {
+			t.Errorf("%s tools are not sorted by name: %v", role, names(given))
+		}
+		for _, tool := range given {
+			found := false
+			for _, r := range tool.Roles {
+				if r == role {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("%s list contains %q, which is not marked for that role", role, tool.Name)
+			}
+		}
+	}
+}
+
+func TestAlwaysLoad(t *testing.T) {
+	want := map[string]bool{
+		"agent_announce":      true,
+		"agent_sessions_find": true,
+		"agent_message_send":  true,
+	}
+	for _, tool := range Tools {
+		if tool.AlwaysLoad != want[tool.Name] {
+			t.Errorf("tool %q AlwaysLoad is %v, want %v", tool.Name, tool.AlwaysLoad, want[tool.Name])
+		}
+	}
+}
+
+func TestWorkersFindCTOInput(t *testing.T) {
+	for _, tool := range Tools {
+		if tool.Name != "agent_workers_find" {
+			continue
+		}
+		if len(tool.CTOInputSchema) == 0 {
+			t.Fatal("agent_workers_find has no CTO input schema")
+		}
+		var schema struct {
+			Properties map[string]map[string]any `json:"properties"`
+		}
+		if err := json.Unmarshal(tool.CTOInputSchema, &schema); err != nil {
+			t.Fatal(err)
+		}
+		if got := schema.Properties["started_by"]["default"]; got != "anyone" {
+			t.Errorf("CTO started_by default is %q, want anyone", got)
+		}
+		return
+	}
+	t.Fatal("agent_workers_find is not in the catalog")
+}
+
+func TestSizeReport(t *testing.T) {
+	for _, role := range []Role{RoleAgent, RoleWorker, RoleCTO} {
+		total := 0
+		for _, tool := range ForRole(role) {
+			total += len(tool.Name) + len(tool.Description) + len(effectiveInput(tool, role))
+		}
+		t.Logf("%s tools: %d tools, %d bytes (name+description+inputSchema)", role, len(ForRole(role)), total)
+	}
+}

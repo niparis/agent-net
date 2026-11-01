@@ -1,0 +1,1 @@
+{"input":{"type":"object","properties":{"server":{"type":"string","description":"Shared MCP server name."}},"required":["server"],"additionalProperties":false},"output":{"type":"object","properties":{"ok":{"type":"boolean"},"tools":{"type":"array","items":{"type":"string"}},"detail":{"type":"string"}},"required":["ok","tools","detail"],"additionalProperties":false}}
