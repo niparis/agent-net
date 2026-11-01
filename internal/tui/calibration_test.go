@@ -144,6 +144,113 @@ func TestQuotaQualityPanelWithoutCalibrationCallers(t *testing.T) {
 	}
 }
 
+// quotaPanelText also checks that a visible panel closes before the next one.
+func quotaPanelText(t *testing.T, view, title string) string {
+	t.Helper()
+	start := strings.Index(view, "╭─"+title)
+	if start < 0 {
+		t.Fatalf("missing %s panel:\n%s", title, view)
+	}
+	var body []string
+	for i, line := range strings.Split(view[start:], "\n") {
+		if i > 0 && strings.HasPrefix(line, "╭") {
+			t.Fatalf("%s panel has no bottom border:\n%s", title, view)
+		}
+		body = append(body, line)
+		if strings.HasPrefix(line, "╰") {
+			return strings.Join(body, "\n")
+		}
+	}
+	t.Fatalf("%s panel has no bottom border:\n%s", title, view)
+	return ""
+}
+
+func TestQuotaQualityOverflowKeepsBordersAndScrolls(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := newModel(size[0], size[1])
+			m.tab = quotasTab
+			m.snap.Calibration = calibrationSnapshot()
+			initial := ansi.Strip(m.View())
+			view := initial
+			quality := quotaPanelText(t, view, "Quality analysis")
+			quotaPanelText(t, view, "Subscriptions")
+			if !strings.Contains(quality, "more below") {
+				t.Errorf("overflow hint missing:\n%s", quality)
+			}
+			golden(t, fmt.Sprintf("calibration_%dx%d", size[0], size[1]), m.View())
+			found := false
+			for range 60 {
+				m = keys(m, "down")
+				view = ansi.Strip(m.View())
+				quality = quotaPanelText(t, view, "Quality analysis")
+				if strings.Contains(quality, "ratings: deepseek-v4.1-flash 3 (1 later)") &&
+					strings.Contains(quality, "defects reported later: 2") {
+					found = true
+					golden(t, fmt.Sprintf("calibration_scrolled_%dx%d", size[0], size[1]), m.View())
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("scrolling never shows ratings and defects:\n%s", view)
+			}
+			for range 60 {
+				m = keys(m, "up")
+			}
+			if got := ansi.Strip(m.View()); got != initial {
+				t.Error("scrolling up did not restore the first page")
+			}
+		})
+	}
+}
+
+func TestQuotaOverflowPreservesAllPanelBordersAcrossHeights(t *testing.T) {
+	// Include the room available with both the current CTO box and a shorter
+	// box. Scroll through Subscriptions, Quality and Workers, including joins.
+	for _, height := range []int{8, 12, 17, 22, 28} {
+		m := newModel(120, 34)
+		m.snap.Calibration = calibrationSnapshot()
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6.1-sol"}}
+		var seen strings.Builder
+		for scroll := range 80 {
+			m.quotaScroll = scroll
+			rows := m.quotasView(120, height)
+			if len(rows) != height {
+				t.Fatalf("height %d scroll %d: got %d rows", height, scroll, len(rows))
+			}
+			open := false
+			for _, row := range rows {
+				row = ansi.Strip(row)
+				seen.WriteString(row + "\n")
+				switch {
+				case strings.HasPrefix(row, "╭"):
+					if open {
+						t.Fatalf("height %d scroll %d: panel lost its bottom border", height, scroll)
+					}
+					open = true
+				case strings.HasPrefix(row, "╰"):
+					if !open {
+						t.Fatalf("height %d scroll %d: panel lost its top border", height, scroll)
+					}
+					open = false
+				case strings.HasPrefix(row, "│"):
+					if !open {
+						t.Fatalf("height %d scroll %d: panel body lost its top border", height, scroll)
+					}
+				}
+			}
+			if open {
+				t.Fatalf("height %d scroll %d: panel lost its bottom border", height, scroll)
+			}
+		}
+		for _, want := range []string{"Subscriptions", "Quality analysis", "Workers", "ratings: deepseek", "defects reported later: 2", "headache ="} {
+			if !strings.Contains(seen.String(), want) {
+				t.Errorf("height %d: scrolling never showed %q", height, want)
+			}
+		}
+	}
+}
+
 func TestQuotaCalibrationGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 40}, {120, 34}} {
 		m := newModel(size[0], size[1])
