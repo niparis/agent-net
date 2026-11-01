@@ -355,7 +355,9 @@ func TestConversationsPageGroupsTenThousandWorkerMessagesFast(t *testing.T) {
 	if page.Conversations[0].Count != 2 {
 		t.Errorf("worker row count = %d, want 2", page.Conversations[0].Count)
 	}
-	if elapsed > 2*time.Second {
+	// About 40 ms without the race detector and up to 4 s with it on a busy
+	// CI runner; the unindexed query this guards against took 20 s or more.
+	if elapsed > 10*time.Second {
 		t.Errorf("first grouped page is too slow: %s", elapsed)
 	}
 }
@@ -395,7 +397,7 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	if page.Total != 500 || len(page.Conversations) != 50 || page.Next == "" {
 		t.Fatalf("page total=%d rows=%d next=%q", page.Total, len(page.Conversations), page.Next)
 	}
-	if elapsed > 2*time.Second {
+	if elapsed > 10*time.Second {
 		t.Errorf("first page is too slow: %s", elapsed)
 	}
 }
