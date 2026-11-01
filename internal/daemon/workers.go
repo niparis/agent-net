@@ -125,22 +125,25 @@ func (s WorkerSettings) filled() WorkerSettings {
 // worker is one running worker. Fields are guarded by Daemon.wmu.
 type worker struct {
 	id, harness, project, path, model, owner string
-	nativeID, sessionID                      string
-	pid, pgid                                int
-	token                                    string
-	startedAt, lastActive                    time.Time
-	savedAt                                  time.Time // when lastActive was last written
-	ownerGoneSince                           time.Time
-	ownerChecked                             time.Time
-	stopping                                 bool
-	turnActive                               bool
-	turnHandbackIdle                         bool
-	turnAwaitingStart                        bool
-	turnQueue                                []protocol.Message
-	idleNoticeSince                          time.Time
-	idleNoticeSent, idleNoticePending        bool
-	idleNoticeGeneration                     uint64
-	idleNoticeReport, idleNoticeKey          string
+	// ownerName is the caller's name when the gateway knows it, for the
+	// commit trailers.
+	ownerName                         string
+	nativeID, sessionID               string
+	pid, pgid                         int
+	token                             string
+	startedAt, lastActive             time.Time
+	savedAt                           time.Time // when lastActive was last written
+	ownerGoneSince                    time.Time
+	ownerChecked                      time.Time
+	stopping                          bool
+	turnActive                        bool
+	turnHandbackIdle                  bool
+	turnAwaitingStart                 bool
+	turnQueue                         []protocol.Message
+	idleNoticeSince                   time.Time
+	idleNoticeSent, idleNoticePending bool
+	idleNoticeGeneration              uint64
+	idleNoticeReport, idleNoticeKey   string
 	// idleFollowUp is true when the owner's message starts a turn on a worker
 	// that went idle without a hand-back. The OpenCode router clears the idle
 	// notice before noteAsk runs, so noteAsk reads this to count the follow-up
@@ -409,6 +412,7 @@ func (d *Daemon) workerSessionReady(w *worker, sessionID string) {
 	d.wmu.Lock()
 	w.sessionID = sessionID
 	w.lastActive = time.Now() // the idle clock starts when the session exists
+	d.writeWorkerCommitSession(w)
 	d.saveWorkerLocked(w)
 	d.wmu.Unlock()
 	w.readyOnce.Do(func() { close(w.ready) })
@@ -569,7 +573,7 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		return refuse("this daemon cannot start %q workers", l.Harness)
 	}
 	rules := projectWorkerRules(l.Path)
-	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner,
+	w := &worker{id: protocol.NewID("w"), harness: l.Harness, project: l.Project, path: l.Path, model: l.Model, owner: l.Owner, ownerName: l.OwnerName,
 		startedAt: time.Now(), ready: make(chan struct{}), taskText: protocol.WorkerTaskSummary(first(l.RecordTask, l.Task)),
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ",")}
@@ -1011,7 +1015,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		d.wmu.Unlock()
 		return fmt.Errorf("this machine already runs %d workers, which is the limit", n)
 	}
-	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner,
+	w := &worker{id: row.ID, harness: row.Harness, project: row.Project, path: row.Path, model: row.Model, owner: row.Owner, ownerName: row.OwnerName,
 		nativeID: row.NativeID, sessionID: row.SessionID, startedAt: row.StartedAt, lastActive: time.Now(),
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
@@ -1376,12 +1380,13 @@ func (d *Daemon) adoptWorkers() {
 			d.st.saveWorker(r)
 			os.RemoveAll(filepath.Join(d.cfg.StateDir, "workers", r.ID))
 			if r.DoneStatus == "" {
-				d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree}, protocol.StopLost)
+				d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
+					owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}, protocol.StopLost)
 			}
 			d.Logf("worker.stopped worker=%s session=%s project=%s harness=%s reason=%s", r.ID, r.SessionID, r.Project, r.Harness, protocol.StopLost)
 			continue
 		}
-		w := &worker{id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner,
+		w := &worker{id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 			nativeID: r.NativeID, sessionID: r.SessionID, pid: r.PID, pgid: r.PGID, token: r.StartToken,
 			startedAt: r.StartedAt, lastActive: time.Now(), ready: make(chan struct{}),
 			dir: filepath.Join(d.cfg.StateDir, "workers", r.ID), mainPath: r.MainPath, worktree: r.Worktree,

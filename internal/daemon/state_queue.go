@@ -12,6 +12,7 @@ import (
 const queueSchema = `
 CREATE TABLE IF NOT EXISTS worker_queue (
 	seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, owner TEXT NOT NULL,
+	owner_name TEXT NOT NULL DEFAULT '',
 	project TEXT NOT NULL, path TEXT NOT NULL, harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '',
 	task TEXT NOT NULL, isolation TEXT NOT NULL DEFAULT '', queued_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS worker_costs (
@@ -21,6 +22,8 @@ CREATE TABLE IF NOT EXISTS worker_costs (
 // queuedStart is a worker start that waits for room.
 type queuedStart struct {
 	ID, Owner, Project, Path, Harness, Model, Task, Isolation string
+	// OwnerName is the caller's display name, for the commit trailers.
+	OwnerName string
 	// Base is the branch to start the worktree from; RecordTask is what the
 	// worker record keeps as the first task (both empty for a plain start).
 	Base, RecordTask string
@@ -34,14 +37,14 @@ type queuedStart struct {
 }
 
 func (s *state) addQueued(q queuedStart) error {
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches)
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, owner_name, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.OwnerName, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches)
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, owner_name, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -50,7 +53,7 @@ func (s *state) queue() ([]queuedStart, error) {
 	for rows.Next() {
 		var q queuedStart
 		var at int64
-		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches); err != nil {
+		if err := rows.Scan(&q.ID, &q.Owner, &q.OwnerName, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)

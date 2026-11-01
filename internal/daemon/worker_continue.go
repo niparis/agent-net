@@ -47,7 +47,7 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 	if p.Model != "" {
 		model = p.Model
 	}
-	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner,
+	l := protocol.WorkerLaunch{Project: r.Project, Path: path, Harness: harness, Model: model, Owner: r.Owner, OwnerName: r.OwnerName,
 		Permissions: r.Permissions, FromCTO: p.FromCTO, // the old worker's level, not the project's current one
 		DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches)}
 	where := ""
@@ -60,7 +60,8 @@ func (d *Daemon) continueWorker(ctx context.Context, p protocol.WorkerContinue) 
 		// A worker that handed back keeps its changes uncommitted: commit them
 		// now, so the new branch has them. For any other ended worker this is
 		// a no-op, the changes are already committed.
-		d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree}, r.EndedReason)
+		d.saveUnfinished(&worker{id: r.ID, worktree: r.Worktree, harness: r.Harness, model: r.Model, sessionID: r.SessionID,
+			owner: r.Owner, ownerName: r.OwnerName, difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed}, r.EndedReason)
 		// The branch is kept when the old worker left changes. If it is gone,
 		// the new worker starts from the project's current commit.
 		// Cleanup removes an unchanged worker branch, even when its starting

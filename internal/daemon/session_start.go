@@ -358,7 +358,7 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 		cctx, cancel := context.WithTimeout(d.ctoCtx, d.cfg.Workers.filled().StartTimeout)
 		defer cancel()
 		d.claudeStartMu.Lock()
-		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil)
+		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil, nil)
 		d.claudeStartMu.Unlock()
 		if err == nil {
 			r.NativeID, r.JobID = sf.SessionID, sf.JobID

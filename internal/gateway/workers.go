@@ -667,7 +667,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	cctx, cancel := context.WithTimeout(ctx, launchWait)
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
-		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
+		Harness: p.Harness, Model: p.Model, Owner: p.Owner, OwnerName: g.store.displayName(p.Owner), Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
 		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.

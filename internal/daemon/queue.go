@@ -33,7 +33,7 @@ func (d *Daemon) admitOrQueue(l protocol.WorkerLaunch) *protocol.WorkerLaunched 
 	if l.RequireReadOnly {
 		return &protocol.WorkerLaunched{Reason: "no room for a read-only background worker"}
 	}
-	q := queuedStart{ID: protocol.NewID("q"), Owner: l.Owner, Project: l.Project, Path: l.Path, Harness: l.Harness,
+	q := queuedStart{ID: protocol.NewID("q"), Owner: l.Owner, OwnerName: l.OwnerName, Project: l.Project, Path: l.Path, Harness: l.Harness,
 		Model: l.Model, Task: l.Task, Isolation: l.Isolation, Base: l.Base, RecordTask: l.RecordTask, Permissions: l.Permissions,
 		DifficultyAsked: l.DifficultyAsked, DifficultyUsed: l.DifficultyUsed, Touches: strings.Join(l.Touches, ","), FromCTO: l.FromCTO, QueuedAt: time.Now()}
 	if err := d.st.addQueued(q); err != nil {
@@ -140,7 +140,7 @@ func (d *Daemon) processQueue(ctx context.Context) {
 // startQueued starts the worker for a queue entry that has room. The owner's
 // machine sends the task; this machine tells the owner it started.
 func (d *Daemon) startQueued(ctx context.Context, e queuedStart) {
-	l := protocol.WorkerLaunch{Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner,
+	l := protocol.WorkerLaunch{Project: e.Project, Path: e.Path, Harness: e.Harness, Model: e.Model, Owner: e.Owner, OwnerName: e.OwnerName,
 		Task: e.Task, Isolation: e.Isolation, Base: e.Base, RecordTask: e.RecordTask, Permissions: e.Permissions,
 		DifficultyAsked: e.DifficultyAsked, DifficultyUsed: e.DifficultyUsed, Touches: splitTouches(e.Touches)}
 	out, err := d.runWorkerStart(ctx, l)

@@ -74,7 +74,7 @@ func (piLauncher) start(ctx context.Context, d *Daemon, w *worker) error {
 		return err
 	}
 	defer in.Close() // the process has its own copy, so its input never closes
-	env := workerEnv(os.Environ(), map[string]string{
+	env := d.workerGitEnv(w, os.Environ(), map[string]string{
 		"AGENT_NET_WORKER": w.id,
 		"AGENT_NET_SOCKET": d.cfg.SocketPath,
 	})

@@ -186,7 +186,7 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 	if err := copyOpenCodeAuth(ctx, bin, data, state); err != nil {
 		return nil, err
 	}
-	env := workerEnv(os.Environ(), map[string]string{
+	env := d.workerGitEnv(w, os.Environ(), map[string]string{
 		"XDG_DATA_HOME":                 data,
 		"OPENCODE_SERVER_PASSWORD":      password,
 		"AGENT_NET_WORKER":              w.id,
