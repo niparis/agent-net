@@ -600,12 +600,10 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 			if changed {
 				ls.info.Status = "busy"
 				ls.info.Waiting = nil
-				d.recordActivityLocked(ls, time.Now())
 			}
 			d.mu.Unlock()
 			d.wmu.Unlock()
 			if changed {
-				d.persistActivity(ls)
 				go d.pushSession(ls)
 			}
 			continue
@@ -634,16 +632,12 @@ func (d *Daemon) reconcileOpenCode(ctx context.Context) {
 			ls.info.Status = "idle"
 		}
 		changed := ls.info.Status == "idle"
-		if changed {
-			d.recordActivityLocked(ls, time.Now())
-		}
 		d.mu.Unlock()
 		d.wmu.Unlock()
 		if next != nil {
 			go d.deliverQueuedWorkerTurn(*next)
 		}
 		if changed {
-			d.persistActivity(ls)
 			go d.pushSession(ls)
 		}
 	}
@@ -712,11 +706,9 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 			if changed {
 				ls.info.Status = "busy"
 				ls.info.Waiting = nil
-				d.recordActivityLocked(ls, time.Now())
 			}
 			d.mu.Unlock()
 			if changed {
-				d.persistActivity(ls)
 				go d.pushSession(ls)
 			}
 			continue
@@ -754,11 +746,9 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 		changed := d.sessions[key("opencode", native)] == ls && ls.info.Status == "busy" && ls.statusRevision == rev
 		if changed {
 			ls.info.Status = "idle"
-			d.recordActivityLocked(ls, time.Now())
 		}
 		d.mu.Unlock()
 		if changed {
-			d.persistActivity(ls)
 			go d.pushSession(ls)
 		}
 	}

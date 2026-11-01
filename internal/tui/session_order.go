@@ -42,19 +42,6 @@ type sessionOrder struct {
 	pending  bool
 }
 
-// sessionActive is when a session last did something, from the gateway. An
-// older gateway sends no last active time; fall back to when it last saw the
-// session, which is what the screen used before.
-func sessionActive(a protocol.AgentView) time.Time {
-	if a.LastActive > 0 {
-		return time.Unix(a.LastActive, 0)
-	}
-	if a.LastSeen > 0 {
-		return time.Unix(a.LastSeen, 0)
-	}
-	return time.Time{}
-}
-
 func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 	now := m.now()
 	if m.sessionOrder == nil {
@@ -62,20 +49,20 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 	}
 	initialized := len(m.sessionOrder) > 0
 	agents := append([]protocol.AgentView(nil), m.snap.Agents...)
-	// The first rank of a band follows real activity, newest first. The time
-	// the daemon last reported a session says nothing about its use.
 	sort.SliceStable(agents, func(i, j int) bool {
-		a, b := sessionActive(agents[i]), sessionActive(agents[j])
-		if !a.Equal(b) {
-			return a.After(b)
+		if a, b := sessionStart(agents[i]), sessionStart(agents[j]); a != b {
+			return a < b
 		}
 		return agents[i].SessionID < agents[j].SessionID
 	})
 	for _, a := range agents {
 		old, exists := m.sessionOrder[a.SessionID]
-		before := old.activity
-		if active := sessionActive(a); active.After(old.activity) {
-			old.activity = active
+		seen := time.Time{}
+		if a.LastSeen > 0 {
+			seen = time.Unix(a.LastSeen, 0)
+		}
+		if seen.After(old.activity) {
+			old.activity = seen
 		}
 		waiting := a.Waiting != nil
 		if exists && ((a.Status != old.status && a.Status == "busy") || (waiting && !old.waiting) || !reflect.DeepEqual(a.Profile, old.profile)) {
@@ -104,9 +91,7 @@ func (m *Model) updateSessionOrder(events []protocol.FeedEvent) {
 					old.rank = m.sessionFront
 				}
 			}
-		} else if (band != old.band || old.pending || old.activity.After(before)) && !now.Before(m.orderFrozenUntil) {
-			// A newer activity wins inside its band too: most recently active
-			// first, never oldest start first.
+		} else if (band != old.band || old.pending) && !now.Before(m.orderFrozenUntil) {
 			m.sessionFront--
 			old.rank = m.sessionFront
 			old.band = band
