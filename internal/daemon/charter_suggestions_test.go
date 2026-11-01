@@ -61,7 +61,7 @@ func TestCharterSuggestionsSizeAndEvidence(t *testing.T) {
 	}
 }
 
-func TestCharterSuggestionsTool(t *testing.T) {
+func TestCTOCharterSuggestionsRemoved(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, WorkerSettings{}, nil)
 	st := g.gw.Store()
@@ -85,19 +85,12 @@ func TestCharterSuggestionsTool(t *testing.T) {
 	if err = st.RememberOwnerPrompt(a, "homelab: github token things are his"); err != nil {
 		t.Fatal(err)
 	}
-	m, _, err := st.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "please"})
+	_, _, err = st.StoreMessage(protocol.MsgSend{Sender: a, Recipient: b, Body: "please"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := w.d.runCTOToolRaw(context.Background(), "charter_suggestions", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := json.Marshal(v)
-	for _, want := range []string{m.ID, "GitHub secrets", "homelab for GitHub secrets"} {
-		if !strings.Contains(string(raw), want) {
-			t.Fatalf("missing %s in %s", want, raw)
-		}
+	if _, err := w.d.runCTOToolRaw(context.Background(), "charter_suggestions", nil); err == nil {
+		t.Fatal("CTO read owner-only charter suggestions")
 	}
 }
 
