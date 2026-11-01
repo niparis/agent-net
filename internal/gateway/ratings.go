@@ -102,16 +102,32 @@ type ratingFacts struct {
 }
 
 // workerRatingFacts reads the model, harness and caller of a finished worker.
-// It prefers the run that the gateway recorded, and falls back to the worker
-// session while that session is still kept.
+// The run ID, harness and model come from the latest run. The caller and the
+// difficulty come from the first run that has them, because a follow-up run
+// after the caller messaged the worker again carries neither. It falls back to
+// the worker session while that session is still kept.
 func (s *Store) workerRatingFacts(sessionID string) (ratingFacts, bool, error) {
 	var f ratingFacts
 	var model string
-	err := s.db.QueryRow(`SELECT id, caller, harness, model, difficulty FROM worker_runs
-		WHERE session_id = ? ORDER BY id DESC LIMIT 1`, sessionID).Scan(&f.runID, &f.caller, &f.harness, &model, &f.difficulty)
+	err := s.db.QueryRow(`SELECT id, harness, model FROM worker_runs
+		WHERE session_id = ? ORDER BY id DESC LIMIT 1`, sessionID).Scan(&f.runID, &f.harness, &model)
 	found := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return f, false, err
+	}
+	if found {
+		// The first run of the session holds what the task asked for: the
+		// caller that started it and the difficulty. A follow-up run after
+		// the caller messaged the worker again has neither of its own, and
+		// the session row may already be gone after cleanup.
+		if err := s.db.QueryRow(`SELECT caller FROM worker_runs
+			WHERE session_id = ? AND caller <> '' ORDER BY id LIMIT 1`, sessionID).Scan(&f.caller); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return f, false, err
+		}
+		if err := s.db.QueryRow(`SELECT difficulty FROM worker_runs
+			WHERE session_id = ? AND difficulty <> '' ORDER BY id LIMIT 1`, sessionID).Scan(&f.difficulty); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return f, false, err
+		}
 	}
 	var sessionHarness, sessionModel, raw string
 	serr := s.db.QueryRow(`SELECT harness, model, worker FROM sessions WHERE id = ?`, sessionID).Scan(&sessionHarness, &sessionModel, &raw)
