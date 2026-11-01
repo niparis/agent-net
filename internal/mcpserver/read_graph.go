@@ -1,0 +1,151 @@
+package mcpserver
+
+// The graph read tool: agent_graph_read (tool redesign task 2b).
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sort"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/niparis/agent-net/internal/protocol"
+)
+
+type roGraphReadIn struct {
+	Node   string `json:"node"`
+	Limit  int    `json:"limit"`
+	Cursor string `json:"cursor"`
+}
+
+type roGraphNode struct {
+	Name     string            `json:"name"`
+	Kind     string            `json:"kind"`
+	Maturity string            `json:"maturity"`
+	Purpose  string            `json:"purpose"`
+	Rules    map[string]string `json:"rules"`
+}
+
+type roGraphEdge struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	Kind string `json:"kind"`
+	Mode string `json:"mode"`
+	Rule string `json:"rule"`
+}
+
+type roGraphReadOut struct {
+	Nodes      []roGraphNode `json:"nodes"`
+	Edges      []roGraphEdge `json:"edges"`
+	NextCursor string        `json:"next_cursor,omitempty"`
+	Note       string        `json:"note,omitempty"`
+}
+
+func addGraphReadTool(s *mcp.Server, call Caller) {
+	roAdd(s, "agent_graph_read", func(ctx context.Context, _ *mcp.CallToolRequest, in roGraphReadIn) (*mcp.CallToolResult, roGraphReadOut, error) {
+		out, err := roReadGraph(ctx, call, in)
+		return nil, out, err
+	})
+}
+
+func roReadGraph(ctx context.Context, call Caller, in roGraphReadIn) (roGraphReadOut, error) {
+	limit, err := roLimit(in.Limit)
+	if err != nil {
+		return roGraphReadOut{}, err
+	}
+	filters := roFilterKey(struct{ Node string }{in.Node})
+	after, err := roDecodeCursor(in.Cursor, "agent_graph_read", roCursorCaller(ctx), filters)
+	if err != nil {
+		return roGraphReadOut{}, err
+	}
+	if in.Node != "" {
+		page, err := roGraphPage(ctx, call, in.Node, 0, 0)
+		if err != nil {
+			return roGraphReadOut{}, err
+		}
+		out := roGraphReadOut{Nodes: roGraphNodes(page.Nodes), Edges: roGraphEdges(page.Edges)}
+		if len(out.Nodes) == 0 {
+			out.Note = fmt.Sprintf("No graph node is named %q. Read the graph without node to list the names.", in.Node)
+		}
+		return out, nil
+	}
+
+	nodes, edges, err := roAllGraphNodes(ctx, call)
+	if err != nil {
+		return roGraphReadOut{}, err
+	}
+	sort.SliceStable(nodes, func(i, j int) bool { return nodes[i].Name < nodes[j].Name })
+	nodeKey := func(node roGraphNode) string { return node.Name }
+	page, next := roWindow(nodes, limit, after, false, nodeKey)
+	out := roGraphReadOut{Nodes: page, Edges: edges}
+	if next != "" {
+		out.NextCursor = roEncodeCursor(roCursor{Tool: "agent_graph_read", Caller: roCursorCaller(ctx), Filters: filters, After: next})
+		out.Note = roPageNote("graph nodes")
+	}
+	return out, nil
+}
+
+func roGraphPage(ctx context.Context, call Caller, node string, offset, limit int) (protocol.PublicGraphPage, error) {
+	raw, err := call(ctx, "agent_graph", protocol.PublicGraphQuery{Node: node, Offset: offset, Limit: limit})
+	if err != nil {
+		return protocol.PublicGraphPage{}, err
+	}
+	var page protocol.PublicGraphPage
+	if err := json.Unmarshal(raw, &page); err != nil {
+		return protocol.PublicGraphPage{}, err
+	}
+	return page, nil
+}
+
+// roAllGraphNodes reads every node. The daemon pages the node list; every page
+// carries all edges.
+func roAllGraphNodes(ctx context.Context, call Caller) ([]roGraphNode, []roGraphEdge, error) {
+	var nodes []roGraphNode
+	var edges []roGraphEdge
+	offset := 0
+	for page := 0; page < 1000; page++ {
+		got, err := roGraphPage(ctx, call, "", offset, protocol.PublicGraphMaxLimit)
+		if err != nil {
+			return nil, nil, err
+		}
+		if page == 0 {
+			edges = roGraphEdges(got.Edges)
+		}
+		nodes = append(nodes, roGraphNodes(got.Nodes)...)
+		if got.Next <= 0 || len(got.Nodes) == 0 {
+			break
+		}
+		offset = got.Next
+	}
+	if edges == nil {
+		edges = []roGraphEdge{}
+	}
+	return nodes, edges, nil
+}
+
+func roGraphNodes(nodes []protocol.PublicGraphNode) []roGraphNode {
+	out := make([]roGraphNode, 0, len(nodes))
+	for _, node := range nodes {
+		purpose, maturity := "", node.Maturity
+		if node.Charter != nil {
+			purpose = node.Charter.Purpose
+			if node.Charter.Maturity != "" {
+				maturity = node.Charter.Maturity
+			}
+		}
+		rules := map[string]string{}
+		for _, rule := range node.Rules {
+			rules[rule.Name] = rule.Value
+		}
+		out = append(out, roGraphNode{Name: node.Name, Kind: node.Kind, Maturity: maturity, Purpose: purpose, Rules: rules})
+	}
+	return out
+}
+
+func roGraphEdges(edges []protocol.PublicGraphEdge) []roGraphEdge {
+	out := make([]roGraphEdge, 0, len(edges))
+	for _, edge := range edges {
+		out = append(out, roGraphEdge{From: edge.From, To: edge.To, Kind: edge.Kind, Mode: edge.Mode, Rule: edge.Rule})
+	}
+	return out
+}
