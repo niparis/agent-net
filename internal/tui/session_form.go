@@ -164,23 +164,50 @@ func (m Model) sessionProjectValue(project, nodeID, host string) string {
 	return project
 }
 
-// sessionHarnessFor picks the harness of the newest session in the project,
-// then the first supported harness the machine has, then Claude.
-func (m Model) sessionHarnessFor(project, nodeID string) string {
-	newest, harness := int64(-1), ""
-	for _, a := range m.snap.Agents {
-		if protocol.IsOwner(a.Harness) || firstNonEmpty(a.Repo.Project, a.Profile.Project) != project {
-			continue
-		}
-		if nodeID != "" && a.NodeID != nodeID {
-			continue
-		}
-		if a.LastSeen > newest {
-			newest, harness = a.LastSeen, a.Harness
-		}
+// sessionDefaultsFor picks the most-used harness and model on the project's
+// machine. Ties go to the most recently seen session.
+func (m Model) sessionDefaultsFor(project, nodeID string) (string, string) {
+	type count struct {
+		n      int
+		newest int64
 	}
+	harnesses := map[string]count{}
+	for _, a := range m.snap.Agents {
+		if protocol.IsOwner(a.Harness) || a.Harness == "" || !strings.EqualFold(firstNonEmpty(a.Repo.Project, a.Profile.Project), project) || (nodeID != "" && a.NodeID != nodeID) {
+			continue
+		}
+		c := harnesses[a.Harness]
+		c.n++
+		if a.LastSeen > c.newest {
+			c.newest = a.LastSeen
+		}
+		harnesses[a.Harness] = c
+	}
+	choose := func(counts map[string]count) string {
+		best := ""
+		var top count
+		for name, c := range counts {
+			if c.n > top.n || (c.n == top.n && (c.newest > top.newest || (c.newest == top.newest && name < best))) {
+				best, top = name, c
+			}
+		}
+		return best
+	}
+	harness := choose(harnesses)
 	if harness != "" {
-		return harness
+		models := map[string]count{}
+		for _, a := range m.snap.Agents {
+			if a.Harness != harness || a.Model == "" || !strings.EqualFold(firstNonEmpty(a.Repo.Project, a.Profile.Project), project) || (nodeID != "" && a.NodeID != nodeID) {
+				continue
+			}
+			c := models[a.Model]
+			c.n++
+			if a.LastSeen > c.newest {
+				c.newest = a.LastSeen
+			}
+			models[a.Model] = c
+		}
+		return harness, choose(models)
 	}
 	for _, n := range m.snap.Nodes {
 		if nodeID != "" && n.NodeID != nodeID {
@@ -189,12 +216,12 @@ func (m Model) sessionHarnessFor(project, nodeID string) string {
 		for _, want := range []string{"claude", "codex", "opencode", "pi"} {
 			for _, hi := range n.Harnesses {
 				if hi.Name == want {
-					return want
+					return want, ""
 				}
 			}
 		}
 	}
-	return "claude"
+	return "claude", ""
 }
 
 // startSessionForm opens the form filled from the selected row.
@@ -264,7 +291,9 @@ func (m Model) startSessionFormFromNode() (Model, tea.Cmd) {
 	m.sform.nodeID, m.sform.hostname, m.sform.path = nodeID, host, path
 	m.sform.in[sProject].SetValue(m.sessionProjectValue(node.Name, nodeID, host))
 	m.sform.initialProject = m.sform.value(sProject)
-	m.sform.in[sHarness].SetValue(m.sessionHarnessFor(node.Name, nodeID))
+	harness, model := m.sessionDefaultsFor(node.Name, nodeID)
+	m.sform.in[sHarness].SetValue(harness)
+	m.sform.in[sModel].SetValue(model)
 	m.resetSessionFolder()
 	m.mode = modeSessionForm
 	m.notice = notice{}

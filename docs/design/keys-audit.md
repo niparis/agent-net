@@ -196,6 +196,7 @@ Tools plan modal and picker:
 | `space` | Pause or resume traffic. |
 | `/` | Find a node; Enter selects the first match, Esc cancels. |
 | `enter` | Open the selected agent card. |
+| `n` | Open the new session form filled from the selected project. |
 | `?` | Graph help. `?` or `esc` closes it. |
 | `q` | Quit. |
 | `tab`, `C` | Focus the CTO box. |
