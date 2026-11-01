@@ -96,29 +96,30 @@ func TestIsGitRepo(t *testing.T) {
 }
 
 // A loose model name is resolved on the gateway against the machine's list,
-// and the result says how.
+// and the result says how. The provider is subscription-backed (openai maps to
+// the Codex quota), because a loose name never resolves to a pay-per-use one.
 func TestWorkerModelIsResolved(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNode(t, g, shortSet, nil) // the list is fake/m1 and fake/m2
+	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"openai/m1", "openai/m2"}), nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 
 	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "M2", Task: "x"})
-	if res.Model != "fake/m2" || res.ModelNote != "M2 -> fake/m2" {
+	if res.Model != "openai/m2" || res.ModelNote != "M2 -> openai/m2" {
 		t.Errorf("resolved model: %q, note %q", res.Model, res.ModelNote)
 	}
 	rec := readFake(t, repo)
-	if m, _ := rec.SessionBody["model"].(map[string]any); m["providerID"] != "fake" || m["id"] != "m2" {
+	if m, _ := rec.SessionBody["model"].(map[string]any); m["providerID"] != "openai" || m["id"] != "m2" {
 		t.Errorf("the harness got model %v", rec.SessionBody["model"])
 	}
 	// An exact name needs no note.
-	res = w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "x"})
-	if res.Model != "fake/m1" || res.ModelNote != "" {
+	res = w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "openai/m1", Task: "x"})
+	if res.Model != "openai/m1" || res.ModelNote != "" {
 		t.Errorf("exact model: %q, note %q", res.Model, res.ModelNote)
 	}
 	// Two models match equally well: an error that lists them.
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake", Task: "x"})
-	if err == nil || !strings.Contains(err.Error(), "fake/m1, fake/m2") {
+	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "openai", Task: "x"})
+	if err == nil || !strings.Contains(err.Error(), "openai/m1, openai/m2") {
 		t.Errorf("tie: %v", err)
 	}
 	// Claude has no list: the alias passes through.

@@ -10,6 +10,14 @@ The gateway stores a roster of named harness, model and optional effort profiles
 
 Automatic choices use the owner's worker provider allowlist, or subscription and quota-reading defaults when unset; a recent successful worker gets more rotation weight than one without.
 
+## Amendment: explicit model names and pay-per-use providers
+
+An explicitly named model must never resolve to a pay-per-use provider by accident. When the caller gives no harness, the gateway resolves the name against every harness that reported a model list and prefers a subscription-backed harness: the Claude and Codex harnesses, the `opencode-go` provider, and any provider with a usable quota reading. A pay-per-use provider comes last.
+
+A loose or bare name is resolved only among subscription-backed models. A pay-per-use provider is used only when the full provider id is written, for example `opencode/gpt-6.1-sol`. When only pay-per-use models match, the start is refused and the error names the full id to write. The start result's `model_note` says `uses pay-per-use provider (<provider>)` whenever one is used.
+
+The pay-per-use rule is the same one the worker provider defaults use, kept in `SubscriptionProvider` (`internal/protocol/worker_providers.go`): providers without a usable quota reading or subscription are pay-per-use, including OpenRouter and OpenCode Zen (`opencode/`).
+
 ## Protected providers
 
 The owner may protect providers used by the orchestrator, because workers on the same subscription spend the limit the orchestrator needs to keep working. When protection is set, automatic selection first considers unprotected profiles at or above the difficulty minimum, then protected profiles if none qualify or all are out of quota. The result explains the choice. Explicit model requests remain available and carry a note. The owner can change the list and reason; setup only suggests it.

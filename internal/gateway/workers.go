@@ -547,7 +547,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			automaticNote += ")"
 		}
 	} else if p.Harness == "" {
-		p.Harness = "opencode"
+		if p.Model == "" {
+			p.Harness = "opencode"
+		} else {
+			harness, err := g.chooseWorkerHarness(node, p.Model, p.RequireReadOnly)
+			if err != nil {
+				return none, err
+			}
+			p.Harness = harness
+		}
 	}
 	var hi *protocol.HarnessInfo
 	for i := range node.Harnesses {
@@ -568,6 +576,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		if err != nil {
 			return none, err
 		}
+	}
+	if p.Model != "" && protocol.PayPerUseProvider(p.Harness, p.Model, quotas) {
+		if modelNote != "" {
+			modelNote += "; "
+		}
+		modelNote += fmt.Sprintf("uses pay-per-use provider (%s)", protocol.ProfileProvider(p.Harness, p.Model))
 	}
 	if !automatic && isProtected(p.Harness, p.Model, protected) {
 		if modelNote != "" {
@@ -702,10 +716,14 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 		if err != nil {
 			return "", "", err
 		}
-		res, err := protocol.ResolveModelRankedQuota(asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), failedSet(succeededAt), quotas)
+		res, err := protocol.ResolveWorkerModelRankedQuota(harness, asked, hi.Models, usage, hi.ModelProviders, failedSet(failedAt), failedSet(succeededAt), quotas)
 		if err != nil {
 			var nm *protocol.NoModelMatchError
-			if errors.As(err, &nm) {
+			var pu *protocol.PayPerUseModelError
+			switch {
+			case errors.As(err, &pu):
+				return "", "", reject("%s model %v on %s", harness, err, node.Hostname)
+			case errors.As(err, &nm):
 				msg := fmt.Sprintf("no %s model matches %q on %s", harness, asked, node.Hostname)
 				if len(nm.Closest) > 0 {
 					msg += "; closest: " + strings.Join(nm.Closest, ", ")
@@ -740,6 +758,73 @@ func (g *Gateway) resolveWorkerModel(node *protocol.NodeView, hi *protocol.Harne
 		model = resolved
 	}
 	return model, modelNote, nil
+}
+
+// chooseWorkerHarness picks the harness for an explicit model when the caller
+// named none. It resolves the model against every harness that reported a list
+// and prefers a subscription-backed harness over a pay-per-use one (decision
+// 0026, amendment). A bare name that only matches a pay-per-use provider is
+// refused with the full id to use.
+func (g *Gateway) chooseWorkerHarness(node *protocol.NodeView, model string, requireReadOnly bool) (string, error) {
+	type candidate struct {
+		harness      string
+		subscription bool
+		exact        bool
+		order        int
+	}
+	quotas := g.nodeQuotas(node.NodeID)
+	var cands []candidate
+	var payErr, opencodeErr, firstErr error
+	for i := range node.Harnesses {
+		h := &node.Harnesses[i]
+		if !protocol.WorkerHarnessSupported(h.Name) || len(h.Models) == 0 {
+			continue
+		}
+		if requireReadOnly && !protocol.WorkerReadOnlySupported(h.Name) {
+			continue
+		}
+		resolved, _, err := g.resolveWorkerModel(node, h, h.Name, model, "")
+		if err != nil {
+			var pe *protocol.PayPerUseModelError
+			if errors.As(err, &pe) && payErr == nil {
+				payErr = err
+			}
+			if h.Name == "opencode" {
+				opencodeErr = err
+			}
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		cands = append(cands, candidate{
+			harness:      h.Name,
+			subscription: protocol.SubscriptionProvider(h.Name, resolved, quotas),
+			exact:        protocol.ModelIDWrittenInFull(model, resolved),
+			order:        i,
+		})
+	}
+	if len(cands) == 0 {
+		switch {
+		case payErr != nil:
+			return "", payErr
+		case opencodeErr != nil:
+			return "", opencodeErr
+		case firstErr != nil:
+			return "", firstErr
+		}
+		return "", reject("no harness on %s lists %q", node.Hostname, model)
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].subscription != cands[j].subscription {
+			return cands[i].subscription
+		}
+		if cands[i].exact != cands[j].exact {
+			return cands[i].exact
+		}
+		return cands[i].order < cands[j].order
+	})
+	return cands[0].harness, nil
 }
 
 // workerContinue starts a new worker from an ended one. The gateway knows the
@@ -832,9 +917,13 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		return none, reject("machine %s refused the worker: %v", old.Hostname, err)
 	}
 	c, err := decode[protocol.WorkerContinued](raw)
+	var modelNote string
 	if err == nil {
 		if track, books, nerr := g.choiceNotes(old.NodeID, old.Hostname, c.Project, c.Harness, c.Model); nerr == nil {
 			c.Track, c.Playbooks = track, books
+		}
+		if c.Model != "" && protocol.PayPerUseProvider(c.Harness, c.Model, g.nodeQuotas(old.NodeID)) {
+			modelNote = fmt.Sprintf("uses pay-per-use provider (%s)", protocol.ProfileProvider(c.Harness, c.Model))
 		}
 	}
 	if err == nil && c.Queued && c.QueueID != "" {
@@ -845,7 +934,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 			"project", c.Project, "harness", c.Harness, "model", c.Model, "owner", p.Owner, "position", c.Position,
 			"reason", c.Reason, "continues", old.SessionID)
 		return protocol.WorkerStartAnswer{NodeID: old.NodeID, Hostname: old.Hostname, Project: c.Project, Path: c.Path,
-			Harness: c.Harness, Model: c.Model, Queued: true, QueueID: c.QueueID, Position: c.Position, Reason: c.Reason,
+			Harness: c.Harness, Model: c.Model, ModelNote: modelNote, Queued: true, QueueID: c.QueueID, Position: c.Position, Reason: c.Reason,
 			Permissions: old.Worker.Permissions, Track: c.Track, Playbooks: c.Playbooks}, nil
 	}
 	if err != nil || c.SessionID == "" {
@@ -862,7 +951,7 @@ func (g *Gateway) workerContinue(ctx context.Context, nc *nodeConn, p protocol.W
 		"worker", c.WorkerID, "project", c.Project, "path", c.Path, "harness", c.Harness, "model", c.Model,
 		"owner", p.Owner, "from_node", nc.id, "continues", old.SessionID, "worktree", c.Worktree, "branch", c.Branch)
 	return protocol.WorkerStartAnswer{Starting: c.Starting, SessionID: c.SessionID, NodeID: old.NodeID, Hostname: old.Hostname,
-		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model,
+		Project: c.Project, Path: c.Path, Harness: c.Harness, Model: c.Model, ModelNote: modelNote,
 		Worktree: c.Worktree, Branch: c.Branch, ProjectRules: c.ProjectRules, Task: c.Task,
 		Permissions: old.Worker.Permissions, Track: c.Track, Playbooks: c.Playbooks}, nil
 }

@@ -110,20 +110,20 @@ func TestCodexRecentSuccessBreaksTheTie(t *testing.T) {
 // failed a worker.
 func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
-	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"fake/m1", "fake/m2"}), nil)
+	w := startWorkerNodeWithDetect(t, g, shortSet, inventoryWithModels("opencode", []string{"openai/m1", "openai/m2"}), nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	// A success on fake/m1 makes it the best match for the loose name "m", so
-	// a failure on it would visibly push it behind fake/m2.
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:handback done"})
+	// A success on openai/m1 makes it the best match for the loose name "m",
+	// so a failure on it would visibly push it behind openai/m2.
+	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "openai/m1", Task: "FAKE:handback done"})
 	w.workerStopped(t, g, protocol.StopHandback)
 	w.waitNotice(t, 1)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/m1", Task: "FAKE:ignore first"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "openai/m1", Task: "FAKE:ignore first"})
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	w.workerStopped(t, g, protocol.StopRequested)
 	var track *protocol.TrackRecord
 	eventually(t, "the gateway has the stopped run", func() bool {
-		tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "fake/m1", 30*24*time.Hour)
+		tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "openai/m1", 30*24*time.Hour)
 		if err != nil || !ok {
 			return false
 		}
@@ -137,7 +137,7 @@ func TestStopOnRequestIsNotAModelFailure(t *testing.T) {
 		t.Errorf("a stop on request demoted the model: %v %v", failed, err)
 	}
 	next := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "m", Task: "FAKE:ignore second"})
-	if next.Model != "fake/m1" {
+	if next.Model != "openai/m1" {
 		t.Errorf("a stopped model was not chosen again: %+v", next)
 	}
 	if strings.Contains(next.ModelNote, "failed a worker") || strings.Contains(next.ModelNote, "ranks last") {
