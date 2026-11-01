@@ -45,6 +45,9 @@ type Options struct {
 	Restart func()
 	// Retention says how long data is kept. The zero value keeps everything.
 	Retention Retention
+	// TempFolders lists folders whose sessions belong to no project. Nil uses
+	// the system temporary folders; an empty list turns the rule off (tests).
+	TempFolders []string
 }
 
 type Gateway struct {
@@ -163,6 +166,9 @@ func New(opts Options) (*Gateway, error) {
 	}
 	if opts.Now != nil {
 		store.now = opts.Now
+	}
+	if opts.TempFolders != nil {
+		store.tempFolders = opts.TempFolders
 	}
 	if err := store.SetAllOffline(); err != nil {
 		store.Close()
@@ -467,7 +473,7 @@ func (g *Gateway) serve(ctx context.Context, nc *nodeConn) {
 			nc.answer(h)
 			continue
 		}
-		if h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
+		if h.Type == "cto.proposal.validate" || h.Type == "tools.read_file" || h.Type == "tools.import" || h.Type == "tools.import_folder" || h.Type == "tools.keep_copy" || h.Type == "gateway.backup" || h.Type == "tools.plan" || h.Type == "tools.apply" || h.Type == "tools.undo" || h.Type == "tools.skill_details" {
 			go g.answer(ctx, nc, h, raw)
 			continue
 		}
@@ -758,6 +764,18 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 			return nil, reject("owner authority required")
 		}
 		return g.readSkillText(ctx, p)
+	case "tools.keep_copy":
+		p, err := decode[protocol.ToolCopyChoice](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.keepSkillCopy(ctx, p)
+	case "tools.import_folder":
+		p, err := decode[protocol.ToolFolderImport](raw)
+		if err != nil || !g.validToolOwner(nc, p.Owner) {
+			return nil, reject("owner authority required")
+		}
+		return g.importSkillFolder(ctx, p)
 	case "tools.import":
 		p, err := decode[protocol.ToolImport](raw)
 		if err != nil {

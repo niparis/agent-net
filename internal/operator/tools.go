@@ -160,3 +160,31 @@ func (s *Client) ToolsSummary(ctx context.Context, req protocol.SkillSummaryRequ
 	}](s.action(ctx, "tools_summary", req))
 	return result.Summary, err
 }
+
+func (s *Client) ToolsMCPAdd(ctx context.Context, p protocol.MCPAdd) error {
+	_, err := s.action(ctx, "tools_mcp_add", p)
+	return err
+}
+func (s *Client) ToolsMCPRemove(ctx context.Context, name string) error {
+	_, err := s.action(ctx, "tools_mcp_remove", protocol.MCPName{Name: name})
+	return err
+}
+func (s *Client) ToolsMCPTest(ctx context.Context, name string) error {
+	_, err := s.action(ctx, "tools_mcp_test", protocol.MCPName{Name: name})
+	return err
+}
+func (s *Client) ToolsMCPList(ctx context.Context) ([]protocol.MCPServer, error) {
+	result, err := decodeCall[struct {
+		Servers []protocol.MCPServer `json:"servers"`
+	}](s.action(ctx, "tools_mcp_list", nil))
+	return result.Servers, err
+}
+func (s *Client) ToolsImportFolder(ctx context.Context, p protocol.ToolImportLocation) error {
+	_, err := s.action(ctx, "tools_import_folder", p)
+	return err
+}
+
+func (s *Client) ToolsKeepCopy(ctx context.Context, p protocol.ToolCopyChoice) error {
+	_, err := s.action(ctx, "tools_keep_copy", p)
+	return err
+}

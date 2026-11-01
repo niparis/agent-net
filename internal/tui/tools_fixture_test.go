@@ -128,11 +128,14 @@ func toolFixtureItems() []protocol.ToolItem {
 // fakeTools answers the Tools tab from memory and records what it was asked.
 type fakeTools struct {
 	*fakeSource
-	mu       sync.Mutex
-	items    []protocol.ToolItem
-	accepted []string
-	needs    []protocol.ToolNeed
-	itemsErr error
+	addedMCP              []protocol.MCPAdd
+	removedMCP, testedMCP []string
+	folders               []protocol.ToolImportLocation
+	mu                    sync.Mutex
+	items                 []protocol.ToolItem
+	accepted              []string
+	needs                 []protocol.ToolNeed
+	itemsErr              error
 
 	plans      []protocol.ToolPlanRequest
 	applied    []string

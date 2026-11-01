@@ -22,6 +22,9 @@ func newTestStore(t *testing.T) (*Store, *clock) {
 	t.Cleanup(func() { s.Close() })
 	c := &clock{t: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
 	s.now = c.now
+	// Test sessions live in the test's own temporary folders. A test that
+	// wants the temp rule sets s.tempFolders itself.
+	s.tempFolders = []string{}
 	return s, c
 }
 

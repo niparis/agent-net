@@ -437,6 +437,7 @@ func (m Model) mapFocusView(w, h int) []string {
 		title += "  " + lipgloss.NewStyle().Foreground(roleCTO).Render("architect")
 	}
 	head = append(head, clip(title, w))
+	head = append(head, m.nodeToolsLine(node.Name))
 	purposeRows := 3
 	if h < 16 {
 		purposeRows = 2

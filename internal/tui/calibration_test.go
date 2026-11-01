@@ -90,20 +90,35 @@ func calibrationSnapshot() protocol.Calibration {
 	}
 }
 
-func TestQuotaCalibrationTable(t *testing.T) {
+func TestQuotaQualityPanel(t *testing.T) {
 	m := newModel(80, 40)
 	m.tab = 2
 	m.snap.Calibration = calibrationSnapshot()
 	view := ansi.Strip(strings.Join(m.calibrationView(80), "\n"))
+	if strings.Contains(ansi.Strip(m.View()), "Difficulty calibration") {
+		t.Error("Quotas view still contains Difficulty calibration")
+	}
+	qualityStart := strings.Index(view, "Quality analysis · read only")
+	if qualityStart < 0 {
+		t.Fatal("missing Quality analysis panel")
+	}
+	quality := view[qualityStart:]
 	for _, want := range []string{
-		"Difficulty calibration · read only",
-		"CALLER", "LEVEL", "MEDIAN", "TASKS", "WOULD",
-		"agent-net", "homelab-agent *", "normal", "hard", "simple",
-		"lower", "keep", "not enough tasks",
-		"network: normal 1 · 9 tasks · keep",
 		"ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14",
 		"defects reported later: 2",
-		"weak caller: follows the network and cannot lower a tier",
+	} {
+		if !strings.Contains(quality, want) {
+			t.Errorf("Quality analysis panel missing %q", want)
+		}
+	}
+	for _, removed := range []string{"MEDIAN", "WOULD", "network:", "last 7 finished tasks"} {
+		if strings.Contains(view, removed) {
+			t.Errorf("removed calibration content %q still shown", removed)
+		}
+	}
+	for _, want := range []string{
+		"ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14",
+		"defects reported later: 2",
 		"Quality analysis · read only",
 		"agent ◂ all agents ▸",
 		"FAMILY", "FOLLOW-UPS", "LATE DEFECTS", "HEADACHE",
@@ -114,6 +129,124 @@ func TestQuotaCalibrationTable(t *testing.T) {
 	} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in:\n%s", want, view)
+		}
+	}
+}
+
+func TestQuotaQualityPanelWithoutCalibrationCallers(t *testing.T) {
+	m := newModel(80, 40)
+	m.snap.Calibration = protocol.Calibration{Quality: qualityLevelSnapshot(), Defects: 3}
+	view := ansi.Strip(strings.Join(m.calibrationView(80), "\n"))
+	for _, want := range []string{"ratings: none yet", "defects reported later: 3"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("Quality analysis panel missing %q", want)
+		}
+	}
+}
+
+// quotaPanelText also checks that a visible panel closes before the next one.
+func quotaPanelText(t *testing.T, view, title string) string {
+	t.Helper()
+	start := strings.Index(view, "╭─"+title)
+	if start < 0 {
+		t.Fatalf("missing %s panel:\n%s", title, view)
+	}
+	var body []string
+	for i, line := range strings.Split(view[start:], "\n") {
+		if i > 0 && strings.HasPrefix(line, "╭") {
+			t.Fatalf("%s panel has no bottom border:\n%s", title, view)
+		}
+		body = append(body, line)
+		if strings.HasPrefix(line, "╰") {
+			return strings.Join(body, "\n")
+		}
+	}
+	t.Fatalf("%s panel has no bottom border:\n%s", title, view)
+	return ""
+}
+
+func TestQuotaQualityOverflowKeepsBordersAndScrolls(t *testing.T) {
+	for _, size := range [][2]int{{120, 34}, {80, 24}} {
+		t.Run(fmt.Sprintf("%dx%d", size[0], size[1]), func(t *testing.T) {
+			m := newModel(size[0], size[1])
+			m.tab = quotasTab
+			m.snap.Calibration = calibrationSnapshot()
+			initial := ansi.Strip(m.View())
+			view := initial
+			quality := quotaPanelText(t, view, "Quality analysis")
+			quotaPanelText(t, view, "Subscriptions")
+			if !strings.Contains(quality, "more below") {
+				t.Errorf("overflow hint missing:\n%s", quality)
+			}
+			golden(t, fmt.Sprintf("calibration_%dx%d", size[0], size[1]), m.View())
+			found := false
+			for range 60 {
+				m = keys(m, "down")
+				view = ansi.Strip(m.View())
+				quality = quotaPanelText(t, view, "Quality analysis")
+				if strings.Contains(quality, "ratings: deepseek-v4.1-flash 3 (1 later)") &&
+					strings.Contains(quality, "defects reported later: 2") {
+					found = true
+					golden(t, fmt.Sprintf("calibration_scrolled_%dx%d", size[0], size[1]), m.View())
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("scrolling never shows ratings and defects:\n%s", view)
+			}
+			for range 60 {
+				m = keys(m, "up")
+			}
+			if got := ansi.Strip(m.View()); got != initial {
+				t.Error("scrolling up did not restore the first page")
+			}
+		})
+	}
+}
+
+func TestQuotaOverflowPreservesAllPanelBordersAcrossHeights(t *testing.T) {
+	// Include the room available with both the current CTO box and a shorter
+	// box. Scroll through Subscriptions, Quality and Workers, including joins.
+	for _, height := range []int{8, 12, 17, 22, 28} {
+		m := newModel(120, 34)
+		m.snap.Calibration = calibrationSnapshot()
+		m.snap.WorkerProfiles = []protocol.WorkerProfile{{Harness: "codex", Model: "gpt-6.1-sol"}}
+		var seen strings.Builder
+		for scroll := range 80 {
+			m.quotaScroll = scroll
+			rows := m.quotasView(120, height)
+			if len(rows) != height {
+				t.Fatalf("height %d scroll %d: got %d rows", height, scroll, len(rows))
+			}
+			open := false
+			for _, row := range rows {
+				row = ansi.Strip(row)
+				seen.WriteString(row + "\n")
+				switch {
+				case strings.HasPrefix(row, "╭"):
+					if open {
+						t.Fatalf("height %d scroll %d: panel lost its bottom border", height, scroll)
+					}
+					open = true
+				case strings.HasPrefix(row, "╰"):
+					if !open {
+						t.Fatalf("height %d scroll %d: panel lost its top border", height, scroll)
+					}
+					open = false
+				case strings.HasPrefix(row, "│"):
+					if !open {
+						t.Fatalf("height %d scroll %d: panel body lost its top border", height, scroll)
+					}
+				}
+			}
+			if open {
+				t.Fatalf("height %d scroll %d: panel lost its bottom border", height, scroll)
+			}
+		}
+		for _, want := range []string{"Subscriptions", "Quality analysis", "Workers", "ratings: deepseek", "defects reported later: 2", "headache ="} {
+			if !strings.Contains(seen.String(), want) {
+				t.Errorf("height %d: scrolling never showed %q", height, want)
+			}
 		}
 	}
 }
@@ -152,7 +285,7 @@ func TestQualityGoldens(t *testing.T) {
 }
 
 func qualityPanel(q protocol.QualityAnalysis, w, agent int, detail bool) string {
-	return ansi.Strip(strings.Join(qualityView(q, w, agent, detail), "\n"))
+	return ansi.Strip(strings.Join(qualityView(protocol.Calibration{Quality: q}, w, agent, detail), "\n"))
 }
 
 // qualityColumn reads one fixed-width column from a table row. Column starts
@@ -179,7 +312,7 @@ func qualityRows(view string) (header string, rows []string) {
 			header = line
 		case strings.Contains(line, " · ") && strings.Contains(line, " tasks"):
 			// Level header.
-		case strings.Contains(line, "agent ◂"), strings.Contains(line, "ratings:"):
+		case strings.Contains(line, "agent ◂"), strings.Contains(line, "ratings:"), strings.Contains(line, "defects reported later:"):
 		case strings.Contains(line, "headache ="), strings.Contains(line, "by severity"):
 		case strings.HasPrefix(line, "╭"), strings.HasPrefix(line, "╰"):
 		default:

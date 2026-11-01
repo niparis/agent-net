@@ -392,7 +392,7 @@ func TestToolsApplyConfirmKeys(t *testing.T) {
 					m.tl.row = i
 				}
 			}
-			m = pressKey(m, "enter")
+			m = resolveTools(m.openFix())
 			if m.tl.modal == nil {
 				t.Fatal("enter did not open the plan")
 			}

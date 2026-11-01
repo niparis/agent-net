@@ -254,20 +254,80 @@ func (m Model) quotasView(w, h int) []string {
 
 	workers := m.quotaModelsView(w)
 	out = append(out, workers...)
-	if len(out) > h {
-		body := out[1:]
-		room := max(h-1, 0)
-		start := min(m.quotaScroll, max(len(body)-room, 0))
-		end := min(start+room, len(body))
-		workerStart := len(body) - len(workers)
-		if start <= workerStart && end > workerStart && end-workerStart < 3 {
-			end = workerStart
-		}
-		out = append(out[:1], body[start:end]...)
-	}
+	out = append(out[:1], quotaPanelViewport(out[1:], w, max(h-1, 0), m.quotaScroll)...)
 
 	for len(out) < h {
 		out = append(out, "")
+	}
+	return out
+}
+
+// quotaPanelViewport scrolls the tab's rows while keeping the borders of every
+// visible panel. The height comes from View after it reserves the CTO box.
+func quotaPanelViewport(rows []string, w, h, scroll int) []string {
+	if len(rows) <= h {
+		return rows
+	}
+	// A continued panel repeats its heading and adds a "more above" row.
+	start := min(max(scroll, 0), max(len(rows)-h+2, 0))
+	var out []string
+	hint := func(text string) string {
+		return panel("", []string{sDim.Render(text)}, w, roleAccent)[1]
+	}
+	moreBelow := hint("more below · up/down to scroll")
+	for i := 0; i < len(rows); {
+		end := i + 1
+		framed := strings.HasPrefix(stripStyles(rows[i]), "╭")
+		if framed {
+			for end < len(rows) && !strings.HasPrefix(stripStyles(rows[end-1]), "╰") {
+				end++
+			}
+		}
+		if start >= end {
+			i = end
+			continue
+		}
+		room := h - len(out)
+		if !framed {
+			if room == 0 {
+				break
+			}
+			out = append(out, rows[i])
+			i = end
+			continue
+		}
+		bodyStart := max(i+1, start)
+		above := bodyStart > i+1
+		bodyRoom := room - 2
+		if above {
+			bodyRoom--
+		}
+		bodyLeft := end - 1 - bodyStart
+		// If the next panel cannot start here, reserve its cue as an
+		// extra row. Replacing the last body row would make that row
+		// unreachable even after scrolling to the panel's end.
+		below := bodyLeft > bodyRoom || (end < len(rows) && bodyRoom-bodyLeft < 4)
+		if below {
+			bodyRoom--
+		}
+		if bodyRoom < 0 || (below && bodyRoom == 0) {
+			// A terminal too short for a panel must not show half a frame.
+			break
+		}
+		out = append(out, rows[i])
+		if above {
+			out = append(out, hint("more above · up/down to scroll"))
+		}
+		bodyEnd := min(bodyStart+bodyRoom, end-1)
+		out = append(out, rows[bodyStart:bodyEnd]...)
+		if below {
+			out = append(out, moreBelow)
+		}
+		out = append(out, rows[end-1])
+		if below {
+			break
+		}
+		i = end
 	}
 	return out
 }
