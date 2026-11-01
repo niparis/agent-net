@@ -126,7 +126,20 @@ func requireHerdrOpened(t *testing.T, log, title string, command ...string) {
 		t.Fatalf("herdr was not called: %v", err)
 	}
 	calls := string(raw)
-	for _, want := range append([]string{"tab create", "--label " + title, "pane run w1:p1"}, command...) {
+	// A TUI inside herdr gets its view split beside it. A caller on another
+	// machine has no pane here, so the daemon creates a tab for it.
+	label := "pane rename w1:p1 " + title
+	if strings.Contains(calls, "pane split --pane "+testHerdrPane) {
+		if !strings.Contains(calls, label) {
+			t.Errorf("herdr calls %q do not include %q", calls, label)
+		}
+	} else {
+		label = "tab create --label " + title
+		if !strings.Contains(calls, label) {
+			t.Errorf("herdr calls %q do not include %q", calls, label)
+		}
+	}
+	for _, want := range append([]string{"pane run w1:p1"}, command...) {
 		if !strings.Contains(calls, want) {
 			t.Errorf("herdr calls %q do not include %q", calls, want)
 		}
@@ -150,7 +163,7 @@ func TestEnterHerdrOpensClaudeBackground(t *testing.T) {
 		}
 		return id != ""
 	})
-	p := enterOf(t, n, id, "")
+	p := enterOfHerdr(t, n, id, fakeHerdrSocket(log))
 	if len(p.Argv) != 0 || !strings.Contains(p.Note, "opened garden in herdr") {
 		t.Errorf("plan %+v", p)
 	}
@@ -170,8 +183,10 @@ func TestEnterHerdrOpensCTO(t *testing.T) {
 			}})
 			cli := cliClient(t, n)
 			cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+			cli.mustCall("cto_enter", nil) // register the CTO; no TUI location, so no view
 			var p protocol.EnterPlan
-			if err := json.Unmarshal(cli.mustCall("cto_enter", nil), &p); err != nil {
+			q := inHerdrEnter(protocol.EnterRequest{SessionID: protocol.CTONodeName}, fakeHerdrSocket(log))
+			if err := json.Unmarshal(cli.mustCall("session_enter", q), &p); err != nil {
 				t.Fatal(err)
 			}
 			if len(p.Argv) != 0 || !strings.Contains(p.Note, "opened CTO in herdr") {
@@ -194,7 +209,8 @@ func TestSessionStartHerdrCodex(t *testing.T) {
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
 	var r protocol.StartedSession
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}), &r)
+	q := inHerdrStart(protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}, fakeHerdrSocket(log))
+	mustJSON(t, n.cli.mustCall("session_start", q), &r)
 	if r.EnterPlan == nil || len(r.EnterPlan.Argv) != 0 || !strings.Contains(r.EnterPlan.Note, "opened garden in herdr") {
 		t.Errorf("start %+v", r)
 	}
@@ -228,7 +244,7 @@ func TestWorkerStartOpensNoViewUntilEnter(t *testing.T) {
 			if agent == nil || agent.Profile.Name == "" {
 				t.Fatal("worker has no display name")
 			}
-			plan := enterOf(t, n.node, r.SessionID, "")
+			plan := enterOfHerdr(t, n.node, r.SessionID, fakeHerdrSocket(log))
 			if !plan.OpenedHerdr {
 				t.Fatalf("enter did not open the worker: %+v", plan)
 			}
@@ -244,7 +260,7 @@ func TestWorkerStartOpensNoViewUntilEnter(t *testing.T) {
 	}
 }
 func TestWorkerResumeOpensNoView(t *testing.T) {
-	bin, log := fakeOpenHerdr(t)
+	_, log := fakeOpenHerdr(t)
 	g := startGateway(t, t.TempDir(), "")
 	n := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "garden")
@@ -255,7 +271,6 @@ func TestWorkerResumeOpensNoView(t *testing.T) {
 	eventually(t, "worker ended", func() bool { return n.d.workerCount() == 0 })
 	n.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: r.SessionID, Body: "one more thing"})
 	eventually(t, "worker resumed", func() bool { return n.d.workerCount() == 1 })
-	_ = bin
 	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "pane run") {
 		t.Fatalf("resumed worker opened a view: %s", raw)
 	}
@@ -269,12 +284,11 @@ func TestEnterRemoteStartedWorkerUsesHerdrClient(t *testing.T) {
 	repo := newRepo(t, "garden")
 	remote.register(t, repo)
 	r := remote.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "garden", Harness: "opencode", Task: "FAKE:ignore"})
-	eventually(t, "remote worker view", func() bool {
-		raw, _ := os.ReadFile(remoteLog)
-		return strings.Contains(string(raw), "pane run w1:p1")
-	})
+	if raw, _ := os.ReadFile(remoteLog); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("worker start opened a view: %s", raw)
+	}
 	waitSessionOnGateway(t, local.node, r.SessionID)
-	p := enterOf(t, local.node, r.SessionID, "")
+	p := enterOfHerdr(t, local.node, r.SessionID, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr {
 		t.Fatalf("remote worker plan: %+v", p)
 	}
@@ -283,9 +297,10 @@ func TestEnterRemoteStartedWorkerUsesHerdrClient(t *testing.T) {
 		t.Fatal("worker absent from gateway")
 	}
 	requireHerdrOpened(t, localLog, agent.Profile.Name, "--remote", remote.d.hostName())
+	// The remote machine has no asking TUI, so it opens one tab for the session.
 	raw, _ := os.ReadFile(remoteLog)
-	if strings.Count(string(raw), "pane run w1:p1") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
-		t.Fatalf("remote worker view was duplicated: %s", raw)
+	if strings.Count(string(raw), "pane run w1:p1") != 1 || strings.Count(string(raw), "tab create") != 1 {
+		t.Fatalf("remote worker view: %s", raw)
 	}
 }
 
@@ -322,7 +337,7 @@ func TestEnterHerdrFocusesExistingPane(t *testing.T) {
 		}
 		return id != ""
 	})
-	p := enterOf(t, n, id, "")
+	p := enterOfHerdr(t, n, id, f.sock)
 	calls := f.calls(t)
 	if !strings.Contains(calls, "agent focus w1:pB") || strings.Contains(calls, "tab create") || len(p.Argv) != 0 || !strings.Contains(p.Note, "opened garden in herdr") {
 		t.Fatalf("plan %+v; calls %q", p, calls)
@@ -344,8 +359,52 @@ func TestEnterWithoutHerdrExplainsFallback(t *testing.T) {
 		return id != ""
 	})
 	p := enterOf(t, n, id, "")
-	if len(p.Argv) != 3 || p.Argv[1] != "attach" || !strings.Contains(strings.ToLower(p.Note), "herdr") || !strings.Contains(strings.ToLower(p.Note), "install") {
+	if len(p.Argv) != 3 || p.Argv[1] != "attach" || p.OpenedHerdr {
 		t.Fatalf("fallback %+v", p)
+	}
+}
+
+// A TUI outside herdr cannot see a herdr pane, so Enter hands over the
+// terminal instead of opening a view the owner would not see.
+func TestEnterOutsideHerdrHandsOverTerminal(t *testing.T) {
+	bins := fakeBin(t, "claude")
+	_, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	ea := &enterAdapter{fakeAdapter: &fakeAdapter{harness: "claude"}, kind: "bg", job: "job_42"}
+	n := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = bins; c.Adapters = []Adapter{ea} }})
+	ea.setSessions(protocol.SessionInfo{Harness: "claude", NativeID: "abcdefgh-1234", PID: 1, Name: "garden", Mode: protocol.ModeBackground})
+	var id string
+	eventually(t, "session", func() bool {
+		if s := n.d.Sessions(); len(s) == 1 {
+			id = s[0].SessionID
+		}
+		return id != ""
+	})
+	p := enterOf(t, n, id, "")
+	if p.OpenedHerdr || len(p.Argv) != 3 || p.Argv[0] != bins["claude"] || p.Argv[1] != "attach" {
+		t.Fatalf("plan %+v", p)
+	}
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "tab create") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "pane run") {
+		t.Fatalf("herdr opened a view for a TUI outside herdr: %s", raw)
+	}
+}
+
+// A start asked by a TUI outside herdr hands the terminal plan back, and no
+// herdr view is opened.
+func TestSessionStartOutsideHerdrHandsOverTerminal(t *testing.T) {
+	bins := fakeBin(t, "codex")
+	_, log := fakeOpenHerdr(t)
+	g := startGateway(t, t.TempDir(), "")
+	n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = bins })
+	repo := newRepo(t, "garden")
+	n.register(t, repo)
+	var r protocol.StartedSession
+	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "codex", FirstMessage: "hello"}), &r)
+	if r.EnterPlan == nil || r.EnterPlan.OpenedHerdr || len(r.EnterPlan.Argv) != 2 || r.EnterPlan.Argv[0] != bins["codex"] || r.EnterPlan.Argv[1] != "hello" {
+		t.Fatalf("start %+v", r)
+	}
+	if raw, _ := os.ReadFile(log); strings.Contains(string(raw), "tab create") || strings.Contains(string(raw), "pane split") || strings.Contains(string(raw), "pane run") {
+		t.Fatalf("herdr opened a view for a TUI outside herdr: %s", raw)
 	}
 }
 
@@ -358,6 +417,7 @@ func TestSessionStartAndResumeHerdrClaude(t *testing.T) {
 			repo := newRepo(t, "garden")
 			c.register(t, repo)
 			t.Cleanup(func() { killFakeClaude(t, repo) })
+			socket := fakeHerdrSocket(log)
 			var r protocol.StartedSession
 			if resume {
 				id, err := g.gw.Store().UpsertSession(c.d.cfg.NodeID, protocol.SessionInfo{Harness: "claude", NativeID: "11111111-0000-4000-8000-000000000000", Cwd: repo, Name: "garden"})
@@ -367,9 +427,9 @@ func TestSessionStartAndResumeHerdrClaude(t *testing.T) {
 				if err := g.gw.Store().SetSessionOffline(c.d.cfg.NodeID, id); err != nil {
 					t.Fatal(err)
 				}
-				mustJSON(t, c.cli.mustCall("session_resume", protocol.SessionResumeRequest{SessionID: id}), &r)
+				mustJSON(t, c.cli.mustCall("session_resume", inHerdrResume(protocol.SessionResumeRequest{SessionID: id}, socket)), &r)
 			} else {
-				mustJSON(t, c.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "claude", FirstMessage: "hello"}), &r)
+				mustJSON(t, c.cli.mustCall("session_start", inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "claude", FirstMessage: "hello"}, socket)), &r)
 			}
 			eventually(t, "started", func() bool {
 				mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
@@ -405,18 +465,18 @@ func TestEnterHerdrRemoteClientInLocalTab(t *testing.T) {
 		a, err := local.d.agentView(context.Background(), id)
 		return err == nil && a.SessionID == id
 	})
-	p := enterOf(t, local, id, "")
+	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr || len(p.Argv) != 0 || p.Note != "opened garden in herdr" {
 		t.Fatalf("plan %+v", p)
 	}
 	requireHerdrOpened(t, remoteLog, "garden", "attach", "job_42")
 	requireHerdrOpened(t, localLog, "garden", "--remote", remote.cfg.Hostname)
-	p = enterOf(t, local, id, "")
+	p = enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr {
 		t.Fatalf("second plan %+v", p)
 	}
 	raw, _ := os.ReadFile(localLog)
-	if strings.Count(string(raw), "tab create") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
+	if strings.Count(string(raw), "pane split") != 1 || !strings.Contains(string(raw), "tab focus w1:t1") {
 		t.Fatalf("second enter duplicated the tab: %s", raw)
 	}
 }
@@ -432,12 +492,15 @@ func TestSessionStartHerdrRemoteCodex(t *testing.T) {
 	repo := newRepo(t, "garden")
 	remote.register(t, repo)
 	var r protocol.StartedSession
-	mustJSON(t, local.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "codex", NodeID: remote.d.NodeID()}), &r)
+	q := inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "codex", NodeID: remote.d.NodeID()}, fakeHerdrSocket(localLog))
+	mustJSON(t, local.cli.mustCall("session_start", q), &r)
 	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
 		t.Fatalf("remote start %+v", r)
 	}
-	requireHerdrOpened(t, remoteLog, "garden", bins["codex"])
-	requireHerdrOpened(t, localLog, "garden", "--remote", remote.d.cfg.Hostname)
+	if raw, _ := os.ReadFile(remoteLog); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("remote start opened a view: %s", raw)
+	}
+	requireHerdrOpened(t, localLog, "garden", "ssh", remote.d.cfg.Hostname, bins["codex"])
 }
 
 func TestEnterHerdrFocusesPlainTerminal(t *testing.T) {
@@ -456,7 +519,7 @@ func TestEnterHerdrFocusesPlainTerminal(t *testing.T) {
 		}
 		return id != ""
 	})
-	p := enterOf(t, n, id, "")
+	p := enterOfHerdr(t, n, id, f.sock)
 	if !p.OpenedHerdr || !strings.Contains(f.calls(t), "tab focus w1:t1") {
 		t.Fatalf("plan %+v calls %q", p, f.calls(t))
 	}
@@ -532,7 +595,8 @@ func TestSessionStartHerdrPiDoesNotNeedTmux(t *testing.T) {
 	repo := newRepo(t, "garden")
 	n.register(t, repo)
 	var r protocol.StartedSession
-	mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "pi"}), &r)
+	q := inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "pi"}, fakeHerdrSocket(log))
+	mustJSON(t, n.cli.mustCall("session_start", q), &r)
 	if r.EnterPlan == nil || !r.EnterPlan.OpenedHerdr {
 		t.Fatalf("initial start %+v", r)
 	}
@@ -564,9 +628,7 @@ func TestCTOSessionProposalStartsInHerdr(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("proposals %v %v", items, err)
 	}
-	if err := c.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
+	c.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(log)))
 	items, err = c.d.proposalRunner().list()
 	if err != nil {
 		t.Fatal(err)
@@ -633,7 +695,7 @@ func TestEnterHerdrFindsExistingClientBySessionID(t *testing.T) {
 		}
 		return id != ""
 	})
-	p := enterOf(t, n, id, "")
+	p := enterOfHerdr(t, n, id, f.sock)
 	if !p.OpenedHerdr || p.HerdrPane != "w1:pB" || !strings.Contains(f.calls(t), "agent focus w1:pB") || strings.Contains(f.calls(t), "tab create") {
 		t.Fatalf("plan %+v calls %q", p, f.calls(t))
 	}
@@ -673,7 +735,7 @@ func TestEnterHerdrRemotePrivateWorkerKeepsCredentialsLocal(t *testing.T) {
 	remote.d.wmu.Unlock()
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} }})
 	waitSessionOnGateway(t, local, id)
-	p := enterOf(t, local, id, "")
+	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr || p.Note != "opened worker in herdr" || len(p.Env) != 0 {
 		t.Fatalf("plan %+v", p)
 	}
@@ -707,7 +769,7 @@ func TestEnterHerdrRemotePrivateCodexKeepsTokenLocal(t *testing.T) {
 	}
 	local := startNode(t, g, nodeOpts{cfg: func(c *Config) { c.HarnessPaths = map[string]string{"herdr": localBin} }})
 	waitSessionOnGateway(t, local, id)
-	p := enterOf(t, local, id, "")
+	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr || len(p.Env) != 0 {
 		t.Fatalf("plan %+v", p)
 	}
@@ -752,21 +814,21 @@ func TestCTOSessionProposalRemoteStartOpensLocalHerdr(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("proposals %v %v", items, err)
 	}
-	if err := local.d.proposalRunner().decide(context.Background(), items[0].ID, true); err != nil {
-		t.Fatal(err)
-	}
+	local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, fakeHerdrSocket(localLog)))
 	eventually(t, "remote proposal opened locally", func() bool { data, _ := os.ReadFile(localLog); return strings.Contains(string(data), "pane run w1:p1") })
-	requireHerdrOpened(t, remoteLog, "garden", "attach")
-	requireHerdrOpened(t, localLog, "garden", "--remote", remote.d.cfg.Hostname)
+	if raw, _ := os.ReadFile(remoteLog); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("remote proposal opened a view there: %s", raw)
+	}
+	requireHerdrOpened(t, localLog, "garden", "ssh", remote.d.cfg.Hostname)
 }
 
-func TestEnterWithoutHerdrOrTerminalIncludesInstallHint(t *testing.T) {
+func TestEnterWithoutHerdrOrTerminalExplainsChecks(t *testing.T) {
 	withoutLocalHerdr(t)
 	fakeTmux(t, "")
 	g := startGateway(t, t.TempDir(), "")
 	n, _, id := enterNode(t, g, "pi", protocol.SessionInfo{NativeID: "pi-1", PID: 1, Name: "garden"}, nil, nil)
 	p := enterOf(t, n, id, "")
-	if len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "install") || !strings.Contains(strings.ToLower(p.Note), "herdr") {
+	if p.OpenedHerdr || len(p.Argv) != 0 || !strings.Contains(strings.ToLower(p.Note), "herdr") || !strings.Contains(strings.ToLower(p.Note), "tmux") {
 		t.Fatalf("note %+v", p)
 	}
 }
@@ -780,7 +842,8 @@ func TestSessionStartHerdrClaudeWithoutJobID(t *testing.T) {
 	c.register(t, repo)
 	t.Cleanup(func() { killFakeClaude(t, repo) })
 	var r protocol.StartedSession
-	mustJSON(t, c.cli.mustCall("session_start", protocol.SessionStartRequest{Project: "garden", Harness: "claude"}), &r)
+	q := inHerdrStart(protocol.SessionStartRequest{Project: "garden", Harness: "claude"}, fakeHerdrSocket(log))
+	mustJSON(t, c.cli.mustCall("session_start", q), &r)
 	eventually(t, "started without job ID", func() bool {
 		mustJSON(t, c.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
 		if r.Status == "failed" {
@@ -801,7 +864,7 @@ func TestSessionResumeHerdrUsesIDWhenNameMissing(t *testing.T) {
 	repo := newRepo(t, "garden")
 	native := "11111111-0000-4000-8000-000000000000"
 	t.Cleanup(func() { killFakeClaude(t, repo) })
-	r, err := c.d.resumeAgent(context.Background(), protocol.AgentView{Harness: "claude", NativeID: native, Cwd: repo}, "", "")
+	r, err := c.d.resumeAgent(context.Background(), protocol.AgentView{Harness: "claude", NativeID: native, Cwd: repo}, fakeHerdrSocket(log), testHerdrPane)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -875,14 +938,17 @@ func testRemoteCTOProposalApproval(t *testing.T, all bool) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("proposal %v %v", items, err)
 	}
+	socket := fakeHerdrSocket(localLog)
 	if all {
-		local.cli.mustCall("proposal_answer", map[string]string{"action": "A"})
+		local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{Action: "A"}, socket))
 	} else {
-		local.cli.mustCall("proposal_answer", map[string]string{"node_id": remote.d.NodeID(), "proposal_id": items[0].ID, "action": "a"})
+		local.cli.mustCall("proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"}, socket))
 	}
 	eventually(t, "remote proposal opened on owner", func() bool { raw, _ := os.ReadFile(localLog); return strings.Contains(string(raw), "pane run w1:p1") })
-	requireHerdrOpened(t, remoteLog, "garden", "attach")
-	requireHerdrOpened(t, localLog, "garden", "--remote", remote.d.cfg.Hostname)
+	if raw, _ := os.ReadFile(remoteLog); strings.Contains(string(raw), "pane run") || strings.Contains(string(raw), "tab create") {
+		t.Fatalf("remote proposal opened a view there: %s", raw)
+	}
+	requireHerdrOpened(t, localLog, "garden", "ssh", remote.d.cfg.Hostname)
 	if q := waitHerdrNotice(t, notices); q["text"] != "opened garden in herdr" || q["herdr_opened"] != true {
 		t.Fatalf("notice %v", q)
 	}
@@ -930,7 +996,7 @@ func TestCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 	if err != nil || len(items) != 1 {
 		t.Fatalf("proposals %v %v", items, err)
 	}
-	if _, err := approver.Call(context.Background(), "proposal_answer", map[string]string{"proposal_id": items[0].ID, "action": "a"}); err != nil {
+	if _, err := approver.Call(context.Background(), "proposal_answer", inHerdrAnswer(protocol.CTOProposalAnswer{ID: items[0].ID, Action: "a"}, filepath.Join(t.TempDir(), "h.sock"))); err != nil {
 		t.Fatal(err)
 	}
 	q := waitHerdrNotice(t, notices)
@@ -972,9 +1038,10 @@ func TestRemoteCTOApprovedCodexWithoutHerdrStartsInApprovingTUI(t *testing.T) {
 			if err != nil || len(items) != 1 {
 				t.Fatalf("proposals %v %v", items, err)
 			}
-			answer := map[string]string{"node_id": remote.d.NodeID(), "proposal_id": items[0].ID, "action": "a"}
+			socket := filepath.Join(t.TempDir(), "h.sock")
+			answer := inHerdrAnswer(protocol.CTOProposalAnswer{NodeID: remote.d.NodeID(), ID: items[0].ID, Action: "a"}, socket)
 			if all {
-				answer = map[string]string{"action": "A"}
+				answer = inHerdrAnswer(protocol.CTOProposalAnswer{Action: "A"}, socket)
 			}
 			if _, err := approver.Call(context.Background(), "proposal_answer", answer); err != nil {
 				t.Fatal(err)

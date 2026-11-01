@@ -159,6 +159,36 @@ func herdrAgentPane(id, term string) string {
 	return `{"pane_id":"` + id + `","terminal_id":"` + term + `","agent":"claude"}`
 }
 
+// testHerdrPane is the pane of the asking TUI in these tests: the daemon splits
+// the new view beside it instead of creating a tab.
+const testHerdrPane = "w1:p0"
+
+// fakeHerdrSocket is the absolute socket of the fake herdr whose call log is at
+// log. The fake does not read the socket; the tests assert on the calls.
+func fakeHerdrSocket(log string) string {
+	return filepath.Join(filepath.Dir(log), "h.sock")
+}
+
+func inHerdrEnter(q protocol.EnterRequest, socket string) protocol.EnterRequest {
+	q.HerdrSocket, q.HerdrPaneID = socket, testHerdrPane
+	return q
+}
+
+func inHerdrStart(q protocol.SessionStartRequest, socket string) protocol.SessionStartRequest {
+	q.HerdrSocket, q.HerdrPaneID = socket, testHerdrPane
+	return q
+}
+
+func inHerdrResume(q protocol.SessionResumeRequest, socket string) protocol.SessionResumeRequest {
+	q.HerdrSocket, q.HerdrPaneID = socket, testHerdrPane
+	return q
+}
+
+func inHerdrAnswer(q protocol.CTOProposalAnswer, socket string) protocol.CTOProposalAnswer {
+	q.HerdrSocket, q.HerdrPaneID = socket, testHerdrPane
+	return q
+}
+
 func herdrPlanFor(pid int, q protocol.EnterRequest, viaGateway bool) (protocol.EnterPlan, bool) {
 	d := &Daemon{}
 	return d.herdrPlan(protocol.SessionInfo{PID: pid}, q, protocol.EnterPlan{Host: "h"}, "s", viaGateway)
@@ -506,7 +536,7 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 	}})
 	waitSessionOnGateway(t, local, id)
 
-	p := enterOf(t, local, id, "")
+	p := enterOfHerdr(t, local, id, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr || len(p.Argv) != 0 || p.Dir != "" || len(p.Env) != 0 || p.Host != remote.cfg.Hostname {
 		t.Fatalf("plan %+v", p)
 	}
@@ -521,7 +551,7 @@ func TestEnterRemoteHerdrUsesLocalClient(t *testing.T) {
 		c.EnterSSHHosts = map[string]string{remote.cfg.Hostname: "me@box"}
 	}})
 	waitSessionOnGateway(t, alias, id)
-	p = enterOf(t, alias, id, "")
+	p = enterOfHerdr(t, alias, id, fakeHerdrSocket(localLog))
 	if !p.OpenedHerdr {
 		t.Fatalf("alias plan %+v", p)
 	}
@@ -592,7 +622,7 @@ func TestEnterHerdrThroughSessionEnter(t *testing.T) {
 		}
 		return id != ""
 	})
-	raw, err := cliClient(t, n).call("session_enter", protocol.EnterRequest{SessionID: id, HerdrSocket: f.sock})
+	raw, err := cliClient(t, n).call("session_enter", inHerdrEnter(protocol.EnterRequest{SessionID: id}, f.sock))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -80,7 +80,18 @@ func enterNode(t *testing.T, g *testGateway, harness string, info protocol.Sessi
 
 func enterOf(t *testing.T, n *node, id, tmuxSocket string) protocol.EnterPlan {
 	t.Helper()
-	raw, err := cliClient(t, n).call("session_enter", protocol.EnterRequest{SessionID: id, TmuxSocket: tmuxSocket})
+	return enterRequest(t, n, protocol.EnterRequest{SessionID: id, TmuxSocket: tmuxSocket})
+}
+
+// enterOfHerdr asks for a session from a TUI inside the herdr server at socket.
+func enterOfHerdr(t *testing.T, n *node, id, socket string) protocol.EnterPlan {
+	t.Helper()
+	return enterRequest(t, n, inHerdrEnter(protocol.EnterRequest{SessionID: id}, socket))
+}
+
+func enterRequest(t *testing.T, n *node, q protocol.EnterRequest) protocol.EnterPlan {
+	t.Helper()
+	raw, err := cliClient(t, n).call("session_enter", q)
 	if err != nil {
 		t.Fatalf("session_enter: %v", err)
 	}
