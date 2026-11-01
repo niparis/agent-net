@@ -531,7 +531,8 @@ func TestWorkersPanelRedesign(t *testing.T) {
 		"unused",
 		"T S N H V: share of next 20",
 		"░<25% ▒<50% ▓<75% █≥75%",
-		"terra codex: complete 5 · continue 0 · fix 0 · picked for trivial, simple, normal and hard",
+		"luna codex: picked for trivial, simple and normal",
+		"terra codex: complete 5 · continue 0 · fix 0 · picked for hard",
 		"Strong at",
 	} {
 		if !strings.Contains(plain, want) {
@@ -568,7 +569,7 @@ func TestWorkersPanelShowsRotationShares(t *testing.T) {
 		"normal": {Recent: []string{terra, terra, luna}},
 	}}
 	view := ansi.Strip(strings.Join(m.quotaModelsView(120), "\n"))
-	for _, want := range []string{"(next start)", "of the last 3 normal starts", "terra codex: 2", "luna codex: 1"} {
+	for _, want := range []string{"(next start)", "of the last 3 normal star", "terra codex: 2", "luna codex: 1"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("missing %q in:\n%s", want, view)
 		}
@@ -611,7 +612,7 @@ func TestWorkerPanelHeatmapMatchesChooserShares(t *testing.T) {
 	scores := []protocol.ModelScore{{Match: "gpt-6.1-terra", Score: 42.3}, {Match: "deepseek-v4.1-flash", Score: 32.5}}
 	m := heatmapModel(t, profiles, scores, []string{"codex", "opencode-go"})
 	m.usage.raw.Local.Quotas = &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{
-		{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 45, ResetsAt: t0.Add(84 * time.Hour).Unix()}}},
+		{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 20, ResetsAt: t0.Add(84 * time.Hour).Unix()}}},
 	}}
 
 	candidates := []protocol.WorkerModelCandidate{
@@ -619,7 +620,7 @@ func TestWorkerPanelHeatmapMatchesChooserShares(t *testing.T) {
 		{Name: "deepseek", Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"},
 	}
 	q := &protocol.Quotas{GeneratedAt: t0.Unix(), Providers: []protocol.QuotaProvider{
-		{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 45, ResetsAt: t0.Add(84 * time.Hour).Unix()}}},
+		{Provider: "codex", Windows: []protocol.QuotaWindow{{Kind: "weekly", PercentUsed: 20, ResetsAt: t0.Add(84 * time.Hour).Unix()}}},
 	}}
 	rotation := m.snap.WorkerRotation.Clone()
 	counts := map[string]int{}
@@ -638,7 +639,8 @@ func TestWorkerPanelHeatmapMatchesChooserShares(t *testing.T) {
 			t.Errorf("%s row lacks %s: %s", p.Name, want, row)
 		}
 	}
-	// Terra is five points behind pace, so it takes more of the next 20 starts.
+	// Terra is thirty points behind pace, so it takes more of the next 20 starts
+	// even though the over-qualification penalty favours weaker models.
 	terra := heatmapRow(t, view, "terra")
 	deepseek := heatmapRow(t, view, "deepseek")
 	if counts["openai-codex/gpt-6.1-terra"] <= counts["opencode-go/deepseek-v4.1-flash"] {

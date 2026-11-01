@@ -110,6 +110,73 @@ func TestChooseWorkerModelAdequateScore(t *testing.T) {
 	}
 }
 
+// workerShareStartsForTest matches the Quotas heatmap window.
+const workerShareStartsForTest = 20
+
+// With today's scores and equal quota pace, over-qualification keeps the
+// weakest adequate model in front at trivial difficulty and saves the strong
+// models for harder work. Every adequate model still rotates.
+func TestChooseWorkerModelOverQualificationPenalty(t *testing.T) {
+	candidates := []WorkerModelCandidate{
+		{Name: "luna", Harness: "codex", Model: "gpt-6-luna"},
+		{Name: "deepseek", Harness: "opencode", Model: "opencode-go/deepseek-v4.1-flash"},
+		{Name: "sonnet", Harness: "claude", Model: "claude-sonnet-5-5"},
+		{Name: "terra", Harness: "codex", Model: "gpt-6.1-terra"},
+		{Name: "sol", Harness: "codex", Model: "gpt-6.1-sol"},
+	}
+	scores := []ModelScore{
+		{Match: "gpt-6-luna", Score: 23.3},
+		{Match: "deepseek-v4.1-flash", Score: 32.5},
+		{Match: "claude-sonnet-5-5", Score: 41.1},
+		{Match: "gpt-6.1-terra", Score: 42.3},
+		{Match: "gpt-6.1-sol", Score: 46.1},
+	}
+	shares := func(level string, starts int) map[string]int {
+		counts := map[string]int{}
+		rotation := &WorkerRotation{}
+		for i := 0; i < starts; i++ {
+			choice, err := ChooseWorkerModel(candidates, level, scores, nil, nil, nil, rotation)
+			if err != nil {
+				t.Fatalf("%s start %d: %v", level, i, err)
+			}
+			counts[choice.Name]++
+		}
+		return counts
+	}
+
+	trivial := shares("trivial", workerShareStartsForTest)
+	for name, count := range trivial {
+		if count <= 0 {
+			t.Errorf("trivial: adequate model %s has no share: %v", name, trivial)
+		}
+	}
+	for name, count := range trivial {
+		if name != "luna" && count >= trivial["luna"] {
+			t.Errorf("trivial: %s beat the weakest adequate model: %v", name, trivial)
+		}
+	}
+	if trivial["sol"]*100/workerShareStartsForTest >= 10 {
+		t.Errorf("trivial: sol got %d of %d starts, want under 10%%: %v", trivial["sol"], workerShareStartsForTest, trivial)
+	}
+
+	hard := shares("hard", workerShareStartsForTest)
+	for _, name := range []string{"sonnet", "terra"} {
+		if hard[name] <= hard["sol"] {
+			t.Errorf("hard: %s did not beat sol: %v", name, hard)
+		}
+	}
+	for _, name := range []string{"sonnet", "terra", "sol"} {
+		if hard[name] <= 0 {
+			t.Errorf("hard: adequate model %s has no share: %v", name, hard)
+		}
+	}
+	for _, name := range []string{"luna", "deepseek"} {
+		if hard[name] != 0 {
+			t.Errorf("hard: below-minimum model %s got %d starts: %v", name, hard[name], hard)
+		}
+	}
+}
+
 func TestChooseWorkerModelQuotaPaceBeforeScore(t *testing.T) {
 	now := time.Unix(1000000, 0)
 	c := []WorkerModelCandidate{{Model: "cheap", Provider: "a"}, {Model: "strong", Provider: "b"}}
@@ -153,9 +220,10 @@ func TestChooseWorkerModelTrackRecord(t *testing.T) {
 	}
 }
 
-// Terra is five percent behind its weekly pace and DeepSeek has no reading.
-// Over twenty normal starts both models must appear, and the lagging one must
-// still win more often.
+// Terra is well behind its weekly pace and DeepSeek has no reading. Over
+// twenty normal starts both models must appear, and the lagging one must still
+// win more often. The gap is wide enough to overcome the over-qualification
+// penalty that favours the weaker adequate model.
 func TestChooseWorkerModelWeightedRotationSpreads(t *testing.T) {
 	now := time.Unix(1000000, 0)
 	candidates := []WorkerModelCandidate{
@@ -164,8 +232,8 @@ func TestChooseWorkerModelWeightedRotationSpreads(t *testing.T) {
 	}
 	scores := []ModelScore{{Match: "terra", Score: 42.3}, {Match: "deepseek", Score: 32.5}}
 	// The window resets in 84 hours of a 168 hour week, so 50 percent has
-	// elapsed and 45 percent is used: five points behind pace.
-	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "codex", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 45, ResetsAt: now.Add(84 * time.Hour).Unix()}}}}}
+	// elapsed and 20 percent is used: thirty points behind pace.
+	q := &Quotas{GeneratedAt: now.Unix(), Providers: []QuotaProvider{{Provider: "codex", Windows: []QuotaWindow{{Kind: "weekly", PercentUsed: 20, ResetsAt: now.Add(84 * time.Hour).Unix()}}}}}
 	rotation := &WorkerRotation{}
 	counts := map[string]int{}
 	var last WorkerModelChoice
