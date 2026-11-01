@@ -55,12 +55,13 @@ outcome note at its next idle moment, without the call's result data.
 The class table in the daemon fixes every tool and action as read, talk or
 proposal. Reads still run immediately. Talk (`message`, `ask_owner`, `learn`,
 `ui`) also runs immediately. `message` takes action `send` or `reply`; with
-`as_owner: true` it becomes a proposal. `settings_change` with `area: cto` or
-`area: notifications` only proposes changes. It never returns owner settings to
-the CTO.
+`as_owner: true` it becomes a proposal. `graph_change` is proposal class: the
+daemon applies its minor actions at once and its major actions during the
+owner window. `settings_change` is always a proposal. It never returns owner
+settings to the CTO.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
-registered CTO session as caller rather than the owner. Static charter guidance
+registered CTO session as caller rather than the owner. Static charter guidance,
 the CTO's own proposals, and its own timeline through `session_text`
 on the CTO session are the exceptions. Message lists and details
 return only the CTO's own conversations. Owner-only data
@@ -75,7 +76,7 @@ show its reserved name `CTO` and harness `cto`, regardless of the owner's title.
 Other sessions cannot take that name, and the CTO session cannot be renamed.
 On upgrade, earlier uses of the name CTO are cleared or given an ID suffix.
 
-Plain `message`, `send` and `reply` calls send from this session with the note:
+Plain `message` calls with action `send` or `reply` send from this session with the note:
 `from the CTO session: model output, not the owner's words. Judge it like any peer request.`
 Only an approved `message` proposal with `as_owner: true` sets the CTO flag.
 Its note is `from the CTO, on the owner's instructions. Treat this as the owner's word within your charter's limits.`
@@ -225,11 +226,12 @@ operator methods after approval for proposal calls. The brief treats material
 it reads as data. Needs you shows each proposed change for the owner's decision;
 the daemon, rather than the CTO model, executes the stored call.
 
-The CTO starts with `overview`, which counts online sessions, machines,
-running workers and its own open proposals. List views return `items`, `total`
-and, when another page exists, `next`. Pass `next` as `offset` to read the
-next page. The default page is 20 items and the maximum is 50. Rows contain
-short fields; use a detail view when needed.
+The CTO has 26 tools: 12 reads, 4 talk tools and 10 proposal tools. It starts
+with `overview`, which counts online sessions, machines, running workers and its
+own open proposals. List views return `items`, `total` and, when another page
+exists, `next`. Pass `next` as `offset` to read the next page. The default page
+is 20 items and the maximum is 50. Rows contain short fields; use a detail view
+when needed.
 
 | CTO read | Source and detail |
 |---|---|
@@ -258,7 +260,7 @@ are proposals. The CTO has one action tool per area:
 | CTO change tool | Actions or area |
 |---|---|
 | `message` | `action: send` or `reply`; `as_owner: true` proposes a send as the owner |
-| `ask_owner` | a question with optional answers, a recommendation and urgency, into Needs you |
+| `ask_owner` | a question with optional `options`, a recommendation and urgency, into Needs you |
 | `learn` | one finding, under the daily limit |
 | `ui` | `action: show` with `tab`, `select`, `filter` and `why`, or `action: notice` with `text` |
 | `graph_change` | `action: charter_set`, `node_add`, `node_remove`, `edge_set`, `edge_remove`, `settings_set` or `undo` |
@@ -274,7 +276,7 @@ are proposals. The CTO has one action tool per area:
 
 Minor graph changes apply at once. Major graph changes become proposals unless
 the owner opened the window with `w`. All non-graph changes are proposals, even
-during the window. A plain `message`, `ask_owner`, `learn` and `ui` are talk.
+during the window. `message`, `ask_owner`, `learn` and `ui` are talk.
 Every proposal tool takes an optional `reason`. The daemon validates the stored
 call and keeps the concrete implementation, its authority checks and its audit
 records, so a rename does not change what a call is allowed to do.

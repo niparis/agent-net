@@ -21,8 +21,8 @@ Model score overrides, difficulty minimums and the worker provider allowlist are
 `scores_get`, `scores_set`, `difficulty_get`, `difficulty_set`, `worker_providers_get`, `worker_providers_set`, `protected_providers_get` and `protected_providers_set` methods use the
 owner gate and refuse agent sessions. Their gateway endpoints require an
 enrolled node token, which is an owner credential. Scores and minimums are
-limited to 0 through 100. The private CTO `score_set` tool uses the same
-settings only after the owner approves its proposal.
+limited to 0 through 100. The CTO's `settings_change` with `area: score` uses
+the same settings only after the owner approves its proposal.
 
 Worker profiles are stored at the gateway. The owner CLI and bound non-worker agent sessions may list, add or remove them. The private CTO may list them and propose adds or removals. The daemon and gateway both reject worker sessions, and the gateway verifies that the requesting session belongs to the sending node. It resolves each added model against the advertised model list of a machine and records the requester and time. The gateway does not verify that an agent received an owner's instruction, so agents must follow their normal instruction and approval rules. Registered profiles remain subject to the owner-controlled worker provider filter.
 
@@ -400,18 +400,21 @@ tools and actions fail closed; a completeness test checks the MCP registry.
 |---|---|
 | Read | Uses the ordinary agent dispatcher with the CTO caller; static guide and own timeline only otherwise |
 | Talk | Sends, replies, learning and UI views/notices run immediately |
-| Graph | Applies minor changes or graph changes during the owner window; otherwise proposes |
 | Proposal | Validates and stores; only the owner-approved runner executes |
+
+The class table has exactly these three classes. `graph_change` is a proposal
+call, and the daemon checks its graph policy before the proposal route: a minor
+action applies at once, a major action applies during the owner window, and
+anything else is stored for the owner.
 
 Proposal calls cover major graph/charter/node settings outside the owner window,
 and always names, trust, policy, workers,
 held and inbox answers and outcomes, tools plans/apply/undo/import, MCP changes
 and calls, integrations, notifications, CTO settings, providers, scores,
-profiles, playbooks, projects, invites, onboarding restart, `cto_send`,
-`cto_new`, and `message` with `as_owner: true`. Empty settings calls also
-propose; they return no settings. Plain sends and replies use the registered
-CTO session and carry the peer note. Only an approved as-owner message carries
-the CTO authority note.
+profiles, playbooks, projects, invites, onboarding restart, `cto_new`, and
+`message` with `as_owner: true`. Empty settings calls also propose; they return
+no settings. Plain sends and replies use the registered CTO session and carry
+the peer note. Only an approved as-owner message carries the CTO authority note.
 
 Validation checks the advertised schema and current IDs, enrollment, names and
 policy using the same checks as execution. Graph and answer validations roll
@@ -424,8 +427,10 @@ world may have changed.
 
 **Rule 2: reads.** Implemented in design part 4. CTO data views reuse ordinary
 agent dispatch with the CTO caller; views without an ordinary source are
-removed. Static charter guidance and the CTO's own timeline remain. Outcome
-notes carry no private result. The parity and canary tests enforce this rule.
+removed. Static charter guidance and the CTO's own timeline remain. Owner-only
+data enters the CTO only when the owner types it or hands an item over. Outcome
+notes carry no private result. The rule holds in every turn, whoever started it.
+The parity and canary tests enforce this rule.
 The CTO now uses its registered network session for these checks. The owner
 can hand one item over from the TUI with `c`: the preview shows the exact
 text, Enter sends it with `owner_send` to the CTO session, and the text is
@@ -706,6 +711,18 @@ Decision [0007](decisions/0007-usage-and-session-text.md). Two kinds of data are
 - **Anyone who can reach the gateway port.** Without a valid code or token they cannot join, list agents or read messages. They can fetch the gateway CA certificate and the agent-net release binaries (`/v1/ca` and `/install/bin/<os>/<arch>` need no login). The gateway listens on `0.0.0.0:7420` by default. Keep it on a LAN, a VPN or Tailscale, and not on the public internet.
 - **Eavesdropping on the gateway machine.** Messages are stored as plain text in `gateway.db` for 30 days by default. They are encrypted on the wire, not at rest. Anyone with access to the gateway's disk can read them, and the files are readable by your user only (mode 0600), not by other users.
 - **A malicious gateway machine.** It hands out the binaries that other machines install, and it sees every message.
+
+### Residual CTO risks
+
+The CTO design lists what its rules leave open ([design section 10](design/cto-as-agent.md#10-risks)). The main leftovers:
+
+- **The owner approves without reading.** A proposal is checked again before it runs, and its diff is computed when the owner opens it. But the owner approves what the detail shows, not what the CTO saw.
+- **What the owner shares can be repeated.** Typed text and handed-over items enter the CTO conversation. Its brief asks it not to repeat them to other agents, but that is advice, not a data gate.
+- **A peak of proposals.** Deduplication, the cap of 20 open proposals and request rules on edges to the CTO limit a flood. A noisy sender can still fill the slots until the owner declines its proposals or sets `never` on its edge.
+- **An agent asks the CTO to relay a request.** A plain send carries the peer note, so the receiver judges it like any peer request. This is the same as an agent relaying a request itself.
+- **A proposal shaped by public data.** The CTO reads only public data, and nothing it reads runs anything. Injected text can still shape a proposal, and the owner reviews that proposal.
+- **A forged CTO note or flag.** Only the proposal runner sets the CTO flag, and the gateway accepts it only from the recorded CTO session. As elsewhere, the gateway trusts enrolled daemons to set it honestly.
+- **The trust boundary.** It stays the owner's operating-system user. A process of that user can type into the CTO box or read the OpenCode password. Rule 1 gives it no owner power beyond what the owner gate already exposes.
 
 ## Reporting a problem
 
