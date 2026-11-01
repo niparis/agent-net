@@ -153,54 +153,11 @@ func fitQuality(samples []qualitySample) qualityFit {
 	return f
 }
 
-// qualityRunSamples reads one rework sample per worker session. The counters
-// are spread over the session's runs, so they add up; model, harness and
-// difficulty come from the first row that is not a stopped run. A session with
-// a run from before the counters existed stays out. Late defects add their
-// severity points to the task's fix count, like Calibration.
+// qualityRunSamples reads one rework sample per task, including all its
+// sessions and late defects. The root session supplies the model and harness.
 func (s *Store) qualityRunSamples() ([]qualitySample, error) {
 	cut := s.now().Add(-calibrationWindow).Unix()
-	rows, err := s.db.Query(`SELECT session_id, model, harness, difficulty, outcome, continue_count, fix_count, counters_known
-		FROM worker_runs WHERE ended_at >= ? ORDER BY ended_at, id`, cut)
-	if err != nil {
-		return nil, err
-	}
-	type session struct {
-		sample    qualitySample
-		cont, fix int
-		unknown   bool
-	}
-	sessions := map[string]*session{}
-	order := []string{}
-	for rows.Next() {
-		var sessionID, model, harness, difficulty, outcome string
-		var cont, fix, known int
-		if err := rows.Scan(&sessionID, &model, &harness, &difficulty, &outcome, &cont, &fix, &known); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		if sessionID == "" || outcome == protocol.OutcomeStopped {
-			continue
-		}
-		sess := sessions[sessionID]
-		if sess == nil {
-			// The first row holds the model, harness and difficulty of the task.
-			sess = &session{}
-			sess.sample.Model, sess.sample.Effort = protocol.SplitModelLevel(model)
-			sess.sample.Model = qualityModel(sess.sample.Model)
-			sess.sample.Harness = harness
-			sess.sample.Difficulty = difficulty
-			sessions[sessionID] = sess
-			order = append(order, sessionID)
-		}
-		sess.cont += cont
-		sess.fix += fix
-		if known == 0 {
-			sess.unknown = true
-		}
-	}
-	err = rows.Err()
-	rows.Close()
+	tasks, _, err := s.reworkTasks(cut)
 	if err != nil {
 		return nil, err
 	}
@@ -208,15 +165,19 @@ func (s *Store) qualityRunSamples() ([]qualitySample, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]qualitySample, 0, len(order))
-	for _, sessionID := range order {
-		sess := sessions[sessionID]
-		if sess.unknown || sess.sample.Model == "" {
+	out := make([]qualitySample, 0, len(tasks))
+	for _, task := range tasks {
+		model, effort := protocol.SplitModelLevel(task.model)
+		model = qualityModel(model)
+		if model == "" {
 			continue
 		}
-		sample := sess.sample
-		sample.Value = protocol.ReworkWeight(sess.fix+defects[sessionID], sess.cont)
-		sample.Weight = 1
+		fix := task.fixCount
+		for session := range task.sessions {
+			fix += defects[session]
+		}
+		sample := qualitySample{Model: model, Effort: effort, Harness: task.harness, Difficulty: task.difficulty,
+			Value: protocol.ReworkWeight(fix, task.continueCount), Weight: 1}
 		out = append(out, sample)
 	}
 	return out, nil

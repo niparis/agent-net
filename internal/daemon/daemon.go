@@ -985,6 +985,7 @@ func (d *Daemon) onDeliver(ctx context.Context, m protocol.Message) {
 
 	// A delivery may have been dispatched while the worker was still online,
 	// but reach the daemon as its hand-back ends it.
+	midrunRecorded := false
 retryWorker:
 	var targetWorker *worker
 	for {
@@ -1013,6 +1014,9 @@ retryWorker:
 				return
 			}
 			continue
+		}
+		if !midrunRecorded {
+			midrunRecorded = d.noteMidrun(w, m)
 		}
 		queued, retry := d.queueOpenCodeTurn(w, m)
 		if retry {

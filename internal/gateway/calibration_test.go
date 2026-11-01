@@ -76,7 +76,7 @@ func TestCalibrationMigrationBackfillsCaller(t *testing.T) {
 	}
 	// The row is about caller attribution, so its counters count as known: a
 	// run from before the counters shipped is covered by
-	// TestCalibrationLeavesOutUnknownCounters.
+	// TestCalibrationIncludesUnknownCounters.
 	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, ended_at, counters_known)
 		VALUES (?,?,?,?,?,?,1)`, node, wid, "opencode", "m", protocol.OutcomeComplete, s.now().Unix()); err != nil {
 		t.Fatal(err)
@@ -264,9 +264,9 @@ func TestCalibrationCountsOneTaskPerWorkerSession(t *testing.T) {
 	}
 }
 
-// Runs recorded before the counters shipped read 0 rework, which is not the
-// same as no rework. A session with an unknown run stays out of the medians.
-func TestCalibrationLeavesOutUnknownCounters(t *testing.T) {
+// Non-stopped tasks remain in the window even when an older run's counters
+// are unknown. Any known rework on the task is still included.
+func TestCalibrationIncludesUnknownCounters(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("mac", "linux")
 	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
@@ -305,8 +305,8 @@ func TestCalibrationLeavesOutUnknownCounters(t *testing.T) {
 		t.Fatalf("callers: %+v", cal.Callers)
 	}
 	l := cal.Callers[0].Levels[0]
-	if l.Tasks != 5 || l.Median != 0 {
-		t.Fatalf("the unknown session must not count: %+v", l)
+	if l.Tasks != 6 || l.Median != 0 {
+		t.Fatalf("the older session must count: %+v", l)
 	}
 }
 
@@ -350,9 +350,8 @@ func TestCalibrationLeavesOutStoppedTasks(t *testing.T) {
 	}
 }
 
-// A stopped run adds no rework to its session either: the task keeps the
-// counters of its complete, partial and failed runs.
-func TestCalibrationStoppedRunAddsNoRework(t *testing.T) {
+// A stopped run contributes its counters when another run completed the task.
+func TestCalibrationStoppedRunContributesRework(t *testing.T) {
 	s, _ := newTestStore(t)
 	node, _, _ := s.CreateNode("mac", "linux")
 	caller, err := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "caller",
@@ -379,7 +378,7 @@ func TestCalibrationStoppedRunAddsNoRework(t *testing.T) {
 	if len(cal.Callers) != 1 || len(cal.Callers[0].Levels) != 1 {
 		t.Fatalf("callers: %+v", cal.Callers)
 	}
-	if l := cal.Callers[0].Levels[0]; l.Tasks != 1 || l.Median != 0 {
-		t.Fatalf("the stopped run added rework: %+v", l)
+	if l := cal.Callers[0].Levels[0]; l.Tasks != 1 || l.Median != 5 {
+		t.Fatalf("the stopped run lost its rework: %+v", l)
 	}
 }
