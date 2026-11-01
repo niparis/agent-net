@@ -1,8 +1,10 @@
 package daemon
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -34,6 +36,38 @@ func (d *Daemon) setWaiting(ls *localSession, w *protocol.Waiting) {
 		w.Since = time.Now().Unix()
 	}
 	d.mu.Lock()
+	sessionID := ls.sessionID
+	d.mu.Unlock()
+	worker := d.workerBySession(sessionID)
+	d.mu.Lock()
+	if worker != nil {
+		old := ls.workerWaiting
+		if w != nil && w.Text == "" {
+			w = nil
+		}
+		changed := w != nil && (old == nil || old.Kind != w.Kind || old.Text != w.Text)
+		ls.workerWaiting = w
+		ls.info.Waiting = nil
+		d.mu.Unlock()
+		if changed {
+			d.wmu.Lock()
+			owner := worker.owner
+			d.wmu.Unlock()
+			if owner != "" {
+				body := fmt.Sprintf("worker %s is blocked: %s", sessionID, w.Text)
+				if _, err := d.sendWorkerNoticeBody(context.Background(), worker, body, "", "", ""); err != nil {
+					d.Logf("worker %s: blocked notice: %v", worker.id, err)
+					d.mu.Lock()
+					if ls.workerWaiting == w {
+						ls.workerWaiting = nil
+					}
+					d.mu.Unlock()
+				}
+			}
+		}
+		d.pushSession(ls)
+		return
+	}
 	ls.info.Waiting = w
 	d.mu.Unlock()
 	d.pushSession(ls)
@@ -63,6 +97,7 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 		return nil, errors.New("this method needs a bound session")
 	}
 	if p.Explicit && d.workerBySession(ls.sessionID) != nil {
+		d.setWaiting(ls, &protocol.Waiting{Kind: p.Kind, Text: p.Text, Explicit: true})
 		return nil, errors.New("you are a worker: put the question in your hand-back or ask your caller with agent_reply")
 	}
 	if p.Clear {

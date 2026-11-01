@@ -514,6 +514,7 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			// clear a wait: the state lives in the daemon, and a session that
 			// is really working again sends status busy.
 			ls.info.Waiting = old.info.Waiting
+			ls.workerWaiting = old.workerWaiting
 		}
 		d.sessions[k] = ls
 		d.mu.Unlock()
