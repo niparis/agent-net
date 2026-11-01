@@ -520,7 +520,10 @@ func (s *Store) upsertSession(q interface {
 	execer
 	Query(string, ...any) (*sql.Rows, error)
 	QueryRow(string, ...any) *sql.Row
-}, nodeID string, in protocol.SessionInfo) (id string, created bool, err error) {
+}, nodeID string, in protocol.SessionInfo, cto ...bool) (id string, created bool, err error) {
+	if in.Harness == "cto" && (len(cto) == 0 || !cto[0]) {
+		return "", false, reject("CTO session requires owner registration")
+	}
 	if in.Harness == "" || in.NativeID == "" {
 		return "", false, reject("session needs harness and native_id")
 	}
@@ -571,7 +574,9 @@ func (s *Store) upsertSession(q interface {
 	// The name is the project's (decision 0024); the harness name is only a
 	// title for the TASK column. The owner pseudo-session keeps its own name.
 	name := ""
-	if protocol.IsOwner(in.Harness) {
+	if in.Harness == "cto" {
+		name = "CTO"
+	} else if protocol.IsOwner(in.Harness) {
 		name = protocol.CleanModel(in.Name)
 	} else if name, err = chooseSessionName(q, nodeID, knownID, knownName, in); err != nil {
 		return "", false, err
@@ -703,7 +708,7 @@ func chooseSessionName(q interface {
 	Query(string, ...any) (*sql.Rows, error)
 }, nodeID, sessionID, current string, in protocol.SessionInfo) (string, error) {
 	base, worker := sessionBaseName(in), in.Worker != nil
-	used := map[string]bool{}
+	used := map[string]bool{"CTO": true}
 	rows, err := q.Query(`SELECT COALESCE(NULLIF(p.name,''), s.name), s.online,
 		s.node_id, s.harness, s.mode, s.pid, s.worker FROM sessions s
 		LEFT JOIN profiles p ON p.session_id = s.id WHERE s.id <> ? AND
@@ -819,7 +824,7 @@ func (s *Store) SyncSessions(nodeID string, in []protocol.SessionInfo) ([]protoc
 		si.SessionID = id
 		out = append(out, si)
 	}
-	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 1`, nodeID)
+	rows, err := tx.Query(`SELECT id FROM sessions WHERE node_id = ? AND online = 1 AND harness <> 'cto'`, nodeID)
 	if err != nil {
 		return nil, err
 	}
@@ -1277,9 +1282,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		return msg, false, reject("unknown sender session %q", p.Sender)
 	}
 	if p.FromCTO {
-		var harness string
-		if err := tx.QueryRow(`SELECT harness FROM sessions WHERE id = ?`, p.Sender).Scan(&harness); err != nil || harness != protocol.OwnerHarness {
-			return msg, false, reject("CTO sender requires an owner session")
+		var registered string
+		if err := tx.QueryRow(`SELECT value FROM owner_settings WHERE key = 'cto_session'`).Scan(&registered); err != nil || registered != p.Sender {
+			return msg, false, reject("CTO sender requires the registered CTO session")
 		}
 	}
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = ?`, p.Recipient).Scan(&n); err != nil || n == 0 {
