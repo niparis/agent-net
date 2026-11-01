@@ -253,6 +253,9 @@ func (d *Daemon) clearGapAfterShortWorker(w *worker) {
 // now. The caller holds d.qmu.
 func (d *Daemon) admission(harness, model string) Decision {
 	now := time.Now()
+	if disk := d.diskAdmission(); !disk.OK {
+		return disk
+	}
 	load := d.load()
 	d.wmu.Lock()
 	running := len(d.workers)

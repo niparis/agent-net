@@ -67,7 +67,9 @@ type Config struct {
 	GatewayData string
 	Hostname    string
 	StateDir    string
-	SocketPath  string
+	// DiskFree overrides the disk free-space probe.
+	DiskFree   func(string) (uint64, error)
+	SocketPath string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
 	// PiSessionsDir is where Pi writes its session files. The daemon reads a

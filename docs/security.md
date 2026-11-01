@@ -987,3 +987,5 @@ off. When enabled, predicted quality multiplies rotation weights by 0.5 to
 1.5 and cannot bypass capability minimums, protected providers or quota
 exclusions. Ratings from callers below score 45 count half; without a strong
 rating, a model cannot receive a prediction above the fitted average.
+
+Worker admission also checks free space on the daemon state filesystem. Starts wait below the configured disk floor; existing workers continue.

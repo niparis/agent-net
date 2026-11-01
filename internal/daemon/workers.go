@@ -31,6 +31,8 @@ type WorkerSettings struct {
 	// Max is the hard cap of workers on this machine, a safety net behind the
 	// load check (decision 0018). Default 12.
 	Max int
+	// MinFreeGB is the worker disk admission floor in GiB.
+	MinFreeGB uint64
 	// CPUTarget is the 5-minute whole-machine CPU busy percent above which no
 	// worker starts. Default 75.
 	CPUTarget float64

@@ -106,7 +106,7 @@ func cleanUsage(r protocol.UsageReport) protocol.UsageReport {
 		cp := *w
 		cp.Running, cp.Queued = max(cp.Running, 0), max(cp.Queued, 0)
 		switch cp.Room {
-		case protocol.RoomOK, protocol.RoomCPU, protocol.RoomMem, protocol.RoomCap, protocol.RoomGap, protocol.RoomMeasuring:
+		case protocol.RoomOK, protocol.RoomDisk, protocol.RoomCPU, protocol.RoomMem, protocol.RoomCap, protocol.RoomGap, protocol.RoomMeasuring:
 		default:
 			cp.Room = ""
 		}

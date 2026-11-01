@@ -58,6 +58,7 @@ func (nc NodeConfig) EnterSSHEnabled() bool { return nc.EnterSSH == nil || *nc.E
 type NodeWorkers struct {
 	// Max is the hard cap of workers on the machine (default 12).
 	Max        int    `json:"max,omitempty"`
+	MinFreeGB  uint64 `json:"min_free_gb,omitempty"`
 	Idle       string `json:"idle,omitempty"`
 	IdleNotice string `json:"idle_notice,omitempty"`
 	MaxAge     string `json:"max_age,omitempty"`
@@ -102,6 +103,7 @@ func (nc NodeConfig) WorkerSettings() (WorkerSettings, error) {
 		return s, nil
 	}
 	s.Max = nc.Workers.Max
+	s.MinFreeGB = nc.Workers.MinFreeGB
 	if nc.Workers.CPUTarget != 0 {
 		if nc.Workers.CPUTarget < 0 || nc.Workers.CPUTarget > 100 {
 			return s, errors.New("node.json: workers.cpu_target must be a percent between 1 and 100")
