@@ -1,7 +1,6 @@
 package gateway
 
 import (
-	"path/filepath"
 	"strings"
 
 	"github.com/niparis/agent-net/internal/protocol"
@@ -9,7 +8,7 @@ import (
 )
 
 func TestPeerTrustMigratesOnceToWildcardRule(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "old.db")
+	path := seededStorePath(t, "old.db")
 	s, err := OpenStore(path)
 	if err != nil {
 		t.Fatal(err)

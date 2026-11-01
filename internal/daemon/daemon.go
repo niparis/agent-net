@@ -104,6 +104,10 @@ type Config struct {
 	// AutoUpgradeMaxDelay bounds the random wait before an automatic upgrade.
 	// Default: 10 s; a negative value means no wait.
 	AutoUpgradeMaxDelay time.Duration
+	// AutoUpgradeDone, if set, is called when an automatic upgrade attempt
+	// has finished, whether it upgraded or decided not to. Tests use it to
+	// know that nothing more will happen.
+	AutoUpgradeDone func()
 	// Served returns the version the gateway serves to this machine.
 	// Default: ask the gateway.
 	Served func(ctx context.Context) (string, error)

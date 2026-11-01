@@ -73,7 +73,7 @@ func TestCTOWindowExpiryAndRestart(t *testing.T) {
 	if !w.active(now) {
 		t.Fatal("not reopened")
 	}
-	st, err := openState(t.TempDir())
+	st, err := openState(seededStateDir(t))
 	if err != nil {
 		t.Fatal(err)
 	}

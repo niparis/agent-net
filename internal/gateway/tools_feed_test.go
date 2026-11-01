@@ -1,14 +1,13 @@
 package gateway
 
 import (
-	"path/filepath"
 	"testing"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
 
 func TestToolTargetsOnlyAppliedForNode(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "db"))
+	s, err := OpenStore(seededStorePath(t, "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +36,7 @@ func TestToolTargetsOnlyAppliedForNode(t *testing.T) {
 }
 
 func TestToolResultsOnlyCurrentOwnedTarget(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "db"))
+	s, err := OpenStore(seededStorePath(t, "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +72,7 @@ func TestToolResultsOnlyCurrentOwnedTarget(t *testing.T) {
 }
 
 func TestRemovalWaitsForAllCopies(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "db"))
+	s, err := OpenStore(seededStorePath(t, "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +112,7 @@ func TestRemovalWaitsForAllCopies(t *testing.T) {
 }
 
 func TestUndoToolIsNewRevisionForAppliedTargetsOnly(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "db"))
+	s, err := OpenStore(seededStorePath(t, "db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +170,7 @@ func TestUndoToolIsNewRevisionForAppliedTargetsOnly(t *testing.T) {
 }
 
 func TestToolOutcomesPerTarget(t *testing.T) {
-	s, err := OpenStore(filepath.Join(t.TempDir(), "db"))
+	s, err := OpenStore(seededStorePath(t, "db"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -207,7 +207,7 @@ func TestGatewayRestartLosesNothing(t *testing.T) {
 
 func TestDuplicateDeliverOnce(t *testing.T) {
 	fa := &fakeAdapter{harness: "fake"}
-	d, err := New(Config{StateDir: t.TempDir(), SocketPath: filepath.Join(shortDir(t), "d.sock"), Adapters: []Adapter{fa}})
+	d, err := New(Config{StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"), Adapters: []Adapter{fa}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestBadTokenRefused(t *testing.T) {
 	}
 	_, ca, _ := LoadNode(cfgDir)
 	d, err := New(Config{GatewayURL: nc.GatewayURL, NodeID: nc.NodeID, Token: "wrong", CAPEM: ca,
-		StateDir: t.TempDir(), SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond})
+		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"), BackoffMin: 20 * time.Millisecond})
 	if err != nil {
 		t.Fatal(err)
 	}

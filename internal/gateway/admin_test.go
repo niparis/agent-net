@@ -52,7 +52,7 @@ func TestAdminNeedsToken(t *testing.T) {
 func TestAdminRestartCallsHook(t *testing.T) {
 	dist := t.TempDir()
 	called := make(chan struct{}, 1)
-	gw, err := New(Options{DataDir: t.TempDir(), DistDir: dist, Restart: func() { called <- struct{}{} }})
+	gw, err := New(Options{DataDir: seededDataDir(t), DistDir: dist, Restart: func() { called <- struct{}{} }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestNodeVersionStored(t *testing.T) {
 
 func newTestStoreForNodes(t *testing.T) *Store {
 	t.Helper()
-	s, err := OpenStore(filepath.Join(t.TempDir(), "gw.db"))
+	s, err := OpenStore(seededStorePath(t, "gw.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func newTestStoreForNodes(t *testing.T) *Store {
 
 func TestVersionOfDistBinary(t *testing.T) {
 	dist := t.TempDir()
-	gw, err := New(Options{DataDir: t.TempDir(), DistDir: dist, Version: "v1.0.0"})
+	gw, err := New(Options{DataDir: seededDataDir(t), DistDir: dist, Version: "v1.0.0"})
 	if err != nil {
 		t.Fatal(err)
 	}

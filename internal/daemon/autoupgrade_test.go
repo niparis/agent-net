@@ -53,10 +53,6 @@ func nodeVersion(g *testGateway, id string) string {
 	return v
 }
 
-// stays waits long enough for an automatic upgrade that would happen to have
-// happened.
-func stays(t *testing.T) { t.Helper(); time.Sleep(300 * time.Millisecond) }
-
 func TestAutoUpgradeNewer(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n, calls := autoNode(t, g, "v0.1.0", installOK, served(servedValue("v0.2.0")))
@@ -65,7 +61,7 @@ func TestAutoUpgradeNewer(t *testing.T) {
 		t.Errorf("install called %d times, want 1", calls.Load())
 	}
 	// Back on the served version: no loop.
-	stays(t)
+	n.stays(t)
 	if calls.Load() != 1 {
 		t.Errorf("install called %d times after the restart", calls.Load())
 	}
@@ -88,7 +84,7 @@ func TestAutoUpgradeDoesNothing(t *testing.T) {
 			opts = append(opts, c.opt)
 		}
 		n, calls := autoNode(t, g, c.version, installOK, opts...)
-		stays(t)
+		n.stays(t)
 		if calls.Load() != 0 {
 			t.Errorf("%s: install was called", c.name)
 		}
@@ -115,7 +111,7 @@ func TestAutoUpgradeFailureIsRemembered(t *testing.T) {
 		n.daemon().Stop()
 		n.start()
 		eventually(t, "reconnected", n.daemon().Connected)
-		stays(t)
+		n.stays(t)
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("install called %d times over reconnects, want 1", calls.Load())
@@ -154,7 +150,7 @@ func TestAutoUpgradeHold(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	stays(t)
+	n.stays(t)
 	if calls.Load() != 0 {
 		t.Fatal("upgraded to a held version")
 	}
@@ -274,7 +270,7 @@ func TestPushJoinsARunningAutoUpgrade(t *testing.T) {
 	}
 	// One install, and one restart: the node is back on v0.2.0 and stays up.
 	eventually(t, "back on v0.2.0", func() bool { return nodeVersion(g, n.cfg.NodeID) == "v0.2.0" })
-	time.Sleep(600 * time.Millisecond)
+	n.stays(t)
 	if calls.Load() != 1 || !n.daemon().Connected() {
 		t.Errorf("installs %d, connected %v, want 1 and true", calls.Load(), n.daemon().Connected())
 	}

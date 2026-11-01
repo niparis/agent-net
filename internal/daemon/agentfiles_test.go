@@ -10,7 +10,7 @@ import (
 func TestStartRefreshesAgentFiles(t *testing.T) {
 	calls := 0
 	d, err := New(Config{
-		StateDir: t.TempDir(), SocketPath: filepath.Join(shortDir(t), "d.sock"),
+		StateDir: seededStateDir(t), SocketPath: filepath.Join(shortDir(t), "d.sock"),
 		RefreshAgentFiles: func(logf func(string, ...any)) {
 			calls++
 			logf("agent files: test")

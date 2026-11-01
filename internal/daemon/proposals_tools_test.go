@@ -40,7 +40,7 @@ func TestProposalEveryChangeRunsStoredCallOnce(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			st, err := openState(t.TempDir())
+			st, err := openState(seededStateDir(t))
 			if err != nil {
 				t.Fatal(err)
 			}
