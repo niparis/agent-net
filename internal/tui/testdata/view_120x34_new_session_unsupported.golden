@@ -1,0 +1,34 @@
+1 Sessions  2 Messages  3 Quotas  4 Graph  5 Tools │ 7 sessions, 6 online · 2 busy · workers 1 running, 0 queued
+╭─Machines─────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│  ● Mac (here) v0.4.0 cpu ? mem ? disk ?                                                                              │
+│  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
+│  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Project        shop   on Mac, /Users/n/code/shop
+  Harness        pi
+  Model          default
+  Folder         project folder   no worktree yet
+> First message
+                 empty: start it and enter it
+                 text: start it in the background and send this
+  ! only Claude and OpenCode on this machine for now.
+
+
+
+
+
+
+
+╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ enter: open the CTO · tab: back                                                                                      │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+enter start  up/down field  esc cancel

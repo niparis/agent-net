@@ -1300,7 +1300,7 @@ The screen refreshes once a second. CPU, memory and counts are asked every 5 sec
 | esc | Leave the help or a message body, or clear the filter. |
 | `r` | Refresh now. |
 | `m` | Send a message to the selected session as yourself. Type, Enter sends, Esc cancels. The reply shows in the messages. |
-| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. Folder is `project folder` for now: this version starts only a local Claude Code session, so another harness or another machine says `only Claude on this machine for now`. An empty First message starts the session and enters it when it registers (ctrl+] returns). Text starts it in the background, sends that text as your own words, and the result line says `started <project> (claude) on <machine>: first message sent. Enter opens it.` A failure shows the reason the harness gave. Esc cancels. |
+| `n` | Start a new session in the selected session's project, with a form: Project, Harness, Model, Folder and First message. The form is filled from the selected row; the focus starts on First message. On the Graph card, `n` opens the same form filled from the selected node. Folder is `project folder` for now: this version starts local Claude Code and OpenCode sessions, so another harness or another machine says `only Claude and OpenCode on this machine for now`. An empty First message starts the session and enters it when it registers (ctrl+] returns). Text starts it in the background, sends that text as your own words, and the result line says `started <project> (<harness>) on <machine>: first message sent. Enter opens it.` A failure shows the reason the harness gave. Esc cancels. |
 | `s` | Start a worker. A form takes Project, Harness, Model and Task. Project completes from the project list (a name on two machines is offered as `name@machine`), Model from the model list of that project's machine. Tab completes, then moves on; up and down or Enter move between fields; Enter on the Task starts it; Esc cancels. If the selected session's project is known, the form starts on the Task with it filled in. |
 | `x` | In Sessions, stop the selected worker after a `y/n` question. Any other session is refused with a message. |
 | `t` | Cycle the selected node's wildcard request rule through `normal`, `ask` and `auto`. |
@@ -1534,24 +1534,38 @@ current PATH. A daemon upgrade adds PATH to older service files.
 
 ### Starting an owner session through the local API
 
-`session_start` starts Claude in an existing project folder on this machine.
+`session_start` starts Claude or OpenCode in an existing project folder on this machine.
 This is the daemon part of the [accepted session-start design](design/start-sessions.md);
 starts on other machines are not built yet.
 
 The request is `{"project":"shop","harness":"claude","model":"haiku","first_message":"Inspect this project"}`.
 Project is a known local project name or its exact path. Ambiguous names are
 refused; use the path. Harness may be omitted and defaults to `claude`. Model
-and first_message are optional. An empty model keeps Claude's own default.
-An empty first message starts an idle background session. A nonempty message
-is the owner's first prompt, passed after `--` to `claude --bg`.
+and first_message are optional. An empty model keeps the harness's own default.
+An empty first message starts an idle background session. For Claude, a nonempty
+message is the owner's first prompt, passed after `--` to `claude --bg`.
+
+For OpenCode, the daemon reads the owner's running service address and password
+from `$XDG_STATE_HOME/opencode/service.json` (default:
+`~/.local/state/opencode/service.json`). It creates the session on that service
+with the project folder in `x-opencode-directory`. A model uses
+`provider/model[:level]`. A first message is queued as an owner prompt through
+OpenCode 2.2's `/api/session/{id}/prompt` API. Without a first message, the TUI
+enters with the existing `opencode --session <id>` plan. The service keeps the
+conversation, including offline and dormant rows; Enter keeps its existing
+plan for those rows. The daemon never starts the owner's service. If its record
+is missing or its address cannot be reached, the start is refused with
+`the OpenCode service is not running on <machine>`. HTTP refusals report only
+the status code. The service password stays in HTTP authentication; it is never
+logged or put in a command argument or notice.
 
 The answer is a started-session record with `id`, `status: "starting"`,
 `node_id`, `harness`, `project`, `path`, `branch`, `model` and `started_at`
 (Unix seconds). Poll `session_start_get {"id":"<returned id>"}`. Once normal
 discovery and gateway registration finish, the record has `status: "started"`,
-`job_id`, `native_id` and `session_id`. A failed launch or registration has
-`status: "failed"` and `error`. An unknown id is refused. Records live in
-memory for this daemon run. A daemon restart loses the records; Claude's
+`native_id` and `session_id` (and `job_id` for Claude). A failed launch or
+registration has `status: "failed"` and `error`. An unknown id is refused. Records live in
+memory for this daemon run. A daemon restart loses the records; the harness's
 session remains discoverable as a normal session. Cancelling the requesting
 socket does not cancel the background launch.
 
@@ -1566,7 +1580,7 @@ harnesses and remote Claude rows cannot yet be resumed here.
 
 All three methods require the owner's CLI connection and refuse agent callers,
 including CLI commands inside agent, Codex app-server and OpenCode serve
-process trees. They are not agent tools. The session uses Claude's normal
+process trees. They are not agent tools. The session uses the harness's normal
 project settings and MCP servers, with no worker brief, hand-back, worktree,
 worker list entry or completion notice. Idle and age limits do not stop it.
 Worker cleanup and daemon shutdown leave it running. Enter it through the

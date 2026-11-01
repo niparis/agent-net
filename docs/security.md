@@ -679,13 +679,23 @@ or an OpenCode serve process tree is refused too. No agent tool exposes these
 methods. An owner session has the owner's normal harness permissions, so an
 agent must never be able to start one to escape worker limits.
 
-For now, starts are limited to Claude in an existing project folder known on
-the local machine. The daemon resolves the project from the gateway registry;
+For now, starts are limited to Claude and OpenCode in an existing project folder
+known on the local machine. The daemon resolves the project from the gateway registry;
 it accepts no executable, command, settings, environment or arbitrary folder
 parameter. It creates no folder, worktree or trust entry. Folder creation and
 its home-folder and symlink checks belong to a later part of the design.
-The model and optional first message are separate command arguments, with
-`--` before the message. There is no shell interpolation.
+For Claude, the model and optional first message are separate command arguments,
+with `--` before the message. There is no shell interpolation.
+
+OpenCode starts use the owner's existing service, never a private worker server.
+The daemon reads its address and password from OpenCode's `service.json` under
+`XDG_STATE_HOME` (default `~/.local/state`). Only an HTTP loopback IP address
+without URL credentials, a query or a path is accepted. Requests do not follow
+redirects. The password is used only for HTTP Basic authentication and never
+logged, placed in argv or included in a notice. API response bodies and transport
+errors are not copied into start errors, because they may contain credentials.
+The folder, model and first message are HTTP headers or JSON, with no shell.
+If the service is down, the start is refused; the daemon never starts it.
 
 Resume accepts only a stored offline local Claude session ID. The daemon uses
 the stored native ID and folder, checks that the folder still exists, and

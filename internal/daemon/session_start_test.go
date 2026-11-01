@@ -4,9 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 
@@ -26,7 +30,7 @@ func TestSessionStartServiceHosts(t *testing.T) {
 		d.inSession = d.insideSession
 		lc := &localConn{d: d, client: "cli", peerPID: 300}
 		for _, method := range []string{"session_start", "session_start_get", "session_resume"} {
-			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
+			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{"project":"shop","harness":"opencode"}`))
 			if !handled || err == nil || !strings.Contains(err.Error(), "inside an agent session") {
 				t.Errorf("%v %s: handled=%v err=%v", args, method, handled, err)
 			}
@@ -39,7 +43,7 @@ func TestSessionStartOwnerGate(t *testing.T) {
 		for _, client := range []string{"mcp", "pi", "opencode", "cli"} {
 			d := &Daemon{inSession: func(int) bool { return true }}
 			lc := &localConn{d: d, client: client}
-			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{}`))
+			_, handled, err := lc.dispatchOperator(context.Background(), method, json.RawMessage(`{"project":"shop","harness":"opencode"}`))
 			if !handled || err == nil || !(strings.Contains(err.Error(), "only available to the owner") || strings.Contains(err.Error(), "inside an agent session")) {
 				t.Errorf("%s client %s: handled=%v err=%v", method, client, handled, err)
 			}
@@ -208,5 +212,204 @@ func TestSessionResumeMissingFolder(t *testing.T) {
 	_, err = c.cli.call("session_resume", map[string]string{"session_id": id})
 	if err == nil || !strings.Contains(err.Error(), "folder is gone") {
 		t.Fatalf("missing folder: %v", err)
+	}
+}
+
+// The fake owner's service uses the real daemon/plugin hello path, without a
+// private worker server or a model call.
+func TestSessionStartOpenCode(t *testing.T) {
+	for _, message := range []string{"", "Inspect this project"} {
+		t.Run(fmt.Sprintf("message=%v", message != ""), func(t *testing.T) {
+			state := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", state)
+			g := startGateway(t, t.TempDir(), "")
+			n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} })
+			repo := newRepo(t, "shop space")
+			n.register(t, repo)
+			var creates, prompts atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				user, pass, ok := r.BasicAuth()
+				if !ok || user != "opencode" || pass != "test-owner-password" {
+					t.Error("missing service authentication")
+					w.WriteHeader(401)
+					return
+				}
+				if r.Method == "POST" && r.Header.Get("x-opencode-directory") != strings.ReplaceAll(url.QueryEscape(repo), "+", "%20") {
+					t.Errorf("directory header %q", r.Header.Get("x-opencode-directory"))
+				}
+				switch r.Method + " " + r.URL.Path {
+				case "POST /api/session":
+					var body struct {
+						Title string
+						Model struct{ ProviderID, ID, Variant string }
+					}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					if body.Title != "shop space" || body.Model.ProviderID != "test" || body.Model.ID != "model" || body.Model.Variant != "high" {
+						t.Errorf("create: %+v", body)
+					}
+					creates.Add(1)
+					helloOpenCode(t, n.node, "ses_owner", repo)
+					fmt.Fprint(w, `{"data":{"id":"ses_owner"}}`)
+				case "POST /api/session/ses_owner/prompt":
+					var body struct{ Text, Delivery string }
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					if body.Text != message || body.Delivery != "queue" {
+						t.Errorf("prompt: %+v", body)
+					}
+					prompts.Add(1)
+					fmt.Fprint(w, `{"data":{}}`)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+			writeOwnerOpenCodeService(t, state, server.URL)
+			var r protocol.StartedSession
+			mustJSON(t, n.cli.mustCall("session_start", protocol.SessionStartRequest{Project: repo, Harness: "opencode", Model: "test/model:high", FirstMessage: message}), &r)
+			if r.Status != "starting" {
+				t.Fatalf("initial result: %+v", r)
+			}
+			eventually(t, "owner OpenCode session registered", func() bool {
+				mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+				if r.Status == "failed" {
+					t.Fatalf("start: %+v", r)
+				}
+				return r.Status == "started"
+			})
+			wantPrompts := int32(0)
+			if message != "" {
+				wantPrompts = 1
+			}
+			if creates.Load() != 1 || prompts.Load() != wantPrompts || r.NativeID != "ses_owner" || r.SessionID == "" || r.Path != repo {
+				t.Fatalf("result %+v creates %d prompts %d", r, creates.Load(), prompts.Load())
+			}
+			a := n.agentOf(t, r.SessionID)
+			if a == nil || a.Worker != nil {
+				t.Fatalf("owner row: %+v", a)
+			}
+			plan, err := n.d.localEnter(context.Background(), protocol.EnterRequest{SessionID: r.SessionID}, false)
+			if err != nil || len(plan.Argv) != 3 || plan.Argv[1] != "--session" || plan.Argv[2] != "ses_owner" {
+				t.Fatalf("enter plan: %+v %v", plan, err)
+			}
+			rows, _ := n.d.st.workers()
+			if len(rows) != 0 {
+				t.Fatalf("worker records: %+v", rows)
+			}
+		})
+	}
+}
+
+func writeOwnerOpenCodeService(t *testing.T, state, address string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(state, "opencode"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := json.Marshal(map[string]string{"url": address, "password": "test-owner-password"})
+	if err := os.WriteFile(filepath.Join(state, "opencode", "service.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSessionStartOpenCodeServiceDown(t *testing.T) {
+	for _, present := range []bool{false, true} {
+		t.Run(fmt.Sprint(present), func(t *testing.T) {
+			state := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", state)
+			g := startGateway(t, t.TempDir(), "")
+			n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} })
+			repo := newRepo(t, "shop")
+			n.register(t, repo)
+			if present {
+				server := httptest.NewServer(http.NotFoundHandler())
+				server.Close()
+				writeOwnerOpenCodeService(t, state, server.URL)
+			}
+			_, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: repo, Harness: "opencode"})
+			want := "the OpenCode service is not running on " + n.d.cfg.Hostname
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Fatalf("refusal: %v, want %q", err, want)
+			}
+		})
+	}
+}
+
+func TestSessionStartOpenCodeServiceFailuresKeepPasswordPrivate(t *testing.T) {
+	for _, failure := range []string{"create", "malformed", "redirect", "prompt"} {
+		t.Run(failure, func(t *testing.T) {
+			state := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", state)
+			g := startGateway(t, t.TempDir(), "")
+			n := startWorkerNode(t, g, shortSet, func(c *Config) { c.HarnessPaths = map[string]string{"opencode": os.Args[0]} })
+			repo := newRepo(t, "shop")
+			n.register(t, repo)
+			var redirected atomic.Int32
+			target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { redirected.Add(1) }))
+			defer target.Close()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/session" && failure == "prompt" {
+					fmt.Fprint(w, `{"data":{"id":"ses_owner"}}`)
+					return
+				}
+				switch failure {
+				case "malformed":
+					fmt.Fprint(w, "test-owner-password")
+				case "redirect":
+					http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+				default:
+					http.Error(w, "test-owner-password", http.StatusInternalServerError)
+				}
+			}))
+			defer server.Close()
+			writeOwnerOpenCodeService(t, state, server.URL)
+			raw, err := n.cli.call("session_start", protocol.SessionStartRequest{Project: repo, Harness: "opencode", FirstMessage: "Hello"})
+			if failure == "prompt" {
+				if err != nil {
+					t.Fatal(err)
+				}
+				var r protocol.StartedSession
+				mustJSON(t, raw, &r)
+				eventually(t, "prompt failure", func() bool {
+					mustJSON(t, n.cli.mustCall("session_start_get", map[string]string{"id": r.ID}), &r)
+					return r.Status != "starting"
+				})
+				if r.Status != "failed" || !strings.Contains(r.Error, "first message") {
+					t.Fatalf("result: %+v", r)
+				}
+				raw, _ = json.Marshal(r)
+			} else if err == nil {
+				t.Fatal("service failure accepted")
+			}
+			if strings.Contains(string(raw)+fmt.Sprint(err), "test-owner-password") {
+				t.Fatal("password in result")
+			}
+			for _, line := range n.logs.lines() {
+				if strings.Contains(line, "test-owner-password") {
+					t.Fatal("password in logs")
+				}
+			}
+			if redirected.Load() != 0 {
+				t.Fatal("followed service redirect")
+			}
+			if len(n.notices(t)) != 0 {
+				t.Fatal("owner start sent a worker notice")
+			}
+		})
+	}
+}
+
+func TestSessionStartOpenCodeRejectsUnsafeServiceAddress(t *testing.T) {
+	for _, address := range []string{"http://192.0.2.1:1234", "http://localhost:1234", "http://user:pass@127.0.0.1:1234", "https://127.0.0.1:1234", "http://127.0.0.1:1234/path", "http://127.0.0.1:1234?token=x"} {
+		t.Run(address, func(t *testing.T) {
+			state := t.TempDir()
+			t.Setenv("XDG_STATE_HOME", state)
+			writeOwnerOpenCodeService(t, state, address)
+			if _, err := ownerOpenCodeService(); err == nil {
+				t.Fatal("unsafe service address accepted")
+			}
+		})
 	}
 }

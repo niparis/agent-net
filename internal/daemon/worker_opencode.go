@@ -230,7 +230,7 @@ func (d *Daemon) serveOpenCode(ctx context.Context, w *worker) (opencodeAPI, err
 }
 
 func openCodeWorkerAPI(ctx context.Context, base, password string) opencodeAPI {
-	hc := &http.Client{Timeout: 10 * time.Second}
+	hc := &http.Client{Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	return func(method, path string, body any, headers ...string) ([]byte, int, error) {
 		var rd io.Reader
 		if body != nil {
@@ -664,31 +664,8 @@ func (d *Daemon) reconcileSharedOpenCode(ctx context.Context) {
 	if len(sessions) == 0 {
 		return
 	}
-	state := os.Getenv("XDG_STATE_HOME")
-	if state == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return
-		}
-		state = filepath.Join(home, ".local", "state")
-	}
-	data, err := os.ReadFile(filepath.Join(state, "opencode", "service.json"))
-	if err != nil || len(data) > 16384 {
-		return
-	}
-	var service struct {
-		URL      string `json:"url"`
-		Password string `json:"password"`
-	}
-	if json.Unmarshal(data, &service) != nil {
-		return
-	}
-	u, err := url.Parse(service.URL)
-	if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/") {
-		return
-	}
-	ip := net.ParseIP(u.Hostname())
-	if ip == nil || !ip.IsLoopback() {
+	service, err := ownerOpenCodeService()
+	if err != nil {
 		return
 	}
 	base := strings.TrimRight(service.URL, "/")
