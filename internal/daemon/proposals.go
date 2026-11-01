@@ -27,6 +27,9 @@ func (d *Daemon) Propose(ctx context.Context, tool, action string, args json.Raw
 		if err := json.Unmarshal(args, &fields); err != nil {
 			return "", err
 		}
+		if fields == nil {
+			return "", errors.New("bad proposal arguments")
+		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", err
 		}
