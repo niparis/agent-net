@@ -91,8 +91,8 @@ Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, us
   <img alt="The owner sets the rules for agents, which have sessions, projects and work, and share tools, knowledge and messages" src="docs/img/primitives-light.svg">
 </picture>
 
-- **Owner and agents:** The owner grants authority. Agents have charters and a kind; sessions are how they run.
-- **Rules and work:** Edges define relationships. Projects, workspaces, tasks and reports give agents a place to work and a way to return results.
+- **Owner and agents:** The owner sets charters, authority and autonomy. Agents have a kind, state and sessions.
+- **Rules and work:** Edges govern requests. Tasks are contracts; workers return reports to their callers. Projects and workspaces give agents a place to work.
 - **Shared:** Tools, knowledge, messages, budget and Needs you support the network.
 
 See [Primitives](docs/decisions/0036-primitives.md) for the terms and their display names.

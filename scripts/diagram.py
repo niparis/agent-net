@@ -103,12 +103,12 @@ def svg(t):
 
 def primitives(t):
     """Draw the conceptual model in separate lanes to keep links legible."""
-    s = (f'<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="870" '
-         f'viewBox="0 0 1200 870" font-family="{FONT}">')
+    s = (f'<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1250" '
+         f'viewBox="0 0 1500 1250" font-family="{FONT}">')
     s += '<title>Agent network primitives and their relationships</title>'
     s += (f'<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" '
           f'orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="{t["line"]}"/></marker></defs>')
-    s += f'<rect width="1200" height="870" rx="14" fill="{t["net"]}"/>'
+    s += f'<rect width="1500" height="1250" rx="14" fill="{t["net"]}"/>'
 
     def box(x, y, w, h, title, lines=(), accent=False):
         nonlocal s
@@ -124,47 +124,55 @@ def primitives(t):
         s += f'<path d="{path}" fill="none" stroke="{t["line"]}" stroke-width="1.5" marker-end="url(#arrow)"/>'
         s += f'<text x="{x}" y="{y}" text-anchor="middle" font-size="12" fill="{t["muted"]}">{label}</text>'
 
-    box(470, 20, 260, 62, 'OWNER', ['Source of authority'], True)
-    for x, title, sub in [(30, 'CHARTER', 'goals and behavior'),
-                          (320, 'AUTHORITY', 'actions without asking'),
-                          (610, 'NEEDS YOU', 'attention queue'),
-                          (900, 'BUDGET', 'quotas and providers')]:
-        box(x, 145, 270, 68, title, [sub])
-    # Owner links branch above the cards.
-    for target, label, lx in [(165, 'sets', 280), (455, 'sets', 475),
-                              (745, 'attends to', 725), (1035, 'limits', 930)]:
-        link(f'M600 82 V110 H{target} V145', label, lx, 103)
+    box(620, 20, 260, 62, 'OWNER', ['Source of authority'], True)
+    for x, title, lines in [
+        (30, 'CHARTER', ['goals and behavior']),
+        (320, 'AUTHORITY', ['actions without asking']),
+        (610, 'AUTONOMY', ['may wake itself', 'may plan its own work']),
+        (900, 'NEEDS YOU', ['attention queue']),
+        (1190, 'BUDGET', ['quotas and protected providers', 'daily cap on automatic wake-ups'])]:
+        box(x, 145, 270, 88, title, lines)
+    for target, label, lx in [(165, 'sets', 265), (455, 'sets', 455),
+                              (745, 'sets', 775), (1035, 'attends to', 1040),
+                              (1325, 'sets', 1230)]:
+        link(f'M750 82 V110 H{target} V145', label, lx, 102)
 
-    box(360, 275, 350, 105, 'AGENT', ['Graph node with a lasting identity',
-                                      'project lead  /  advisor  /  worker  /  ghost'], True)
-    box(850, 292, 260, 68, 'AGENT', ['another Graph node'], True)
-    link('M710 325 H850', 'EDGE defines', 780, 315)
-    link('M165 213 V250 H400 V275', 'defines', 270, 242)
-    link('M455 213 V275', 'limits', 477, 248)
+    box(320, 340, 520, 130, 'AGENT', ['Graph node: project lead / advisor / worker / ghost',
+                                      'STATE: activity (session: busy/idle) + pending',
+                                      '(has work left: yes/no/unknown)'], True)
+    box(920, 355, 250, 100, 'EDGE', ['who may ask whom', 'rule: auto / hold / ask   ·   trust'])
+    box(1250, 370, 210, 70, 'AGENT B', ['another Graph node'], True)
+    link('M840 405 H920', '', 880, 396)
+    link('M1170 405 H1250', 'A to B', 1210, 395)
+    link('M165 233 V285 H380 V340', 'defines', 270, 277)
+    link('M455 233 V340', 'limits', 477, 290)
+    link('M745 233 V340', 'governs', 775, 290)
+    link('M810 340 V300 H1035 V233', 'asks', 950, 292)
 
-    # Three independent lanes: runtime, home, and delegated work.
-    box(30, 465, 240, 75, 'SESSION', ['1 = agent; 2+ = clones'])
-    box(30, 635, 240, 75, 'MACHINE / HARNESS / MODEL', ['session attributes'])
-    link('M400 380 V420 H150 V465', 'lives as', 275, 412)
-    link('M150 540 V635', 'runs on', 180, 590)
+    box(30, 580, 300, 75, 'SESSION', ['1 = agent; 2+ = clones'])
+    box(30, 730, 300, 75, 'MACHINE / HARNESS / MODEL', ['session attributes'])
+    link('M380 470 V525 H180 V580', 'lives as', 270, 517)
+    link('M180 655 V730', 'runs on', 210, 696)
+    box(420, 580, 250, 75, 'PROJECT', ['home of a lead'])
+    box(420, 730, 250, 75, 'WORKSPACE', ['folder or worktree'])
+    link('M545 470 V580', 'has home', 580, 529)
+    link('M545 655 V730', 'contains', 576, 696)
+    box(760, 580, 300, 75, 'TOOLS', ['skills and MCP'])
+    box(1110, 580, 350, 75, 'KNOWLEDGE', ['playbooks and findings'])
+    box(760, 730, 300, 88, 'MESSAGE', ['ask, reply, notification', 'a request is a task'])
+    box(1110, 730, 350, 75, 'NEEDS YOU ITEM', ['a task for the owner'])
+    s += f'<text x="760" y="550" font-size="13" font-weight="700" fill="{t["muted"]}">SHARED ACROSS THE NETWORK</text>'
 
-    box(340, 465, 220, 75, 'PROJECT', ['home of a lead'])
-    box(340, 635, 220, 75, 'WORKSPACE', ['folder or worktree'])
-    link('M500 380 V430 H450 V465', 'has home', 466, 422)
-    link('M450 540 V635', 'contains', 480, 590)
-
-    box(650, 465, 220, 75, 'WORKER', ['one-task agent'])
-    box(650, 635, 220, 75, 'TASK', ['work to be done'])
-    box(950, 635, 220, 75, 'REPORT', ['task result'])
-    link('M650 380 V420 H760 V465', 'requests', 711, 412)
-    link('M760 540 V635', 'does', 777, 590)
-    link('M870 500 H920 V672 H950', 'returns', 951, 580)
-
-    s += f'<text x="30" y="785" font-size="13" font-weight="700" fill="{t["muted"]}">SHARED ACROSS THE NETWORK</text>'
-    for x, title, sub in [(30, 'TOOLS', 'skills and MCP'), (420, 'KNOWLEDGE', 'playbooks and findings'),
-                          (810, 'MESSAGE', 'ask, reply, notification')]:
-        box(x, 800, 360, 52, title)
-        s += f'<text x="{x+344}" y="832" text-anchor="end" font-size="12" fill="{t["muted"]}">{sub}</text>'
+    s += f'<text x="30" y="880" font-size="13" font-weight="700" fill="{t["muted"]}">DELEGATED WORK</text>'
+    box(30, 980, 260, 75, 'REQUESTING AGENT', ['the agent above'], True)
+    box(400, 980, 220, 75, 'WORKER', ['one-task agent'])
+    box(730, 980, 300, 95, 'TASK', ['contract: caller, doer,', 'done condition, result'])
+    box(1140, 980, 260, 75, 'REPORT', ['task result'])
+    link('M290 1015 H400', 'requests', 345, 1005)
+    link('M620 1015 H730', 'does', 675, 1005)
+    link('M1030 1015 H1140', 'produces', 1085, 1005)
+    link('M1270 980 V925 H160 V980', 'returns to', 715, 917)
+    link('M1460 189 H1480 V1140 H510 V1055', 'caps worker and automatic wake-ups', 1150, 1130)
     return s + '</svg>\n'
 
 

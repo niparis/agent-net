@@ -23,6 +23,7 @@ These terms describe the agent network. They are the fixed terms used in code, d
 - **Charter:** The goals and behavior of any agent.
 - **Edge:** How two agents deal with each other.
 - **Authority:** What an agent may do without asking the owner, including merges, pushes, proposals and held requests.
+- **Autonomy:** Whether an agent may wake itself or plan its own work. It is separate from authority.
 - **Task:** Work to be done.
 - **Message:** An ask, reply or notification.
 - **Report:** The result of a task.
@@ -34,6 +35,28 @@ These terms describe the agent network. They are the fixed terms used in code, d
 - **Knowledge:** Playbooks and findings shared by agents.
 - **Budget:** Quotas and protected providers.
 - **Needs you:** The queue for the owner's attention.
+
+## Tasks and levels of work
+
+A task is a contract between a caller and a doer. It names the caller, doer, done condition and result. Requests between agents, worker briefs and Needs you items are tasks.
+
+agent-net knows the content only of work that crosses a boundary between agents or between an agent and the owner. Work inside one session stays in the harness and the repo. agent-net is not a task tracker.
+
+Work has three levels: the objective is the charter's purpose; the roadmap lives in the repo and the charter may point to it; tasks are the work to be done. agent-net reads none of this content from the repo. It knows boundary work only as described above.
+
+## State and pending work
+
+Pending says whether an agent has work left. It comes from open tasks, such as a reply owed, a reply awaited or a worker not yet handed back, plus one declared bit at each turn end. No answer means unknown, never no.
+
+Agent state is activity from the session plus pending work for the agent. An idle agent with nothing pending is free. An idle agent with work pending is waiting or stalled.
+
+## Autonomy and guard rails
+
+Authority gates actions such as a merge or push. Autonomy gates decisions about work, such as waking itself or planning its next work. When an agent is idle with work pending, autonomy determines whether agent-net wakes it or creates a Needs you row.
+
+Edge, autonomy and authority together answer who may create work for whom and what needs approval. Autonomy must allow waking before an automatic wake-up can happen. A daily cap limits automatic wake-ups per agent. Two wake-ups in a row with no new message, task or commit stop automatic wake-ups and tell the owner.
+
+An open conflict remains: the session-start design lets only the owner or the CTO start sessions, while autonomy means agent-net wakes agents itself. This needs a decision.
 
 ## Exposure
 
