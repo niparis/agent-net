@@ -227,7 +227,6 @@ func (f *fakeSource) SetNodeAutonomy(_ context.Context, node, value string) erro
 	return nil
 }
 
-
 func (f *fakeSource) Conversations(_ context.Context, q protocol.QueryConversations) (protocol.ConversationPage, error) {
 	f.convCalls = append(f.convCalls, q)
 	if f.convErr != nil {
