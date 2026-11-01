@@ -6,8 +6,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────╯
 New session ────────────────────────────────────────────────────────────────────
   Project        strategies           on Mac, /Users/n/code/strategies
-  Harness        claude
-  Model          default
+  Harness        ◂ claude ▸
+  Model          ◂ default ▸
   Folder         ◂ project folder ▸   no other session here
 > First message
                  empty: start it and enter it
@@ -21,4 +21,4 @@ New session ──────────────────────�
 │                                                                              │
 │ enter: open the CTO · tab: back                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-enter start  up/down field  left/right folder  esc cancel
+up/down field · left/right change · enter start · esc cancel

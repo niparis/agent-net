@@ -115,7 +115,7 @@ func (m Model) helpLine(w int) string {
 	case modeForm:
 		return sDim.Render(clip("tab or up/down: field  enter: next or start  esc cancels", w))
 	case modeSessionForm:
-		return sDim.Render(clip("enter start  up/down field  left/right folder  esc cancel", w))
+		return sDim.Render(clip("up/down field · left/right change · enter start · esc cancel", w))
 	case modeQuotaConfirm:
 		if m.quotaUnprotect {
 			return confirmLine("Unprotect "+sanitize(m.quotaConfirm)+"?", w)

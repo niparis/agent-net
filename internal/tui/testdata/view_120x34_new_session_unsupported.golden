@@ -6,8 +6,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Project        shop                            on Mac, /Users/n/code/shop
-  Harness        aider
-  Model          default
+  Harness        ◂ aider ▸
+  Model          ◂ default ▸
   Folder         ◂ project folder ▸              no other session here
 > First message
                  empty: start it and enter it
@@ -31,4 +31,4 @@ New session ──────────────────────�
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter start  up/down field  left/right folder  esc cancel
+up/down field · left/right change · enter start · esc cancel
