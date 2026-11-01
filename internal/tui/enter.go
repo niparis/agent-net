@@ -32,10 +32,11 @@ type enterMsg struct {
 
 // enterDoneMsg is the end of the entered command.
 type enterDoneMsg struct {
-	name     string
-	err      error
-	fallback string // the manual way, when the plan uses ssh
-	target   string // the ssh target of the plan, or ""
+	name      string
+	err       error
+	fallback  string // the manual way, when the plan uses ssh
+	target    string // the ssh target of the plan, or ""
+	ctoNotice string
 }
 
 // startEnter asks how to enter the selected session.
@@ -139,14 +140,20 @@ func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	proxy := ptyproxy.New(cmd)
 	proxy.Name = name
 	proxy.Title = name + " - ctrl+] to come back"
+	ctoNotice := ""
+	if r.cto && strings.HasPrefix(r.plan.Note, "The CTO's Claude conversation was closed") {
+		ctoNotice = r.plan.Note
+	}
 	return m, run(proxy, func(err error) tea.Msg {
-		return enterDoneMsg{name: name, err: err, fallback: fallback, target: target}
+		return enterDoneMsg{name: name, err: err, fallback: fallback, target: target, ctoNotice: ctoNotice}
 	})
 }
 
 // onEnterDone is the return from the session.
 func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 	switch {
+	case r.err == nil && r.ctoNotice != "":
+		m.say(sanitize(r.ctoNotice))
 	case r.err == nil:
 		m.say("Back from " + r.name + ".")
 	case r.fallback != "" && exitCodeOf(r.err) == 255:

@@ -142,3 +142,46 @@ func TestCTOStartingOperatorReadsAndConcurrentEnter(t *testing.T) {
 		t.Fatalf("starts %q: %v", raw, err)
 	}
 }
+
+func TestCTOClaudeFailedResumeFallback(t *testing.T) {
+	for _, mode := range []string{"missing", "crash"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+			t.Setenv("FAKE_CLAUDE_RESUME_FAILURE", mode)
+			g := startGateway(t, t.TempDir(), "")
+			n := startClaudeNode(t, g, shortSet)
+			harness := "claude"
+			n.cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+			old := "missing-session"
+			if _, err := n.d.st.db.Exec(`UPDATE cto SET claude_session_id=? WHERE id=1`, old); err != nil {
+				t.Fatal(err)
+			}
+			plan, err := n.d.ctoEnter(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if plan.Note != "The CTO's Claude conversation was closed by Claude Code; started a new one." {
+				t.Fatalf("notice: %q", plan.Note)
+			}
+			id, err := n.d.claudeCTOSession()
+			if err != nil || id == "" || id == old || id == "failed-copy" {
+				t.Fatalf("stored id %q: %v", id, err)
+			}
+			rec := readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+			if argValue(rec.Args, "--resume") != "" {
+				t.Fatalf("fallback resumed: %v", rec.Args)
+			}
+			n.d.cto.mu.Lock()
+			n.d.stopClaudeCTOLocked()
+			n.d.cto.mu.Unlock()
+			t.Setenv("FAKE_CLAUDE_RESUME_FAILURE", "")
+			if _, err := n.d.ctoEnter(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			rec = readClaude(t, filepath.Join(n.cfg.StateDir, "cto", "claude"))
+			if got := argValue(rec.Args, "--resume"); got != id {
+				t.Fatalf("next resume %q, want %q", got, id)
+			}
+		})
+	}
+}

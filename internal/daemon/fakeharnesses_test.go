@@ -164,6 +164,19 @@ func fakeClaudeCLI() {
 		fmt.Println("Workspace not trusted. Run `claude` in this folder once and accept the trust prompt, then retry.")
 		os.Exit(1)
 	}
+	if mode := os.Getenv("FAKE_CLAUDE_RESUME_FAILURE"); mode != "" && argValue(os.Args, "--resume") != "" {
+		id := "failed-copy"
+		job := filepath.Join(filepath.Dir(dir), "jobs", id)
+		os.MkdirAll(job, 0700)
+		detail := "source session not found"
+		if mode == "crash" {
+			detail = "worker crashed"
+		}
+		body, _ := json.Marshal(map[string]string{"status": "failed", "error": detail})
+		os.WriteFile(filepath.Join(job, "state.json"), body, 0600)
+		fmt.Println("claude stop", id)
+		return
+	}
 	cwd, _ := os.Getwd()
 	init, _ := json.Marshal(fakeClaudeInit{Args: os.Args[1:], Cwd: cwd, Env: map[string]string{
 		"CLAUDE_CODE_DISABLE_MOUSE": os.Getenv("CLAUDE_CODE_DISABLE_MOUSE")}})
@@ -248,6 +261,9 @@ func fakeClaudeSession() {
 	b, _ := json.Marshal(sf)
 	tmp := filepath.Join(dir, "."+strconv.Itoa(os.Getpid())+".tmp")
 	os.WriteFile(tmp, b, 0o600)
+	job := filepath.Join(filepath.Dir(dir), "jobs", id)
+	os.MkdirAll(job, 0700)
+	os.WriteFile(filepath.Join(job, "state.json"), []byte(`{"status":"running"}`), 0600)
 	os.Rename(tmp, filepath.Join(dir, strconv.Itoa(os.Getpid())+".json"))
 
 	var mu sync.Mutex

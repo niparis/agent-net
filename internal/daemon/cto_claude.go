@@ -31,6 +31,7 @@ type claudeCTOState struct {
 	token               string
 	ref, session, model string
 	capabilities        map[string]claudeCTOCapability
+	restarted           bool
 }
 
 type claudeCTOCapability struct {
@@ -112,7 +113,30 @@ func findClaudeCTOBg(sessions, dir, ref string) (claudeSessionFile, bool) {
 // startClaudeCTO is serialized with CTO mutations by ctoDispatchMu. Only
 // inspecting and publishing runtime state takes cto.mu. Launching Claude,
 // capability checks and waiting for its session file run without it.
+const claudeCTORestartNotice = "The CTO's Claude conversation was closed by Claude Code; started a new one."
+
+type claudeCTOJobFailure struct{ detail string }
+
+func (e *claudeCTOJobFailure) Error() string { return "CTO Claude job failed: " + e.detail }
+
 func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
+	d.claudeCTO.restarted = false
+	err := d.startClaudeCTOOnce(ctx, id, model)
+	var failure *claudeCTOJobFailure
+	if id == "" || !errors.As(err, &failure) {
+		return err
+	}
+	if err = d.startClaudeCTOOnce(ctx, "", model); err != nil {
+		return err
+	}
+	d.claudeCTO.restarted = true
+	if d.log != nil {
+		d.log.Print(claudeCTORestartNotice)
+	}
+	return nil
+}
+
+func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error {
 	d.cto.mu.Lock()
 	c := &d.claudeCTO
 	dir := filepath.Join(d.cfg.StateDir, "cto", "claude")
@@ -198,7 +222,12 @@ func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	defer cancel()
 	for {
 		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref)
-		if ok && adopt(sf) {
+		status, detail := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
+		if status == "failed" || status == "crashed" || status == "killed" {
+			(claudeLauncher{}).stopID(d, ref)
+			return &claudeCTOJobFailure{detail: detail}
+		}
+		if ok && status == "running" && adopt(sf) {
 			return nil
 		}
 		select {
@@ -208,6 +237,29 @@ func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 		case <-time.After(50 * time.Millisecond):
 		}
 	}
+}
+
+// Job state is authoritative: a session file can appear before a resume fails.
+func claudeCTOJobState(sessions, ref string) (string, string) {
+	if filepath.Base(ref) != ref {
+		return "", ""
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(sessions), "jobs", ref, "state.json"))
+	if err != nil {
+		return "", ""
+	}
+	var state struct {
+		Status string          `json:"status"`
+		Error  json.RawMessage `json:"error"`
+	}
+	if json.Unmarshal(raw, &state) != nil {
+		return "", ""
+	}
+	detail := strings.Trim(string(state.Error), `"`)
+	if detail == "" || detail == "null" {
+		detail = state.Status
+	}
+	return strings.ToLower(state.Status), claudeCTOErrorOutput([]byte(detail))
 }
 
 var claudeVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)
