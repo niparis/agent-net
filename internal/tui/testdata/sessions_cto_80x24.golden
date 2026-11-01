@@ -14,11 +14,11 @@
 
 
 
+
+
+
 ╭─Atlas · opencode · fake/m1───────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the Atlas · tab: back                                            │
+│ c: open the Atlas                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  n new  tab Atlas  ? help  q quit
+up/down select  enter open  m msg  n new  c Atlas  ? help  q quit

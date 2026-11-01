@@ -18,17 +18,17 @@ What a session in this project gets. m changes the machine.
 │                       │   ● using-git-worktrees           agent-net v2                                               │
 │                       │ MCP SERVERS  1                                                                               │
 │                       │   ◆ tenebrae-library              gateway on research                                        │
+│                       │                                                                                              │
+│                       │                                                                                              │
+│                       │                                                                                              │
+│                       │                                                                                              │
+│                       │                                                                                              │
 │                       │ needs: a deploy runbook skill - estate-runbook                                               │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 j/k project  m machine  / filter  [ ] screen  ? help  q quit

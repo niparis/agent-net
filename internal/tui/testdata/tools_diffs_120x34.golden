@@ -4,14 +4,19 @@ Things that do not match across your machines. enter fixes the selected one, x a
 ╭─What differs · 5 to look at──────────────────────────────────────────────────────────────────────────────────────────╮
 │ ▸ ! design-taste-frontend has 2 different copies on research                                                         │
 │     fix: compare, then keep one                                                                                      │
+│                                                                                                                      │
 │   ◐ code-review differs: Nicolas-MBP on v1, research on v3                                                           │
 │     fix: make every machine use v3                                                                                   │
+│                                                                                                                      │
 │   ◐ imnplementing-clean-architecture looks like a copy of clean-architecture-python                                  │
 │     fix: remove imnplementing-clean-architecture                                                                     │
+│                                                                                                                      │
 │   ◐ sovl-clone's repo has its own web-design-guidelines; it hides yours                                              │
 │     fix: remove the repo copy                                                                                        │
+│                                                                                                                      │
 │   ○ 23 skills are only on research and not managed by agent-net                                                      │
 │     fix: import them and put them on every machine                                                                   │
+│                                                                                                                      │
 │   … 2 items share a difference (pending)                                                                             │
 │     press enter to see each difference                                                                               │
 │                                                                                                                      │
@@ -24,11 +29,6 @@ Things that do not match across your machines. enter fixes the selected one, x a
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 j/k move  enter fix  x accept  [ ] screen  ? help  q quit

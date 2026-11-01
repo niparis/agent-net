@@ -8,7 +8,10 @@ selected machine or projects.
 │   code-review        agent-net v3      v1           ●        -               │
 │   ⌂ deploy-test-ser… repo sovl-clone   ·            ·        ⌂ sovl-clone    │
 │   design-taste-fron… your machines     ·            ○        -               │
-│ 1-4 of 41                                                                    │
+│   diagnosing-bugs    agent-net v1      ◐            ●        -               │
+│   ⌂ estate-runbook   repo homelab      ·            ·        ⌂ homelab       │
+│   found-skill-00     your machines     ○            ○        -               │
+│ 1-7 of 41                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Details · clean-architecture-python──────────────────────────────────────────╮
 │ agent-net v1 on every project on: Nicolas-MBP, research. agent-net handles   │
@@ -16,9 +19,6 @@ selected machine or projects.
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k item  h/l machine  a/u on/off  / search  [ ] screen  ? help  q quit

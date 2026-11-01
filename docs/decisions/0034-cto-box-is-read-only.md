@@ -3,6 +3,8 @@
 **Date:** 2026-10-31
 **Status:** Accepted.
 
+**Key update:** `c` and `C` now focus the CTO box. Tab returns to Sessions.
+
 ## Context
 
 The CTO box at the bottom of every tab was a second chat window: `tab` focused

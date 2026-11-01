@@ -91,18 +91,29 @@ func (m Model) ctoView(w, h int) []string {
 		if f.titleInput.Value() == "" {
 			formTitle = sDim.Render(protocol.DefaultCTOTitle)
 		}
-		out = append(out,
+		fields := []string{
 			clip(mark(0)+" Harness: < "+f.harness+" >", w),
 			clip(mark(1)+" Title:   "+formTitle, w),
-			clip(mark(2)+" Model:   "+model, w))
+			clip(mark(2)+" Model:   "+model, w),
+		}
 		candidates := m.ctoModelCandidates(f.harness, f.input.Value())
-		if len(candidates) > 0 {
-			out = append(out, clip("  Suggestions: "+strings.Join(candidates, ", "), w))
+		showSuggestions := len(candidates) > 0 && (h >= 3 || f.field == 2)
+		fieldRows := h
+		if h > 1 && (f.err != "" || showSuggestions) {
+			fieldRows--
+		}
+		fieldRows = min(fieldRows, len(fields))
+		if fieldRows == 2 && f.field == 0 && showSuggestions {
+			out = append(out, fields[0], fields[2])
+		} else {
+			start := min(max(f.field-fieldRows+1, 0), len(fields)-fieldRows)
+			out = append(out, fields[start:start+fieldRows]...)
 		}
 		if f.err != "" {
 			out = append(out, clip(sBad.Render("  "+f.err), w))
+		} else if showSuggestions {
+			out = append(out, clip("  Suggestions: "+strings.Join(candidates, ", "), w))
 		}
-		out = append(out, clip("  up/down field  left/right harness  tab field  enter save  esc cancel", w))
 		for len(out) < h {
 			out = append(out, "")
 		}
@@ -121,7 +132,10 @@ func (m Model) ctoView(w, h int) []string {
 	if c.confirming {
 		lines = append(lines, "Start a new conversation?"+confirmSuffix)
 	}
-	rows := max(h-1, 0)
+	rows := h
+	if h > 1 {
+		rows-- // The last interior row is the hint.
+	}
 	c.pageRows = max(rows-1, 1)
 	c.scrollMax = max(len(lines)-rows, 0)
 	c.scroll = min(c.scroll, c.scrollMax)
@@ -133,14 +147,24 @@ func (m Model) ctoView(w, h int) []string {
 	} else {
 		lines = lines[start:end]
 	}
-	for len(out) < h-1-len(lines) {
+	for len(out) < rows-len(lines) {
 		out = append(out, "")
 	}
 	for _, v := range lines {
 		out = append(out, clip(v, w))
 	}
-	out = append(out, m.onboardingLine(w))
-	return panelWithBorder(title, out, w+4, roleCTO, borderColor)
+	if h > 1 {
+		out = append(out, m.onboardingLine(w))
+	}
+	box := panelWithBorder(title, out, w+4, roleCTO, borderColor)
+	if h == 1 {
+		// With a single interior row, put the hint in the bottom border so
+		// the newest CTO line remains visible.
+		hint := m.onboardingLine(w)
+		border := lipgloss.NewStyle().Foreground(borderColor)
+		box[len(box)-1] = border.Render("╰─") + hint + border.Render(strings.Repeat("─", max(w+1-lipgloss.Width(hint), 0))+"╯")
+	}
+	return box
 }
 
 // wrapCTOLine indents continuation rows while keeping their text in the box.

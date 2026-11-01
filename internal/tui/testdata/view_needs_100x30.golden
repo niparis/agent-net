@@ -18,13 +18,13 @@ Needs you (2) ──────────────────────
 
 
 
+
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                  │
 │                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│                                                                                                  │
-│ enter: open the CTO · tab: back                                                                  │
+│ c: open the CTO                                                                                  │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter answer  m msg  n new  tab CTO  ? help  q quit
+up/down select  enter answer  m msg  n new  c CTO  ? help  q quit

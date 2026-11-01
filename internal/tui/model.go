@@ -1123,16 +1123,12 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tab == toolsTab && !m.mapOn && m.tl.capturing() {
 		return m.toolsKey(k)
 	}
-	if k.String() == "C" && !m.filtering {
+	if (k.String() == "c" || k.String() == "C") && !m.filtering {
 		m.tab, m.mapOn, m.focus = 0, false, focusCTO
 		m.open = nil
 		if m.cto == nil {
 			return m.startCTO()
 		}
-		return m, nil
-	}
-	if k.String() == "tab" && m.cto != nil && !m.filtering && m.open == nil {
-		m.focus = focusCTO
 		return m, nil
 	}
 	if !m.filtering && m.open == nil {
@@ -1330,7 +1326,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "m":
 		return m.startCompose()
-	case "c":
+	case "b":
 		if m.tab == sessionsTab || m.tab == messagesTab {
 			return m.startHandover()
 		}
@@ -1444,11 +1440,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 					return m, m.bodyCmd(row.lastMsgID)
 				}
 			}
-		}
-	case "tab":
-		if m.tab == sessionsTab && m.cto != nil {
-			m.focus = focusCTO
-			return m, nil
 		}
 	case "r":
 		if !m.fetching {

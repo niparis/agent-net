@@ -1,18 +1,23 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online · 1 busy                               updated 14:05:00
 
 
-                                  ⠶○⠶ project-07 ⠄⢀ ⡀⢀ ⡀⢀ ⡀             ○ project-14
-                                                           ⠈ ⠁⠈ ⠁⠈ ⠁⠐ ⠂⠐ ⠂⠐ ⠂⠠ ⠄⠠ ⠄⠠ ⠄⢀ ⡀⢀ ⡀⢀ ⡀
-                                                                                               ⠈ ⠁⠈⠶○⠶ project-11
-         ○ project-13                              •
+                                  ⠶○⠶ project-07 ⡀⢀                     ○ project-14
+                                                    ⠁⠈ ⠁⠈ ⠁⠐ ⠂⠐ ⠂⠠ ⠄⠠ ⠄⢀ ⡀⢀ ⡀
+                                                                             ⠈ ⠁⠈ ⠁⠈ ⠂⠐ ⠂⠐ ⠄⠠ ⠄⠠ ⡀⢀⠶○⠶ project-11
+
+         ○ project-13
                                                   ○ project-05
-                                                     ⠈⠑○ project-04                                    project-10 ○
-                                                         ⠈⠑⠢⢄⡀
+                                                  •←⠢⢄
+                                                      ⠑○ project-04                                    project-10 ○
+                                                        ←⠑⠢⣀
     ○ project-12                                            (○) project-03 ◂all
-                                                                 ⠈⠑⠢○ project-02
-                                                                      ⠉•⠤⣀                               project-08 ○
+                                                               ←⠢⡀
+                                                                 ⠈⠑⠤○ project-02
+                                                                    ⠈←⢄⡀                                 project-08 ○
+                                                                       •⠢⢄
                ○ project-09                                               ○ project-01
-                                                                             ⠈⠑○ architect
+                                                                             ⠐⢄⡀
+                                                                               ○ architect
 
                                        ○ project-06
 
@@ -24,11 +29,6 @@
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-1-5 tabs  tab CTO  ? help  q quit
+1-5 tabs  c CTO  ? help  q quit

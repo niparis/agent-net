@@ -263,7 +263,12 @@ func (m Model) quotasView(w, h int) []string {
 		if start <= workerStart && end > workerStart && end-workerStart < 3 {
 			end = workerStart
 		}
-		out = append(out[:1], body[start:end]...)
+		visible := append([]string(nil), body[start:end]...)
+		if end < len(body) && len(visible) > 0 && strings.HasPrefix(stripStyles(visible[len(visible)-1]), "│") {
+			more := "↓ more"
+			visible[len(visible)-1] = sDim.Render("╰─" + more + strings.Repeat("─", max(w-3-lipgloss.Width(more), 0)) + "╯")
+		}
+		out = append(out[:1], visible...)
 	}
 
 	for len(out) < h {

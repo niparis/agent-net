@@ -1,4 +1,5 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+ Differences   All tools   By project   [ ] switch screen · ← → also   / search
 ╭─Compare, then keep one───────────────────────────────────────────────────────╮
 │   summary by model: a runs tests first; b uses the old install command       │
 │ a  keep the copy on alpha                                                    │
@@ -9,16 +10,15 @@
 │      used by beta / claude                                                   │
 │   no clear winner: read the comparison                                       │
 │   1 file differ: SKILL.md changed                                            │
-│   lines 1-9 of 11 · up/down scroll                                           │
+│   the one you keep goes into agent-net and to every machine                  │
+│   selected file: SKILL.md                                                    │
 │                                                                              │
 │ a keep alpha  b keep beta  n/p select file  v view diff  d exact folders     │
 │   esc cancel                                                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k move  enter fix  x accept  [ ] screen  ? help  q quit

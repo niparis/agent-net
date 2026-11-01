@@ -8,17 +8,17 @@ governed by: wbg-architect (advisor)
 IN 2                                     OUT 2
 all projects ──▶ depends                 ──▶ cogforge depends ask
 homelab ──▶ deploys auto                 ──▶ homelab depends ask
-Card 1-4/44  [ ] scroll ────────────────────────────────────────────────────────
+Card 1-7/44  [ ] scroll ────────────────────────────────────────────────────────
 Legend ─────────────────────────────────────────────────────────────────────────
   Edges
   ──▶ depends  consumer uses provider
   ──▶ governs  architect over component; mode advisor, arbiter or owner
+  ──▶ deploys  deployer runs the app's deploys
+  Request rule on an edge from A to B
+  normal  delivered; B judges it
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 enter sessions  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit

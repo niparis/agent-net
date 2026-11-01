@@ -269,7 +269,10 @@ func TestActionScreensGolden(t *testing.T) {
 		bad.fail("Not stopped: machine build-vm is offline")
 		golden(t, name("notice_error"), bad.View())
 
-		feed := keys(selectID(m, ownerID), "tab")
+		feed := keys(selectID(m, ownerID), "c")
+		if feed.focus != focusCTO {
+			t.Fatal("c did not focus the CTO")
+		}
 		golden(t, name("feed_owner_reply"), feed.View())
 	}
 }

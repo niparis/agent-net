@@ -15,10 +15,10 @@
 │   model gone - ask the CTO to fix                                            │
 │ router          opencode opus-5.5:high     ·     ·     ·     ·     ·         │
 │   (not a worker provider)                                                    │
+│ sol             codex    gpt-6.1-sol       ·     ·     ·     ·     x         │
+│ terra           codex    gpt-6.1-terra     ·     ·     ·     ·     x         │
+╰─↓ more───────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

@@ -20,15 +20,15 @@
 │ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                                                                      │
 │ simple · 8 tasks                                                                                                     │
 │ luna         5       0.20            -    2 min                                                                      │
+│ deepseek     1       0.33            -    2 min                                                                      │
+│ sol          1       0.00            -    0 min                                                                      │
+│ terra        1       1.00            -   10 min                                                                      │
+│ normal · 154 tasks                                                                                                   │
+╰─↓ more───────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

@@ -20,15 +20,15 @@
 │ terra pi           pi       gpt-6.1-terra             38.1/medium  ·     ·     ·     x     x      unused             │
 │   not on research                                                                                                    │
 │ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min                                               │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+opus claude: complete 10 · continue 0 · fix 0 · picked for trivial, simple, normal, hard and very complex (next start).…
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

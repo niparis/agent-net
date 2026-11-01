@@ -8,7 +8,7 @@ governed by: wbg-architect (advisor)
 IN 2                                                         OUT 2
 all projects ──▶ depends                                     ──▶ cogforge depends ask
 homelab ──▶ deploys auto                                     ──▶ homelab depends ask
-Card 1-10/15  [ ] scroll ───────────────────────────────────────────────────────────────────────────────────────────────
+Card ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client reports.
@@ -19,16 +19,16 @@ needs            MCP: tenebrae-library; a GPU box for embeddings.
 notes            Deploys go through homelab. Keep the library read only on laptops.
 Rules ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 tests_before_merge suite-new-tests        maturity default
+merge_authority    delegated              maturity default
+worker_sandbox     sandboxed              maturity default
+judge_consumers    strict                 maturity default
+deploy_rule        owner                  owner override
+autonomy           wake                   owner override
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 enter sessions  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit

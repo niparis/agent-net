@@ -18,17 +18,17 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
 │ 1 system event · e to show · w hide workers                    ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the CTO · tab: back                                                                                      │
+│ c: open the CTO                                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit
+up/down thread  left/right msg  enter latest  v body  c CTO  ? help  q quit

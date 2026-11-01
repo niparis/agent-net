@@ -684,7 +684,7 @@ func TestCTOWrapsLongLines(t *testing.T) {
 		t.Fatalf("lines not wrapped:\n%s", joined)
 	}
 	for _, line := range view {
-		if strings.Contains(line, "…") && !strings.Contains(line, "enter: open the CTO") {
+		if strings.Contains(line, "…") && !strings.Contains(line, "c: open the CTO") {
 			t.Fatalf("line clipped: %q", line)
 		}
 		if ansi.StringWidth(line) > 30 {

@@ -430,9 +430,9 @@ func TestHandoverConfirmKeys(t *testing.T) {
 			m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 			m = settle(refresh(m, src))
 			m.selected = "s_0000000000000002"
-			m = pressKey(m, "c")
+			m = pressKey(m, "b")
 			if m.handover == nil {
-				t.Fatal("c did not open the preview")
+				t.Fatal("b did not open the preview")
 			}
 			want := m.handover.text
 			m = pressKey(m, tc.key)

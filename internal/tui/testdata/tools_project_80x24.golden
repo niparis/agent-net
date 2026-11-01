@@ -9,16 +9,16 @@ What a session in this project gets. m changes the machine.
 │ ▸ homelab           │ ON NICOLAS-MBP FOR EVERY PROJECT  9                    │
 │   homelab-portal    │   ● clean-architecture-python     agent-net v1         │
 │   infra-game        │   ◐ code-review                   agent-net v3         │
-│   sovl-clone        │   + 7 more                                             │
-│   strategies        │ MCP SERVERS  1                                         │
-│   tenebrae          │   ◆ tenebrae-library              gateway on research  │
-│   wbg-arch          │ needs: a deploy runbook skill - estate-runbook         │
+│   sovl-clone        │   ◐ diagnosing-bugs               agent-net v1         │
+│   strategies        │   ○ found-skill-00                not managed          │
+│   tenebrae          │   ○ found-skill-01                not managed          │
+│   wbg-arch          │   + 4 more                                             │
+│   wbg-housing       │ MCP SERVERS  1                                         │
+│   wbg-worldview     │   ◆ tenebrae-library              gateway on research  │
+│                     │ needs: a deploy runbook skill - estate-runbook         │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 j/k project  m machine  / filter  [ ] screen  ? help  q quit

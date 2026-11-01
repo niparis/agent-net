@@ -14,11 +14,11 @@
  build-vm 2 sessions ───────────────────────────────────────────────────────────
   ci-runner    pi       agent-net gpt-6      idle   -        5%  300M
   scratch      pi       -         -          shell  -       <1%   80M
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  enter open  m msg  n new  tab CTO  ? help  q quit
+up/down select  enter open  m msg  n new  c CTO  ? help  q quit

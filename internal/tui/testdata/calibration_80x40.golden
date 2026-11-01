@@ -24,17 +24,17 @@
 │ deepseek     1       0.33            -    2 min                              │
 │ sol          1       0.00            -    0 min                              │
 │ terra        1       1.00            -   10 min                              │
+│ normal · 154 tasks                                                           │
+│ deepseek    66       0.09            -    1 min                              │
+│ terra       53       0.72            -    6 min                              │
+│ luna        19       0.26            -    3 min                              │
+│ sol          9       0.26            -    2 min                              │
+╰─↓ more───────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │
 │                                                                              │
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down select  p protect  s show unset  r refresh  tab CTO  ? help  q quit
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

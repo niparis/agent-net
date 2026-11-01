@@ -28,10 +28,10 @@ func handoverWaitingModel(w, h int) Model {
 
 func TestHandOverPreviewShowsTheWaitingSession(t *testing.T) {
 	m := handoverWaitingModel(100, 30)
-	next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("c")})
+	next, _ := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("b")})
 	m = next
 	if m.handover == nil {
-		t.Fatal("c did not open the hand-over preview")
+		t.Fatal("b did not open the hand-over preview")
 	}
 	for _, want := range []string{
 		"Hand-over from the owner",
@@ -59,9 +59,9 @@ func TestHandOverPreviewShowsAHeldRequest(t *testing.T) {
 		Body: "Deploy abc to production?\nThe branch is ready.",
 	}}
 	m.selected = "m_held"
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	if m.handover == nil {
-		t.Fatal("c did not open the hand-over preview")
+		t.Fatal("b did not open the hand-over preview")
 	}
 	for _, want := range []string{
 		"a held request in Needs you",
@@ -84,9 +84,9 @@ func TestHandOverPreviewShowsTheInboxQuestion(t *testing.T) {
 		Status: "open", CreatedAt: t0.Add(-5 * time.Minute),
 	}}
 	m.selected = "s_0000000000000002"
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	if m.handover == nil {
-		t.Fatal("c did not open the hand-over preview")
+		t.Fatal("b did not open the hand-over preview")
 	}
 	for _, want := range []string{
 		"an inbox item in Needs you",
@@ -112,9 +112,9 @@ func TestHandOverPreviewShowsAMessageBody(t *testing.T) {
 	m = settle(refresh(m, src))
 	m = keys(m, "4")
 	m.feedCur = feedIndexFor(m, "m_1")
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	if m.handover == nil {
-		t.Fatal("c did not open the hand-over preview")
+		t.Fatal("b did not open the hand-over preview")
 	}
 	for _, want := range []string{
 		"a message in Messages",
@@ -151,9 +151,9 @@ func TestHandOverSendsExactlyThePreviewedText(t *testing.T) {
 		Body: "Deploy abc to production?\nThe branch is ready.",
 	}}
 	m.selected = "m_held"
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	if m.handover == nil {
-		t.Fatal("c did not open the hand-over preview")
+		t.Fatal("b did not open the hand-over preview")
 	}
 	want := m.handover.text
 	m = pressKey(m, "enter")
@@ -176,7 +176,7 @@ func TestHandOverEscCancels(t *testing.T) {
 	m = send(m, tea.WindowSizeMsg{Width: 100, Height: 30})
 	m = settle(refresh(m, src))
 	m.selected = "s_0000000000000002"
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	m = pressKey(m, "esc")
 	if m.handover != nil {
 		t.Fatal("esc did not close the preview")
@@ -192,9 +192,9 @@ func TestHandOverCapsAndScrollsLongText(t *testing.T) {
 		a.Profile.Task = strings.Repeat("word ", 2000)
 	}))
 	m.selected = "s_long"
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	if m.handover == nil {
-		t.Fatal("c did not open the hand-over preview")
+		t.Fatal("b did not open the hand-over preview")
 	}
 	if got := len([]rune(m.handover.text)); got > maxHandoverRunes {
 		t.Fatalf("preview holds %d runes, limit is %d", got, maxHandoverRunes)
@@ -214,7 +214,7 @@ func TestHandOverViewFitsEverySize(t *testing.T) {
 	for _, w := range []int{80, 120} {
 		for _, h := range []int{24, 34} {
 			m := handoverWaitingModel(w, h)
-			m = pressKey(m, "c")
+			m = pressKey(m, "b")
 			out := m.View()
 			if ls := lines(out); len(ls) != h {
 				t.Fatalf("%dx%d: %d lines, want %d", w, h, len(ls), h)
@@ -230,10 +230,10 @@ func TestHandOverViewFitsEverySize(t *testing.T) {
 
 func TestHandOverGolden(t *testing.T) {
 	m := handoverWaitingModel(80, 24)
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	golden(t, "handover_80x24", m.View())
 
 	m = handoverWaitingModel(120, 34)
-	m = pressKey(m, "c")
+	m = pressKey(m, "b")
 	golden(t, "handover_120x34", m.View())
 }

@@ -14,11 +14,11 @@
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
   scratch      pi       -         -          shell  -         ?     ?
 
+
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
   started strategies (claude) on Mac: first message sent. Enter opens it.

@@ -32,6 +32,17 @@ type layout struct {
 
 const maxMachineRows = 5
 
+// ctoBoxHeight keeps half the rows previously reserved for the CTO. Round up
+// when the old height is odd so that its latest output still has room.
+func (m Model) ctoBoxHeight(tab int) int {
+	h := max(m.height, 10)
+	box := min(max((h-1)/3, 6), max(h-4, 1))
+	if tab == quotasTab && h <= 24 && box > 6 {
+		box = 6
+	}
+	return (box + 1) / 2
+}
+
 // layout divides the height between the parts. The sessions table gets what
 // the detail pane and the feed leave; on a tall terminal they grow too. With
 // expand the detail pane takes the room of the feed.
@@ -47,7 +58,7 @@ func (m Model) layout() layout {
 		l.machines++ // the "+N more" line
 	}
 	if m.mode == modeNormal {
-		box := min(max((h-1)/3, 6), max(h-4, 1))
+		box := m.ctoBoxHeight(m.tab)
 		fixed := 1 + max(l.machines, 1) + 3 + l.needs + 1 + box
 		if l.banner {
 			fixed++
@@ -139,10 +150,7 @@ func (m Model) View() string {
 			add(s)
 		}
 	default:
-		box := min(max((h-1)/3, 6), max(h-4, 1))
-		if m.tab == quotasTab && h <= 24 && box > 6 {
-			box = 6
-		}
+		box := m.ctoBoxHeight(m.tab)
 		contentHeight := h - 1 - box
 		switch {
 		case m.mode == modeSessionForm:

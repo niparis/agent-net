@@ -18,17 +18,17 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: Atl
 │                                                                ││                                                    │
 │                                                                ││                                                    │
 │                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
+│                                                                ││                                                    │
 │ 0 system events · e to show · w hide workers                   ││                                                    │
 ╰────────────────────────────────────────────────────────────────╯╰────────────────────────────────────────────────────╯
 ╭─Atlas · opencode · fake/m1───────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│                                                                                                                      │
-│ enter: open the Atlas · tab: back                                                                                    │
+│ c: open the Atlas                                                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  enter latest  v body  tab Atlas  ? help  q quit
+up/down thread  left/right msg  enter latest  v body  c Atlas  ? help  q quit

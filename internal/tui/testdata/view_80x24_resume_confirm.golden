@@ -14,11 +14,11 @@
   ci-runner    pi       agent-net gpt-6      idle   -         ?     ?
   scratch      pi       -         -          shell  -         ?     ?
  old-box 1 session ─────────────────────────────────────────────────────────────
+  old-session  claude   old       -          off    -     -     -
+
+
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 Resume tenebr… (claude, last active 3h ago) and enter it?  enter: yes · esc: no

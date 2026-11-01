@@ -105,7 +105,7 @@ func (m Model) toolsScreenLine(w int) string {
 }
 
 // toolsHints lists the keys used most on the Tools tab. [ and ] switch the
-// screens: the digits are the global tabs and tab goes to the CTO box. The
+// screens: the digits are the global tabs and c goes to the CTO box. The
 // full list is in the help overlay.
 func (m Model) toolsHints() []hint {
 	switch m.tl.screen {
@@ -828,8 +828,11 @@ func overlayModal(screen, box []string, w int) []string {
 	}
 	x := max((w-bw)/2, 0)
 	out := append([]string(nil), screen...)
-	// The plan floats on a clear band: no pieces of the screen under it show
-	// beside it.
+	// The full-width plan covers the panel beneath it. Clear the rest of that
+	// panel too, so its border or rows do not appear without their heading.
+	for i := y; i < len(out); i++ {
+		out[i] = ""
+	}
 	for i, l := range box {
 		r := y + i
 		if r >= len(out) {

@@ -14,10 +14,10 @@ Needs you (2) ──────────────────────
   strategies         claude   strategies  sonnet-5-5 idle      -      240%  4.6G
   web                opencode shop        sonnet-5   idle      -         ?     ?
  build-vm 2 sessions ───────────────────────────────────────────────────────────
+  ci-runner          pi       agent-net   gpt-6      idle      -        5%  300M
+  scratch            pi       -           -          shell     -       <1%   80M
+
 ╭─Atlas · opencode · fake/m1 · 2 open proposals────────────────────────────────╮
-│                                                                              │
-│ you: hello                                                                   │
-│ cto:                                                                         │
 │ hi                                                                           │
 │ enter: open the Atlas · tab: back · w: drive 30m                             │
 ╰──────────────────────────────────────────────────────────────────────────────╯

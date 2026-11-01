@@ -8,6 +8,9 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │ 2 system events · e to hide · w hide workers                                 │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Conversation─────────────────────────────────────────────────────────────────╮
+│ Check the tests.                                                             │
+│   13:58 worker 8                                                             │
+│ ✓ done · 1h5m · 15 files                                                     │
 │   14:02 tenebrae-53                                                          │
 │ Polish the sessions panel                                                    │
 │ Run the checks.                                                              │
@@ -16,9 +19,6 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 ╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
-│                                                                              │
-│                                                                              │
-│                                                                              │
-│ enter: open the CTO · tab: back                                              │
+│ c: open the CTO                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  v body  f defect  tab CTO  ? help  q quit
+up/down thread  left/right msg  v body  f defect  c CTO  ? help  q quit
