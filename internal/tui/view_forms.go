@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -19,6 +20,11 @@ func (m Model) noticeLine(w int) (string, bool) {
 		return "", false
 	}
 	prefix := "  "
+	if a := m.resumeConfirm; a != nil {
+		suffix := fmt.Sprintf(" (claude, last active %s ago) and enter it?  enter: yes  esc: no", ago(m.now().Sub(time.Unix(a.LastSeen, 0))))
+		name := sanitize(a.Profile.Name)
+		return m.noticeStyle(n).Render("Resume " + clip(name, max(w-len("Resume ")-len(suffix), 0)) + suffix), true
+	}
 	if n.err {
 		prefix = "! "
 	}

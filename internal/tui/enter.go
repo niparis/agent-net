@@ -48,9 +48,58 @@ func (m Model) startEnter() (Model, tea.Cmd) {
 		m.fail("That is you, not a session.")
 		return m, nil
 	}
+	if !a.Online && a.Harness != "opencode" && a.Harness != "codex" {
+		if a.Harness != "claude" || a.NodeID != m.snap.NodeID {
+			m.fail("resume works for Claude on this machine for now")
+			return m, nil
+		}
+		if m.now().Sub(time.Unix(a.LastSeen, 0)) > time.Hour {
+			m.resumeConfirm = &a
+			return m, nil
+		}
+		return m.resumeClaude(a)
+	}
 	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
 	m.say("Looking up how to enter " + name + "...")
 	return m, m.enterCmd(a.SessionID, name)
+}
+
+type resumeMsg struct {
+	res  protocol.StartedSession
+	err  error
+	name string
+}
+
+func (m Model) resumeClaude(a protocol.AgentView) (Model, tea.Cmd) {
+	name := sanitize(dashIfEmpty(a.Profile.Name)) + " (" + sanitize(a.Hostname) + ")"
+	m.say("Resuming " + name + "...")
+	src := m.src
+	return m, func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID})
+		for err == nil && res.Status == "starting" {
+			select {
+			case <-ctx.Done():
+				return resumeMsg{err: ctx.Err(), name: name}
+			case <-time.After(100 * time.Millisecond):
+			}
+			res, err = src.SessionStartGet(ctx, res.ID)
+		}
+		return resumeMsg{res: res, err: err, name: name}
+	}
+}
+
+func (m Model) onResume(r resumeMsg) (Model, tea.Cmd) {
+	if r.err != nil {
+		m.fail("Cannot resume: " + explain(r.err))
+		return m, nil
+	}
+	if r.res.Status != "started" || r.res.SessionID == "" {
+		m.fail(firstNonEmpty(sanitize(r.res.Error), "The session did not resume."))
+		return m, nil
+	}
+	return m, m.enterCmd(r.res.SessionID, r.name)
 }
 
 func (m Model) enterCmd(id, name string) tea.Cmd {

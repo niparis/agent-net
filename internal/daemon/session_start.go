@@ -60,6 +60,47 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 	}
 	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: p.Harness, Project: found.Name, Path: found.Path, Model: p.Model, StartedAt: time.Now().Unix()}
 	r.Branch, _ = gitOut(ctx, r.Path, "branch", "--show-current")
+	args := []string{"--bg", "--name", r.Project}
+	if p.Model != "" {
+		args = append(args, "--model", p.Model)
+	}
+	if p.FirstMessage != "" {
+		args = append(args, "--", p.FirstMessage)
+	}
+	return d.launchOwnerClaude(r, bin, args, ""), nil
+}
+
+func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequest) (protocol.StartedSession, error) {
+	raw, err := d.call(ctx, "query.agent", protocol.QueryAgent{SessionID: p.SessionID})
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	var result struct {
+		Agent protocol.AgentView `json:"agent"`
+	}
+	if err = json.Unmarshal(raw, &result); err != nil {
+		return protocol.StartedSession{}, err
+	}
+	a := result.Agent
+	if a.NodeID != d.cfg.NodeID || a.Harness != "claude" || a.NativeID == "" {
+		return protocol.StartedSession{}, errors.New("resume works for Claude on this machine for now")
+	}
+	if a.Online {
+		return protocol.StartedSession{}, errors.New("session is already online")
+	}
+	info, err := os.Stat(a.Cwd)
+	if err != nil || !info.IsDir() {
+		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
+	}
+	bin, err := d.harnessBinary("claude")
+	if err != nil {
+		return protocol.StartedSession{}, err
+	}
+	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Harness: "claude", Project: a.Profile.Name, Path: a.Cwd, StartedAt: time.Now().Unix()}
+	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID), nil
+}
+
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume string) protocol.StartedSession {
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -73,15 +114,8 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 		defer d.wg.Done()
 		cctx, cancel := context.WithTimeout(d.ctoCtx, d.cfg.Workers.filled().StartTimeout)
 		defer cancel()
-		args := []string{"--bg", "--name", r.Project}
-		if p.Model != "" {
-			args = append(args, "--model", p.Model)
-		}
-		if p.FirstMessage != "" {
-			args = append(args, "--", p.FirstMessage)
-		}
 		d.claudeStartMu.Lock()
-		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", "", nil)
+		sf, err := d.launchClaudeBackground(cctx, bin, r.Path, args, "", resume, nil)
 		d.claudeStartMu.Unlock()
 		if err == nil {
 			r.NativeID, r.JobID = sf.SessionID, sf.JobID
@@ -119,7 +153,7 @@ func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartReques
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
 	}(r)
-	return r, nil
+	return r
 }
 
 func (d *Daemon) sessionStartGet(id string) (protocol.StartedSession, error) {

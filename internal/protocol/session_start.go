@@ -1,6 +1,7 @@
 package protocol
 
 const (
+	OpSessionResume   = "session_resume"
 	OpSessionStart    = "session_start"
 	OpSessionStartGet = "session_start_get"
 )
@@ -34,4 +35,9 @@ type StartedSession struct {
 	NativeID  string `json:"native_id,omitempty"`
 	SessionID string `json:"session_id,omitempty"`
 	Error     string `json:"error,omitempty"`
+}
+
+// SessionResumeRequest identifies an offline conversation.
+type SessionResumeRequest struct {
+	SessionID string `json:"session_id"`
 }
