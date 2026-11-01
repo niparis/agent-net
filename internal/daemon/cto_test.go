@@ -381,11 +381,6 @@ func TestCTOMethodsOwnerGate(t *testing.T) {
 	pi, _ := helloPi(t, n, "p1", "/w/p", false)
 	for _, method := range []string{"cto_send", "cto_new", "cto_events", "cto_settings", "cto_enter"} {
 		want := "only available to the owner"
-		if method == "cto_new" {
-			// cto_new is a catalog tool for the CTO role; the role check runs
-			// before the owner gate.
-			want = "not available to agent"
-		}
 		if _, err := pi.call(method, map[string]any{"text": "x"}); err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: %v", method, err)
 		}
