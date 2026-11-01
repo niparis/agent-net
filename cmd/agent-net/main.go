@@ -55,7 +55,7 @@ const usage = `usage: agent-net <command>
   tools      show observed skills and MCP servers
   projects   list known projects (registered and seen); add, scan and remove register them
   events     show the gateway's events table (run on the gateway machine)
-  tui        live terminal view of every agent session on the network; send as yourself, start and stop workers
+  tui        live terminal view of every agent session on the network; start sessions, send as yourself, stop workers
   upgrade    upgrade agent-net (--check, --rollback, --version, --force)
   messages   list recent messages and their states
   start      start a worker session: --project NAME --harness opencode --model M "<task>"

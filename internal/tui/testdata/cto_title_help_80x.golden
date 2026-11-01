@@ -14,7 +14,6 @@
                        folder, first message (a form). Empty first message
                        starts it and enters it; text starts it in the background
                        and sends it.
-  s                    start a worker (a form: project, harness, model, task)
   x, h, H              stop session; h hides/unhides; H shows hidden sessions
                        (dim)
   t                    cycle request rule: normal, ask, auto

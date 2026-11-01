@@ -843,8 +843,8 @@ func (m Model) sessionFieldNote(i sessionFormField) string {
 	return ""
 }
 
-// sessionFormView draws the form in the place of the session list, like the
-// worker form. rows is the room it has, including its heading.
+// sessionFormView draws the form in the place of the session list. rows is the
+// room it has, including its heading.
 func (m Model) sessionFormView(w, rows int) []string {
 	f := m.sform
 	out := []string{section("New session", w)}

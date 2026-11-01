@@ -11,7 +11,6 @@ Keys ─────────────────────────
   c                    hand over the selected row to the CTO: a preview first, then Enter sends it, Esc cancels
   n                    start a new session: project, harness, model, project folder, first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
-  s                    start a worker (a form: project, harness, model, task)
   x, h, H              stop session; h hides/unhides; H shows hidden sessions (dim)
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a form)
@@ -36,5 +35,6 @@ Keys ─────────────────────────
   n                    start a new session in this project (the same form, filled from here)
   esc                  return to Graph with the same node selected
   D                    name project (empty clears)
+  a                    toggle autonomy off or wake
   more below
 up/down scroll  esc close help  q quit

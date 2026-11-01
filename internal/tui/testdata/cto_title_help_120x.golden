@@ -9,7 +9,6 @@
   c                    hand over the selected row to the Atlas: a preview first, then Enter sends it, Esc cancels
   n                    start a new session: project, harness, model, project folder, first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
-  s                    start a worker (a form: project, harness, model, task)
   x, h, H              stop session; h hides/unhides; H shows hidden sessions (dim)
   t                    cycle request rule: normal, ask, auto
   p                    delegation policy: subagent or worker for code changes (a form)

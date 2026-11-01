@@ -112,8 +112,6 @@ func (m Model) helpLine(w int) string {
 	switch m.mode {
 	case modeCompose:
 		return clip(m.compose.View()+sDim.Render("   enter sends, esc cancels"), w)
-	case modeForm:
-		return sDim.Render(clip("tab or up/down: field  enter: next or start  esc cancels", w))
 	case modeSessionForm:
 		return sDim.Render(clip("enter start  up/down field  left/right folder  esc cancel", w))
 	case modeQuotaConfirm:
@@ -177,7 +175,6 @@ func (m Model) helpContent(w int) []string {
 		{"m", "send a message to the session as yourself"},
 		{"c", "hand over the selected row to the " + m.ctoTitle() + ": a preview first, then Enter sends it, Esc cancels"},
 		{"n", "start a new session: project, harness, model, project folder, first message (a form). Empty first message starts it and enters it; text starts it in the background and sends it."},
-		{"s", "start a worker (a form: project, harness, model, task)"},
 		{"x, h, H", "stop session; h hides/unhides; H shows hidden sessions (dim)"},
 		{"t", "cycle request rule: normal, ask, auto"},
 		{"p", "delegation policy: subagent or worker for code changes (a form)"},
