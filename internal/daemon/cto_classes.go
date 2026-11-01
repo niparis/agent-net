@@ -17,11 +17,11 @@ const (
 )
 
 // Every CTO entry point is listed here. Unknown tools and actions fail closed.
-// Read does not yet imply public-only data; that is design part 4.
+// Reads must have an ordinary-agent source or be the CTO's own timeline.
 var ctoToolClasses = func() map[string]ctoToolClass {
 	out := map[string]ctoToolClass{}
 	for class, names := range map[ctoToolClass]string{
-		ctoRead:     "charter_guide charter_suggestions graph_get charter_history edge_history agents workers needs_you feed worker_profile_list protected_providers_get info nodes projects get messages message_status session_text usage usage_top counts graph_view session_enter project_display_get integrations_get held_list inbox_list outcome_inbox node_settings_get playbook_get mcp_list cto_enter cto_events cto_graph_history tools_list tools_history mcp_import_candidates tools_differences",
+		ctoRead:     "charter_guide agents nodes projects get messages message_status mcp_list worker_profile_list cto_events",
 		ctoTalk:     "send reply learn ui_show ui_notice message",
 		ctoProposal: "project_display_set charter_set node_add node_remove edge_set edge_remove graph_undo worker_profile_add worker_profile_remove worker_providers_set protected_providers_set score_set worker_start project_add project_remove mcp_call session_trust session_policy node_rename session_rename integrations_set worker_stop held_answer inbox_answer outcome_overrule node_settings_set playbook_set mcp_add mcp_remove mcp_test mcp_enable cto_send cto_new tools_plan tools_apply tools_undo mcp_import mcp_native_remove invite onboarding_restart notification_settings cto_settings",
 	} {
@@ -65,13 +65,6 @@ func ctoClass(name string, raw json.RawMessage) (ctoToolClass, error) {
 		}
 	}
 
-	if name == "cto_settings" || name == "notification_settings" {
-		// These legacy tools combine a read and a write. Only an empty call reads.
-		delete(fields, "reason")
-		if len(fields) == 0 {
-			return ctoRead, nil
-		}
-	}
 	if name == "message" {
 		var asOwner bool
 		if value, ok := fields["as_owner"]; ok && json.Unmarshal(value, &asOwner) != nil {
