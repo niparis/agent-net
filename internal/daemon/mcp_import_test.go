@@ -272,7 +272,7 @@ func TestMCPImportComparesTheToolList(t *testing.T) {
 	f.requireConfigsUntouched(t)
 }
 
-func TestMCPImportOwnerGate(t *testing.T) {
+func TestCTOMCPImportOwnerGate(t *testing.T) {
 	f := newImportFixture(t, map[string]string{"probe": stdioNative()}, "")
 	cand := f.candidate(t, "claude", "probe")
 	agent, _ := helloPi(t, f.n, "agent-import", "/work", true)
@@ -289,12 +289,16 @@ func TestMCPImportOwnerGate(t *testing.T) {
 	if len(f.servers(t)) != 0 {
 		t.Fatal("a refused request registered a server")
 	}
-	// The CTO tools go through the same owner path and are recorded as the CTO.
+	// The CTO proposes the import; approval runs it with the proposal actor.
 	v, err := f.n.d.runCTOToolRaw(context.Background(), "mcp_import", importJSON(t, protocol.MCPImportRequest{PlanID: plan.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b, _ := json.Marshal(v); !strings.Contains(string(b), `"state":"imported"`) {
+	if len(f.servers(t)) != 0 {
+		t.Fatal("proposal registered a server before approval")
+	}
+	b := approveCTOToolResult(t, f.n.d, v)
+	if !strings.Contains(string(b), `"state":"imported"`) {
 		t.Fatalf("cto apply: %s", b)
 	}
 	f.requireConfigsUntouched(t)

@@ -206,7 +206,7 @@ func TestMCPNativeRemoveRefusesACommittedProjectFile(t *testing.T) {
 	}
 }
 
-func TestMCPNativeRemoveOwnerGate(t *testing.T) {
+func TestCTOMCPNativeRemoveOwnerGate(t *testing.T) {
 	f := newImportFixture(t, map[string]string{"probe": stdioNative(), "other": stdioNative()}, "")
 	cand := f.importProbe(t)
 	agent, _ := helloPi(t, f.n, "agent-native", "/work", true)
@@ -224,12 +224,17 @@ func TestMCPNativeRemoveOwnerGate(t *testing.T) {
 	if !strings.Contains(string(b), `"probe"`) {
 		t.Fatal("a refused request edited the file")
 	}
-	// The CTO tool goes through the same owner path and is recorded as the CTO.
+	// The CTO proposes removal; the file stays intact until owner approval.
 	v, err := f.n.d.runCTOToolRaw(context.Background(), "mcp_native_remove", importJSON(t, protocol.MCPNativeRemoveRequest{PlanID: plan.ID}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, _ := json.Marshal(v); !strings.Contains(string(out), `"state":"removed"`) {
+	before, _ := os.ReadFile(filepath.Join(f.home, ".claude.json"))
+	if string(before) != string(b) {
+		t.Fatal("proposal changed native config before approval")
+	}
+	out := approveCTOToolResult(t, f.n.d, v)
+	if !strings.Contains(string(out), `"state":"removed"`) {
 		t.Fatalf("cto apply: %s", out)
 	}
 }
