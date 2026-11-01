@@ -283,6 +283,29 @@ func (g *Gateway) exportSkill(item, hash string) (protocol.SkillBundle, error) {
 }
 
 func (g *Gateway) readSkillText(ctx context.Context, p protocol.SkillTextRequest) (any, error) {
+	if p.Item != "" && p.Path != "" && p.Location.Location == "" && p.Location.NodeID == "" {
+		var hash string
+		if err := g.store.db.QueryRow(`SELECT hash FROM skill_versions WHERE item=? ORDER BY number DESC LIMIT 1`, p.Item).Scan(&hash); err != nil {
+			return nil, reject("skill has no stored version")
+		}
+		bundle, err := g.exportSkill(p.Item, hash)
+		if err != nil {
+			return nil, err
+		}
+		dir, err := os.MkdirTemp("", "agent-net-read-skill-")
+		if err != nil {
+			return nil, err
+		}
+		defer os.RemoveAll(dir)
+		if err = inventory.UnpackSkill(bundle.Data, dir); err != nil {
+			return nil, err
+		}
+		text, err := inventory.ReadSkillText(dir, p.Path)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]string{"text": string(text)}, nil
+	}
 	if p.Item == "" || p.Location.NodeID == "" || p.Location.Location == "" || p.Path == "" {
 		return nil, reject("file request is incomplete")
 	}

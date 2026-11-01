@@ -14,3 +14,12 @@ func TestSkillTextRequiresOwnerAtGateway(t *testing.T) {
 		}
 	}
 }
+
+func TestSkillFolderAndCopyChoiceRequireOwner(t *testing.T) {
+	g, node := scopeGateway(t)
+	for _, method := range []string{"tools.import_folder", "tools.keep_copy"} {
+		if _, err := g.handle(context.Background(), &nodeConn{id: node}, method, []byte(`{"owner":"s_fake"}`)); err == nil || !strings.Contains(err.Error(), "owner authority") {
+			t.Fatalf("%s: %v", method, err)
+		}
+	}
+}

@@ -47,15 +47,16 @@ hint: the chooser may use it, and the start result says when it did not. Only
 the owner (the CLI, the TUI, or an approved CTO proposal) forces a model.
 Otherwise every caller could step around the loop by naming one.
 
-## 2. Measuring rework: two counters
+## 2. Measuring rework: counters
 
-Each worker record gets two counters. Both come from messages that agent-net
+Each worker record gets counters. They come from messages that agent-net
 already routes. The caller marks nothing.
 
 | Counter | Counts when | Means |
 |---|---|---|
 | `continue` | the caller sends the worker a new message after a hand-back with `complete: no` | the worker stopped early |
 | `fix` | the caller sends the worker a new message after a hand-back with `complete: yes` | the worker finished, but not right |
+| `midrun_count` | after the first brief, a caller request arrives with no end notice since the previous caller request | the caller sent a mid-run follow-up |
 
 A worker that goes idle without a hand-back is the same signal as
 `complete: no`: it stopped early without saying so, and the caller's next
@@ -80,16 +81,26 @@ continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
 wrong (few continues, some fixes). Counting both the same would treat a
 model that needs a nudge like one that builds the wrong thing.
 
-**A task is the worker session, not one turn.** Continuing a worker after a
-hand-back starts another run. That run gets another gateway row with the same
-session ID, and the follow-up's counter lands on the new row. The calibration
-therefore reads one sample per session: it adds the continues and fixes of
-all the session's rows, takes the caller and the difficulty from the first
-row and the end time from the last. A follow-up turn is never a task of its
-own. A run stopped by the owner or the caller is left out of the samples: a
-stop says nothing about the model, and it must not count as a clean task. So
-are runs recorded before the counters shipped, because their 0 means unknown,
-not "no rework".
+**A task can span worker sessions and turns.** A follow-up after a hand-back
+can start another run in the same session. `agent_start continue=<session>`
+starts a new session for the same task. Each gateway run has a `task_id`:
+the root session ID, or an empty string when its own session is the root.
+The calibration and quality tables add the counters of every run in the task.
+They take the caller, model, harness and difficulty from the root's first run,
+and the end time from the last. A continued start adds one continue when the
+old run was partial, or one fix for every other outcome, including stopped.
+The task stays out only if all its runs were stopped. A stopped run within a
+task otherwise contributes its counters, and defects reported on any session
+belong to the same task. Some older runs have unknown counters, so their stored
+zero may not describe all of the rework.
+
+`midrun_count` excludes the initial brief. A done, partial, failed, timed out
+or idle-without-hand-back notice marks the next caller request as post-notice;
+another request before a new notice counts as mid-run. This counter does not
+change the existing continue and fix counts and has weight zero for now.
+Automatic continues are not caller requests. The gateway backfills links and
+mid-run counts once from retained messages and stores a completion marker in
+the same transaction. Expired messages cannot be recovered.
 
 **A defect found later.** The counters only see a follow-up the caller sends.
 A defect found hours later, after the hand-back or after merge, would be lost.
@@ -101,17 +112,16 @@ severity in points of rework to that worker's task. The owner can file one
 from the Messages tab, with `f` on a worker conversation, where the prompt
 asks for the note and then the severity.
 
-Not counted in the first version: restarts on a new worker, reverts after
-landing, fix-up lines found in git. They are better signals but need more
-machinery. Add them only if the two counters prove too weak.
+Not counted: reverts after landing and fix-up lines found in git. They are
+better signals but need more machinery.
 
 ## 3. The target: a median of about one
 
 For each caller and difficulty, take the weighted rework of the caller's last
 7 tasks at that difficulty (with at least 5). Use the median, not the mean:
 counts are small whole numbers, and one bad task should not swing the result.
-A task is one worker session, so the runs of a continued worker are added
-together before they enter the window.
+The runs of all sessions in a task are added together before the task enters
+the window.
 
 | Median | Reading | Action |
 |---|---|---|
@@ -299,7 +309,7 @@ sol    medium -> high   +0.1 (6, weak)
 
 ## 9. State
 
-- Two counters on each worker record (daemon and gateway).
+- Rework and mid-run counters on each worker record (daemon and gateway).
 - The ratings, raw, one row per rating (gateway).
 - One offset per caller and difficulty, plus the network offsets (gateway
   owner settings, next to the rotation state).

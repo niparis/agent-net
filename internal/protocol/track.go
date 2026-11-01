@@ -31,9 +31,11 @@ const (
 type WorkerRun struct {
 	NodeID    string `json:"node_id"`
 	SessionID string `json:"session_id,omitempty"`
-	Harness   string `json:"harness"`
-	Model     string `json:"model,omitempty"`
-	Outcome   string `json:"outcome"`
+	// TaskID is the root session for a continued worker, or empty for a root.
+	TaskID  string `json:"task_id,omitempty"`
+	Harness string `json:"harness"`
+	Model   string `json:"model,omitempty"`
+	Outcome string `json:"outcome"`
 	// StartedAt and EndedAt are unix seconds.
 	StartedAt int64 `json:"started_at,omitempty"`
 	EndedAt   int64 `json:"ended_at"`
@@ -43,6 +45,7 @@ type WorkerRun struct {
 	// began, after a hand-back with complete:no and complete:yes.
 	Continue int `json:"continue,omitempty"`
 	Fix      int `json:"fix,omitempty"`
+	Midrun   int `json:"midrun,omitempty"`
 	// AutoContinue counts the continues the daemon sent itself, which cost
 	// the caller no rework.
 	AutoContinue int `json:"auto_continue,omitempty"`

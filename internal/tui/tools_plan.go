@@ -36,6 +36,8 @@ var (
 
 // toolsModal is the plan (or the project picker, or the result) on screen.
 type toolsModal struct {
+	menu         *toolMenu
+	form         *toolAddForm
 	id           int
 	title        string
 	lines        []string
@@ -99,6 +101,12 @@ func (md *toolsModal) planFoot(verb string) {
 
 func (m Model) toolsModalKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	md := m.tl.modal
+	if md.menu != nil {
+		return m.toolMenuKey(k)
+	}
+	if md.form != nil {
+		return m.toolAddKey(k)
+	}
 	key := k.String()
 	if md.picker != nil && !md.loading {
 		return m.pickerKey(k)
@@ -166,6 +174,7 @@ func (m Model) machineTarget(on bool, machine toolsdiff.Machine) protocol.ToolAs
 
 // assignJob is one skill to change: import first when it is not in the store.
 type assignJob struct {
+	choice *protocol.ToolCopyChoice
 	name   string
 	item   string
 	imp    *toolsdiff.Copy
@@ -550,7 +559,20 @@ func (m Model) runJobs(jobs []assignJob) (Model, tea.Cmd) {
 		var lines []string
 		fails := 0
 		for _, j := range jobs {
-			if j.imp != nil {
+			if j.choice != nil {
+				keeper, ok := m.src.(interface {
+					ToolsKeepCopy(context.Context, protocol.ToolCopyChoice) error
+				})
+				if !ok {
+					lines = append(lines, "copy replacement unavailable on this daemon")
+					continue
+				}
+				if err := keeper.ToolsKeepCopy(ctx, *j.choice); err != nil {
+					lines = append(lines, j.name+": "+sanitize(err.Error()))
+					continue
+				}
+			}
+			if j.imp != nil && j.choice == nil {
 				err := ts.ToolsImport(ctx, protocol.ToolImport{Item: j.imp.Item, Location: protocol.ToolImportLocation{NodeID: j.imp.NodeID, Location: j.imp.Location}})
 				if err != nil {
 					fails++
@@ -592,6 +614,7 @@ func tidyResult(lines []string, max int) []string {
 // ---- project picker ----
 
 type projPicker struct {
+	targets   bool
 	all       []string
 	sel       map[string]bool
 	filter    string
@@ -651,7 +674,10 @@ func pickerFoot(md *toolsModal, p *projPicker) {
 		return
 	}
 	verb := "plan"
-	md.foot = []string{"space", "tick", "/", "filter", "enter", verb, "esc", "cancel"}
+	if p.targets {
+		verb = "apply"
+	}
+	md.foot = []string{"j/k", "move", "space", "tick", "/", "filter", "enter", verb, "esc", "cancel"}
 }
 
 func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -698,6 +724,9 @@ func (m Model) pickerKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m Model) pickerConfirm() (tea.Model, tea.Cmd) {
+	if m.tl.modal.picker.targets {
+		return m.targetPickerConfirm()
+	}
 	md := m.tl.modal
 	p := md.picker
 	var chosen []string
@@ -1522,14 +1551,18 @@ func renderChoose(md *toolsModal) {
 		md.actions[letter] = func(m Model) (Model, tea.Cmd) {
 			m.tl.modal = nil
 			notes := comparisonNotes(act.Copies, c)
-			notes = append(notes, "a different copy in the way shows as a conflict in the result")
+			notes = append(notes, "other observed user copies are backed up before installing the chosen copy")
+			choice := &protocol.ToolCopyChoice{Chosen: protocol.ToolImport{Item: c.Item, Location: protocol.ToolImportLocation{NodeID: c.NodeID, Location: c.Location}}}
+			for _, copy := range act.Copies {
+				choice.Copies = append(choice.Copies, protocol.ToolSkillScan{NodeID: copy.NodeID, Name: act.Name, Location: copy.Location, Hash: copy.Hash})
+			}
 			target := protocol.ToolAssignment{Scope: "global"}
 			where := ""
 			if len(act.Copies) == 2 && c.NodeID != "" && act.Copies[0].NodeID == c.NodeID && act.Copies[1].NodeID == c.NodeID && len(m.tl.cat.Machines) > 1 {
 				target.Machines = []string{c.NodeID}
 				where = c.Machine
 			}
-			model, cmd := m.openAssign("Keep "+act.Name+" "+c.Version(), "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, target: target, where: where}}, notes)
+			model, cmd := m.openAssign("Keep "+act.Name+" from "+c.Machine+" ("+c.Harness+")", "apply", []assignJob{{name: act.Name, item: c.Item, imp: &c, choice: choice, target: target, where: where}}, notes)
 			return model.(Model), cmd
 		}
 	}
@@ -1607,7 +1640,7 @@ func (m Model) openSkillDiff(a, b toolsdiff.Copy) (Model, tea.Cmd) {
 				lines = append(lines, sanitize(line))
 			}
 			if diff == "" {
-				lines = []string{"no text differences"}
+				lines = []string{"The text matches now. The scanned fingerprint changed; file permissions or a newer edit can explain it."}
 			}
 		}
 		return toolsModalMsg{id: id, update: func(md *toolsModal) { md.loading = false; md.lines = lines }}

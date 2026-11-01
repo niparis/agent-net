@@ -162,6 +162,10 @@ type worker struct {
 	// the part since this run began, which the gateway counts as one run.
 	continueCount, fixCount int
 	continueRun, fixRun     int
+	taskID                  string
+	midrunCount, midrunRun  int
+	noticeSinceRequest      bool
+	midrunSeen              bool
 	// autoContinue turns the daemon's own continues on or off. autoContinueCount
 	// and autoContinueRun count those it sent; separate from the caller's.
 	autoContinue      bool
@@ -473,7 +477,8 @@ func (d *Daemon) rowLocked(w *worker, ended string) workerRow {
 		Continue: w.continueCount, Fix: w.fixCount, ContinueRun: w.continueRun, FixRun: w.fixRun,
 		AutoContinue: w.autoContinue, AutoContinueCount: w.autoContinueCount, AutoContinueRun: w.autoContinueRun,
 		PendingHandback: w.pendingHandback, PendingPartial: w.pendingPartial,
-		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed, Touches: w.touches}
+		DifficultyAsked: w.difficultyAsked, DifficultyUsed: w.difficultyUsed, Touches: w.touches,
+		TaskID: w.taskID, MidrunCount: w.midrunCount, MidrunRun: w.midrunRun, NoticeSinceRequest: w.noticeSinceRequest, MidrunSeen: w.midrunSeen}
 }
 
 // ---- starting ----
@@ -583,6 +588,14 @@ func (d *Daemon) runWorkerStartChecked(ctx context.Context, l protocol.WorkerLau
 		taskFull:    boundTask(first(l.RecordTask, l.Task)),
 		permissions: protocol.WorkerPermissionsOrDefault(l.Permissions), difficultyAsked: l.DifficultyAsked, difficultyUsed: l.DifficultyUsed, touches: strings.Join(l.Touches, ","),
 		autoContinue: protocol.AutoContinueEnabled(l.AutoContinue)}
+	if l.TaskID != "" {
+		w.taskID = l.TaskID
+		if l.ContinuationPartial {
+			w.continueCount, w.continueRun = 1, 1
+		} else {
+			w.fixCount, w.fixRun = 1, 1
+		}
+	}
 	worktree, branch := "", ""
 	if l.Isolation == protocol.IsolationWorktree {
 		worktree, branch = filepath.Join(d.cfg.StateDir, "worktrees", w.id), protocol.WorktreeBranch(w.id)
@@ -929,7 +942,7 @@ func (d *Daemon) reportWorkerEnds(ctx context.Context) {
 			Status: r.DoneStatus, Complete: complete, StartedAt: r.StartedAt.Unix(),
 			Continue: r.Continue, Fix: r.Fix, ContinueRun: r.ContinueRun, FixRun: r.FixRun,
 			AutoContinue: r.AutoContinueCount, AutoContinueRun: r.AutoContinueRun,
-			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches)})
+			DifficultyAsked: r.DifficultyAsked, DifficultyUsed: r.DifficultyUsed, Touches: splitTouches(r.Touches), TaskID: r.TaskID, MidrunRun: r.MidrunRun})
 		cancel()
 		var re RemoteError
 		switch {
@@ -1027,6 +1040,7 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		dir: filepath.Join(d.cfg.StateDir, "workers", row.ID), mainPath: row.MainPath, worktree: row.Worktree,
 		branch: row.Branch, base: row.Base, taskMsg: row.TaskMsg, taskText: row.TaskText, taskFull: row.TaskFull, ref: row.Ref, permissions: protocol.WorkerPermissionsOrDefault(row.Permissions),
 		continueCount: row.Continue, fixCount: row.Fix, pendingHandback: row.PendingHandback, pendingPartial: row.PendingPartial,
+		taskID: row.TaskID, midrunCount: row.MidrunCount, noticeSinceRequest: row.NoticeSinceRequest, midrunSeen: row.MidrunSeen,
 		autoContinue: row.AutoContinue, autoContinueCount: row.AutoContinueCount,
 		difficultyAsked: row.DifficultyAsked, difficultyUsed: row.DifficultyUsed, touches: row.Touches, ready: make(chan struct{})}
 	w.logPath = filepath.Join(w.dir, "worker.log")
@@ -1401,6 +1415,7 @@ func (d *Daemon) adoptWorkers() {
 			taskFull:    r.TaskFull,
 			permissions: protocol.WorkerPermissionsOrDefault(r.Permissions), continueCount: r.Continue, fixCount: r.Fix,
 			continueRun: r.ContinueRun, fixRun: r.FixRun, pendingHandback: r.PendingHandback, pendingPartial: r.PendingPartial,
+			taskID: r.TaskID, midrunCount: r.MidrunCount, midrunRun: r.MidrunRun, noticeSinceRequest: r.NoticeSinceRequest, midrunSeen: r.MidrunSeen,
 			autoContinue: r.AutoContinue, autoContinueCount: r.AutoContinueCount, autoContinueRun: r.AutoContinueRun,
 			difficultyAsked: r.DifficultyAsked, difficultyUsed: r.DifficultyUsed, touches: r.Touches}
 		w.logPath = filepath.Join(w.dir, "worker.log")

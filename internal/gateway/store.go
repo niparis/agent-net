@@ -426,6 +426,10 @@ SELECT 1 /* worker defect severity */;
 -- no rework, so they are kept apart from continue_count and never enter the
 -- difficulty calibration.
 SELECT 1 /* worker auto continue */;
+`, `
+-- Continued sessions belong to one task. Mid-run requests are kept apart
+-- from the existing rework counters until the owner assigns a weight.
+SELECT 1 /* worker task rework columns */;
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.
@@ -449,6 +453,10 @@ func OpenStore(path string) (*Store, error) {
 	if err := s.backfillRework(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("rework backfill: %w", err)
+	}
+	if err := s.backfillTaskRework(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("task rework backfill: %w", err)
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
@@ -579,6 +587,24 @@ func (s *Store) migrate() error {
 					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
 						tx.Rollback()
 						return err
+					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker task rework columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"task_id", `task_id TEXT NOT NULL DEFAULT ''`},
+				{"midrun_count", `midrun_count INTEGER NOT NULL DEFAULT 0`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name=?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
 				}
 			}

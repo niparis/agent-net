@@ -29,6 +29,8 @@ type queuedStart struct {
 	// DifficultyAsked and DifficultyUsed are the levels of the start.
 	DifficultyAsked, DifficultyUsed string
 	Touches                         string
+	TaskID                          string
+	ContinuationPartial             bool
 	FromCTO                         bool
 	// AutoContinue is the start's automatic-continue setting.
 	AutoContinue bool
@@ -36,14 +38,14 @@ type queuedStart struct {
 }
 
 func (s *state) addQueued(q queuedStart) error {
-	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue))
+	_, err := s.db.Exec(`INSERT INTO worker_queue (id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, q.ID, q.Owner, q.Project, q.Path, q.Harness, q.Model, q.Task, q.Isolation, q.QueuedAt.UnixNano(), q.Base, q.RecordTask, q.Permissions, q.FromCTO, q.DifficultyAsked, q.DifficultyUsed, q.Touches, boolInt(q.AutoContinue), q.TaskID, boolInt(q.ContinuationPartial))
 	return err
 }
 
 // queue lists the waiting starts, the oldest first.
 func (s *state) queue() ([]queuedStart, error) {
-	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue FROM worker_queue ORDER BY seq`)
+	rows, err := s.db.Query(`SELECT id, owner, project, path, harness, model, task, isolation, queued_at, base, record_task, permissions, sender_cto, difficulty_asked, difficulty_used, touches, auto_continue, task_id, continuation_partial FROM worker_queue ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +55,7 @@ func (s *state) queue() ([]queuedStart, error) {
 		var q queuedStart
 		var at int64
 		var autoContinue int
-		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue); err != nil {
+		if err := rows.Scan(&q.ID, &q.Owner, &q.Project, &q.Path, &q.Harness, &q.Model, &q.Task, &q.Isolation, &at, &q.Base, &q.RecordTask, &q.Permissions, &q.FromCTO, &q.DifficultyAsked, &q.DifficultyUsed, &q.Touches, &autoContinue, &q.TaskID, &q.ContinuationPartial); err != nil {
 			return nil, err
 		}
 		q.QueuedAt = time.Unix(0, at)

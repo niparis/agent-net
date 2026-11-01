@@ -411,3 +411,24 @@ type SkillSummaryRequest struct {
 	B     string `json:"b"`
 	Owner string `json:"owner,omitempty"`
 }
+
+// ToolFolderImport is an explicit owner request to import a folder on a host.
+// The host packs it with the same containment and size checks as inventory.
+type ToolFolderImport struct {
+	ToolImportLocation
+	Owner string `json:"owner"`
+}
+type ToolFolderBundle struct {
+	Name string `json:"name"`
+	Data []byte `json:"data"`
+}
+
+// ToolCopyChoice authorizes replacing only the named, observed copies. The
+// chosen copy is imported before any guarded removal runs.
+type ToolCopyChoice struct {
+	// RemoveAll also backs up the chosen source, after importing it.
+	RemoveAll bool            `json:"remove_all,omitempty"`
+	Chosen    ToolImport      `json:"chosen"`
+	Copies    []ToolSkillScan `json:"copies"`
+	Owner     string          `json:"owner,omitempty"`
+}

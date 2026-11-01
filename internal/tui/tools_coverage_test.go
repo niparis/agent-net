@@ -55,7 +55,7 @@ func coverageRowIndex(m Model, prefix string) int {
 
 func TestToolsMCPCoverageRowsAndPlan(t *testing.T) {
 	m, src := coverageToolsModel(120, 34)
-	v := plain(m)
+	v := strings.Join(m.diffsView(120, 25), "\n")
 	if !strings.Contains(v, "homelab-mcp · homelab · claude ✓ pi ✗ opencode ✗") {
 		t.Fatalf("coverage row is missing:\n%s", v)
 	}
@@ -67,7 +67,7 @@ func TestToolsMCPCoverageRowsAndPlan(t *testing.T) {
 		t.Fatalf("no coverage gap difference: %+v", m.shownDiffs())
 	}
 	m.tl.row = gap
-	m = pressKey(m, "enter")
+	m = enterToolsPlan(m)
 	v = plain(m)
 	for _, want := range []string{"Add homelab-mcp for homelab", "writes these files", ".pi/mcp.json", "opencode.json", "environment values stay references"} {
 		if !strings.Contains(v, want) {
@@ -77,7 +77,7 @@ func TestToolsMCPCoverageRowsAndPlan(t *testing.T) {
 	if len(src.coveragePlans) != 1 || strings.Join(src.coveragePlans[0].Harnesses, ",") != "opencode,pi" {
 		t.Fatalf("plan request = %+v", src.coveragePlans)
 	}
-	m = pressKey(m, "enter")
+	m = enterToolsPlan(m)
 	if len(src.coverageApplied) != 1 {
 		t.Fatalf("plan was not applied: %+v", src.coverageApplied)
 	}
@@ -100,7 +100,7 @@ func TestToolsMCPCoverageGoldens(t *testing.T) {
 			t.Fatal("no coverage gap difference")
 		}
 		m.tl.row = gap
-		m = pressKey(m, "enter")
+		m = enterToolsPlan(m)
 		golden(t, fmt.Sprintf("tools_mcp_coverage_plan_%dx%d", size[0], size[1]), m.View())
 	}
 }
@@ -112,7 +112,7 @@ func TestToolsMCPCoverageConflictHasNoAutomaticFix(t *testing.T) {
 		t.Fatal("no conflict difference")
 	}
 	m.tl.row = row
-	m = pressKey(m, "enter")
+	m = enterToolsPlan(m)
 	if len(src.coveragePlans) != 0 {
 		t.Fatalf("a conflict opened a write plan: %+v", src.coveragePlans)
 	}

@@ -96,6 +96,8 @@ func (m Model) mapKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "t":
+		return m.startNodeTools(m.mp.selected)
 	case "a":
 		return m.toggleAutonomy()
 	case "D":
