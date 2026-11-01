@@ -218,7 +218,7 @@ func TestStopAWorkerAsksFirst(t *testing.T) {
 	m.mode = modeNormal
 	m = selectID(m, workerID)
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
-	if m.mode != modeConfirm || !strings.Contains(lines(m.View())[23], "Stop worker tenebrae (Mac)? y/n") {
+	if m.mode != modeConfirm || !strings.Contains(lines(m.View())[23], "Stop worker tenebrae (Mac)?"+confirmSuffix) {
 		t.Fatalf("confirm: mode %v help %q", m.mode, lines(m.View())[23])
 	}
 	// n and esc leave it alone.

@@ -934,8 +934,9 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.resumeConfirm != nil {
 		a := *m.resumeConfirm
+		yes, _ := confirmAnswer(k)
 		m.resumeConfirm = nil
-		if k.String() == "enter" {
+		if yes {
 			return m.resumeOwnerSession(a)
 		}
 		return m, nil

@@ -27,9 +27,9 @@ const (
 	modeCompose               // typing a message to the selected session
 	modeForm                  // the start-a-worker form
 	modeSessionForm           // the new-session form
-	modeConfirm               // asking y/n before stopping a session
+	modeConfirm               // asking before stopping a session
 	modeQuotaConfirm
-	modeTrust         // asking y/n before trusting a session with peer requests
+	modeTrust         // asking before trusting a session with peer requests
 	modePolicy        // the delegation policy form (policy.go)
 	modeRename        // typing a display name for the selected session's machine
 	modeProjectRename // typing the selected project display name
@@ -80,7 +80,7 @@ func (m *Model) fail(text string) {
 // hold and fade are over.
 func (m Model) activeNotice() *notice {
 	if a := m.resumeConfirm; a != nil {
-		return &notice{text: fmt.Sprintf("Resume %s (claude, last active %s ago) and enter it?  enter: yes  esc: no", sanitize(a.Profile.Name), ago(m.now().Sub(time.Unix(a.LastSeen, 0)))), at: m.now()}
+		return &notice{text: fmt.Sprintf("Resume %s (claude, last active %s ago) and enter it?", sanitize(a.Profile.Name), ago(m.now().Sub(time.Unix(a.LastSeen, 0)))) + confirmSuffix, at: m.now()}
 	}
 	if m.notice.text == "" || m.now().Sub(m.notice.at) >= m.notice.life() {
 		return nil
@@ -187,15 +187,16 @@ func (m Model) startConfirm() (Model, tea.Cmd) {
 }
 
 func (m Model) confirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(k)
+	switch {
+	case yes:
 		m.mode = modeNormal
 		m.say("Stopping...")
 		if m.confirmOwner {
 			return m, m.stopSessionCmd(m.confirmID)
 		}
 		return m, m.stopCmd(m.confirmID, m.confirmName)
-	case "n", "N", "esc":
+	case no:
 		m.mode = modeNormal
 		m.say("Not stopped.")
 	}
@@ -326,12 +327,13 @@ func (m Model) startTrust() (Model, tea.Cmd) {
 }
 
 func (m Model) trustKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch k.String() {
-	case "y", "Y":
+	yes, no := confirmAnswer(k)
+	switch {
+	case yes:
 		m.mode = modeNormal
 		m.say("Turning peer trust on...")
 		return m, m.trustCmd(m.confirmID, m.confirmName, true)
-	case "n", "N", "esc":
+	case no:
 		m.mode = modeNormal
 		m.say("Peer trust unchanged.")
 	}
