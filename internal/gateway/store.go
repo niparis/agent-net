@@ -207,8 +207,7 @@ CREATE TABLE model_successes (
 CREATE TABLE IF NOT EXISTS worker_runs (
   id INTEGER PRIMARY KEY AUTOINCREMENT, node_id TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT '',
   harness TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL,
-  started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0,
-  continue_count INTEGER NOT NULL DEFAULT 0, fix_count INTEGER NOT NULL DEFAULT 0);
+  started_at INTEGER NOT NULL DEFAULT 0, ended_at INTEGER NOT NULL, run_seconds INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS worker_runs_node ON worker_runs (node_id, harness, model, ended_at);
 CREATE INDEX IF NOT EXISTS worker_runs_at ON worker_runs (ended_at);
 CREATE TABLE IF NOT EXISTS playbook_notes (
@@ -318,13 +317,13 @@ UPDATE profiles SET name = '';
 `, `
 ALTER TABLE sessions ADD COLUMN last_active INTEGER NOT NULL DEFAULT 0;
 `, `
--- The two rework counters of a worker run (difficulty calibration, part 1).
-SELECT 1 /* worker rework counters */;
-`, `
 -- Reserve CTO for the network session, including names saved before part 6.
 UPDATE profiles SET name = '' WHERE name = 'CTO';
 UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harness <> 'cto';
-`, `SELECT 1 /* CTO legacy route upgrade */;`, `ALTER TABLE messages ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0;`}
+`, `SELECT 1 /* CTO legacy route upgrade */;`, `ALTER TABLE messages ADD COLUMN reminded INTEGER NOT NULL DEFAULT 0;`, `
+-- The two rework counters of a worker run (difficulty calibration, part 1).
+SELECT 1 /* worker rework counters */;
+`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
