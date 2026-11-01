@@ -47,8 +47,10 @@ type WorkerRun struct {
 	// level it asked for. The gateway keeps them on the run so the
 	// difficulty calibration still has them after the worker session is
 	// cleaned.
-	Caller     string `json:"caller,omitempty"`
-	Difficulty string `json:"difficulty,omitempty"`
+	Caller         string   `json:"caller,omitempty"`
+	Difficulty     string   `json:"difficulty,omitempty"`
+	DifficultyUsed string   `json:"difficulty_used,omitempty"`
+	Touches        []string `json:"touches,omitempty"`
 }
 
 // TrackRecord is what the gateway learned about one harness and model.

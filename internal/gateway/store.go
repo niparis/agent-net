@@ -396,7 +396,7 @@ SELECT 1 /* worker run counters known */;
 -- Indexes for the per-worker rows of the stored conversation list.
 CREATE INDEX IF NOT EXISTS messages_sender ON messages (sender, created_at);
 CREATE INDEX IF NOT EXISTS messages_recipient ON messages (recipient, created_at);
-`}
+`, `SELECT 1 /* worker blast radius columns */;`}
 
 // OpenStore opens (or creates) the database at path and migrates it.
 func OpenStore(path string) (*Store, error) {
@@ -535,6 +535,21 @@ func (s *Store) migrate() error {
 				if _, err := tx.Exec(`UPDATE worker_runs SET caller = ?, difficulty = ? WHERE session_id = ? AND caller = ''`, f.caller, difficulty, id); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker blast radius columns") {
+			for _, col := range []string{"touches", "difficulty_used"} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = ?`, col).Scan(&has); err != nil {
+					tx.Rollback()
+					return err
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col + ` TEXT NOT NULL DEFAULT ''`); err != nil {
+						tx.Rollback()
+						return err
+					}
 				}
 			}
 		}

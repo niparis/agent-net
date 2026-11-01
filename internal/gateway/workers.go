@@ -109,13 +109,16 @@ func (g *Gateway) handleWorker(ctx context.Context, nc *nodeConn, typ string, ra
 		difficulty := p.DifficultyAsked
 		if difficulty == "" {
 			difficulty = p.DifficultyUsed
+			if _, reason := protocol.WorkerEffectiveDifficulty("normal", p.Touches); reason != "" {
+				difficulty = "normal"
+			}
 		}
 		if difficulty == "" {
 			difficulty = "normal"
 		}
 		run := protocol.WorkerRun{NodeID: nc.id, SessionID: p.SessionID, Harness: p.Harness, Model: p.Model,
 			Outcome: protocol.WorkerOutcome(p.Reason, p.Status, p.Complete), StartedAt: p.StartedAt, EndedAt: end,
-			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, Caller: caller, Difficulty: difficulty}
+			RunSeconds: runSeconds, Continue: p.ContinueRun, Fix: p.FixRun, Caller: caller, Difficulty: difficulty, DifficultyUsed: p.DifficultyUsed, Touches: p.Touches}
 		if err := g.store.RecordWorkerRun(run); err != nil {
 			return nil, err
 		}
@@ -269,12 +272,15 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, reject("%v", err)
 		}
 	}
-	// The level the caller asked for and the level the chooser uses are kept
-	// on the worker record. Part 1 changes neither: an empty ask means normal.
-	difficultyAsked, difficultyUsed := p.Difficulty, p.Difficulty
-	if difficultyUsed == "" {
-		difficultyUsed = "normal"
+	for _, touch := range p.Touches {
+		switch touch {
+		case "db", "hot-path", "ui", "docs", "tests", "config", "other":
+		default:
+			return none, reject("unknown touches value %q", touch)
+		}
 	}
+	difficultyAsked := p.Difficulty
+	difficultyUsed, touchReason := protocol.WorkerEffectiveDifficulty(p.Difficulty, p.Touches)
 	if p.Continue == "" && p.Project == "" {
 		return none, reject("a worker needs a project")
 	}
@@ -434,10 +440,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	automatic := p.Model == "" || strings.EqualFold(p.Model, "auto")
 	var automaticNote string
 	if automatic {
-		difficulty := p.Difficulty
-		if difficulty == "" {
-			difficulty = "normal"
-		}
+		difficulty := difficultyUsed
 		providers, err := g.store.workerProviders()
 		if err != nil {
 			return none, err
@@ -593,6 +596,12 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		return none, reject("no safe automatic read-only worker is available")
 	}
 	modelNote := automaticNote
+	if automatic && touchReason != "" {
+		if modelNote != "" {
+			modelNote += "; "
+		}
+		modelNote += fmt.Sprintf("touches %s: chose as %s", touchReason, difficultyUsed)
+	}
 	quotas := g.nodeQuotas(pick.NodeID)
 	if !automatic {
 		p.Model, modelNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, modelNote)
@@ -659,7 +668,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 	defer cancel()
 	raw, err := target.call(cctx, "worker.launch", protocol.WorkerLaunch{Project: pick.Name, Path: pick.Path,
 		Harness: p.Harness, Model: p.Model, Owner: p.Owner, Task: p.Task, Isolation: p.Isolation, Base: p.Base, Permissions: perms, FromCTO: p.FromCTO, RequireReadOnly: p.RequireReadOnly,
-		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed})
+		DifficultyAsked: difficultyAsked, DifficultyUsed: difficultyUsed, Touches: p.Touches})
 	if err != nil {
 		// The target daemon's refusal (its limit, its checks) is a rule, not a fault.
 		if errors.Is(err, errNodeGone) || errors.Is(err, context.DeadlineExceeded) {

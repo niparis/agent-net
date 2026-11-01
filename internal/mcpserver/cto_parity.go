@@ -48,7 +48,8 @@ var ctoConcreteTools = func() map[string]ctoToolDef {
 	add("worker_start", "Start a worker.", map[string]ctoField{
 		"project": s("Default CTO project."), "harness": en("Harness; empty is auto.", "opencode", "claude", "pi", "codex"),
 		"model": s("Model; empty is auto."), "difficulty": en("Default normal.", "trivial", "simple", "normal", "hard", "very_complex"),
-		"base": s("Branch."), "continue": s("Worker ID."), "task": s("Brief and limits."), "machine": s("Machine."),
+		"touches": {typ: "array", desc: "Areas touched.", items: map[string]any{"type": "string", "enum": []string{"db", "hot-path", "ui", "docs", "tests", "config", "other"}}},
+		"base":    s("Branch."), "continue": s("Worker ID."), "task": s("Brief and limits."), "machine": s("Machine."),
 		"isolation": en("None reads only; default worktree.", "worktree", "none"),
 	})
 	add("worker_stop", "Stop a worker or queued start.", map[string]ctoField{"session": s("Worker ID.")})

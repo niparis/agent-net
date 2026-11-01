@@ -651,6 +651,7 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 		cp.Task = w.taskText
 		cp.Continue, cp.Fix = w.continueCount, w.fixCount
 		cp.DifficultyAsked, cp.DifficultyUsed = w.difficultyAsked, w.difficultyUsed
+		cp.Touches = splitTouches(w.touches)
 		w.info = &cp
 		// The session gets its own copy, so a later change to w.info never
 		// touches a value that pushSession may be encoding.

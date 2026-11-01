@@ -259,3 +259,32 @@ func TestWorkerExplicitProtectedProviderNote(t *testing.T) {
 		t.Fatalf("explicit: %+v %v", res, err)
 	}
 }
+
+func TestWorkerTouchesDifficulty(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		touches         []string
+		wantModel, note string
+	}{
+		{"db", []string{"db"}, "fake/m2", "touches db: chose as hard"},
+		{"ui", []string{"ui"}, "fake/m1", ""},
+		{"empty", nil, "fake/m1", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			g := startGateway(t, t.TempDir(), "")
+			w := startWorkerNode(t, g, shortSet, nil)
+			w.register(t, newRepo(t, "shop"))
+			low, high := 32.5, 42.3
+			w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &low})
+			w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &high})
+			w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
+			for _, m := range []string{"fake/m1", "fake/m2"} {
+				w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: m})
+			}
+			res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Difficulty: "normal", Touches: tc.touches, Task: "x"})
+			if err != nil || res.Model != tc.wantModel || (tc.note != "" && !strings.Contains(res.ModelNote, tc.note)) || (tc.note == "" && strings.Contains(res.ModelNote, "touches")) {
+				t.Fatalf("choice: %+v, %v", res, err)
+			}
+		})
+	}
+}

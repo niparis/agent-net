@@ -325,3 +325,5 @@ few days before part 3 starts steering.
 6. **The analysis.** A sum of effects with shrinkage, no interactions at
    first. Recommendation: yes; it is small, and plain medians per
    combination would stay empty for weeks.
+
+Worker starts can also report `touches`. When it includes `db` (schema, migrations or stored data) or `hot-path` (code run on every request, refresh, redraw or message), automatic choice uses the next difficulty level, capped at `very_complex`. The requested difficulty remains the calibration input; the worker and run also store the effective level and touched areas. Empty touches or other areas leave choice unchanged.
