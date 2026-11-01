@@ -31,4 +31,4 @@ you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit
+up/down thread  left/right msg  v body  f defect  tab CTO  ? help  q quit

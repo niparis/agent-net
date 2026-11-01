@@ -52,6 +52,14 @@ continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
 wrong (few continues, some fixes). Counting both the same would treat a
 model that needs a nudge like one that builds the wrong thing.
 
+**A defect found later.** The counters only see a follow-up the caller sends.
+A defect found hours later, after the hand-back or after merge, would be lost.
+So the caller can report it with `agent_rate` and `kind:
+"defect_found_later"`: one line on what is wrong, no score, at any time within
+the gateway's worker run retention, also after a rating and more than once.
+Each report is one defect and counts as one fix on that worker's task. The
+owner can file one from the Messages tab, with `f` on a worker conversation.
+
 Not counted in the first version: restarts on a new worker, reverts after
 landing, fix-up lines found in git. They are better signals but need more
 machinery. Add them only if the two counters prove too weak.

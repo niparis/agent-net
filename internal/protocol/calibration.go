@@ -79,6 +79,9 @@ type Calibration struct {
 	// Ratings is how many satisfaction ratings each model has (part 4). It is
 	// read only, like the rest of the table.
 	Ratings []CalibrationRating `json:"ratings,omitempty"`
+	// Defects is how many defects were reported later on workers in the
+	// window. Each report also counts as one fix in the task's median.
+	Defects int `json:"defects,omitempty"`
 }
 
 // ReworkWeight is one task's weighted rework: fix + 0.5 * continue.

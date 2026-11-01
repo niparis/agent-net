@@ -21,17 +21,18 @@ const calibrationWindow = protocol.TrackRecordDays * 24 * time.Hour
 // chooser never reads it.
 func (s *Store) Calibration() (protocol.Calibration, error) {
 	cut := s.now().Add(-calibrationWindow).Unix()
-	rows, err := s.db.Query(`SELECT caller, difficulty, ended_at, continue_count, fix_count
+	rows, err := s.db.Query(`SELECT session_id, caller, difficulty, ended_at, continue_count, fix_count
 		FROM worker_runs WHERE caller <> '' AND ended_at >= ? ORDER BY ended_at, id`, cut)
 	if err != nil {
 		return protocol.Calibration{}, err
 	}
 	samples := []protocol.CalibrationSample{}
+	sampleSession := []string{}
 	for rows.Next() {
-		var caller, difficulty string
+		var sessionID, caller, difficulty string
 		var ended int64
 		var cont, fix int
-		if err := rows.Scan(&caller, &difficulty, &ended, &cont, &fix); err != nil {
+		if err := rows.Scan(&sessionID, &caller, &difficulty, &ended, &cont, &fix); err != nil {
 			rows.Close()
 			return protocol.Calibration{}, err
 		}
@@ -40,12 +41,34 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 		}
 		samples = append(samples, protocol.CalibrationSample{Caller: caller, Difficulty: difficulty,
 			Continue: cont, Fix: fix, EndedAt: ended})
+		sampleSession = append(sampleSession, sessionID)
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
 		return protocol.Calibration{}, err
 	}
 	rows.Close()
+
+	// A defect reported later is one more fix on that worker's task. It is
+	// kept in its own table, so the same task's rows get the count once: the
+	// newest row of the session carries it.
+	defects, err := s.DefectCountsBySession(cut)
+	if err != nil {
+		return protocol.Calibration{}, err
+	}
+	lastRow := map[string]int{}
+	for i, sessionID := range sampleSession {
+		if sessionID != "" {
+			lastRow[sessionID] = i
+		}
+	}
+	totalDefects := 0
+	for sessionID, n := range defects {
+		totalDefects += n
+		if i, ok := lastRow[sessionID]; ok {
+			samples[i].Fix += n
+		}
+	}
 
 	scores, err := s.scores()
 	if err != nil {
@@ -69,6 +92,7 @@ func (s *Store) Calibration() (protocol.Calibration, error) {
 		return protocol.Calibration{}, err
 	}
 	cal.Ratings = ratings
+	cal.Defects = totalDefects
 	for i := range cal.Callers {
 		cal.Callers[i].Name = names[cal.Callers[i].Caller]
 		cal.Callers[i].Model = models[cal.Callers[i].Caller]

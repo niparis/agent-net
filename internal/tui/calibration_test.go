@@ -26,9 +26,10 @@ func calibrationSnapshot() protocol.Calibration {
 			{Difficulty: "hard", Median: 0.5, Tasks: 12, Action: protocol.CalibrationKeep},
 		},
 		Ratings: []protocol.CalibrationRating{
-			{Model: "deepseek-v4.1-flash", Count: 3},
+			{Model: "deepseek-v4.1-flash", Count: 3, Defects: 1},
 			{Model: "gpt-6.1-sol", Count: 14},
 		},
+		Defects: 2,
 	}
 }
 
@@ -43,7 +44,8 @@ func TestQuotaCalibrationTable(t *testing.T) {
 		"agent-net", "homelab-agent *", "normal", "hard", "simple",
 		"lower", "keep", "not enough tasks",
 		"network: normal 1 · 9 tasks · keep",
-		"ratings: deepseek-v4.1-flash 3 · gpt-6.1-sol 14",
+		"ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14",
+		"defects reported later: 2",
 		"weak caller: follows the network and cannot lower a tier",
 	} {
 		if !strings.Contains(view, want) {

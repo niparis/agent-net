@@ -382,6 +382,25 @@ CREATE TABLE IF NOT EXISTS worker_rate_offers (
   asked INTEGER NOT NULL DEFAULT 0,
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_rate_offers_caller ON worker_rate_offers (caller, at);
+`, `
+-- Defects reported after a worker's hand-back (difficulty calibration). One
+-- row per report, so a worker session may have several. Each row counts as one
+-- fix on that task in the medians. The note is the caller's one line, never
+-- the task text.
+CREATE TABLE IF NOT EXISTS worker_defects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL DEFAULT 0,
+  session_id TEXT NOT NULL,
+  caller TEXT NOT NULL DEFAULT '',
+  rater_model TEXT NOT NULL DEFAULT '',
+  harness TEXT NOT NULL DEFAULT '',
+  model TEXT NOT NULL DEFAULT '',
+  effort TEXT NOT NULL DEFAULT '',
+  difficulty TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '',
+  at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS worker_defects_session ON worker_defects (session_id, at);
+CREATE INDEX IF NOT EXISTS worker_defects_model ON worker_defects (model, at);
 `}
 
 // OpenStore opens (or creates) the database at path and migrates it.

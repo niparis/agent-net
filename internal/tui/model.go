@@ -155,7 +155,11 @@ type Model struct {
 	sessionPending *sessionAsk // the create or trust question of a start
 	confirmID      string      // session the stop question is about
 	confirmOwner   bool        // owner session rather than a worker
+	confirmDefect  bool        // confirm reporting a defect found later
 	confirmName    string
+	defect         textinput.Model // the one-line defect note
+	defectWorker   string          // worker session the defect is about
+	defectName     string          // how the prompt names the worker
 	pol            policyForm
 	intg           integrationsForm // the setup integrations of the whole network
 	rename         textinput.Model  // the machine name prompt
@@ -1029,6 +1033,8 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.sessionFormKey(k)
 	case modeConfirm:
 		return m.confirmKey(k)
+	case modeDefectNote:
+		return m.defectKey(k)
 	case modeQuotaConfirm:
 		return m.quotaConfirmKey(k)
 	case modeTrust:
@@ -1322,6 +1328,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		return m.startEnter()
+	case "f":
+		if m.tab == messagesTab {
+			return m.startDefect()
+		}
 	case "w":
 		if m.tab == messagesTab {
 			m.hideWorkerThreads = !m.hideWorkerThreads

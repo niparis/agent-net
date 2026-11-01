@@ -103,6 +103,10 @@ const (
 	// OpRate records one caller's rating of a finished worker (difficulty
 	// calibration, part 4). Open to agent sessions, not to the command line.
 	OpRate = "agent_rate" // takes RateRequest, answers RateResult
+	// OpWorkerDefect reports a defect found later on a worker's task as the
+	// owner. It is owner only, so the owner's score path stays separate from
+	// the caller's agent_rate.
+	OpWorkerDefect = "worker_defect" // takes DefectRequest, answers RateResult
 )
 
 // Graph operator methods are available only to the owner.
@@ -130,7 +134,7 @@ var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
-	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpLearn, OpRate}
+	OpIntegrationsGet, OpIntegrationsSet, OpHiddenGet, OpHiddenSet, "onboarding_get", "onboarding_set", "onboarding_restart", OpPlaybookGet, OpPlaybookSet, OpSend, OpWorkerStart, OpWorkerStop, OpWorkerProfiles, OpWorkerProfileAdd, OpWorkerProfileRemove, OpLearn, OpRate, OpWorkerDefect}
 
 // HiddenItems is the owner's shared TUI visibility preference. Session IDs
 // remain hidden across machines; node names identify graph items on Graph.
