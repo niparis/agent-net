@@ -999,22 +999,7 @@ func sandboxDenial(s string) bool {
 // report: "complete: yes" or "complete: no". The last such line wins. ok is
 // false when the report has none (the work then counts as complete).
 func codexReportComplete(report string) (complete, ok bool) {
-	complete = true
-	lines := strings.Split(strings.TrimSpace(report), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.ToLower(strings.TrimSpace(lines[i]))
-		if line == "" {
-			continue
-		}
-		switch line {
-		case "complete: no":
-			return false, true
-		case "complete: yes":
-			return true, true
-		}
-		return true, false
-	}
-	return true, false
+	return protocol.WorkerReportComplete(report)
 }
 
 // blockedReport is the W15 report: what was tried, why it stopped, and where
