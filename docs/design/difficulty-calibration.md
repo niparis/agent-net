@@ -137,6 +137,36 @@ tasks need too many fixes at a difficulty loses rotation weight there. A
 model that only needs continues keeps most of its weight on resumable
 harnesses, and loses it on harnesses that cannot resume (Pi today).
 
+## 7b. Asking the caller: a satisfaction sample
+
+Counters see how often work came back, not how good it was. So, now and then,
+agent-net asks the caller directly.
+
+- **When.** After a worker's final hand-back, for every 5th finished worker
+  of each caller. Also for the first 3 finished tasks of any model and effort
+  that has fewer than 5 ratings, so new models get rated quickly.
+- **What.** One short request from agent-net, answered with one tool call
+  (`agent_rate`): a score from 1 to 5 for the result, and one line on why.
+  Example: "Rate worker 4 (deepseek-v4.1-flash, normal, 23 min): 1 to 5 for
+  the result, and one line." No answer within a day counts as no rating, not
+  as a low one.
+- **Stored.** Per rating: the model, the effort, the harness, the difficulty
+  asked and used, the caller and its model, the score, the line, the time.
+- **Used.** A quality score per model and effort (for example
+  `deepseek-v4.1-flash` and `gpt-6.1-sol:medium` rated separately), as the
+  median of recent ratings, shown next to the benchmark score in the Quotas
+  tab with the number of ratings behind it. The chooser uses it like the
+  track record: it changes rotation weight, within limits, and never the
+  score minimum. The benchmark score decides what a model may do; the
+  ratings decide how often it is picked among the adequate ones.
+- **The same guard as section 6.** Ratings from strong callers count fully.
+  Ratings from weak callers count half, and alone they cannot raise a model's
+  quality score. A weak reviewer is generous for the same reason it sends
+  nothing back.
+- **Overlap.** `agent_learn` stays for free-text findings that should change
+  how a model is briefed. `agent_rate` is the structured number. A low rating
+  with a reason may also become a finding, by the caller's choice.
+
 ## 8. What the owner sees
 
 The Quotas tab gets one small table, one row per caller:
@@ -171,7 +201,9 @@ content only of work that crosses a boundary, and here it only counts it.
 3. Apply the offsets in the chooser, with the explanation in the start
    result, `reason` overrides, the critical floor and target, and a model
    named by an agent as a hint.
-4. Optional, later: restarts, reverts and git fix-up lines as extra signals;
+4. The satisfaction sample (section 7b): `agent_rate`, the sampling, the
+   quality score per model and effort, and its rotation weight.
+5. Optional, later: restarts, reverts and git fix-up lines as extra signals;
    spot checks.
 
 Parts 1 and 2 change no behavior, so the owner can watch the numbers for a
@@ -187,3 +219,6 @@ few days before part 3 starts steering.
    which today means sol, Opus and Astra, and not terra, DeepSeek or Sonnet.
 4. **A named model from an agent becomes a hint.** This changes today's
    behavior for agents that name models. Recommendation: yes.
+5. **How often to ask.** Every 5th finished worker per caller, plus the first
+   3 tasks of a little-rated model. Recommendation: keep it, and watch
+   whether callers find it a burden.
