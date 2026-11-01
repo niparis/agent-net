@@ -253,6 +253,9 @@ func (g *Gateway) RunExpiry(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			if err := g.store.samplePendingStalls(); err != nil {
+				g.logLine("error", "where", "pending sample", "err", err)
+			}
 			// Expire writes one log line per message.
 			if n, err := g.store.Expire(); err != nil {
 				g.logLine("error", "where", "expiry", "err", err)

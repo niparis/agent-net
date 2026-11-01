@@ -30,6 +30,9 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	pendingMu         sync.Mutex
+	pendingEpisodes   map[string]pendingEpisode
+	pendingStalls     int
 	db                *sql.DB
 	graphJunkRemoved  int64
 	graphJunkMigrated bool
@@ -1171,6 +1174,9 @@ func (s *Store) Agents(f protocol.QueryAgents) ([]protocol.AgentView, error) {
 		return nil, err
 	}
 	if err := s.applyAgentCharters(out, true); err != nil {
+		return nil, err
+	}
+	if err := s.applyPending(out); err != nil {
 		return nil, err
 	}
 	return out, nil

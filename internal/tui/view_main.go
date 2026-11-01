@@ -955,10 +955,17 @@ func (m Model) sessionsTable(w, n int) []string {
 		}
 	}
 	avail := w - 2 // two columns for the selection marker
+	statusWidth := 6
 	if len(m.needsRows()) > 0 {
-		avail -= 3
-	} // reserve the wider status
-	cols := m.needsColumns(columnsForProject(avail, nameWant, projectWant, policy))
+		statusWidth = 9
+	}
+	avail -= statusWidth - 6
+	cols := columnsForProject(avail, nameWant, projectWant, policy)
+	for i := range cols {
+		if cols[i].name == "STATUS" {
+			cols[i].width = statusWidth
+		}
+	}
 	wanted := 5
 	for _, g := range m.groups() {
 		for _, a := range g.agents {
@@ -1107,6 +1114,37 @@ func (m Model) usageCells(a protocol.AgentView, cols []column) map[string]string
 	return cells
 }
 
+// pendingTask fits the request description while preserving its age.
+func (m Model) pendingTask(a protocol.AgentView, width int) string {
+	if !a.Online || a.Status != "idle" || len(a.Pending) == 0 || width <= 0 {
+		return ""
+	}
+	p := a.Pending[0]
+	for _, request := range a.Pending {
+		if !request.Outgoing {
+			p = request
+			break
+		}
+	}
+	prefix := "waiting on "
+	if !p.Outgoing {
+		prefix = "owes reply to "
+	}
+	prefix += sanitize(p.PeerName)
+	age := needsAge(m.now(), p.Since)
+	suffix := " · " + age
+	if ansi.StringWidth(prefix+suffix) <= width {
+		return prefix + suffix
+	}
+	if width < ansi.StringWidth(suffix) {
+		if width >= ansi.StringWidth(age) {
+			return age
+		}
+		return ""
+	}
+	return strings.TrimSpace(cellDots(prefix, width-ansi.StringWidth(suffix))) + suffix
+}
+
 func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, visibleIndex int) string {
 	selected := a.SessionID == m.selected && (m.selIdx == visibleIndex && !m.selNeeds || m.selNeeds && m.selIdx >= maxNeedsRows)
 	marker := "  "
@@ -1144,6 +1182,9 @@ func (m Model) sessionLine(a protocol.AgentView, mk treeMark, cols []column, w, 
 			v = policyBadge(a.Delegation)
 		case "TASK":
 			v = taskText(a)
+			if pending := m.pendingTask(a, c.width); pending != "" {
+				v = pending
+			}
 		}
 		if c.name != "TASK" {
 			v = dashIfEmpty(v)
