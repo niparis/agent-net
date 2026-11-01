@@ -264,7 +264,7 @@ func TestTwoCopiesDescribeNewerAndFileChanges(t *testing.T) {
 	older.Locations[0].Manifest = &protocol.SkillManifest{Newest: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "old"}, {Path: "removed", Fingerprint: "x"}}}
 	newer.Locations[0].Manifest = &protocol.SkillManifest{Newest: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Files: []protocol.SkillFile{{Path: "SKILL.md", Fingerprint: "new"}, {Path: "added", Fingerprint: "y"}}}
 	d := find(Differences([]protocol.ToolItem{older, newer}, machines), KindTwoCopies, "demo")
-	if d == nil || !strings.Contains(d.Title, "Claude") || !strings.Contains(d.Title, "newer than Pi") || !strings.Contains(d.Title, "3 files differ") || d.Fix != "keep the newer one in both places" {
+	if d == nil || !strings.Contains(d.Title, "2 different copies") || d.Fix != "compare, then keep one" {
 		t.Fatalf("difference: %+v", d)
 	}
 	if d.Action.Copies[0].Manifest == nil {

@@ -590,3 +590,5 @@ and its local users must be trusted. Do not expose the HTTP listener directly
 on a network or put an untrusted proxy in front of it.
 
 Skill file previews use the owner-only operator gate. The gateway checks the owner session and the current observed skill location; the originating daemon checks that the relative path is in its current manifest and that the file still matches its fingerprint. Previews reject symlinks, non-regular files, invalid UTF-8, NUL bytes and files over 64 KiB. Contents pass through the gateway on request and are not stored by the preview operation. Enrolled daemons remain inside the gateway trust boundary.
+
+The owner-only skill comparison summary sends up to 12,000 bytes of skill text to an automatically chosen read-only worker. The worker is selected through the normal protected-provider rules. Summary requests share the phrasing rate limit.

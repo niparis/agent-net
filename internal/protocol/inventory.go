@@ -378,3 +378,12 @@ type SkillTextRequest struct {
 	Name     string             `json:"name,omitempty"`
 	Hash     string             `json:"hash,omitempty"`
 }
+
+// SkillSummaryRequest asks an owner-only worker to compare observed skill text.
+type SkillSummaryRequest struct {
+	AHash string `json:"a_hash"`
+	BHash string `json:"b_hash"`
+	A     string `json:"a"`
+	B     string `json:"b"`
+	Owner string `json:"owner,omitempty"`
+}
