@@ -8,6 +8,7 @@ Keys ─────────────────────────
   enter                enter the selected session (ctrl+] to return)
   e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
+  c                    hand over the selected row to the CTO: a preview first, then Enter sends it, Esc cancels
   n                    start a new session: project, harness, model, project folder, first message (a form). Empty first
                        message starts it and enters it; text starts it in the background and sends it.
   s                    start a worker (a form: project, harness, model, task)
@@ -35,6 +36,5 @@ Keys ─────────────────────────
   n                    start a new session in this project (the same form, filled from here)
   esc                  return to Graph with the same node selected
   D                    name project (empty clears)
-  h, H                 hide or unhide the selected project; show hidden projects
   more below
 up/down scroll  esc close help  q quit

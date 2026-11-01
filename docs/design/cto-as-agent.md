@@ -7,6 +7,8 @@ This design builds on the CTO as the advisor for the whole network, its charter,
 Status: accepted by the owner as option A on 2026-10-31. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
+Part 5 (hand-over) is implemented: `c` previews one item and sends it through
+the owner-gated `cto_send` method.
 
 The daemon runs validators and calls for charter changes, edge sets and machine
 renames. Validators and runners for the other change operations belong to Part
@@ -152,7 +154,7 @@ So whatever an agent gets the CTO to repeat, the agent could have read itself, w
 The owner can give the CTO owner-only data on purpose:
 
 - **Typing it** in the CTO session or sending it from the Messages tab, as today.
-- **A hand-over key.** `c` on a Needs you row, a Sessions row or a message in Messages sends an owner message to the CTO session with that item: the question and its options, the held request, the last 20 lines of the session's text, or the message body. The TUI shows what it will send before it sends.
+- **A hand-over key.** `c` on a Needs you row, a Sessions row or a message in Messages sends an owner message to the CTO session with that item: the question and its options, the held request, the inbox question, the session's announced task and recent status, or the message body. The TUI shows the exact text before it sends, and caps it at 4,000 characters. Enter sends it through the owner-gated `cto_send` method; Esc cancels.
 
 A hand-over is the owner's choice to share. The CTO brief says such content is for the owner's work and should not be repeated to other agents, but that is advice. The owner should treat what they give the CTO like what they tell a colleague who also talks to others.
 
@@ -368,6 +370,10 @@ Status: implemented. Every current owner-only CTO change uses the proposal runne
 - Tests: the parity test pins each read view to its agent tool; the canary test of section 6 over every read view; a view without a source fails the parity test.
 
 **Part 5. Hand-over to the CTO.**
+
+Status: implemented. `c` opens a preview at 80 and 120 columns, and the
+preview is capped at 4,000 characters.
+
 - `c` on Needs you rows, Sessions rows and messages: a preview, then an owner message to the CTO.
 - Tests: golden TUI scenes for the preview; the sent message holds exactly the previewed text; it goes through the owner gate.
 

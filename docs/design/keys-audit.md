@@ -37,6 +37,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | `enter` | Enter the selected session, including a Needs you row. |
 | `e` | Enter the selected session (alias of Enter). |
 | `m` | Compose a message to the selected session. |
+| `c` | Hand over the selected row to the CTO: a preview first, then Enter sends it. |
 | `s` | Start a worker form. On an outcome row, "let stand". |
 | `o` | Toggle offline sessions. On an outcome row, "overrule". |
 | `x` | Stop the selected worker. |
@@ -67,6 +68,7 @@ session. The extra actions apply only when such a row is selected.
 |---|---|
 | `enter` | Enter the waiting session. |
 | `m` | Send a message without entering. |
+| `c` | Hand over the selected row to the CTO: a preview first, then Enter sends it. |
 | `a`, `A` | Accept a held request. |
 | `r`, `R` | Refuse a held request. |
 | `a` | Accept a learned suggestion. |
@@ -81,6 +83,7 @@ session. The extra actions apply only when such a row is selected.
 | `left`/`right` | Select a message inside the conversation. |
 | `enter` | Select the latest message in the thread. |
 | `v` | Open the selected message body. |
+| `c` | Hand over the selected message to the CTO: a preview first, then Enter sends it. |
 | `w` | Show or hide worker threads. |
 | `e` | Show or hide system events. |
 | `l` | Cycle the event filter. |
@@ -273,6 +276,7 @@ only supplies ctrl+] to come back.
 | `m` | Sessions and Messages: compose. Tools: next machine. CTO: model form. Body overlay: close. | Compose, machine and close. |
 | `p` | Sessions: policy. Quotas: protect. | Two settings actions. |
 | `t` | Sessions: cycle request rule. Graph: traffic. Inbox: type an answer. | Rule, visibility and text. |
+| `c` | Sessions and Messages: hand the selected item to the CTO. Graph card: focus the CTO box. | Two meanings on two kinds of screen. The card has no item to hand over, so it keeps the CTO focus it had. |
 | `d` | Sessions: detail. Tools plan: exact folders. | Both are details, so this one is acceptable. |
 | `l` | Messages and Sessions feed: event filter. Tools All: move right a column. Graph: pan right. | Filter and movement. |
 | `j`/`k` | Lists: move selection. Graph: pan. Modals: scroll. Picker: select. | Movement in all cases, but the axis and unit differ. |
@@ -356,6 +360,16 @@ Rules:
 | 18 | Card: Esc returns to the selected Graph node (implemented in decision 0038). | Medium | Esc must go back one level, not jump to Sessions. |
 | 19 | Make `?` open the same help overlay on Graph, with a Graph section, instead of the separate `graphHelp` panel. | Medium | One key, one help. |
 | 20 | Unify the confirmation keys on `y`/`n` and show them in every modal footer. They already agree except for `Y`/`N` aliases, which can stay. | Small | One confirmation convention. |
+
+### Hand-over key
+
+Part 5 of [the CTO design](cto-as-agent.md#6-reads-the-gap-option-a-leaves-and-the-rule)
+uses `c` on a Needs you row, a Sessions row and a message in Messages. It
+opens a preview of the exact text that Enter sends to the CTO. The key was
+free on Sessions and Messages; `C` is the global CTO-box key, and the Graph
+card already uses `c` to focus the CTO box. The card keeps that meaning
+because a card node is not an item the owner hands over. The text is capped
+at 4,000 characters; a longer item ends with a line that says it was cut.
 
 Items 8, 9, 10, 11 and 12 change everyday keys. They should be done together,
 one commit, after the owner approves the map. The implemented changes are the Graph/card merge in decision 0038 and

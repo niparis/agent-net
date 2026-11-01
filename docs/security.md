@@ -333,8 +333,11 @@ world may have changed.
 
 **Rule 2: reads.** The accepted design limits CTO reads to what ordinary sessions
 can read, plus the CTO's own conversations and proposals. This rule is not yet
-implemented. The CTO remains private and still has its current owner-only read
-views. Public-only reads and owner hand-over are the next design parts. The
+implemented for the CTO's own reads. The CTO remains private and still has its
+current owner-only read views; public-only reads are the next design part. The
+owner can hand one item over from the TUI with `c`: the preview shows the exact
+text, Enter sends it through the owner-gated `cto_send` method, and the text is
+capped at 4,000 characters. An agent session cannot call that method. The
 proposal boundary enforces rule 1 independently of those later parts.
 
 ## Limits against loops

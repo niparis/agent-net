@@ -10,6 +10,8 @@ Keys ─────────────────────────
   enter                enter the selected session (ctrl+] to return)
   e                    enter the selected session (alias for Enter)
   m                    send a message to the session as yourself
+  c                    hand over the selected row to the CTO: a preview first,
+                       then Enter sends it, Esc cancels
   n                    start a new session: project, harness, model, project
                        folder, first message (a form). Empty first message
                        starts it and enters it; text starts it in the background
@@ -18,7 +20,5 @@ Keys ─────────────────────────
   x, h, H              stop worker; h hides/unhides; H shows hidden sessions
                        (dim)
   t                    cycle request rule: normal, ask, auto
-  p                    delegation policy: subagent or worker for code changes (a
-                       form)
   more below
 up/down scroll  esc close help  q quit
