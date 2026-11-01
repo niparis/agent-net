@@ -15,15 +15,15 @@
 │ ratings: deepseek-v4.1-flash 3 · gpt-6.1-sol 14                              │
 │ last 7 finished tasks, at least 5 · rework = fix + 0.5 * continue            │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Workers · 0 registered · 0 running · scores: Artificial Analysis─────────────╮
-│ NAME            HARNESS  MODEL               T     S     N     H     V       │
-│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min       │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-
-
-
-
+╭─Quality analysis · read only─────────────────────────────────────────────────╮
+│ tentative: overlap and more ratings needed                                   │
+│ Model matters · quality / rework (tasks)                                     │
+│ gpt-6.1-sol  +0.60 (14) / -0.30 (20)                                         │
+│ Harness matters · quality / rework (tasks)                                   │
+│ codex  +0.10 (14) / +0.00 (20)                                               │
+│ Effort matters (within model) · quality / rework (tasks)                     │
+│ gpt-6.1-sol high  +0.10 (3, weak) / +0.00 (5)                                │
+│ Predicted quality · normal difficulty                                        │
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

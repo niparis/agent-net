@@ -539,6 +539,9 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 				}
 				return none, reject("%s", reason)
 			}
+			if err := g.store.applyQualityWeights(candidates, difficulty); err != nil {
+				return none, err
+			}
 			g.rotationMu.Lock()
 			rotation, err := g.store.WorkerRotation()
 			if err != nil {

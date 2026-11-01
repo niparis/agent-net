@@ -31,6 +31,10 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	qualityMu         sync.Mutex
+	quality           protocol.QualityAnalysis
+	qualityFit        qualityFit
+	qualityStrong     map[string]int
 	reminderMu        sync.Mutex
 	reminderOffline   map[string]bool
 	checkMu           sync.Mutex
@@ -404,6 +408,10 @@ func OpenStore(path string) (*Store, error) {
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.refreshQuality(); err != nil {
 		db.Close()
 		return nil, err
 	}

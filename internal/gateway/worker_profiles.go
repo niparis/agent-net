@@ -113,7 +113,10 @@ func (s *Store) saveWorkerProfiles(profiles []protocol.WorkerProfile) error {
 		return err
 	}
 	_, err = s.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, workerProfilesKey, string(raw), s.now().UnixNano())
-	return err
+	if err != nil {
+		return err
+	}
+	return s.refreshQuality()
 }
 func (s *Store) AddWorkerProfile(p protocol.WorkerProfile) error {
 	s.mu.Lock()

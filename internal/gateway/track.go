@@ -39,6 +39,9 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.Caller, r.Difficulty); err != nil {
 		return err
 	}
+	if err := s.refreshQuality(); err != nil {
+		return err
+	}
 	// A clearly bad track record promotes a note on its own (decision 0022).
 	if err := s.evaluatePlaybook(protocol.SubjectModel, r.Model, ""); err != nil {
 		return err

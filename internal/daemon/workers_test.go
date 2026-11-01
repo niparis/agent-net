@@ -1326,8 +1326,8 @@ func TestOwnerSessionIsRegisteredPerMachine(t *testing.T) {
 	eventually(t, "delivered to the other owner", func() bool { return messageState(t, cb, sent.Message.ID) == protocol.StateDelivered })
 }
 
-// Every operator method is served to a CLI client, and not one answers with
-// "unknown method". This keeps protocol.OperatorMethods and the daemon together.
+// Every operator method is recognized. Agent-only methods refuse the CLI;
+// the other methods are served. This keeps the protocol and daemon together.
 func TestEveryOperatorMethodIsServed(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -1335,6 +1335,12 @@ func TestEveryOperatorMethodIsServed(t *testing.T) {
 	eventually(t, "connected", func() bool { return n.d.ownerSessionID() != "" })
 	for _, m := range protocol.OperatorMethods {
 		_, err := cli.call(m, map[string]any{})
+		if m == protocol.OpLearn || m == protocol.OpRate {
+			if err == nil || !strings.Contains(err.Error(), "not available to cli") {
+				t.Errorf("%s must refuse the CLI: %v", m, err)
+			}
+			continue
+		}
 		if err != nil && (strings.Contains(err.Error(), "unknown method") || strings.Contains(err.Error(), "not available to cli")) {
 			t.Errorf("%s: %v", m, err)
 		}

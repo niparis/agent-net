@@ -1,6 +1,21 @@
 # Difficulty calibration from rework
 
 Status: approved by the owner on 2026-11-01, with the recommended answers to the open questions. Built in the parts of section 10.
+
+Parts 1, 2, 4 and 5 are built. Part 3 steering is not built. Part 5 fits
+ratings and weighted rework in the gateway, with a penalty of 10 equivalent
+tasks per effect. Effort effects sum to zero within each model. The gateway
+rebuilds the cached analysis at startup and when ratings, runs, profiles or
+score overrides change, including run retention. No request or TUI redraw
+fits data. Quotas shows effects, counts and predictions at normal difficulty.
+Rotation weighting is owner controlled through
+`agent-net scores quality on|off`, defaults to off, and needs at least 5
+ratings. Its multiplier is
+`1 + (prediction - average) / 4`, bounded to 0.5 through 1.5. Weak ratings
+count half; models without a strong rating cannot get a prediction above
+the fitted average. Residuals over 0.75 points with at least 5 ratings flag a
+combination for review. No interactions or difficulty steering were added.
+
 Builds on decision [0026](../decisions/0026-worker-difficulty-and-scores.md)
 (difficulty, scores, rotation) and [0036](../decisions/0036-primitives.md)
 (task as a contract between a caller and a doer).
@@ -211,9 +226,9 @@ Kept honest:
   without, and flag a combination whose real results stay far from the
   prediction.
 
-Size: a few dozen lines of code on the gateway, run on demand or every hour,
-over a few thousand tasks in milliseconds. Nothing is stored beyond the raw
-records. The real limit is data: at 5 to 20 rated tasks a day, model effects
+The fit runs in the gateway on source changes, and its result is cached in
+memory. Reads only serve the cache. Nothing is stored beyond the raw
+records and the owner setting. The real limit is data: at 5 to 20 rated tasks a day, model effects
 take a week or two to settle, harness and effort effects longer, and the
 screen says so instead of pretending to know.
 
