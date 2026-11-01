@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -210,5 +211,61 @@ func TestCTOClaudeOtherStartupFailureKeepsSession(t *testing.T) {
 	id, err := n.d.claudeCTOSession()
 	if err != nil || id != "prior-session" {
 		t.Fatalf("stored id %q: %v", id, err)
+	}
+}
+
+// Claude Code writes its background job state as {"state": ..., "detail": ...}.
+// v0.4.52 read "status" and never saw a live job, so every CTO start ran
+// into its deadline. Any state that does not mean the job ended counts as
+// alive; the process check decides then.
+func TestClaudeCTOJobStateReadsClaudesKeys(t *testing.T) {
+	dir := t.TempDir()
+	sessions := filepath.Join(dir, "sessions")
+	write := func(ref, body string) {
+		job := filepath.Join(dir, "jobs", ref)
+		if err := os.MkdirAll(job, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(job, "state.json"), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("live", `{"state":"working","detail":null,"sessionId":"x"}`)
+	write("gone", `{"state":"failed","detail":"source session 48072c8a not found"}`)
+	write("old", `{"status":"crashed","error":"boom"}`)
+	if state, _ := claudeCTOJobState(sessions, "live"); state != "working" || claudeJobEnded(state) {
+		t.Fatalf("live job: state %q, ended %v", state, claudeJobEnded(state))
+	}
+	state, detail := claudeCTOJobState(sessions, "gone")
+	if !claudeJobEnded(state) || !strings.Contains(detail, "not found") {
+		t.Fatalf("failed job: state %q detail %q", state, detail)
+	}
+	if state, _ := claudeCTOJobState(sessions, "old"); state != "crashed" {
+		t.Fatalf("older keys: state %q", state)
+	}
+}
+
+// A daemon restart (every auto-upgrade) must not end the CTO's Claude job:
+// that lost the owner's CTO conversation. Releasing forgets the job; the
+// process keeps running so the next daemon can adopt it.
+func TestReleasingTheClaudeCTOLeavesItsJobRunning(t *testing.T) {
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _, _ = cmd.Process.Wait() })
+	token, alive := procToken(cmd.Process.Pid)
+	if !alive {
+		t.Fatal("test process not alive")
+	}
+	d := &Daemon{}
+	d.claudeCTO.root.Store(&claudeCTORoot{pid: cmd.Process.Pid, token: token})
+	d.claudeCTO.ref, d.claudeCTO.session = "job-1", "s-1"
+	d.releaseClaudeCTOLocked()
+	if _, alive := procToken(cmd.Process.Pid); !alive {
+		t.Fatal("releasing the CTO ended its Claude job")
+	}
+	if d.claudeCTO.ref != "" || d.claudeCTO.root.Load() != nil {
+		t.Fatal("the daemon still holds the released job")
 	}
 }

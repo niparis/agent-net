@@ -48,6 +48,13 @@ type claudeCTOHarness struct{}
 
 func (claudeCTOHarness) name() string { return "claude" }
 
+// releaseClaudeCTOLocked forgets the CTO's Claude job without ending it.
+func (d *Daemon) releaseClaudeCTOLocked() {
+	c := &d.claudeCTO
+	c.root.Store(nil)
+	c.ref, c.session, c.model, c.token = "", "", "", ""
+}
+
 func (d *Daemon) stopClaudeCTOLocked() {
 	c := &d.claudeCTO
 	root := c.root.Load()
@@ -157,7 +164,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 			tok, alive = procToken(root.pid)
 		}
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, c.ref)
-		if ok && status == "running" && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
+		if ok && !claudeJobEnded(status) && root != nil && alive && tok == c.token && sf.PID == root.pid && c.session == id && c.model == model {
 			d.cto.mu.Unlock()
 			return nil
 		}
@@ -182,7 +189,7 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	// session may still be alive. Bind it before launching another copy.
 	if sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ""); canAdopt && ok && func() bool {
 		status, _ := claudeCTOJobState(d.cfg.ClaudeSessionsDir, sf.JobID)
-		return status == "running"
+		return !claudeJobEnded(status)
 	}() && adopt(sf) {
 		return nil
 	}
@@ -238,12 +245,12 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 	for {
 		sf, ok := findClaudeCTOBg(d.cfg.ClaudeSessionsDir, dir, ref)
 		status, detail := claudeCTOJobState(d.cfg.ClaudeSessionsDir, ref)
-		if status == "failed" || status == "crashed" || status == "killed" {
+		if claudeJobEnded(status) {
 			(claudeLauncher{}).stopID(d, ref)
 			lower := strings.ToLower(detail)
 			return &claudeCTOJobFailure{detail: detail, recoverable: status == "crashed" || strings.Contains(lower, "crash") || (strings.Contains(lower, "source session") && strings.Contains(lower, "not found"))}
 		}
-		if ok && status == "running" && adopt(sf) {
+		if ok && !claudeJobEnded(status) && adopt(sf) {
 			return nil
 		}
 		select {
@@ -256,6 +263,8 @@ func (d *Daemon) startClaudeCTOOnce(ctx context.Context, id, model string) error
 }
 
 // Job state is authoritative: a session file can appear before a resume fails.
+// Claude Code writes {"state": ..., "detail": ...}; older builds used status
+// and error, so both are read.
 func claudeCTOJobState(sessions, ref string) (string, string) {
 	if filepath.Base(ref) != ref {
 		return "", ""
@@ -265,17 +274,37 @@ func claudeCTOJobState(sessions, ref string) (string, string) {
 		return "", ""
 	}
 	var state struct {
+		State  string          `json:"state"`
+		Detail json.RawMessage `json:"detail"`
 		Status string          `json:"status"`
 		Error  json.RawMessage `json:"error"`
 	}
 	if json.Unmarshal(raw, &state) != nil {
 		return "", ""
 	}
-	detail := strings.Trim(string(state.Error), `"`)
-	if detail == "" || detail == "null" {
-		detail = state.Status
+	status := state.State
+	if status == "" {
+		status = state.Status
 	}
-	return strings.ToLower(state.Status), claudeCTOErrorOutput([]byte(detail))
+	detail := strings.Trim(string(state.Detail), `"`)
+	if detail == "" || detail == "null" {
+		detail = strings.Trim(string(state.Error), `"`)
+	}
+	if detail == "" || detail == "null" {
+		detail = status
+	}
+	return strings.ToLower(status), claudeCTOErrorOutput([]byte(detail))
+}
+
+// claudeJobEnded reports a job state that means the background job is gone.
+// Any other state, including one this version does not know, counts as alive:
+// the process check decides then.
+func claudeJobEnded(state string) bool {
+	switch state {
+	case "failed", "crashed", "killed", "stopped", "done":
+		return true
+	}
+	return false
 }
 
 var claudeVersionPattern = regexp.MustCompile(`\b[0-9]+\.[0-9]+\.[0-9]+\b`)

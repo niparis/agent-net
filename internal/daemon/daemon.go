@@ -53,12 +53,15 @@ type Host interface {
 }
 
 type Config struct {
-	testFreePort  func() (int, error) // deterministic collision tests
-	InventoryHome string              // Empty disables tools inventory (used by tests).
-	GatewayURL    string
-	NodeID        string
-	Token         string
-	CAPEM         []byte // pinned CA; nil means the system roots (plain http in tests)
+	testFreePort func() (int, error) // deterministic collision tests
+	// testStopCTOOnExit makes Stop end the CTO's Claude job, so tests do not
+	// leave fake processes behind. A real daemon leaves it running.
+	testStopCTOOnExit bool
+	InventoryHome     string // Empty disables tools inventory (used by tests).
+	GatewayURL        string
+	NodeID            string
+	Token             string
+	CAPEM             []byte // pinned CA; nil means the system roots (plain http in tests)
 	// GatewayData is the gateway data dir on the gateway machine. Empty on
 	// other machines. The CTO invite tool reads it and fails without a gateway.
 	GatewayData string
@@ -456,7 +459,14 @@ func (d *Daemon) Stop() {
 	// Wait for canceled startup to finish publishing before stopping its runtime.
 	_ = d.ctoDispatchMu.lock(context.Background())
 	d.cto.mu.Lock()
-	d.stopClaudeCTOLocked()
+	// The CTO's Claude job outlives the daemon: an upgrade restarts the daemon
+	// often, and killing the job lost the owner's CTO conversation. The next
+	// daemon adopts the running job again (startClaudeCTO).
+	if d.cfg.testStopCTOOnExit {
+		d.stopClaudeCTOLocked()
+	} else {
+		d.releaseClaudeCTOLocked()
+	}
 	d.cto.stopLocked()
 	d.cto.mu.Unlock()
 	d.ctoDispatchMu.unlock()

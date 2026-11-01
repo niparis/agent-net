@@ -178,7 +178,7 @@ func fakeClaudeCLI() {
 		} else if mode == "other" {
 			detail = "permission denied"
 		}
-		body, _ := json.Marshal(map[string]string{"status": "failed", "error": detail})
+		body, _ := json.Marshal(map[string]string{"state": "failed", "detail": detail})
 		os.WriteFile(filepath.Join(job, "state.json"), body, 0600)
 		fmt.Println("claude stop", id)
 		return
@@ -269,7 +269,7 @@ func fakeClaudeSession() {
 	os.WriteFile(tmp, b, 0o600)
 	job := filepath.Join(filepath.Dir(dir), "jobs", id)
 	os.MkdirAll(job, 0700)
-	os.WriteFile(filepath.Join(job, "state.json"), []byte(`{"status":"running"}`), 0600)
+	os.WriteFile(filepath.Join(job, "state.json"), []byte(`{"state":"working","detail":null}`), 0600)
 	os.Rename(tmp, filepath.Join(dir, strconv.Itoa(os.Getpid())+".json"))
 
 	var mu sync.Mutex
