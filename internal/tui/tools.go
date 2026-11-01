@@ -13,11 +13,9 @@ import (
 	"github.com/niparis/agent-net/internal/toolsdiff"
 )
 
-// The Tools tab (decision 0027, step 8). Three screens: what differs, all tools
-// (one column per machine), and what one project gets on one machine. A skill
-// is on or off for a machine, or on for chosen projects; the tab never shows
-// harness columns. Every change opens a plan first. The tab reads and acts
-// through the owner-only daemon methods, in the same way as the CLI and the CTO.
+// The Tools tab uses one list with plain status text and scoped action menus.
+// Changes use owner-only daemon methods and the existing plan/apply services.
+// Legacy catalog helpers remain shared with comparison and backend tests.
 
 // ToolsSource is what the Tools tab needs from the daemon. The operator client
 // has these methods; a source without them shows a note instead of the tab.
@@ -109,6 +107,7 @@ func (m Model) activeToast() string {
 // startTools opens the tab and reads the tools.
 func (m Model) startTools() (tea.Model, tea.Cmd) {
 	m.tab, m.mapOn, m.focus = toolsTab, false, focusSessions
+	m.tl.screen = toolsAll
 	m.uiFilter = ""
 	if m.tl.loading {
 		return m, nil
@@ -260,27 +259,38 @@ func (m Model) shownDiffs() []toolsdiff.Difference {
 	return out
 }
 
-// shownRows is the All tools list after the search.
+// shownRows is one row per name and kind, with attention first.
 func (m Model) shownRows() []toolsdiff.Row {
-	q := strings.ToLower(m.tl.search)
 	var out []toolsdiff.Row
+	seen := map[string]int{}
 	for _, r := range m.tl.cat.Rows {
-		if q == "" || strings.Contains(strings.ToLower(r.Name), q) || strings.Contains(strings.ToLower(r.From), q) {
-			out = append(out, r)
+		key := r.Kind + ":" + r.Name
+		if i, ok := seen[key]; ok {
+			for _, project := range r.Projects {
+				exists := false
+				for _, current := range out[i].Projects {
+					exists = exists || current.Name == project.Name
+				}
+				if !exists {
+					out[i].Projects = append(out[i].Projects, project)
+				}
+			}
+			continue
+		}
+		seen[key] = len(out)
+		out = append(out, r)
+	}
+	filtered := out[:0]
+	for _, r := range out {
+		if m.toolMatches(r) {
+			filtered = append(filtered, r)
 		}
 	}
-	return out
+	sort.SliceStable(filtered, func(i, j int) bool { return m.toolAttention(filtered[i]) && !m.toolAttention(filtered[j]) })
+	return filtered
 }
 
-func (m Model) toolsRowCount() int {
-	switch m.tl.screen {
-	case toolsDiffs:
-		return len(m.shownDiffs())
-	case toolsAll:
-		return len(m.shownRows())
-	}
-	return len(m.shownProjects())
-}
+func (m Model) toolsRowCount() int { return len(m.shownRows()) }
 
 func (m *Model) toolsClamp() {
 	n := m.toolsRowCount()
@@ -318,100 +328,27 @@ func (m Model) toolsKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.tl.searching {
 		return m.toolsSearchKey(k)
 	}
-	key := k.String()
 	m.tl.toast = ""
-	switch key {
+	switch k.String() {
 	case "q":
 		m.quitting = true
 		return m, tea.Quit
 	case "?":
 		m.help = true
-		return m, nil
 	case "M", "G":
 		return m.startGraph()
-	case "]":
-		m.toolsSetScreen(m.tl.screen + 1)
-	case "[":
-		m.toolsSetScreen(m.tl.screen - 1)
 	case "down", "j":
-		if m.tl.screen == toolsProject {
-			m.toolsMoveProject(1)
-		} else {
-			m.tl.row++
-		}
+		m.tl.row++
 	case "up", "k":
-		if m.tl.screen == toolsProject {
-			m.toolsMoveProject(-1)
-		} else {
-			m.tl.row--
-		}
-	case "right":
-		if m.tl.screen != toolsAll {
-			m.toolsSetScreen(m.tl.screen + 1)
-		} else {
-			m.tl.col++
-		}
-	case "left":
-		if m.tl.screen != toolsAll {
-			m.toolsSetScreen(m.tl.screen - 1)
-		} else {
-			m.tl.col--
-		}
-	case "l":
-		m.tl.col++
-	case "h":
-		m.tl.col--
-	case "m":
-		if n := len(m.tl.cat.Machines); n > 0 {
-			m.tl.machine = (m.tl.machine + 1) % n
-		}
+		m.tl.row--
 	case "/":
 		m.tl.searching = true
-		if m.tl.screen == toolsDiffs {
-			m.toolsSetScreen(toolsAll)
-			m.tl.searching = true
-		}
-		return m, nil
 	case "esc":
-		m.tl.search, m.tl.projFind = "", ""
-	case "r":
-		return m.toolsRescan()
-	case ".":
-		if m.tl.screen == toolsDiffs {
-			m.tl.showAccepted = !m.tl.showAccepted
-		}
-	case "x":
-		if m.tl.screen == toolsDiffs {
-			return m.toolsAccept()
-		}
+		m.tl.search = ""
 	case "enter":
-		switch m.tl.screen {
-		case toolsDiffs:
-			ds := m.shownDiffs()
-			if m.tl.row < len(ds) && strings.HasPrefix(ds[m.tl.row].Key, "group:") {
-				key := ds[m.tl.row].Key
-				next := map[string]bool{}
-				for k, v := range m.tl.expandedDiffs {
-					next[k] = v
-				}
-				next[key] = !next[key]
-				m.tl.expandedDiffs = next
-				return m, nil
-			}
-			return m.openFix()
-		case toolsAll:
-			m.toolsToast("details are below the list")
-			return m, nil
-		}
-	case "a", "u":
-		switch m.tl.screen {
-		case toolsAll:
-			return m.openRowPlan(key == "a")
-		case toolsProject:
-			if key == "u" {
-				m.toolsToast("go to All tools ([ or ]), pick the item, then press u: it opens the same plan")
-			}
-		}
+		return m.openToolMenu()
+	case "n":
+		return m.openToolAdd()
 	}
 	m.toolsClamp()
 	return m, nil

@@ -10,8 +10,8 @@ import (
 func TestToolsTurnOffOnAMachineCellIsLimitedToThatMachine(t *testing.T) {
 	m, src := toolsAtScreen(120, 34, 1)
 	m = rowByNameFrom(m, "research", "agent-net")
-	m = pressKey(m, "l") // the second machine column is research
-	m = pressKey(m, "u")
+	m.tl.col++ // the second machine column is research
+	m = resolveTools(m.openRowPlan(false))
 	if m.tl.modal == nil {
 		t.Fatalf("u must open a plan: %q", m.tl.toast)
 	}
@@ -32,8 +32,8 @@ func TestToolsTurnOffOnAMachineCellIsLimitedToThatMachine(t *testing.T) {
 func TestToolsTurnOnOnAMachineCellIsLimitedToThatMachine(t *testing.T) {
 	m, src := toolsAtScreen(120, 34, 1)
 	m = rowByNameFrom(m, "code-review", "agent-net")
-	m = pressKey(m, "h") // the first machine column is Nicolas-MBP, where code-review is another version
-	m = pressKey(m, "a")
+	m.tl.col = max(0, m.tl.col-1) // the first machine column is Nicolas-MBP, where code-review is another version
+	m = resolveTools(m.openRowPlan(true))
 	if m.tl.modal == nil {
 		t.Fatalf("a must open a plan: %q", m.tl.toast)
 	}
@@ -58,7 +58,7 @@ func TestToolsWithOneMachineHasNoMachineScope(t *testing.T) {
 	m = openTools(m)
 	m = pressKey(m, "]")
 	m = rowByNameFrom(m, "solo", "agent-net")
-	m = pressKey(m, "u")
+	m = resolveTools(m.openRowPlan(false))
 	if len(src.plans) != 1 || len(src.plans[0].Target.Machines) != 0 {
 		t.Fatalf("plans %+v", src.plans)
 	}

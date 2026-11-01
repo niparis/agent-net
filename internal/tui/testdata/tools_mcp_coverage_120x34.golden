@@ -1,12 +1,8 @@
 1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 6 sessions, 5 online · 1 busy                    updated 14:05:00
- Differences   All tools   By project   [ ] switch screen · ← → also   / search
-Things that do not match across your machines. enter fixes the selected one, x accepts it as it is.
-╭─What differs · 2 to look at──────────────────────────────────────────────────────────────────────────────────────────╮
-│ ▸ ! conflict-mcp · homelab · claude ✓ pi ! opencode ✗                                                                │
-│     fix: compare the declarations; nothing is overwritten                                                            │
-│                                                                                                                      │
-│   ◐ homelab-mcp · homelab · claude ✓ pi ✗ opencode ✗                                                                 │
-│     fix: add it to opencode and pi for homelab                                                                       │
+╭─Tools────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│   NAME                            KIND   STATUS                                                                      │
+│   conflict-mcp                    MCP    local folder in homelab, not managed                                        │
+│   homelab-mcp                     MCP    local folder in homelab, not managed                                        │
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
@@ -18,7 +14,11 @@ Things that do not match across your machines. enter fixes the selected one, x a
 │                                                                                                                      │
 │                                                                                                                      │
 │                                                                                                                      │
-│ 0 tools are the same everywhere you set them  ·  [ ] shows all of them                                               │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│                                                                                                                      │
+│ 2 tools · ! needs attention · enter opens actions                                                                    │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ Things that do not match across your machines. enter fixes the selected one, x a
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-j/k move  enter fix  x accept  [ ] screen  ? help  q quit
+j/k move  enter actions  / filter  n add  esc clear  ? help  q quit
