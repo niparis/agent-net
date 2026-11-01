@@ -1481,11 +1481,22 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		if err != nil {
 			return nil, reject("bad query.conversations")
 		}
-		page, err := st.ConversationsPage(nc.id, p)
+		page, err := st.ConversationsPage(p)
 		if err != nil {
 			return nil, err
 		}
 		return page, nil
+
+	case "query.conversation_messages":
+		p, err := decode[protocol.QueryConversationMessages](raw)
+		if err != nil || p.ConversationID == "" {
+			return nil, reject("bad query.conversation_messages")
+		}
+		ms, err := st.ConversationMessages(p.ConversationID, p.Limit)
+		if err != nil {
+			return nil, err
+		}
+		return protocol.ConversationMessagesResult{Messages: ms}, nil
 
 	case "query.messages":
 		p, err := decode[protocol.QueryMessages](raw)

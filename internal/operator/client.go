@@ -254,12 +254,10 @@ func (s *Client) Conversations(ctx context.Context, q protocol.QueryConversation
 }
 
 func (s *Client) ConversationMessages(ctx context.Context, conversationID string) ([]protocol.Message, error) {
-	raw, err := s.Call(ctx, "messages", protocol.QueryMessages{ConversationID: conversationID, Limit: 200})
+	var out protocol.ConversationMessagesResult
+	raw, err := s.action(ctx, protocol.OpConversationMessages, protocol.QueryConversationMessages{ConversationID: conversationID, Limit: 200})
 	if err != nil {
 		return nil, err
-	}
-	var out struct {
-		Messages []protocol.Message `json:"messages"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err

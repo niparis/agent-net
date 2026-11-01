@@ -1805,30 +1805,26 @@ func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protoco
 	return out, total, rows.Err()
 }
 
-// conversationVisible limits a query to conversations that involve a session
-// of the node: the same rule as MessagesPage (docs/security.md).
-const conversationVisible = `(m.sender IN (SELECT id FROM sessions WHERE node_id = ?) OR m.recipient IN (SELECT id FROM sessions WHERE node_id = ?)) AND m.conversation_id <> ''`
-
-// ConversationsPage lists stored conversations newest activity first, with a
-// keyset cursor. It is one grouped query on messages, so the two indexes
-// (messages_conv and messages_created) carry the work; it never loads every
-// message body at once.
-func (s *Store) ConversationsPage(nodeID string, q protocol.QueryConversations) (protocol.ConversationPage, error) {
+// ConversationsPage lists every stored conversation on the gateway, newest
+// activity first, with a keyset cursor. The caller is the owner, so it is not
+// limited to one machine's sessions (docs/security.md). It is one grouped query
+// on messages, so the two indexes (messages_conv and messages_created) carry
+// the work; it never loads every message body at once.
+func (s *Store) ConversationsPage(q protocol.QueryConversations) (protocol.ConversationPage, error) {
 	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
 	if q.Limit <= 0 || q.Limit > 100 {
 		q.Limit = 50
 	}
 	if err := s.db.QueryRow(`SELECT COUNT(*) FROM (
-		SELECT m.conversation_id FROM messages m WHERE `+conversationVisible+` GROUP BY m.conversation_id)`,
-		nodeID, nodeID).Scan(&page.Total); err != nil {
+		SELECT m.conversation_id FROM messages m WHERE m.conversation_id <> '' GROUP BY m.conversation_id)`).Scan(&page.Total); err != nil {
 		return page, err
 	}
 
 	sqlText := `WITH page AS (
 		SELECT m.conversation_id AS cid, MAX(m.created_at) AS last_at
-		FROM messages m WHERE ` + conversationVisible + `
+		FROM messages m WHERE m.conversation_id <> ''
 		GROUP BY m.conversation_id`
-	args := []any{nodeID, nodeID}
+	args := []any{}
 	if at, id, ok := parseConversationCursor(q.Cursor); ok {
 		sqlText += ` HAVING last_at < ? OR (last_at = ? AND cid < ?)`
 		args = append(args, at, at, id)
@@ -1848,14 +1844,12 @@ func (s *Store) ConversationsPage(nodeID string, q protocol.QueryConversations) 
 	LEFT JOIN sessions rs ON rs.id = m.recipient
 	LEFT JOIN profiles rp ON rp.session_id = m.recipient
 	ORDER BY p.last_at DESC, p.cid DESC`
-	args = append(args, q.Limit)
+	args = append(args, q.Limit+1)
 	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
 	if err != nil {
 		return page, err
 	}
 	defer rows.Close()
-	var lastAt int64
-	var lastID string
 	for rows.Next() {
 		var v protocol.ConversationView
 		var at int64
@@ -1871,15 +1865,40 @@ func (s *Store) ConversationsPage(nodeID string, q protocol.QueryConversations) 
 		v.FromCTO = senderCTO != 0
 		v.OwnerInstruction = ownerInstruction != 0
 		page.Conversations = append(page.Conversations, v)
-		lastAt, lastID = at, v.ID
 	}
 	if err := rows.Err(); err != nil {
 		return page, err
 	}
-	if len(page.Conversations) == q.Limit {
-		page.Next = fmt.Sprintf("%d|%s", lastAt, lastID)
+	if len(page.Conversations) > q.Limit {
+		page.Conversations = page.Conversations[:q.Limit]
+		last := page.Conversations[len(page.Conversations)-1]
+		page.Next = fmt.Sprintf("%d|%s", last.At.UnixNano(), last.ID)
 	}
 	return page, nil
+}
+
+// ConversationMessages returns every stored message of one conversation,
+// newest first. The caller is the owner, so it is not limited to one machine's
+// sessions. Agents keep the node-scoped MessagesPage read.
+func (s *Store) ConversationMessages(conversationID string, limit int) ([]protocol.Message, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 200
+	}
+	rows, err := s.db.QueryContext(context.Background(), msgSelect+`
+		WHERE m.conversation_id = ? ORDER BY m.created_at DESC, m.rowid DESC LIMIT ?`, conversationID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []protocol.Message{}
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
 }
 
 // parseConversationCursor reads the Next value of a page.

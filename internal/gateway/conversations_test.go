@@ -43,7 +43,7 @@ func insertConversationMessage(t *testing.T, s *Store, id, conv, from, to, body 
 
 func TestConversationsPageCursorTotalAndOrder(t *testing.T) {
 	s, c := newTestStore(t)
-	node, alice, bob := conversationFixture(t, s)
+	_, alice, bob := conversationFixture(t, s)
 
 	base := c.t
 	insertConversationMessage(t, s, "m_c1a", "c_old", alice, bob, "old first line\nsecond line", base.Add(-3*time.Hour))
@@ -52,30 +52,30 @@ func TestConversationsPageCursorTotalAndOrder(t *testing.T) {
 	insertConversationMessage(t, s, "m_c3a", "c_new", bob, alice, "newest message\nmore", base.Add(-2*time.Minute))
 	insertConversationMessage(t, s, "m_c3b", "c_new", alice, bob, "newest reply", base.Add(-time.Minute))
 
-	// A conversation between two sessions of another node must not be listed:
-	// the gateway gives a node its own conversations (docs/security.md).
+	// A conversation between two sessions of another node is part of the
+	// owner's gateway history: the list is not limited to this node.
 	other, _, _ := s.CreateNode("h2", "linux")
 	carol, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nc", Name: "carol"})
 	dave, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nd", Name: "dave"})
 	insertConversationMessage(t, s, "m_other", "c_other", carol, dave, "elsewhere", base)
 
-	page, err := s.ConversationsPage(node, protocol.QueryConversations{Limit: 2})
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Total != 3 {
-		t.Fatalf("total = %d, want 3", page.Total)
+	if page.Total != 4 {
+		t.Fatalf("total = %d, want 4", page.Total)
 	}
 	if len(page.Conversations) != 2 {
 		t.Fatalf("first page has %d rows, want 2", len(page.Conversations))
 	}
-	if page.Conversations[0].ID != "c_new" || page.Conversations[1].ID != "c_mid" {
+	if page.Conversations[0].ID != "c_other" || page.Conversations[1].ID != "c_new" {
 		t.Fatalf("first page order = %s, %s", page.Conversations[0].ID, page.Conversations[1].ID)
 	}
 	if page.Next == "" {
 		t.Fatal("first page did not give a cursor")
 	}
-	first := page.Conversations[0]
+	first := page.Conversations[1]
 	if first.From != alice || first.To != bob || first.FromName != "alice" || first.ToName != "bob" {
 		t.Errorf("sides = %s/%s (%s/%s)", first.From, first.To, first.FromName, first.ToName)
 	}
@@ -95,24 +95,45 @@ func TestConversationsPageCursorTotalAndOrder(t *testing.T) {
 		t.Errorf("last message = %q", first.LastMessageID)
 	}
 
-	next, err := s.ConversationsPage(node, protocol.QueryConversations{Cursor: page.Next, Limit: 2})
+	next, err := s.ConversationsPage(protocol.QueryConversations{Cursor: page.Next, Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.Total != 3 || next.Next != "" {
+	if next.Total != 4 || next.Next != "" {
 		t.Fatalf("second page total=%d next=%q", next.Total, next.Next)
 	}
-	if len(next.Conversations) != 1 || next.Conversations[0].ID != "c_old" {
+	if len(next.Conversations) != 2 || next.Conversations[0].ID != "c_mid" || next.Conversations[1].ID != "c_old" {
 		t.Fatalf("second page = %+v", next.Conversations)
 	}
-	if next.Conversations[0].LastLine != "old reply" {
-		t.Errorf("last line = %q", next.Conversations[0].LastLine)
+	if next.Conversations[1].LastLine != "old reply" {
+		t.Errorf("last line = %q", next.Conversations[1].LastLine)
+	}
+}
+
+func TestConversationMessagesCoverEveryNodeForTheOwner(t *testing.T) {
+	s, c := newTestStore(t)
+	other, _, _ := s.CreateNode("h2", "linux")
+	carol, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nc", Name: "carol"})
+	dave, _ := s.UpsertSession(other, protocol.SessionInfo{Harness: "pi", NativeID: "nd", Name: "dave"})
+	base := c.t
+	insertConversationMessage(t, s, "m_r1", "c_remote", carol, dave, "remote request", base.Add(-2*time.Minute))
+	insertConversationMessage(t, s, "m_r2", "c_remote", dave, carol, "remote reply", base.Add(-time.Minute))
+
+	msgs, err := s.ConversationMessages("c_remote", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 2 || msgs[0].ID != "m_r2" || msgs[1].ID != "m_r1" {
+		t.Fatalf("messages = %+v", msgs)
+	}
+	if msgs[0].Body != "remote reply" || msgs[0].From != dave || msgs[0].To != carol {
+		t.Fatalf("newest message = %+v", msgs[0])
 	}
 }
 
 func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	s, c := newTestStore(t)
-	node, alice, bob := conversationFixture(t, s)
+	_, alice, bob := conversationFixture(t, s)
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -136,7 +157,7 @@ func TestConversationsPageKeepsTenThousandMessagesFast(t *testing.T) {
 	}
 
 	start := time.Now()
-	page, err := s.ConversationsPage(node, protocol.QueryConversations{Limit: 50})
+	page, err := s.ConversationsPage(protocol.QueryConversations{Limit: 50})
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatal(err)

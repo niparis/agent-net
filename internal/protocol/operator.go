@@ -24,15 +24,19 @@ const (
 	OpProposalList   = "proposal_list"
 	OpProposalAnswer = "proposal_answer"
 	// Data. These only read.
-	OpInfo             = "info"              // answers OperatorInfo
-	OpNodes            = "nodes"             // answers NodesInfo
-	OpAgents           = "list"              // takes QueryAgents, answers AgentsResult
-	OpProjects         = "projects"          // takes QueryProjects, answers ProjectsResult
-	OpEvents           = "events"            // takes QueryEvents, answers EventsResult
-	OpConversations    = "conversations"     // takes QueryConversations, answers ConversationPage
-	OpMessage          = "message_status"    // takes QueryMessage, answers MessageResult
-	OpWorkers          = "workers"           // takes nothing, answers WorkersResult
-	OpToolsDifferences = "tools_differences" // owner-only summary of skill and MCP server differences
+	OpInfo          = "info"          // answers OperatorInfo
+	OpNodes         = "nodes"         // answers NodesInfo
+	OpAgents        = "list"          // takes QueryAgents, answers AgentsResult
+	OpProjects      = "projects"      // takes QueryProjects, answers ProjectsResult
+	OpEvents        = "events"        // takes QueryEvents, answers EventsResult
+	OpConversations = "conversations" // takes QueryConversations, answers ConversationPage
+	// OpConversationMessages reads every stored message of one conversation
+	// for the owner. It is owner only: agents keep the node-scoped messages
+	// method.
+	OpConversationMessages = "conversation_messages" // takes QueryConversationMessages, answers ConversationMessagesResult
+	OpMessage              = "message_status"        // takes QueryMessage, answers MessageResult
+	OpWorkers              = "workers"               // takes nothing, answers WorkersResult
+	OpToolsDifferences     = "tools_differences"     // owner-only summary of skill and MCP server differences
 
 	// Owner-only data (decision 0008): CPU and memory, the text of a session,
 	// the session counts. They share one gate with OpSend (decision 0008): the
@@ -118,7 +122,7 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpMessage, OpWorkers, OpToolsDifferences,
+var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpConversationMessages, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
@@ -205,12 +209,25 @@ type ConversationView struct {
 }
 
 // ConversationPage answers OpConversations. Total counts every stored
-// conversation the caller's machine takes part in, not only this page. Next is
-// empty on the last page.
+// conversation on the gateway, not only this page. Next is empty on the last
+// page.
 type ConversationPage struct {
 	Conversations []ConversationView `json:"conversations"`
 	Total         int                `json:"total"`
 	Next          string             `json:"next,omitempty"`
+}
+
+// QueryConversationMessages asks for every stored message of one conversation.
+// It is owner only and covers the whole network, not only this machine's
+// sessions.
+type QueryConversationMessages struct {
+	ConversationID string `json:"conversation_id"`
+	Limit          int    `json:"limit,omitempty"`
+}
+
+// ConversationMessagesResult answers OpConversationMessages, newest first.
+type ConversationMessagesResult struct {
+	Messages []Message `json:"messages"`
 }
 
 // MessageResult answers OpMessage.

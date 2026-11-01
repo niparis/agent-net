@@ -216,6 +216,41 @@ func TestOpeningAStoredConversationShowsItsGatewayMessages(t *testing.T) {
 	}
 }
 
+func TestOpeningARemoteConversationShowsItsGatewayMessages(t *testing.T) {
+	src := &fakeSource{snap: fakeSnapshot(), events: nil}
+	const a, b = "s_remote_carol", "s_remote_dave"
+	src.convFirst = protocol.ConversationPage{Conversations: []protocol.ConversationView{
+		conversationView("c_remote", a, b, "carol", "dave", 2, "remote summary", protocol.StateReplied, t0.Add(-48*time.Hour)),
+	}, Total: 1}
+	src.convMsgs = map[string][]protocol.Message{
+		"c_remote": {
+			{ID: "m_remote_reply", ConversationID: "c_remote", From: b, To: a, Type: protocol.TypeReply,
+				Body: "a reply between two other machines", CreatedAt: t0.Add(-48*time.Hour + time.Minute)},
+			{ID: "m_remote_request", ConversationID: "c_remote", From: a, To: b, Type: protocol.TypeRequest,
+				Body: "a request between two other machines", CreatedAt: t0.Add(-48 * time.Hour)},
+		},
+	}
+	m := New(src)
+	m.loc, m.now = time.UTC, func() time.Time { return t0 }
+	m.tab, m.focus = messagesTab, focusFeed
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 40})
+	m = refreshAndRun(t, m, src)
+
+	rows := m.messageConversations()
+	if len(rows) != 1 || rows[0].convID != "c_remote" {
+		t.Fatalf("remote conversation not listed: %+v", rows)
+	}
+	view := ansi.Strip(strings.Join(m.messagesView(120, 30), "\n"))
+	for _, want := range []string{"a request between two other machines", "a reply between two other machines"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("opening the remote conversation is missing %q:\n%s", want, view)
+		}
+	}
+	if len(src.convMsgCalls) != 1 || src.convMsgCalls[0] != "c_remote" {
+		t.Fatalf("remote conversation messages were asked for %+v", src.convMsgCalls)
+	}
+}
+
 func TestConversationFullListScreens(t *testing.T) {
 	const owner, worker = "s_owner_fixture", "s_worker_fixture"
 	snap := fakeSnapshot()
