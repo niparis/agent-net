@@ -42,6 +42,7 @@ var ctoEdgeKinds = []string{"depends", "governs", "deploys"}
 // allowed values, and what an edge rule does to a request.
 var ctoTools = map[string]ctoToolDef{
 	"charter_guide":         {desc: "Read charter guide.", fields: map[string]ctoField{}},
+	"onboarding_restart":    {desc: "Restart the getting-started steps.", fields: map[string]ctoField{}},
 	"notification_settings": {desc: "Read or set notifications.", fields: map[string]ctoField{"disabled": {typ: "boolean", desc: "Off if true; omit to read."}}},
 	"charter_suggestions":   {desc: "Read charter suggestions.", fields: map[string]ctoField{}},
 	"graph_get": {

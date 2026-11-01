@@ -55,9 +55,10 @@ type toolsModal struct {
 
 // toolsModalMsg changes the open modal when a background call ends.
 type toolsModalMsg struct {
-	id     int
-	update func(md *toolsModal)
-	reload bool
+	id         int
+	update     func(md *toolsModal)
+	reload     bool
+	onboarding bool
 }
 
 func (m *Model) openModal(title string) *toolsModal {
@@ -492,7 +493,14 @@ func (m Model) applyPlan(planID, name string) (Model, tea.Cmd) {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*Timeout)
 		defer cancel()
 		res, err := ts.ToolsApply(ctx, planID)
-		return toolsModalMsg{id: id, reload: true, update: func(md *toolsModal) {
+		applied := false
+		for _, target := range res.Targets {
+			if target.State == "ok" {
+				applied = true
+				break
+			}
+		}
+		return toolsModalMsg{id: id, reload: true, onboarding: err == nil && applied, update: func(md *toolsModal) {
 			md.loading, md.done, md.paths, md.picker = false, true, nil, nil
 			md.foot = []string{"enter", "close"}
 			if err != nil {

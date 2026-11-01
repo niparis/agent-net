@@ -63,8 +63,9 @@ func (n notice) life() time.Duration { return n.hold() + noticeFade }
 
 // actionMsg is the end of an action that ran in the background.
 type actionMsg struct {
-	text string
-	err  error
+	onboarding string
+	text       string
+	err        error
 }
 
 // ---- notices ----
@@ -149,13 +150,13 @@ func (m Model) sendCmd(to, name, body string) tea.Cmd {
 			return actionMsg{err: fmt.Errorf("Not sent to %s: %s", name, explain(err))}
 		}
 		if res.Queued {
-			return actionMsg{text: "Queued for " + name + ": the gateway is not reachable, it is sent when the link is back."}
+			return actionMsg{onboarding: "talk", text: "Queued for " + name + ": the gateway is not reachable, it is sent when the link is back."}
 		}
 		id := ""
 		if res.Message != nil {
 			id = " (" + res.Message.ID + ")"
 		}
-		return actionMsg{text: "Sent to " + name + id + " as you. The reply will show in the messages."}
+		return actionMsg{onboarding: "talk", text: "Sent to " + name + id + " as you. The reply will show in the messages."}
 	}
 }
 
@@ -670,7 +671,11 @@ func (m Model) startCmd(req protocol.WorkerStartRequest) tea.Cmd {
 		} else if res.Queued {
 			text = fmt.Sprintf("Started worker %s, but the task waits: the gateway link dropped. It is sent when the link is back.", res.SessionID)
 		}
-		return actionMsg{text: text}
+		step := "work-worker"
+		if res.Status == "starting" || res.Status == "queued" {
+			step = ""
+		}
+		return actionMsg{onboarding: step, text: text}
 	}
 }
 

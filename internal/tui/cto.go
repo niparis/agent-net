@@ -203,6 +203,9 @@ func (m Model) ctoKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if c.settingsForm != nil {
 		return m.ctoSettingsKey(k)
 	}
+	if k.Type == tea.KeyEsc && !c.confirming && m.onboardingStep().id != "" {
+		return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Step: m.onboardingStep().id, State: "skipped"})
+	}
 	if k.Type == tea.KeyEsc || k.String() == "tab" {
 		m.focus = focusSessions
 		if m.tab == 1 && !m.mapOn {

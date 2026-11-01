@@ -362,8 +362,8 @@ func TestCTOSchemaBudgetAndCharterGuide(t *testing.T) {
 	for _, item := range sizes[:10] {
 		t.Logf("%s: %d bytes", item.name, item.bytes)
 	}
-	if len(schema) > 23973 {
-		t.Errorf("CTO schema is %d bytes, budget 23973", len(schema))
+	if len(schema) > 24150 {
+		t.Errorf("CTO schema is %d bytes, budget 24150", len(schema))
 	}
 }
 

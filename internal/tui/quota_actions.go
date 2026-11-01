@@ -33,7 +33,7 @@ func (m Model) quotaConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if p.Reason == "" && len(providers) > 0 {
 			p.Reason = "Saved for your orchestrator"
 		}
-		src, name := m.src, m.quotaConfirm
+		src, name, protecting := m.src, m.quotaConfirm, !m.quotaUnprotect
 		m.say("Saving protection...")
 		return m, func() tea.Msg {
 			caller, ok := src.(interface {
@@ -47,7 +47,11 @@ func (m Model) quotaConfirmKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if _, err := caller.Call(ctx, protocol.OpProtectedProvidersSet, p); err != nil {
 				return actionMsg{err: fmt.Errorf("Cannot change protection: %s", explain(err))}
 			}
-			return actionMsg{text: "Protection updated for " + name + "."}
+			step := ""
+			if protecting {
+				step = "work-protect"
+			}
+			return actionMsg{onboarding: step, text: "Protection updated for " + name + "."}
 		}
 	}
 	return m, nil

@@ -44,14 +44,23 @@ type openMsg struct {
 // Model is the whole state of the screen. Update changes it; view.go only
 // reads it.
 type Model struct {
-	inboxItems                         []protocol.InboxItem
-	inboxOn, inboxDetail, inboxEditing bool
-	inboxIndex                         int
-	inboxError                         string
-	inboxInput                         textinput.Model
-	cto                                *ctoState
-	ctoGeneration                      int
-	src                                Source
+	inboxItems                          []protocol.InboxItem
+	inboxOn, inboxDetail, inboxEditing  bool
+	inboxIndex                          int
+	inboxError                          string
+	inboxInput                          textinput.Model
+	cto                                 *ctoState
+	ctoGeneration                       int
+	onboarding                          protocol.Onboarding
+	onboardingLoaded, onboardingPending bool
+	onboardingRevision                  int
+	onboardingQueue                     []onboardingWriteRequest
+	onboardingCTOLast                   string
+	onboardingCTOLoaded                 bool
+	onboardingSawNoAgents               bool
+	onboardingToolsCount                int
+	onboardingToolsKnown                bool
+	src                                 Source
 	// loc and now are replaced in tests.
 	loc *time.Location
 	now func() time.Time
@@ -182,13 +191,19 @@ type fetchedMsg struct {
 	eventsErr  error
 	at         time.Time
 	// usage and counts are set when this refresh asked for them.
-	askedUsage bool
-	usage      Usage
-	usageErr   error
-	counts     protocol.SessionCounts
-	countsErr  error
-	hidden     protocol.HiddenItems
-	hiddenErr  error
+	askedUsage           bool
+	usage                Usage
+	usageErr             error
+	counts               protocol.SessionCounts
+	countsErr            error
+	hidden               protocol.HiddenItems
+	hiddenErr            error
+	onboarding           protocol.Onboarding
+	onboardingErr        error
+	onboardingAsked      bool
+	onboardingRevision   int
+	onboardingToolsCount int
+	onboardingToolsKnown bool
 }
 
 type notificationSettingMsg struct {
@@ -243,6 +258,7 @@ func (m Model) nextTick() tea.Cmd {
 // fetchCmd reads a snapshot and the new events. One runs at a time.
 func (m Model) fetchCmd() tea.Cmd {
 	src, after := m.src, m.feed.lastID
+	onboardingRevision, onboardingPending := m.onboardingRevision, m.onboardingPending
 	skipFeed := m.feed.unavailable != ""
 	askUsage := m.usageDue()
 	askCounts := askUsage && !m.usage.noCounts
@@ -258,6 +274,23 @@ func (m Model) fetchCmd() tea.Cmd {
 			return res
 		}
 		res.hidden, res.hiddenErr = src.HiddenItems(ctx)
+
+		if caller, ok := src.(inboxCaller); ok && !onboardingPending {
+			res.onboardingAsked, res.onboardingRevision = true, onboardingRevision
+			var raw json.RawMessage
+			raw, res.onboardingErr = caller.Call(ctx, "onboarding_get", nil)
+			if res.onboardingErr == nil {
+				res.onboardingErr = json.Unmarshal(raw, &res.onboarding)
+			}
+		}
+		if d, ok := src.(interface {
+			ToolsDifferences(context.Context) (int, error)
+		}); ok && askUsage && len(res.snap.Nodes) > 1 {
+			count, err := d.ToolsDifferences(ctx)
+			if err == nil {
+				res.onboardingToolsCount, res.onboardingToolsKnown = count, true
+			}
+		}
 		if askUsage {
 			res.askedUsage = true
 			if askU {
@@ -416,6 +449,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		oldID, loaded := m.cto.lastGraphID, m.cto.historyLoaded
+		last := m.onboardingLastUserMessage(msg.events)
+		ctoDone := msg.err == nil && m.onboardingCTOLoaded && last != "" && last != m.onboardingCTOLast
+		if msg.err == nil {
+			m.onboardingCTOLast, m.onboardingCTOLoaded = last, true
+		}
 		m.applyCTOPoll(msg)
 		if msg.err == nil {
 			m.cto.historyLoaded = true
@@ -426,6 +464,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mp.loading = true
 				return m, m.mapCmd()
 			}
+		}
+		if ctoDone {
+			return m.onboardingComplete("cto")
 		}
 		return m, nil
 	case ctoOlderMsg:
@@ -538,12 +579,43 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 		return m, nil
+	case onboardingMsg:
+		if msg.revision != m.onboardingRevision {
+			return m, nil
+		}
+		if msg.write {
+			m.onboardingPending = false
+		}
+		if msg.err != nil {
+			if msg.write {
+				m.fail("Could not save tips: " + explain(msg.err))
+			}
+		} else {
+			m.onboarding, m.onboardingLoaded = msg.value, true
+		}
+		if msg.write && len(m.onboardingQueue) > 0 {
+			request := m.onboardingQueue[0]
+			m.onboardingQueue = m.onboardingQueue[1:]
+			return m.onboardingWrite(request.method, request.params)
+		}
+		return m, nil
+
 	case fetchedMsg:
+		if msg.onboardingAsked && msg.onboardingErr == nil && msg.onboardingRevision == m.onboardingRevision && !m.onboardingPending {
+			m.onboarding, m.onboardingLoaded = msg.onboarding, true
+		}
+		before := m.onboardingStep().id
 		if msg.inboxOK {
 			m.inboxItems = msg.inboxItems
 		}
 		m.fetching = false
 		m.applyFetch(msg)
+		if msg.onboardingToolsKnown {
+			m.onboardingToolsCount, m.onboardingToolsKnown = msg.onboardingToolsCount, true
+		}
+		if msg.err == nil && msg.snap.Connected {
+			return m.onboardingAfterFetch(before, msg.events)
+		}
 		return m, nil
 	case notificationSettingMsg:
 		if msg.err != nil {
@@ -576,19 +648,40 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case toolsAcceptMsg:
 		m.onToolsAccept(msg)
+		if msg.err == nil && msg.accepted {
+			return m.onboardingComplete("tools")
+		}
 		return m, nil
 
 	case toolsModalMsg:
-		return m.onToolsModal(msg)
+		next, cmd := m.onToolsModal(msg)
+		if msg.onboarding {
+			var save tea.Cmd
+			next, save = next.onboardingComplete("tools")
+			return next, tea.Batch(cmd, save)
+		}
+		return next, cmd
 
 	case enterMsg:
 		return m.onEnter(msg)
 
 	case enterDoneMsg:
-		return m.onEnterDone(msg)
+		next, cmd := m.onEnterDone(msg)
+		if msg.err == nil && msg.name != "CTO" {
+			var save tea.Cmd
+			next, save = next.onboardingComplete("see")
+			return next, tea.Batch(cmd, save)
+		}
+		return next, cmd
 
 	case actionMsg:
-		return m.onAction(msg)
+		next, cmd := m.onAction(msg)
+		if msg.err == nil && msg.onboarding != "" {
+			var save tea.Cmd
+			next, save = next.onboardingComplete(msg.onboarding)
+			return next, tea.Batch(cmd, save)
+		}
+		return next, cmd
 
 	case policyPreviewMsg:
 		return m.onPolicyPreview(msg)
@@ -626,6 +719,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.orderFrozenUntil = m.now().Add(3 * time.Second)
 		next, cmd := m.key(msg)
+		if changed, ok := next.(Model); ok && changed.tab == 1 && m.tab != 1 && changed.onboardingHasPeerThread() {
+			var save tea.Cmd
+			changed, save = changed.onboardingComplete("talk")
+			next, cmd = changed, tea.Batch(cmd, save)
+		}
 		if m.mapOn {
 			if changed, ok := next.(Model); ok && (!changed.mapOn || changed.quitting) {
 				mark := m.markMapViewed(m.mp.selected)
@@ -759,6 +857,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.help {
 		switch k.String() {
+		case "T":
+			disabled := !m.onboarding.Disabled
+			return m.onboardingWrite("onboarding_set", protocol.OnboardingUpdate{Disabled: &disabled})
+		case "R":
+			return m.onboardingWrite("onboarding_restart", nil)
 		case "n":
 			src, ok := m.src.(interface {
 				NotificationSettings(context.Context, *bool) (bool, error)
