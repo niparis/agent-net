@@ -29,6 +29,7 @@ const (
 	OpAgents           = "list"              // takes QueryAgents, answers AgentsResult
 	OpProjects         = "projects"          // takes QueryProjects, answers ProjectsResult
 	OpEvents           = "events"            // takes QueryEvents, answers EventsResult
+	OpConversations    = "conversations"     // takes QueryConversations, answers ConversationPage
 	OpMessage          = "message_status"    // takes QueryMessage, answers MessageResult
 	OpWorkers          = "workers"           // takes nothing, answers WorkersResult
 	OpToolsDifferences = "tools_differences" // owner-only summary of skill and MCP server differences
@@ -117,7 +118,7 @@ const (
 )
 
 // OperatorMethods lists every operator method, for tests and docs.
-var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpMessage, OpWorkers, OpToolsDifferences,
+var OperatorMethods = []string{OpProposalList, OpProposalAnswer, OpInfo, OpNodes, OpAgents, OpProjects, OpEvents, OpConversations, OpMessage, OpWorkers, OpToolsDifferences,
 	OpUsage, OpUsageTop, OpGraphView, OpGraphTalk, OpSessionText, OpCounts, OpSessionEnter, OpSessionTrust, OpSessionPolicy, OpSessionRename, OpNodeRename, OpProjectDisplayGet, OpProjectDisplaySet,
 	OpHeldList, OpHeldAnswer, OpGraphGet, OpCharterSet, OpCharterHistory, OpNodeAdd, OpNodeRemove, OpEdgeSet, OpEdgeRemove, OpEdgeHistory, OpGraphUndo,
 	OpNodeSettingsGet, OpNodeSettingsSet,
@@ -169,6 +170,47 @@ type ProjectsResult struct {
 // EventsResult answers OpEvents.
 type EventsResult struct {
 	Events []FeedEvent `json:"events"`
+}
+
+// QueryConversations asks for stored conversations, newest activity first.
+// Cursor is the Next value of the previous page; an empty cursor starts at the
+// newest conversation. Limit is capped by the gateway.
+type QueryConversations struct {
+	Cursor string `json:"cursor,omitempty"`
+	Limit  int    `json:"limit,omitempty"`
+}
+
+// ConversationView is one stored conversation as the owner's Messages tab
+// shows it: the two sides, how many messages it holds, and its latest line.
+type ConversationView struct {
+	ID       string `json:"id"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	FromName string `json:"from_name,omitempty"`
+	ToName   string `json:"to_name,omitempty"`
+	Count    int    `json:"message_count"`
+	// Type is the newest message's type (request, reply, notification).
+	Type string `json:"type,omitempty"`
+	// LastLine is the first line of the newest message, cleaned for one
+	// terminal line and cut.
+	LastLine string `json:"last_line,omitempty"`
+	// State is the newest message's state.
+	State         string    `json:"state,omitempty"`
+	LastMessageID string    `json:"last_message_id,omitempty"`
+	At            time.Time `json:"at"`
+	FromCTO       bool      `json:"from_cto,omitempty"`
+	// OwnerInstruction tells whether the newest message carries the owner's
+	// prompt excerpt. It shows the same you→ marker as the live feed.
+	OwnerInstruction bool `json:"owner_instruction,omitempty"`
+}
+
+// ConversationPage answers OpConversations. Total counts every stored
+// conversation the caller's machine takes part in, not only this page. Next is
+// empty on the last page.
+type ConversationPage struct {
+	Conversations []ConversationView `json:"conversations"`
+	Total         int                `json:"total"`
+	Next          string             `json:"next,omitempty"`
 }
 
 // MessageResult answers OpMessage.

@@ -99,6 +99,19 @@ type Model struct {
 	feed             feed
 	fetching         bool
 
+	// Stored conversations for the Messages tab. The gateway answers a page;
+	// View only reads convs, never calls the source.
+	storedConvs       []protocol.ConversationView
+	convs             []messageConversation
+	convTotal         int
+	convNext          string
+	convLoaded        bool
+	convLoading       bool
+	convErr           string
+	convSel           int
+	convDetail        map[string]convDetail
+	convDetailLoading map[string]bool
+
 	// What the person chose.
 	sessionOrder              map[string]sessionOrder
 	sessionNext, sessionFront int64
@@ -181,6 +194,7 @@ func New(src Source) Model {
 	ti.Cursor.SetMode(cursor.CursorHide)
 	m := Model{src: src, loc: time.Local, now: time.Now, width: 80, height: 24, feed: newFeed(), input: ti, fetching: true,
 		top: map[string]*topEntry{}, hiddenSessions: map[string]bool{}, hiddenNodes: map[string]bool{},
+		convDetail: map[string]convDetail{}, convDetailLoading: map[string]bool{},
 		graphPixel: &graphPixelState{imageID: graphview.ImageID}}
 	m.ctoGeneration = 1
 	m.cto = &ctoState{generation: 1}
@@ -205,6 +219,11 @@ type fetchedMsg struct {
 	events      []protocol.FeedEvent
 	eventsErr   error
 	at          time.Time
+	// conversations is the first stored page, asked for only on the Messages
+	// tab.
+	convAsked bool
+	convPage  protocol.ConversationPage
+	convErr   error
 	// usage and counts are set when this refresh asked for them.
 	askedUsage           bool
 	usage                Usage
@@ -339,6 +358,10 @@ func (m Model) fetchCmd() tea.Cmd {
 			limit = backlog
 		}
 		res.events, res.eventsErr = src.Events(ctx, after, limit)
+		if m.tab == messagesTab {
+			res.convAsked = true
+			res.convPage, res.convErr = src.Conversations(ctx, protocol.QueryConversations{Limit: conversationPageSize})
+		}
 		return res
 	}
 }
@@ -389,6 +412,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, c)
 		}
 		if c := nm.wantSnippets(); c != nil {
+			cmds = append(cmds, c)
+		}
+		if c := nm.wantConversations(); c != nil {
+			cmds = append(cmds, c)
+		}
+		if c := nm.wantConversationDetails(); c != nil {
 			cmds = append(cmds, c)
 		}
 	}
@@ -642,12 +671,21 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.fetching = false
 		m.applyFetch(msg)
+		if msg.convAsked {
+			m.applyConversationPage(conversationPageMsg{page: msg.convPage, err: msg.convErr, first: true})
+		}
 		if msg.onboardingToolsKnown {
 			m.onboardingToolsCount, m.onboardingToolsKnown = msg.onboardingToolsCount, true
 		}
 		if msg.err == nil && msg.snap.Connected {
 			return m.onboardingAfterFetch(before, msg.events)
 		}
+		return m, nil
+	case conversationPageMsg:
+		m.applyConversationPage(msg)
+		return m, nil
+	case conversationMessagesMsg:
+		m.applyConversationMessages(msg)
 		return m, nil
 	case notificationSettingMsg:
 		if msg.err != nil {
@@ -899,6 +937,7 @@ func (m *Model) applyFetch(r fetchedMsg) {
 			m.feedClamp()
 		}
 	}
+	m.rebuildConversations()
 	m.ensureSelection()
 	m.fixScroll()
 }
@@ -1073,6 +1112,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.filtering, m.filter = false, ""
 			m.input.SetValue("")
 			m.input.Blur()
+			m.rebuildConversations()
 		case tea.KeyEnter:
 			m.filtering = false
 			m.input.Blur()
@@ -1080,6 +1120,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.input, cmd = m.input.Update(k)
 			m.filter = m.input.Value()
+			m.rebuildConversations()
 			m.ensureSelection()
 			m.fixScroll()
 			return m, cmd
@@ -1114,9 +1155,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if i == messagesTab {
 				m.focus = focusFeed
 				m.feedCur = m.feedLastVisible()
-				if rows := m.messageConversations(); len(rows) > 0 {
+				m.convSel = 0
+				if rows := m.messageConversations(); len(rows) > 0 && !m.convLoaded {
 					m.feedCur = rows[0].items[0]
 				}
+				return m, m.conversationCmd("", true)
 			}
 			return m, nil
 		}
@@ -1252,6 +1295,11 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "w":
 		if m.tab == messagesTab {
 			m.hideWorkerThreads = !m.hideWorkerThreads
+			if m.convLoaded {
+				m.rebuildConversations()
+				m.convSel = min(m.convSel, max(len(m.convs)-1, 0))
+				return m, nil
+			}
 			rows := m.messageConversations()
 			selected := false
 			for _, row := range rows {
@@ -1304,6 +1352,7 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.filter != "" {
 			m.filter = ""
 			m.input.SetValue("")
+			m.rebuildConversations()
 			m.ensureSelection()
 			m.fixScroll()
 		}
@@ -1327,6 +1376,14 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.open = &openMsg{id: it.MsgID, loading: true}
 				return m, m.bodyCmd(it.MsgID)
 			}
+			rows := m.messageConversations()
+			if len(rows) > 0 {
+				row := rows[m.selectedConversationIndex(rows)]
+				if row.lastMsgID != "" {
+					m.open = &openMsg{id: row.lastMsgID, loading: true}
+					return m, m.bodyCmd(row.lastMsgID)
+				}
+			}
 		}
 	case "tab":
 		if m.tab == sessionsTab && m.cto != nil {
@@ -1342,7 +1399,10 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.tab == messagesTab && m.focus == focusFeed {
 			rows := m.messageConversations()
 			if len(rows) > 0 {
-				r := rows[m.conversationIndex(rows)]
+				r := rows[m.selectedConversationIndex(rows)]
+				if len(r.items) == 0 {
+					return m, nil
+				}
 				pos := 0
 				for i, v := range r.items {
 					if v == m.feedCur {
@@ -1373,15 +1433,15 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.move(1 << 20)
 	case "enter":
 		if m.focus == focusFeed {
-			it := m.selectedConversationItem()
-			if it == nil || !it.isMessage() {
+			rows := m.messageConversations()
+			if len(rows) == 0 {
 				return m, nil
 			}
-			rows := m.messageConversations()
-			if len(rows) > 0 {
-				row := rows[m.conversationIndex(rows)]
-				m.feedCur = row.items[len(row.items)-1]
+			row := rows[m.selectedConversationIndex(rows)]
+			if len(row.items) == 0 {
+				return m, m.wantConversationDetails()
 			}
+			m.feedCur = row.items[len(row.items)-1]
 			return m, nil
 		}
 		if m.tab == sessionsTab {
@@ -1399,9 +1459,14 @@ func (m *Model) move(delta int) {
 		if m.tab == messagesTab {
 			rows := m.messageConversations()
 			if len(rows) > 0 {
-				pos := m.conversationIndex(rows)
+				pos := m.selectedConversationIndex(rows)
 				pos = min(max(pos+delta, 0), len(rows)-1)
-				m.feedCur = rows[pos].items[0]
+				m.convSel = pos
+				if !m.convLoaded {
+					m.feedCur = rows[pos].items[0]
+				} else if len(rows[pos].items) > 0 {
+					m.feedCur = rows[pos].items[len(rows[pos].items)-1]
+				}
 			}
 			return
 		}

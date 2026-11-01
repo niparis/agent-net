@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools
+you→: your prompt · orange: waiting for a reply · red: failed · purple: CTO
+╭─Messages · conversations─────────────────────────────────────────────────────╮
+│ ▸ tenebrae-53 ↔ strategies · Stored conversation 00: keep t… 1 message · now │
+│   tenebrae-53 ↔ strategies · Stored conversation 01: ke… 2 messages · 7m ago │
+│   you → worker: Polish the sessions panel and make the… 3 messages · running │
+│   tenebrae-53 ↔ strategies · Stored conversation 03: k… 4 messages · 21m ago │
+│   tenebrae-53 ↔ strategies · Stored conversation 04: k… 5 messages · 28m ago │
+│ 0 system events · e to show · w hide workers                                 │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Conversation─────────────────────────────────────────────────────────────────╮
+│   14:03 tenebrae-53                                                          │
+│ Show the whole stored history of this conversation.                          │
+│   14:04 strategies                                                           │
+│ The full stored conversation is in the right pane.                           │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│                                                                              │
+│ enter: open the CTO · tab: back                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+up/down thread  left/right msg  enter latest  v body  tab CTO  ? help  q quit

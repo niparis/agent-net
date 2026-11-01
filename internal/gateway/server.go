@@ -1476,6 +1476,17 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return map[string]any{"agent": a}, nil
 
+	case "query.conversations":
+		p, err := decode[protocol.QueryConversations](raw)
+		if err != nil {
+			return nil, reject("bad query.conversations")
+		}
+		page, err := st.ConversationsPage(nc.id, p)
+		if err != nil {
+			return nil, err
+		}
+		return page, nil
+
 	case "query.messages":
 		p, err := decode[protocol.QueryMessages](raw)
 		if err != nil {

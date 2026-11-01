@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/niparis/agent-net/internal/dbfile"
 	"github.com/niparis/agent-net/internal/phrasing"
@@ -1802,6 +1803,115 @@ func (s *Store) MessagesPage(nodeID string, q protocol.QueryMessages) ([]protoco
 		out = append(out, m)
 	}
 	return out, total, rows.Err()
+}
+
+// conversationVisible limits a query to conversations that involve a session
+// of the node: the same rule as MessagesPage (docs/security.md).
+const conversationVisible = `(m.sender IN (SELECT id FROM sessions WHERE node_id = ?) OR m.recipient IN (SELECT id FROM sessions WHERE node_id = ?)) AND m.conversation_id <> ''`
+
+// ConversationsPage lists stored conversations newest activity first, with a
+// keyset cursor. It is one grouped query on messages, so the two indexes
+// (messages_conv and messages_created) carry the work; it never loads every
+// message body at once.
+func (s *Store) ConversationsPage(nodeID string, q protocol.QueryConversations) (protocol.ConversationPage, error) {
+	page := protocol.ConversationPage{Conversations: []protocol.ConversationView{}}
+	if q.Limit <= 0 || q.Limit > 100 {
+		q.Limit = 50
+	}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM (
+		SELECT m.conversation_id FROM messages m WHERE `+conversationVisible+` GROUP BY m.conversation_id)`,
+		nodeID, nodeID).Scan(&page.Total); err != nil {
+		return page, err
+	}
+
+	sqlText := `WITH page AS (
+		SELECT m.conversation_id AS cid, MAX(m.created_at) AS last_at
+		FROM messages m WHERE ` + conversationVisible + `
+		GROUP BY m.conversation_id`
+	args := []any{nodeID, nodeID}
+	if at, id, ok := parseConversationCursor(q.Cursor); ok {
+		sqlText += ` HAVING last_at < ? OR (last_at = ? AND cid < ?)`
+		args = append(args, at, at, id)
+	}
+	sqlText += ` ORDER BY last_at DESC, cid DESC LIMIT ?)
+	SELECT p.cid, p.last_at, m.id, m.sender, m.recipient, m.body, m.state, m.sender_cto, m.type,
+		(SELECT COUNT(*) FROM messages c WHERE c.conversation_id = p.cid),
+		COALESCE(NULLIF(fp.name,''), fs.name, ''),
+		COALESCE(NULLIF(rp.name,''), rs.name, ''),
+		EXISTS(SELECT 1 FROM charter_signals cs WHERE cs.message_id = m.id)
+	FROM page p
+	JOIN messages m ON m.conversation_id = p.cid AND m.created_at = p.last_at
+		AND m.rowid = (SELECT MAX(m2.rowid) FROM messages m2
+			WHERE m2.conversation_id = p.cid AND m2.created_at = p.last_at)
+	LEFT JOIN sessions fs ON fs.id = m.sender
+	LEFT JOIN profiles fp ON fp.session_id = m.sender
+	LEFT JOIN sessions rs ON rs.id = m.recipient
+	LEFT JOIN profiles rp ON rp.session_id = m.recipient
+	ORDER BY p.last_at DESC, p.cid DESC`
+	args = append(args, q.Limit)
+	rows, err := s.db.QueryContext(context.Background(), sqlText, args...)
+	if err != nil {
+		return page, err
+	}
+	defer rows.Close()
+	var lastAt int64
+	var lastID string
+	for rows.Next() {
+		var v protocol.ConversationView
+		var at int64
+		var senderCTO, ownerInstruction int
+		var typ string
+		if err := rows.Scan(&v.ID, &at, &v.LastMessageID, &v.From, &v.To, &v.LastLine, &v.State,
+			&senderCTO, &typ, &v.Count, &v.FromName, &v.ToName, &ownerInstruction); err != nil {
+			return page, err
+		}
+		v.Type = typ
+		v.At = time.Unix(0, at).UTC()
+		v.LastLine = conversationLine(v.LastLine)
+		v.FromCTO = senderCTO != 0
+		v.OwnerInstruction = ownerInstruction != 0
+		page.Conversations = append(page.Conversations, v)
+		lastAt, lastID = at, v.ID
+	}
+	if err := rows.Err(); err != nil {
+		return page, err
+	}
+	if len(page.Conversations) == q.Limit {
+		page.Next = fmt.Sprintf("%d|%s", lastAt, lastID)
+	}
+	return page, nil
+}
+
+// parseConversationCursor reads the Next value of a page.
+func parseConversationCursor(cursor string) (int64, string, bool) {
+	at, id, ok := strings.Cut(cursor, "|")
+	if !ok || id == "" {
+		return 0, "", false
+	}
+	n, err := strconv.ParseInt(at, 10, 64)
+	if err != nil {
+		return 0, "", false
+	}
+	return n, id, true
+}
+
+// conversationLine keeps the first line of a body for a list row: no control
+// characters, no line break, and at most 200 characters.
+func conversationLine(body string) string {
+	line, _, _ := strings.Cut(body, "\n")
+	line = strings.Map(func(r rune) rune {
+		switch {
+		case r == '\r' || r == '\t':
+			return ' '
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r):
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(line))
+	if r := []rune(line); len(r) > 200 {
+		line = string(r[:199]) + "…"
+	}
+	return line
 }
 
 // SetAllOffline is run at start: no daemon is connected to a new process.
