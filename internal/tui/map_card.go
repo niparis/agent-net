@@ -132,7 +132,9 @@ func (m Model) mapEdgeColumns(node string, w, room int) []string {
 	}
 	var lines []string
 	if w >= 52 {
-		colW := (w - 2) / 2
+		// Two columns side by side, capped so a wide terminal does not push
+		// the two lists to opposite edges.
+		colW := min((w-2)/2, 60)
 		l, r := entries(in, true, room), entries(out, false, room)
 		lines = append(lines, padStyled(label("IN", len(in)), colW)+"  "+label("OUT", len(out)))
 		for i := 0; i < max(len(l), len(r)); i++ {
@@ -274,9 +276,146 @@ func mapPurposeLines(purpose string, w, rows int) []string {
 	return lines
 }
 
+// mapRuleLine is one effective rule of a node, with where its value comes from.
+type mapRuleLine struct{ name, value, source string }
+
+// mapRuleValues reads the node's rules the way agent_graph does: the five
+// maturity defaults, each replaced by a valid owner setting, and autonomy,
+// which has no maturity default. The source says which one won.
+func mapRuleValues(node protocol.Node) []mapRuleLine {
+	hasMaturity := maturityLevel(node.Charter.Maturity) != "-"
+	rules := protocol.RulesFor(node.Charter.Maturity, node.Settings)
+	out := make([]mapRuleLine, 0, len(rules))
+	for _, r := range rules {
+		source := "maturity default"
+		if !hasMaturity {
+			source = "default"
+		}
+		if r.Name == protocol.SettingAutonomy {
+			source = "default"
+			if protocol.NodeAutonomy(node.Settings) == protocol.AutonomyWake {
+				source = "owner override"
+			}
+		} else if value, ok := node.Settings[r.Name]; ok {
+			value = strings.TrimSpace(value)
+			if value != "" && protocol.ValidateNodeSetting(r.Name, value) == nil {
+				source = "owner override"
+			}
+		}
+		out = append(out, mapRuleLine{name: r.Name, value: r.Value, source: source})
+	}
+	return out
+}
+
+// mapRuleMark is the short or long note beside a rule value.
+func mapRuleMark(source string, narrow bool) string {
+	switch {
+	case source == "owner override":
+		if narrow {
+			return "owner"
+		}
+		return "owner override"
+	case source == "maturity default":
+		if narrow {
+			return "maturity"
+		}
+		return "maturity default"
+	}
+	return "default"
+}
+
+// mapRulesLines draws the effective rules under the card's Rules heading.
+func mapRulesLines(node protocol.Node, w int) []string {
+	nameW, markW := 18, 16
+	narrow := w < 64
+	if narrow {
+		nameW, markW = 12, 8
+	}
+	// Keep the value column near its content so the mark stays beside it on a
+	// very wide card.
+	valueW := min(22, max(w-nameW-markW-2, 8))
+	out := make([]string, 0, len(protocol.NodeSettingNames()))
+	for _, r := range mapRuleValues(node) {
+		mark := sDim.Render(cell(mapRuleMark(r.source, narrow), markW))
+		if r.source == "owner override" {
+			mark = sNeeds.Render(cell(mapRuleMark(r.source, narrow), markW))
+		}
+		out = append(out, sDim.Render(cell(r.name, nameW))+" "+cell(r.value, valueW)+" "+mark)
+	}
+	return out
+}
+
+// mapLegendEntry wraps one legend line under an aligned label.
+func mapLegendEntry(label string, labelW int, text string, style lipgloss.Style, w int) []string {
+	body := wrap(text, max(w-labelW-3, 8))
+	out := []string{"  " + padStyled(style.Render(label), labelW) + " " + body[0]}
+	for _, l := range body[1:] {
+		out = append(out, "  "+strings.Repeat(" ", labelW)+" "+l)
+	}
+	return out
+}
+
+// mapLegendLines explains the edges and the charter fields. The claims about
+// the charter follow the code: NodeContext sends maturity, accepts, refuses
+// and escalate every turn, NeighborCharters sends 40 characters of accepts and
+// refuses, CharterBrief sends the rest to a worker, and feature_requests is
+// only in the agent view.
+func mapLegendLines(w int) []string {
+	out := []string{section("Legend", w)}
+	out = append(out, sBold.Render("  Edges"))
+	for _, e := range []struct{ kind, text string }{
+		{"depends", "consumer uses provider"},
+		{"governs", "architect over component; mode advisor, arbiter or owner"},
+		{"deploys", "deployer runs the app's deploys"},
+	} {
+		label := edgeKindStyle(e.kind).Render("──▶") + " " + e.kind
+		out = append(out, mapLegendEntry(label, 12, e.text, lipgloss.NewStyle(), w)...)
+	}
+	out = append(out, sBold.Render("  Request rule on an edge from A to B"))
+	out = append(out, mapLegendEntry("normal", 7, "delivered; B judges it", sDim, w)...)
+	out = append(out, mapLegendEntry("auto", 7, "delivered with a trust note; B can act without asking you, still inside B's merge authority and refusals", sBusy, w)...)
+	out = append(out, mapLegendEntry("ask", 7, "held in Needs you", sNeeds, w)...)
+	out = append(out, mapLegendEntry("never", 7, "refused", sBad, w)...)
+	for _, l := range wrap("a specific edge beats the all projects wildcard; an edge never grants deploy or merge permission by itself (deploy_rule and merge_authority do)", max(w-2, 8)) {
+		out = append(out, "  "+l)
+	}
+	out = append(out, sBold.Render("  Charter fields"))
+	out = append(out, mapLegendEntry("maturity", 16, "sets the default rules; the only charter field with an enforced effect", sDim, w)...)
+	out = append(out, mapLegendEntry("accepts", 16, "your agent reads it every turn; every neighbour reads the first 40 characters", sDim, w)...)
+	out = append(out, mapLegendEntry("refuses", 16, "same as accepts", sDim, w)...)
+	out = append(out, mapLegendEntry("escalate", 16, "your agent reads it every turn", sDim, w)...)
+	out = append(out, mapLegendEntry("purpose", 16, "in a worker's brief", sDim, w)...)
+	out = append(out, mapLegendEntry("consumers", 16, "in a worker's brief", sDim, w)...)
+	out = append(out, mapLegendEntry("needs", 16, "in a worker's brief, and in the Tools tab", sDim, w)...)
+	out = append(out, mapLegendEntry("notes", 16, "in a worker's brief", sDim, w)...)
+	out = append(out, mapLegendEntry("feature_requests", 16, "shown only when another agent looks this node up", sDim, w)...)
+	return out
+}
+
+// mapCardBody is the scrollable part of the card: the optional legend, the
+// charter, the learned changes and the effective rules, each in its own
+// section.
+func (m Model) mapCardBody(node protocol.Node, w int) []string {
+	var out []string
+	if m.mp.legend {
+		out = append(out, mapLegendLines(w)...)
+	}
+	out = append(out, section("Charter", w))
+	charter := mapCharterBlock(node.Charter, w)
+	if len(charter) == 0 {
+		charter = []string{sDim.Render("no charter set")}
+	}
+	out = append(out, charter...)
+	out = append(out, m.mapLearnedLines(node.Name, w)...)
+	out = append(out, section("Rules", w))
+	out = append(out, mapRulesLines(node, w)...)
+	return out
+}
+
 // mapFocusView draws the selected node as a card: name, maturity, the start of
-// the purpose and the sessions; its edges; the charter, which scrolls; and
-// the recent changes on the last row.
+// the purpose and the sessions; its edges; and a scrolling body with the
+// charter, the rules, the learned changes and the optional legend. The recent
+// changes stay on the last row.
 func (m Model) mapFocusView(w, h int) []string {
 	var head []string
 	if m.mp.err != "" {
@@ -331,28 +470,21 @@ func (m Model) mapFocusView(w, h int) []string {
 		head = append(head, clip(sDim.Render("governed by: ")+strings.Join(gov, ", "), w))
 	}
 	head = append(head, "")
-	// The charter gets at least five rows when the pane allows it.
+	// The body gets at least five rows when the pane allows it.
 	room := min(max(h-len(head)-1-1-5, 1), 6)
 	head = append(head, m.mapEdgeColumns(node.Name, w, room)...)
 	recent := m.mapRecentLine(node.Name, w)
-	if h-len(head)-1 >= 9 {
-		head = append(head, "")
-	}
 	rows := h - len(head) - 1
 	out := head
 	if rows > 0 {
-		all := m.mapLearnedLines(node.Name, w)
-		all = append(all, mapCharterBlock(node.Charter, w)...)
-		if len(all) == 0 {
-			all = []string{sDim.Render("no charter set")}
-		}
+		all := m.mapCardBody(node, w)
 		body := rows - 1
 		scroll := 0
 		if m.mp.charterFor == node.Name {
 			scroll = m.mp.charterScroll
 		}
 		scroll = min(max(scroll, 0), max(len(all)-body, 0))
-		title := "Charter"
+		title := "Card"
 		if len(all) > body && body > 0 {
 			title += sDim.Render(fmt.Sprintf(" %d-%d/%d  [ ] scroll", scroll+1, min(scroll+body, len(all)), len(all)))
 		}

@@ -8,7 +8,7 @@ governed by: wbg-architect (advisor)
 IN 2                                                         OUT 2
 all projects ──▶ depends                                     ──▶ cogforge depends ask
 homelab ──▶ deploys auto                                     ──▶ homelab depends ask
-
+Card 1-10/15  [ ] scroll ───────────────────────────────────────────────────────────────────────────────────────────────
 Charter ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 accepts          New document sources, retrieval fixes, and schema changes that keep old ids working.
 refuses          Anything that writes to the trading accounts; one-off client reports.
@@ -17,8 +17,8 @@ consumers        cogforge, shop, the nightly report job
 escalate         Data loss, or a change of the public ids.
 needs            MCP: tenebrae-library; a GPU box for embeddings.
 notes            Deploys go through homelab. Keep the library read only on laptops.
-
-
+Rules ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+tests_before_merge suite-new-tests        maturity default
 RECENT  3h ago maturity by trading-architect
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
@@ -31,4 +31,4 @@ RECENT  3h ago maturity by trading-architect
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter sessions  esc Graph  [ ] scroll  n new  U/u learned/undo  ? help  q quit
+enter sessions  esc Graph  [ ] scroll  n new  U/u undo  ! legend  ? help  q quit

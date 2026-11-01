@@ -347,15 +347,31 @@ Enter selects the first match and Esc cancels.
 Enter on a node opens its card: name, maturity, purpose and live sessions as
 dots. A `governed by` line names its architects when it has some. IN and OUT
 columns list edges with colored arrows and rules other than `normal`; `*`
-reads `all projects`. The other set charter fields appear under aligned labels.
-Use `[` and `]` or ctrl+u/ctrl+d to scroll the charter. RECENT on the last row
-lists the newest changes. The card shows unviewed automatic changes as
-`● N learned`, with values, times and evidence excerpts. `U` selects the next
-learned change; `u` undoes it through `graph_undo`, which refuses stale changes.
-Leaving the card marks its current changes viewed. Esc returns to the Graph
-with the same node selected. Enter on the card's sessions line opens Sessions
-filtered to the agent's project. `c` focuses the CTO box; Tab moves between
-the Graph and that box.
+reads `all projects`. The two columns sit side by side and each is capped at 60
+columns, so a wide terminal does not push them to opposite edges; a narrow one
+stacks them. The body scrolls with `[` and `]` or ctrl+u/ctrl+d, and its first
+line says `Card A-B/N  [ ] scroll`. The body has one section each for `Charter`,
+`Learned changes` and `Rules`, in that order. The other set charter fields
+appear under aligned labels. `Rules` lists the six effective settings, read the
+way `agent_graph` reads them: `tests_before_merge`, `merge_authority`,
+`worker_sandbox`, `judge_consumers`, `deploy_rule` and `autonomy`. Each line
+ends with `maturity default` when the node's maturity set the value,
+`owner override` when a valid owner setting replaced it, and `default` when
+there is no maturity (autonomy is `owner override` only when it is `wake`).
+The card shows unviewed automatic changes as `● N learned`, with values, times
+and one wrapped evidence line (at most two lines, cut at a word with an
+ellipsis). `U` selects the next learned change; `u` undoes it through
+`graph_undo`, which refuses stale changes. Both keys are in the key line, not
+in the card body. `!` toggles a legend, hidden by default: it explains the edge
+kinds and their arrow colors, the `normal`, `auto`, `ask` and `never` request
+rules, that a specific edge beats the `all projects` wildcard, that an edge
+never grants deploy or merge permission by itself, and what each charter field
+feeds (the per-turn context, a neighbour's 40-character view, a worker's brief,
+the Tools tab, or the agent lookup). RECENT on the last row lists the newest
+changes. Leaving the card marks its current changes viewed. Esc returns to the
+Graph with the same node selected. Enter on the card's sessions line opens
+Sessions filtered to the agent's project. `c` focuses the CTO box; Tab moves
+between the Graph and that box.
 
 Hidden item preferences are shared by every machine's TUI through the
 gateway's `owner_settings` entry `hidden_items`. On Sessions, `h` hides or

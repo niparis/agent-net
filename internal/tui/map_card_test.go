@@ -190,19 +190,15 @@ func TestMapCardRulesShowEffectiveValuesAndOverrides(t *testing.T) {
 		{"deploy_rule", protocol.DeployOwner, "owner override"},
 		{"autonomy", protocol.AutonomyWake, "owner override"},
 	} {
-		line := ""
+		found := false
 		for _, l := range strings.Split(view, "\n") {
-			if strings.Contains(l, want[0]) && !strings.Contains(l, "legend") {
-				line = l
+			if strings.Contains(l, want[0]) && strings.Contains(l, want[1]) && strings.HasSuffix(strings.TrimSpace(l), want[2]) {
+				found = true
 				break
 			}
 		}
-		if line == "" {
-			t.Errorf("no rule line for %s:\n%s", want[0], view)
-			continue
-		}
-		if !strings.Contains(line, want[1]) || !strings.HasSuffix(strings.TrimSpace(line), want[2]) {
-			t.Errorf("%s line %q, want value %q and source %q", want[0], line, want[1], want[2])
+		if !found {
+			t.Errorf("no rule line for %s with value %q and source %q:\n%s", want[0], want[1], want[2], view)
 		}
 	}
 }
@@ -229,7 +225,7 @@ func TestMapCardLearnedIsItsOwnSectionAfterCharterAndRules(t *testing.T) {
 	m.mp.selected = "tenebrae"
 	m.snap.Learned = []protocol.LearnedSuggestion{{
 		ID: 11, Node: "tenebrae", Field: "needs", Phrase: "a backup box", NewValue: "a backup box",
-		Status: "applied", By: "learned", HistoryID: 42, Unseen: true,
+		Status: "applied", By: "learned", HistoryID: 42,
 		DecidedAt: t0.UnixNano(), Evidence: []protocol.LearnedEvidence{{ID: "m1", Excerpt: "ops owns backups"}},
 	}}
 	view := cardText(m, 120, 60)
@@ -239,8 +235,8 @@ func TestMapCardLearnedIsItsOwnSectionAfterCharterAndRules(t *testing.T) {
 	if charter < 0 || rules < 0 || learned < 0 {
 		t.Fatalf("missing a section: charter=%d rules=%d learned=%d\n%s", charter, rules, learned, view)
 	}
-	if !(charter < rules && rules < learned) {
-		t.Fatalf("section order charter=%d rules=%d learned=%d\n%s", charter, rules, learned, view)
+	if !(charter < learned && learned < rules) {
+		t.Fatalf("section order charter=%d learned=%d rules=%d\n%s", charter, learned, rules, view)
 	}
 	if !strings.Contains(view, "accepts") || strings.Contains(view[charter:learned], "Learned changes") {
 		t.Fatalf("learned changes still break the charter:\n%s", view)
