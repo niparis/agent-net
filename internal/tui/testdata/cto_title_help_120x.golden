@@ -18,6 +18,8 @@
   up/down, j/k         select a subscription
   p                    protect or unprotect the selected subscription
   s                    show or hide subscriptions that are not set up
+  left/right           cycle the Quality panel agent: all agents, then each caller
+  d                    show or hide the Quality panel detail (fixes and continues)
   r                    refresh the readings
 
  Graph

@@ -57,7 +57,7 @@ func TestKeysRemovedFromKeyLineStayInHelp(t *testing.T) {
 	}{
 		{"Sessions", "1", []string{"1-5", "s", "x", "h", "H", "t", "p", "N", "L", "o", "a", "d", "r", "/"}},
 		{"Messages", "4", []string{"w", "e", "l"}},
-		{"Quotas", "3", []string{"1-5"}},
+		{"Quotas", "3", []string{"1-5", "left/right", "d"}},
 		{"Graph", "2", []string{"D", "[ ]", "U", "u", "h", "H", "c"}},
 		{"Tools", "5", []string{".", "r", "tab"}},
 	} {
