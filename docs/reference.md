@@ -211,7 +211,7 @@ short fields; use a detail view when needed.
 | `sessions`, `session` | `agent_list` and `agent_get`; `session` takes `session_id` |
 | `proposals` | The CTO's own proposals; `id` selects one. Owner-only results are omitted. |
 | `feed`, `messages` | The CTO's conversations via `agent_messages`; feed has metadata only. `messages` takes `message_id` for a body via `agent_message_status`. |
-| `graph`, `projects` | Public projects via `agent_project_list`. `graph` takes `node` to filter or `view: "guide"` for charter guidance. Agent tools do not expose graph edges. |
+| `graph`, `projects` | Public projects via `agent_project_list`. `graph` takes `node` for project detail or `view: "guide"` for charter guidance. Agent tools do not expose graph edges. |
 | `machines` | `agent_nodes`; `machine` selects a machine, and `harness` lists its models. |
 | `workers` | Workers from `agent_list`; `id` reads a worker profile via `agent_get`. |
 | `tools` | Shared MCP server rows from `agent_mcp_list`; `view` is `mcp`. |

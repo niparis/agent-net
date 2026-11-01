@@ -148,7 +148,14 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 		if err = ctoDecode(value, &result); err != nil {
 			return nil, err
 		}
-		return ctoOffsetPage(ctoProjectRows(result.Projects), q.Limit, q.Offset), nil
+		page := ctoOffsetPage(ctoProjectRows(result.Projects), q.Limit, q.Offset)
+		if name == "graph" && q.Node != "" {
+			if page.Total == 0 {
+				return nil, errors.New("unknown public project node")
+			}
+			return map[string]any{"node": result.Projects[0].Name, "items": page.Items, "total": page.Total, "next": page.Next}, nil
+		}
+		return page, nil
 	case "machines":
 		var q struct {
 			Machine string `json:"machine"`

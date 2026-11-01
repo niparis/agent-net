@@ -134,6 +134,14 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	graphNode, err := w.d.runCTOToolRaw(ctx, "graph", json.RawMessage(`{"node":"fixture-0"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	graphJSON, _ := json.Marshal(graphNode)
+	if !strings.Contains(string(graphJSON), `"node":"fixture-0"`) {
+		t.Fatalf("graph node detail: %s", graphJSON)
+	}
 	overview, err := w.d.runCTOToolRaw(ctx, "overview", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatal(err)
