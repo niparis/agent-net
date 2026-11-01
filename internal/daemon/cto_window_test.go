@@ -140,6 +140,21 @@ func TestCTOGraphMinorAndMajorWindow(t *testing.T) {
 			}
 		})
 	}
+	// Minor changes keep their own attribution even while the window is open.
+	n.d.ctoGraph.mu.Lock()
+	n.d.ctoGraph.toggle(time.Now())
+	n.d.ctoGraph.mu.Unlock()
+	if _, err := n.d.runCTOToolRaw(ctx, "charter_set", json.RawMessage(`{"node":"first","attr":"purpose","value":"Routine wording"}`)); err != nil {
+		t.Fatal(err)
+	}
+	changes, err := g.gw.Store().CharterHistory("first", 1)
+	if err != nil || len(changes) != 1 || changes[0].By != "CTO (minor)" {
+		t.Fatalf("minor during window: %+v %v", changes, err)
+	}
+	cli.mustCall("graph_undo", protocol.GraphUndoRequest{ID: changes[0].ID})
+	n.d.ctoGraph.mu.Lock()
+	n.d.ctoGraph.toggle(time.Now())
+	n.d.ctoGraph.mu.Unlock()
 	for _, c := range []struct{ tool, args string }{
 		{"charter_set", `{"node":"first","attr":"purpose","value":"Only local work"}`},
 		{"charter_set", `{"node":"first","attr":"refuses","value":"deployments"}`},

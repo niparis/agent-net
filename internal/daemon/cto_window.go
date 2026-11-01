@@ -79,10 +79,12 @@ func (d *Daemon) routeCTOGraph(ctx context.Context, name string, raw json.RawMes
 		return nil, err
 	}
 	actor := "CTO (minor)"
-	if w.active(time.Now()) {
+	active := w.active(time.Now())
+	if class != "minor" {
+		if !active {
+			return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
+		}
 		actor = "CTO (owner window)"
-	} else if class != "minor" {
-		return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
 	}
 	result, err := d.executeCTOTool(context.WithValue(ctx, proposalActorKey{}, actor), name, raw)
 	if err != nil {
