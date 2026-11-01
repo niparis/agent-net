@@ -899,56 +899,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		return result, nil
 
 	case "send":
-		sid, err := lc.boundID()
-		if err != nil {
-			return nil, err
-		}
-		var p struct {
-			To             string `json:"to"`
-			Body           string `json:"body"`
-			MessageType    string `json:"message_type"`
-			IdempotencyKey string `json:"idempotency_key"`
-		}
-		if json.Unmarshal(raw, &p) != nil {
-			return nil, errors.New("bad send params")
-		}
-		to, err := d.resolveTo(ctx, p.To)
-		if err != nil {
-			return nil, err
-		}
-		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: to, Type: p.MessageType,
-			Body: p.Body, IdempotencyKey: p.IdempotencyKey})
+		return d.localSend(ctx, lc, raw)
 
 	case "reply":
-		sid, err := lc.boundID()
-		if err != nil {
-			return nil, err
-		}
-		var p struct {
-			protocol.ReplyOutcome
-			MessageID      string `json:"message_id"`
-			Body           string `json:"body"`
-			IdempotencyKey string `json:"idempotency_key"`
-		}
-		if json.Unmarshal(raw, &p) != nil || p.MessageID == "" {
-			return nil, errors.New("reply needs message_id and body")
-		}
-		p.ReplyOutcome, err = protocol.CleanOutcome(p.ReplyOutcome)
-		if err != nil {
-			return nil, err
-		}
-		data, err := d.call(ctx, "query.message", protocol.QueryMessage{MessageID: p.MessageID})
-		if err != nil {
-			return nil, err
-		}
-		var parent struct {
-			Message protocol.Message `json:"message"`
-		}
-		if err := json.Unmarshal(data, &parent); err != nil {
-			return nil, err
-		}
-		return d.send(ctx, protocol.MsgSend{Sender: sid, Recipient: parent.Message.From,
-			Type: protocol.TypeReply, Body: p.Body, ParentID: p.MessageID, IdempotencyKey: p.IdempotencyKey, ReplyOutcome: p.ReplyOutcome})
+		return d.localReply(ctx, lc, raw)
 
 	case "messages":
 		var p protocol.QueryMessages

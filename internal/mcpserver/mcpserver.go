@@ -264,6 +264,7 @@ func New(call Caller, version string, note ...func(ctx context.Context) string) 
 			return nil, out, err
 		})
 	addRegistryTools(s, run)
+	addMessageWriteTools(s, run)
 	addProjectTools(s, run)
 	addWorkerTools(s, run)
 	addWorkerProfileTools(s, run)
