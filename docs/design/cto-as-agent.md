@@ -396,6 +396,14 @@ Status: implemented. Messages reach the selected harness, including after a swit
 - Tests: a reply to a CTO send reaches the active harness; after a switch it reaches the other harness; a reply to a pre-upgrade conversation is routed; the CTO session is never offered ordinary agent-net tools.
 
 **Part 8. The TUI and the Graph.**
+
+Status: implemented. The CTO is a row in Sessions with the owner's title and
+Enter uses `session_enter`. The CTO box shows the number of open proposals. The
+Graph has the fixed `cto` node; a send the owner approved as their own words is
+a gold line, and edges into the CTO node carry request rules. The operator
+client no longer exposes `cto_send`, `cto_events` and `cto_enter`; the old
+frames still answer an older TUI.
+
 - The CTO row in Sessions, Enter through `session_enter`, the CTO box on the session with the proposal count, the `cto` node and gold lines for approved sends, request rules on edges to the CTO; remove `cto_send`, `cto_events` and `cto_enter`.
 - Tests: golden TUI scenes for the Sessions row, the box with proposals, the Graph node and a proposal row (`scripts/screens.sh`); Enter on the row and Enter on the box give the same plan.
 

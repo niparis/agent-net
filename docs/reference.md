@@ -35,7 +35,8 @@ including empty calls. They never return owner settings to the CTO.
 
 CTO reads use the same daemon dispatcher as ordinary agent tools, with a
 registered CTO session as caller rather than the owner. Static `charter_guide`
-text and the CTO's own `cto_events` timeline are the only exceptions. Message
+text and the CTO session's own timeline through `session_text` are the only
+exceptions. Message
 lists and status return only the CTO's own conversations. Owner-only data
 enters the conversation only when the owner shares it.
 
@@ -124,8 +125,8 @@ the other CTO action lines. Action lines are short. Graph change details remain
 in graph history. The daemon keeps one displayed timeline across harnesses and
 restarts. A switch adds a dim divider with the harness, model and local time.
 
-The owner-only `cto_send` method takes `{"text":"..."}` and starts the selected
-harness on first use. OpenCode runs as a private server. Claude Code runs as a
+An owner message to the CTO is `owner_send` with the CTO session ID (or the
+name `CTO`) and the text. It starts the selected harness on first use. OpenCode runs as a private server. Claude Code runs as a
 background session using the owner's Claude login, including a Claude Max plan
 when that login uses one. It uses the model name or alias in the setting, such
 as `opus` or `sonnet`; the default is `opus`. Its transcript stays in Claude's
@@ -134,12 +135,11 @@ projects directory.
 Each harness keeps its own conversation ID in daemon state across restarts and
 harness switches. `cto_new` starts a fresh conversation for the selected
 harness only. When a harness is left, the daemon saves its messages and action
-lines in the local state database. `cto_events` merges that saved history with
-the selected harness's live conversation and the durable switch dividers, in
-chronological order. It returns at most 500 entries per page. An `index` of 0
-returns the newest page. `older` is the cursor for the previous page; the TUI
-sends its negative value as `index` when scrolling reaches the oldest loaded
-entry. `next` remains the forward offset.
+lines in the local state database. `session_text` on the CTO session merges that
+saved history with the selected harness's live conversation and the durable
+switch dividers, in chronological order. It returns the newest page by default
+and `older` is the cursor for the previous page. Graph action lines carry the
+tool name `cto_action`; a harness failure carries `cto_error`.
 Changing harness stops the previous runtime; the next send resumes the selected
 conversation. The CTO is a network session, not a worker.
 
@@ -172,9 +172,9 @@ disable all hooks and enable no plugins.
 Before starting Claude, the daemon adopts a live `agent-net-cto` background job
 in that private directory if one exists. When Claude resumes a conversation as
 a copy, the daemon saves the copy's session ID and moves its action lines to
-that ID. Concurrent `cto_enter` calls share one start; each caller can stop
-waiting on its own deadline. A start does not block owner reads such as
-`cto_settings`, Claude `cto_events`, graph, usage or inbox calls.
+that ID. Concurrent `session_enter` calls on the CTO session share one start; each
+caller can stop waiting on its own deadline. A start does not block owner reads
+such as `cto_settings`, the CTO timeline, graph, usage or inbox calls.
 
 The CTO has no built-in tools. OpenCode uses plural `permissions` rules denying
 `bash`, `edit`, `write`, `subagent`, `read`, `glob`, `grep`, `list`,
@@ -214,7 +214,7 @@ are not in the shared MCP registry.
 | `agent_mcp_list` via `mcp_list` | `mcp_list` |
 | `agent_worker_profiles` via `worker_profiles` | `worker_profile_list` |
 | Static `protocol.CharterGuideText` | `charter_guide` |
-| The CTO's own timeline | `cto_events` |
+| The CTO's own timeline | `session_text` on the CTO session |
 
 The parity test pins every read view to this source. A new read without a
 source fails the test. `agents` and `get` omit waiting-question contents on
@@ -256,7 +256,8 @@ In the TUI, `C` or `tab` focuses the CTO box on every tab.
 Its title shows the owner's CTO title, the selected harness and model.
 The box is read-only: it shows the latest CTO output lines and one hint line,
 `enter: open the <title> · tab: back`. Enter opens the full CTO harness UI through
-`cto_enter`, the same hand-over a session uses; ctrl+] returns. `n` asks before
+`session_enter` on the CTO session, the same hand-over a session uses; ctrl+]
+returns. The title also shows how many CTO proposals are open. `n` asks before
 starting a new conversation, `u` undoes the latest graph change, `m` opens the
 harness and model form, and Esc or `tab` returns focus to the tab. The chat
 polls once per second and shows recorded CTO tool calls, including reads and
@@ -269,8 +270,8 @@ content, such as the question and its options, the held request body, the inbox
 question, the session's announced task and recent status, or the message body.
 The preview scrolls with up/down and pgup/pgdown. Esc cancels. The text is
 capped at 4,000 characters; a longer item ends with a line that says it was cut.
-The hand-over uses the owner-gated `cto_send` method, so an agent session cannot
-make the call.
+The hand-over uses `owner_send` to the CTO session, so it goes through the same
+owner gate as any message from you.
 
 Press `5` to open the Tools tab (skills and MCP servers, [decision 0027](decisions/0027-skills-and-mcp-management.md)).
 It has three screens. Digits stay the global tabs and `tab` goes to the CTO box, so `[` and `]` switch screens. Left and right arrows also switch screens except in All tools, where they select a machine or projects cell. Press `?` for Tools keys.
@@ -286,7 +287,11 @@ gap is between them inside one project.
 Every change opens a plan first, in machines and projects. `d` shows the exact folders, `enter` applies, `esc` cancels. A project MCP coverage row plans every file it would write, in the harness's own format: `.mcp.json` for Claude, `.pi/mcp.json` for Pi, `opencode.json` for OpenCode, and `.codex/config.toml` only when the project already has that file. Environment variables stay references such as `${TOKEN}`; a value is never copied. The plan is read again from the machine that holds the project before you see it. Apply checks each file again, saves the whole file under `mcp-backups` first and writes only if it still has the planned hash. `u` on the result restores the files. A same-name declaration with a different definition is never replaced: it stays a conflict row. Codex without a project config shows `codex: global only`. Removing a skill committed in a project repo offers a local branch with one commit, or asking that project's agent through the owner send path (`b`). The plan names the branch and exact tracked files. It also says when the skill folder has uncommitted changes in the owner's checkout. Applying creates `agent-net/remove-<skill>` from the project's default branch head in a temporary worktree under the daemon state directory, commits the removal and deletes the temporary worktree. The branch stays in the project for you to merge when ready. agent-net never commits to the default branch and never pushes. The action uses the owner-gated `tools_plan` and `tools_apply` methods and is available to the CTO through the same methods. To compare changed skill files, use `n` and `p` to select a file, then `v` to view its diff; `esc` returns to the plan. The owner-only `tools_read_file` reads a current observed text file of at most 64 KiB without importing the skill. The tab also uses `tools_items`, `tools_import`, `tools_accepted`, `tools_accept`, `tools_needs`, `inventory_scan`, `tools_skill_details`, `mcp_import_candidates`, `mcp_import`, `mcp_native_remove`, `mcp_coverage_plan`, `mcp_coverage_apply` and `mcp_coverage_undo`. The CTO cannot read tool differences; the owner can share a plan or comparison.
 
 Press `4`, `M` or `G` to open the Graph tab, the network screen. Each node
-is an agent with a lasting identity and charter. Arrows, `[` and `]`, or a
+is an agent with a lasting identity and charter. The CTO is a fixed node named
+`CTO` with no charter; it appears once the owner has started the CTO. A gold
+line from it is a send the owner approved as their own words; plain CTO talk is
+an ordinary talk line. An edge into the CTO node carries a request rule, so you
+can set `ask` or `never` for a noisy sender. Arrows, `[` and `]`, or a
 click select a node. Press `/` to find a node by identity or display name;
 Enter selects the first match and Esc cancels.
 
@@ -1312,7 +1317,7 @@ The Graph tab keeps its graph, camera, selection and traffic in a headless state
 - **Header.** `12 online · 3 busy · 1 needs you · workers 4 running, 1 queued`: the gateway's online count from `counts`, the sessions that report `busy`, the sessions that wait for you (in the warning colour, and left out when none wait), and the workers with the queued starts from the admission queue. Offline sessions are left out: they are mostly old ghosts. An older gateway has no counts: the header then says `N sessions, M online` and the same figures after it. A warning on the title points to tab 3 when a subscription window is above 80% or exhausted. The header also shows the inbox count, the learned count, the active filters (`filter: active, /cogforge`), and the time of the last refresh.
 - **Needs you,** a section above the machines when at least one session waits for you (decision [0016](decisions/0016-needs-you.md)). Each row has the session, harness, machine, age and question or permission request. Oldest waits come first; at most five rows are shown. Select a waiting session and press Enter to enter it and answer there; `m` sends a message without entering. A waiting session also says `needs you` in STATUS. See [Needs you](#needs-you).
 - **Machines,** one line each: an online dot, name, agent-net version, CPU use as a percentage of the machine's core capacity with a bar, memory used and total with a bar, free space on the filesystem containing the daemon user's home directory, running worker count and memory, and the session or worker with the highest CPU use. Versions are dim, except that an online machine on an older version than the newest online machine is amber. Offline machines show their last known version in dim. The columns stay aligned across rows. When the terminal is narrow, the row keeps its version and omits optional fields in this order: top CPU session, workers, disk. Disk space is sampled once a minute; less than 10G free is red and less than 20G is amber. It does not list installed harnesses. When another machine has a harness that this machine lacks or has at an older version, it shows a dim note such as `no codex` or `old codex`. This machine comes first and is marked `(here)`. The name is the gateway's name for the machine, and `(here)` is matched by node ID, not by hostname. A figure that is missing or older than 45 seconds reads `?`.
-- **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, MODEL (shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `needs you`, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), POLICY (only when some session has a [delegation policy](#delegation-policy): `own`, `sub` or `wrk`), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. Sessions are grouped by machine and sorted into activity bands: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, or a wait started), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL, PROJECT and POLICY go first; TRUST always stays. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row.
+- **Sessions,** grouped by machine under a heading: NAME, AGENT (the harness), PROJECT, MODEL (shortened: no provider, no `claude-` prefix), STATUS (`idle`, `wait`, `owes`, `busy`, `shell`, `needs you`, `dorm` for dormant, `off` for offline; `shell` comes from Claude Code and means no turn is running but a shell command the session started is still alive, such as a background command), TRUST (`-`, `ask` or `auto` for the node wildcard rule, with `+N` for sender-specific edges; always shown), POLICY (only when some session has a [delegation policy](#delegation-policy): `own`, `sub` or `wrk`), CPU, RAM and TASK (the task the session announced; a worker without one shows the first line of its task; otherwise the harness title if it differs from NAME, else blank). An idle session with unanswered requests shows `wait` or `owes` in STATUS and the peer and age in TASK. The detail pane lists each peer, time and message ID. Requests older than 24 hours and notifications do not count. The operator counts call includes `pending_stalls`, the number of observed idle periods with an open request for over 20 minutes since gateway start. Sampling runs once a minute. Sessions are grouped by machine and sorted into activity bands: busy or needs you, active within 10 minutes, within one hour, within 24 hours, then older or offline. Activity is the last time the session did something (a turn started or ended, a message was sent or received, it announced a task, or a wait started), not the last time its daemon reported it. A daemon restart or a re-report does not make an idle session look active. Within a band the most recently active session comes first; ties never use the oldest start. A session entering a band moves to its top; idle margins reduce moves near band boundaries. The order freezes for three seconds after a key press, and selection follows the session. Workers stay under their caller. A session that is idle with no report for more than an hour is dim. Offline sessions are dimmed too. On a narrow terminal TASK, MODEL, PROJECT and POLICY go first; TRUST always stays. A tree with more than 20 processes, 200% CPU or 4G of memory shows its numbers in red. A process tree that several sessions share shows `shared` in their rows and has no row of its own. A worker's private OpenCode server is its own tree, so its CPU and memory are on the worker's row. The CTO is a normal row in its machine group; NAME shows the owner's CTO title, and Enter enters it through `session_enter`, the same plan as Enter in the CTO box.
 - **Selected session.** The first line has the name, harness, status and the session's CPU, RAM and process count. Below, on the left: session and worker IDs and PID, folder, branch, model and mode (these last two moved here from the table), function (the project description from `AGENTS.md`; "none: add a `# Project: <one line>` line to AGENTS.md" when there is none), remote, worktree (when the session runs in a linked worktree), the project source (`seen in a session`, `registered`, or `seen in a session and registered`), task, expertise, a `trust` line when peer trust is on, `policy` and `main` lines when it has a delegation policy (with a note for each part its harness cannot do), and its recent messages. For a worker it starts with who started it and then `context 84k / 1M (8%)  tokens 345k`, with only the parts the harness has reported. On the right: the heaviest 5 processes by CPU and by memory (PID, CPU, RAM, command line with secrets masked), fetched with `usage_top` when the session is selected and again every 5 seconds. Press `d` to replace the session list with these details; press it again to return. The CTO box stays visible.
 - **Workers** show in the sessions table right under the session that started them, indented with `├─` (or `└─` for the last one), in order of start time, like a sub-agent. A worker's NAME is `<project> worker <n>` (decision [0024](decisions/0024-session-names.md)), and its TASK is the first line of its FIRST task, which the daemon records and the gateway passes in the agent list; a later request from its owner does not replace it. When that task is missing, TASK is the harness title, or blank. The full worker ID is on the detail pane's `id` line. A worker on another machine than its caller still sits under the caller and has `@host` after its name. A worker whose caller is not on screen (you started it, or the caller is offline or hidden by the filter) stays in its own machine group with `↳` before the name. Selection keys follow the order on screen. The detail says the worker runs in the background. The title counts them.
 - **Messages** on tab 2 groups messages into threads. A thread uses its conversation ID, or the pair of sessions when older events have no conversation ID. Each row shows the latest message's first line, the message count and the age. The right pane shows the messages in the selected thread; up and down select a thread, left and right select a message, and Enter selects the latest message in the thread. Press `v` to open that message's full body. The body is fetched once through `message_status` and cached by message ID. The owner can read any thread through the participant relay; another machine can read messages involving one of its sessions. A long preview ends with `…` after its text. If a body cannot be fetched, the thread says why.
@@ -1566,7 +1571,7 @@ A rejection or escalation of another agent's request appears as a separate Needs
 
 The daemon marks its private Claude CTO folder and Claude worker worktrees trusted in `~/.claude.json` (or `$CLAUDE_CONFIG_DIR/.claude.json`). It removes the worktree trust setting when the worktree is deleted. Uninstall removes the CTO folder's trust setting and preserves other project settings.
 
-The owner-only `cto_enter` method starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing.
+`session_enter` with the CTO session ID starts the local CTO runtime if needed and returns an enter plan for its full harness UI. In the CTO box, press Enter to open it and ctrl+] to return. Claude starts a background session on first entry if needed. Entry errors appear in the TUI. The Claude CTO requires Claude Code with `--bg` and `--strict-mcp-config`; update Claude Code if either flag is missing.
 
 The daemon service records the login shell's PATH in its environment, so tools
 installed outside the system directories are available to workers. If the shell
