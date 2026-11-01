@@ -273,7 +273,11 @@ func ctoSchema(name string, spec ctoToolDef) map[string]any {
 		}
 		props[k] = prop
 	}
-	return map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	schema := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	if name == "message" {
+		schema["required"] = []string{"action"}
+	}
+	return schema
 }
 
 // NewCTO is deliberately separate from the network MCP registry. ctoTools is

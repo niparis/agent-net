@@ -236,3 +236,17 @@ func TestCTOProposalTrustHistoryActor(t *testing.T) {
 		t.Fatalf("history: %v %v", changes, err)
 	}
 }
+
+func TestCTOProposalMessageRequiresActionBeforeStoring(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "/usr/bin/pi"})
+	_, sid := helloPi(t, n, "recipient", "/work/project", true)
+	args, _ := json.Marshal(map[string]any{"as_owner": true, "to": sid, "body": "text"})
+	if _, err := n.d.runCTOToolRaw(context.Background(), "message", args); err == nil {
+		t.Fatal("stored message without an action")
+	}
+	items, err := n.d.proposalRunner().list()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("invalid proposal stored: %v %v", items, err)
+	}
+}

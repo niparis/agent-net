@@ -19,7 +19,7 @@ func init() {
 	add("mcp_import", "Propose import.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID.")})
 	add("mcp_native_remove", "Propose native removal.", map[string]ctoField{"candidate": s("Candidate."), "plan_id": s("Plan ID."), "undo_plan_id": s("Removal ID.")})
 	add("tools_differences", "Read tool differences.", map[string]ctoField{"offset": n("Offset."), "limit": n("Default 20; max 60.")})
-	add("tools_plan", "Propose assignments or repo removal.", map[string]ctoField{
+	add("tools_plan", "Propose assignments; repo removal on a local branch.", map[string]ctoField{
 		"item": s("Item ID."), "target": obj("Assignment."),
 		"operation": en("Operation.", "repo_remove"),
 		"project":   s("Project."),
