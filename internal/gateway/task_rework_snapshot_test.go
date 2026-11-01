@@ -192,5 +192,5 @@ for root_id, task in tasks.items():
     row[2] += task["mid"]
 for (level, family), (n, headache, midrun) in sorted(table.items()):
     if n >= 5:
-        print(f"{level:7} {family:9} tasks {n:3}  headache {headache/n:5.1f} min   (+mid-run msgs {midrun}, +0 min)")
+        print(f"{level:7} {family:9} tasks {n:3}  headache {headache/n:5.1f} min   (+mid-run msgs {midrun}, +{2*midrun/n:.1f} min if counted as continue)")
 `
