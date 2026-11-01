@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -109,5 +110,46 @@ func TestMaturityApprovalUsesInboxAndSharedNote(t *testing.T) {
 		if !found {
 			t.Fatalf("no shared note for %s: %+v", action, msgs)
 		}
+	}
+}
+
+func TestDiskNoticeHourly(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	g := &Gateway{store: s}
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	raw, _ := json.Marshal(map[string]string{"text": "disk: 6 GB free; /tmp 30 GB"})
+	for i := 0; i < 2; i++ {
+		if _, err := g.handle(context.Background(), &nodeConn{id: node}, "worker.disk_notice", raw); err != nil {
+			t.Fatal(err)
+		}
+	}
+	items, err := s.ListInbox()
+	if err != nil || len(items) != 1 || items[0].Kind != "check" || !strings.Contains(items[0].Text, "6 GB") {
+		t.Fatalf("notices: %+v %v", items, err)
+	}
+	now = now.Add(time.Hour)
+	if _, err := g.handle(context.Background(), &nodeConn{id: node}, "worker.disk_notice", raw); err != nil {
+		t.Fatal(err)
+	}
+	items, err = s.ListInbox()
+	if err != nil || len(items) != 2 {
+		t.Fatalf("notice after hour: %+v %v", items, err)
+	}
+}
+
+func TestDiskNoticeCanBeDismissed(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("test", "linux")
+	if err := s.CreateDiskNotice(node, "disk low"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := s.ListInbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AnswerInbox(items[0].ID, "seen"); err != nil {
+		t.Fatal(err)
 	}
 }

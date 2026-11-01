@@ -989,3 +989,5 @@ exclusions. Ratings from callers below score 45 count half; without a strong
 rating, a model cannot receive a prediction above the fitted average.
 
 Worker admission also checks free space on the daemon state filesystem. Starts wait below the configured disk floor; existing workers continue.
+
+The daemon deletes worker build cache files older than two hours only inside configured cache folders. It deletes old worker temporary entries only after checking for open files; when that check is unavailable it keeps them. Cache paths must not contain symlinks, and cleanup skips hard-linked files. The daemon logs cleanup results and reports low space to Needs you.

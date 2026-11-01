@@ -32,6 +32,7 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	diskNoticeMu      sync.Mutex
 	qualityMu         sync.Mutex
 	quality           protocol.QualityAnalysis
 	qualityFit        qualityFit

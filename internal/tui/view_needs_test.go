@@ -400,3 +400,12 @@ func TestCheckInboxItemShowsInNeedsYou(t *testing.T) {
 		t.Fatalf("check row = %+v", got)
 	}
 }
+
+func TestDiskNoticeNeedsYouUsesHost(t *testing.T) {
+	m := newModel(80, 24)
+	m.inboxItems = []protocol.InboxItem{{Kind: "check", SessionID: "disk:n_123", Node: "example-host", Text: "disk: 6 GB free", Status: "open"}}
+	rows := m.needsRows()
+	if len(rows) != 1 || rows[0].Profile.Name != "example-host" || rows[0].Harness != "disk" {
+		t.Fatalf("rows: %+v", rows)
+	}
+}

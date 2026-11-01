@@ -68,8 +68,13 @@ type Config struct {
 	Hostname    string
 	StateDir    string
 	// DiskFree overrides the disk free-space probe.
-	DiskFree   func(string) (uint64, error)
-	SocketPath string
+	DiskFree        func(string) (uint64, error)
+	WorkerCacheDirs []string
+	WorkerTempDirs  []string
+	CacheEntryInUse func(string) (bool, error)
+	DiskRoot        func(string) string
+	DiskNotice      func(context.Context, string) error
+	SocketPath      string
 	// ClaudeSessionsDir is used by the peer check for `agent-net mcp`.
 	ClaudeSessionsDir string
 	// PiSessionsDir is where Pi writes its session files. The daemon reads a
@@ -217,6 +222,7 @@ type Daemon struct {
 	ctoEntering      *ctoEnterCall
 	cto              ctoRuntime
 	claudeCTO        claudeCTOState
+	cacheWake        chan struct{}
 	cfg              Config
 	log              *log.Logger
 	st               *state
@@ -374,7 +380,7 @@ func New(cfg Config) (*Daemon, error) {
 		st.close()
 		return nil, err
 	}
-	d := &Daemon{cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
+	d := &Daemon{cacheWake: make(chan struct{}, 1), cfg: cfg, log: cfg.Logger, st: st, sessions: map[string]*localSession{}, activity: activity, adopted: make(chan struct{}),
 		intgWake: make(chan struct{}, 1), toolsWake: make(chan struct{}, 1),
 		mcpHello: map[string]time.Time{}, qGone: map[string]time.Time{}, workers: map[string]*worker{}, recent: map[string]recentWorker{}, launchers: map[string]launcher{"opencode": opencodeLauncher{}, "claude": claudeLauncher{},
 			"pi": piLauncher{}, "codex": codexLauncher{}},
@@ -443,6 +449,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	go func() { defer d.wg.Done(); d.workerLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.queueLoop(ctx) }()
+	d.wg.Add(1)
+	go func() { defer d.wg.Done(); d.workerCacheLoop(ctx) }()
 	d.wg.Add(1)
 	go func() { defer d.wg.Done(); d.proposalNotesLoop(ctx) }()
 	d.wg.Add(1)

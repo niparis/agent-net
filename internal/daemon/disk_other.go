@@ -2,8 +2,15 @@
 
 package daemon
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
 func homeDiskFree() uint64 { return 0 }
 
 func diskFree(path string) (uint64, error) { return 0, fmt.Errorf("disk space unavailable") }
+
+func diskDevice(string) (uint64, bool) { return 0, false }
+
+func diskHardlinked(os.FileInfo) bool { return true }
