@@ -1,6 +1,21 @@
 # Difficulty calibration from rework
 
 Status: approved by the owner on 2026-11-01, with the recommended answers to the open questions. Built in the parts of section 10.
+
+Parts 1, 2, 4 and 5 are built. Part 3 steering is not built. Part 5 fits
+ratings and weighted rework in the gateway, with a penalty of 10 equivalent
+tasks per effect. Effort effects sum to zero within each model. The gateway
+rebuilds the cached analysis at startup and when ratings, runs, profiles or
+score overrides change, including run retention. No request or TUI redraw
+fits data. Quotas shows effects, counts and predictions at normal difficulty.
+Rotation weighting is owner controlled through
+`agent-net scores quality on|off`, defaults to off, and needs at least 5
+ratings. Its multiplier is
+`1 + (prediction - average) / 4`, bounded to 0.5 through 1.5. Weak ratings
+count half; models without a strong rating cannot get a prediction above
+the fitted average. Residuals over 0.75 points with at least 5 ratings flag a
+combination for review. No interactions or difficulty steering were added.
+
 Builds on decision [0026](../decisions/0026-worker-difficulty-and-scores.md)
 (difficulty, scores, rotation) and [0036](../decisions/0036-primitives.md)
 (task as a contract between a caller and a doer).
@@ -42,6 +57,10 @@ already routes. The caller marks nothing.
 | `continue` | the caller sends the worker a new message after a hand-back with `complete: no` | the worker stopped early |
 | `fix` | the caller sends the worker a new message after a hand-back with `complete: yes` | the worker finished, but not right |
 
+A worker that goes idle without a hand-back is the same signal as
+`complete: no`: it stopped early without saying so, and the caller's next
+message counts as a continue.
+
 The weighted rework of a task is `fix + 0.5 × continue`. A fix counts more
 because it costs review attention: the worker delivered the wrong thing, and
 someone had to notice. A continue is cheaper: the work so far was right, and
@@ -51,6 +70,17 @@ This split matters for real models. Today terra on Codex stops early (many
 continues, few fixes), and DeepSeek on OpenCode finishes but is sometimes
 wrong (few continues, some fixes). Counting both the same would treat a
 model that needs a nudge like one that builds the wrong thing.
+
+**A task is the worker session, not one turn.** Continuing a worker after a
+hand-back starts another run. That run gets another gateway row with the same
+session ID, and the follow-up's counter lands on the new row. The calibration
+therefore reads one sample per session: it adds the continues and fixes of
+all the session's rows, takes the caller and the difficulty from the first
+row and the end time from the last. A follow-up turn is never a task of its
+own. A run stopped by the owner or the caller is left out of the samples: a
+stop says nothing about the model, and it must not count as a clean task. So
+are runs recorded before the counters shipped, because their 0 means unknown,
+not "no rework".
 
 **A defect found later.** The counters only see a follow-up the caller sends.
 A defect found hours later, after the hand-back or after merge, would be lost.
@@ -69,6 +99,8 @@ machinery. Add them only if the two counters prove too weak.
 For each caller and difficulty, take the weighted rework of the caller's last
 7 tasks at that difficulty (with at least 5). Use the median, not the mean:
 counts are small whole numbers, and one bad task should not swing the result.
+A task is one worker session, so the runs of a continued worker are added
+together before they enter the window.
 
 | Median | Reading | Action |
 |---|---|---|
@@ -219,9 +251,9 @@ Kept honest:
   without, and flag a combination whose real results stay far from the
   prediction.
 
-Size: a few dozen lines of code on the gateway, run on demand or every hour,
-over a few thousand tasks in milliseconds. Nothing is stored beyond the raw
-records. The real limit is data: at 5 to 20 rated tasks a day, model effects
+The fit runs in the gateway on source changes, and its result is cached in
+memory. Reads only serve the cache. Nothing is stored beyond the raw
+records and the owner setting. The real limit is data: at 5 to 20 rated tasks a day, model effects
 take a week or two to settle, harness and effort effects longer, and the
 screen says so instead of pretending to know.
 

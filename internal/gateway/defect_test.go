@@ -62,6 +62,22 @@ func TestDefectAfterHandbackCountsOneFix(t *testing.T) {
 	if tasks != 1 || median != 1 {
 		t.Fatalf("calibration after one defect: tasks %d median %v, want 1 and 1", tasks, median)
 	}
+	cal, err := s.Calibration()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cal.Defects != 1 {
+		t.Fatalf("calibration defects = %d, want 1", cal.Defects)
+	}
+	found := false
+	for _, r := range cal.Ratings {
+		if r.Model == "p/m" && r.Count == 0 && r.Defects == 1 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("model defect count missing from the ratings line: %+v", cal.Ratings)
+	}
 }
 
 // Each report is one defect: a second one counts again and the rating stays
@@ -179,6 +195,16 @@ func TestDefectBeforeHandbackIsRefused(t *testing.T) {
 	}
 	if out.Accepted || !strings.Contains(out.Reason, "not finished") {
 		t.Fatalf("defect before hand-back was not refused: %+v", out)
+	}
+}
+
+func TestRateRejectsUnknownKind(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("mac", "linux")
+	caller := ratingCaller(t, s, node, "caller", "claude-opus-5-5")
+	wid := ratingRun(t, s, node, caller, "p/m", "normal")
+	if _, err := s.AddRating(protocol.RateFrame{RateRequest: protocol.RateRequest{Worker: wid, Kind: "bug", Note: "x"}, Rater: caller}); err == nil {
+		t.Fatal("an unknown kind was accepted")
 	}
 }
 

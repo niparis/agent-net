@@ -6,8 +6,8 @@
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Project        tenebrae                        on Mac, /Users/n/code/tenebrae
-  Harness        claude
-  Model          default
+  Harness        ◂ claude ▸
+  Model          ◂ default ▸
   Folder         ◂ new worktree ▸                tenebrae is busy in the project folder
   Branch         agent-net/tenebrae-1            from main (HEAD)
 > First message
@@ -31,4 +31,4 @@ New session ──────────────────────�
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-enter start  up/down field  left/right folder  esc cancel
+up/down field · left/right change · enter start · esc cancel

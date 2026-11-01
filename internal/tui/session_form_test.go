@@ -19,6 +19,42 @@ func sessionKey() tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}
 }
 
+func TestSDoesNotOpenAWorkerFormAndNOpensANewSession(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m = selectID(m, "s_0000000000000001")
+
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+	if m.mode != modeNormal || cmd != nil || src.started != nil {
+		t.Fatalf("s opened a form or started a worker: mode %v, cmd %v, started %+v", m.mode, cmd != nil, src.started)
+	}
+	if strings.Contains(m.View(), "Start a worker") {
+		t.Fatalf("worker form is still visible:\n%s", m.View())
+	}
+
+	m, _ = press(m, sessionKey())
+	if m.mode != modeSessionForm {
+		t.Fatalf("n opened mode %v, want the New session form", m.mode)
+	}
+}
+
+func TestSKeyLinesGoldenAt80And120Columns(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m, _ := workerModel(size.w, size.h)
+		m = selectID(m, "s_0000000000000004")
+		m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
+		golden(t, "keyline_sessions_"+itoa(size.w), m.helpLine(size.w))
+
+		quota := newModel(size.w, size.h)
+		quota.tab = quotasTab
+		golden(t, "keyline_quotas_"+itoa(size.w), quota.helpLine(size.w))
+
+		outcome := newModel(size.w, size.h)
+		outcome.snap.Outcomes = []protocol.OutcomeInboxEntry{{EdgeOutcome: protocol.EdgeOutcome{ReplyID: "r"}, Sender: "sender", Recipient: "receiver"}}
+		outcome.selected = "outcome:r"
+		golden(t, "keyline_outcome_"+itoa(size.w), outcome.helpLine(size.w))
+	}
+}
+
 // startedSession is what the fake daemon answers for a successful start.
 func startedSession(project, harness string) protocol.StartedSession {
 	return protocol.StartedSession{

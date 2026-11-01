@@ -1326,8 +1326,8 @@ func TestOwnerSessionIsRegisteredPerMachine(t *testing.T) {
 	eventually(t, "delivered to the other owner", func() bool { return messageState(t, cb, sent.Message.ID) == protocol.StateDelivered })
 }
 
-// Every operator method is served to a CLI client, and not one answers with
-// "unknown method". This keeps protocol.OperatorMethods and the daemon together.
+// Every operator method is recognized. Agent-only methods refuse the CLI;
+// the other methods are served. This keeps the protocol and daemon together.
 func TestEveryOperatorMethodIsServed(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startNode(t, g, nodeOpts{})
@@ -1335,8 +1335,47 @@ func TestEveryOperatorMethodIsServed(t *testing.T) {
 	eventually(t, "connected", func() bool { return n.d.ownerSessionID() != "" })
 	for _, m := range protocol.OperatorMethods {
 		_, err := cli.call(m, map[string]any{})
+		if m == protocol.OpLearn || m == protocol.OpRate {
+			if err == nil || !strings.Contains(err.Error(), "not available to cli") {
+				t.Errorf("%s must refuse the CLI: %v", m, err)
+			}
+			continue
+		}
 		if err != nil && (strings.Contains(err.Error(), "unknown method") || strings.Contains(err.Error(), "not available to cli")) {
 			t.Errorf("%s: %v", m, err)
 		}
+	}
+}
+
+// All harnesses share the same cache: missing or partial reads must not erase
+// a previous context pair, but compaction may legitimately lower the tokens.
+func TestWorkerContextSurvivesMissingUsage(t *testing.T) {
+	for _, harness := range []string{"opencode", "codex", "claude", "pi"} {
+		t.Run(harness, func(t *testing.T) {
+			d := &Daemon{}
+			w := &worker{harness: harness}
+			d.noteWorkerUsage(w, workerStats{ContextTokens: 84000, ContextLimit: 200000, TotalTokens: 100000})
+			for _, missing := range []workerStats{{}, {ContextTokens: 100}, {ContextLimit: 1000000}} {
+				d.noteWorkerUsage(w, missing)
+				got := d.workerInfo(w)
+				if got.ContextTokens != 84000 || got.ContextLimit != 200000 {
+					t.Fatalf("missing usage erased context: %+v", got)
+				}
+			}
+			if d.noteWorkerUsage(w, workerStats{ContextTokens: 84000, ContextLimit: 200000, TotalTokens: 100000}) {
+				t.Fatal("recovering the same total counted as new activity")
+			}
+			d.noteWorkerUsage(w, workerStats{ContextTokens: 12000, ContextLimit: 1000000, TotalTokens: 110000})
+			got := d.workerInfo(w)
+			if got.ContextTokens != 12000 || got.ContextLimit != 1000000 {
+				t.Fatalf("new context after compaction was not recorded: %+v", got)
+			}
+			// Completion notices read workerStats again, possibly after the harness
+			// can no longer answer. They need the cached context too.
+			st := d.workerStats(w)
+			if st.ContextTokens != 12000 || st.ContextLimit != 1000000 {
+				t.Fatalf("final stats lost cached context: %+v", st)
+			}
+		})
 	}
 }

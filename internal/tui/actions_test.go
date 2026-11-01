@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -248,166 +247,6 @@ func TestStopAWorkerAsksFirst(t *testing.T) {
 	}
 }
 
-// ---- start a worker ----
-
-func openForm(t *testing.T, m Model) Model {
-	t.Helper()
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	if m.mode != modeForm {
-		t.Fatal("s did not open the form")
-	}
-	return m
-}
-
-func TestStartFormShowsProjectPermissions(t *testing.T) {
-	m, _ := workerModel(120, 34)
-	for i := range m.snap.Projects {
-		if m.snap.Projects[i].Name == "tenebrae" {
-			m.snap.Projects[i].Permissions = "read-only"
-		}
-	}
-	m = openForm(t, selectID(m, "s_0000000000000004"))
-	m = typeText(m, "tenebrae")
-	if view := strings.Join(m.formView(120, 18), "\n"); !strings.Contains(view, "permissions: read-only") {
-		t.Fatalf("form: %s", view)
-	}
-}
-
-func TestStartFormCompletesAndStarts(t *testing.T) {
-	m, src := workerModel(120, 34)
-	m = selectID(m, "s_0000000000000004") // a session with no project on a known list
-	m = openForm(t, m)
-	if m.form.cur != fProject || m.form.value(fHarness) != "" {
-		t.Fatalf("form start: cur %v harness %q", m.form.cur, m.form.value(fHarness))
-	}
-	// Project: "te" matches tenebrae only; tab completes it.
-	m = typeText(m, "ten")
-	if c := m.candidates(); len(c) != 1 || c[0].value != "tenebrae" || !strings.Contains(c[0].note, "both on Mac") {
-		t.Fatalf("project candidates: %+v", c)
-	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.form.value(fProject) != "tenebrae" {
-		t.Fatalf("tab did not complete: %q", m.form.value(fProject))
-	}
-	if note := m.fieldNote(fProject); note != "on Mac" {
-		t.Errorf("project note %q", note)
-	}
-	// A second tab moves on to the harness, then the model.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.form.cur != fHarness {
-		t.Fatalf("cur %v", m.form.cur)
-	}
-	m.form.in[fHarness].SetValue("opencode")
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.form.cur != fModel {
-		t.Fatalf("cur %v", m.form.cur)
-	}
-	// Model: the models of that machine, narrowed by what is typed.
-	if c := m.candidates(); len(c) != 3 {
-		t.Fatalf("model candidates: %+v", c)
-	}
-	m = typeText(m, "anthropic/claude-h")
-	if c := m.candidates(); len(c) != 1 || c[0].value != "anthropic/claude-haiku-4-5" {
-		t.Fatalf("narrowed: %+v", c)
-	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab})
-	if m.form.value(fModel) != "anthropic/claude-haiku-4-5" {
-		t.Fatalf("model: %q", m.form.value(fModel))
-	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	// Difficulty is optional. Move to task.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	// Task. Enter with an empty task is refused with a line in the form.
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.mode != modeForm || m.form.err != "Write the task." {
-		t.Fatalf("empty task: mode %v err %q", m.mode, m.form.err)
-	}
-	if v := m.View(); !strings.Contains(v, "! Write the task.") {
-		t.Errorf("the form error is not on screen:\n%s", v)
-	}
-	m = typeText(m, "reply with the word ok via agent_reply")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	if m.mode != modeNormal || m.notice.text == "" {
-		t.Fatalf("submit: mode %v notice %+v", m.mode, m.notice)
-	}
-	if !strings.Contains(m.notice.text, "Starting a worker in tenebrae") {
-		t.Errorf("progress line: %q", m.notice.text)
-	}
-	m = finish(t, m, cmd)
-	want := protocol.WorkerStartRequest{Project: "tenebrae", Harness: "opencode", Model: "anthropic/claude-haiku-4-5", Task: "reply with the word ok via agent_reply"}
-	if src.started == nil || *src.started != want {
-		t.Fatalf("request: %+v", src.started)
-	}
-	if m.notice.err || !strings.Contains(m.notice.text, "Started worker s_new (opencode, tenebrae on Mac)") {
-		t.Errorf("result: %+v", m.notice)
-	}
-}
-
-func TestStartFormFillsTheProjectOfTheSelection(t *testing.T) {
-	m, _ := workerModel(80, 24)
-	m = selectID(m, "s_0000000000000001") // tenebrae-53, project tenebrae
-	m = openForm(t, m)
-	if m.form.value(fProject) != "tenebrae" || m.form.cur != fTask {
-		t.Errorf("project %q, cur %v", m.form.value(fProject), m.form.cur)
-	}
-	// A project that is not in the list is not filled in.
-	m, _ = workerModel(80, 24)
-	m = selectID(m, "s_0000000000000004") // agent-net project: not in the project list
-	m = openForm(t, m)
-	if m.form.value(fProject) != "" || m.form.cur != fProject {
-		t.Errorf("project %q, cur %v", m.form.value(fProject), m.form.cur)
-	}
-}
-
-func TestStartFormMachineAndErrors(t *testing.T) {
-	m, src := workerModel(80, 24)
-	m = selectID(m, "s_0000000000000004") // its project is not in the list: nothing is filled in
-	m.snap.Projects = append(m.snap.Projects,
-		protocol.ProjectView{Name: "shop", NodeID: "n_mac", Hostname: "Mac", Path: "/a/shop", Source: protocol.SourceRegistered},
-		protocol.ProjectView{Name: "shop", NodeID: "n_vm", Hostname: "build-vm", Path: "/b/shop", Source: protocol.SourceRegistered})
-	m = openForm(t, m)
-	m = typeText(m, "sho")
-	cands := m.candidates()
-	if len(cands) != 2 || cands[0].value != "shop@Mac" || cands[1].value != "shop@build-vm" {
-		t.Fatalf("a project on two machines is offered per machine: %+v", cands)
-	}
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyTab}) // common start: "shop@"
-	if m.form.value(fProject) != "shop@" {
-		t.Fatalf("common prefix: %q", m.form.value(fProject))
-	}
-	m = typeText(m, "build-vm")
-	for i := 0; i < 4; i++ {
-		m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	}
-	m = typeText(m, "write tests")
-	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
-	src.actErr = errors.New("machine build-vm does not accept workers (it was set up with --no-launch)")
-	m = finish(t, m, cmd)
-	if src.started == nil || src.started.Project != "shop" || src.started.Machine != "build-vm" {
-		t.Fatalf("request: %+v", src.started)
-	}
-	if !m.notice.err || m.notice.text != "Worker not started: machine build-vm does not accept workers (it was set up with --no-launch)" {
-		t.Errorf("error: %+v", m.notice)
-	}
-	// Esc cancels, and up goes back a field.
-	m = openForm(t, m)
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyDown})
-	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp})
-	if m.form.cur != fProject {
-		t.Errorf("cur %v", m.form.cur)
-	}
-	m, cmd = press(m, tea.KeyMsg{Type: tea.KeyEsc})
-	if m.mode != modeNormal || cmd != nil || m.notice.text != "Start cancelled." {
-		t.Errorf("esc: %v %+v", m.mode, m.notice)
-	}
-	// With no project known the form says how to register one.
-	m.snap.Projects = nil
-	m = openForm(t, m)
-	if v := m.View(); !strings.Contains(v, "No projects are known. Register one with: agent-net projects add <path>") {
-		t.Errorf("empty project list:\n%s", v)
-	}
-}
-
 // ---- golden screens ----
 
 func TestActionScreensGolden(t *testing.T) {
@@ -423,19 +262,11 @@ func TestActionScreensGolden(t *testing.T) {
 		confirm, _ := press(selectID(m, workerID), tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")})
 		golden(t, name("confirm_stop"), confirm.View())
 
-		form := openForm(t, selectID(m, "s_0000000000000004"))
-		golden(t, name("start_form_empty"), form.View())
-		golden(t, name("start_form_project"), typeText(form, "t").View())
-		form = typeText(form, "tenebrae")
-		form, _ = press(form, tea.KeyMsg{Type: tea.KeyEnter})
-		form, _ = press(form, tea.KeyMsg{Type: tea.KeyEnter})
-		golden(t, name("start_form_model"), typeText(form, "anthropic/").View())
-
 		ok := m
 		ok.say("Sent to tenebrae (Mac) (m_sent) as you. The reply will show in the messages.")
 		golden(t, name("notice_ok"), ok.View())
 		bad := m
-		bad.fail("Worker not started: machine build-vm does not accept workers (it was set up with --no-launch)")
+		bad.fail("Not stopped: machine build-vm is offline")
 		golden(t, name("notice_error"), bad.View())
 
 		feed := keys(selectID(m, ownerID), "tab")
@@ -464,9 +295,9 @@ func TestActionScreensFitEverySize(t *testing.T) {
 			return typeText(m, strings.Repeat("long ", 40))
 		},
 		"confirm": func(m Model) Model { m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}); return m },
-		"form": func(m Model) Model {
-			m, _ = press(m, tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-			return typeText(m, "t")
+		"new session": func(m Model) Model {
+			m, _ = press(m, sessionKey())
+			return typeText(m, strings.Repeat("long ", 40))
 		},
 		"notice": func(m Model) Model {
 			m.fail(strings.Repeat("a long error line ", 20))
@@ -488,43 +319,5 @@ func TestActionScreensFitEverySize(t *testing.T) {
 				}
 			}
 		}
-	}
-}
-
-func TestWorkerDifficultyField(t *testing.T) {
-	m := newModel(120, 34)
-	m, _ = m.startForm()
-	m.form.in[fDifficulty].SetValue("hard")
-	if !strings.Contains(m.View(), "Difficulty") {
-		t.Fatal("difficulty missing from form")
-	}
-}
-
-func TestWorkerFormAllowsAutomaticHarness(t *testing.T) {
-	m, src := workerModel(120, 34)
-	m, _ = m.startForm()
-	m.form.in[fProject].SetValue("tenebrae")
-	m.form.in[fHarness].SetValue("")
-	m.form.in[fTask].SetValue("test")
-	m.form.cur = fTask
-	next, cmd := m.submitForm()
-	m = finish(t, next.(Model), cmd)
-	if src.started == nil || src.started.Harness != "" {
-		t.Fatalf("automatic harness: %+v", src.started)
-	}
-}
-
-type startingWorkerSource struct{ fakeSource }
-
-func (s *startingWorkerSource) StartWorker(context.Context, protocol.WorkerStartRequest) (protocol.WorkerStartResult, error) {
-	return protocol.WorkerStartResult{Status: "starting", SessionID: "s_pending"}, nil
-}
-
-func TestStartCommandReportsStarting(t *testing.T) {
-	m := New(&startingWorkerSource{})
-	msg := m.startCmd(protocol.WorkerStartRequest{Project: "shop"})()
-	result, ok := msg.(actionMsg)
-	if !ok || result.err != nil || !strings.Contains(result.text, "Starting worker s_pending") || !strings.Contains(result.text, "notice") {
-		t.Fatalf("result: %+v", msg)
 	}
 }

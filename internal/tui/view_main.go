@@ -230,12 +230,6 @@ func (m Model) mainView(w, h int) []string {
 			add(s)
 		}
 	}
-	if m.mode == modeForm {
-		for _, s := range m.formView(w, l.detail+l.feed+2) {
-			add(s)
-		}
-		return out
-	}
 	if m.mode == modeSessionForm {
 		for _, s := range m.sessionFormView(w, l.detail+l.feed+2) {
 			add(s)

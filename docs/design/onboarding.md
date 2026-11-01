@@ -346,7 +346,7 @@ Seven steps, in the order of the six points. Step 1b exists only while the netwo
 | 3 | CTO | step 2 done | `Say what you want in plain words. Try: "what is going on?"` | The first message sent to the CTO from this TUI (`cto_send`). |
 | 4 | Graph | step 3 done, at least one agent with a live session has no charter | `The agent for <project> has no charter, so peers guess what it accepts. Ask the CTO: "draft a charter for the agent for <project>".` | That agent, or any agent with a live session, has a charter (live fact from `graph_get`). |
 | 5 | Work | step 4 done or passed, Claude, Codex or another orchestrator provider is logged in, none protected | `Workers spend the cheapest good-enough plan. Protect <provider> so your main sessions keep their limit: 3, then p.` | `protected_providers_get` says configured (live fact). |
-| 5 | Work | protection configured, no worker ever started on the network | `Hand a task to a worker: tell any agent "do this with a worker", or press s.` | A worker exists or existed (`workers` with `--recent`, or a `worker.started` event in the feed). |
+| 5 | Work | protection configured, no worker ever started on the network | `Ask an agent to use a worker, or press n to start a new session.` | A worker exists or existed (`workers` with `--recent`, or a `worker.started` event in the feed). |
 | 6 | Tools | 2 or more machines, `tools_differences` lists at least one item | `Your machines differ in <n> skills or MCP servers. 5 fixes them from one screen.` | The owner applied a fix or accepted a difference on Tools (TUI action), or the count reaches 0 (live fact). |
 
 Notes on the choices:

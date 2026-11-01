@@ -35,8 +35,11 @@ func (s *Store) RecordWorkerRun(r protocol.WorkerRun) error {
 	if r.Fix < 0 {
 		r.Fix = 0
 	}
-	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, caller, difficulty)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.Caller, r.Difficulty); err != nil {
+	if _, err := s.db.Exec(`INSERT INTO worker_runs (node_id, session_id, harness, model, outcome, started_at, ended_at, run_seconds, continue_count, fix_count, caller, difficulty, counters_known)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)`, r.NodeID, r.SessionID, r.Harness, r.Model, r.Outcome, r.StartedAt, r.EndedAt, r.RunSeconds, r.Continue, r.Fix, r.Caller, r.Difficulty); err != nil {
+		return err
+	}
+	if err := s.refreshQuality(); err != nil {
 		return err
 	}
 	// A clearly bad track record promotes a note on its own (decision 0022).

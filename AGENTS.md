@@ -8,13 +8,14 @@ Go 1.27 or newer. If `go` is not on your `PATH`, add it first.
 
 ```
 go build -o agent-net ./cmd/agent-net
-go vet ./... && go test -race ./...
+go vet ./... && scripts/test.sh -- -timeout 30m
 gofmt -l .                  # must print nothing
 sh -n install.sh            # syntax check of the installer
+bash -n scripts/test.sh
 plugins/pi/typecheck.sh     # type-check the Pi extension (needs Pi installed)
 ```
 
-CI runs `gofmt`, `go vet`, `go test -race` and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
+CI runs `gofmt`, `go vet`, `scripts/test.sh` for the daemon shards and other packages, and `sh -n install.sh`. All must pass. Tests use localhost only. No test may sleep for more than 2 seconds: use a polling helper with a timeout.
 
 ## Layout
 

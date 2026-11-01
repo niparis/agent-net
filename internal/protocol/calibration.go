@@ -74,6 +74,7 @@ type CalibrationCaller struct {
 // Calibration is the read-only table: one entry per caller, plus the network
 // offsets learned from strong callers.
 type Calibration struct {
+	Quality QualityAnalysis     `json:"quality"`
 	Callers []CalibrationCaller `json:"callers,omitempty"`
 	Network []CalibrationLevel  `json:"network,omitempty"`
 	// Ratings is how many satisfaction ratings each model has (part 4). It is

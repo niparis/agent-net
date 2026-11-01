@@ -10,6 +10,8 @@ import (
 
 // WorkerModelCandidate is one model available on an installed harness.
 type WorkerModelCandidate struct {
+	// QualityWeight is supplied only when owner quality weighting is enabled.
+	QualityWeight float64
 	Name          string
 	Harness       string
 	Model         string
@@ -280,6 +282,9 @@ func workerRotationWeight(c WorkerModelCandidate, score, weakestAdequate, room f
 		weight *= 0.5
 	} else if c.Succeeded {
 		weight *= 1.2
+	}
+	if c.QualityWeight > 0 {
+		weight *= math.Max(.5, math.Min(1.5, c.QualityWeight))
 	}
 	return weight
 }

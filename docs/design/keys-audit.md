@@ -39,7 +39,7 @@ smaller map that follows that rule. Changes are marked **small**, **medium** or
 | `m` | Compose a message to the selected session. |
 | `n` | Start a new session in the selected session's project. On the Graph card, open the same form filled from the node. |
 | `c` | Hand over the selected row to the CTO: a preview first, then Enter sends it. |
-| `s` | Start a worker form. On an outcome row, "let stand". |
+| `s` | On an outcome row, "let stand". No action on a session row. |
 | `o` | Toggle offline sessions. On an outcome row, "overrule". |
 | `x` | Stop the selected worker. |
 | `h` | Hide or unhide the selected session. |
@@ -90,7 +90,7 @@ session. The extra actions apply only when such a row is selected.
 | `e` | Show or hide system events. |
 | `l` | Cycle the event filter. |
 | `pgup`/`pgdown`, `home`/`g`, `end` | Move or page the conversation list. |
-| `m`, `s`, `x`, `t`, `p`, `I`, `N`, `L`, `M`, `d`, `/`, `o`, `a`, `r`, `?`, `tab`, `q` | Same as Sessions, except that `e` is events, not enter. |
+| `m`, `x`, `t`, `p`, `I`, `N`, `L`, `M`, `d`, `/`, `o`, `a`, `r`, `?`, `tab`, `q` | Same as Sessions, except that `e` is events, not enter. |
 
 ### Message body overlay
 
@@ -241,8 +241,7 @@ the scrolling card body, so it never needs a second screen.
 | Form | Keys |
 |---|---|
 | Compose message | Text input, `enter` sends, `esc` cancels. |
-| Start worker | `tab` completes or moves to the next field, `shift+tab`/`up` previous, `down` next, `enter` next field or starts on the task field, `esc` cancels, text input. |
-| New session | `tab` or `down` next field, `shift+tab`/`up` previous, `left`/`right` change Folder between `project folder` and `new worktree`, `enter` next field or starts on First message, `esc` cancels, text input. The Branch field is shown only for a new worktree. The Project field also takes a path. |
+| New session | `tab` completes a known project name, else next field; `down` next field; `shift+tab`/`up` previous; `left`/`right` change the focused switch (Harness, Model or Folder), and move the cursor in Project, Branch and First message; `enter` next field or starts on First message; `esc` cancels. Harness is a switch over the harnesses the target machine reports, in the order claude, codex, opencode, pi. Model follows the harness: `default` is first, then that harness's models on the target machine, and a harness change resets Model. The Branch field is shown only for a new worktree. The Project field also takes a path. Key line: `up/down field · left/right change · enter start · esc cancel`. |
 | Create folder, Claude trust | The New session form's extra questions on the result line: `enter` or `y` says yes, `esc` or `n` says no, hint `enter: yes · esc: no`. |
 | Stop worker | `y`/`Y` stops, `n`/`N`/`esc` cancels. |
 | Protect quota | `y` confirms, `n`/`esc` cancels. |
@@ -282,7 +281,7 @@ only supplies ctrl+] to come back.
 | `[` `]` | Tools: switch screens. Graph: previous or next neighbour. Card: scroll the card body. | Screen switch, graph navigation and text scroll. |
 | `a` | Sessions: active only, accept a learned suggestion, accept a held request. Graph card: toggle autonomy. Tools All: turn on. Inbox: approve. | Same letter for "show active", "accept", "toggle a rule" and "turn on". |
 | `r` | Sessions: refresh, reject a learned suggestion, refuse a held request. Quotas, Graph card, Tools: refresh or rescan. Inbox: refuse. | Refresh and refuse are opposite actions. |
-| `s` | Sessions and Messages: start a worker. Outcome row: let stand. Quotas: show not set up. | Start, let stand and show. |
+| `s` | Sessions outcome row: let stand. Quotas: show not set up. Sessions and Messages: no action. | Let stand and show. |
 | `o` | Sessions: show offline, or overrule an outcome. Graph: orbit. | Filter, decision and layout. |
 | `u` | CTO: undo a graph change. Card: undo a learned change. Tools All: turn off. Tools By project: explains where turn off lives. | Undo and turn off are close, but the By project case is a dead end. |
 | `U` | Card: next learned change. | Only one meaning, but easy to confuse with `u`. |
@@ -313,7 +312,6 @@ only supplies ctrl+] to come back.
 | Previous or next | `[`/`]`, `left`/`right`, `up`/`down`, `j`/`k`, `tab` | Tools screens, Graph neighbours, list rows, form fields. |
 | Accept or refuse | `a`/`r`, `y`/`n`, `a`/`u`, `space`/`x` | Inbox, learned, held requests, confirms, Tools, picker. |
 | Show or hide | `h`/`H`, `w`, `e`, `t`, `o`, `a`, `z` | Sessions, Messages, Graph. |
-| Start a worker | `s` | Sessions and Messages only. |
 | Refresh | `r` | Sessions, Quotas, Graph card, Tools. |
 | Scroll text | `pgup`/`pgdown`, `ctrl+u`/`ctrl+d`, `j`/`k`, arrows | CTO, help, body, card charter, plans. |
 
@@ -339,7 +337,7 @@ Rules:
    - `x` stop or close. Accept on Tools moves to `a`.
    - `u` undo or turn off.
    - `m` message or compose. Machine choice moves to `v`.
-   - `s` start a worker. "Let stand" moves to `S`; show not set up moves to `V`.
+   - `s` has no action on Sessions or Messages. It remains "let stand" on an outcome row and show not set up in Quotas.
    - `o` offline filter. Overrule moves to `O`; orbit stays `o` only on Graph.
    - `h`/`H` hide and show hidden. Panning and column movement stop using them.
    - `[`/`]` switch screens or tabs. Graph neighbours move to `,`/`.`; charter
@@ -363,7 +361,7 @@ Rules:
 | 7 | Tools: accept a difference with `a`, not `x`. Keep `.` for accepted. | Small | `a` is accept everywhere; `x` is stop or close. |
 | 8 | Refresh moves from `r` to `R` on Sessions, Messages, Quotas, Graph card and Tools. `r` becomes refuse or reject. | Large | `r` currently means refresh and refuse on the same Sessions screen. This is the biggest change and needs the owner's approval. |
 | 9 | Sessions: move active-only from `a` to `A`. `a` stays accept or approve. | Small | `a` then means accept everywhere. `A` is free on Sessions. |
-| 10 | Sessions: move "let stand" from `s` to `S`; Quotas: move show not set up from `s` to `V`. `s` stays start only. | Small | One word, one letter. |
+| 10 | Keep `s` for "let stand" on an outcome row and show not set up in Quotas. It does nothing on a session row. | None | Preserve the two existing actions. |
 | 11 | Sessions: move "overrule" from `o` to `O`; keep `o` for offline. Graph orbit keeps `o`, which is a layout action on a graph, not a list action. | Small | Ends the two meanings of `o` on Sessions. |
 | 12 | Tools: move machine choice from `m` to `v`; keep `m` for message and compose. | Medium | `m` then means message everywhere. |
 | 13 | Body overlay: close on `esc` and Enter only; remove `m` and `backspace` as close keys. | Small | `m` is message; backspace is text editing. |

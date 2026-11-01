@@ -29,6 +29,28 @@ func scoreArguments(args []string) (string, *protocol.ScoreSetRequest, error) {
 	return "", nil, usage
 }
 func cmdScores(ctx context.Context, args []string) error {
+	if len(args) > 0 && args[0] == "quality" {
+		method := protocol.OpQualityGet
+		var change *protocol.QualitySettings
+		if len(args) == 2 && (args[1] == "on" || args[1] == "off") {
+			method = protocol.OpQualitySet
+			change = &protocol.QualitySettings{Enabled: args[1] == "on"}
+		} else if len(args) != 1 {
+			return errors.New("usage: agent-net scores quality [on|off]")
+		}
+		cl, err := dialCLI(ctx)
+		if err != nil {
+			return err
+		}
+		defer cl.Close()
+		raw, err := cl.Call(ctx, method, change)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(raw))
+		return nil
+	}
+
 	if len(args) > 0 && args[0] == "providers" {
 		return cmdWorkerProviders(ctx, args[1:])
 	}

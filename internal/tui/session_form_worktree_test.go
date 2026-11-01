@@ -99,7 +99,13 @@ func TestNewSessionBusyFolderDefaultsToWorktree(t *testing.T) {
 		}
 	}
 
-	// Left sets it back to the project folder, and the plan follows.
+	// Left on the focused Folder sets it back to the project folder, and the
+	// plan follows. Left elsewhere in the form does not change the folder.
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp}) // First message -> Branch
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyUp}) // Branch -> Folder
+	if m.sform.cur != sFolder {
+		t.Fatalf("focus %v, want Folder", m.sform.cur)
+	}
 	m, _ = press(m, tea.KeyMsg{Type: tea.KeyLeft})
 	if m.sform.folder != protocol.FolderProject {
 		t.Fatalf("left did not return to the project folder: %q", m.sform.folder)
@@ -107,6 +113,7 @@ func TestNewSessionBusyFolderDefaultsToWorktree(t *testing.T) {
 	if v := m.View(); strings.Contains(v, "agent-net/tenebrae-1") {
 		t.Errorf("the project-folder form still shows the branch line:\n%s", v)
 	}
+	m, _ = press(m, tea.KeyMsg{Type: tea.KeyEnter}) // Folder -> First message
 	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("enter gave no command")

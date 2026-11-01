@@ -72,6 +72,7 @@ func (g *Gateway) handleScoresSet(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = g.store.db.Exec(`INSERT INTO owner_settings (key,value,updated_at) VALUES (?,?,?) ON CONFLICT (key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at`, scoresKey, string(raw), g.store.now().UnixNano())
 	if err == nil {
+		err = g.store.refreshQuality()
 		g.store.Event("scores.set", node, "", "", "")
 	}
 	writeJSON(w, out, err)

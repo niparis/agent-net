@@ -31,6 +31,10 @@ func reject(format string, args ...any) error { return Rejection(fmt.Sprintf(for
 
 // Store is the gateway's SQLite database.
 type Store struct {
+	qualityMu         sync.Mutex
+	quality           protocol.QualityAnalysis
+	qualityFit        qualityFit
+	qualityStrong     map[string]int
 	reminderMu        sync.Mutex
 	reminderOffline   map[string]bool
 	checkMu           sync.Mutex
@@ -383,6 +387,11 @@ CREATE TABLE IF NOT EXISTS worker_rate_offers (
   at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS worker_rate_offers_caller ON worker_rate_offers (caller, at);
 `, `
+-- Whether the rework counters were live for a run (difficulty calibration,
+-- parts 1 and 2). Runs recorded before the counters shipped read 0, which is
+-- not the same as no rework, so they stay out of the medians.
+SELECT 1 /* worker run counters known */;
+`, `
 -- Defects reported after a worker's hand-back (difficulty calibration). One
 -- row per report, so a worker session may have several. Each row counts as one
 -- fix on that task in the medians. The note is the caller's one line, never
@@ -423,6 +432,10 @@ func OpenStore(path string) (*Store, error) {
 	}
 	// Fix files that an older version made with the default mode.
 	if err := dbfile.Secure(path); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.refreshQuality(); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -530,6 +543,21 @@ func (s *Store) migrate() error {
 					difficulty = "normal"
 				}
 				if _, err := tx.Exec(`UPDATE worker_runs SET caller = ?, difficulty = ? WHERE session_id = ? AND caller = ''`, f.caller, difficulty, id); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker run counters known") {
+			var has int
+			if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = 'counters_known'`).Scan(&has); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			if has == 0 {
+				// Rows that already exist were recorded before the counters
+				// shipped, so they keep the default 0: unknown.
+				if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN counters_known INTEGER NOT NULL DEFAULT 0`); err != nil {
 					tx.Rollback()
 					return fmt.Errorf("migration %d: %w", i+1, err)
 				}

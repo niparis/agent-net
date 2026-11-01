@@ -141,8 +141,13 @@ type worker struct {
 	idleNoticeSent, idleNoticePending        bool
 	idleNoticeGeneration                     uint64
 	idleNoticeReport, idleNoticeKey          string
-	dir                                      string
-	logPath                                  string
+	// idleFollowUp is true when the owner's message starts a turn on a worker
+	// that went idle without a hand-back. The OpenCode router clears the idle
+	// notice before noteAsk runs, so noteAsk reads this to count the follow-up
+	// as a continue.
+	idleFollowUp bool
+	dir          string
+	logPath      string
 	// Worktree isolation (W13).
 	mainPath, worktree, branch, base string
 	// taskMsg is the last request from the owner; doneStatus the status of the
@@ -269,6 +274,10 @@ func (d *Daemon) workerInfo(w *worker) *protocol.WorkerInfo {
 // worker is still working (checkWorkers uses it for the idle limit).
 func (d *Daemon) noteWorkerUsage(w *worker, st workerStats) (grew bool) {
 	d.wmu.Lock()
+	st = lastWorkerContext(w, st)
+	// A missing read must not reset activity tracking either: recovering the
+	// same total on the next tick is not new work.
+	st.TotalTokens = max(w.totalTokens, st.TotalTokens)
 	if w.contextTokens == st.ContextTokens && w.contextLimit == st.ContextLimit && w.totalTokens == st.TotalTokens {
 		d.wmu.Unlock()
 		return false

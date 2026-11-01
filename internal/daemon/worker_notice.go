@@ -347,18 +347,30 @@ type workerStats struct {
 	TotalTokens int64
 }
 
-// workerStats asks the launcher, with a short time limit. It is empty when the
-// harness cannot say (or the worker was adopted after a restart).
+// workerStats asks the launcher, with a short time limit. When the harness
+// cannot say, it keeps the last complete context pair for notices and views.
 func (d *Daemon) workerStats(w *worker) workerStats {
-	ln, ok := d.launchers[w.harness].(interface {
+	var st workerStats
+	if ln, ok := d.launchers[w.harness].(interface {
 		stats(ctx context.Context, d *Daemon, w *worker) workerStats
-	})
-	if !ok {
-		return workerStats{}
+	}); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		st = ln.stats(ctx, d, w)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	return ln.stats(ctx, d, w)
+	d.wmu.Lock()
+	defer d.wmu.Unlock()
+	return lastWorkerContext(w, st)
+}
+
+// lastWorkerContext keeps the last complete context pair through failed reads
+// and turns that have not reported usage yet. A real value may be lower after
+// compaction, so this is not a high-water mark. The caller holds d.wmu.
+func lastWorkerContext(w *worker, st workerStats) workerStats {
+	if st.ContextTokens <= 0 || st.ContextLimit <= 0 {
+		st.ContextTokens, st.ContextLimit = w.contextTokens, w.contextLimit
+	}
+	return st
 }
 
 // tokenText formats token counts, or "" when there are none.
@@ -590,7 +602,9 @@ func (d *Daemon) handbackToNote(ctx context.Context, w *worker, req protocol.Wor
 // noteAsk records a message from a worker's owner and counts a follow-up after
 // a hand-back. A hand-back answers the last request; messages from the owner
 // after it are continues when it said complete:no, and fixes when it said
-// complete:yes. Only the owner counts: a notice, or another session, does not.
+// complete:yes. A worker that went idle without a hand-back counts a continue
+// too: its follow-up is the owner telling it to carry on. Only the owner
+// counts: a notice, or another session, does not.
 func (d *Daemon) noteAsk(m protocol.Message) {
 	w := d.workerBySession(m.To)
 	if w == nil || m.From != w.owner {
@@ -602,16 +616,20 @@ func (d *Daemon) noteAsk(m protocol.Message) {
 	}
 	d.wmu.Lock()
 	counted := false
-	if w.pendingHandback {
+	if w.pendingHandback || w.idleNoticeSent || w.idleFollowUp {
 		// Every message from the owner after a hand-back counts until the
-		// worker hands back again. A notice or another session does not.
-		if w.pendingPartial {
-			w.continueCount++
-			w.continueRun++
-		} else {
+		// worker hands back again. An idle notice with no hand-back is the
+		// same signal: the worker stopped early without saying so, so the
+		// owner's follow-up is a continue. A notice or another session does
+		// not count.
+		if w.pendingHandback && !w.pendingPartial {
 			w.fixCount++
 			w.fixRun++
+		} else {
+			w.continueCount++
+			w.continueRun++
 		}
+		w.idleFollowUp = false
 		counted = true
 	}
 	var updated *protocol.WorkerInfo
@@ -750,6 +768,7 @@ func (d *Daemon) queueOpenCodeTurn(w *worker, m protocol.Message) (queued, retry
 		return false, false
 	}
 	if !w.turnActive {
+		w.idleFollowUp = w.idleNoticeSent && m.From == w.owner
 		w.idleNoticeSince = time.Time{}
 		w.idleNoticeSent = false
 		w.idleNoticePending = false

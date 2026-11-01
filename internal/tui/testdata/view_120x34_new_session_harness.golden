@@ -4,16 +4,16 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-  Project    tenebrae   on Mac
-  Harness       automatic choice
-> Model      anthropic/
-  Difficulty
-  Task
-  permissions: sandboxed (writes only in its worktree, network on) (enforced for Codex only for now)
+New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Project        strategies                      on Mac, /Users/n/code/strategies
+> Harness        ◂ claude ▸
+  Model          ◂ default ▸
+  Folder         ◂ project folder ▸              no other session here
+  First message
+                 empty: start it and enter it
+                 text: start it in the background and send this
 
-  anthropic/claude-haiku-4-5
-  anthropic/claude-sonnet-5
+
 
 
 
@@ -31,4 +31,4 @@ Start a worker ─────────────────────�
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab or up/down: field  enter: next or start  esc cancels
+up/down field · left/right change · enter start · esc cancel

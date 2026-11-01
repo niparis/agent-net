@@ -7,8 +7,8 @@
 New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
   Project        ~/code/garden-planner           on Mac
                  ! new folder: it will be created with git init
-  Harness        pi
-  Model          default
+  Harness        ◂ pi ▸
+  Model          ◂ default ▸
   Folder         ◂ project folder ▸              a new folder has one tree
 > First message
                  empty: start it and enter it

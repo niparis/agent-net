@@ -102,7 +102,7 @@ func TestOnboardingTriggersAdvance(t *testing.T) {
 				snap.Agents[0].Charter.Purpose = "build"
 				msg = fetchedMsg{snap: snap}
 			case "work-worker":
-				msg = m.startCmd(protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "help"})()
+				msg = fetchedMsg{snap: m.snap, events: []protocol.FeedEvent{{Event: protocol.Event{ID: 1, Kind: "worker.started"}}}}
 			case "work-protect":
 				msg = actionMsg{onboarding: "work-protect"}
 			case "tools":

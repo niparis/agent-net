@@ -150,7 +150,6 @@ type Model struct {
 	compose        textinput.Model // the message prompt
 	composeTo      string          // session ID the message goes to
 	composeName    string
-	form           workerForm
 	sform          sessionForm
 	sessionPending *sessionAsk // the create or trust question of a start
 	confirmID      string      // session the stop question is about
@@ -1027,8 +1026,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeCompose:
 		return m.composeKey(k)
-	case modeForm:
-		return m.formKey(k)
 	case modeSessionForm:
 		return m.sessionFormKey(k)
 	case modeConfirm:
@@ -1317,7 +1314,6 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if cmd := m.resolveOutcome("let_stand"); cmd != nil {
 			return m, cmd
 		}
-		return m.startForm()
 	case "n":
 		if m.tab == sessionsTab {
 			return m.startSessionForm()

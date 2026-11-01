@@ -4,15 +4,15 @@
 │  ● build-vm   v0.4.0 cpu ? mem ? disk ?   no claude · no opencode                                                    │
 │  ○ old-box    v0.3.2 cpu ? mem ? disk ?                                                                              │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-Start a worker ─────────────────────────────────────────────────────────────────────────────────────────────────────────
-> Project    t
-  Harness       automatic choice
-  Model         automatic choice
-  Difficulty
-  Task
+New session ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Project        strategies                      on Mac, /Users/n/code/strategies
+  Harness        ◂ opencode ▸
+> Model          ◂ default ▸
+  Folder         ◂ project folder ▸              no other session here
+  First message
+                 empty: start it and enter it
+                 text: start it in the background and send this
 
-  strategies                                   registered on Mac
-  tenebrae                                     both on Mac
 
 
 
@@ -31,4 +31,4 @@ Start a worker ─────────────────────�
 │                                                                                                                      │
 │ enter: open the CTO · tab: back                                                                                      │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
-tab or up/down: field  enter: next or start  esc cancels
+up/down field · left/right change · enter start · esc cancel

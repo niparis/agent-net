@@ -203,6 +203,9 @@ func (s *Store) addRating(f protocol.RateFrame) (protocol.RateResult, error) {
 		return protocol.RateResult{Worker: worker, Score: f.Score,
 			Reason: "this worker already has a rating"}, nil
 	}
+	if err := s.refreshQuality(); err != nil {
+		return protocol.RateResult{}, err
+	}
 	return protocol.RateResult{Accepted: true, Worker: worker, Kind: protocol.RateKindRating, Score: f.Score,
 		Model: facts.model, Harness: facts.harness, Effort: facts.effort, Difficulty: facts.difficulty, At: at}, nil
 }
@@ -243,6 +246,9 @@ func (s *Store) addDefect(f protocol.RateFrame) (protocol.RateResult, error) {
 		(run_id, session_id, caller, rater_model, harness, model, effort, difficulty, note, at)
 		VALUES (?,?,?,?,?,?,?,?,?,?)`, facts.runID, worker, rater, raterModel, facts.harness,
 		facts.model, facts.effort, facts.difficulty, note, at); err != nil {
+		return out, err
+	}
+	if err := s.refreshQuality(); err != nil {
 		return out, err
 	}
 	out.Accepted, out.Model, out.Harness, out.Effort, out.Difficulty, out.At =
