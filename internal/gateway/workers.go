@@ -469,14 +469,7 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 			return none, err
 		}
 		if len(profiles) == 0 {
-			if p.RequireReadOnly {
-				return none, reject("no registered read-only workers")
-			}
-			if p.Harness == "" {
-				p.Harness = "opencode"
-			}
-			p.Model = ""
-			automaticNote = "no registered workers; add one with the CTO or agent_worker_profile_add"
+			return none, reject("no registered workers qualify for %s; register a profile for %s, or pass model explicitly", difficulty, difficulty)
 		} else {
 			tracks, err := g.store.TrackRecords(pick.NodeID, 0)
 			if err != nil {
@@ -607,6 +600,23 @@ func (g *Gateway) workerStart(ctx context.Context, nc *nodeConn, p protocol.Work
 		p.Model, modelNote, err = g.resolveWorkerModel(node, hi, p.Harness, p.Model, modelNote)
 		if err != nil {
 			return none, err
+		}
+	}
+	if !automatic {
+		scores, err := g.store.scores()
+		if err != nil {
+			return none, err
+		}
+		minimums, err := g.store.difficultyMinimums()
+		if err != nil {
+			return none, err
+		}
+		_, _, eligible, scored := protocol.WorkerCandidateFit(protocol.WorkerModelCandidate{Model: p.Model, DefaultEffort: hi.ModelDefaultEfforts[p.Model]}, difficultyUsed, scores, minimums)
+		if scored && !eligible {
+			if modelNote != "" {
+				modelNote += "; "
+			}
+			modelNote += "explicit model overrides the max-or-one-level-below eligibility rule"
 		}
 	}
 	if p.Model != "" && protocol.PayPerUseProvider(p.Harness, p.Model, quotas) {
@@ -1254,20 +1264,22 @@ func workerChoiceNote(level string, choice protocol.WorkerModelChoice, candidate
 		}
 	}
 	for _, c := range candidates {
-		score, ok := protocol.LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
-		if !ok || score.Score <= choice.Score {
-			continue
+		score, fit, eligible, ok := protocol.WorkerCandidateFit(c, level, scores, minimums)
+		if ok && eligible && score > choice.Score {
+			name := c.Name
+			if name == "" {
+				name = c.Model
+			}
+			note += "; " + name + " kept for harder work"
 		}
-		fit, _ := protocol.DifficultyFit(score.Score, level, minimums)
-		if fit != "good" && fit != "excellent" {
+		if !ok || eligible || fit != "good" && fit != "excellent" {
 			continue
 		}
 		name := c.Name
 		if name == "" {
-			name = c.Model
+			name = c.Harness + " " + c.Model
 		}
-		note += "; " + name + " kept for harder work"
-		break
+		note += "; " + name + " excluded: its max is " + protocol.WorkerMaximumLevel(score, minimums) + " (automatic picks may be at most one level below their max)"
 	}
 	return note
 }

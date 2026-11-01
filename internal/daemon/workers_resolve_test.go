@@ -22,7 +22,7 @@ func twoShops(t *testing.T) (w *workerNode, r1, r2 string, pi *localClient, piID
 
 func TestWorkerRegisteredFolderWinsOverSeenOnly(t *testing.T) {
 	w, r1, _, _, _ := twoShops(t)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if res.Path != r1 {
 		t.Errorf("the registered folder should win: %+v", res)
 	}
@@ -31,13 +31,13 @@ func TestWorkerRegisteredFolderWinsOverSeenOnly(t *testing.T) {
 func TestWorkerAmbiguityListsPathsAndHints(t *testing.T) {
 	w, r1, r2, _, _ := twoShops(t)
 	w.register(t, r2)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), r1) || !strings.Contains(err.Error(), r2) ||
 		!strings.Contains(err.Error(), "pass one of these paths as project") {
 		t.Errorf("two registered folders: %v", err)
 	}
 	// The hint works: the path picks one.
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: r2, Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: r2, Harness: "opencode", Task: "x"})
 	if res.Path != r2 {
 		t.Errorf("path as project: %+v", res)
 	}
@@ -49,7 +49,7 @@ func TestWorkerSeenOnlyFoldersStayAmbiguous(t *testing.T) {
 	r1, r2 := newRepo(t, "shop"), newRepo(t, "shop")
 	helloPi(t, w.node, "pi-1", r1, true)
 	helloPi(t, w.node, "pi-2", r2, true)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), "2 folders named") || !strings.Contains(err.Error(), r1) {
 		t.Errorf("two seen-only folders: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestWorkerSeenOnlyFoldersStayAmbiguous(t *testing.T) {
 // registered folder with the same name exists.
 func TestWorkerEmptyProjectUsesTheCallersFolderExactly(t *testing.T) {
 	_, _, r2, pi, piID := twoShops(t)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
 	if res.Path != r2 || res.Task == nil || res.Task.From != piID {
 		t.Errorf("worker for the caller's folder: %+v", res)
 	}
@@ -68,7 +68,7 @@ func TestWorkerEmptyProjectUsesTheCallersFolderExactly(t *testing.T) {
 func TestWorkerProjectAsPath(t *testing.T) {
 	w, _, r2, _, _ := twoShops(t)
 	// A seen-only folder by path.
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: r2, Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: r2, Harness: "opencode", Task: "x"})
 	if res.Path != r2 || res.Project != "shop" {
 		t.Errorf("seen folder by path: %+v", res)
 	}
@@ -76,12 +76,12 @@ func TestWorkerProjectAsPath(t *testing.T) {
 	wt := filepath.Join(filepath.Dir(r2), "shop-wt")
 	gitIn(t, r2, "worktree", "add", "-q", "-b", "wt", wt)
 	helloPi(t, w.node, "pi-wt", wt, true)
-	res = w.mustStart(t, protocol.WorkerStartRequest{Project: wt, Harness: "opencode", Task: "x"})
+	res = w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: wt, Harness: "opencode", Task: "x"})
 	if res.Path != r2 {
 		t.Errorf("worktree path: %+v", res)
 	}
 	// An unknown path says so.
-	_, err := w.start(protocol.WorkerStartRequest{Project: "/no/such/folder", Harness: "opencode", Task: "x"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "/no/such/folder", Harness: "opencode", Task: "x"})
 	if err == nil || !strings.Contains(err.Error(), "no known project at the path") {
 		t.Errorf("unknown path: %v", err)
 	}

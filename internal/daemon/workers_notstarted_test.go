@@ -18,7 +18,7 @@ func TestNotStartedByTheLocalOwnerIsAnEvent(t *testing.T) {
 	w := startWorkerNode(t, g, set, withLoad(fl))
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	r, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	r, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	if err != nil || r.Status != "queued" {
 		t.Fatalf("%+v %v", r, err)
 	}

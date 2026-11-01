@@ -162,7 +162,7 @@ func TestWorkerWorktreeWithoutChangesIsRemoved(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "say ok", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "say ok", Isolation: protocol.IsolationWorktree})
 	if _, err := os.Stat(res.Worktree); err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +211,7 @@ func TestWorkerTimedOutSendsANotice(t *testing.T) {
 	w2 := startWorkerNode(t, g2, set, nil)
 	repo2 := newRepo(t, "shop")
 	w2.register(t, repo2)
-	w2.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	w2.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	ageWorkers(w2, 2*time.Hour)
 	if n := w2.waitNotice(t, 1)[0]; !strings.Contains(n.Body, "status: timed out") || !strings.Contains(n.Body, "longest time allowed") {
 		t.Errorf("max age notice:\n%s", n.Body)
@@ -287,7 +287,7 @@ func TestWorkerCrashSendsANotice(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	rec := readFake(t, repo)
 	syscall.Kill(-rec.Pgid, syscall.SIGKILL)
 	w.workerStopped(t, g, protocol.StopExited)
@@ -303,7 +303,7 @@ func TestWorkerHandbackBlocked(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:handback FAKE:blocked need a password"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:handback FAKE:blocked need a password"})
 	if n := w.waitNotice(t, 1)[0]; !strings.Contains(n.Body, "status: blocked") {
 		t.Errorf("notice:\n%s", n.Body)
 	}
@@ -328,7 +328,7 @@ func TestWorkerIsolationIsChecked(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: "container"})
+	_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: "container"})
 	if err == nil || !strings.Contains(err.Error(), "isolation can be") {
 		t.Fatalf("isolation container: %v", err)
 	}
@@ -340,7 +340,7 @@ func TestWorkerIsolationIsChecked(t *testing.T) {
 	os.MkdirAll(empty, 0o755)
 	gitIn(t, empty, "init", "-q", "-b", "main")
 	w.register(t, empty)
-	_, err = w.start(protocol.WorkerStartRequest{Project: "plain", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
+	_, err = w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "plain", Harness: "opencode", Task: "x", Isolation: protocol.IsolationWorktree})
 	if err == nil || !strings.Contains(err.Error(), "cannot make a worktree") {
 		t.Fatalf("no commit: %v", err)
 	}
@@ -363,7 +363,7 @@ func TestWorkerIdleWithoutHandbackNotice(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:edit", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	n := w.waitNotice(t, 1)[0]
 	for _, want := range []string{"status: idle without hand-back", "run time:", "work.txt", "last assistant message", "finished without hand-back", protocol.ChecklistMarker} {
 		if !strings.Contains(n.Body, want) {
@@ -432,7 +432,7 @@ func TestCodexWorkerIdleNoticeAfterAutomaticHandbackFails(t *testing.T) {
 	w := startCodexNode(t, g, set)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:edit FAKE:hold-codex", Isolation: protocol.IsolationWorktree, AutoContinue: autoContinueOff()})
 	eventually(t, "codex turn held", func() bool { _, err := os.Stat(filepath.Join(res.Worktree, "fake-codex-held")); return err == nil })
 	worker := w.d.workerBySession(res.SessionID)
 	w.d.wmu.Lock()

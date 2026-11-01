@@ -471,7 +471,7 @@ func TestWorkerStopKillsAProcessThatIgnoresTerm(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	rec := readFake(t, repo)
 	w.cli.mustCall("worker_stop", protocol.WorkerStopRequest{Session: res.SessionID})
 	eventually(t, "killed", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
@@ -486,7 +486,7 @@ func TestWorkerEndsWhenIdle(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	rec := readFake(t, repo)
 	w.workerStopped(t, g, protocol.StopIdle)
 	eventually(t, "the process is gone", func() bool { return !alive(rec.Pid) && !alive(rec.ChildPid) })
@@ -500,7 +500,7 @@ func TestWorkerMessagesKeepItAlive(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	// Keep talking for longer than the idle time.
 	end := time.Now().Add(1500 * time.Millisecond)
 	for time.Now().Before(end) {
@@ -521,7 +521,7 @@ func TestBusyWorkerIsNotIdle(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	var native string
 	eventually(t, "the worker's session and task", func() bool {
 		rows, _ := w.d.st.workers()
@@ -587,7 +587,7 @@ func TestWorkerWithGrowingTokensIsNotIdle(t *testing.T) {
 	w := startPiNode(t, g, set)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Task: "x", Isolation: protocol.IsolationWorktree})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Task: "x", Isolation: protocol.IsolationWorktree})
 	var file string
 	eventually(t, "the worker's session and task", func() bool {
 		rows, _ := w.d.st.workers()
@@ -620,7 +620,7 @@ func TestWorkerEndsAtMaxAge(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	ageWorkers(w, 2*time.Hour)
 	w.workerStopped(t, g, protocol.StopMaxAge)
 }
@@ -645,7 +645,7 @@ func TestWorkerEndsWhenItsOwnerIsGone(t *testing.T) {
 	w.register(t, repo)
 	// The owner is an agent session (Pi) that starts the worker itself.
 	pi, piID := helloPi(t, w.node, "owner-pi", "/work/pi", true)
-	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
+	res := mustWorker(t, pi.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x", Isolation: protocol.IsolationNone}))
 	if res.Task == nil || res.Task.From != piID {
 		t.Fatalf("the task is not from the calling session: %+v", res.Task)
 	}
@@ -678,7 +678,7 @@ func TestWorkerLimitPerMachine(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}
+	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}
 	a := w.mustStart(t, req)
 	w.mustStart(t, req)
 	// At the hard cap a start is queued, not refused (decision 0018), and
@@ -710,7 +710,7 @@ func TestWorkerCannotStartWorkers(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	shop := newRepo(t, "shop")
 	w.register(t, shop)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	w.replyTo(t, w.ownerID(), res.Task.ID)
 	// The worker (the fake plugin) asks for another worker.
 	var sent protocol.MessageSent
@@ -728,7 +728,7 @@ func TestWorkerCannotStartWorkers(t *testing.T) {
 	// The gateway refuses it too, if a daemon let it through.
 	wk := w.workerSession(t, res.SessionID)
 	_, err := w.d.call(context.Background(), "worker.start", protocol.WorkerStartFrame{
-		WorkerStartRequest: protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}, Owner: wk})
+		WorkerStartRequest: protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}, Owner: wk})
 	if err == nil || !strings.Contains(err.Error(), "a worker cannot start workers") {
 		t.Fatalf("the gateway let a worker start a worker: %v", err)
 	}
@@ -767,7 +767,7 @@ func TestOwnerActionsRefuseACallerInsideAnAgent(t *testing.T) {
 		params any
 	}{
 		{"owner_send", protocol.OwnerSendRequest{To: "s_x", Body: "hi"}},
-		{"worker_start", protocol.WorkerStartRequest{Project: "p", Harness: "opencode", Task: "t"}},
+		{"worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "p", Harness: "opencode", Task: "t"}},
 		{"worker_stop", protocol.WorkerStopRequest{Session: "s_x"}},
 	} {
 		_, err := cli.call(c.method, c.params)
@@ -788,7 +788,7 @@ func TestOnlyTheWorkersProcessCanConnectAsItsSession(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	rec := readFake(t, repo)
 	// The user's own OpenCode service sees the session in the shared database
 	// and tries to register it: refused.
@@ -880,7 +880,7 @@ func TestWorkerStartFailures(t *testing.T) {
 			w := startWorkerNode(t, g, set, nil)
 			repo := newRepo(t, "shop")
 			w.register(t, repo)
-			_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+			_, err := w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("error %v, want %q", err, c.want)
 			}
@@ -925,13 +925,13 @@ func TestWorkerRefusals(t *testing.T) {
 		req  protocol.WorkerStartRequest
 		want string
 	}{
-		{"unknown project", protocol.WorkerStartRequest{Project: "nope", Harness: "opencode", Task: "x"}, `no project named "nope" is known`},
-		{"harness the machine has not", protocol.WorkerStartRequest{Project: "bare", Harness: "opencode", Task: "x"}, "opencode is not installed on"},
-		{"unsupported harness", protocol.WorkerStartRequest{Project: "shop", Harness: "gemini", Task: "x"}, "workers can run these harnesses: opencode, claude, pi, codex"},
+		{"unknown project", protocol.WorkerStartRequest{Model: "fake/m1", Project: "nope", Harness: "opencode", Task: "x"}, `no project named "nope" is known`},
+		{"harness the machine has not", protocol.WorkerStartRequest{Model: "fake/m1", Project: "bare", Harness: "opencode", Task: "x"}, "opencode is not installed on"},
+		{"unsupported harness", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "gemini", Task: "x"}, "workers can run these harnesses: opencode, claude, pi, codex"},
 		{"model not in the list", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "fake/zzz", Task: "x"}, `no opencode model matches "fake/zzz"`},
-		{"machine that refuses workers", protocol.WorkerStartRequest{Project: "private", Harness: "opencode", Task: "x"}, "does not accept workers (it was set up with --no-launch)"},
-		{"wrong machine named", protocol.WorkerStartRequest{Project: "shop", Machine: "elsewhere", Harness: "opencode", Task: "x"}, `no project named "shop" on machine "elsewhere"`},
-		{"no task", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode"}, "worker_start needs project, harness and task"},
+		{"machine that refuses workers", protocol.WorkerStartRequest{Model: "fake/m1", Project: "private", Harness: "opencode", Task: "x"}, "does not accept workers (it was set up with --no-launch)"},
+		{"wrong machine named", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Machine: "elsewhere", Harness: "opencode", Task: "x"}, `no project named "shop" on machine "elsewhere"`},
+		{"no task", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode"}, "worker_start needs project, harness and task"},
 	}
 	for _, c := range cases {
 		_, err := w.start(c.req)
@@ -984,7 +984,7 @@ func TestWorkerProjectOnTwoMachines(t *testing.T) {
 	ra, rb := newRepo(t, "shop"), newRepo(t, "shop")
 	a.register(t, ra)
 	b.register(t, rb)
-	req := protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}
+	req := protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}
 	_, err := a.start(req)
 	if err == nil || !strings.Contains(err.Error(), "is on several machines") {
 		t.Fatalf("ambiguous project: %v", err)
@@ -1021,7 +1021,7 @@ func TestAgentStopsOnlyItsOwnWorkers(t *testing.T) {
 	w.register(t, repo)
 	mine, mineID := helloPi(t, w.node, "pi-a", "/work/a", true)
 	other, _ := helloPi(t, w.node, "pi-b", "/work/b", true)
-	res := mustWorker(t, mine.mustCall("worker_start", protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"}))
+	res := mustWorker(t, mine.mustCall("worker_start", protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"}))
 	if res.Status == "starting" {
 		eventually(t, "the worker receives its task", func() bool {
 			for _, m := range w.messagesOf(t, mineID) {
@@ -1128,8 +1128,8 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	shop, other := newRepo(t, "shop"), newRepo(t, "other")
 	w.register(t, shop)
 	w.register(t, other)
-	live := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
-	dying := w.mustStart(t, protocol.WorkerStartRequest{Project: "other", Harness: "opencode", Task: "x"})
+	live := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
+	dying := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "other", Harness: "opencode", Task: "x"})
 	recLive, recDying := readFake(t, shop), readFake(t, other)
 	owner := w.ownerID()
 
@@ -1188,7 +1188,7 @@ func TestWorkersSurviveADaemonRestart(t *testing.T) {
 	}
 	// A worker lost at a restart is not the model's fault, even though the
 	// owner's notice says failed: the track record counts it as stopped.
-	if tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "", protocol.TrackRecordDays*24*time.Hour); err != nil ||
+	if tr, ok, err := g.gw.Store().TrackRecord(w.d.NodeID(), "opencode", "fake/m1", protocol.TrackRecordDays*24*time.Hour); err != nil ||
 		!ok || tr.Stopped != 1 || tr.Failed != 0 {
 		t.Errorf("a lost run was counted against the model: %+v %v %v", tr, ok, err)
 	}
@@ -1251,7 +1251,7 @@ func TestWorkersQueryTaskRecentAndOwner(t *testing.T) {
 		info: protocol.SessionInfo{Harness: "claude", NativeID: claudeID}, sessionID: owner}
 	w.d.mu.Unlock()
 
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "say ok\nand then more"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "say ok\nand then more"})
 	query := func(q protocol.WorkersQuery) []protocol.WorkerView {
 		t.Helper()
 		var r protocol.WorkersResult

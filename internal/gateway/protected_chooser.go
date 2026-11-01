@@ -25,17 +25,16 @@ func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level str
 	var ordinary, protected []protocol.WorkerModelCandidate
 	var skipped []string
 	for _, c := range candidates {
-		_, _, adequate, ok := protocol.WorkerCandidateFit(c, level, scores, minimums)
-		if !ok || !adequate {
-			continue
-		}
 		if isProtected(c.Harness, c.Model, setting) {
 			protected = append(protected, c)
 			name := c.Name
 			if name == "" {
 				name = c.Harness + " " + c.Model
 			}
-			skipped = append(skipped, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", name, protocol.ProfileProvider(c.Harness, c.Model)))
+			_, _, eligible, _ := protocol.WorkerCandidateFit(c, level, scores, minimums)
+			if eligible {
+				skipped = append(skipped, fmt.Sprintf("skipped %s: protected provider (%s), saved for your orchestrator", name, protocol.ProfileProvider(c.Harness, c.Model)))
+			}
 		} else {
 			ordinary = append(ordinary, c)
 		}
@@ -48,6 +47,11 @@ func chooseProtectedWorker(candidates []protocol.WorkerModelCandidate, level str
 	}
 	c, err := protocol.ChooseWorkerModel(protected, level, scores, minimums, quotas, running, rotation)
 	if err != nil {
+		// Report the full roster, including profiles excluded by level.
+		_, allErr := protocol.ChooseWorkerModel(candidates, level, scores, minimums, quotas, running, nil)
+		if allErr != nil {
+			err = allErr
+		}
 		return c, "", err
 	}
 	reason := setting.Reason

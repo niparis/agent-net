@@ -37,7 +37,7 @@ func TestWorkerRetriesPortCollision(t *testing.T) {
 			})
 			repo := newRepo(t, "shop")
 			w.register(t, repo)
-			_, err = w.start(protocol.WorkerStartRequest{Project: "shop", Harness: harness, Task: "say ok"})
+			_, err = w.start(protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: harness, Task: "say ok"})
 			if err != nil {
 				t.Fatal(err)
 			}

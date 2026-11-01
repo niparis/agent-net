@@ -115,7 +115,7 @@ const workerShareStartsForTest = 20
 
 // With today's scores and equal quota pace, over-qualification keeps the
 // weakest adequate model in front at trivial difficulty and saves the strong
-// models for harder work. Every adequate model still rotates.
+// models for harder work. Only eligible models rotate.
 func TestChooseWorkerModelOverQualificationPenalty(t *testing.T) {
 	candidates := []WorkerModelCandidate{
 		{Name: "luna", Harness: "codex", Model: "gpt-6-luna"},
@@ -290,7 +290,7 @@ func TestChooseWorkerModelRotationIsDeterministic(t *testing.T) {
 
 func TestChooseWorkerModelExhaustedNeverAppears(t *testing.T) {
 	candidates := []WorkerModelCandidate{{Name: "empty", Harness: "pi", Model: "empty", Provider: "a"}, {Name: "open", Harness: "pi", Model: "open", Provider: "b"}}
-	scores := []ModelScore{{Match: "empty", Score: 50}, {Match: "open", Score: 50}}
+	scores := []ModelScore{{Match: "empty", Score: 40}, {Match: "open", Score: 40}}
 	q := &Quotas{Providers: []QuotaProvider{{Provider: "a", Windows: []QuotaWindow{{Exhausted: true}}}}}
 	rotation := &WorkerRotation{}
 	for i := 0; i < 10; i++ {
@@ -338,6 +338,92 @@ func TestWorkerEffectiveDifficulty(t *testing.T) {
 		got, _ := WorkerEffectiveDifficulty(tc.level, tc.touches)
 		if got != tc.want {
 			t.Errorf("%s %v: got %s, want %s", tc.level, tc.touches, got, tc.want)
+		}
+	}
+}
+
+func TestWorkerCandidateMaximumLevelEligibility(t *testing.T) {
+	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
+	for _, tc := range []struct {
+		name  string
+		score float64
+		max   int
+	}{
+		{"luna", 23.3, 1}, {"deepseek", 32.5, 2}, {"terra", 38.1, 2},
+		{"sol", 46.1, 3}, {"terra-high", 42.3, 3}, {"terra-max", 51, 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := WorkerModelCandidate{Name: tc.name, Harness: "codex", Model: tc.name}
+			scores := []ModelScore{{Match: tc.name, Score: tc.score}}
+			for i, level := range levels {
+				_, _, eligible, ok := WorkerCandidateFit(c, level, scores, nil)
+				want := i == tc.max || i == tc.max-1
+				if !ok || eligible != want {
+					t.Errorf("%s: eligible=%v, want %v", level, eligible, want)
+				}
+				rotation := &WorkerRotation{}
+				for start := 0; start < 25; start++ {
+					_, err := ChooseWorkerModel([]WorkerModelCandidate{c}, level, scores, nil, nil, nil, rotation)
+					if (err == nil) != want {
+						t.Fatalf("%s start %d: %v", level, start, err)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestWorkerNoEligibleModelExplainsFix(t *testing.T) {
+	c := []WorkerModelCandidate{{Name: "terra max codex", Harness: "codex", Model: "terra-max"}, {Name: "unknown", Harness: "pi", Model: "unscored"}}
+	_, err := ChooseWorkerModel(c, "normal", []ModelScore{{Match: "terra-max", Score: 51}}, nil, nil, nil, nil)
+	if err == nil {
+		t.Fatal("over-qualified model was picked")
+	}
+	for _, want := range []string{"normal", "terra max codex", "very_complex", "unknown", "unscored", "register a profile", "model explicitly"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+func TestWorkerRotationExcludesModelsAboveMaximumGap(t *testing.T) {
+	candidates := []WorkerModelCandidate{}
+	scores := []ModelScore{}
+	for i, score := range []float64{23.3, 32.5, 38.1, 46.1, 42.3, 51} {
+		name := []string{"luna", "deepseek", "terra", "sol", "terra-high", "terra-max"}[i]
+		candidates = append(candidates, WorkerModelCandidate{Harness: "codex", Model: name})
+		scores = append(scores, ModelScore{Match: name, Score: score})
+	}
+	levels := []string{"trivial", "simple", "normal", "hard", "very_complex"}
+	for i, level := range levels {
+		rotation := &WorkerRotation{Levels: map[string]*WorkerRotationLevel{level: {Current: map[string]float64{WorkerModelKey(candidates[5]): 10000}}}}
+		for start := 0; start < 100; start++ {
+			choice, err := ChooseWorkerModel(candidates, level, scores, nil, nil, nil, rotation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			maxLevel := WorkerMaximumLevel(choice.Score, nil)
+			if maxLevel != level && (i+1 >= len(levels) || maxLevel != levels[i+1]) {
+				t.Fatalf("%s picked max %s", level, maxLevel)
+			}
+		}
+		if i < 3 && rotation.Levels[level].Current[WorkerModelKey(candidates[5])] != 0 {
+			t.Fatalf("excluded model carries rotation weight at %s", level)
+		}
+	}
+}
+
+func TestWorkerMaximumLevelUsesMinimumOverrides(t *testing.T) {
+	minimums := map[string]float64{"hard": 35, "very_complex": 60}
+	c := WorkerModelCandidate{Model: "terra"}
+	scores := []ModelScore{{Match: "terra", Score: 38.1}}
+	if max := WorkerMaximumLevel(38.1, minimums); max != "hard" {
+		t.Fatalf("max=%s", max)
+	}
+	for _, level := range []string{"simple", "normal", "hard"} {
+		_, _, eligible, _ := WorkerCandidateFit(c, level, scores, minimums)
+		if eligible != (level != "simple") {
+			t.Errorf("%s: eligible=%v", level, eligible)
 		}
 	}
 }

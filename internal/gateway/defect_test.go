@@ -283,7 +283,7 @@ func TestDefectsChangeNoChooserBehavior(t *testing.T) {
 		{Name: "a", Harness: "codex", Model: "a"},
 		{Name: "b", Harness: "codex", Model: "b"},
 	}
-	scores := []protocol.ModelScore{{Match: "a", Score: 50}, {Match: "b", Score: 50}}
+	scores := []protocol.ModelScore{{Match: "a", Score: 40}, {Match: "b", Score: 40}}
 	first := protocol.WorkerRotation{}
 	firstPick, err := protocol.ChooseWorkerModel(candidates, "normal", scores, nil, nil, nil, &first)
 	if err != nil {

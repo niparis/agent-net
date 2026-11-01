@@ -88,7 +88,8 @@ func (r *WorkerRotation) level(name string) *WorkerRotationLevel {
 
 // ChooseWorkerModel picks an adequate model by weighted rotation.
 //
-// A candidate must score at or above the difficulty minimum. Exhausted
+// A candidate must score at or above the difficulty minimum, and the task
+// must be its maximum level or exactly one level below it. Exhausted
 // windows and windows above 90 percent used are excluded. Unprotected
 // candidates come first, and candidates with a poor track record are used only
 // when no other adequate candidate remains. The rest rotate with a smooth
@@ -125,10 +126,15 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 	var reasons []string
 	for _, c := range candidates {
 		score, fit, isAdequate, ok := WorkerCandidateFit(c, level, scores, minimums)
+		name := c.Name
+		if name == "" {
+			name = c.Harness + " " + c.Model
+		}
 		if !ok {
+			reasons = append(reasons, name+" (max unknown: unscored)")
 			continue
 		}
-		reasons = append(reasons, fmt.Sprintf("%s %s (score %g, %s)", c.Harness, c.Model, score, fit))
+		reasons = append(reasons, fmt.Sprintf("%s (max %s, score %g, %s)", name, WorkerMaximumLevel(score, minimums), score, fit))
 		if !isAdequate {
 			continue
 		}
@@ -153,11 +159,12 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 		adequate = append(adequate, WorkerModelKey(c))
 	}
 	if len(eligible) == 0 {
-		if len(reasons) == 0 {
-			return WorkerModelChoice{}, fmt.Errorf("no scored models qualify for %s", level)
-		}
 		sort.Strings(reasons)
-		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s: %s", level, strings.Join(reasons, ", "))
+		roster := strings.Join(reasons, ", ")
+		if roster == "" {
+			roster = "none"
+		}
+		return WorkerModelChoice{}, fmt.Errorf("no model qualifies for %s under the max-or-one-level-below rule (or eligible providers are out of quota); registered profiles: %s; register a profile for %s, or pass model explicitly", level, roster, level)
 	}
 	lvl := state.level(level)
 	// Follow the roster: a model that left or lost its allowance no longer
@@ -237,15 +244,14 @@ func ChooseWorkerModel(candidates []WorkerModelCandidate, level string, scores [
 
 // workerOverQualificationScale is the score gap above the weakest adequate
 // candidate at which a model's rotation weight falls to 1/e. A small scale
-// makes over-qualification expensive: the strongest models get a small share
-// at easy difficulties instead of competing evenly with the weakest adequate
-// model, so they stay available for harder work.
+// reduces over-qualification among eligible candidates. Models more than one
+// level below their maximum are excluded before weights are calculated.
 const workerOverQualificationScale = 8.0
 
 // WorkerCandidateFit looks up a candidate's score and classifies it against a
 // difficulty. ok is false when the model has no score or the level is unknown;
-// adequate is true only for a good or excellent fit, which is a score at or
-// above the minimum. Callers that show or choose candidates share this rule.
+// adequate requires a good or excellent fit and a task at the model's maximum
+// level or exactly one below. Callers that show or choose share this rule.
 func WorkerCandidateFit(c WorkerModelCandidate, level string, scores []ModelScore, minimums map[string]float64) (score float64, fit string, adequate, ok bool) {
 	s, found := LookupModelScoreWithDefaultEffort(c.Model, c.DefaultEffort, scores)
 	if !found {
@@ -255,7 +261,33 @@ func WorkerCandidateFit(c WorkerModelCandidate, level string, scores []ModelScor
 	if err != nil {
 		return s.Score, "", false, false
 	}
-	return s.Score, fit, fit == "good" || fit == "excellent", true
+	if level == "" {
+		level = "normal"
+	}
+	maxLevel := WorkerMaximumLevel(s.Score, minimums)
+	eligible := false
+	for i, name := range workerDifficultyLevels {
+		if name == maxLevel {
+			eligible = level == name || i > 0 && level == workerDifficultyLevels[i-1]
+			break
+		}
+	}
+	return s.Score, fit, eligible && (fit == "good" || fit == "excellent"), true
+}
+
+var workerDifficultyLevels = []string{"trivial", "simple", "normal", "hard", "very_complex"}
+
+// WorkerMaximumLevel is the highest level whose minimum the score meets.
+// It returns "none" when the score meets no minimum.
+func WorkerMaximumLevel(score float64, minimums map[string]float64) string {
+	maxLevel := "none"
+	for _, level := range workerDifficultyLevels {
+		fit, _ := DifficultyFit(score, level, minimums)
+		if fit == "good" || fit == "excellent" {
+			maxLevel = level
+		}
+	}
+	return maxLevel
 }
 
 // workerRotationWeight turns quota room, over-qualification and track record

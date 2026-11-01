@@ -103,3 +103,40 @@ func TestModelFailuresAreRemembered24Hours(t *testing.T) {
 		t.Errorf("after 25 hours: %v", g)
 	}
 }
+
+// The automatic chooser reads run failures separately from model-call failures.
+// Neither those failures nor successes may affect another harness's weight.
+func TestWorkerChoiceMarksStayOnTheirHarness(t *testing.T) {
+	s, _ := newTestStore(t)
+	node, _, _ := s.CreateNode("worker", "linux")
+	model := "gpt-6.1-sol:medium"
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, Harness: "opencode", Model: model, Outcome: protocol.OutcomeFailed, EndedAt: s.now().Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordModelSuccess(node, "opencode", model); err != nil {
+		t.Fatal(err)
+	}
+	weights := map[string]float64{}
+	for _, harness := range []string{"opencode", "codex"} {
+		failures, err := s.RecentWorkerFailures(node, harness)
+		if err != nil {
+			t.Fatal(err)
+		}
+		successes, err := s.SucceededModels(node, harness)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := protocol.WorkerModelCandidate{Harness: harness, Model: model, Failed: failures[model], Succeeded: !successes[model].IsZero()}
+		if c.Failed != (harness == "opencode") || c.Succeeded != (harness == "opencode") {
+			t.Fatalf("marks leaked: %+v", c)
+		}
+		choice, err := protocol.ChooseWorkerModel([]protocol.WorkerModelCandidate{c}, "hard", nil, nil, nil, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		weights[harness] = choice.Weight
+	}
+	if weights["codex"] != 1 || weights["opencode"] != .5 {
+		t.Fatalf("weights: %v", weights)
+	}
+}

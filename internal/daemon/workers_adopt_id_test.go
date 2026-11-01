@@ -18,7 +18,7 @@ func TestAdoptedWorkerKeepsItsSessionID(t *testing.T) {
 	w := startWorkerNode(t, g, set, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "x"})
 	st := g.gw.Store()
 	ag, ok, _ := st.Agent(res.SessionID)
 	if !ok {
@@ -100,7 +100,7 @@ func TestAdoptedCodexKeepsItsSessionIDAfterRecordCleanup(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:slow"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:slow"})
 	readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 	w.d.Stop()
 	st := g.gw.Store()

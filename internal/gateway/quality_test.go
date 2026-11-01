@@ -168,7 +168,7 @@ func TestQualityChooserEnabledAndBounded(t *testing.T) {
 	if candidates[0].QualityWeight != 1.5 || candidates[1].QualityWeight != .5 {
 		t.Fatalf("weights: %+v", candidates)
 	}
-	scores := []protocol.ModelScore{{Match: "a", Score: 50}, {Match: "b", Score: 50}}
+	scores := []protocol.ModelScore{{Match: "a", Score: 40}, {Match: "b", Score: 40}}
 	rotation := &protocol.WorkerRotation{}
 	counts := map[string]int{}
 	for i := 0; i < 40; i++ {

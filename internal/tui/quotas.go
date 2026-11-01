@@ -315,7 +315,14 @@ func (f *workerForecastMemo) refresh(m Model, in workerForecastInputs) {
 	forecast := m.snap.WorkerRotation.Clone()
 	for i, level := range levels {
 		counts[i] = make([]int, len(in.rows))
-		shares[i] = protocol.WorkerRotationShares(level, in.candidates, &m.snap.WorkerRotation)
+		var eligible []protocol.WorkerModelCandidate
+		for _, c := range in.candidates {
+			_, _, fits, _ := protocol.WorkerCandidateFit(c, level, m.snap.Scores, m.snap.DifficultyMinimums)
+			if fits {
+				eligible = append(eligible, c)
+			}
+		}
+		shares[i] = protocol.WorkerRotationShares(level, eligible, &m.snap.WorkerRotation)
 		normal, protected := m.workerCandidateTiers(level, in.candidates)
 		for start := 0; start < workerShareStarts; start++ {
 			choice, err := protocol.ChooseWorkerModel(normal, level, m.snap.Scores, m.snap.DifficultyMinimums, in.quotas, in.running, &forecast)
@@ -373,7 +380,7 @@ func (m Model) workerCandidateTiers(level string, candidates []protocol.WorkerMo
 }
 
 // workerShareCell renders one profile's share of the next 20 starts. A model
-// below the difficulty minimum is a dim x; an eligible model with no share is
+// outside its eligible levels is a dim x; an eligible model with no share is
 // a dot.
 func workerShareCell(count int, eligible bool) string {
 	if !eligible {
@@ -487,14 +494,16 @@ func (m Model) quotaModelsView(w int) []string {
 			letter := "-"
 			eligible := false
 			if r.scored && !r.stale {
-				fit, _ := protocol.DifficultyFit(r.score.Score, level, m.snap.DifficultyMinimums)
+				_, fit, fits, _ := protocol.WorkerCandidateFit(protocol.WorkerModelCandidate{Model: r.model, DefaultEffort: r.defaultEffort}, level, m.snap.Scores, m.snap.DifficultyMinimums)
 				switch fit {
 				case "excellent":
-					letter = "E"
-					eligible = true
+					if fits {
+						letter = "E"
+					}
+					eligible = fits
 				case "good":
 					letter = "G"
-					eligible = true
+					eligible = fits
 				case "poor":
 					letter = "P"
 				}
@@ -563,7 +572,7 @@ func (m Model) quotaModelsView(w int) []string {
 			}
 		}
 	}
-	legend := "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min"
+	legend := "T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible"
 	body = append(body, sDim.Render(clip(legend, w-4)))
 	title := fmt.Sprintf("Workers · %d registered · %d running · scores: Artificial Analysis", len(rows), runningCount)
 	if len(m.snap.ProtectedProviders.Providers) > 0 {

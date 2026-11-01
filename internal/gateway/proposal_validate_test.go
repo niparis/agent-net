@@ -161,7 +161,7 @@ func TestCTOProposalValidationLeavesDatabaseUnchanged(t *testing.T) {
 		})
 	}
 	t.Run("automatic worker selection", func(t *testing.T) {
-		if _, err := st.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('model_scores',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, `[{"match":"model","score":100,"source":"owner"}]`); err != nil {
+		if _, err := st.db.Exec(`INSERT INTO owner_settings(key,value,updated_at) VALUES('model_scores',?,0) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, `[{"match":"model","score":23.3,"source":"owner"}]`); err != nil {
 			t.Fatal(err)
 		}
 		before := proposalSnapshot(t, st)

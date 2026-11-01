@@ -763,7 +763,7 @@ func fakeOCPluginOnce(client, sessionID, cwd string, location *atomic.Int64, pre
 			results[id] = ch
 			rmu.Unlock()
 			b, _ := json.Marshal(map[string]any{"id": id, "method": "worker_start",
-				"params": protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "child"}})
+				"params": protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "child"}})
 			wmu.Lock()
 			c.Write(append(b, '\n'))
 			wmu.Unlock()

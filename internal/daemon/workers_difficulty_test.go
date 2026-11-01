@@ -47,7 +47,7 @@ func TestWorkerAutomaticProfileResolvesProviderPerMachine(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	score := 80.0
+	score := 42.3
 	research.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "openai/gpt-6.1-terra", Score: &score})
 	research.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"codex"}})
 
@@ -76,7 +76,7 @@ func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
 	if err := g.gw.Store().AddWorkerProfile(protocol.WorkerProfile{Name: "terra pi", Harness: "opencode", Model: "fake/deleted", AddedBy: w.ownerID()}); err != nil {
 		t.Fatal(err)
 	}
-	score := 51.0
+	score := 42.3
 	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
 	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
 	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Harness: "opencode", Model: "fake/m1"})
@@ -95,15 +95,12 @@ func TestWorkerAutomaticSkipsStaleProfileWithReason(t *testing.T) {
 func TestWorkerUnscoredFallback(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	w := startWorkerNode(t, g, shortSet, nil)
-	repo := newRepo(t, "shop")
-	w.register(t, repo)
-	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "x"})
-	if err != nil || !strings.Contains(res.ModelNote, "no registered workers") {
-		t.Fatalf("fallback: %+v %v", res, err)
-	}
-	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Model: "auto", Difficulty: "hard", Task: "x"})
-	if err != nil || !strings.Contains(res.ModelNote, "no registered workers") {
-		t.Fatalf("difficulty: %+v %v", res, err)
+	w.register(t, newRepo(t, "shop"))
+	for _, level := range []string{"normal", "hard"} {
+		_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Difficulty: level, Task: "x"})
+		if err == nil || !strings.Contains(err.Error(), "no registered workers") || !strings.Contains(err.Error(), "model explicitly") {
+			t.Fatalf("empty roster at %s: %v", level, err)
+		}
 	}
 }
 
@@ -295,5 +292,30 @@ func TestWorkerTouchesDifficulty(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestWorkerStartMaximumLevelRule(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, shortSet, nil)
+	w.register(t, newRepo(t, "shop"))
+	w.cli.mustCall(protocol.OpWorkerProvidersSet, protocol.WorkerProviders{Providers: []string{"fake"}})
+	score := 51.0
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m1", Score: &score})
+	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "strong", Harness: "opencode", Model: "fake/m1"})
+	_, err := w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
+	if err == nil || !strings.Contains(err.Error(), "very_complex") || !strings.Contains(err.Error(), "model explicitly") {
+		t.Fatalf("missing actionable eligibility error: %v", err)
+	}
+	res, err := w.start(protocol.WorkerStartRequest{Project: "shop", Model: "fake/m1", Difficulty: "normal", Task: "x"})
+	if err != nil || res.Model != "fake/m1" || !strings.Contains(res.ModelNote, "explicit model overrides") {
+		t.Fatalf("explicit override: %+v %v", res, err)
+	}
+	score = 32.5
+	w.cli.mustCall(protocol.OpScoresSet, protocol.ScoreSetRequest{Model: "fake/m2", Score: &score})
+	w.cli.mustCall(protocol.OpWorkerProfileAdd, protocol.WorkerProfileRequest{Name: "adequate", Harness: "opencode", Model: "fake/m2"})
+	res, err = w.start(protocol.WorkerStartRequest{Project: "shop", Difficulty: "normal", Task: "x"})
+	if err != nil || res.Model != "fake/m2" || !strings.Contains(res.ModelNote, "strong excluded: its max is very_complex") || !strings.Contains(res.ModelNote, "one level") {
+		t.Fatalf("automatic exclusion: %+v %v", res, err)
 	}
 }

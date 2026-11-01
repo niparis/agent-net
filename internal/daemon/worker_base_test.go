@@ -35,7 +35,7 @@ func TestCodexWorkerStartsFromTheBaseBranch(t *testing.T) {
 	})
 	repo := repoWithFeature(t)
 	w.register(t, repo)
-	res, err := w.startDefault(protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok", Base: "agent-net/w_c2435587709e6f13"})
+	res, err := w.startDefault(protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "say ok", Base: "agent-net/w_c2435587709e6f13"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestQueuedStartKeepsItsBaseBranch(t *testing.T) {
 			repo := repoWithFeature(t)
 			w.register(t, repo)
 			pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
-			r := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: harness, Task: "say ok",
+			r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: harness, Task: "say ok",
 				Isolation: protocol.IsolationWorktree, Base: "agent-net/w_c2435587709e6f13"})
 			if r.Status != "queued" {
 				t.Fatalf("start: %+v", r)
@@ -123,7 +123,7 @@ func TestWorkerStopsBeforeRepoCleanup(t *testing.T) {
 		}
 	})
 	w.register(t, repo)
-	_, err := w.startDefault(protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	_, err := w.startDefault(protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "say ok"})
 	if err != nil {
 		t.Fatal(err)
 	}

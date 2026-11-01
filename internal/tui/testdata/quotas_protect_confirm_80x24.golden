@@ -8,7 +8,7 @@
 ╭─Workers · 1 registered · 0 running · scores: Artificial Analysis─────────────╮
 │ NAME            HARNESS  MODEL               T     S     N     H     V       │
 │ sonnet          claude   sonnet-4          x     x     x     x     x         │
-│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x below min       │
+│ T S N H V: share of next 20 · ░<25% ▒<50% ▓<75% █≥75% · 0% x ineligible      │
 ╰──────────────────────────────────────────────────────────────────────────────╯
 
 

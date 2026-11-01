@@ -16,7 +16,7 @@ func TestStoppedWorkerInAMergeIsLeftAsIs(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "merge main", Isolation: protocol.IsolationWorktree})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "merge main", Isolation: protocol.IsolationWorktree})
 	if err := os.WriteFile(filepath.Join(repo, "main-only.txt"), []byte("main\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}

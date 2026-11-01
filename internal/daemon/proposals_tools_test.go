@@ -286,7 +286,7 @@ func TestCTOProposalQueuedStopDoesNotCancelUntilApproval(t *testing.T) {
 	w := startWorkerNode(t, g, queueSet, withLoad(fl))
 	w.register(t, newRepo(t, "shop"))
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
-	queued := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "test"})
+	queued := startFrom(t, pi, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "test"})
 	if queued.Status != "queued" {
 		t.Fatalf("not queued: %+v", queued)
 	}

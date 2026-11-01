@@ -75,7 +75,7 @@ func TestOpenCodeWorkerQueuedTurnAfterHandback(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	owner := w.ownerID()
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:wait-handback", Isolation: protocol.IsolationNone})
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-handback"}), &sent)
 	eventually(t, "second message delivered", func() bool { return w.d.st.isDelivered(sent.Message.ID) })
@@ -100,7 +100,7 @@ func TestPiWorkerCannotBeResumed(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree,
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree,
 		Task: "FAKE:wait-handback"})
 	// Hold the fake's hand-back until its record has been read. Otherwise the
 	// clean worktree, including the ignored record, can disappear first.
@@ -134,7 +134,7 @@ func TestQueuedWorkerResumeRefusalNotifiesSender(t *testing.T) {
 	w := startPiNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:handback say ok"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "openai/gpt-4.1-nano", Project: "shop", Harness: "pi", Isolation: protocol.IsolationWorktree, Task: "FAKE:handback say ok"})
 	w.waitNotice(t, 1)
 	eventually(t, "worker ended", func() bool { return w.d.workerCount() == 0 })
 	p := protocol.MsgSend{Sender: w.ownerID(), Recipient: res.SessionID, Body: "queued follow-up", IdempotencyKey: "k_queued"}
@@ -162,7 +162,7 @@ func TestNonOwnerCannotResumeAWorker(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:handback done"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:handback done"})
 	rec := readFake(t, repo)
 	w.waitNotice(t, 1)
 	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 && !alive(rec.Pid) })
@@ -308,7 +308,7 @@ func TestOpenCodeWorkerIdleAfterMissedEndEvent(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:missed-idle"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:missed-idle"})
 	eventually(t, "worker is busy", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "busy" })
 	if err := os.WriteFile(filepath.Join(repo, "fake-end-turn"), nil, 0600); err != nil {
 		t.Fatal(err)
@@ -321,7 +321,7 @@ func TestOpenCodeWorkerQueueAfterMissedEndEvent(t *testing.T) {
 	w := startWorkerNode(t, g, shortSet, nil)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "opencode", Task: "FAKE:missed-idle"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "fake/m1", Project: "shop", Harness: "opencode", Task: "FAKE:missed-idle"})
 	eventually(t, "worker is busy", func() bool { ls := w.d.sessionByID(res.SessionID); return ls != nil && w.d.infoOf(ls).Status == "busy" })
 	var sent protocol.MessageSent
 	mustJSON(t, w.cli.mustCall("owner_send", protocol.OwnerSendRequest{To: res.SessionID, Body: "FAKE:queued-missed-idle"}), &sent)

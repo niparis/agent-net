@@ -37,7 +37,7 @@ func TestWorkerRemainsActiveDuringBranchCleanup(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
 	defer os.WriteFile(release, nil, 0o600)
 	eventually(t, "branch cleanup", func() bool { _, err := os.Stat(marker); return err == nil })
 	if w.d.workerCount() != 1 {
@@ -80,7 +80,7 @@ func TestCodexWorkerPermissionLevels(t *testing.T) {
 			if tc.level != "" {
 				setWorkersLevel(t, w, repo, tc.level)
 			}
-			res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
+			res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
 			if res.Permissions != tc.want {
 				t.Errorf("the start result says permissions %q, want %q", res.Permissions, tc.want)
 			}
@@ -148,7 +148,7 @@ func TestCodexWorkerKeepsItsLevelOnResume(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	setWorkersLevel(t, w, repo, protocol.WorkersNoNetwork)
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
 	w.waitNotice(t, 1)
 	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 	// The owner changes the project's level meanwhile: a worker keeps its own.
@@ -189,7 +189,7 @@ func TestCodexWorkerTurnsOffTheAgentNetMCPServer(t *testing.T) {
 			}
 			repo := newRepo(t, "shop")
 			w.register(t, repo)
-			w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+			w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "say ok"})
 			rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Turns) == 1 })
 			joined := strings.Join(rec.Args, " ")
 			if got := strings.Contains(joined, "-c mcp_servers.agent-net.enabled=false"); got != tc.want {
@@ -224,7 +224,7 @@ func TestCodexApprovalStillDeclinedWithTheSandbox(t *testing.T) {
 	w := startCodexNode(t, g, shortSet)
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
-	w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "FAKE:approve x"})
+	w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "FAKE:approve x"})
 	rec := readCodex(t, repo, func(r fakeCodexRecord) bool { return len(r.Answers) == 1 })
 	if m, _ := rec.Answers[0].(map[string]any); m["decision"] != "decline" {
 		t.Errorf("answer: %v", rec.Answers[0])
@@ -260,7 +260,7 @@ func TestWorkersLevelGateAndScope(t *testing.T) {
 		t.Errorf("unknown level: %v", err)
 	}
 	// Nothing was stored by the refusals: the default holds.
-	res := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	res := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "say ok"})
 	if res.Permissions != protocol.WorkersSandboxed {
 		t.Errorf("level after refusals: %q", res.Permissions)
 	}
@@ -283,7 +283,7 @@ func TestQueuedCodexStartKeepsItsLevel(t *testing.T) {
 	w.register(t, repo)
 	setWorkersLevel(t, w, repo, protocol.WorkersNoNetwork)
 	pi, _ := helloPi(t, w.node, "caller", "/work/caller", true)
-	r := startFrom(t, pi, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Task: "say ok"})
+	r := startFrom(t, pi, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Task: "say ok"})
 	if r.Status != "queued" || r.Permissions != protocol.WorkersNoNetwork {
 		t.Fatalf("queued start: %+v", r)
 	}
@@ -304,7 +304,7 @@ func TestContinuedCodexWorkerKeepsTheOldLevel(t *testing.T) {
 	repo := newRepo(t, "shop")
 	w.register(t, repo)
 	setWorkersLevel(t, w, repo, protocol.WorkersNoNetwork)
-	old := w.mustStart(t, protocol.WorkerStartRequest{Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
+	old := w.mustStart(t, protocol.WorkerStartRequest{Model: "gpt-fake", Project: "shop", Harness: "codex", Isolation: protocol.IsolationWorktree, Task: "say ok"})
 	w.waitNotice(t, 1)
 	eventually(t, "the worker ends", func() bool { return w.d.workerCount() == 0 })
 	setWorkersLevel(t, w, repo, protocol.WorkersReadOnly)
