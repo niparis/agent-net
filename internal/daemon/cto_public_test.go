@@ -176,3 +176,53 @@ func TestCTOReadParity(t *testing.T) {
 		t.Fatalf("CTO borrowed owner authority: %q %v", id, err)
 	}
 }
+
+func TestCTOOutcomeCanary(t *testing.T) {
+	for _, status := range []string{"applied", "failed", "declined", "expired"} {
+		t.Run(status, func(t *testing.T) {
+			state, err := openState(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer state.close()
+			now := time.Now()
+			runner := proposalRunner{state: state, now: func() time.Time { return now }, validate: func(context.Context, proposalCall) error { return nil }, run: func(context.Context, proposalCall, string) (json.RawMessage, error) {
+				result := json.RawMessage(`{"files":["/private/TOOL_PLAN_PATH_CANARY"],"body":"MCP_RESULT_CANARY"}`)
+				if status == "failed" {
+					return result, fmt.Errorf("fixture failure")
+				}
+				return result, nil
+			}}
+			id, err := runner.propose(context.Background(), proposalCall{Tool: "mcp_call", Args: json.RawMessage(`{}`)}, "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch status {
+			case "expired":
+				now = now.Add(25 * time.Hour)
+			case "declined":
+				err = runner.decide(context.Background(), id, false)
+			default:
+				err = runner.decide(context.Background(), id, true)
+			}
+			if status == "failed" && err == nil || status != "failed" && err != nil {
+				t.Fatalf("decide: %v", err)
+			}
+			notes := 0
+			if err = runner.deliverNote(context.Background(), func(_ context.Context, note string) error {
+				notes++
+				if !strings.Contains(note, map[string]string{"applied": "approved and applied", "failed": "approved, failed", "declined": "declined", "expired": "expired"}[status]) {
+					t.Errorf("wrong note %q", note)
+				}
+				for _, marker := range []string{"TOOL_PLAN_PATH_CANARY", "MCP_RESULT_CANARY"} {
+					if strings.Contains(note, marker) {
+						t.Errorf("outcome leaked %s", marker)
+					}
+				}
+				return nil
+			}); err != nil || notes != 1 {
+				t.Fatalf("notes=%d err=%v", notes, err)
+			}
+		})
+	}
+}
