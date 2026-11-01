@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS inventory_scan (id INTEGER PRIMARY KEY CHECK(id=1), v
 CREATE TABLE IF NOT EXISTS session_activity (harness TEXT NOT NULL, native_id TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (harness, native_id));
 CREATE TABLE IF NOT EXISTS workers (
 	id TEXT PRIMARY KEY, harness TEXT NOT NULL, project TEXT NOT NULL, path TEXT NOT NULL,
-	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, native_id TEXT NOT NULL DEFAULT '',
+	model TEXT NOT NULL DEFAULT '', owner TEXT NOT NULL, owner_name TEXT NOT NULL DEFAULT '', native_id TEXT NOT NULL DEFAULT '',
 	session_id TEXT NOT NULL DEFAULT '', pid INTEGER NOT NULL, pgid INTEGER NOT NULL,
 	start_token TEXT NOT NULL, started_at INTEGER NOT NULL, last_active INTEGER NOT NULL,
 	ended_reason TEXT NOT NULL DEFAULT '',
@@ -139,6 +139,14 @@ CREATE TABLE IF NOT EXISTS workers (
 			return nil, err
 		}
 	}
+	var hasWorkerOwnerName int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('workers') WHERE name = 'owner_name'`).Scan(&hasWorkerOwnerName)
+	if hasWorkerOwnerName == 0 {
+		if _, err := db.Exec(`ALTER TABLE workers ADD COLUMN owner_name TEXT NOT NULL DEFAULT ''`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	// base and record_task keep a continued or based start in the queue. A
 	// queue table from an older version does not have them.
 	for _, col := range []string{"base", "record_task", "permissions", "difficulty_asked", "difficulty_used", "touches", "task_id"} {
@@ -174,6 +182,14 @@ CREATE TABLE IF NOT EXISTS workers (
 	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'auto_continue'`).Scan(&hasAutoContinue)
 	if hasAutoContinue == 0 {
 		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN auto_continue INTEGER NOT NULL DEFAULT 1`); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
+	var hasOwnerName int
+	db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_queue') WHERE name = 'owner_name'`).Scan(&hasOwnerName)
+	if hasOwnerName == 0 {
+		if _, err := db.Exec(`ALTER TABLE worker_queue ADD COLUMN owner_name TEXT NOT NULL DEFAULT ''`); err != nil {
 			db.Close()
 			return nil, err
 		}

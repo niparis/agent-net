@@ -97,14 +97,21 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		}
 	}
 	// Per worker settings, as a JSON string for --settings. They add to the
-	// settings of the user and the project and replace nothing in them.
+	// settings of the user and the project and replace nothing in them. The
+	// commit trailer settings are also in the process environment; the settings
+	// copy makes sure the worker's own shell commands see them too.
+	commitEnv := d.workerCommitEnv(w)
+	settingsEnv := map[string]string{
+		"AGENT_NET_SOCKET":          d.cfg.SocketPath,
+		"AGENT_NET_WORKER":          w.id,
+		"CLAUDE_CODE_DISABLE_MOUSE": "1",
+	}
+	for k, v := range commitEnv {
+		settingsEnv[k] = v
+	}
 	settings, _ := json.Marshal(map[string]any{
 		"crossSessionInbound": "accept",
-		"env": map[string]string{
-			"AGENT_NET_SOCKET":          d.cfg.SocketPath,
-			"AGENT_NET_WORKER":          w.id,
-			"CLAUDE_CODE_DISABLE_MOUSE": "1",
-		},
+		"env":                 settingsEnv,
 	})
 	// No flag that turns permission checks off (decision 0002, W6). The first
 	// prompt is not an argument: the task arrives as a normal message.
@@ -132,7 +139,7 @@ func (d *Daemon) startClaude(ctx context.Context, w *worker, resume string) erro
 		}
 	}()
 	launchedJob := ""
-	sf, err := d.launchClaudeBackground(ctx, bin, w.path, args, filepath.Join(dir, "worker.log"), resume, func(id string) {
+	sf, err := d.launchClaudeBackground(ctx, bin, w.path, args, filepath.Join(dir, "worker.log"), resume, commitEnv, func(id string) {
 		launchedJob = id
 		d.wmu.Lock()
 		w.ref = id
@@ -380,7 +387,7 @@ func claudeContextLimit(model string) int64 {
 // launchClaudeBackground is shared by workers and owner sessions. The caller
 // holds claudeStartMu until the session file is known, before discovery runs.
 // Worker settings, records and lifetime rules belong to the caller.
-func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, args []string, logPath, resume string, onJob func(string)) (claudeSessionFile, error) {
+func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, args []string, logPath, resume string, extraEnv map[string]string, onJob func(string)) (claudeSessionFile, error) {
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = path
 	env := os.Environ()
@@ -393,7 +400,19 @@ func (d *Daemon) launchClaudeBackground(ctx context.Context, bin, path string, a
 		}
 		env = filtered
 	}
-	cmd.Env = workerEnv(env, map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"})
+	set := map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}
+	for k, v := range extraEnv {
+		set[k] = v
+	}
+	filtered := env[:0]
+	for _, item := range env {
+		k, _, _ := strings.Cut(item, "=")
+		if (strings.HasPrefix(k, "GIT_CONFIG_") || strings.HasPrefix(k, "AGENT_NET_TRAILER_")) && len(extraEnv) > 0 {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	cmd.Env = workerEnv(filtered, set)
 	out, err := cmd.CombinedOutput()
 	if logPath != "" {
 		logf, lerr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)

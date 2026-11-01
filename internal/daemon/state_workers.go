@@ -12,11 +12,13 @@ import (
 // what starts its harness session again (resumable).
 type workerRow struct {
 	ID, Harness, Project, Path, Model, Owner string
-	NativeID, SessionID                      string
-	PID, PGID                                int
-	StartToken                               string
-	StartedAt, LastActive                    time.Time
-	EndedReason                              string
+	// OwnerName is the caller's display name, for the commit trailers.
+	OwnerName             string
+	NativeID, SessionID   string
+	PID, PGID             int
+	StartToken            string
+	StartedAt, LastActive time.Time
+	EndedReason           string
 	// Resumable is true for a worker that ended after a hand-back: a message
 	// from its owner starts its harness session again.
 	Resumable bool
@@ -62,13 +64,14 @@ type workerRow struct {
 }
 
 func (s *state) saveWorker(w workerRow) error {
-	_, err := s.db.Exec(`INSERT INTO workers (id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
+	_, err := s.db.Exec(`INSERT INTO workers (id, harness, project, path, model, owner, owner_name, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
 		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
 		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT (id) DO UPDATE SET native_id=excluded.native_id, session_id=excluded.session_id,
+		owner_name=excluded.owner_name,
 		path=excluded.path, pid=excluded.pid, pgid=excluded.pgid, start_token=excluded.start_token,
 		last_active=excluded.last_active, ended_reason=excluded.ended_reason, resumable=excluded.resumable,
 		reported=excluded.reported, task_msg=excluded.task_msg, task_text=excluded.task_text,
@@ -81,7 +84,7 @@ func (s *state) saveWorker(w workerRow) error {
 		auto_continue=excluded.auto_continue, auto_continue_count=excluded.auto_continue_count,
 		auto_continue_run=excluded.auto_continue_run, task_id=excluded.task_id, midrun_count=excluded.midrun_count,
 		midrun_run=excluded.midrun_run, notice_since_request=excluded.notice_since_request, midrun_seen=excluded.midrun_seen`,
-		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.NativeID, w.SessionID, w.PID, w.PGID,
+		w.ID, w.Harness, w.Project, w.Path, w.Model, w.Owner, w.OwnerName, w.NativeID, w.SessionID, w.PID, w.PGID,
 		w.StartToken, w.StartedAt.UnixNano(), w.LastActive.UnixNano(), w.EndedReason, boolInt(w.Resumable),
 		boolInt(w.Reported), w.MainPath, w.Worktree, w.Branch, w.Base, w.TaskMsg, w.TaskText, w.DoneStatus,
 		boolInt(w.DonePartial), w.Ref, w.TaskFull, w.Permissions,
@@ -99,7 +102,7 @@ func boolInt(b bool) int {
 }
 
 func (s *state) workers() ([]workerRow, error) {
-	rows, err := s.db.Query(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
+	rows, err := s.db.Query(`SELECT id, harness, project, path, model, owner, owner_name, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
 		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
@@ -114,7 +117,7 @@ func (s *state) workers() ([]workerRow, error) {
 		var w workerRow
 		var started, active int64
 		var resumable, reported, partial, pending, pendingPartial, autoContinue, notice, seen int
-		if err := rows.Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
+		if err := rows.Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.OwnerName, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
 			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
 			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed, &w.Touches,
@@ -137,13 +140,13 @@ func (s *state) workerBySession(sessionID string) (workerRow, bool, error) {
 	var w workerRow
 	var started, active int64
 	var resumable, reported, partial, pending, pendingPartial, autoContinue, notice, seen int
-	err := s.db.QueryRow(`SELECT id, harness, project, path, model, owner, native_id, session_id, pid, pgid,
+	err := s.db.QueryRow(`SELECT id, harness, project, path, model, owner, owner_name, native_id, session_id, pid, pgid,
 		start_token, started_at, last_active, ended_reason, resumable, reported, main_path, worktree, branch, base,
 		task_msg, task_text, done_status, done_partial, harness_ref, task_full, permissions,
 		continue_count, fix_count, continue_run, fix_run, pending_handback, pending_partial, difficulty_asked, difficulty_used, touches,
 		auto_continue, auto_continue_count, auto_continue_run, task_id, midrun_count, midrun_run, notice_since_request, midrun_seen
 		FROM workers WHERE session_id = ?`, sessionID).
-		Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.NativeID, &w.SessionID,
+		Scan(&w.ID, &w.Harness, &w.Project, &w.Path, &w.Model, &w.Owner, &w.OwnerName, &w.NativeID, &w.SessionID,
 			&w.PID, &w.PGID, &w.StartToken, &started, &active, &w.EndedReason, &resumable, &reported,
 			&w.MainPath, &w.Worktree, &w.Branch, &w.Base, &w.TaskMsg, &w.TaskText, &w.DoneStatus, &partial, &w.Ref, &w.TaskFull, &w.Permissions,
 			&w.Continue, &w.Fix, &w.ContinueRun, &w.FixRun, &pending, &pendingPartial, &w.DifficultyAsked, &w.DifficultyUsed, &w.Touches,

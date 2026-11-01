@@ -81,6 +81,12 @@ func gitOut(ctx context.Context, dir string, args ...string) (string, error) {
 }
 
 func gitOutWithContext(ctx context.Context, dir string, args ...string) (string, error) {
+	return gitOutWithEnv(ctx, dir, nil, args...)
+}
+
+// gitOutWithEnv is gitOut with extra environment entries for the command, such
+// as a worker's commit hook settings.
+func gitOutWithEnv(ctx context.Context, dir string, extra []string, args ...string) (string, error) {
 	path := worktreeGitPath()
 	git := "git"
 	for _, dir := range filepath.SplitList(path) {
@@ -91,7 +97,21 @@ func gitOutWithContext(ctx context.Context, dir string, args ...string) (string,
 		}
 	}
 	cmd := exec.CommandContext(ctx, git, append([]string{"-C", dir}, args...)...)
-	cmd.Env = append(os.Environ(), "PATH="+path, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	base := os.Environ()
+	if len(extra) > 0 {
+		// Extra entries replace inherited command-scope git config and worker
+		// trailer values, so an inherited set cannot win or leak in.
+		kept := base[:0]
+		for _, item := range base {
+			k, _, _ := strings.Cut(item, "=")
+			if strings.HasPrefix(k, "GIT_CONFIG_") || strings.HasPrefix(k, "AGENT_NET_TRAILER_") {
+				continue
+			}
+			kept = append(kept, item)
+		}
+		base = kept
+	}
+	cmd.Env = append(append(base, "PATH="+path, "GIT_TERMINAL_PROMPT=0", "LC_ALL=C"), extra...)
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
 	if err := cmd.Run(); err != nil {
@@ -268,7 +288,7 @@ func (d *Daemon) saveUnfinished(w *worker, reason string) bool {
 		args = append(args, "-c", "user.email=agent-net@localhost")
 	}
 	args = append(args, "commit", "-q", "--no-verify", "-m", unfinishedSubject(id, reason))
-	if _, err := gitOut(ctx, dir, args...); err != nil {
+	if _, err := gitOutWithEnv(ctx, dir, d.workerGitEnv(w, nil, nil), args...); err != nil {
 		d.Logf("worker %s: keep unfinished work: %v", id, err)
 		return false
 	}
@@ -738,7 +758,7 @@ func (d *Daemon) lostNotice(ctx context.Context, r workerRow) {
 	if r.DoneStatus != "" || r.SessionID == "" {
 		return
 	}
-	w := &worker{id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner,
+	w := &worker{id: r.ID, harness: r.Harness, project: r.Project, path: r.Path, model: r.Model, owner: r.Owner, ownerName: r.OwnerName,
 		sessionID: r.SessionID, startedAt: r.StartedAt, taskMsg: r.TaskMsg, mainPath: r.MainPath, worktree: r.Worktree,
 		branch: r.Branch, base: r.Base}
 	status, note := d.noticeFor(protocol.StopLost)

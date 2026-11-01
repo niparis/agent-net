@@ -296,6 +296,9 @@ type (
 		Harness         string `json:"harness"`
 		Model           string `json:"model,omitempty"`
 		Owner           string `json:"owner_session"`
+		// OwnerName is the name the gateway knows for the caller, for the
+		// worker's commit trailers. Empty when the record is gone.
+		OwnerName string `json:"owner_name,omitempty"`
 		// Permissions is the project's worker level ("" means sandboxed).
 		Permissions string `json:"permissions,omitempty"`
 		// Task is what the worker should do. The machine that starts it uses

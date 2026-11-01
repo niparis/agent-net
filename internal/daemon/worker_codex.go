@@ -260,7 +260,7 @@ func (d *Daemon) startCodex(ctx context.Context, w *worker) (*codexConn, error) 
 		if codexConfigDefinesAgentNet() {
 			args = append(args, "-c", "mcp_servers.agent-net.enabled=false")
 		}
-		if err := d.spawnWorker(w, bin, args, os.Environ()); err != nil {
+		if err := d.spawnWorker(w, bin, args, d.workerGitEnv(w, os.Environ(), nil)); err != nil {
 			return nil, err
 		}
 		d.wmu.Lock()
