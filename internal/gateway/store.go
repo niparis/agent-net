@@ -325,6 +325,11 @@ UPDATE sessions SET name = 'CTO ' || substr(id, 3) WHERE name = 'CTO' AND harnes
 -- The two rework counters of a worker run (difficulty calibration, part 1).
 SELECT 1 /* worker rework counters */;
 `, `
+-- The caller and the level it asked for on every run (difficulty
+-- calibration, part 2). Kept on the run because a worker session is cleaned
+-- a few hours after it starts.
+SELECT 1 /* worker calibration columns */;
+`, `
 -- The idle check keeps only the high-water mark of the last activity it
 -- covered, the small stopping counters, and the daily cap. Task content is
 -- never stored here.
@@ -415,6 +420,71 @@ func (s *Store) migrate() error {
 						tx.Rollback()
 						return fmt.Errorf("migration %d: %w", i+1, err)
 					}
+				}
+			}
+		}
+		if strings.Contains(migrations[i], "worker calibration columns") {
+			for _, col := range []struct{ name, spec string }{
+				{"caller", `caller TEXT NOT NULL DEFAULT ''`},
+				{"difficulty", `difficulty TEXT NOT NULL DEFAULT ''`},
+			} {
+				var has int
+				if err := tx.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('worker_runs') WHERE name = ?`, col.name).Scan(&has); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				if has == 0 {
+					if _, err := tx.Exec(`ALTER TABLE worker_runs ADD COLUMN ` + col.spec); err != nil {
+						tx.Rollback()
+						return fmt.Errorf("migration %d: %w", i+1, err)
+					}
+				}
+			}
+			if _, err := tx.Exec(`CREATE INDEX IF NOT EXISTS worker_runs_caller ON worker_runs (caller, difficulty, ended_at)`); err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			// Runs made before these columns existed can still be attributed
+			// while their worker session is kept (a few hours after a start).
+			rows, err := tx.Query(`SELECT id, worker FROM sessions WHERE worker <> ''`)
+			if err != nil {
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			type runFacts struct{ caller, asked, used string }
+			facts := map[string]runFacts{}
+			for rows.Next() {
+				var id, raw string
+				if err := rows.Scan(&id, &raw); err != nil {
+					rows.Close()
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
+				}
+				var w protocol.WorkerInfo
+				if json.Unmarshal([]byte(raw), &w) == nil {
+					facts[id] = runFacts{caller: w.Owner, asked: w.DifficultyAsked, used: w.DifficultyUsed}
+				}
+			}
+			if err := rows.Err(); err != nil {
+				rows.Close()
+				tx.Rollback()
+				return fmt.Errorf("migration %d: %w", i+1, err)
+			}
+			rows.Close()
+			for id, f := range facts {
+				if f.caller == "" {
+					continue
+				}
+				difficulty := f.asked
+				if difficulty == "" {
+					difficulty = f.used
+				}
+				if difficulty == "" {
+					difficulty = "normal"
+				}
+				if _, err := tx.Exec(`UPDATE worker_runs SET caller = ?, difficulty = ? WHERE session_id = ? AND caller = ''`, f.caller, difficulty, id); err != nil {
+					tx.Rollback()
+					return fmt.Errorf("migration %d: %w", i+1, err)
 				}
 			}
 		}
