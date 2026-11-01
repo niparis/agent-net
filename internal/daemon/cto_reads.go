@@ -130,7 +130,7 @@ func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessa
 			return nil, errors.New("bad project arguments")
 		}
 		if name == "graph" && q.View == "guide" {
-			return protocol.CharterGuideText(), nil
+			return protocol.CharterGuideText() + "\n\nEdges: depends goes from consumer to provider; governs from architect to component; deploys from deployer to app. Governance modes are advisor (advises), arbiter (arbitrates), and owner (decides). Request rules: normal delivers with ordinary peer guidance; auto delivers with peer trust; ask holds for the owner; never refuses.", nil
 		}
 		if name == "graph" && q.View != "" {
 			return nil, errors.New("unknown graph view")
@@ -348,11 +348,16 @@ func ctoOffsetPage[T any](items []T, limit, offset int) ctoList[T] {
 
 func ctoCut(s string, n int) string {
 	s = cleanLine(s)
-	r := []rune(s)
-	if len(r) > n {
-		return string(r[:n])
+	end, size := 0, 0
+	for i, r := range s {
+		encoded, _ := json.Marshal(string(r))
+		size += len(encoded) - 2
+		if size > n {
+			break
+		}
+		end = i + len(string(r))
 	}
-	return s
+	return s[:end]
 }
 
 type ctoSessionRow struct {

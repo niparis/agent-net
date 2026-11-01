@@ -25,6 +25,15 @@ func TestCTOSessionPage(t *testing.T) {
 		t.Fatalf("second: %+v", second)
 	}
 	b, _ := json.Marshal(first)
+	for i := range agents {
+		agents[i].Profile.Name = strings.Repeat("<", 80)
+		agents[i].Profile.Task = strings.Repeat("<", 200)
+		agents[i].Status = strings.Repeat("<", 40)
+	}
+	escaped, _ := json.Marshal(ctoSessionPage(agents, 0, 0))
+	if len(escaped) >= 3000 {
+		t.Fatalf("escaped page: %d bytes", len(escaped))
+	}
 	if len(b) >= 3000 {
 		t.Fatalf("page: %d bytes", len(b))
 	}
@@ -155,5 +164,19 @@ func TestCTOListCursorsAndParity(t *testing.T) {
 				t.Fatalf("second: %+v", second)
 			}
 		})
+	}
+}
+
+func TestCTOGraphGuideExplainsEdges(t *testing.T) {
+	var d Daemon
+	value, err := d.readCTOTool(context.Background(), "graph", json.RawMessage(`{"view":"guide"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	guide := value.(string)
+	for _, term := range []string{"depends", "governs", "deploys", "advisor", "arbiter", "owner", "normal", "auto", "ask", "never"} {
+		if !strings.Contains(guide, term) {
+			t.Errorf("guide missing %s", term)
+		}
 	}
 }
