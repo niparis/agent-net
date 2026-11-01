@@ -1007,7 +1007,7 @@ func (g *Gateway) handle(ctx context.Context, nc *nodeConn, typ string, raw []by
 		}
 		return st.CTOGraphClass(q.Tool, q.Args)
 	case "cto.capabilities":
-		return map[string]bool{"attribution": true, "network_session": true}, nil
+		return map[string]bool{"attribution": true, "network_session": true, "graph_authority": true}, nil
 	case "graph.get":
 		p, err := decode[protocol.QueryGraph](raw)
 		if err != nil {
@@ -1586,8 +1586,8 @@ func graphActor(raw json.RawMessage) string {
 	var p struct {
 		By string `json:"by"`
 	}
-	if json.Unmarshal(raw, &p) == nil && p.By == "cto" {
-		return "cto"
+	if json.Unmarshal(raw, &p) == nil && (p.By == "cto" || p.By == "CTO (minor)" || p.By == "CTO (owner window)") {
+		return p.By
 	}
 	if strings.HasPrefix(p.By, "owner (CTO proposal p_") && strings.HasSuffix(p.By, ")") {
 		n := strings.TrimSuffix(strings.TrimPrefix(p.By, "owner (CTO proposal p_"), ")")

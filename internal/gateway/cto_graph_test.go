@@ -13,6 +13,7 @@ func TestCTOGraphClass(t *testing.T) {
 		{"charter_set", `{"node":"app","attr":"needs","value":"help"}`, "minor"},
 		{"charter_set", `{"node":"app","attr":"consumers","value":"clients"}`, "minor"},
 		{"charter_set", `{"node":"app","attr":"notes","value":"Only local work"}`, "major"},
+		{"charter_set", `{"node":"app","attr":"needs","value":""}`, "major"},
 		{"charter_set", `{"node":"app","attr":"refuses","value":"deploys"}`, "major"},
 		{"charter_set", `{"node":"app","attr":"escalate","value":"owner"}`, "major"},
 		{"charter_set", `{"node":"app","attr":"maturity","value":"mature"}`, "major"},
@@ -56,7 +57,7 @@ func TestCTOGraphClass(t *testing.T) {
 	if err != nil || len(h) != 1 {
 		t.Fatalf("history: %+v %v", h, err)
 	}
-	if got, err := s.CTOGraphClass("graph_undo", json.RawMessage(`{"id":0}`)); err != nil || got != "minor" {
+	if got, err := s.CTOGraphClass("graph_undo", json.RawMessage(`{"id":0}`)); err != nil || got != "major" {
 		t.Fatalf("undo class %s %v", got, err)
 	}
 	if err := s.GraphUndo(h[0].ID, "owner"); err != nil {

@@ -33,7 +33,8 @@ import (
 
 // operatorMethods are the methods that return owner-only data.
 var operatorMethods = map[string]bool{
-	protocol.OpProposalList: true, protocol.OpProposalAnswer: true,
+	protocol.OpCTOGraphWindow: true,
+	protocol.OpProposalList:   true, protocol.OpProposalAnswer: true,
 	"notification_settings": true,
 	"inventory_scan":        true, "inventory_get": true, "mcp_import_candidates": true, "mcp_import": true, "mcp_native_remove": true, "mcp_coverage_plan": true, "mcp_coverage_apply": true, "mcp_coverage_undo": true, "tools_items": true, "tools_item": true, "tools_plan": true, "tools_apply": true, "tools_undo": true, "tools_history": true, "tools_accepted": true, "tools_accept": true, "tools_needs": true, "tools_import": true, "tools_read_file": true, "tools_summary": true, "tools_skill_details": true, "tools_versions": true, "tools_export": true, protocol.OpToolsDifferences: true, "gateway_backup": true,
 	protocol.OpSessionStop: true, protocol.OpSessionStart: true, protocol.OpSessionStartGet: true, protocol.OpSessionResume: true,
@@ -202,6 +203,9 @@ func (lc *localConn) dispatchOperator(ctx context.Context, method string, raw js
 func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.RawMessage) (res any, ok bool, err error) {
 	d := lc.d
 	switch method {
+	case protocol.OpCTOGraphWindow:
+		v, err := lc.ctoGraphWindow(raw)
+		return v, true, err
 	case protocol.OpProposalList, protocol.OpProposalAnswer:
 		var q protocol.CTOProposalAnswer
 		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {

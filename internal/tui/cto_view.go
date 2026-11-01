@@ -1,12 +1,14 @@
 package tui
 
 import (
+	"fmt"
 	"github.com/charmbracelet/glamour"
 	ga "github.com/charmbracelet/glamour/ansi"
 	"github.com/charmbracelet/glamour/styles"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 	"strings"
+	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
 )
@@ -22,12 +24,24 @@ func (m Model) ctoTitle() string {
 func (m Model) ctoView(w, h int) []string {
 	c := m.cto
 	title := m.ctoTitle()
+	if !c.windowUntil.IsZero() {
+		now := time.Now()
+		if m.now != nil {
+			now = m.now()
+		}
+		if left := c.windowUntil.Sub(now); left > 0 {
+			seconds := int((left + time.Second - 1) / time.Second)
+			title += fmt.Sprintf(" · I'm driving %02d:%02d · w close", seconds/60, seconds%60)
+		}
+	}
+
 	if c.harness != "" {
 		title += " · " + sanitize(c.harness)
 	}
 	if c.model != "" {
 		title += " · " + sDim.Render(sanitize(c.model))
 	}
+
 	borderColor := roleFaint
 	if m.focus == focusCTO {
 		borderColor = roleCTO

@@ -509,6 +509,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		poll.olderPage = true
 		m.applyCTOPoll(poll)
 		return m, nil
+	case ctoWindowMsg:
+		if m.cto != nil && m.cto.generation == msg.generation {
+			if msg.err != nil {
+				m.cto.err = sanitize(msg.err.Error())
+			} else {
+				m.cto.windowUntil = msg.window.Until
+				m.cto.err = ""
+			}
+		}
+		return m, nil
 	case ctoUndoMsg:
 		if m.cto == nil || m.cto.generation != msg.generation {
 			return m, nil

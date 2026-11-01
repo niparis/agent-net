@@ -27,6 +27,10 @@ func (s *Store) CTOGraphClass(tool string, raw json.RawMessage) (string, error) 
 	switch tool {
 	case "charter_set":
 		typ = "charter"
+		err = tx.QueryRow(`SELECT value FROM graph_charter WHERE node=? AND attr=?`, node, attr).Scan(&old)
+		if err != nil && err != sql.ErrNoRows {
+			return "", err
+		}
 	case "node_add":
 		typ, node, value = "node", q.Name, "architect"
 	case "node_remove":
@@ -92,6 +96,27 @@ func ctoGraphClassTx(tx *sql.Tx, typ, node, attr, old, value string) (string, er
 		}
 		return "major", nil
 	case "charter":
+		if strings.TrimSpace(value) == "" {
+			v.Kind = "remove"
+		}
+		switch attr {
+		case "accepts", "needs", "consumers":
+			// Learned items are separated with semicolons. Removing an existing item
+			// is a removal, even if the replacement itself has no restrictive words.
+			for _, item := range strings.FieldsFunc(old, func(r rune) bool { return r == ';' || r == '\n' }) {
+				found := false
+				for _, next := range strings.FieldsFunc(value, func(r rune) bool { return r == ';' || r == '\n' }) {
+					if strings.EqualFold(strings.TrimSpace(item), strings.TrimSpace(next)) {
+						found = true
+						break
+					}
+				}
+				if strings.TrimSpace(item) != "" && !found {
+					v.Kind = "remove"
+					break
+				}
+			}
+		}
 		// Wording uses the same restriction rule as learned additions. These fields
 		// do not set authority; maturity, refuses and escalate still fail closed.
 		switch attr {

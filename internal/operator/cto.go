@@ -66,3 +66,13 @@ func (s *Client) SetCTOSettings(ctx context.Context, req protocol.CTOSettingsReq
 	err = json.Unmarshal(b, &out)
 	return out, err
 }
+
+func (s *Client) CTOGraphWindow(ctx context.Context, toggle bool) (protocol.CTOGraphWindow, error) {
+	var out protocol.CTOGraphWindow
+	b, err := s.action(ctx, protocol.OpCTOGraphWindow, map[string]bool{"toggle": toggle})
+	if err != nil {
+		return out, err
+	}
+	err = json.Unmarshal(b, &out)
+	return out, err
+}
