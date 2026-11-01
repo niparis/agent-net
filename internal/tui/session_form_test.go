@@ -134,9 +134,11 @@ func TestNewSessionEnterWithTextStartsInTheBackground(t *testing.T) {
 }
 
 func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
-	for _, tc := range []struct{ id, why string }{
-		{"s_0000000000000003", "opencode on this machine"}, // web, opencode, Mac
-		{"s_0000000000000004", "pi on another machine"},    // ci-runner, pi, build-vm
+	for _, tc := range []struct{ id, harness, why string }{
+		{"s_0000000000000002", "codex", "codex on this machine"},
+		{"s_0000000000000002", "pi", "pi on this machine"},
+		{"s_0000000000000002", "other", "unknown harness"},
+		{"s_0000000000000004", "pi", "pi on another machine"},
 	} {
 		t.Run(tc.why, func(t *testing.T) {
 			m, src := workerModel(120, 34)
@@ -145,14 +147,15 @@ func TestNewSessionRefusesOtherHarnessesAndMachines(t *testing.T) {
 			if m.mode != modeSessionForm {
 				t.Fatalf("n opened mode %v", m.mode)
 			}
-			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude on this machine for now") {
+			m.sform.in[sHarness].SetValue(tc.harness)
+			if v := m.View(); !strings.Contains(strings.ToLower(v), "only claude and opencode on this machine for now") {
 				t.Errorf("the form does not refuse:\n%s", v)
 			}
 			m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
 			if cmd != nil || len(src.sessionStarts) != 0 {
 				t.Fatalf("refused start still ran: cmd %v, asks %+v", cmd != nil, src.sessionStarts)
 			}
-			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude on this machine for now") {
+			if m.mode != modeSessionForm || !strings.Contains(strings.ToLower(m.View()), "only claude and opencode on this machine for now") {
 				t.Errorf("the refusal is not on the form:\n%s", m.View())
 			}
 		})
@@ -268,4 +271,39 @@ func equalStrings(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestNewSessionOpenCodeStartsAndEnters(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m = selectID(m, "s_0000000000000003")
+	src.sessionStart = startedSession("web", "opencode")
+	src.enterPlan = protocol.EnterPlan{Argv: []string{"opencode", "--session", "ses_owner"}, Dir: "/Users/n/code/web"}
+	got, _, _, _ := captureName(&m, "web (Mac)")
+	m, _ = press(m, sessionKey())
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("OpenCode refused")
+	}
+	m, cmd = press2(m, cmd())
+	if len(src.sessionStarts) != 1 || src.sessionStarts[0].Harness != "opencode" {
+		t.Fatalf("requests: %+v", src.sessionStarts)
+	}
+	if cmd == nil {
+		t.Fatal("no enter")
+	}
+	_, cmd = press2(m, cmd())
+	if cmd == nil || !equalStrings(*got, []string{"opencode", "--session", "ses_owner"}) {
+		t.Fatalf("enter: %v", *got)
+	}
+}
+
+func TestNewSessionHarnessSupportGoldens(t *testing.T) {
+	for _, size := range []struct{ w, h int }{{80, 24}, {120, 34}} {
+		m, _ := workerModel(size.w, size.h)
+		m = selectID(m, "s_0000000000000003")
+		m, _ = press(m, sessionKey())
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_opencode", m.View())
+		m.sform.in[sHarness].SetValue("pi")
+		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_unsupported", m.View())
+	}
 }
