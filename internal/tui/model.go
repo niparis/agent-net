@@ -80,6 +80,8 @@ type Model struct {
 	quotaConfirm      string
 	quotaUnprotect    bool
 	quotaShowUnset    bool
+	qualityAgent      int
+	qualityDetail     bool
 	messageShowEvents bool
 	hideWorkerThreads bool
 
@@ -932,6 +934,9 @@ func (m *Model) applyFetch(r fetchedMsg) {
 	}
 	m.problem, m.problemT = ProblemNone, ""
 	m.snap, m.haveData, m.lastOK = r.snap, true, r.at
+	if n := len(m.snap.Calibration.Quality.Agents); m.qualityAgent > n {
+		m.qualityAgent = 0
+	}
 	m.updateSessionOrder(r.events)
 	if r.hiddenErr == nil {
 		m.setHiddenItems(r.hidden)
@@ -1225,6 +1230,20 @@ func (m Model) key(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.quotaShowUnset = !m.quotaShowUnset
 			m.quotaScroll = 0
 			m.refreshWorkerForecast()
+		case "left", "right":
+			if m.focus != focusSessions {
+				return m, nil
+			}
+			n := len(m.snap.Calibration.Quality.Agents) + 1
+			if k.String() == "right" {
+				m.qualityAgent = (m.qualityAgent + 1) % n
+			} else {
+				m.qualityAgent = (m.qualityAgent + n - 1) % n
+			}
+			m.quotaScroll = 0
+		case "d":
+			m.qualityDetail = !m.qualityDetail
+			m.quotaScroll = 0
 		case "q":
 			m.quitting = true
 			return m, tea.Quit

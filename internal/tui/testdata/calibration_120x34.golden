@@ -16,10 +16,10 @@
 │ last 7 finished tasks, at least 5 · rework = fix + 0.33 * continue + defects                                         │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ╭─Quality analysis · read only─────────────────────────────────────────────────────────────────────────────────────────╮
-│ tentative: overlap and more ratings needed                                                                           │
-│ Model matters · quality / rework (tasks)                                                                             │
-│ gpt-6.1-sol  +0.60 (14) / -0.30 (20)                                                                                 │
-│ Harness matters · quality / rework (tasks)                                                                           │
+│ agent ◂ all agents ▸                                                                                                 │
+│ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                                                                      │
+│ simple · 8 tasks                                                                                                     │
+│ luna         5       0.20            -    2 min                                                                      │
 ╭─CTO──────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │                                                                                                                      │
 │                                                                                                                      │

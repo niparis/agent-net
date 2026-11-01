@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/niparis/agent-net/internal/protocol"
@@ -16,7 +17,7 @@ import (
 func (m Model) calibrationView(w int) []string {
 	cal := m.snap.Calibration
 	if len(cal.Callers) == 0 && len(cal.Network) == 0 {
-		return qualityView(cal.Quality, w)
+		return qualityView(cal.Quality, w, m.qualityAgent, m.qualityDetail)
 	}
 	callerWidth, levelWidth, medianWidth, tasksWidth, actionWidth := 16, 13, 6, 5, 16
 	if w >= 100 {
@@ -83,8 +84,8 @@ func (m Model) calibrationView(w int) []string {
 		body = append(body, sDim.Render(clip("ratings: none yet", w-4)))
 	}
 	body = append(body, sDim.Render(clip(fmt.Sprintf("defects reported later: %d", cal.Defects), w-4)))
-	body = append(body, sDim.Render(clip("last 7 finished tasks, at least 5 · rework = fix + 0.33 * continue + defects", w-4)))
-	return append(panel("Difficulty calibration · read only", body, w, roleAccent), qualityView(cal.Quality, w)...)
+	body = append(body, sDim.Render(clip(fmt.Sprintf("last 7 finished tasks, at least 5 · rework = fix + %g * continue + defects", protocol.CalibrationContinueWeight), w-4)))
+	return append(panel("Difficulty calibration · read only", body, w, roleAccent), qualityView(cal.Quality, w, m.qualityAgent, m.qualityDetail)...)
 }
 
 func calibrationMedian(v float64) string {
@@ -101,59 +102,127 @@ func calibrationAction(action string, w int) string {
 	}
 }
 
-// qualityView only formats the gateway snapshot. Fitting belongs to the gateway.
-func qualityView(q protocol.QualityAnalysis, w int) []string {
-	status := q.Status
-	if status == "" {
+// qualityView only formats the gateway snapshot. Fitting, family folding,
+// level buckets and per-caller tables all belong to the gateway; View picks a
+// cached table.
+func qualityView(q protocol.QualityAnalysis, w, agent int, detail bool) []string {
+	if q.Status == "" {
 		return nil
 	}
-	if q.Ratings == 0 && len(q.Effects) == 0 && len(q.Profiles) == 0 {
-		return panel("Quality analysis · read only", []string{sDim.Render("not enough ratings")}, w, roleAccent)
-	}
-	body := []string{sDim.Render(clip(status, w-4))}
-	for _, section := range []struct{ kind, title string }{{"model", "Model matters"}, {"harness", "Harness matters"}, {"effort", "Effort matters (within model)"}} {
-		body = append(body, sBold.Render(clip(section.title+" · quality / rework (tasks)", w-4)))
-		found := false
-		for _, e := range q.Effects {
-			if e.Kind != section.kind {
-				continue
-			}
-			found = true
-			weak := ""
-			if e.Ratings < 5 {
-				weak = ", weak"
-			}
-			rweak := ""
-			if e.Runs < 5 {
-				rweak = ", weak"
-			}
-			text := fmt.Sprintf("%s  %+.2f (%d%s) / %+.2f (%d%s)", e.Name, e.Quality, e.Ratings, weak, e.Rework, e.Runs, rweak)
-			for _, line := range wrap(text, w-4) {
-				body = append(body, line)
-			}
+	levels := qualityLevels(q, agent)
+	familyW := qualityFamilyWidth(levels)
+	body := []string{qualitySelector(q, agent, w), sBold.Render(clip(qualityColumnHeader(familyW, detail), w-4))}
+	for _, level := range levels {
+		label := fmt.Sprintf("%s · %d tasks", level.Difficulty, level.Tasks)
+		if level.Difficulty == "unknown" {
+			body = append(body, sDim.Render(clip(label, w-4)))
+		} else {
+			body = append(body, sBold.Render(clip(label, w-4)))
 		}
-		if !found {
-			body = append(body, sDim.Render("not enough ratings"))
+		for _, f := range level.Families {
+			line := qualityFamilyLine(f, familyW, detail)
+			if qualityFamilyDim(level.Difficulty, f.Tasks) {
+				line = sDim.Render(line)
+			}
+			body = append(body, clip(line, w-4))
 		}
 	}
-	body = append(body, sBold.Render("Predicted quality · normal difficulty"))
-	for _, p := range q.Profiles {
-		if q.Ratings == 0 {
-			for _, line := range wrap(p.Name+"  not enough ratings", w-4) {
-				body = append(body, line)
-			}
-			continue
-		}
-		note := ""
-		if p.Ratings < 5 {
-			note = ", weak"
-		}
-		if p.Unexpected {
-			note += ", differs from fit"
-		}
-		for _, line := range wrap(fmt.Sprintf("%s  %.2f · %d ratings, %d runs%s", p.Name, p.Quality, p.Ratings, p.Runs, note), w-4) {
-			body = append(body, line)
-		}
+	body = append(body, sDim.Render(clip(qualityRatingsLine(q), w-4)))
+	for _, line := range wrap(qualityHeadacheFootnote(), w-4) {
+		body = append(body, sDim.Render(line))
 	}
 	return panel("Quality analysis · read only", body, w, roleAccent)
+}
+
+// qualitySelector is the panel's first line: the agent cycled by left and
+// right. An empty or stale selection falls back to all agents.
+func qualitySelector(q protocol.QualityAnalysis, agent int, w int) string {
+	name := "all agents"
+	if agent > 0 && agent <= len(q.Agents) {
+		name = strings.TrimSpace(q.Agents[agent-1].Name)
+		if name == "" {
+			name = shortID(q.Agents[agent-1].Caller)
+		}
+	}
+	return sBold.Render(clip("agent ◂ "+name+" ▸", w-4))
+}
+
+// qualityLevels returns the cached level tables for the chosen agent, or the
+// all-agent tables when none is chosen.
+func qualityLevels(q protocol.QualityAnalysis, agent int) []protocol.QualityLevel {
+	if agent > 0 && agent <= len(q.Agents) {
+		return q.Agents[agent-1].Levels
+	}
+	return q.Levels
+}
+
+func qualityFamilyWidth(levels []protocol.QualityLevel) int {
+	w := len("FAMILY")
+	for _, level := range levels {
+		for _, f := range level.Families {
+			if n := utf8.RuneCountInString(f.Family); n > w {
+				w = n
+			}
+		}
+	}
+	// The known families are eight characters at most. A long unknown model
+	// name is cut with an ellipsis instead of pushing the numbers right.
+	return min(max(w, len("FAMILY")), 9)
+}
+
+func qualityColumnHeader(familyW int, detail bool) string {
+	parts := []string{cell("FAMILY", familyW), cellR("TASKS", 5)}
+	if detail {
+		parts = append(parts, cellR("FIXES", 5), cellR("CONTINUES", 9))
+	}
+	parts = append(parts, cellR("FOLLOW-UPS", 10), cellR("LATE DEFECTS", 12), cellR("HEADACHE", 8))
+	return strings.Join(parts, " ")
+}
+
+func qualityFamilyLine(f protocol.QualityFamily, familyW int, detail bool) string {
+	parts := []string{cell(f.Family, familyW), cellR(strconv.Itoa(f.Tasks), 5)}
+	if detail {
+		parts = append(parts, cellR(strconv.Itoa(f.Fixes), 5), cellR(strconv.Itoa(f.Continues), 9))
+	}
+	parts = append(parts,
+		cellR(fmt.Sprintf("%.2f", f.FollowUps), 10),
+		cellR(qualityLateDefects(f), 12),
+		cellR(fmt.Sprintf("%.0f min", f.Headache), 8))
+	return strings.Join(parts, " ")
+}
+
+func qualityLateDefects(f protocol.QualityFamily) string {
+	if f.LateDefects <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%d · avg %.1f", f.LateDefects, f.LateDefectSeverity)
+}
+
+// qualityHeadacheFootnote names the orchestrator costs behind HEADACHE.
+func qualityHeadacheFootnote() string {
+	return fmt.Sprintf("headache = orchestrator minutes: continue %d, fix %d, late defect %d/%d/%d/%d by severity",
+		protocol.QualityContinueMinutes, protocol.QualityFixMinutes,
+		protocol.QualityDefectMinutesSeverity1, protocol.QualityDefectMinutesSeverity2,
+		protocol.QualityDefectMinutesSeverity3, protocol.QualityDefectMinutesSeverity4)
+}
+
+// qualityFamilyDim marks a level with no requested difficulty and a family
+// with too few tasks to rank.
+func qualityFamilyDim(level string, tasks int) bool {
+	return level == "unknown" || tasks < protocol.CalibrationMinTasks
+}
+
+// qualityRatingsLine is the single dim line below all tables. It always gives
+// the real rating count; once the fit is big enough it adds the factors that
+// matter most, largest first.
+func qualityRatingsLine(q protocol.QualityAnalysis) string {
+	line := fmt.Sprintf("ratings: %d so far", q.Ratings)
+	if q.Ratings >= protocol.QualityAnalysisMinRatings && len(q.Summary) > 0 {
+		names := make([]string, 0, len(q.Summary))
+		for _, f := range q.Summary {
+			names = append(names, f.Kind)
+		}
+		return line + "; what matters most: " + strings.Join(names, " / ")
+	}
+	return line + fmt.Sprintf("; the analysis starts at %d", protocol.QualityAnalysisMinRatings)
 }
