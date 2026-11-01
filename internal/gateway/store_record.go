@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/niparis/agent-net/internal/protocol"
+	"github.com/niparis/agent-net/internal/temppath"
 )
 
 // ---- projects ----
@@ -76,7 +77,7 @@ func (s *Store) Projects(name string) ([]protocol.ProjectView, error) {
 // name, when set, keeps only projects with that name (case-insensitive).
 func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	rows, err := s.db.Query(`SELECT s.node_id, n.hostname, s.harness, s.cwd, s.online, s.last_seen,
-		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree
+		s.repo_root, s.repo_project, s.repo_remote, s.repo_worktree, s.no_project
 		FROM sessions s JOIN nodes n ON n.id = s.node_id WHERE s.harness != 'owner' ORDER BY s.last_seen DESC, s.id`)
 	if err != nil {
 		return nil, err
@@ -88,9 +89,9 @@ func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 	var order []key
 	for rows.Next() {
 		var node, host, h, cwd, root, project, remote, worktree string
-		var online int
+		var online, noProject int
 		var seen int64
-		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote, &worktree); err != nil {
+		if err := rows.Scan(&node, &host, &h, &cwd, &online, &seen, &root, &project, &remote, &worktree, &noProject); err != nil {
 			return nil, err
 		}
 		path := root
@@ -98,6 +99,12 @@ func (s *Store) seenProjects(name string) ([]protocol.ProjectView, error) {
 			path = cwd
 		}
 		if path == "" {
+			continue
+		}
+		// A temporary folder is not a project. The daemon marks some of them;
+		// for the older records, and for a daemon that did not know the folder,
+		// the path is enough.
+		if noProject != 0 || temppath.Under(path, s.tempRoots()) {
 			continue
 		}
 		if project == "" {
@@ -366,12 +373,15 @@ func (s *Store) nodeIDs(idOrHost string) ([]string, error) {
 
 // Default retention periods. A period of 0 keeps the data for ever.
 const (
-	DefaultKeepMessages = 30 * 24 * time.Hour
+	// DefaultKeepMessages is 0: messages (with their bodies) and delivery
+	// rows are kept until they are deleted by hand.
+	DefaultKeepMessages = 0
 	DefaultKeepEvents   = 90 * 24 * time.Hour
 	DefaultKeepSessions = 30 * 24 * time.Hour
-	// DefaultKeepWorkerRuns is how long the model track record stays
-	// (decision 0022).
-	DefaultKeepWorkerRuns = protocol.TrackRecordDays * 24 * time.Hour
+	// DefaultKeepWorkerRuns is 0: the worker runs behind the model track
+	// record are kept for ever (decision 0022). protocol.TrackRecordDays is
+	// only the read window of the track record and the calibration.
+	DefaultKeepWorkerRuns = 0
 )
 
 // Retention says how long the gateway keeps data. A zero period keeps it for ever.

@@ -223,8 +223,9 @@ func TestProjects(t *testing.T) {
 	s.UpsertSession(n1, protocol.SessionInfo{Harness: "opencode", NativeID: "b", Cwd: "/src/shop", Repo: repo})
 	s.UpsertSession(n2, protocol.SessionInfo{Harness: "pi", NativeID: "c", Cwd: "/home/u/shop",
 		Repo: protocol.RepoInfo{Root: "/home/u/shop", Project: "shop"}})
-	// No repository info: named after the folder. A session without a folder is skipped.
-	s.UpsertSession(n2, protocol.SessionInfo{Harness: "claude", NativeID: "d", Cwd: "/tmp/scratch"})
+	// No repository info: named after the folder. A session without a folder is
+	// skipped, and a temporary folder is no project.
+	s.UpsertSession(n2, protocol.SessionInfo{Harness: "claude", NativeID: "d", Cwd: "/tmp/scratch", NoProject: true})
 	s.UpsertSession(n2, protocol.SessionInfo{Harness: "claude", NativeID: "e"})
 	s.SyncSessions(n1, []protocol.SessionInfo{{Harness: "opencode", NativeID: "b", Cwd: "/src/shop", Repo: repo}}) // a goes offline
 
@@ -242,15 +243,14 @@ func TestProjects(t *testing.T) {
 		got = append(got, row{p.Name, p.Hostname, p.Path, p.Remote, p.Harnesses, p.Sessions, p.Online})
 	}
 	want := []row{
-		{"scratch", "linux-box", "/tmp/scratch", "", []string{"claude"}, 1, 1},
 		{"shop", "linux-box", "/home/u/shop", "", []string{"pi"}, 1, 1},
 		{"shop", "mac", "/src/shop", "https://example.com/shop.git", []string{"claude", "opencode"}, 2, 1},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("got  %+v\nwant %+v", got, want)
 	}
-	if ps[2].LastSeen != c.t.Unix() {
-		t.Fatalf("last seen %d, want %d", ps[2].LastSeen, c.t.Unix())
+	if ps[1].LastSeen != c.t.Unix() {
+		t.Fatalf("last seen %d, want %d", ps[1].LastSeen, c.t.Unix())
 	}
 	one, _ := s.Projects("SHOP")
 	if len(one) != 2 {
@@ -471,6 +471,50 @@ func TestPruneDeletesOldDataOnly(t *testing.T) {
 	before := count(`SELECT COUNT(*) FROM events`)
 	if res, _ := s.Prune(Retention{}); res.Any() || count(`SELECT COUNT(*) FROM events`) != before {
 		t.Fatal("zero retention deleted data")
+	}
+}
+
+func TestDefaultRetentionKeepsMessagesAndWorkerRunsForever(t *testing.T) {
+	s, c := newTestStore(t)
+	a, b := twoSessions(t, s)
+	node := mustNode(t, s, a)
+	day := 24 * time.Hour
+
+	old, _, _ := send(s, a, b, "old", "")
+	s.ApplyDelivery(old.ID, protocol.StateDelivered, "")
+	now := s.now()
+	if err := s.RecordWorkerRun(protocol.WorkerRun{NodeID: node, SessionID: "s_old",
+		Harness: "opencode", Model: "m1", Outcome: protocol.OutcomeComplete,
+		StartedAt: now.Add(-400 * day).Unix(), EndedAt: now.Add(-400 * day).Unix()}); err != nil {
+		t.Fatal(err)
+	}
+	// An offline session older than the session period still goes.
+	gone, _ := s.UpsertSession(node, protocol.SessionInfo{Harness: "claude", NativeID: "gone"})
+	s.SetSessionOffline(node, gone)
+
+	c.t = c.t.Add(400 * day)
+	res, err := s.Prune(DefaultRetention())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Messages != 0 || res.Deliveries != 0 || res.WorkerRuns != 0 {
+		t.Fatalf("default retention deleted messages or worker runs: %+v", res)
+	}
+	if _, ok, _ := s.Message(old.ID); !ok {
+		t.Fatal("a message 400 days old was deleted")
+	}
+	var runs int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM worker_runs`).Scan(&runs); err != nil {
+		t.Fatal(err)
+	}
+	if runs != 1 {
+		t.Fatalf("worker runs left: %d, want 1", runs)
+	}
+	if _, ok, _ := s.Agent(gone); ok {
+		t.Fatal("an offline session older than 30 days was kept")
+	}
+	if res.Sessions != 1 {
+		t.Fatalf("pruned %d offline sessions, want 1", res.Sessions)
 	}
 }
 
@@ -787,9 +831,9 @@ func TestProjectsGroupWorktrees(t *testing.T) {
 }
 
 // Worker worktrees share the main tree's project identity, and a temporary
-// test folder is not a graph project. The projects call still lists the temp
-// folder (it is a folder where a session ran), but the graph, which the Map
-// and the setup Map line count, keeps one node for the repository.
+// test folder is not a project at all: the daemon marks it NoProject, so the
+// projects call and the graph (which the Map and the setup Map line count)
+// both keep one row for the repository.
 func TestProjectsGroupWorkerWorktreesAndHideTemporaryFolders(t *testing.T) {
 	s, _ := newTestStore(t)
 	n, _, _ := s.CreateNode("box", "linux")
@@ -803,14 +847,14 @@ func TestProjectsGroupWorkerWorktreesAndHideTemporaryFolders(t *testing.T) {
 		s.UpsertSession(n, protocol.SessionInfo{Harness: "opencode", NativeID: fmt.Sprintf("worker-%d", i), Cwd: wt, Repo: repo(wt, fmt.Sprintf("agent-net/w_%d", i))})
 	}
 	s.UpsertSession(n, protocol.SessionInfo{Harness: "claude", NativeID: "temp", Cwd: "/tmp/tmp123456",
-		Repo: protocol.RepoInfo{Root: "/tmp/tmp123456", Project: "tmp123456"}})
+		Repo: protocol.RepoInfo{Root: "/tmp/tmp123456", Project: "tmp123456"}, NoProject: true})
 
 	ps, err := s.Projects("")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ps) != 2 {
-		t.Fatalf("projects: %+v, want the repository and the temp folder", ps)
+	if len(ps) != 1 {
+		t.Fatalf("projects: %+v, want the repository only", ps)
 	}
 	var project protocol.ProjectView
 	for _, p := range ps {

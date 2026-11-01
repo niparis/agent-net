@@ -20,7 +20,7 @@
   I                    integrations for all machines: 7 checkboxes (a form)
 
  Quotas
-  up/down, j/k         select a subscription
+  up/down, j/k         select a subscription and scroll the panels
   p                    protect or unprotect the selected subscription
   s                    show or hide subscriptions that are not set up
   left/right           cycle the Quality panel agent: all agents, then each

@@ -100,9 +100,13 @@ type SessionInfo struct {
 	Status    string `json:"status"` // idle | busy | shell | dormant | unknown
 	Delivery  string `json:"delivery"`
 	// Repo is worked out by the daemon from Cwd. It is empty from older daemons.
-	Repo          RepoInfo `json:"repo"`
-	GraphExcluded bool     `json:"graph_excluded,omitempty"`
-	GraphChecked  bool     `json:"graph_checked,omitempty"`
+	Repo RepoInfo `json:"repo"`
+	// NoProject says the daemon found Cwd under a system temporary folder, so
+	// the session belongs to no project. The gateway keeps the session but
+	// derives no project from it. Empty from older daemons.
+	NoProject     bool `json:"no_project,omitempty"`
+	GraphExcluded bool `json:"graph_excluded,omitempty"`
+	GraphChecked  bool `json:"graph_checked,omitempty"`
 	// Mode says whether a person has the session open: ModeForeground,
 	// ModeBackground or ModeUnknown. Empty from older daemons.
 	Mode string `json:"mode,omitempty"`

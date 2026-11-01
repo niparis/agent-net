@@ -4,18 +4,6 @@
 │ No machine reads quotas yet: quota-axi is not installed on any machine (see  │
 │ docs/setup.md, Quota).                                                       │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-╭─Difficulty calibration · read only───────────────────────────────────────────╮
-│ CALLER           LEVEL         MEDIAN TASKS WOULD                            │
-│ agent-net        normal             0     9 lower                            │
-│ agent-net        hard               1     7 keep                             │
-│ homelab-agent *  simple           0.5     3 not enough tasks                 │
-│ homelab-agent *  normal             0     5 keep                             │
-│ * weak caller: follows the network and cannot lower a tier                   │
-│ network: normal 1 · 9 tasks · keep · hard 0.5 · 12 tasks · keep              │
-│ ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14                    │
-│ defects reported later: 2                                                    │
-│ last 7 finished tasks, at least 5 · rework = fix + 0.33 * continue + defects │
-╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─Quality analysis · read only─────────────────────────────────────────────────╮
 │ agent ◂ all agents ▸                                                         │
 │ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                              │
@@ -29,7 +17,19 @@
 │ terra       53       0.72            -    6 min                              │
 │ luna        19       0.26            -    3 min                              │
 │ sol          9       0.26            -    2 min                              │
-╰─↓ more───────────────────────────────────────────────────────────────────────╯
+│ opus         7       0.00            -    0 min                              │
+│ hard · 33 tasks                                                              │
+│ terra       25       0.61  1 · avg 4.0   13 min                              │
+│ sol          8       0.42            -    4 min                              │
+│ unknown · 23 tasks                                                           │
+│ deepseek    12       0.17            -    2 min                              │
+│ sol          8       0.13            -    1 min                              │
+│ terra        3       1.00            -   10 min                              │
+│ ratings: deepseek-v4.1-flash 3 (1 later) · gpt-6.1-sol 14                    │
+│ defects reported later: 2                                                    │
+│ ratings: 40 so far; what matters most: model / effort / harness              │
+│ more below · up/down to scroll                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
 ╭─CTO──────────────────────────────────────────────────────────────────────────╮
 │                                                                              │
 │                                                                              │

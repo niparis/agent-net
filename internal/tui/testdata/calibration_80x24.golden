@@ -1,0 +1,24 @@
+1 Sessions  2 Graph  3 Quotas  4 Messages  5 Tools │ 12 online  14:05:00
+╭─Subscriptions────────────────────────────────────────────────────────────────╮
+│ no provider protected · select a subscription and press p                    │
+│ No machine reads quotas yet: quota-axi is not installed on any machine (see  │
+│ docs/setup.md, Quota).                                                       │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─Quality analysis · read only─────────────────────────────────────────────────╮
+│ agent ◂ all agents ▸                                                         │
+│ FAMILY   TASKS FOLLOW-UPS LATE DEFECTS HEADACHE                              │
+│ simple · 8 tasks                                                             │
+│ luna         5       0.20            -    2 min                              │
+│ deepseek     1       0.33            -    2 min                              │
+│ sol          1       0.00            -    0 min                              │
+│ terra        1       1.00            -   10 min                              │
+│ normal · 154 tasks                                                           │
+│ deepseek    66       0.09            -    1 min                              │
+│ terra       53       0.72            -    6 min                              │
+│ luna        19       0.26            -    3 min                              │
+│ more below · up/down to scroll                                               │
+╰──────────────────────────────────────────────────────────────────────────────╯
+╭─CTO──────────────────────────────────────────────────────────────────────────╮
+│                                                                              │
+╰─c: open the CTO──────────────────────────────────────────────────────────────╯
+up/down select  p protect  s show unset  r refresh  c CTO  ? help  q quit

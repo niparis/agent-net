@@ -491,13 +491,20 @@ func (lc *localConn) hello(raw json.RawMessage) (any, error) {
 			// reserved for a machine on an older agent-net.
 			p.Mode = protocol.ModeUnknown
 		}
+		// A session whose process asks to stay off the network is not
+		// registered at all. A worker started by this daemon is always
+		// registered: its caller waits for it.
+		if winfo == nil && d.sessionIgnored(pid) {
+			return map[string]any{"node_id": d.cfg.NodeID, "session_id": "", "version": d.helloVersion()}, nil
+		}
 		title := d.pluginTitle(p.Name, p.Cwd)
 		if winfo != nil {
 			title = "" // a worker's task is its title; the harness name adds nothing
 		}
+		repo, noProject := d.sessionRepo(p.Cwd, true)
 		ls := &localSession{conn: lc, info: protocol.SessionInfo{
 			Harness: p.Client, NativeID: p.NativeID, PID: pid, Cwd: p.Cwd, Name: title,
-			Status: status, Delivery: "plugin", Repo: d.repo.Refresh(p.Cwd),
+			Status: status, Delivery: "plugin", Repo: repo, NoProject: noProject,
 			Mode: p.Mode, Model: protocol.CleanModel(p.Model), Worker: winfo}}
 		k := key(p.Client, p.NativeID)
 		if wk != nil && wk.sessionID != "" {
