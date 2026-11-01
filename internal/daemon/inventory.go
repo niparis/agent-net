@@ -66,9 +66,17 @@ func (d *Daemon) harnessLoop(ctx context.Context) {
 // harness is not installed. Only a missing binary removes it.
 func keepMissingHarnesses(prev, next []protocol.HarnessInfo, logf func(string, ...any)) []protocol.HarnessInfo {
 	seen := make(map[string]bool, len(next))
+	known := make(map[string]bool, len(prev))
+	for _, h := range prev {
+		if h.Path != "" {
+			known[h.Name] = true
+		}
+	}
 	out := make([]protocol.HarnessInfo, 0, len(next)+len(prev))
 	for _, h := range next {
-		if h.Path == "" { // an entry a failed probe could not fill in
+		// An entry a failed probe could not fill in gives way to the copy
+		// found before. Without an earlier copy it is all there is.
+		if h.Path == "" && known[h.Name] {
 			continue
 		}
 		out = append(out, h)
