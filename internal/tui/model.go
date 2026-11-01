@@ -480,6 +480,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		g.hash = msg.hash
 		g.have = msg.have
 		g.transmit = msg.transmit
+		g.shown = msg.id
 		g.ready = len(msg.lines) > 0
 		return m, nil
 

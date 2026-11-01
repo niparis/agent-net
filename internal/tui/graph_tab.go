@@ -40,6 +40,15 @@ type graphPixelState struct {
 	key          [32]byte
 	lines        []string
 	transmit     string
+	// shown is the image id the placeholders point at now. Frames alternate
+	// between imageID and imageID+1: a new frame is sent under the other id
+	// and the old one is deleted only after the switch, so the terminal never
+	// shows an empty graph between frames.
+	shown uint32
+	// motion turns on the animated pixel graph (message dots, busy pulse,
+	// eased camera). Off by default: every animated frame is a new image, and
+	// the owner prefers a still graph that changes only when the graph does.
+	motion bool
 }
 
 // rasterizeFrame is a variable so a test can prove View never calls it.
@@ -48,6 +57,7 @@ var rasterizeFrame = graphview.Rasterize
 // graphFrameMsg carries a finished image and its placeholder rows back to the
 // update loop.
 type graphFrameMsg struct {
+	id       uint32
 	key      [32]byte
 	size     graphview.Size
 	lines    []string
@@ -64,6 +74,16 @@ func (g *graphPixelState) set(gr graphview.Graphics) {
 	g.cellW, g.cellH = gr.CellWidth, gr.CellHeight
 }
 
+// stillScene drops what only moves: message dots, arrival ripples and the busy
+// pulse. The pixel graph then changes only when the graph itself does.
+func stillScene(s *graphview.Scene) {
+	s.Comets, s.Ripples = nil, nil
+	for i := range s.Nodes {
+		s.Nodes[i].Pulse = false
+		s.Nodes[i].PulsePhase = .5
+	}
+}
+
 func graphTick(generation int) tea.Cmd {
 	return graphTickAfter(generation, graphIdleInterval)
 }
@@ -78,7 +98,7 @@ func (m Model) graphFrameInterval() time.Duration {
 	if m.graphPixel == nil || !m.graphPixel.graphics {
 		return graphIdleInterval
 	}
-	if m.graphState.Moving() {
+	if m.graphPixel.motion && m.graphState.Moving() {
 		return graphFrameInterval
 	}
 	return graphIdleInterval
@@ -86,7 +106,7 @@ func (m Model) graphFrameInterval() time.Duration {
 
 // smoothCamera turns on the eased camera only for the pixel renderer.
 func (m *Model) smoothCamera() {
-	m.graphState.Smooth = m.graphPixel != nil && m.graphPixel.graphics
+	m.graphState.Smooth = m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.motion
 }
 
 // graphScene builds the renderer-independent scene with display names. It is
@@ -123,8 +143,11 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 	}
 	size := graphview.Size{Width: gw, Height: gh}
 	state := m.graphState
-	state.Smooth = true
+	state.Smooth = g.motion
 	scene := m.graphScene(state, size)
+	if !g.motion {
+		stillScene(&scene)
+	}
 	key := graphview.HashScene(scene, size)
 	if g.ready && g.lines != nil && g.key == key && g.size == size {
 		return nil
@@ -138,22 +161,32 @@ func (m *Model) scheduleGraphRender() tea.Cmd {
 func (m Model) graphRenderCmd(scene graphview.Scene, size graphview.Size, key [32]byte) tea.Cmd {
 	g := m.graphPixel
 	metrics := graphview.PixelMetrics{CellWidth: g.cellW, CellHeight: g.cellH}
-	imageID := g.imageID
+	shown := g.shown
+	next := g.imageID
+	if shown == g.imageID {
+		next = g.imageID + 1
+	}
 	previousHash, previousHave := g.hash, g.have
 	previousTransmit := g.transmit
 	cols, rows := size.Width, size.Height
 	return func() tea.Msg {
 		img := rasterizeFrame(scene, size, metrics)
 		if img == nil {
-			return graphFrameMsg{key: key, size: size, hash: previousHash, have: previousHave}
+			return graphFrameMsg{id: shown, key: key, size: size, hash: previousHash, have: previousHave}
 		}
-		lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, imageID, graphview.StyleRole)
 		hash := graphview.HashImage(img)
-		transmit := previousTransmit
-		if !previousHave || hash != previousHash {
-			transmit = graphview.DeleteImage(imageID) + graphview.TransmitImage(img, imageID, cols, rows)
+		if previousHave && hash == previousHash && shown != 0 {
+			lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, shown, graphview.StyleRole)
+			return graphFrameMsg{id: shown, key: key, size: size, lines: lines, hash: hash, have: true, transmit: previousTransmit}
 		}
-		return graphFrameMsg{key: key, size: size, lines: lines, hash: hash, have: true, transmit: transmit}
+		// Send the frame under the other id, then delete the one on screen:
+		// the placeholders switch to the new id in the same write.
+		transmit := graphview.TransmitImage(img, next, cols, rows)
+		if shown != 0 {
+			transmit += graphview.DeleteImage(shown)
+		}
+		lines := graphview.PlaceholderLines(graphview.PixelLabels(scene, size), size, next, graphview.StyleRole)
+		return graphFrameMsg{id: next, key: key, size: size, lines: lines, hash: hash, have: true, transmit: transmit}
 	}
 }
 
@@ -298,7 +331,7 @@ func (m Model) graphView(w, h int) []string {
 		return append(out, sDim.Render("  reading the graph..."))
 	}
 	gw, gh := max(w-4, 1), max(h-5, 1)
-	smooth := m.graphPixel != nil && m.graphPixel.graphics
+	smooth := m.graphPixel != nil && m.graphPixel.graphics && m.graphPixel.motion
 	m.graphState.Smooth = smooth
 	state, _ := graphview.Update(m.graphState, graphview.Tick{Now: m.now()})
 	state.Smooth = smooth
