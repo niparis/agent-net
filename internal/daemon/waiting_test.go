@@ -172,3 +172,13 @@ func TestCodexTurnStartedClearsWaiting(t *testing.T) {
 	a.onNote("turn/started", json.RawMessage(`{"threadId":"thread-one"}`))
 	eventually(t, "turn start clears wait", func() bool { return waitingOf(t, n, id) == nil })
 }
+
+func TestWorkerAskOwnerIsRefused(t *testing.T) {
+	d := &Daemon{workers: map[string]*worker{"w_test": {id: "w_test", sessionID: "s_test"}}}
+	lc := &localConn{d: d}
+	ls := &localSession{sessionID: "s_test"}
+	_, err := lc.waitingCall("opencode", ls, json.RawMessage(`{"kind":"question","text":"Merge?","explicit":true}`))
+	if err == nil || err.Error() != "you are a worker: put the question in your hand-back or ask your caller with agent_reply" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

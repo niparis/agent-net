@@ -116,7 +116,10 @@ func (w *Waiting) UnmarshalJSON(b []byte) error {
 		if err := json.Unmarshal(b, &s); err != nil {
 			return err
 		}
-		*w = Waiting{Kind: WaitingInput, Text: s}
+		*w = Waiting{Text: s}
+		if CleanWaitingText(s) != "" {
+			w.Kind = WaitingInput
+		}
 		return nil
 	}
 	type plain Waiting

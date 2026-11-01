@@ -73,3 +73,15 @@ func TestCleanWaitingOptions(t *testing.T) {
 		t.Fatalf("waiting: %+v", w)
 	}
 }
+
+func TestEmptyAnnounceWaitingDoesNotCreateInput(t *testing.T) {
+	var p struct {
+		Waiting *Waiting `json:"waiting"`
+	}
+	if err := json.Unmarshal([]byte(`{"waiting":""}`), &p); err != nil {
+		t.Fatal(err)
+	}
+	if got := CleanWaiting(p.Waiting); got != nil {
+		t.Fatalf("empty string created a wait: %+v", got)
+	}
+}

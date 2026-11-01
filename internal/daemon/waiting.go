@@ -62,6 +62,9 @@ func (lc *localConn) waitingCall(client string, ls *localSession, raw json.RawMe
 	} else if ls == nil {
 		return nil, errors.New("this method needs a bound session")
 	}
+	if p.Explicit && d.workerBySession(ls.sessionID) != nil {
+		return nil, errors.New("you are a worker: put the question in your hand-back or ask your caller with agent_reply")
+	}
 	if p.Clear {
 		d.setWaiting(ls, nil)
 		return nil, nil

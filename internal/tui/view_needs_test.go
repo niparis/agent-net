@@ -358,3 +358,36 @@ func TestNotifyHelpToggle(t *testing.T) {
 		t.Fatalf("toggle did not persist: %+v", m.snap)
 	}
 }
+
+func TestWorkerWaitingDoesNotNeedOwner(t *testing.T) {
+	m := newModel(80, 24)
+	a := protocol.AgentView{SessionID: "s_worker", Harness: "opencode", Online: true, Status: "busy", Worker: &protocol.WorkerInfo{}, Waiting: &protocol.Waiting{Kind: protocol.WaitingQuestion, Text: "Blocked"}}
+	m.snap.Agents = []protocol.AgentView{a}
+	if got := m.needsRows(); len(got) != 0 {
+		t.Fatalf("worker in Needs you: %+v", got)
+	}
+	if got := m.statusCell(a); got == "needs you" {
+		t.Fatal("worker status needs you")
+	}
+}
+
+func TestWorkerWaitingScreen(t *testing.T) {
+	for _, tc := range []struct {
+		width, height int
+		name          string
+	}{{80, 24, "worker_waiting_80x24"}, {120, 34, "worker_waiting_120x34"}} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := newModel(tc.width, tc.height)
+			m.snap.Agents = []protocol.AgentView{agent("s_worker", "n_mac", "test-host", "opencode", "blocked-worker", func(a *protocol.AgentView) {
+				a.Status = "busy"
+				a.Worker = &protocol.WorkerInfo{ID: "w_test"}
+				waiting(a, -time.Minute, protocol.WaitingQuestion, "Which branch?")
+			})}
+			view := ansi.Strip(m.View())
+			if strings.Contains(view, "Needs you") || strings.Contains(view, "needs you") || !strings.Contains(view, "blocked-w") {
+				t.Fatalf("unexpected worker screen:\n%s", view)
+			}
+			golden(t, tc.name, m.View())
+		})
+	}
+}

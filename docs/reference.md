@@ -150,7 +150,7 @@ tool names are private to the CTO and are not in the shared MCP registry.
 | `cto_settings` | `cto_settings` |
 | `notification_settings` | `notification_settings` (this machine only) |
 | `cto_enter`, `cto_send`, `cto_new`, `cto_events`, `cto_graph_history` | Same names; these methods manage the CTO itself. |
-| `agent_announce`, `agent_ask_owner`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session or worker self-service only. The CTO is neither a network session nor a worker; it talks to the owner in this chat. |
+| `agent_announce`, `agent_ask_owner`, `agent_handback`, `agent_request_approval`, `agent_propose_idea` | Session self-service only. Workers can use these tools except `agent_ask_owner`, which they must replace with a hand-back or `agent_reply`. The CTO talks to the owner in this chat. |
 
 CTO `nodes` returns machine name, online state, version, harness versions and
 model counts, worker count and a quota summary. To read one model list, call
@@ -1265,7 +1265,7 @@ The Claude Code hook output, when there is a suggestion (one line of JSON on std
 
 A session can wait for you: it asks permission for a tool, asks a question, or wants your input. The TUI lists those sessions above the machines (decision [0016](decisions/0016-needs-you.md)). Every machine's TUI sees them, so one screen answers "what needs me" across the network.
 
-Agents on Claude Code, Codex, Pi and OpenCode can call `agent_ask_owner` with `question`, optional `options` and optional `urgency`. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance asks an agent to call this tool when it ends a turn waiting for your decision or input. A plain-text question at the end of a turn does not raise an alert by itself.
+Non-worker sessions on Claude Code, Codex, Pi and OpenCode can call `agent_ask_owner` with `question`, optional `options` and optional `urgency`. The question is one line, cut to 200 characters with control characters removed. Options are up to four short strings, cleaned the same way. Urgency is `normal` or `high`. The guidance asks an agent to call this tool when it ends a turn waiting for your decision or input. A plain-text question at the end of a turn does not raise an alert by itself. A worker cannot call this tool; it must put the question in its hand-back or ask its caller with `agent_reply`. Worker rows do not appear in the TUI Needs you section.
 
 The daemon stores the question as a `question` waiting state with the options, urgency and start time. It sends the state with the session to the gateway, and every machine reads it from the agent list. The existing harness hooks still report permission prompts, forms and input dialogs. `agent_announce` also accepts an optional `waiting` string as a fallback.
 
