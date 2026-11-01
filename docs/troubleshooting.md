@@ -142,6 +142,10 @@ These messages come from `agent-net tools ...`, the MCP import and native remova
 - **A conflict about a name shown twice or shadowed**: two harness folders would show the same skill, or another source already provides it. Remove or rename one by hand, or choose another target.
 - **A skill or MCP server is applied but a running session does not see it**: sessions load skills and native MCP config at start. Reload or restart the session. Federated MCP tools update live in Claude Code and Pi only.
 
+## The mouse does not select text
+
+Hold Shift while dragging to select text when an app captures the mouse.
+
 ## Still stuck
 
 Open an issue on [github.com/niparis/agent-net](https://github.com/niparis/agent-net/issues) with the output of `agent-net version`, `agent-net status`, the relevant log lines and your OS.

@@ -110,20 +110,22 @@ func randHex(n int) string {
 // ---- Claude ----
 
 type fakeClaudeRecord struct {
-	Args     []string          `json:"args"`
-	Cwd      string            `json:"cwd"`
-	Settings map[string]any    `json:"settings"`
-	Env      map[string]string `json:"env"`
-	Pid      int               `json:"pid"`
-	Pgid     int               `json:"pgid"`
-	ChildPid int               `json:"child_pid"`
-	ID       string            `json:"id"`
-	Session  string            `json:"session"`
+	Args       []string          `json:"args"`
+	Cwd        string            `json:"cwd"`
+	Settings   map[string]any    `json:"settings"`
+	Env        map[string]string `json:"env"`
+	CommandEnv map[string]string `json:"command_env"`
+	Pid        int               `json:"pid"`
+	Pgid       int               `json:"pgid"`
+	ChildPid   int               `json:"child_pid"`
+	ID         string            `json:"id"`
+	Session    string            `json:"session"`
 }
 
 type fakeClaudeInit struct {
-	Args []string `json:"args"`
-	Cwd  string   `json:"cwd"`
+	Args []string          `json:"args"`
+	Cwd  string            `json:"cwd"`
+	Env  map[string]string `json:"env"`
 }
 
 // fakeClaudeCLI is `claude --bg ...` and `claude stop <id>`.
@@ -163,7 +165,8 @@ func fakeClaudeCLI() {
 		os.Exit(1)
 	}
 	cwd, _ := os.Getwd()
-	init, _ := json.Marshal(fakeClaudeInit{Args: os.Args[1:], Cwd: cwd})
+	init, _ := json.Marshal(fakeClaudeInit{Args: os.Args[1:], Cwd: cwd, Env: map[string]string{
+		"CLAUDE_CODE_DISABLE_MOUSE": os.Getenv("CLAUDE_CODE_DISABLE_MOUSE")}})
 	env := os.Environ()
 	// The settings "env" reaches the session, as in the real Claude Code. The
 	// environment of this command does not.
@@ -220,10 +223,10 @@ func fakeClaudeSession() {
 	}
 	defer os.Remove(sock)
 
-	rec := fakeClaudeRecord{Args: in.Args, Cwd: in.Cwd, Pid: os.Getpid(), ID: id, Session: session, Env: map[string]string{}}
+	rec := fakeClaudeRecord{Args: in.Args, Cwd: in.Cwd, CommandEnv: in.Env, Pid: os.Getpid(), ID: id, Session: session, Env: map[string]string{}}
 	rec.Pgid, _ = syscall.Getpgid(0)
 	json.Unmarshal([]byte(argValue(in.Args, "--settings")), &rec.Settings)
-	for _, k := range []string{"AGENT_NET_SOCKET", "AGENT_NET_WORKER", "FOO_FROM_COMMAND"} {
+	for _, k := range []string{"AGENT_NET_SOCKET", "AGENT_NET_WORKER", "FOO_FROM_COMMAND", "CLAUDE_CODE_DISABLE_MOUSE"} {
 		rec.Env[k] = os.Getenv(k)
 	}
 	sleeper := exec.Command("sleep", "600")

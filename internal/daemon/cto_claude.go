@@ -163,7 +163,7 @@ func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	if err := claudetrust.Set(dir); err != nil {
 		return fmt.Errorf("trust CTO Claude directory: %w", err)
 	}
-	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": ""}})
+	settings, _ := json.Marshal(map[string]any{"crossSessionInbound": "accept", "disableAllHooks": true, "enabledPlugins": map[string]bool{}, "env": map[string]string{"AGENT_NET_CTO": "1", "AGENT_NET_SOCKET": d.cfg.SocketPath, "AGENT_NET_WORKER": "", "CLAUDE_CODE_DISABLE_MOUSE": "1"}})
 	args := []string{"--bg", "--tools", "", "--setting-sources", "", "--name", "agent-net-cto", "--settings", string(settings), "--system-prompt", ctoBrief}
 	if id != "" {
 		args = append(args, "--resume", id)
@@ -177,6 +177,7 @@ func (d *Daemon) startClaudeCTO(ctx context.Context, id, model string) error {
 	defer c.starting.Store(false)
 	cmd := exec.CommandContext(ctx, bin, args...)
 	cmd.Dir = dir
+	cmd.Env = workerEnv(os.Environ(), map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"})
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		if claudeTrustPrompt(output) {

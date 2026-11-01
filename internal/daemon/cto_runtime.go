@@ -205,6 +205,7 @@ func (d *Daemon) ctoEnterOnce(ctx context.Context) (protocol.EnterPlan, error) {
 			return plan, e
 		}
 		plan.Argv = []string{bin, "attach", d.claudeCTO.ref}
+		plan.Env = map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}
 	} else {
 		d.cto.mu.Lock()
 		defer d.cto.mu.Unlock()

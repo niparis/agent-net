@@ -63,6 +63,10 @@ func TestClaudeCTOBackgroundAndResume(t *testing.T) {
 	if id != rec.Session || argValue(rec.Args, "--model") != "opus" || argValue(rec.Args, "--resume") != "" {
 		t.Fatalf("first: %+v %q", rec, id)
 	}
+	settingsEnv, _ := rec.Settings["env"].(map[string]any)
+	if settingsEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
+		t.Fatalf("mouse off: settings %v session %v command %v", settingsEnv, rec.Env, rec.CommandEnv)
+	}
 	transcriptDir := filepath.Join(filepath.Dir(n.sessions), "projects", "fake")
 	if err := os.MkdirAll(transcriptDir, 0700); err != nil {
 		t.Fatal(err)
@@ -410,6 +414,9 @@ func TestCTOEnterClaude(t *testing.T) {
 	}
 	if len(plan.Argv) != 3 || plan.Argv[1] != "attach" || plan.Argv[2] != n.d.claudeCTO.ref {
 		t.Fatalf("plan: %+v", plan)
+	}
+	if plan.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
+		t.Fatalf("attach env: %v", plan.Env)
 	}
 	cfgPath := filepath.Join(os.Getenv("CLAUDE_CONFIG_DIR"), ".claude.json")
 	raw, err := os.ReadFile(cfgPath)

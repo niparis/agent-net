@@ -101,6 +101,9 @@ func TestClaudeWorkerLifecycle(t *testing.T) {
 	if env["AGENT_NET_SOCKET"] != c.cfg.SocketPath || !strings.HasPrefix(rec.Env["AGENT_NET_WORKER"], "w_") {
 		t.Errorf("settings env %v, session env %v", env, rec.Env)
 	}
+	if env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" || rec.CommandEnv["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
+		t.Errorf("mouse off: settings %v session %v command %v", env, rec.Env, rec.CommandEnv)
+	}
 	// The MCP server of the session is this daemon's binary, whatever the user
 	// has installed.
 	var mcpCfg struct {

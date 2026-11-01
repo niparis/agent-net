@@ -113,7 +113,7 @@ func TestEnterClaudeBackgroundSessionAttaches(t *testing.T) {
 	if want := []string{bins["claude"], "attach", "abcd1234"}; !reflect.DeepEqual(p.Argv, want) {
 		t.Fatalf("argv %v, want %v", p.Argv, want)
 	}
-	if p.Dir != cwd || len(p.Env) != 0 {
+	if p.Dir != cwd || len(p.Env) != 1 || p.Env["CLAUDE_CODE_DISABLE_MOUSE"] != "1" {
 		t.Fatalf("dir %q env %v", p.Dir, p.Env)
 	}
 
