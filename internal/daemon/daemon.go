@@ -166,8 +166,9 @@ type Config struct {
 type localSession struct {
 	info           protocol.SessionInfo
 	sessionID      string
-	conn           *localConn // set for plugin sessions
-	statusRevision uint64     // changes on each plugin status event
+	workerWaiting  *protocol.Waiting // last unsettled worker wait, protected by d.mu
+	conn           *localConn        // set for plugin sessions
+	statusRevision uint64            // changes on each plugin status event
 	// owned is set for a session the daemon registered itself (a Codex worker
 	// in its private server). Discovery of a harness never removes it.
 	owned bool

@@ -48,7 +48,7 @@ func (m Model) needsRows() []protocol.AgentView {
 		out = append(out, protocol.AgentView{SessionID: "outcome:" + e.ReplyID, Harness: "outcome", Online: true, Profile: protocol.Profile{Name: e.From + " -> " + e.To}, Waiting: &protocol.Waiting{Kind: protocol.WaitingInput, Text: text, Since: e.At / 1e9}})
 	}
 	for _, a := range m.snap.Agents {
-		if protocol.IsOwner(a.Harness) || a.Waiting == nil {
+		if protocol.IsOwner(a.Harness) || a.Worker != nil || a.Waiting == nil {
 			continue
 		}
 		if m.hiddenSessions[a.SessionID] && !m.showHiddenSessions {
@@ -305,7 +305,7 @@ func (m Model) needsHost(a protocol.AgentView) string {
 // waitingStatus is the STATUS of a session in the table: a wait outranks idle,
 // busy and offline (the section above shows it too).
 func waitingStatus(a protocol.AgentView) string {
-	if a.Waiting == nil {
+	if a.Waiting == nil || a.Worker != nil {
 		return ""
 	}
 	return "needs you"
