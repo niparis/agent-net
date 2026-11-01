@@ -11,7 +11,7 @@ import (
 	"github.com/niparis/agent-net/internal/toolcatalog"
 )
 
-func catalogTool(t *testing.T, name string) toolcatalog.Tool {
+func catalogToolT(t *testing.T, name string) toolcatalog.Tool {
 	t.Helper()
 	for _, tool := range toolcatalog.Tools {
 		if tool.Name == name {
@@ -93,7 +93,7 @@ func TestReadToolsRegisteredFromCatalog(t *testing.T) {
 		byName[tool.Name] = tool
 	}
 	for _, name := range []string{"agent_sessions_find", "agent_session_get", "agent_machines_find", "agent_machine_get", "agent_projects_find"} {
-		entry := catalogTool(t, name)
+		entry := catalogToolT(t, name)
 		got, ok := byName[name]
 		if !ok {
 			t.Fatalf("%s is not registered", name)
@@ -135,7 +135,7 @@ func TestReadToolResultsMatchCatalogSchema(t *testing.T) {
 		if res.StructuredContent == nil {
 			t.Fatalf("%s has no structuredContent", c.tool)
 		}
-		entry := catalogTool(t, c.tool)
+		entry := catalogToolT(t, c.tool)
 		if err := resolvedSchema(t, entry.OutputSchema).Validate(res.StructuredContent); err != nil {
 			t.Fatalf("%s structuredContent does not match the catalog output schema: %v", c.tool, err)
 		}
