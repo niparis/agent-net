@@ -1,4 +1,8 @@
-"""Draw the README overview diagram: python3 scripts/diagram.py docs/img"""
+"""Draw the README SVG diagrams: python3 scripts/diagram.py docs/img
+
+For PNG previews, run: rsvg-convert -o docs/img/primitives-light.png docs/img/primitives-light.svg
+Repeat for the dark theme. This needs librsvg tools.
+"""
 import sys
 
 THEMES = {
@@ -97,7 +101,84 @@ def svg(t):
     return s
 
 
+def primitives(t):
+    """Draw the conceptual model in separate lanes to keep links legible."""
+    s = (f'<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1250" '
+         f'viewBox="0 0 1500 1250" font-family="{FONT}">')
+    s += '<title>Agent network primitives and their relationships</title>'
+    s += (f'<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" '
+          f'orient="auto"><path d="M0 0 L8 4 L0 8 Z" fill="{t["line"]}"/></marker></defs>')
+    s += f'<rect width="1500" height="1250" rx="14" fill="{t["net"]}"/>'
+
+    def box(x, y, w, h, title, lines=(), accent=False):
+        nonlocal s
+        stroke = t["accent"] if accent else t["border"]
+        fill = t["soft"] if accent else t["card"]
+        s += f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10" fill="{fill}" stroke="{stroke}" stroke-width="1.3"/>'
+        s += f'<text x="{x+16}" y="{y+27}" font-size="15" font-weight="700" fill="{t["text"]}">{title}</text>'
+        for i, line in enumerate(lines):
+            s += f'<text x="{x+16}" y="{y+49+i*19}" font-size="13" fill="{t["muted"]}">{line}</text>'
+
+    def link(path, label, x, y):
+        nonlocal s
+        s += f'<path d="{path}" fill="none" stroke="{t["line"]}" stroke-width="1.5" marker-end="url(#arrow)"/>'
+        s += f'<text x="{x}" y="{y}" text-anchor="middle" font-size="12" fill="{t["muted"]}">{label}</text>'
+
+    box(620, 20, 260, 62, 'OWNER', ['Source of authority'], True)
+    for x, title, lines in [
+        (30, 'CHARTER', ['goals and behavior']),
+        (320, 'AUTHORITY', ['actions without asking']),
+        (610, 'AUTONOMY', ['may wake itself', 'may plan its own work']),
+        (900, 'NEEDS YOU', ['attention queue']),
+        (1190, 'BUDGET', ['quotas and protected providers', 'daily cap on automatic wake-ups'])]:
+        box(x, 145, 270, 88, title, lines)
+    for target, label, lx in [(165, 'sets', 265), (455, 'sets', 455),
+                              (745, 'sets', 775), (1035, 'attends to', 1040),
+                              (1325, 'sets', 1230)]:
+        link(f'M750 82 V110 H{target} V145', label, lx, 102)
+
+    box(320, 340, 520, 130, 'AGENT', ['Graph node: project lead / advisor / worker / ghost',
+                                      'STATE: activity (session: busy/idle) + pending',
+                                      '(has work left: yes/no/unknown)'], True)
+    box(920, 355, 250, 100, 'EDGE', ['who may ask whom', 'rule: auto / hold / ask   ·   trust'])
+    box(1250, 370, 210, 70, 'AGENT B', ['another Graph node'], True)
+    link('M840 405 H920', '', 880, 396)
+    link('M1170 405 H1250', 'A to B', 1210, 395)
+    link('M165 233 V285 H380 V340', 'defines', 270, 277)
+    link('M455 233 V340', 'limits', 477, 290)
+    link('M745 233 V340', 'governs', 775, 290)
+    link('M810 340 V300 H1035 V233', 'asks', 950, 292)
+
+    box(30, 580, 300, 75, 'SESSION', ['1 = agent; 2+ = clones'])
+    box(30, 730, 300, 75, 'MACHINE / HARNESS / MODEL', ['session attributes'])
+    link('M380 470 V525 H180 V580', 'lives as', 270, 517)
+    link('M180 655 V730', 'runs on', 210, 696)
+    box(420, 580, 250, 75, 'PROJECT', ['home of a lead'])
+    box(420, 730, 250, 75, 'WORKSPACE', ['folder or worktree'])
+    link('M545 470 V580', 'has home', 580, 529)
+    link('M545 655 V730', 'contains', 576, 696)
+    box(760, 580, 300, 75, 'TOOLS', ['skills and MCP'])
+    box(1110, 580, 350, 75, 'KNOWLEDGE', ['playbooks and findings'])
+    box(760, 730, 300, 88, 'MESSAGE', ['ask, reply, notification', 'a request is a task'])
+    box(1110, 730, 350, 75, 'NEEDS YOU ITEM', ['a task for the owner'])
+    s += f'<text x="760" y="550" font-size="13" font-weight="700" fill="{t["muted"]}">SHARED ACROSS THE NETWORK</text>'
+
+    s += f'<text x="30" y="880" font-size="13" font-weight="700" fill="{t["muted"]}">DELEGATED WORK</text>'
+    box(30, 980, 260, 75, 'REQUESTING AGENT', ['the agent above'], True)
+    box(400, 980, 220, 75, 'WORKER', ['one-task agent'])
+    box(730, 980, 300, 95, 'TASK', ['contract: caller, doer,', 'done condition, result'])
+    box(1140, 980, 260, 75, 'REPORT', ['task result'])
+    link('M290 1015 H400', 'requests', 345, 1005)
+    link('M620 1015 H730', 'does', 675, 1005)
+    link('M1030 1015 H1140', 'produces', 1085, 1005)
+    link('M1270 980 V925 H160 V980', 'returns to', 715, 917)
+    link('M1460 189 H1480 V1140 H510 V1055', 'caps worker and automatic wake-ups', 1150, 1130)
+    return s + '</svg>\n'
+
+
 out = sys.argv[1]
 for name, t in THEMES.items():
     with open(f"{out}/overview-{name}.svg", "w") as f:
         f.write(svg(t))
+    with open(f"{out}/primitives-{name}.svg", "w") as f:
+        f.write(primitives(t))

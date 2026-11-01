@@ -86,6 +86,19 @@ Install details, modes and options: [docs/setup.md](docs/setup.md). On a Mac, as
 - **Each session gets the same tools:** `agent_list`, `agent_get`, `agent_announce`, `agent_send`, `agent_reply`, `agent_messages` and `agent_message_status`, and tools to register and list projects (`agent_project_add`, `agent_project_list`). Claude Code gets them from `agent-net mcp`, a stdio MCP server it starts for each session. Pi gets them from an extension, and OpenCode from a plugin in its background service.
 - **Messages arrive as a new turn** in the running session, like something you typed. The reply is routed back to the sender: Claude Code answers with its own `SendMessage`, and the daemon turns that into a network reply. Pi answers with `agent_reply`.
 
+## How agent-net thinks
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/primitives-dark.svg">
+  <img alt="The owner sets the rules for agents, which have sessions, projects and work, and share tools, knowledge and messages" src="docs/img/primitives-light.svg">
+</picture>
+
+- **Owner and agents:** The owner sets charters, authority and autonomy. Agents have a kind, state and sessions.
+- **Rules and work:** Edges govern requests. Tasks are contracts; workers return reports to their callers. Projects and workspaces give agents a place to work.
+- **Shared:** Tools, knowledge, messages, budget and Needs you support the network.
+
+See [Primitives](docs/decisions/0036-primitives.md) for the terms and their display names.
+
 ## What it looks like
 
 A real run with two throwaway sessions on one machine: Claude Code in a frontend project, Pi in an API project. The transcript is trimmed where marked with `...`.
