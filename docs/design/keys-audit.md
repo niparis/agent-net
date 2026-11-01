@@ -252,6 +252,7 @@ Tools plan modal and picker:
 | `m` | Harness and model form. |
 | `n` | Ask to start a new conversation; `y` confirms. |
 | `u` | Undo the latest graph change. |
+| `w` | Toggle the 30-minute "I'm driving" graph window. Owner TUI only; the box shows time left. |
 
 Inside the CTO harness (the full session), the harness owns the keys. The TUI
 only supplies ctrl+] to come back.
@@ -376,3 +377,6 @@ one commit, after the owner approves the map. The implemented changes are the Gr
 the CTO box in decision
 [0034](../decisions/0034-cto-box-is-read-only.md): Enter opens the CTO and `o`
 no longer does anything there.
+
+The focused CTO box reserves `w` for the graph window (decision 0040). This key
+was free there; the Messages worker-thread filter keeps its existing `w`.

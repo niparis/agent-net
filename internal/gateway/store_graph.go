@@ -46,6 +46,15 @@ func graphKind(tx *sql.Tx, name string) (string, error) {
 	return "component", nil
 }
 func graphRecord(tx *sql.Tx, typ, node, attr, old, value, actor string, at int64) error {
+	if actor == "CTO (minor)" {
+		class, err := ctoGraphClassTx(tx, typ, node, attr, old, value)
+		if err != nil {
+			return err
+		}
+		if class != "minor" {
+			return reject("CTO graph change now requires the owner")
+		}
+	}
 	if actor == "" {
 		return reject("actor required")
 	}
@@ -733,7 +742,7 @@ func (s *Store) Graph() (protocol.Graph, error) {
 
 // CTOGraphHistory returns all attributed CTO changes after a history ID.
 func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) {
-	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE (actor='cto' OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
+	rows, err := s.db.Query(`SELECT id,type,node,attr,old_value,new_value,at FROM graph_history WHERE (actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)') AND id>? ORDER BY id`, after)
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +760,7 @@ func (s *Store) CTOGraphHistory(after int64) ([]protocol.CTOGraphChange, error) 
 
 func (s *Store) CTOLastGraphID() (int64, error) {
 	var id int64
-	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor GLOB 'owner (CTO proposal p_[0-9]*)'`).Scan(&id)
+	err := s.db.QueryRow(`SELECT COALESCE(MAX(id),0) FROM graph_history WHERE actor='cto' OR actor IN ('CTO (minor)','CTO (owner window)') OR actor GLOB 'owner (CTO proposal p_[0-9]*)'`).Scan(&id)
 	return id, err
 }
 

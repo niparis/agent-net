@@ -218,7 +218,7 @@ func (m Model) helpContent(w int) []string {
 		{"m", "change the machine on By project"},
 		{"/", "search or filter"},
 		{"r", "rescan"},
-		{"tab, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, m title, harness and model; pgup/pgdn scroll"},
+		{"tab, C", "focus the " + m.ctoTitle() + " box: enter opens the full " + m.ctoTitle() + ", tab returns, esc skips a tip; n new, u undo, w drive 30m, m title, harness and model; pgup/pgdn scroll"},
 		{"N", "name the machine of the session (every machine sees it; empty resets)"},
 		{"L", "what the network learned: playbook notes and their support"},
 		{"/", "filter (words match name, project, branch, model, ...)"},

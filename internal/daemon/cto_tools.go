@@ -35,6 +35,9 @@ func (lc *localConn) ctoTool(ctx context.Context, raw json.RawMessage) (any, err
 }
 
 func (d *Daemon) runCTOToolRaw(ctx context.Context, name string, raw json.RawMessage) (any, error) {
+	if isCTOGraphTool(name) {
+		return d.routeCTOGraph(ctx, name, raw)
+	}
 	return routeCTOTool(ctx, name, raw, d.Propose, d.executeCTOTool)
 }
 
@@ -127,7 +130,7 @@ func (d *Daemon) executeCTOTool(ctx context.Context, name string, raw json.RawMe
 			return nil, errNotConnected
 		}
 		return d.call(ctx, "learn.add", protocol.LearnFrame{LearnRequest: p, Reporter: sid})
-	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo":
+	case "charter_set", "node_add", "node_remove", "edge_set", "edge_remove", "graph_undo", "node_settings_set":
 		delete(args, "by")
 		if name == "graph_undo" {
 			args["history_id"] = args["id"]
@@ -279,9 +282,13 @@ func (d *Daemon) ctoAttributedCall(ctx context.Context, typ string, params any) 
 	var caps struct {
 		Attribution    bool `json:"attribution"`
 		NetworkSession bool `json:"network_session"`
+		GraphAuthority bool `json:"graph_authority"`
 	}
 	if json.Unmarshal(b, &caps) != nil || !caps.Attribution {
 		return nil, errors.New("gateway cannot verify CTO attribution; upgrade the gateway")
+	}
+	if actor := proposalActor(ctx); (actor == "CTO (minor)" || actor == "CTO (owner window)") && !caps.GraphAuthority {
+		return nil, errors.New("gateway cannot enforce CTO graph authority; upgrade the gateway")
 	}
 	if (typ == "msg.send" || typ == "cto.session.register") && !caps.NetworkSession {
 		return nil, errors.New("gateway does not support the CTO network session; upgrade the gateway")
@@ -302,7 +309,7 @@ var ctoOwnerMethods = map[string]bool{
 	"mcp_import": true, "mcp_native_remove": true, "tools_plan": true, "tools_apply": true, "tools_undo": true,
 	"inbox_answer": true, "outcome_overrule": true,
 	"session_trust": true, "session_policy": true, "session_rename": true, "node_rename": true, "project_display_set": true, "integrations_set": true,
-	"held_answer": true, "node_settings_set": true,
+	"held_answer":  true,
 	"playbook_set": true, "cto_settings": true, "cto_send": true, "cto_new": true,
 }
 var ctoLocalMethods = map[string]bool{

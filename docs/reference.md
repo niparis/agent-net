@@ -4,14 +4,40 @@ Decision [0036](decisions/0036-primitives.md) defines an agent as a lasting iden
 
 ## CTO settings and conversation
 
-Every owner-only CTO change becomes a proposal in Needs you. This includes
-all graph and charter changes, node settings, session and machine names, trust
-and policy, worker start and stop, held/inbox/outcome answers, tools plans and
-apply/undo/import, MCP add/remove/test/enable/call, integrations, notifications,
-CTO settings, providers, scores, worker profiles, playbooks, project registration
-and names, invites, onboarding restart and new CTO conversations. Even a dry
-run or a plan needs approval. `mcp_call` can have side effects and return private
-data, so it is always a proposal.
+Minor CTO graph changes apply immediately with actor `CTO (minor)`: charter
+wording, `accepts`, `needs` and `consumers` items, new architect nodes and
+`depends` edges with the normal request rule. The gateway reuses the learned
+change classifier, including its restrictive-wording check. Restrictive or
+narrowing phrases, `refuses`, `escalate`, maturity, deploy and request rules
+(`auto`, `ask`, `never`), `governs` and `deploys` edges, node removal, any node
+settings, and any change touching a critical node are major. Clearing a charter field or removing an accepts, needs or consumers item is
+major. Undo is classified
+by the change it would make. Removing an edge with a permission rule is major
+too, as is replacing that rule with `normal`.
+
+Press `w` on the focused CTO box to open an "I'm driving" window for 30 minutes.
+The same key closes it early. While open, major graph changes also apply
+immediately, with actor `CTO (owner window)`. The box shows the time left.
+The CTO host daemon keeps the grant only in memory: it expires at 30 minutes
+and closes on restart. Only an owner-gated TUI connection on that daemon may
+read or toggle it. An agent, the CTO process, a CLI inside a session, and an
+ordinary CLI connection cannot open it. The CTO cannot supply or extend its
+expiry. It applies in every CTO turn, including turns started by peers.
+
+Each immediate change leaves a notice in the CTO box and a normal graph
+history entry. Press `u` there to undo the latest CTO graph change in one key.
+These notices do not create blocking Needs you rows. Outside the window, major
+graph changes become proposals in Needs you.
+
+All non-graph owner-only changes remain proposals, including session and
+machine names, trust and policy, worker start and stop, held/inbox/outcome
+answers, tools plans and apply/undo/import, MCP add/remove/test/enable/call,
+integrations, notifications, CTO settings, providers, scores, worker profiles,
+playbooks, project registration and names, invites, onboarding restart and new
+CTO conversations. Even a dry run or a plan needs approval. `mcp_call` can have
+side effects and return private data, so it is always a proposal. An approval
+typed in the CTO chat never counts. Use `A` in Needs you for proposals, or `w`
+in the CTO box for the graph window.
 
 Each proposal tool accepts an optional `reason`. The daemon validates the exact
 call before storing it. The CTO receives only:
@@ -226,7 +252,8 @@ method is owner-gated, so the CTO cannot read that setting. Needs you, other
 sessions' text, owner inboxes, tool inventory and owner settings remain outside
 the CTO's read tools.
 
-Change tools remain proposals: graph and charter writes, worker start/stop,
+Major graph changes outside the owner window and all non-graph change tools
+remain proposals: worker start/stop,
 session trust/policy/names, held/inbox/outcome answers, settings and playbook
 writes, projects, tools plans/apply/undo/import, MCP changes/calls, invites,
 onboarding restart, `cto_send` and `cto_new`. `send`, `reply`, `message`, `learn`,

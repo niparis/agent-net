@@ -4,7 +4,7 @@
 
 This design builds on the CTO as the advisor for the whole network, its charter, edges and authority. Its proposed peer session and owner-approved proposals fit decision 0036. The current private CTO behavior remains as documented until this design is built.
 
-Status: accepted by the owner as option A on 2026-10-31. Parts 6, 7 and 9 are implemented; the CTO session receives messages through the active harness and uses paged public reads. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
+Status: implemented minor graph authority and the owner window on 2026-11-01 ([0040](../decisions/0040-cto-minor-graph-and-owner-window.md)), amending option A accepted on 2026-10-31. Parts 6, 7 and 9 are implemented; the CTO session receives messages through the active harness and uses paged public reads. Decision: [0035](../decisions/0035-cto-is-a-standard-agent.md).
 
 Part 2 supplies the proposal store, decision runner and Needs you interface.
 Part 5 (hand-over) is implemented: `c` previews one item and sends it through
@@ -20,7 +20,7 @@ Base: [0022](../decisions/0022-component-graph-and-cto.md) (the CTO section), [0
 ## Summary
 
 - The CTO becomes a normal agent session. It runs on the claude or opencode harness, as today. It is listed as `CTO` in `agent_list`, the Sessions tab and the Graph. Enter opens it like any session. Agents can message it, and replies reach it like any session.
-- **The CTO never runs an owner-only change itself.** Every graph or charter change, worker start or stop, settings change, tools or MCP change, answer in Needs you and send as the owner becomes a **proposal** in Needs you. The owner approves it with one key. The daemon, not the model, then runs the stored call.
+- **The daemon enforces graph authority.** Minor graph changes apply at once. Major graph changes need a proposal outside the owner window. Every worker start or stop, settings change, tools or MCP change, answer in Needs you and send as the owner becomes a **proposal** in Needs you. The owner approves it with one key. The daemon, not the model, then runs the stored call.
 - **The CTO reads only what any session can read.** Owner-only data (Needs you contents, other sessions' text, the owner's inbox, owner settings) reaches the CTO only when the owner hands an item to it from the TUI.
 - Both rules hold in every turn, whoever started it. So the design needs no turn provenance, which the spike showed cannot be proven with today's Claude Code and OpenCode.
 - The CTO has no built-in tools: no shell, no file reads or writes, no web, no scheduling, no subagents. Its only tools are the 26 tools of its own MCP server.
@@ -36,7 +36,7 @@ Today the CTO is a private object (0022: "It is not a network peer: no session c
 - **Its own interface.** `cto_send`, `cto_events` and `cto_enter` duplicate `owner_send`, `session_text` and `session_enter`.
 - **Its tools are all or nothing.** 82 schemas go into every model call. Some results are large: `needs_you` returns about 4,610 tokens for 50 waiting sessions.
 
-The rule "no session can message it" bought one thing: no agent can talk the CTO into using owner powers or into repeating owner data. This design keeps that guarantee in a form the daemon can enforce without knowing who started a turn: the CTO has no owner powers to misuse and no owner data to repeat, except what the owner approves or hands over.
+The rule "no session can message it" bought one thing: no agent can talk the CTO into using owner powers or into repeating owner data. This design keeps that guarantee in a form the daemon can enforce without knowing who started a turn: the CTO has bounded graph powers under decision 0040, other owner changes need proposals, and owner data enters only when the owner hands it over.
 
 ## 2. The model
 
@@ -50,7 +50,7 @@ The rule "no session can message it" bought one thing: no agent can talk the CTO
 | Enter | `cto_enter` | `session_enter` on the CTO session, the same plan as today |
 | Status, context, compaction | CTO-only code | The session's normal fields; the 0029 compaction rules stay |
 | Messages from agents | Not possible | Delivered like any session |
-| Owner-only changes | Run directly, on "the owner's explicit words" in the brief | Always a proposal; the daemon runs it after the owner approves |
+| Owner-only changes | Run directly, on "the owner's explicit words" in the brief | Minor graph changes run immediately; major graph changes need a proposal or the owner window; other changes remain proposals |
 | Owner-only reads | Yes | No; the owner hands items over |
 | Built-in tools | All, including a shell and file writes | None |
 | Sends | As the owner session with a CTO flag | From its own session: a peer note, or the CTO note after approval |
@@ -70,7 +70,7 @@ The CTO is a fixed node of kind `cto`. It has no editable charter: its brief is 
 
 ## 3. The two rules
 
-> **Rule 1. Changes.** The CTO never runs an owner-only change. Each one becomes a proposal. The daemon runs it only after the owner approves it through the owner gate.
+> **Rule 1. Changes.** Minor graph changes apply at once. Major graph changes become proposals unless the owner opened the 30-minute graph window. All non-graph owner-only changes remain proposals. The daemon enforces these rules in every turn.
 >
 > **Rule 2. Reads.** The CTO's tools return only data that an ordinary session can already read through its own agent-net tools, plus the CTO's own conversations. Owner-only data enters the CTO only when the owner hands it over.
 
@@ -84,7 +84,8 @@ Every tool and action has a fixed class, kept in one table in the daemon, not in
 |---|---|---|
 | Public read | Runs, returns only public data | sessions, session profile, graph, machines, projects, workers, feed metadata, the CTO's own conversations, its own proposals |
 | Talk | Runs, as for any session | a reply or a plain send with the peer note, `ask_owner`, `learn`, `ui` |
-| Proposal | Validated and stored, never run by the CTO | every change tool, `mcp_call`, a send as the owner, `cto_new` |
+| Graph | Minor changes apply at once; major changes apply during the owner window or become proposals | charter, nodes, edges, node settings and graph undo |
+| Proposal | Validated and stored, never run by the CTO | all non-graph owner changes, `mcp_call`, a send as the owner, `cto_new` |
 
 There is no "owner read" class. An owner-only read that the CTO has today is either removed or reduced to what an ordinary session gets.
 
@@ -95,6 +96,23 @@ Talk is what any session can already do. A plain send from the CTO carries a pee
 `ui` shows a view or a notice in the owner's open TUIs. It runs no action. It is talk, under a rate limit of 6 calls per minute, and the TUI marks it as from the CTO.
 
 ## 4. Proposals
+
+Decision 0040 amends option A. Minor graph changes reuse the learned restriction
+classifier: charter wording, accepts, needs, consumers, new architect nodes and
+normal depends edges. Restrictive or narrowing wording, refuses, escalate,
+maturity, deploy and request rules, governs and deploys edges, node removal,
+all node settings and anything touching a critical node are major. The gateway
+checks minor writes again inside the graph transaction. Undo follows its reverse
+change. Immediate changes write a notice in the CTO box and normal graph history
+with `CTO (minor)`, or `CTO (owner window)` while the window is open. The owner
+can undo with `u`; there is no blocking row for these notices.
+
+Only the owner's gated TUI on the CTO host can toggle the window, with `w` on
+the focused CTO box. It shows the time left, closes after 30 minutes, closes on
+restart, and the same key closes it early. The deadline lives only in daemon
+memory and is not a CTO tool, setting or token. It grants graph changes only,
+in all turns regardless of source. Non-graph changes stay proposals. Chat text
+never approves a proposal: the CTO brief points to `A` in Needs you or `w`.
 
 A call of class proposal:
 
@@ -107,11 +125,12 @@ A call of class proposal:
 - **Report.** The CTO gets a one-line note at its next idle moment: `p_12 approved and applied`, `p_12 approved, failed: <error, at most 200 characters>`, `p_12 declined` or `p_12 expired`. The note never carries data that the call returned (for example an `mcp_call` result or a plan's file paths). The owner sees the full result in the detail, and can hand it to the CTO (section 6).
 - **Limits.** The same call is not proposed twice while one is open. A proposal expires after 24 hours. At most 20 proposals are open at once; the 21st is refused with a reason. The cap is global, because the daemon cannot tell which input led to a proposal.
 
-The proposal is the owner's approval of that exact call. The owner's typing in the CTO session is not an approval: if the owner types "add the edge", the CTO proposes it and the owner presses `a`. This one extra key is the cost of option A.
+The proposal is the owner's approval of that exact call. Typing an approval in the CTO chat never counts. For a major graph change outside the window, the owner uses Needs you or opens the window with `w`.
 
-### Owner-only changes, all as proposals
+### Changes that need proposals
 
-Graph and charter changes, node settings, session rename, trust and policy, worker start and stop, answers to held requests, inbox items and outcomes, tools plans, apply, undo and import, MCP add, remove, test and enable, `mcp_call`, integrations, notifications, CTO settings, providers, scores, worker profiles, the playbook, project add and remove and display names, sends as the owner, and `cto_new`.
+Major graph and charter changes and node settings outside the owner window;
+always session rename, trust and policy, worker start and stop, answers to held requests, inbox items and outcomes, tools plans, apply, undo and import, MCP add, remove, test and enable, `mcp_call`, integrations, notifications, CTO settings, providers, scores, worker profiles, the playbook, project add and remove and display names, sends as the owner, and `cto_new`.
 
 `mcp_call` is a proposal because a shared MCP tool can have side effects (send mail, write a file) and can return private data.
 

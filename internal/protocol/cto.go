@@ -159,3 +159,10 @@ type CTOGraphChange struct {
 	NewValue string `json:"new_value"`
 	At       int64  `json:"at"`
 }
+
+// CTOGraphWindow is owner-only state on the CTO host daemon.
+type CTOGraphWindow struct {
+	Until time.Time `json:"until"`
+}
+
+const OpCTOGraphWindow = "cto_graph_window"

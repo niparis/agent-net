@@ -184,6 +184,7 @@ type activityUpdate struct {
 func key(harness, nativeID string) string { return harness + "/" + nativeID }
 
 type Daemon struct {
+	ctoGraph         ctoGraphWindow
 	operatorReads    operatorReadCache
 	startedSessions  map[string]protocol.StartedSession // guarded by mu
 	notify           notificationTracker
