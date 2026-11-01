@@ -40,3 +40,10 @@ func TestCTOConversationRows(t *testing.T) {
 		t.Fatalf("rows: %+v", rows)
 	}
 }
+
+func TestCTOProjectRows(t *testing.T) {
+	rows := ctoProjectRows([]protocol.ProjectView{{Name: "project", DisplayName: strings.Repeat("x", 100), NodeID: "node"}})
+	if len(rows) != 1 || len([]rune(rows[0].Display)) > 80 {
+		t.Fatalf("rows: %+v", rows)
+	}
+}

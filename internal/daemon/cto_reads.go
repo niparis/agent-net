@@ -12,7 +12,7 @@ import (
 // These are daemon methods used by the matching ordinary MCP tools. A read
 // without a source fails closed. Do not use an owner/CLI connection here.
 var ctoReadSources = map[string]string{
-	"agents": "list", "nodes": "nodes", "projects": "projects", "get": "get",
+	"agents": "list", "nodes": "nodes", "get": "get",
 	"message_status": "message_status", "mcp_list": "mcp_list",
 	"worker_profile_list": protocol.OpWorkerProfiles,
 }
@@ -27,6 +27,81 @@ func (d *Daemon) ctoReadConn() *localConn {
 
 func (d *Daemon) readCTOTool(ctx context.Context, name string, raw json.RawMessage) (any, error) {
 	switch name {
+	case "graph", "projects":
+		var q struct {
+			View   string `json:"view"`
+			Node   string `json:"node"`
+			Name   string `json:"name"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad project arguments")
+		}
+		if name == "graph" && q.View == "guide" {
+			return protocol.CharterGuideText(), nil
+		}
+		if name == "graph" && q.View != "" {
+			return nil, errors.New("unknown graph view")
+		}
+		filter := q.Name
+		if name == "graph" {
+			filter = q.Node
+		}
+		b, _ := json.Marshal(protocol.QueryProjects{Name: filter})
+		value, err := d.ctoReadConn().dispatch(ctx, "projects", b)
+		if err != nil {
+			return nil, err
+		}
+		var result protocol.ProjectsResult
+		if err = ctoDecode(value, &result); err != nil {
+			return nil, err
+		}
+		return ctoOffsetPage(ctoProjectRows(result.Projects), q.Limit, q.Offset), nil
+	case "machines":
+		var q struct {
+			Machine string `json:"machine"`
+			Harness string `json:"harness"`
+			Limit   int    `json:"limit"`
+			Offset  int    `json:"offset"`
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
+			return nil, errors.New("bad machine arguments")
+		}
+		value, err := d.ctoReadConn().dispatch(ctx, "nodes", nil)
+		if err != nil {
+			return nil, err
+		}
+		var result protocol.NodesInfo
+		if err = ctoDecode(value, &result); err != nil {
+			return nil, err
+		}
+		type row struct {
+			ID        string `json:"id"`
+			Name      string `json:"name"`
+			Online    bool   `json:"online"`
+			Harnesses int    `json:"harnesses"`
+		}
+		rows := make([]row, 0, len(result.Nodes))
+		for _, n := range result.Nodes {
+			if q.Machine != "" && (q.Machine == n.NodeID || q.Machine == n.Hostname) {
+				if q.Harness == "" {
+					return row{n.NodeID, ctoCut(n.Hostname, 80), n.Online, len(n.Harnesses)}, nil
+				}
+				for _, h := range n.Harnesses {
+					if h.Name == q.Harness {
+						return ctoOffsetPage(h.Models, q.Limit, q.Offset), nil
+					}
+				}
+				return nil, errors.New("unknown harness")
+			}
+			rows = append(rows, row{n.NodeID, ctoCut(n.Hostname, 80), n.Online, len(n.Harnesses)})
+		}
+		if q.Machine != "" {
+			return nil, errors.New("unknown machine")
+		}
+		return ctoOffsetPage(rows, q.Limit, q.Offset), nil
+
 	case "proposals":
 		var q struct {
 			ID     string `json:"id"`
@@ -255,6 +330,22 @@ func ctoConversationRows(messages []protocol.Message, feed bool) []ctoConversati
 			row.Text = ctoCut(m.Body, 80)
 		}
 		rows = append(rows, row)
+	}
+	return rows
+}
+
+type ctoProjectRow struct {
+	Name     string `json:"name"`
+	Display  string `json:"display,omitempty"`
+	Machine  string `json:"machine"`
+	Sessions int    `json:"sessions"`
+	Online   int    `json:"online"`
+}
+
+func ctoProjectRows(projects []protocol.ProjectView) []ctoProjectRow {
+	rows := make([]ctoProjectRow, 0, len(projects))
+	for _, p := range projects {
+		rows = append(rows, ctoProjectRow{ctoCut(p.Name, 80), ctoCut(p.DisplayName, 80), ctoCut(p.Hostname, 80), p.Sessions, p.Online})
 	}
 	return rows
 }

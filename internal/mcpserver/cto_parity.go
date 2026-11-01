@@ -30,7 +30,7 @@ func init() {
 	add("ui_show", "Show a TUI view.", map[string]ctoField{"tab": en("Tab.", "sessions", "messages", "quotas", "graph", "tools"), "select": s("Selection."), "filter": s("Filter."), "why": s("Reason.")})
 	add("ui_notice", "Show notice.", map[string]ctoField{"text": s("Notice.")})
 	add("nodes", "List machines and harness models.", nil)
-	add("projects", "List projects.", map[string]ctoField{"name": s("All.")})
+	add("projects", "List projects.", map[string]ctoField{"name": s("Filter."), "limit": n("Limit."), "offset": n("Offset.")})
 	add("project_add", "Register or scan projects.", map[string]ctoField{"paths": arr("Paths."), "dir": s("Directory."), "scan": b("Directory."), "depth": n("3; max 8."), "dry_run": b("Preview.")})
 	add("project_remove", "Remove a project.", map[string]ctoField{"name": s("Project."), "path": s("Path.")})
 	add("reply", "Reply as CTO.", map[string]ctoField{"message_id": s("Message ID."), "body": s("Reply.")})
