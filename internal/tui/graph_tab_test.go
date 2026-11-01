@@ -87,6 +87,8 @@ func TestGraphTabKeys(t *testing.T) {
 func TestGraphGoldens(t *testing.T) {
 	for _, size := range [][2]int{{80, 24}, {120, 34}} {
 		m := graphModel(size[0], size[1])
+		// A central node shows the accented neighbourhood and the dimmed rest.
+		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-03"})
 		got := m.View()
 		plain := ansi.Strip(got)
 		if strings.Contains(plain, "…") {
@@ -235,6 +237,37 @@ func TestGraphHintsDropInPriorityOrder(t *testing.T) {
 				t.Errorf("width %d has %q: %q", tc.width, h, line)
 			}
 		}
+	}
+}
+
+func TestGraphStatusLineNamesSelectedNode(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-01"})
+	lines := m.graphView(120, 20)
+	plain := ansi.Strip(strings.Join(lines, "\n"))
+	if !strings.Contains(plain, "selected: project-01 · component · 2 edges") {
+		t.Fatalf("status line does not name the selection:\n%s", plain)
+	}
+	for _, line := range lines {
+		if ansi.StringWidth(line) > 120 {
+			t.Fatalf("status line overflows: %q", ansi.Strip(line))
+		}
+	}
+	m80 := graphModel(80, 24)
+	m80.graphState, _ = graphview.Update(m80.graphState, graphview.SelectNode{Name: "project-01"})
+	plain = ansi.Strip(strings.Join(m80.graphView(80, 16), "\n"))
+	if !strings.Contains(plain, "selected: project-01 · component · 2 edges") || strings.Contains(plain, "…") {
+		t.Fatalf("narrow status line is cut:\n%s", plain)
+	}
+}
+
+func TestGraphStatusLineFollowsTheCamera(t *testing.T) {
+	m := graphModel(120, 34)
+	m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "project-02"})
+	m = keys(m, "+", "h", "h")
+	lines := m.graphView(120, 20)
+	if !strings.Contains(ansi.Strip(strings.Join(lines, "\n")), "selected: project-02 · component · 2 edges") {
+		t.Fatalf("status line changed after zoom and pan:\n%s", strings.Join(lines, "\n"))
 	}
 }
 

@@ -60,6 +60,27 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		role string
 	}
 	var arrows []arrow
+	edgeRole := func(e SceneEdge) string {
+		if e.Selected {
+			return "selectedEdge"
+		}
+		if e.Dimmed {
+			return "edgeDim"
+		}
+		return e.Kind
+	}
+	// Draw the selection's edges last so they stay accented where lines cross.
+	ordered := make([]SceneEdge, 0, len(scene.Edges))
+	for _, e := range scene.Edges {
+		if !e.Selected {
+			ordered = append(ordered, e)
+		}
+	}
+	for _, e := range scene.Edges {
+		if e.Selected {
+			ordered = append(ordered, e)
+		}
+	}
 	// Paint ordinary talk below relationships and voice above them.
 	drawTalk := func(talk SceneTalk) {
 		x0, y0 := point(talk.From)
@@ -113,15 +134,16 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 	}
 
-	for _, e := range scene.Edges {
+	for _, e := range ordered {
 		x0, y0 := point(e.From)
 		x1, y1 := point(e.To)
+		role := edgeRole(e)
 		ax, ay := x1-x0, y1-y0
 		if ax != 0 || ay != 0 {
 			angle := math.Atan2(float64(ay)/4, float64(ax)/2)
 			dirs := []rune{'→', '↘', '↓', '↙', '←', '↖', '↑', '↗'}
 			idx := (int(math.Round(angle/(math.Pi/4))) + 8) % 8
-			arrows = append(arrows, arrow{int(math.Round(float64(x0)*0.2+float64(x1)*0.8)) / 2, int(math.Round(float64(y0)*0.2+float64(y1)*0.8)) / 4, dirs[idx], e.Kind})
+			arrows = append(arrows, arrow{int(math.Round(float64(x0)*0.2+float64(x1)*0.8)) / 2, int(math.Round(float64(y0)*0.2+float64(y1)*0.8)) / 4, dirs[idx], role})
 		}
 		dx := abs(x1 - x0)
 		dy := -abs(y1 - y0)
@@ -139,7 +161,7 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		}
 		for step := 0; ; step++ {
 			if !e.Dashed || step%8 < 5 {
-				dot(x0, y0, e.Kind)
+				dot(x0, y0, role)
 			}
 			if x0 == x1 && y0 == y1 {
 				break
@@ -181,6 +203,36 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			hits[Cell{x / 2, y / 4}] = n.Name
 		}
 	}
+	// The selected node gets a bracket ring on its own cell row, drawn before
+	// halos and labels so those keep clear of it.
+	ring := func(cx, cy int, name string, left, right rune) bool {
+		if cx-1 < 0 || cx+1 >= width || cy < 0 || cy >= height {
+			return false
+		}
+		if cells[cy*width+cx-1].occupied || cells[cy*width+cx+1].occupied {
+			return false
+		}
+		for i, r := range []rune{left, right} {
+			x := cx - 1 + i*2
+			c := &cells[cy*width+x]
+			c.text, c.role, c.occupied = r, "selected", true
+			hits[Cell{x, cy}] = name
+		}
+		return true
+	}
+	for _, n := range scene.Nodes {
+		if !n.Selected {
+			continue
+		}
+		x, y := point(n.Position)
+		cx, cy := x/2, y/4
+		if ring(cx, cy, n.Name, '(', ')') {
+			continue
+		}
+		if !put(cx-2, cy, '▸', "selected") {
+			put(cx, cy-2, '▾', "selected")
+		}
+	}
 	// Reserve each disc's cells before labels are placed. Earlier discs win
 	// where nodes overlap, and marker cells always remain visible.
 	for _, n := range scene.Nodes {
@@ -206,17 +258,6 @@ func (b Braille) Render(scene Scene, size Size) Output {
 			hits[c] = n.Name
 		}
 	}
-	for _, n := range scene.Nodes {
-		if !n.Selected {
-			continue
-		}
-		x, y := point(n.Position)
-		cx, cy := x/2, y/4
-		if !put(cx-2, cy, '▸', "selected") {
-			put(cx, cy-2, '▾', "selected")
-		}
-	}
-
 	labelNodes := append([]SceneNode(nil), scene.Nodes...)
 	sort.SliceStable(labelNodes, func(i, j int) bool { return labelNodes[i].Selected && !labelNodes[j].Selected })
 	for _, n := range labelNodes {
@@ -236,6 +277,9 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if n.HasCharter {
 			labelRole = "label"
 		}
+		if n.Selected {
+			labelRole = "selectedLabel"
+		}
 		rs := []rune(label)
 		left, right, top := 0, 0, 0
 		if n.Activity >= 2 {
@@ -247,7 +291,13 @@ func (b Braille) Render(scene Scene, size Size) Output {
 		if n.Activity >= 4 {
 			top = 1
 		}
-		candidates := [][2]int{{cx + right + 2, cy}, {cx - len(rs) - left - 1, cy}, {cx - len(rs)/2, cy - top - 1}, {cx - len(rs)/2, cy + 1}}
+		// The selection ring owns the cells beside the disc, so its label and
+		// the gap before it start one cell further out.
+		ringGap := 0
+		if n.Selected {
+			ringGap = 1
+		}
+		candidates := [][2]int{{cx + right + 2 + ringGap, cy}, {cx - len(rs) - left - 1 - ringGap, cy}, {cx - len(rs)/2, cy - top - 1}, {cx - len(rs)/2, cy + 1}}
 		// A selected node gets another chance in any free row of the viewport.
 		if n.Selected {
 			for row := 0; row < height; row++ {
@@ -391,12 +441,22 @@ func colorRole(role, text string) string {
 		color = lipgloss.AdaptiveColor{Light: "#00666b", Dark: "#5fc4c9"}
 	case "governs":
 		color = lipgloss.AdaptiveColor{Light: "#6445a1", Dark: "#b49cf5"}
-	case "deploys", "selected", "flash", "busyPulse":
-		color = lipgloss.AdaptiveColor{Light: "#865000", Dark: "#f0b35a"}
+	case "deploys", "selected", "selectedEdge", "flash", "busyPulse":
+		color = AccentColor
+	case "edgeDim":
+		color = lipgloss.AdaptiveColor{Light: "#a7adb8", Dark: "#454c58"}
 	case "node", "label", "card":
 		color = lipgloss.AdaptiveColor{Light: "#242a34", Dark: "#d7dce5"}
 	case "busy", "comet":
 		color = lipgloss.AdaptiveColor{Light: "#246b32", Dark: "#7ccf8a"}
+	}
+	if role == "selectedLabel" {
+		return lipgloss.NewStyle().Bold(true).
+			Foreground(lipgloss.AdaptiveColor{Light: "#ffffff", Dark: "#1b1c20"}).
+			Background(AccentColor).Render(text)
+	}
+	if role == "selected" || role == "selectedEdge" {
+		return lipgloss.NewStyle().Bold(true).Foreground(color).Render(text)
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(text)
 }

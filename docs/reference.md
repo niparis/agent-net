@@ -280,7 +280,12 @@ Every change opens a plan first, in machines and projects. `d` shows the exact f
 
 Press `4`, `M` or `G` to open the Graph tab, the network screen. Each node
 is an agent with a lasting identity and charter. Arrows, `[` and `]`, or a
-click select a node. Press `/` to find a node by identity or display name;
+click select a node. The selected node has a bracket ring on its dot in the
+accent colour, its name in bold on an accent background, and its edges in the
+accent colour while every other edge is dimmed, so its neighbourhood stands
+out. The line above the keys reads `selected: NAME · KIND · N edges` and
+follows the node when the camera zooms or pans. Press `/` to find a node by
+identity or display name;
 Enter selects the first match and Esc cancels.
 
 Enter on a node opens its card: name, maturity, purpose and live sessions as
