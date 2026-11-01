@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -140,6 +141,34 @@ type ctoEnterCall struct {
 // Concurrent callers share the same startup result, including failures. Each
 // waiter can leave on its own deadline without starting another process.
 func (d *Daemon) ctoEnter(ctx context.Context) (protocol.EnterPlan, error) {
+	return d.ctoEnterWithLocation(ctx, "", "")
+}
+
+func (d *Daemon) ctoEnterWithLocation(ctx context.Context, socket, pane string) (protocol.EnterPlan, error) {
+	plan, err := d.ctoEnterBase(ctx)
+	if err != nil {
+		return plan, err
+	}
+	harness, native := "opencode", ""
+	if len(plan.Argv) > 2 && plan.Argv[1] == "attach" {
+		harness = "claude"
+		d.cto.mu.Lock()
+		native = d.claudeCTO.session
+		d.cto.mu.Unlock()
+	} else {
+		for i := 1; i+1 < len(plan.Argv); i++ {
+			if plan.Argv[i] == "--session" {
+				native = plan.Argv[i+1]
+			}
+		}
+	}
+	if existing, found := d.focusHerdrSession(socket, harness, native, plan.Host, "CTO"); found {
+		return herdrOpenNotice(existing, plan), nil
+	}
+	return d.openInHerdr("cto:"+strings.Join(plan.Argv, "\x00"), "CTO", socket, pane, plan), nil
+}
+
+func (d *Daemon) ctoEnterBase(ctx context.Context) (protocol.EnterPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return protocol.EnterPlan{}, err
 	}

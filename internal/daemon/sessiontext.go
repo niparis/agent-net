@@ -213,6 +213,9 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if len(raw) > 0 && json.Unmarshal(raw, &q) != nil {
 			return nil, true, errors.New("bad proposal request")
 		}
+		if method == protocol.OpProposalAnswer {
+			ctx = context.WithValue(ctx, proposalHerdrLocationKey{}, proposalHerdrLocation{socket: q.HerdrSocket, pane: q.HerdrPaneID})
+		}
 		if method == protocol.OpProposalList && q.NodeID == "" {
 			value, err := d.networkProposals(ctx)
 			return value, true, err
@@ -227,7 +230,11 @@ func (lc *localConn) dispatchOwner(ctx context.Context, method string, raw json.
 		if method == protocol.OpProposalAnswer {
 			frame = "query.proposal_answer"
 		}
+		q.HerdrSocket, q.HerdrPaneID = "", ""
 		data, err := d.call(ctx, frame, q)
+		if err == nil && method == protocol.OpProposalAnswer && q.Action == "a" {
+			d.openApprovedRemoteSession(ctx, q.NodeID, q.ID)
+		}
 		return data, true, err
 	case "notification_settings":
 		var p struct {
@@ -993,6 +1000,7 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		method := protocol.OpProposalList
 		if typ == "node.proposal_answer" {
 			method = protocol.OpProposalAnswer
+			ctx = context.WithValue(ctx, proposalRemoteOwnerKey{}, true)
 		}
 		data, _, err = d.proposalOperator(ctx, method, q)
 	case "node.message_body":
@@ -1024,10 +1032,10 @@ func (d *Daemon) onOperatorFrame(ctx context.Context, l *link, typ, id string, r
 		var q protocol.EnterRequest
 		if json.Unmarshal(raw, &q) != nil || q.SessionID == "" {
 			err = errors.New("bad node.session_enter")
-		} else if handled, plan, ctoErr := d.ctoEnterQuery(ctx, q); handled {
+		} else if handled, plan, ctoErr := d.ctoEnterQuery(ctx, q, true); handled {
 			data, err = plan, ctoErr
 		} else {
-			q.TmuxSocket, q.HerdrSocket = "", "" // the asker's terminal means nothing here
+			q.TmuxSocket, q.HerdrSocket, q.HerdrPaneID = "", "", "" // the asker's terminal means nothing here
 			data, err = d.localEnter(ctx, q, true)
 		}
 	case "node.session_text":

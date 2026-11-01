@@ -90,8 +90,8 @@ func TestNewSessionFormFilledFromTheSelectedRow(t *testing.T) {
 	for _, want := range []string{
 		"New session", "Project", "strategies", "Harness", "claude", "Model",
 		"Folder", "project folder", "no other session here", "First message",
-		"empty: start it and enter it",
-		"text: start it in the background and send this",
+		"empty: start and open it in herdr",
+		"text: send this and open it in herdr",
 	} {
 		if !strings.Contains(v, want) {
 			t.Errorf("form does not show %q:\n%s", want, v)
@@ -449,5 +449,19 @@ func TestNewSessionGraphGoldens(t *testing.T) {
 		m.graphState, _ = graphview.Update(m.graphState, graphview.SelectNode{Name: "tenebrae"})
 		m, _ = press(m, sessionKey())
 		golden(t, "view_"+itoa(size.w)+"x"+itoa(size.h)+"_new_session_graph", m.View())
+	}
+}
+
+func TestNewSessionHerdrNoticeWithFirstMessage(t *testing.T) {
+	m, src := workerModel(120, 34)
+	m = selectID(m, "s_0000000000000001")
+	src.sessionStart = startedSession("tenebrae", "claude")
+	src.sessionStart.EnterPlan = &protocol.EnterPlan{OpenedHerdr: true, Note: "opened tenebrae in herdr"}
+	m, _ = press(m, sessionKey())
+	m = typeText(m, "Inspect it")
+	m, cmd := press(m, tea.KeyMsg{Type: tea.KeyEnter})
+	m, _ = press2(m, cmd())
+	if m.notice.text != "opened tenebrae in herdr" || len(src.enters) != 0 {
+		t.Fatalf("notice %q, enters %+v", m.notice.text, src.enters)
 	}
 }

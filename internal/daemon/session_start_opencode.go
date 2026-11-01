@@ -52,7 +52,7 @@ func ownerOpenCodeService() (openCodeService, error) {
 	return service, nil
 }
 
-func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message string) (protocol.StartedSession, error) {
+func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSession, message, socket, pane string, notify bool) (protocol.StartedSession, error) {
 	down := fmt.Errorf("the OpenCode service is not running on %s", d.cfg.Hostname)
 	service, err := ownerOpenCodeService()
 	if err != nil {
@@ -131,11 +131,25 @@ func (d *Daemon) launchOwnerOpenCode(ctx context.Context, r protocol.StartedSess
 		if startErr != nil {
 			r.Status, r.Error = "failed", startErr.Error()
 		} else {
+			bin, err := d.harnessBinary("opencode")
+			if err == nil {
+				plan := protocol.EnterPlan{Argv: []string{bin, "--session", r.NativeID}, Dir: r.Path, Host: r.Hostname,
+					Note: "Press ctrl+] to come back here; the session keeps running."}
+				opened := d.openInHerdr(r.SessionID, r.Project, socket, pane, plan)
+				if opened.OpenedHerdr || len(opened.Argv) == 0 {
+					r.EnterPlan = &opened
+				} else {
+					r.EnterNote = "Enter opens it. " + herdrInstallNote
+				}
+			}
 			r.Status = "started"
 		}
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
+		if notify && r.Status == "started" {
+			d.notifySessionStart(r)
+		}
 	}(r)
 	return r, nil
 }

@@ -198,6 +198,8 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		}
 	}
 	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
+	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
+	notify := p.CTOProposal && !remoteOwner
 	if p.Harness == "codex" {
 		args := []string{bin}
 		if p.Model != "" {
@@ -211,13 +213,18 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		if home, def := d.cfg.CodexHome, defaultCodexHome(); home != "" && home != def {
 			r.EnterPlan.Env = map[string]string{"CODEX_HOME": home}
 		}
+		plan := d.openInHerdr("start:"+r.ID, r.Project, p.HerdrSocket, p.HerdrPaneID, *r.EnterPlan)
+		r.EnterPlan = &plan
+		if notify {
+			d.notifySessionStart(r)
+		}
 		return r, nil
 	}
 	if p.Harness == "opencode" {
-		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage)
+		return d.launchOwnerOpenCode(ctx, r, p.FirstMessage, p.HerdrSocket, p.HerdrPaneID, notify)
 	}
 	if p.Harness == "pi" {
-		return d.launchOwnerPi(r, p.FirstMessage, "")
+		return d.launchOwnerPi(r, p.FirstMessage, "", p.HerdrSocket, p.HerdrPaneID, notify)
 	}
 	args := []string{"--bg", "--name", r.Project}
 	if p.Model != "" {
@@ -226,7 +233,7 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if p.FirstMessage != "" {
 		args = append(args, "--", p.FirstMessage)
 	}
-	return d.launchOwnerClaude(r, bin, args, ""), nil
+	return d.launchOwnerClaude(r, bin, args, "", p.HerdrSocket, p.HerdrPaneID, notify), nil
 }
 
 // relaySessionStart asks the gateway to start the session on another machine.
@@ -235,6 +242,8 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	if owner == "" {
 		return protocol.StartedSession{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
 	}
+	socket, pane := p.HerdrSocket, p.HerdrPaneID
+	p.HerdrSocket, p.HerdrPaneID = "", ""
 	frame := protocol.SessionStartRelay{Owner: owner, NodeID: target, SessionStartRequest: p}
 	typ := protocol.FrameSessionStart
 	if p.CTOProposal {
@@ -248,26 +257,76 @@ func (d *Daemon) relaySessionStart(ctx context.Context, p protocol.SessionStartR
 	if err := json.Unmarshal(data, &res); err != nil {
 		return protocol.StartedSession{}, err
 	}
-	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, target))
-	return d.remoteStartResult(res), nil
+	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, target), socket, pane)
+	res = d.remoteStartResult(ctx, res, socket, pane)
+	remoteOwner, _ := ctx.Value(proposalRemoteOwnerKey{}).(bool)
+	if p.CTOProposal && !remoteOwner && res.Status == "starting" {
+		d.watchApprovedSessionStart(res.ID)
+	} else if p.CTOProposal && !remoteOwner && res.Status == "started" {
+		d.notifySessionStart(res)
+	}
+	return res, nil
+}
+
+// An approved remote start must be opened even when no form is polling it.
+func (d *Daemon) watchApprovedSessionStart(id string) {
+	d.wg.Add(1)
+	go func() {
+		defer d.wg.Done()
+		ctx, cancel := context.WithTimeout(d.ctoCtx, d.cfg.Workers.filled().StartTimeout)
+		defer cancel()
+		ticker := time.NewTicker(150 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				result, err := d.sessionStartGet(ctx, id)
+				if err != nil || result.Status != "starting" {
+					if err == nil && result.Status == "started" {
+						d.notifySessionStart(result)
+					}
+					return
+				}
+			}
+		}
+	}()
 }
 
 // remoteStartResult fills the fields that only the owner's machine can know:
 // the other machine's host name, the ssh note, and a remote Codex plan.
-func (d *Daemon) remoteStartResult(res protocol.StartedSession) protocol.StartedSession {
+func (d *Daemon) remoteStartResult(ctx context.Context, res protocol.StartedSession, socket, pane string) protocol.StartedSession {
 	if res.NodeID == "" || res.NodeID == d.cfg.NodeID {
 		return res
 	}
 	res.Hostname = firstNonEmpty(res.Hostname, res.NodeID)
 	if res.EnterPlan != nil {
-		plan := d.wrapRemoteEnter(res.Hostname, *res.EnterPlan)
+		remote := *res.EnterPlan
+		if remote.OpenedHerdr && herdrIDRe.MatchString(remote.HerdrPane) {
+			remote.Argv = []string{"herdr", "agent", "attach", remote.HerdrPane}
+			remote.OpenedHerdr = false
+		}
+		plan := d.wrapRemoteEnter(res.Hostname, remote)
+		key := "start:" + res.ID
+		if res.SessionID != "" {
+			key = "remote:" + res.SessionID
+		}
+		plan = d.openInHerdr(key, res.Project, socket, pane, plan)
 		res.EnterPlan = &plan
+	} else if res.Status == "started" && res.SessionID != "" && d.herdrBinary("") != "" {
+		if plan, err := d.enterPlan(ctx, protocol.EnterRequest{SessionID: res.SessionID, HerdrSocket: socket, HerdrPaneID: pane}); err == nil && plan.OpenedHerdr {
+			res.EnterPlan = &plan
+		}
 	}
 	res.EnterNote = d.remoteEnterNote(res.Hostname)
+	if d.herdrBinary("") == "" {
+		res.EnterNote += " " + herdrInstallNote
+	}
 	return res
 }
 
-func (d *Daemon) rememberRelayedStart(id, node string) {
+func (d *Daemon) rememberRelayedStart(id, node, socket, pane string) {
 	if id == "" || node == "" {
 		return
 	}
@@ -276,6 +335,14 @@ func (d *Daemon) rememberRelayedStart(id, node string) {
 		d.startedRelays = make(map[string]string)
 	}
 	d.startedRelays[id] = node
+	if d.startedRelaySockets == nil {
+		d.startedRelaySockets = make(map[string]string)
+	}
+	d.startedRelaySockets[id] = socket
+	if d.startedRelayPanes == nil {
+		d.startedRelayPanes = make(map[string]string)
+	}
+	d.startedRelayPanes[id] = pane
 	d.mu.Unlock()
 }
 
@@ -285,9 +352,9 @@ func (d *Daemon) sessionResume(ctx context.Context, p protocol.SessionResumeRequ
 		return protocol.StartedSession{}, err
 	}
 	if a.NodeID != d.cfg.NodeID {
-		return d.relaySessionResume(ctx, a, p.SessionID)
+		return d.relaySessionResume(ctx, a, p.SessionID, p.HerdrSocket, p.HerdrPaneID)
 	}
-	return d.resumeAgent(ctx, a)
+	return d.resumeAgent(ctx, a, p.HerdrSocket, p.HerdrPaneID)
 }
 
 // sessionResumeLocal resumes an offline session that must be on this machine.
@@ -300,10 +367,10 @@ func (d *Daemon) sessionResumeLocal(ctx context.Context, sessionID string) (prot
 	if a.NodeID != d.cfg.NodeID {
 		return protocol.StartedSession{}, errors.New("session is not on this machine")
 	}
-	return d.resumeAgent(ctx, a)
+	return d.resumeAgent(ctx, a, "", "")
 }
 
-func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView) (protocol.StartedSession, error) {
+func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView, socket, pane string) (protocol.StartedSession, error) {
 	if a.NativeID == "" || (a.Harness != "claude" && a.Harness != "pi") {
 		return protocol.StartedSession{}, errors.New("resume works for Claude and Pi for now")
 	}
@@ -314,18 +381,18 @@ func (d *Daemon) resumeAgent(ctx context.Context, a protocol.AgentView) (protoco
 	if err != nil || !info.IsDir() {
 		return protocol.StartedSession{}, fmt.Errorf("session folder is gone: %s", a.Cwd)
 	}
-	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: a.Profile.Name, Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
+	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: a.Harness, Project: firstNonEmpty(a.Profile.Name, a.Title, a.NativeID), Path: a.Cwd, NativeID: a.NativeID, StartedAt: time.Now().Unix()}
 	if a.Harness == "pi" {
-		return d.launchOwnerPi(r, "", a.NativeID)
+		return d.launchOwnerPi(r, "", a.NativeID, socket, pane, false)
 	}
 	bin, err := d.harnessBinary("claude")
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID), nil
+	return d.launchOwnerClaude(r, bin, []string{"--bg", "--resume", a.NativeID}, a.NativeID, socket, pane, false), nil
 }
 
-func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID string) (protocol.StartedSession, error) {
+func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, sessionID, socket, pane string) (protocol.StartedSession, error) {
 	owner := d.ownerSessionID()
 	if owner == "" {
 		return protocol.StartedSession{}, errors.New("the owner session is not registered yet (is the gateway reachable?)")
@@ -339,11 +406,11 @@ func (d *Daemon) relaySessionResume(ctx context.Context, a protocol.AgentView, s
 	if err := json.Unmarshal(data, &res); err != nil {
 		return protocol.StartedSession{}, err
 	}
-	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, a.NodeID))
-	return d.remoteStartResult(res), nil
+	d.rememberRelayedStart(res.ID, firstNonEmpty(res.NodeID, a.NodeID), socket, pane)
+	return d.remoteStartResult(ctx, res, socket, pane), nil
 }
 
-func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume string) protocol.StartedSession {
+func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args []string, resume, socket, pane string, notify bool) protocol.StartedSession {
 	d.mu.Lock()
 	if d.startedSessions == nil {
 		d.startedSessions = make(map[string]protocol.StartedSession)
@@ -390,11 +457,30 @@ func (d *Daemon) launchOwnerClaude(r protocol.StartedSession, bin string, args [
 			r.Status = "failed"
 			r.Error = err.Error()
 		} else {
+			job := r.JobID
+			if job == "" && len(r.NativeID) >= 8 {
+				job = r.NativeID[:8]
+			}
+			plan := protocol.EnterPlan{Argv: []string{bin, "attach", job}, Dir: r.Path, Host: r.Hostname,
+				Env: map[string]string{"CLAUDE_CODE_DISABLE_MOUSE": "1"}, Note: "Press ctrl+] to come back here; the session keeps running."}
+			if job == "" {
+				plan.Argv = nil
+				plan.Note = "The session started but has no Claude background ID to attach."
+			}
+			opened := d.openInHerdr(r.SessionID, r.Project, socket, pane, plan)
+			if opened.OpenedHerdr || len(opened.Argv) == 0 {
+				r.EnterPlan = &opened
+			} else {
+				r.EnterNote = "Enter opens it. " + herdrInstallNote
+			}
 			r.Status = "started"
 		}
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
+		if notify && r.Status == "started" {
+			d.notifySessionStart(r)
+		}
 	}(r)
 	return r
 }
@@ -405,6 +491,8 @@ func (d *Daemon) sessionStartGet(ctx context.Context, id string) (protocol.Start
 	d.mu.Lock()
 	r, ok := d.startedSessions[id]
 	node := d.startedRelays[id]
+	socket := d.startedRelaySockets[id]
+	pane := d.startedRelayPanes[id]
 	d.mu.Unlock()
 	if ok {
 		return r, nil
@@ -427,7 +515,7 @@ func (d *Daemon) sessionStartGet(ctx context.Context, id string) (protocol.Start
 	if remote.NodeID == "" {
 		remote.NodeID = node
 	}
-	return d.remoteStartResult(remote), nil
+	return d.remoteStartResult(ctx, remote, socket, pane), nil
 }
 
 // sessionStartGetLocal answers the gateway for a start on this machine.

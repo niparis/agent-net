@@ -21,13 +21,9 @@ import (
 // terminal is a client. Every process in a pane has HERDR_ENV=1, HERDR_PANE_ID
 // and HERDR_SOCKET_PATH (the server) in its environment. When macOS does not
 // expose those variables, the daemon can identify a herdr server in the
-// process ancestry and probe its socket. `herdr agent focus`
-// only changes the server's idea of the focused pane: a client that is already
-// attached keeps showing the tab it is on (checked on herdr 0.8.0), so it
-// cannot take the owner to the pane. `herdr agent attach <pane>` gives this
-// terminal a direct view of the pane instead, and ctrl+b q gives it back. That
-// works the same from outside herdr, from another herdr server and from a pane
-// of the same server, so there is one plan.
+// process ancestry and probe its socket. The normal path focuses that pane,
+// although an already attached client may stay on its previous tab. The
+// direct attach command remains the fallback for clients without Herdr.
 //
 // Two direct attaches cannot share a terminal. Without --takeover the second
 // one fails with a clear error and the first stays. With --takeover the first
@@ -210,8 +206,14 @@ func herdrRun(bin, socket string, args ...string) ([]byte, error) {
 
 type herdrPaneInfo struct {
 	PaneID     string `json:"pane_id"`
+	TabID      string `json:"tab_id"`
 	TerminalID string `json:"terminal_id"`
 	Agent      string `json:"agent"`
+	Session    *struct {
+		Agent string `json:"agent"`
+		Kind  string `json:"kind"`
+		Value string `json:"value"`
+	} `json:"agent_session"`
 }
 
 // herdrPanes lists the panes of a server.
@@ -279,7 +281,7 @@ func pidChain(pid int) map[int]bool {
 	return chain
 }
 
-// herdrPlan takes the owner to the herdr pane of a session. ok is false when
+// herdrPlan finds the herdr pane of a session. ok is false when
 // the session does not run in herdr: the caller then tries tmux. When ok is
 // true the plan is final, with a command or with a note that says why not.
 // viaGateway is true when another machine asked: whether its terminal is
@@ -343,7 +345,17 @@ func (d *Daemon) herdrPlan(info protocol.SessionInfo, q protocol.EnterRequest, p
 	// client opens on it. This is best effort; the note names the pane in case
 	// the client opens on another tab.
 	if q.HerdrClient {
-		herdrRun(bin, h.socket, "agent", "focus", pane.PaneID)
+		var err error
+		if pane.Agent != "" {
+			_, err = herdrRun(bin, h.socket, "agent", "focus", pane.PaneID)
+		} else if herdrIDRe.MatchString(pane.TabID) {
+			_, err = herdrRun(bin, h.socket, "tab", "focus", pane.TabID)
+		} else {
+			err = fmt.Errorf("pane has no tab ID")
+		}
+		if err != nil {
+			return note("cannot focus %s in herdr; open pane %s on %s", name, pane.PaneID, where)
+		}
 	}
 	switch {
 	case pane.Agent != "" && herdrIDRe.MatchString(pane.PaneID):

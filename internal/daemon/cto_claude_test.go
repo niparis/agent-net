@@ -543,11 +543,14 @@ func TestCTOExtraBuiltinFailsStartup(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	n.d.cto.mu.Lock()
 	err := n.d.startCTOLocked(context.Background())
+	running := n.d.cto.cmd != nil
+	n.d.cto.mu.Unlock()
 	if err == nil || !strings.Contains(err.Error(), "Bash") {
 		t.Fatalf("extra built-in must fail clearly: %v", err)
 	}
-	if n.d.cto.cmd != nil {
+	if running {
 		t.Error("rejected runtime retains CTO access")
 	}
 }
@@ -569,11 +572,14 @@ func TestCTOOpenCodeMissingDenyFailsStartup(t *testing.T) {
 	g := startGateway(t, t.TempDir(), "")
 	n := startClaudeNode(t, g, shortSet)
 	n.d.cfg.HarnessPaths["opencode"] = os.Args[0]
+	n.d.cto.mu.Lock()
 	err := n.d.startCTOLocked(context.Background())
+	running := n.d.cto.cmd != nil
+	n.d.cto.mu.Unlock()
 	if err == nil || !strings.Contains(err.Error(), "read") {
 		t.Fatalf("missing deny must fail clearly: %v", err)
 	}
-	if n.d.cto.cmd != nil {
+	if running {
 		t.Error("rejected runtime retains CTO access")
 	}
 }

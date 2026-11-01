@@ -106,6 +106,15 @@ func TestMain(m *testing.M) {
 	os.WriteFile(filepath.Join(bin, "shell"), []byte("#!/bin/sh\np=${PATH%%:*}\nprintf '%s\\0' \"$p\" '' '' '' '' '' '' '' ''\n"), 0700)
 	os.Setenv("SHELL", filepath.Join(bin, "shell"))
 	os.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	// No test may discover the machine's real Herdr binary. Tests that need
+	// one put a fake on PATH or provide an explicit fake binary.
+	var testPath []string
+	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+		if !isExecutable(filepath.Join(dir, "herdr")) {
+			testPath = append(testPath, dir)
+		}
+	}
+	os.Setenv("PATH", strings.Join(testPath, string(os.PathListSeparator)))
 	os.Setenv("HOME", filepath.Join(fakes, "home"))
 	os.Setenv("CLAUDE_CONFIG_DIR", filepath.Join(fakes, "claude-config"))
 	config := filepath.Join(fakes, "config")

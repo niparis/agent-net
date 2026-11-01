@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"github.com/niparis/agent-net/internal/protocol"
 	"strings"
 	"testing"
@@ -72,5 +73,42 @@ func TestCTOUISelectOverridesActiveFilter(t *testing.T) {
 	m = send(m, protocol.UIRequest{Tab: "sessions", Select: "strategies"})
 	if m.selected != "s_0000000000000002" {
 		t.Fatalf("selected %s while active filter set", m.selected)
+	}
+}
+
+func TestHerdrOpenNoticeHasNoCTOPrefix(t *testing.T) {
+	m := mapModel(80, 24, fakeGraph())
+	var q protocol.UIRequest
+	if err := json.Unmarshal([]byte(`{"text":"opened garden in herdr","herdr_opened":true}`), &q); err != nil {
+		t.Fatal(err)
+	}
+	m = send(m, q)
+	if m.notice.text != "opened garden in herdr" {
+		t.Fatalf("notice %q", m.notice.text)
+	}
+}
+
+func TestProposalResultKeepsNewHerdrOpenNotice(t *testing.T) {
+	m := mapModel(80, 24, fakeGraph())
+	var q protocol.UIRequest
+	if err := json.Unmarshal([]byte(`{"text":"opened garden in herdr","herdr_opened":true}`), &q); err != nil {
+		t.Fatal(err)
+	}
+	m = send(m, q)
+	m = send(m, proposalAnswerMsg{node: "n_test", id: "p_1", action: "a", items: []protocol.CTOProposal{{NodeID: "n_test", ID: "p_1", Note: "p_1 approved and applied"}}})
+	if m.notice.text != "opened garden in herdr" {
+		t.Fatalf("notice overwritten: %q", m.notice.text)
+	}
+}
+
+func TestDaemonFallbackNoticeHasNoCTOPrefix(t *testing.T) {
+	m := mapModel(80, 24, fakeGraph())
+	var q protocol.UIRequest
+	if err := json.Unmarshal([]byte(`{"text":"Herdr was not found; install it","daemon_notice":true}`), &q); err != nil {
+		t.Fatal(err)
+	}
+	m = send(m, q)
+	if m.notice.text != "Herdr was not found; install it" {
+		t.Fatalf("notice %q", m.notice.text)
 	}
 }

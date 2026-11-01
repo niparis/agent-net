@@ -23,6 +23,9 @@ func Run(ctx context.Context, src Source) error {
 	m.graphPixel.motion = os.Getenv("AGENT_NET_GRAPH_MOTION") == "1"
 	m.tmuxSocket = tmuxSocketOf(os.Getenv("TMUX"))
 	m.herdrSocket = herdrSocketOf(os.Getenv("HERDR_ENV"), os.Getenv("HERDR_SOCKET_PATH"))
+	if m.herdrSocket != "" {
+		m.herdrPaneID = os.Getenv("HERDR_PANE_ID")
+	}
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithContext(ctx))
 	if receiver, ok := src.(interface {
 		SetUIPush(func(protocol.UIRequest))

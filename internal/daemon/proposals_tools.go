@@ -15,6 +15,10 @@ import (
 )
 
 type proposalActorKey struct{}
+type proposalHerdrLocationKey struct{}
+type proposalRemoteOwnerKey struct{}
+
+type proposalHerdrLocation struct{ socket, pane string }
 
 func proposalActor(ctx context.Context) string {
 	s, _ := ctx.Value(proposalActorKey{}).(string)
@@ -307,6 +311,8 @@ func (d *Daemon) executeApprovedCTOTool(ctx context.Context, name string, raw js
 		}
 		p.TrustClaude = false
 		p.CTOProposal = true
+		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
+		p.HerdrSocket, p.HerdrPaneID = loc.socket, loc.pane
 		return d.sessionStart(ctx, p)
 	}
 	if name == "message" {

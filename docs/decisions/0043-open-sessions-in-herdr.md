@@ -1,0 +1,33 @@
+# 0043 - Open sessions in herdr
+
+**Date:** 2026-11-01
+**Status:** Accepted.
+
+## Context
+
+The owner wants every session opened by agent-net to use herdr. Taking over the
+TUI terminal hides the TUI and turns off mouse tracking in Claude attaches.
+Decision 0032 made Enter open a session; decision 0039 added offline resume.
+Decision 0035 made the CTO a normal session.
+
+## Decision
+
+Open sessions in herdr for Enter, starts, resumed sessions, and the CTO. Focus
+an existing pane when one holds the session. Otherwise split beside a TUI
+already in herdr, or create a titled tab on the default server. Start a
+headless server when needed. The TUI keeps running and reports the open in its
+result line. A herdr Claude attach keeps mouse tracking on. The daemon keeps
+private worker connection values out of command arguments and pane input.
+
+For another machine, use its herdr pane and a local herdr remote client when
+available. Otherwise run the SSH plan in the local herdr pane. The SSH setting
+and the boundary around private worker credentials still apply.
+
+When herdr is unavailable or its server cannot start, retain the prior enter
+and start behavior and give an installation hint. Ctrl+] still returns from a
+terminal handover. An interactive session outside herdr and tmux cannot be
+attached twice; its existing window remains the way to enter it. A headless
+server needs an attached herdr client to display its panes.
+
+This changes the terminal handover in decisions 0032 and 0039 when herdr is
+available. Their selection and resume rules remain in force.

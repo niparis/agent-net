@@ -12,9 +12,8 @@ import (
 	"github.com/niparis/agent-net/internal/redact"
 )
 
-// Pi has no background mode with a screen. agent-net hosts it in its own tmux
-// server, so the session has a terminal to attach to later, and the server
-// outlives a daemon restart. See docs/design/start-sessions.md, part 6.
+// Pi has no background mode with a screen. agent-net hosts it in Herdr, or in
+// its own tmux server when Herdr is unavailable. Both outlive the daemon.
 const piTmuxServer = "agent-net"
 
 // piTmuxStartArgv is the exact command that hosts a new Pi session. It is
@@ -39,37 +38,56 @@ func piTmuxResumeArgv(tmux, folder, bin, session string, newSession bool) []stri
 	return []string{tmux, "-L", piTmuxServer, sub, "-d", "-c", folder, "--", bin, "--session", session}
 }
 
-// launchOwnerPi starts Pi in agent-net's private tmux server and waits for the
+// launchOwnerPi starts Pi in Herdr or the private tmux server and waits for the
 // extension to register the session. A nonempty message is sent afterwards as
 // an owner message, the same path as a worker's first task. resume is the
 // native ID of an ended session, or "" for a new one.
-func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume string) (protocol.StartedSession, error) {
-	tmux, err := exec.LookPath("tmux")
-	if err != nil {
-		return protocol.StartedSession{}, fmt.Errorf("pi needs tmux on %s to run in the background", d.hostName())
-	}
+func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume, socket, pane string, notify bool) (protocol.StartedSession, error) {
 	bin, err := d.harnessBinary("pi")
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	var argv []string
+	var piArgs []string
 	if resume == "" {
 		native, err := newUUID()
 		if err != nil {
 			return protocol.StartedSession{}, err
 		}
 		r.NativeID = native
-		argv = piTmuxStartArgv(tmux, r.Path, bin, native, r.Project, r.Model)
+		piArgs = []string{bin, "--session-id", native, "--name", r.Project}
+		if r.Model != "" {
+			piArgs = append(piArgs, "--model", r.Model)
+		}
 	} else {
 		r.NativeID = resume
-		argv = piTmuxResumeArgv(tmux, r.Path, bin, resume, !piTmuxHasSession(tmux))
+		piArgs = []string{bin, "--session", resume}
 	}
 	timeout := d.cfg.Workers.filled().StartTimeout
-	startCtx, cancel := context.WithTimeout(d.ctoCtx, timeout)
-	out, err := exec.CommandContext(startCtx, argv[0], argv[1:]...).CombinedOutput()
-	cancel()
-	if err != nil {
-		return protocol.StartedSession{}, fmt.Errorf("tmux could not start the Pi session: %s", tmuxFailure(out, err))
+	plan := protocol.EnterPlan{Argv: piArgs, Dir: r.Path, Host: r.Hostname}
+	opened := d.openInHerdr("pi:"+r.NativeID, r.Project, socket, pane, plan)
+	if opened.OpenedHerdr {
+		r.EnterPlan = &opened
+	} else {
+		if len(opened.Argv) == 0 {
+			return protocol.StartedSession{}, errors.New(opened.Note)
+		}
+		tmux, err := exec.LookPath("tmux")
+		if err != nil {
+			return protocol.StartedSession{}, fmt.Errorf("pi needs tmux on %s to run in the background. %s", d.hostName(), herdrInstallNote)
+		}
+		var argv []string
+		if resume == "" {
+			argv = piTmuxStartArgv(tmux, r.Path, bin, r.NativeID, r.Project, r.Model)
+		} else {
+			argv = piTmuxResumeArgv(tmux, r.Path, bin, resume, !piTmuxHasSession(tmux))
+		}
+		startCtx, cancel := context.WithTimeout(d.ctoCtx, timeout)
+		out, err := exec.CommandContext(startCtx, argv[0], argv[1:]...).CombinedOutput()
+		cancel()
+		if err != nil {
+			return protocol.StartedSession{}, fmt.Errorf("tmux could not start the Pi session: %s", tmuxFailure(out, err))
+		}
+		r.EnterNote = opened.Note
 	}
 	d.mu.Lock()
 	if d.startedSessions == nil {
@@ -121,6 +139,9 @@ func (d *Daemon) launchOwnerPi(r protocol.StartedSession, message, resume string
 		d.mu.Lock()
 		d.startedSessions[r.ID] = r
 		d.mu.Unlock()
+		if notify && r.Status == "started" {
+			d.notifySessionStart(r)
+		}
 	}(r)
 	return r, nil
 }

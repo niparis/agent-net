@@ -31,7 +31,7 @@ func TestNewSessionFormAcceptsAProjectOnAnotherMachine(t *testing.T) {
 		t.Fatalf("project %q", got)
 	}
 	view := m.View()
-	for _, want := range []string{"on build-vm, /srv/agent-net", "empty: start it and enter it (through ssh to build-vm)"} {
+	for _, want := range []string{"on build-vm, /srv/agent-net", "empty: start and open it in herdr (on build-vm)"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the form does not show %q:\n%s", want, view)
 		}

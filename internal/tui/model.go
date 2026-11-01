@@ -174,7 +174,9 @@ type Model struct {
 	// execProcess replaces tea.Exec in tests.
 	tmuxSocket string
 	// herdrSocket is the herdr server this terminal runs in, or "".
-	herdrSocket string
+	herdrSocket         string
+	herdrPaneID         string
+	sessionNoticeSerial uint64
 	// enterNote is the daemon's note for the command that runs now.
 	enterNote   string
 	execProcess func(tea.ExecCommand, tea.ExecCallback) tea.Cmd
@@ -836,6 +838,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err != nil {
 			m.fail("Proposal failed: " + explain(msg.err))
+		} else if msg.action != "x" && m.sessionNoticeSerial != msg.sessionBefore {
+			// Keep the session start result that arrived during approval.
 		} else if msg.action == "A" {
 			m.say("Proposals approved and applied.")
 		} else {
@@ -1926,10 +1930,15 @@ func (m *Model) fixScroll() {
 	m.tableTop = min(max(m.tableTop, 0), max(len(rows)-1, 0))
 }
 
-// applyCTOUI applies an owner-authorized request from the local CTO channel.
+// applyCTOUI applies a CTO request or a daemon notice from the local channel.
 func (m Model) applyCTOUI(q protocol.UIRequest) (tea.Model, tea.Cmd) {
 	if q.Text != "" {
-		m.say("CTO: " + q.Text)
+		if q.HerdrOpened || q.DaemonNotice {
+			m.sessionNoticeSerial++
+			m.say(q.Text)
+		} else {
+			m.say("CTO: " + q.Text)
+		}
 		return m, nil
 	}
 	m.inboxOn, m.help, m.learned, m.mapOn = false, false, false, false

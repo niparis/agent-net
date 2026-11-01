@@ -27,6 +27,7 @@ type proposalAnswerMsg struct {
 	node, id, action string
 	items            []protocol.CTOProposal
 	err              error
+	sessionBefore    uint64
 }
 
 func proposalKey(p protocol.CTOProposal) string { return "proposal:" + p.NodeID + ":" + p.ID }
@@ -156,6 +157,8 @@ func proposalGraphDiff(p protocol.CTOProposal, g protocol.Graph) []string {
 }
 func (m Model) proposalAnswerCmd(p protocol.CTOProposal, action string) tea.Cmd {
 	c, ok := m.src.(inboxCaller)
+	socket, pane := m.herdrSocket, m.herdrPaneID
+	sessionBefore := m.sessionNoticeSerial
 	var confirmed []protocol.CTOProposalRef
 	if action == "A" {
 		confirmed = make([]protocol.CTOProposalRef, 0, len(m.proposalConfirmItems))
@@ -164,14 +167,14 @@ func (m Model) proposalAnswerCmd(p protocol.CTOProposal, action string) tea.Cmd 
 		}
 	}
 	return func() tea.Msg {
-		r := proposalAnswerMsg{node: p.NodeID, id: p.ID, action: action}
+		r := proposalAnswerMsg{node: p.NodeID, id: p.ID, action: action, sessionBefore: sessionBefore}
 		if !ok {
 			r.err = fmt.Errorf("proposal actions unavailable")
 			return r
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 		defer cancel()
-		_, r.err = c.Call(ctx, protocol.OpProposalAnswer, protocol.CTOProposalAnswer{NodeID: p.NodeID, ID: p.ID, Action: action, Confirm: confirmed})
+		_, r.err = c.Call(ctx, protocol.OpProposalAnswer, protocol.CTOProposalAnswer{NodeID: p.NodeID, ID: p.ID, Action: action, Confirm: confirmed, HerdrSocket: socket, HerdrPaneID: pane})
 		raw, err := c.Call(ctx, protocol.OpProposalList, nil)
 		if err == nil {
 			_ = json.Unmarshal(raw, &r.items)

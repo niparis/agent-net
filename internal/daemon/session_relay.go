@@ -25,6 +25,7 @@ func (d *Daemon) sessionOwnerRelay(ctx context.Context, typ string, raw []byte) 
 	case protocol.FrameSessionOwnerProposalStart:
 		p.CTOProposal = true
 		p.TrustClaude = false
+		ctx = context.WithValue(ctx, proposalRemoteOwnerKey{}, true)
 		return d.sessionStartLocal(ctx, p.SessionStartRequest)
 	case protocol.FrameSessionOwnerStart:
 		return d.sessionStartLocal(ctx, p.SessionStartRequest)

@@ -143,12 +143,48 @@ func (d *Daemon) approveNetworkProposals(ctx context.Context, confirmed []protoc
 			_, _, err = d.proposalOperator(ctx, protocol.OpProposalAnswer, q)
 		} else {
 			_, err = d.call(ctx, "query.proposal_answer", q)
+			if err == nil {
+				d.openApprovedRemoteSession(ctx, q.NodeID, q.ID)
+			}
 		}
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// An approval handled on another node can start a session after this call
+// returns. Follow its start from the owner's node to open the local client.
+func (d *Daemon) openApprovedRemoteSession(ctx context.Context, node, id string) {
+	data, err := d.call(ctx, "query.proposal_list", protocol.CTOProposalAnswer{NodeID: node})
+	if err != nil {
+		return
+	}
+	var items []protocol.CTOProposal
+	if json.Unmarshal(data, &items) != nil {
+		return
+	}
+	for _, item := range items {
+		if item.ID != id || item.Status != "applied" || !((item.Tool == "session_change" && item.Action == "session_start") || (item.Tool == "project_change" && item.Action == "create")) {
+			continue
+		}
+		var res protocol.StartedSession
+		if json.Unmarshal(item.Result, &res) != nil || res.ID == "" || (res.Status != "starting" && res.Status != "started") {
+			return
+		}
+		loc, _ := ctx.Value(proposalHerdrLocationKey{}).(proposalHerdrLocation)
+		if res.NodeID != "" && res.NodeID != d.cfg.NodeID {
+			d.rememberRelayedStart(res.ID, res.NodeID, loc.socket, loc.pane)
+			res = d.remoteStartResult(ctx, res, loc.socket, loc.pane)
+		}
+		if res.Status == "starting" {
+			d.watchApprovedSessionStart(res.ID)
+		} else if res.Status == "started" {
+			d.notifySessionStart(res)
+		}
+		return
+	}
 }
 
 func (d *Daemon) proposalRunner() proposalRunner {

@@ -65,6 +65,19 @@ func TestCTOUIBroadcast(t *testing.T) {
 			t.Fatal("missing notice")
 		}
 	}
+	if _, err := call("ui", `{"action":"notice","text":"hello","daemon_notice":true,"herdr_opened":true}`); err != nil {
+		t.Fatal(err)
+	}
+	for _, ch := range channels {
+		select {
+		case q := <-ch:
+			if q.DaemonNotice || q.HerdrOpened {
+				t.Fatalf("CTO forged a daemon notice: %+v", q)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("missing notice")
+		}
+	}
 	if _, err := call("ui", `{"action":"show","tab":"bad"}`); err == nil {
 		t.Fatal("invalid tab accepted")
 	}

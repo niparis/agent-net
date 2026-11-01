@@ -16,11 +16,8 @@ import (
 	"github.com/niparis/agent-net/internal/ptyproxy"
 )
 
-// Enter a session (decision 0002, W16). The key e asks the daemon how to take
-// over the terminal for the selected session (the session_enter method) and
-// runs what it answers. The TUI builds no command of its own: the daemon knows
-// the harness, the machine and the tmux pane, and the phone app will show the
-// same plan. When the owner leaves the session, the TUI draws itself again.
+// Enter a session (decisions 0032 and 0043). The daemon opens a Herdr pane or
+// returns a terminal handover plan. The TUI builds no command of its own.
 
 // enterMsg is the daemon's answer to session_enter.
 type enterMsg struct {
@@ -81,7 +78,7 @@ func (m Model) resumeOwnerSession(a protocol.AgentView) (Model, tea.Cmd) {
 	return m, func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
-		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID, NodeID: a.NodeID})
+		res, err := src.SessionResume(ctx, protocol.SessionResumeRequest{SessionID: a.SessionID, NodeID: a.NodeID, HerdrSocket: m.herdrSocket, HerdrPaneID: m.herdrPaneID})
 		for err == nil && res.Status == "starting" {
 			select {
 			case <-ctx.Done():
@@ -103,15 +100,23 @@ func (m Model) onResume(r resumeMsg) (Model, tea.Cmd) {
 		m.fail(firstNonEmpty(sanitize(r.res.Error), "The session did not resume."))
 		return m, nil
 	}
+	if r.res.EnterPlan != nil && r.res.EnterPlan.OpenedHerdr {
+		m.say(sanitize(r.res.EnterPlan.Note))
+		return m, nil
+	}
+	if r.res.EnterPlan != nil && len(r.res.EnterPlan.Argv) == 0 {
+		m.fail(sanitize(firstNonEmpty(r.res.EnterPlan.Note, "The session resumed but could not be opened.")))
+		return m, nil
+	}
 	return m, m.enterCmd(r.res.SessionID, r.name)
 }
 
 func (m Model) enterCmd(id, name string) tea.Cmd {
-	src, sock, hsock := m.src, m.tmuxSocket, m.herdrSocket
+	src, sock, hsock, hpane := m.src, m.tmuxSocket, m.herdrSocket, m.herdrPaneID
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock})
+		plan, err := src.SessionEnter(ctx, protocol.EnterRequest{SessionID: id, TmuxSocket: sock, HerdrSocket: hsock, HerdrPaneID: hpane})
 		return enterMsg{name: name, plan: plan, err: err}
 	}
 }
@@ -120,6 +125,16 @@ func (m Model) enterCmd(id, name string) tea.Cmd {
 func (m Model) onEnter(r enterMsg) (Model, tea.Cmd) {
 	if r.cto && m.cto != nil {
 		m.cto.opening = false
+	}
+	if r.err == nil && r.plan.OpenedHerdr {
+		if r.cto && m.cto != nil {
+			m.cto.enterNotice = ""
+			if strings.Contains(r.plan.Note, "The CTO's Claude conversation was closed") {
+				m.cto.enterNotice = r.plan.Note
+			}
+		}
+		m.say(sanitize(r.plan.Note))
+		return m, nil
 	}
 	switch {
 	case r.err != nil:
@@ -183,12 +198,16 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		}
 		m.say(sanitize(r.ctoNotice))
 	case r.err == nil:
-		m.say("Back from " + r.name + ".")
+		if hint := strings.TrimSpace(herdrFallbackSuffix(m.enterNote)); hint != "" {
+			m.say(hint)
+		} else {
+			m.say("Back from " + r.name + ".")
+		}
 	case r.fallback != "" && exitCodeOf(r.err) == 255:
 		// ssh could not connect or log in. The command to run on the other
 		// machine is more useful than the exit status.
 		target := firstNonEmpty(sanitize(r.target), "the other machine")
-		m.fail("Could not ssh to " + target + ". Set enter_ssh_hosts in node.json, or " + lowerFirst(sanitize(r.fallback)))
+		m.fail("Could not ssh to " + target + ". Set enter_ssh_hosts in node.json, or " + lowerFirst(sanitize(r.fallback)) + herdrFallbackSuffix(m.enterNote))
 	default:
 		// The note holds the way back and the usual cause (herdr: an attach is
 		// already open), which the screen of the entered command hid.
@@ -199,6 +218,13 @@ func (m Model) onEnterDone(r enterDoneMsg) (Model, tea.Cmd) {
 		return m, m.fetchCmd()
 	}
 	return m, nil
+}
+
+func herdrFallbackSuffix(note string) string {
+	if i := strings.Index(note, "Herdr was not found"); i >= 0 {
+		return " " + sanitize(note[i:])
+	}
+	return ""
 }
 
 // sshTarget is the target of an ssh plan, or "" for another plan.
