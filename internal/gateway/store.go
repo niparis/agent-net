@@ -1322,9 +1322,9 @@ func (s *Store) StoreMessage(p protocol.MsgSend) (msg protocol.Message, created 
 		err = tx.QueryRow(`SELECT c.value FROM owner_settings c JOIN owner_settings start ON start.key='cto_legacy_route_start'
 			JOIN messages root ON root.conversation_id=? AND root.parent_id=''
 			JOIN sessions sender ON sender.id=root.sender
-			WHERE c.key='cto_session' AND root.sender_cto=1 AND sender.harness=?
+			WHERE c.key='cto_session' AND root.sender_cto=1 AND sender.harness=? AND root.sender=?
 			AND root.created_at<=start.updated_at AND ?>=start.updated_at AND ?<start.updated_at+?`,
-			parent.ConversationID, protocol.OwnerHarness, now.UnixNano(), now.UnixNano(), int64(30*24*time.Hour)).Scan(&legacyCTO)
+			parent.ConversationID, protocol.OwnerHarness, m.To, now.UnixNano(), now.UnixNano(), int64(30*24*time.Hour)).Scan(&legacyCTO)
 		if err != nil && err != sql.ErrNoRows {
 			return msg, false, err
 		}

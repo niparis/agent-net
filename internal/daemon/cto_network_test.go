@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -155,4 +156,73 @@ func TestCTOPeerInputDoesNotRegisterSession(t *testing.T) {
 			t.Fatalf("peer/note replaced the CTO record: %+v %v", a, err)
 		}
 	}
+}
+
+func TestCTONetworkReplyDelivered(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	g := startGateway(t, t.TempDir(), "")
+	w := startWorkerNode(t, g, WorkerSettings{}, nil)
+	peer, target := helloPi(t, w.node, "reply-peer", "/w/peer", true)
+	w.cli.mustCall("cto_send", map[string]string{"text": "start"})
+	raw, _ := json.Marshal(map[string]string{"action": "send", "to": target, "body": "question"})
+	if _, err := w.d.runCTOTool(context.Background(), "message", raw); err != nil {
+		t.Fatal(err)
+	}
+	sent := peer.nextPush()
+	peer.mustCall("reply", map[string]any{"message_id": sent.ID, "body": "network answer"})
+	eventually(t, "network reply in CTO timeline", func() bool { return strings.Contains(string(w.cli.mustCall("cto_events", nil)), "network answer") })
+}
+
+type recordingCTOClaude struct {
+	*fsClaudeAdapter
+	received chan string
+}
+
+func (a *recordingCTOClaude) DeliverCTO(ctx context.Context, target protocol.SessionInfo, id, text string) Result {
+	result := a.fsClaudeAdapter.DeliverCTO(ctx, target, id, text)
+	if result.Delivered {
+		a.received <- text
+	}
+	return result
+}
+
+func TestCTOReplyFollowsHarnessSwitch(t *testing.T) {
+	t.Setenv("AGENT_NET_CONFIG_DIR", t.TempDir())
+	sessions, _ := useFakeClaude(t)
+	adapter := &recordingCTOClaude{fsClaudeAdapter: &fsClaudeAdapter{dir: sessions}, received: make(chan string, 10)}
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{cmdline: "pi", detect: fakeInventory, interval: time.Hour, cfg: func(c *Config) {
+		c.ClaudeSessionsDir = sessions
+		c.Adapters = append(c.Adapters, adapter)
+		c.HarnessPaths = map[string]string{"claude": os.Args[0], "opencode": os.Args[0]}
+	}})
+	cli := cliClient(t, n)
+	peer, target := helloPi(t, n, "switch-peer", "/w/peer", true)
+	harness := "opencode"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	cli.mustCall("cto_send", map[string]string{"text": "start open"})
+	send := func(body string) protocol.Message {
+		raw, _ := json.Marshal(map[string]string{"action": "send", "to": target, "body": body})
+		if _, err := n.d.runCTOTool(context.Background(), "message", raw); err != nil {
+			t.Fatal(err)
+		}
+		return peer.nextPush()
+	}
+	first := send("from open")
+	harness = "claude"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	peer.mustCall("reply", map[string]string{"message_id": first.ID, "body": "to claude"})
+	select {
+	case text := <-adapter.received:
+		if !strings.Contains(text, "to claude") {
+			t.Fatalf("Claude got %q", text)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("reply did not reach Claude")
+	}
+	second := send("from claude")
+	harness = "opencode"
+	cli.mustCall("cto_settings", protocol.CTOSettingsRequest{Harness: &harness})
+	peer.mustCall("reply", map[string]string{"message_id": second.ID, "body": "to open"})
+	eventually(t, "reply in OpenCode", func() bool { return strings.Contains(string(cli.mustCall("cto_events", nil)), "to open") })
 }

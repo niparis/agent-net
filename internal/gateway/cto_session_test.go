@@ -7,6 +7,7 @@ import (
 	"github.com/niparis/agent-net/internal/protocol"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCTONetworkSession(t *testing.T) {
@@ -174,5 +175,16 @@ func TestCTOLegacyReplyRoutesToRegisteredSession(t *testing.T) {
 	}
 	if reply.To != cto {
 		t.Fatalf("reply went to %s, want CTO %s", reply.To, cto)
+	}
+	answer, _, err := s.StoreMessage(protocol.MsgSend{Sender: cto, Recipient: peer, ParentID: reply.ID, Body: "follow up"})
+	if err != nil || answer.To != peer {
+		t.Fatalf("CTO follow up: %+v %v", answer, err)
+	}
+	if _, err := s.db.Exec(`UPDATE owner_settings SET updated_at=? WHERE key='cto_legacy_route_start'`, s.now().Add(-31*24*time.Hour).UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	expired, _, err := s.StoreMessage(protocol.MsgSend{Sender: peer, Recipient: owner, ParentID: root.ID, Body: "late reply"})
+	if err != nil || expired.To != owner {
+		t.Fatalf("expired route: %+v %v", expired, err)
 	}
 }
