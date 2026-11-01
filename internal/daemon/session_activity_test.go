@@ -96,3 +96,135 @@ func TestRepeatedWaitKeepsActivity(t *testing.T) {
 		t.Fatalf("a repeated wait moved activity: %+v", got)
 	}
 }
+
+// A restart re-registers every session: the plugin says hello, then reports
+// the status it had (dormant for an OpenCode session quiet for a day). Neither
+// the first status nor a change between idle, dormant and offline is a turn.
+// Only becoming busy, or becoming idle after busy, moves the activity time.
+func TestRestartWithoutATurnKeepsActivity(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{adapter: &fakeAdapter{harness: "pi"}})
+	harnesses := []string{"opencode", "claude", "codex", "pi"}
+	statuses := []string{"idle", "dormant"}
+	infos := map[string][]protocol.SessionInfo{}
+	for _, h := range harnesses {
+		for _, s := range statuses {
+			infos[h] = append(infos[h], protocol.SessionInfo{NativeID: h + "-" + s, Status: s, Cwd: "/work/" + h})
+		}
+		n.d.SetSessions(h, infos[h])
+	}
+	active := time.Now().Add(-3 * time.Hour).Truncate(time.Second)
+	for _, h := range harnesses {
+		for _, in := range infos[h] {
+			n.d.touchSession(testSessionOf(t, n, h, in.NativeID), active)
+		}
+	}
+
+	n.restart()
+	for _, h := range harnesses {
+		n.d.SetSessions(h, infos[h])
+	}
+	for _, h := range harnesses {
+		for _, in := range infos[h] {
+			ls := testSessionOf(t, n, h, in.NativeID)
+			if got := n.d.infoOf(ls).LastActive; got != active.Unix() {
+				t.Fatalf("%s %s after restart: last active %d, want %d", h, in.NativeID, got, active.Unix())
+			}
+		}
+	}
+
+	// Quiet sessions may move between idle, dormant and offline without doing
+	// anything.
+	for _, h := range harnesses {
+		var updated []protocol.SessionInfo
+		for _, in := range infos[h] {
+			next := "dormant"
+			if in.Status == "dormant" {
+				next = "idle"
+			}
+			updated = append(updated, protocol.SessionInfo{NativeID: in.NativeID, Status: next, Cwd: in.Cwd})
+		}
+		n.d.SetSessions(h, updated)
+		for _, in := range updated {
+			ls := testSessionOf(t, n, h, in.NativeID)
+			if got := n.d.infoOf(ls).LastActive; got != active.Unix() {
+				t.Fatalf("%s %s -> %s moved last active to %d, want %d", h, in.NativeID, in.Status, got, active.Unix())
+			}
+		}
+	}
+
+	// A turn still counts: busy starts it, idle ends it.
+	for _, h := range harnesses {
+		native := h + "-idle"
+		n.d.SetSessions(h, []protocol.SessionInfo{
+			{NativeID: native, Status: "busy", Cwd: "/work/" + h},
+			{NativeID: h + "-dormant", Status: "idle", Cwd: "/work/" + h},
+		})
+		ls := testSessionOf(t, n, h, native)
+		busyAt := n.d.infoOf(ls).LastActive
+		if busyAt <= active.Unix() {
+			t.Fatalf("%s: a turn start did not move last active: %d, still %d", h, busyAt, active.Unix())
+		}
+		n.d.SetSessions(h, []protocol.SessionInfo{
+			{NativeID: native, Status: "idle", Cwd: "/work/" + h},
+			{NativeID: h + "-dormant", Status: "idle", Cwd: "/work/" + h},
+		})
+		if got := n.d.infoOf(testSessionOf(t, n, h, native)).LastActive; got < busyAt {
+			t.Fatalf("%s: a turn end did not move last active: %d, before %d", h, got, busyAt)
+		}
+	}
+}
+
+// The OpenCode plugin says hello with idle or busy and then reports dormant
+// for a session that has been quiet. That second status must not look like
+// activity, on a fresh daemon or after a restart.
+func TestPluginDormantStatusIsNotActivity(t *testing.T) {
+	g := startGateway(t, t.TempDir(), "")
+	n := startNode(t, g, nodeOpts{exe: "/opt/x/node_modules/@opencode/cli/bin/opencode.exe"})
+	lc, _ := helloOpenCode(t, n, "ses_quiet", "/work/quiet")
+	ls := testSessionOf(t, n, "opencode", "ses_quiet")
+	old := time.Now().Add(-time.Hour).Truncate(time.Second)
+	n.d.touchSession(ls, old)
+	lc.mustCall("status", map[string]any{"status": "dormant"})
+	if got := n.d.infoOf(testSessionOf(t, n, "opencode", "ses_quiet")).LastActive; got != old.Unix() {
+		t.Fatalf("idle -> dormant moved last active to %d, want %d", got, old.Unix())
+	}
+	lc.mustCall("status", map[string]any{"status": "idle"})
+	if got := n.d.infoOf(testSessionOf(t, n, "opencode", "ses_quiet")).LastActive; got != old.Unix() {
+		t.Fatalf("dormant -> idle moved last active to %d, want %d", got, old.Unix())
+	}
+
+	// A restart: the plugin reconnects, says idle in hello, then dormant.
+	lc.c.Close()
+	n.restart()
+	lc = dialLocal(t, n.sock)
+	lc.AutoAck = true
+	lc.mustCall("hello", map[string]any{"client": "opencode", "harness": "opencode",
+		"native_id": "ses_quiet", "cwd": "/work/quiet", "status": "idle"})
+	lc.mustCall("status", map[string]any{"status": "dormant"})
+	if got := n.d.infoOf(testSessionOf(t, n, "opencode", "ses_quiet")).LastActive; got != old.Unix() {
+		t.Fatalf("re-registration moved last active to %d, want %d", got, old.Unix())
+	}
+
+	// A real turn moves it.
+	lc.mustCall("status", map[string]any{"status": "busy"})
+	busyAt := n.d.infoOf(testSessionOf(t, n, "opencode", "ses_quiet")).LastActive
+	if busyAt <= old.Unix() {
+		t.Fatalf("a turn start did not move last active: %d, still %d", busyAt, old.Unix())
+	}
+	lc.mustCall("status", map[string]any{"status": "idle"})
+	if got := n.d.infoOf(testSessionOf(t, n, "opencode", "ses_quiet")).LastActive; got < busyAt {
+		t.Fatalf("a turn end did not move last active: %d, before %d", got, busyAt)
+	}
+}
+
+func testSessionOf(t *testing.T, n *node, harness, native string) *localSession {
+	t.Helper()
+	n.d.mu.Lock()
+	defer n.d.mu.Unlock()
+	ls := n.d.sessions[key(harness, native)]
+	if ls == nil {
+		t.Fatalf("session %s/%s is not known", harness, native)
+	}
+	return ls
+}

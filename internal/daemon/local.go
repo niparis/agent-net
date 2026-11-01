@@ -741,9 +741,10 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 			}
 		}
 		d.mu.Lock()
+		previousStatus := ls.info.Status
 		statusChanged := false
 		if p.Status != "" {
-			statusChanged = ls.info.Status != p.Status
+			statusChanged = previousStatus != p.Status
 			ls.statusRevision++
 			ls.info.Status = p.Status
 			if p.Status == "busy" {
@@ -763,11 +764,14 @@ func (lc *localConn) dispatch(ctx context.Context, method string, raw json.RawMe
 		cwd := ls.info.Cwd
 		harness, native := ls.info.Harness, ls.info.NativeID
 		activeAt := time.Now()
-		if statusChanged {
+		// Only a turn boundary is activity; a quiet session that goes dormant
+		// or idle, or says hello again, did nothing.
+		statusActivity := statusChanged && statusIsActivity(previousStatus, p.Status)
+		if statusActivity {
 			d.recordActivityLocked(ls, activeAt)
 		}
 		d.mu.Unlock()
-		if statusChanged {
+		if statusActivity {
 			d.saveActivity(harness, native, activeAt)
 		}
 		repo := d.repo.Refresh(cwd)

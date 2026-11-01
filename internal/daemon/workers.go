@@ -1006,11 +1006,13 @@ func (d *Daemon) resumeWorkerSession(ctx context.Context, sessionID, requester s
 		}
 	}()
 	// The worktree is kept when it has changes. The one without changes was
-	// removed when the worker ended, so it is made again for the new run.
+	// removed when the worker ended, so it is made again for the new run. Keep
+	// the branch and its base: createWorktree finds the branch when it is
+	// still there and checks it out with the commits it holds.
 	if w.worktree != "" {
 		if fi, err := os.Stat(w.worktree); err != nil || !fi.IsDir() {
 			w.path = w.mainPath
-			w.worktree, w.branch, w.base = "", "", ""
+			w.worktree = ""
 			if err := d.createWorktree(cctx, w); err != nil {
 				return err
 			}

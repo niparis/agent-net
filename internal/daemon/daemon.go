@@ -549,7 +549,8 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 				updates = append(updates, activityUpdate{harness, in.NativeID, candidate})
 			}
 		} else if !ls.plugin() {
-			statusChanged := in.Status != ls.info.Status
+			previousStatus := ls.info.Status
+			statusChanged := in.Status != previousStatus
 			infoChanged := false
 			in.Waiting = keepWaiting(before[k], in)
 			if ls.info != in {
@@ -566,8 +567,9 @@ func (d *Daemon) SetSessions(harness string, infos []protocol.SessionInfo) {
 				ls.lastActive = candidate
 				activeChanged = true
 			}
-			if statusChanged {
-				// A turn started or ended in the harness.
+			if statusChanged && statusIsActivity(previousStatus, in.Status) {
+				// A turn started or ended in the harness. A quiet session that
+				// goes idle or dormant did nothing.
 				now := time.Now()
 				if !ls.lastActive.After(now) {
 					ls.lastActive = now
@@ -671,6 +673,18 @@ func (d *Daemon) infoLocked(ls *localSession) protocol.SessionInfo {
 		info.LastActive = ls.lastActive.Unix()
 	}
 	return info
+}
+
+// statusIsActivity tells whether a status change is a real turn boundary: a
+// turn starts when a session becomes busy, and ends when a busy session
+// becomes anything else. A change between idle, dormant and offline is not
+// activity, and neither is the status first learned at registration or
+// re-registration (an empty before).
+func statusIsActivity(before, after string) bool {
+	if before == "" || after == "" {
+		return false
+	}
+	return before == "busy" || after == "busy"
 }
 
 // recordActivityLocked keeps at as the session's last activity when it is
