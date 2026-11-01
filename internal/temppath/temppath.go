@@ -37,7 +37,10 @@ func Default() []string {
 	add(os.Getenv("TMPDIR"))
 	add("/tmp")
 	add("/private/tmp")
-	for _, pattern := range []string{"/var/folders/*/T", "/private/var/folders/*/T"} {
+	for _, pattern := range []string{
+		"/var/folders/*/T", "/private/var/folders/*/T",
+		"/var/folders/*/*/T", "/private/var/folders/*/*/T",
+	} {
 		if matches, err := filepath.Glob(pattern); err == nil {
 			for _, m := range matches {
 				add(m)
