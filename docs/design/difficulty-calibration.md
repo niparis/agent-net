@@ -1,6 +1,6 @@
 # Difficulty calibration from rework
 
-Status: proposed design, for the owner's review. Not approved, not scheduled.
+Status: approved by the owner on 2026-11-01, with the recommended answers to the open questions. Built in the parts of section 10.
 Builds on decision [0026](../decisions/0026-worker-difficulty-and-scores.md)
 (difficulty, scores, rotation) and [0036](../decisions/0036-primitives.md)
 (task as a contract between a caller and a doer).
