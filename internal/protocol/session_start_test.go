@@ -27,6 +27,30 @@ func TestSessionStartRequestCarriesTheFolderChoice(t *testing.T) {
 	}
 }
 
+// A path typed in the Project field and the owner's decision to create it
+// survive the relay to another machine (docs/design/start-sessions.md, part 10).
+func TestSessionStartRequestCarriesAPathAndTheCreateFlag(t *testing.T) {
+	raw, err := json.Marshal(SessionOwnerRequest{
+		Owner: "s_owner", FromNode: "n_a",
+		SessionStartRequest: SessionStartRequest{
+			Path: "~/code/garden-planner", Create: true, TrustClaude: true,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back SessionOwnerRequest
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Path != "~/code/garden-planner" || !back.Create || !back.TrustClaude {
+		t.Fatalf("the relay dropped the path, create flag or trust flag: %s", raw)
+	}
+	if back.Project != "" {
+		t.Errorf("a path start also names a project: %q", back.Project)
+	}
+}
+
 func TestOwnerWorktreeBranchNames(t *testing.T) {
 	for _, tc := range []struct {
 		project, want string

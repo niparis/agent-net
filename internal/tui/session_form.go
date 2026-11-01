@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -47,6 +48,9 @@ type sessionForm struct {
 	// busy is the one-line reason the folder is not offered first, empty when
 	// no live session works in the project folder.
 	busy string
+	// folderWhy says why this project or path has no worktree choice, such as
+	// a new folder or a folder that is not a git repository.
+	folderWhy string
 	// base is the branch the new worktree starts from, for the branch note.
 	base string
 	// branchAuto is true while the branch field still holds the automatic
@@ -387,7 +391,18 @@ func (m *Model) resetSessionFolder() {
 	f.base = m.sessionProjectBase(project, nodeID, folder)
 	f.busy = ""
 	f.folder = protocol.FolderProject
-	if m.sessionFolderBusy(project, nodeID, folder) {
+	f.folderWhy = ""
+	st := m.sessionPathState(*f)
+	if st.isPath {
+		f.path = st.candidate
+		switch {
+		case st.why != "":
+		case !st.exists:
+			f.folderWhy = "a new folder has one tree"
+		case !st.isGit:
+			f.folderWhy = "not a git repository: no worktrees"
+		}
+	} else if m.sessionFolderBusy(project, nodeID, folder) {
 		f.busy = project + " is busy in the project folder"
 		f.folder = protocol.FolderWorktree
 	}
@@ -401,6 +416,9 @@ func (m *Model) setSessionFolder(folder string) {
 	f := &m.sform
 	if folder != protocol.FolderWorktree {
 		folder = protocol.FolderProject
+	}
+	if folder == protocol.FolderWorktree && f.folderWhy != "" {
+		return
 	}
 	if f.folder == folder {
 		return
@@ -417,15 +435,16 @@ func (m *Model) setSessionFolder(folder string) {
 	}
 }
 
-// splitProjectMachine splits "name@machine". A path may contain an @ of its
-// own, so a path stays whole.
+// splitProjectMachine splits "name@machine" and "path@machine". A path may
+// contain an @ of its own, so an @ only starts a machine when what follows it
+// has no folder separator.
 func splitProjectMachine(value string) (project, machine string) {
 	value = strings.TrimSpace(value)
-	if strings.HasPrefix(value, "/") || strings.HasPrefix(value, "~") {
-		return value, ""
-	}
 	if i := strings.LastIndex(value, "@"); i > 0 {
-		return strings.TrimSpace(value[:i]), strings.TrimSpace(value[i+1:])
+		suffix := strings.TrimSpace(value[i+1:])
+		if suffix != "" && !strings.ContainsAny(suffix, `/\`) && !strings.HasPrefix(suffix, "~") {
+			return strings.TrimSpace(value[:i]), suffix
+		}
 	}
 	return value, ""
 }
@@ -470,6 +489,9 @@ func (m Model) sessionRemoteHost(f sessionForm) string {
 // sessionFormRefusal says why this version cannot start the form's session.
 func (m Model) sessionFormRefusal(f sessionForm) string {
 	const only = "only Claude, OpenCode, Codex and Pi for now"
+	if why := m.sessionPathState(f).why; why != "" {
+		return why
+	}
 	if h := strings.ToLower(f.value(sHarness)); h != "" && h != "claude" && h != "opencode" && h != "codex" && h != "pi" {
 		return only
 	}
@@ -531,15 +553,44 @@ func (m Model) sessionFormKey(k tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	f.in[f.cur], cmd = f.in[f.cur].Update(k)
-	if f.cur == sProject && f.worktree() && f.branchAuto {
-		project, _ := splitProjectMachine(f.value(sProject))
-		nodeID := f.nodeID
-		if node := m.sessionFormNode(*f); node != nil {
-			nodeID = node.NodeID
+	if f.cur == sProject {
+		m.refreshSessionPathFolder()
+		if f.worktree() && f.branchAuto {
+			project, _ := splitProjectMachine(f.value(sProject))
+			nodeID := f.nodeID
+			if node := m.sessionFormNode(*f); node != nil {
+				nodeID = node.NodeID
+			}
+			f.in[sBranch].SetValue(m.ownerWorktreeBranch(project, nodeID))
 		}
-		f.in[sBranch].SetValue(m.ownerWorktreeBranch(project, nodeID))
 	}
 	return m, cmd
+}
+
+// refreshSessionPathFolder keeps the Folder line honest while the owner types
+// a path. A new folder, or one that is not a repository, has one tree.
+func (m *Model) refreshSessionPathFolder() {
+	f := &m.sform
+	st := m.sessionPathState(*f)
+	if !st.isPath || st.why != "" {
+		f.folderWhy = ""
+		return
+	}
+	f.path = st.candidate
+	switch {
+	case !st.exists:
+		f.folderWhy = "a new folder has one tree"
+	case !st.isGit:
+		f.folderWhy = "not a git repository: no worktrees"
+	default:
+		f.folderWhy = ""
+	}
+	if f.folderWhy != "" && f.folder == protocol.FolderWorktree {
+		f.folder = protocol.FolderProject
+		if f.cur == sBranch {
+			m.sform.focus(sFolder)
+		}
+	}
 }
 
 func (m Model) submitSessionForm() (tea.Model, tea.Cmd) {
@@ -551,7 +602,7 @@ func (m Model) submitSessionForm() (tea.Model, tea.Cmd) {
 	}
 	if why := m.sessionFormRefusal(*f); why != "" {
 		f.err = strings.ToUpper(why[:1]) + why[1:] + "."
-		if f.nodeID != "" && f.nodeID != m.snap.NodeID {
+		if m.sessionPathState(*f).why != "" || (f.nodeID != "" && f.nodeID != m.snap.NodeID) {
 			return m, f.focus(sProject)
 		}
 		return m, f.focus(sHarness)
@@ -577,17 +628,35 @@ func (m Model) submitSessionForm() (tea.Model, tea.Cmd) {
 			f.in[sBranch].SetValue(branch)
 		}
 	}
-	req := protocol.SessionStartRequest{Project: m.sessionFormProject(*f), Harness: harness,
+	st := m.sessionPathState(*f)
+	req := protocol.SessionStartRequest{Harness: harness,
 		Model: f.value(sModel), FirstMessage: f.value(sFirstMessage), Folder: folder, Branch: branch}
+	project = m.sessionFormProject(*f)
 	host := m.localHost()
+	if st.isPath {
+		req.Path = st.candidate
+		project = filepath.Base(st.candidate)
+	} else {
+		req.Project = project
+	}
 	if node := m.sessionFormNode(*f); node != nil {
 		if node.NodeID != m.snap.NodeID {
 			req.NodeID = node.NodeID
 		}
 		host = firstNonEmpty(node.Hostname, host)
 	}
+	if st.create {
+		display := m.tildePath(st.candidate)
+		m.sessionPending = &sessionAsk{kind: askCreateFolder, req: req, display: display, host: host}
+		m.notice = notice{}
+		return m, nil
+	}
 	m.mode = modeNormal
-	m.say("Starting " + sanitize(m.sessionFormProject(*f)) + " on " + sanitize(host) + "...")
+	what := project
+	if st.isPath {
+		what = m.tildePath(st.candidate)
+	}
+	m.say("Starting " + sanitize(what) + " on " + sanitize(host) + "...")
 	return m, m.sessionStartCmd(req)
 }
 
@@ -637,6 +706,21 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 		m.fail("Session not started: " + explain(r.err))
 		return m, refresh()
 	}
+	host := m.nodeName(r.res.NodeID, firstNonEmpty(r.res.Hostname, m.localHost()))
+	if r.res.Status == "needs_create" || r.res.Status == "needs_trust" {
+		display := firstNonEmpty(r.res.Path, r.req.Path)
+		if r.res.NodeID == "" || r.res.NodeID == m.snap.NodeID {
+			display = m.tildePath(display)
+		}
+		kind := askCreateFolder
+		if r.res.Status == "needs_trust" {
+			kind = askTrustClaude
+		}
+		m.mode = modeNormal
+		m.sessionPending = &sessionAsk{kind: kind, req: r.req, display: display, host: host}
+		m.notice = notice{}
+		return m, nil
+	}
 	if r.res.Status == "failed" {
 		m.fail(firstNonEmpty(sanitize(r.res.Error), "The session did not start."))
 		return m, refresh()
@@ -645,7 +729,7 @@ func (m Model) onSessionStarted(r sessionStartedMsg) (Model, tea.Cmd) {
 		m.fail("The start did not finish.")
 		return m, refresh()
 	}
-	host := m.nodeName(r.res.NodeID, firstNonEmpty(m.sform.hostname, m.localHost()))
+	host = m.nodeName(r.res.NodeID, firstNonEmpty(m.sform.hostname, m.localHost()))
 	project := sanitize(firstNonEmpty(r.res.Project, m.sessionFormProject(m.sform)))
 	harness := firstNonEmpty(r.res.Harness, r.req.Harness)
 	if harness == "" {
@@ -711,6 +795,9 @@ func (m Model) sessionFieldNote(i sessionFormField) string {
 			return ""
 		}
 	case sFolder:
+		if f.folderWhy != "" {
+			return f.folderWhy
+		}
 		if f.busy != "" {
 			return f.busy
 		}
@@ -757,6 +844,7 @@ func (m Model) sessionFormView(w, rows int) []string {
 			noteCol = end
 		}
 	}
+	indent := strings.Repeat(" ", sessionValueCol)
 	for i := sessionFormField(0); i < sFields; i++ {
 		if i == sBranch && !f.worktree() {
 			continue
@@ -787,9 +875,16 @@ func (m Model) sessionFormView(w, rows int) []string {
 			}
 		}
 		out = append(out, clip(line, w))
+		if i == sProject {
+			st := m.sessionPathState(f)
+			for _, extra := range []string{st.note, m.sessionPathTrustNote(st, f.value(sHarness))} {
+				if extra != "" {
+					out = append(out, sDim.Render(clip(indent+extra, w)))
+				}
+			}
+		}
 	}
 	why := m.sessionFormRefusal(f)
-	indent := strings.Repeat(" ", sessionValueCol)
 	remote := m.sessionRemoteHost(f)
 	enterHow := "empty: start it and enter it"
 	if remote != "" {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,9 +18,10 @@ import (
 // build plan part 8.
 func (d *Daemon) sessionStart(ctx context.Context, p protocol.SessionStartRequest) (protocol.StartedSession, error) {
 	p.Project = strings.TrimSpace(p.Project)
+	p.Path = strings.TrimSpace(p.Path)
 	p.NodeID = strings.TrimSpace(p.NodeID)
-	if p.Project == "" {
-		return protocol.StartedSession{}, errors.New("session_start needs project")
+	if p.Project == "" && p.Path == "" {
+		return protocol.StartedSession{}, errors.New("session_start needs project or path")
 	}
 	if p.Harness == "" {
 		p.Harness = "claude"
@@ -60,6 +62,11 @@ func (d *Daemon) agentView(ctx context.Context, id string) (protocol.AgentView, 
 func (d *Daemon) sessionStartMachine(ctx context.Context, p protocol.SessionStartRequest) (string, error) {
 	if p.NodeID != "" && p.NodeID != d.cfg.NodeID && !strings.EqualFold(p.NodeID, d.cfg.Hostname) {
 		return p.NodeID, nil
+	}
+	if p.Path != "" {
+		// A typed path belongs to this machine unless the request names
+		// another one with NodeID.
+		return "", nil
 	}
 	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
 	if err != nil {
@@ -102,26 +109,59 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 	if err != nil {
 		return protocol.StartedSession{}, err
 	}
-	raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
-	if err != nil {
-		return protocol.StartedSession{}, err
-	}
-	var projects protocol.ProjectsResult
-	if err = json.Unmarshal(raw, &projects); err != nil {
-		return protocol.StartedSession{}, err
-	}
 	var found *protocol.ProjectView
-	for _, project := range projects.Projects {
-		if project.NodeID == d.cfg.NodeID && (project.Name == p.Project || project.Path == p.Project) {
-			if found != nil {
-				return protocol.StartedSession{}, errors.New("project is ambiguous: use its local path")
-			}
-			copy := project
-			found = &copy
+	// typed is the checked folder of a path start, empty for a project start.
+	// created says agent-net made that folder on this request.
+	typed, created := "", false
+	if p.Path != "" {
+		path, err := cleanOwnerPath(p.Path)
+		if err != nil {
+			return protocol.StartedSession{}, err
 		}
-	}
-	if found == nil {
-		return protocol.StartedSession{}, errors.New("project is not known on this machine")
+		info, statErr := os.Stat(path)
+		switch {
+		case errors.Is(statErr, os.ErrNotExist):
+			if !p.Create {
+				return protocol.StartedSession{ID: protocol.NewID("start"), Status: "needs_create",
+					NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
+					Project: filepath.Base(path), Path: path, Model: p.Model, StartedAt: time.Now().Unix()}, nil
+			}
+			if err := createOwnerFolder(ctx, path); err != nil {
+				return protocol.StartedSession{}, err
+			}
+			created = true
+		case statErr != nil:
+			return protocol.StartedSession{}, statErr
+		case !info.IsDir():
+			return protocol.StartedSession{}, errors.New("the path is not a folder")
+		}
+		projectPath, projectName, err := d.ownerPathProject(ctx, path, p.Harness, created)
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		typed = projectPath
+		found = &protocol.ProjectView{Name: projectName, Path: projectPath}
+	} else {
+		raw, err := d.call(ctx, "query.projects", protocol.QueryProjects{})
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		var projects protocol.ProjectsResult
+		if err = json.Unmarshal(raw, &projects); err != nil {
+			return protocol.StartedSession{}, err
+		}
+		for _, project := range projects.Projects {
+			if project.NodeID == d.cfg.NodeID && (project.Name == p.Project || project.Path == p.Project) {
+				if found != nil {
+					return protocol.StartedSession{}, errors.New("project is ambiguous: use its local path")
+				}
+				copy := project
+				found = &copy
+			}
+		}
+		if found == nil {
+			return protocol.StartedSession{}, errors.New("project is not known on this machine")
+		}
 	}
 	info, err := os.Stat(found.Path)
 	if err != nil {
@@ -139,6 +179,18 @@ func (d *Daemon) sessionStartLocal(ctx context.Context, p protocol.SessionStartR
 		sessionPath, branch = dir, name
 	} else {
 		branch, _ = gitOut(ctx, found.Path, "branch", "--show-current")
+	}
+	if typed != "" && p.Harness == "claude" {
+		needTrust, err := ownerClaudeTrust(sessionPath, created, p.Folder == protocol.FolderWorktree, p.TrustClaude)
+		if err != nil {
+			return protocol.StartedSession{}, err
+		}
+		if needTrust {
+			return protocol.StartedSession{ID: protocol.NewID("start"), Status: "needs_trust",
+				NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness,
+				Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model,
+				StartedAt: time.Now().Unix()}, nil
+		}
 	}
 	r := protocol.StartedSession{ID: protocol.NewID("start"), Status: "starting", NodeID: d.cfg.NodeID, Hostname: d.hostName(), Harness: p.Harness, Project: found.Name, Path: sessionPath, Branch: branch, Model: p.Model, StartedAt: time.Now().Unix()}
 	if p.Harness == "codex" {

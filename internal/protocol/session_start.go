@@ -90,6 +90,16 @@ type SessionStartRequest struct {
 	NodeID       string `json:"node_id,omitempty"`
 	Folder       string `json:"folder,omitempty"`
 	Branch       string `json:"branch,omitempty"`
+	// Path is a folder typed in the Project field. It must be absolute or
+	// start with ~, and it is checked on the machine that runs the start.
+	// Project is empty for a path start.
+	Path string `json:"path,omitempty"`
+	// Create is the owner's yes to creating Path with git init when it does
+	// not exist. Without it the start answers status "needs_create".
+	Create bool `json:"create,omitempty"`
+	// TrustClaude is the owner's yes to trusting an existing folder for
+	// Claude Code. Without it an untrusted folder answers "needs_trust".
+	TrustClaude bool `json:"trust_claude,omitempty"`
 }
 
 // SessionStartRelay is "session.start" from the owner's machine. The gateway

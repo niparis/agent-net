@@ -816,15 +816,30 @@ and Pi sessions in the owner's terminal are refused. Worker stops keep their
 existing authority checks and stop rules. No agent tool exposes owner stops.
 
 Starts are limited to Claude, OpenCode and Pi in the background, and Codex as
-an enter plan, in an existing project folder known on the local machine or on
-another machine of the network. The daemon resolves the project from the
-gateway registry; it accepts no executable, command, settings, environment or
-arbitrary folder parameter. The optional `folder` field of the request is
-carried unchanged to the machine that runs the start; this version does not
-create a folder. It creates no worktree or trust entry. Folder creation and its
-confirm, home-folder and symlink checks belong to a later part of the design;
-on another machine it will follow the owner's decision 8, with the same confirm
-and the same home-folder rule.
+an enter plan, in a project folder known on the local machine or on another
+machine of the network, or in a path the owner typed. The daemon resolves a
+project from the gateway registry; it accepts no executable, command, settings
+or environment parameter. The optional `folder` field of the request is
+carried unchanged to the machine that runs the start.
+
+A typed `path` is checked on the machine that runs the start, including a start
+relayed from another machine. It must be absolute after `~` is expanded, must
+hold no control characters, and must stay inside the home folder of the user of
+that machine. A symbolic link that leaves home, or a missing folder whose
+nearest existing parent leaves home, is refused. The daemon never creates a
+folder outside home. It makes a missing folder only when the request carries
+`create: true`, which the TUI sends only after the owner answers yes, and it
+runs `git init` there with plain arguments and no shell. An existing folder is
+registered when it is a git working tree; a folder that is not a repository is
+not registered and starts where it is. A start on another machine carries the
+path and the create flag through the gateway, and that machine applies the same
+checks.
+
+Claude Code folder trust is set only for a folder the owner asked agent-net to
+create, or after the owner answers the TUI's `Trust <path> for Claude Code?`
+question, which sends `trust_claude: true`. An existing folder that Claude does
+not trust makes the start answer `needs_trust` and start nothing. agent-net
+never trusts a known project folder on its own.
 For Claude, the model and optional first message are separate command arguments,
 with `--` before the message. There is no shell interpolation.
 
